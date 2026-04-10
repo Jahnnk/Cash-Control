@@ -14,11 +14,17 @@ export async function getWeeklyReport(startDate: string, endDate: string) {
     )
     SELECT
       d.date,
-      COALESCE((SELECT SUM(net_amount) FROM sales WHERE date = d.date), 0) as sales_total,
-      COALESCE((SELECT SUM(amount) FROM collections WHERE date = d.date), 0) as collections_total,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date), 0) as expenses_total,
-      (SELECT closing_balance FROM bank_balance WHERE date = d.date) as bank_balance
+      COALESCE(dr.byte_total, 0) as byte_total,
+      COALESCE(dr.byte_credit_day, 0) as byte_credit_day,
+      COALESCE(dr.byte_credit_collected, 0) as byte_credit_collected,
+      COALESCE(dr.byte_cash, 0) as byte_cash,
+      COALESCE(dr.byte_discounts, 0) as byte_discounts,
+      COALESCE(dr.bank_income, 0) as bank_income,
+      COALESCE(dr.bank_expense, 0) as bank_expense,
+      dr.bank_balance_real,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date), 0) as expenses_total
     FROM dates d
+    LEFT JOIN daily_records dr ON dr.date = d.date
     ORDER BY d.date ASC
   `);
 
@@ -27,28 +33,30 @@ export async function getWeeklyReport(startDate: string, endDate: string) {
 
 export async function getMonthlyReport(month: string) {
   const startDate = `${month}-01`;
-  // Get last day of month
   const [year, m] = month.split("-").map(Number);
   const lastDay = new Date(year, m, 0).getDate();
   const endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
-  // Totals
+  // Totals from daily_records
   const totals = await db.execute(sql`
     SELECT
-      COALESCE((SELECT SUM(net_amount) FROM sales WHERE date >= ${startDate} AND date <= ${endDate}), 0) as total_sales,
-      COALESCE((SELECT SUM(amount) FROM collections WHERE date >= ${startDate} AND date <= ${endDate}), 0) as total_collections,
+      COALESCE(SUM(byte_total), 0) as total_byte,
+      COALESCE(SUM(bank_income), 0) as total_income,
+      COALESCE(SUM(bank_expense), 0) as total_bank_expense,
       COALESCE((SELECT SUM(amount) FROM expenses WHERE date >= ${startDate} AND date <= ${endDate}), 0) as total_expenses
+    FROM daily_records
+    WHERE date >= ${startDate} AND date <= ${endDate}
   `);
 
   // Bank balance variation
   const bankStart = await db.execute(sql`
-    SELECT closing_balance FROM bank_balance
-    WHERE date <= ${startDate}
+    SELECT bank_balance_real FROM daily_records
+    WHERE bank_balance_real IS NOT NULL AND date <= ${startDate}
     ORDER BY date DESC LIMIT 1
   `);
   const bankEnd = await db.execute(sql`
-    SELECT closing_balance FROM bank_balance
-    WHERE date <= ${endDate}
+    SELECT bank_balance_real FROM daily_records
+    WHERE bank_balance_real IS NOT NULL AND date <= ${endDate}
     ORDER BY date DESC LIMIT 1
   `);
 
@@ -61,88 +69,43 @@ export async function getMonthlyReport(month: string) {
     ORDER BY total DESC
   `);
 
-  // Top 5 clients by sales
-  const topBySales = await db.execute(sql`
-    SELECT c.name, SUM(s.net_amount) as total
-    FROM sales s JOIN clients c ON c.id = s.client_id
-    WHERE s.date >= ${startDate} AND s.date <= ${endDate}
-    GROUP BY c.name
-    ORDER BY total DESC LIMIT 5
-  `);
-
-  // Top 5 clients by pending balance
-  const topByPending = await db.execute(sql`
-    SELECT c.name, SUM(s.net_amount) as total
-    FROM sales s JOIN clients c ON c.id = s.client_id
-    WHERE s.is_collected = false
-    GROUP BY c.name
-    ORDER BY total DESC LIMIT 5
-  `);
-
   return {
     totals: totals.rows[0],
     bankStartBalance: bankStart.rows[0]
-      ? parseFloat(bankStart.rows[0].closing_balance as string)
+      ? parseFloat(bankStart.rows[0].bank_balance_real as string)
       : 0,
     bankEndBalance: bankEnd.rows[0]
-      ? parseFloat(bankEnd.rows[0].closing_balance as string)
+      ? parseFloat(bankEnd.rows[0].bank_balance_real as string)
       : 0,
     byCategory: byCategory.rows,
-    topBySales: topBySales.rows,
-    topByPending: topByPending.rows,
   };
 }
 
 export async function getDebtAgingReport() {
+  // With daily_records, CxC is global: total byte - total collected
+  // We show it as a single summary, not per-client aging
   const result = await db.execute(sql`
     SELECT
-      c.id as client_id,
-      c.name as client_name,
-      s.id as sale_id,
-      s.date,
-      s.net_amount,
-      CURRENT_DATE - s.date::date as days_old
-    FROM sales s
-    JOIN clients c ON c.id = s.client_id
-    WHERE s.is_collected = false
-    ORDER BY s.date ASC
+      date,
+      byte_total,
+      bank_income,
+      (COALESCE(byte_total, 0) - COALESCE(bank_income, 0)) as daily_gap
+    FROM daily_records
+    WHERE COALESCE(byte_total, 0) > 0 OR COALESCE(bank_income, 0) > 0
+    ORDER BY date ASC
   `);
 
-  // Group by ranges
-  const ranges = {
-    "0-7": { total: 0, clients: new Map<string, number>() },
-    "8-15": { total: 0, clients: new Map<string, number>() },
-    "16-30": { total: 0, clients: new Map<string, number>() },
-    "31-60": { total: 0, clients: new Map<string, number>() },
-    "60+": { total: 0, clients: new Map<string, number>() },
+  const totals = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(byte_total), 0) as total_byte,
+      COALESCE(SUM(bank_income), 0) as total_collected
+    FROM daily_records
+  `);
+
+  return {
+    dailyData: result.rows,
+    totalByte: parseFloat(totals.rows[0].total_byte as string),
+    totalCollected: parseFloat(totals.rows[0].total_collected as string),
+    totalPending: parseFloat(totals.rows[0].total_byte as string) - parseFloat(totals.rows[0].total_collected as string),
   };
-
-  for (const row of result.rows) {
-    const days = Number(row.days_old);
-    const amount = parseFloat(row.net_amount as string);
-    const clientName = row.client_name as string;
-
-    let range: keyof typeof ranges;
-    if (days <= 7) range = "0-7";
-    else if (days <= 15) range = "8-15";
-    else if (days <= 30) range = "16-30";
-    else if (days <= 60) range = "31-60";
-    else range = "60+";
-
-    ranges[range].total += amount;
-    const current = ranges[range].clients.get(clientName) || 0;
-    ranges[range].clients.set(clientName, current + amount);
-  }
-
-  // Convert Maps to arrays for serialization
-  const serializable = Object.entries(ranges).map(([range, data]) => ({
-    range,
-    total: data.total,
-    clients: Array.from(data.clients.entries()).map(([name, amount]) => ({
-      name,
-      amount,
-    })),
-  }));
-
-  return serializable;
 }

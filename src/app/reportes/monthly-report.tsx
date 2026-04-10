@@ -27,8 +27,6 @@ type MonthlyData = {
   bankStartBalance: number;
   bankEndBalance: number;
   byCategory: Record<string, unknown>[];
-  topBySales: Record<string, unknown>[];
-  topByPending: Record<string, unknown>[];
 };
 
 export function MonthlyReport() {
@@ -70,12 +68,12 @@ export function MonthlyReport() {
           {/* Summary cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
             <SummaryCard
-              label="Ventas totales"
-              value={formatCurrency(data.totals.total_sales as string)}
+              label="Ventas Byte"
+              value={formatCurrency(data.totals.total_byte as string)}
             />
             <SummaryCard
-              label="Cobros totales"
-              value={formatCurrency(data.totals.total_collections as string)}
+              label="Ingresos BCP"
+              value={formatCurrency(data.totals.total_income as string)}
               color="text-primary-light"
             />
             <SummaryCard
@@ -96,7 +94,6 @@ export function MonthlyReport() {
 
           {/* Expenses by category */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Donut chart */}
             {donutData && donutData.length > 0 && (
               <div className="bg-white rounded-xl border border-gray-200 p-6">
                 <h3 className="text-sm font-semibold text-gray-900 mb-4">
@@ -132,12 +129,9 @@ export function MonthlyReport() {
               </div>
             )}
 
-            {/* Category table */}
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100">
-                <h3 className="text-sm font-semibold text-gray-900">
-                  Detalle por categoría
-                </h3>
+                <h3 className="text-sm font-semibold text-gray-900">Detalle por categoría</h3>
               </div>
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
@@ -167,20 +161,6 @@ export function MonthlyReport() {
               </div>
             </div>
           </div>
-
-          {/* Top clients */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            <TopTable
-              title="Top 5 clientes por venta"
-              data={data.topBySales}
-              color="text-gray-900"
-            />
-            <TopTable
-              title="Top 5 clientes por saldo pendiente"
-              data={data.topByPending}
-              color="text-amber-600"
-            />
-          </div>
         </>
       ) : null}
     </div>
@@ -200,45 +180,6 @@ function SummaryCard({
     <div className="bg-white rounded-xl border border-gray-200 p-5">
       <div className="text-sm text-gray-600 mb-1">{label}</div>
       <div className={`text-xl font-bold ${color}`}>{value}</div>
-    </div>
-  );
-}
-
-function TopTable({
-  title,
-  data,
-  color,
-}: {
-  title: string;
-  data: Record<string, unknown>[];
-  color: string;
-}) {
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-6 py-4 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-900">{title}</h3>
-      </div>
-      {data.length === 0 ? (
-        <div className="px-6 py-6 text-center text-gray-500 text-sm">Sin datos</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <tbody className="divide-y divide-gray-100">
-              {data.map((row, i) => (
-                <tr key={row.name as string}>
-                  <td className="px-6 py-3">
-                    <span className="text-gray-400 mr-2">{i + 1}.</span>
-                    {row.name as string}
-                  </td>
-                  <td className={`px-6 py-3 text-right font-semibold ${color}`}>
-                    {formatCurrency(row.total as string)}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
     </div>
   );
 }

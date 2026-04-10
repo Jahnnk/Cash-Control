@@ -48,18 +48,10 @@ export function WeeklyReport() {
 
   const chartData = data?.map((row) => ({
     name: formatDateShort(row.date as string),
-    Ventas: parseFloat(row.sales_total as string),
-    Cobros: parseFloat(row.collections_total as string),
+    "Byte Total": parseFloat(row.byte_total as string),
+    "Ingreso BCP": parseFloat(row.bank_income as string),
     Egresos: parseFloat(row.expenses_total as string),
   }));
-
-  const totals = data
-    ? {
-        sales: data.reduce((s, r) => s + parseFloat(r.sales_total as string), 0),
-        collections: data.reduce((s, r) => s + parseFloat(r.collections_total as string), 0),
-        expenses: data.reduce((s, r) => s + parseFloat(r.expenses_total as string), 0),
-      }
-    : null;
 
   return (
     <div className="space-y-6">
@@ -89,11 +81,10 @@ export function WeeklyReport() {
         </div>
       ) : (
         <>
-          {/* Chart */}
           {chartData && chartData.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 p-6">
               <h3 className="text-sm font-semibold text-gray-900 mb-4">
-                Ventas vs Cobros vs Egresos
+                Byte Total vs Ingreso BCP vs Egresos
               </h3>
               <ResponsiveContainer width="100%" height={300}>
                 <BarChart data={chartData}>
@@ -105,8 +96,8 @@ export function WeeklyReport() {
                     contentStyle={{ fontSize: 12 }}
                   />
                   <Legend wrapperStyle={{ fontSize: 12 }} />
-                  <Bar dataKey="Ventas" fill="#EAB308" radius={[4, 4, 0, 0]} />
-                  <Bar dataKey="Cobros" fill="#098B5F" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Byte Total" fill="#EAB308" radius={[4, 4, 0, 0]} />
+                  <Bar dataKey="Ingreso BCP" fill="#098B5F" radius={[4, 4, 0, 0]} />
                   <Bar dataKey="Egresos" fill="#DC2626" radius={[4, 4, 0, 0]} />
                 </BarChart>
               </ResponsiveContainer>
@@ -119,51 +110,44 @@ export function WeeklyReport() {
               <table className="w-full text-sm">
                 <thead>
                   <tr className="bg-gray-50 text-gray-600 text-left">
-                    <th className="px-6 py-3 font-medium">Fecha</th>
-                    <th className="px-6 py-3 font-medium text-right">Ventas Byte</th>
-                    <th className="px-6 py-3 font-medium text-right">Cobros reales</th>
-                    <th className="px-6 py-3 font-medium text-right">Egresos</th>
-                    <th className="px-6 py-3 font-medium text-right">Saldo banco</th>
+                    <th className="px-4 py-3 font-medium">Fecha</th>
+                    <th className="px-4 py-3 font-medium text-right">Byte Total</th>
+                    <th className="px-4 py-3 font-medium text-right">Créd. Día</th>
+                    <th className="px-4 py-3 font-medium text-right">Créd. Cobr.</th>
+                    <th className="px-4 py-3 font-medium text-right">Ingreso BCP</th>
+                    <th className="px-4 py-3 font-medium text-right">Egresos</th>
+                    <th className="px-4 py-3 font-medium text-right">Saldo BCP</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-gray-100">
                   {data?.map((row) => (
                     <tr key={row.date as string} className="hover:bg-gray-50">
-                      <td className="px-6 py-3 font-medium">
+                      <td className="px-4 py-3 font-medium">
                         {formatDateShort(row.date as string)}
                       </td>
-                      <td className="px-6 py-3 text-right">
-                        {formatCurrency(row.sales_total as string)}
+                      <td className="px-4 py-3 text-right">
+                        {formatCurrency(row.byte_total as string)}
                       </td>
-                      <td className="px-6 py-3 text-right text-primary-light font-medium">
-                        {formatCurrency(row.collections_total as string)}
+                      <td className="px-4 py-3 text-right text-gray-600">
+                        {formatCurrency(row.byte_credit_day as string)}
                       </td>
-                      <td className="px-6 py-3 text-right text-red-600">
+                      <td className="px-4 py-3 text-right text-blue-600">
+                        {formatCurrency(row.byte_credit_collected as string)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-primary-light font-medium">
+                        {formatCurrency(row.bank_income as string)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-red-600">
                         {formatCurrency(row.expenses_total as string)}
                       </td>
-                      <td className="px-6 py-3 text-right font-semibold">
-                        {row.bank_balance
-                          ? formatCurrency(row.bank_balance as string)
+                      <td className="px-4 py-3 text-right font-semibold">
+                        {row.bank_balance_real
+                          ? formatCurrency(row.bank_balance_real as string)
                           : "—"}
                       </td>
                     </tr>
                   ))}
                 </tbody>
-                {totals && (
-                  <tfoot>
-                    <tr className="bg-gray-50 font-semibold">
-                      <td className="px-6 py-3">Total</td>
-                      <td className="px-6 py-3 text-right">{formatCurrency(totals.sales)}</td>
-                      <td className="px-6 py-3 text-right text-primary-light">
-                        {formatCurrency(totals.collections)}
-                      </td>
-                      <td className="px-6 py-3 text-right text-red-600">
-                        {formatCurrency(totals.expenses)}
-                      </td>
-                      <td className="px-6 py-3"></td>
-                    </tr>
-                  </tfoot>
-                )}
               </table>
             </div>
           </div>

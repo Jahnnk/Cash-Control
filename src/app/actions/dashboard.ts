@@ -8,22 +8,27 @@ export async function getDashboardData() {
   const currentMonth = today.substring(0, 7);
   const startOfMonth = `${currentMonth}-01`;
 
-  // Latest bank balance
+  // Latest bank balance from daily_records
   const bankResult = await db.execute(sql`
-    SELECT closing_balance, date FROM bank_balance
+    SELECT bank_balance_real, date FROM daily_records
+    WHERE bank_balance_real IS NOT NULL
     ORDER BY date DESC LIMIT 1
   `);
   const bankBalance = bankResult.rows[0]
-    ? parseFloat(bankResult.rows[0].closing_balance as string)
+    ? parseFloat(bankResult.rows[0].bank_balance_real as string)
     : 0;
   const bankDate = bankResult.rows[0]?.date as string | null;
 
-  // Total accounts receivable
-  const arResult = await db.execute(sql`
-    SELECT COALESCE(SUM(net_amount), 0) as total
-    FROM sales WHERE is_collected = false
+  // CxC global: total Byte sold - total collected in bank
+  const cxcResult = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(byte_total), 0) as total_byte,
+      COALESCE(SUM(bank_income), 0) as total_collected
+    FROM daily_records
   `);
-  const accountsReceivable = parseFloat(arResult.rows[0].total as string);
+  const totalByte = parseFloat(cxcResult.rows[0].total_byte as string);
+  const totalCollected = parseFloat(cxcResult.rows[0].total_collected as string);
+  const accountsReceivable = Math.max(0, totalByte - totalCollected);
 
   // Monthly expenses
   const expResult = await db.execute(sql`
@@ -33,29 +38,12 @@ export async function getDashboardData() {
   `);
   const monthlyExpenses = parseFloat(expResult.rows[0].total as string);
 
-  // Days in month so far
+  // Days of coverage
   const dayOfMonth = new Date().getDate();
   const avgDailyExpense = dayOfMonth > 0 ? monthlyExpenses / dayOfMonth : 0;
   const daysCovered = avgDailyExpense > 0 ? Math.floor(bankBalance / avgDailyExpense) : 999;
 
-  // Accounts receivable by client with aging
-  const arByClient = await db.execute(sql`
-    SELECT
-      c.id,
-      c.name,
-      c.type,
-      c.payment_pattern,
-      COALESCE(SUM(s.net_amount), 0) as pending_amount,
-      MIN(s.date) as oldest_date
-    FROM clients c
-    LEFT JOIN sales s ON s.client_id = c.id AND s.is_collected = false
-    WHERE c.is_active = true
-    GROUP BY c.id, c.name, c.type, c.payment_pattern
-    HAVING COALESCE(SUM(s.net_amount), 0) > 0
-    ORDER BY pending_amount DESC
-  `);
-
-  // Last 7 days summary
+  // Last 7 days from daily_records + expenses
   const last7Days = await db.execute(sql`
     WITH dates AS (
       SELECT generate_series(
@@ -66,12 +54,29 @@ export async function getDashboardData() {
     )
     SELECT
       d.date,
-      COALESCE((SELECT SUM(net_amount) FROM sales WHERE date = d.date), 0) as sales_total,
-      COALESCE((SELECT SUM(amount) FROM collections WHERE date = d.date), 0) as collections_total,
+      COALESCE(dr.byte_total, 0) as byte_total,
+      COALESCE(dr.bank_income, 0) as bank_income,
+      COALESCE(dr.bank_expense, 0) as bank_expense,
+      dr.bank_balance_real,
       COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date), 0) as expenses_total,
-      (SELECT closing_balance FROM bank_balance WHERE date = d.date) as bank_balance
+      COALESCE(dr.byte_credit_day, 0) as byte_credit_day,
+      COALESCE(dr.byte_credit_collected, 0) as byte_credit_collected,
+      COALESCE(dr.byte_cash, 0) as byte_cash,
+      COALESCE(dr.byte_discounts, 0) as byte_discounts
     FROM dates d
+    LEFT JOIN daily_records dr ON dr.date = d.date
     ORDER BY d.date ASC
+  `);
+
+  // Monthly Byte summary
+  const monthlyByte = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(byte_total), 0) as month_byte_total,
+      COALESCE(SUM(bank_income), 0) as month_bank_income,
+      COALESCE(SUM(byte_credit_day), 0) as month_credit_day,
+      COALESCE(SUM(byte_credit_collected), 0) as month_credit_collected
+    FROM daily_records
+    WHERE date >= ${startOfMonth} AND date <= ${today}
   `);
 
   return {
@@ -81,7 +86,7 @@ export async function getDashboardData() {
     monthlyExpenses,
     daysCovered,
     avgDailyExpense,
-    arByClient: arByClient.rows,
     last7Days: last7Days.rows,
+    monthlyByte: monthlyByte.rows[0],
   };
 }

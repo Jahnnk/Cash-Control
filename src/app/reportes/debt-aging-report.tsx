@@ -2,34 +2,18 @@
 
 import { useState, useEffect } from "react";
 import { getDebtAgingReport } from "@/app/actions/reports";
-import { formatCurrency, agingColor } from "@/lib/utils";
+import { formatCurrency, formatDateShort } from "@/lib/utils";
 
-type AgingRange = {
-  range: string;
-  total: number;
-  clients: { name: string; amount: number }[];
-};
-
-const RANGE_LABELS: Record<string, string> = {
-  "0-7": "0–7 días",
-  "8-15": "8–15 días",
-  "16-30": "16–30 días",
-  "31-60": "31–60 días",
-  "60+": "60+ días",
-};
-
-const RANGE_COLORS: Record<string, string> = {
-  "0-7": "bg-green-500",
-  "8-15": "bg-yellow-400",
-  "16-30": "bg-orange-500",
-  "31-60": "bg-red-500",
-  "60+": "bg-red-700",
+type DebtData = {
+  dailyData: Record<string, unknown>[];
+  totalByte: number;
+  totalCollected: number;
+  totalPending: number;
 };
 
 export function DebtAgingReport() {
-  const [data, setData] = useState<AgingRange[] | null>(null);
+  const [data, setData] = useState<DebtData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expanded, setExpanded] = useState<string | null>(null);
 
   useEffect(() => {
     getDebtAgingReport().then((d) => {
@@ -46,89 +30,95 @@ export function DebtAgingReport() {
     );
   }
 
-  const grandTotal = data?.reduce((s, r) => s + r.total, 0) || 0;
+  if (!data) return null;
+
+  const pct = data.totalByte > 0
+    ? ((data.totalCollected / data.totalByte) * 100).toFixed(1)
+    : "0";
 
   return (
     <div className="space-y-6">
-      {/* Summary bar */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="text-sm font-semibold text-gray-900">
-            Total cuentas por cobrar
-          </h3>
-          <span className="text-xl font-bold text-gray-900">
-            {formatCurrency(grandTotal)}
-          </span>
-        </div>
-        {grandTotal > 0 && (
-          <div className="flex rounded-lg overflow-hidden h-4">
-            {data?.map(
-              (range) =>
-                range.total > 0 && (
-                  <div
-                    key={range.range}
-                    className={`${RANGE_COLORS[range.range]} transition-all`}
-                    style={{ width: `${(range.total / grandTotal) * 100}%` }}
-                    title={`${RANGE_LABELS[range.range]}: ${formatCurrency(range.total)}`}
-                  />
-                )
-            )}
+      {/* Summary */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="text-sm text-gray-600 mb-1">Total vendido (Byte)</div>
+          <div className="text-2xl font-bold text-gray-900">
+            {formatCurrency(data.totalByte)}
           </div>
-        )}
-        <div className="flex flex-wrap gap-4 mt-3">
-          {data?.map((range) => (
-            <div key={range.range} className="flex items-center gap-2 text-xs text-gray-600">
-              <span className={`w-3 h-3 rounded-full ${RANGE_COLORS[range.range]}`} />
-              {RANGE_LABELS[range.range]}
-            </div>
-          ))}
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-5">
+          <div className="text-sm text-gray-600 mb-1">Total cobrado (BCP)</div>
+          <div className="text-2xl font-bold text-primary-light">
+            {formatCurrency(data.totalCollected)}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">{pct}% recuperado</div>
+        </div>
+        <div className="bg-white rounded-xl border border-gray-200 p-5 border-l-4 border-l-amber-500">
+          <div className="text-sm text-gray-600 mb-1">Pendiente por cobrar</div>
+          <div className="text-2xl font-bold text-amber-600">
+            {formatCurrency(Math.max(0, data.totalPending))}
+          </div>
+          <div className="text-xs text-gray-500 mt-1">Diferencia Byte - BCP</div>
         </div>
       </div>
 
-      {/* Ranges */}
-      {data?.map((range) => (
-        <div
-          key={range.range}
-          className="bg-white rounded-xl border border-gray-200 overflow-hidden"
-        >
-          <button
-            onClick={() => setExpanded(expanded === range.range ? null : range.range)}
-            className="w-full px-6 py-4 flex items-center justify-between hover:bg-gray-50"
-          >
-            <div className="flex items-center gap-3">
-              <span className={`w-3 h-3 rounded-full ${RANGE_COLORS[range.range]}`} />
-              <span className="font-semibold text-gray-900">
-                {RANGE_LABELS[range.range]}
-              </span>
-              <span className="text-sm text-gray-500">
-                ({range.clients.length} clientes)
-              </span>
-            </div>
-            <span className="text-lg font-bold text-gray-900">
-              {formatCurrency(range.total)}
-            </span>
-          </button>
-
-          {expanded === range.range && range.clients.length > 0 && (
-            <div className="border-t border-gray-100">
-              <table className="w-full text-sm">
-                <tbody className="divide-y divide-gray-100">
-                  {range.clients
-                    .sort((a, b) => b.amount - a.amount)
-                    .map((client) => (
-                      <tr key={client.name} className="hover:bg-gray-50">
-                        <td className="px-6 py-3 pl-12">{client.name}</td>
-                        <td className="px-6 py-3 text-right font-medium">
-                          {formatCurrency(client.amount)}
-                        </td>
-                      </tr>
-                    ))}
-                </tbody>
-              </table>
-            </div>
-          )}
+      {/* Progress bar */}
+      {data.totalByte > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          <div className="flex items-center justify-between mb-2">
+            <span className="text-sm font-medium text-gray-700">Porcentaje de cobro</span>
+            <span className="text-sm font-bold text-primary-light">{pct}%</span>
+          </div>
+          <div className="w-full bg-gray-200 rounded-full h-3">
+            <div
+              className="bg-primary-light h-3 rounded-full transition-all"
+              style={{ width: `${Math.min(100, parseFloat(pct))}%` }}
+            />
+          </div>
         </div>
-      ))}
+      )}
+
+      {/* Daily breakdown */}
+      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+        <div className="px-6 py-4 border-b border-gray-100">
+          <h3 className="text-sm font-semibold text-gray-900">
+            Detalle diario: Byte vs BCP
+          </h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="bg-gray-50 text-gray-600 text-left">
+                <th className="px-4 py-3 font-medium">Fecha</th>
+                <th className="px-4 py-3 font-medium text-right">Byte Total</th>
+                <th className="px-4 py-3 font-medium text-right">Ingreso BCP</th>
+                <th className="px-4 py-3 font-medium text-right">Diferencia</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {data.dailyData.map((row) => {
+                const gap = parseFloat(row.daily_gap as string);
+                return (
+                  <tr key={row.date as string} className="hover:bg-gray-50">
+                    <td className="px-4 py-3 font-medium">
+                      {formatDateShort(row.date as string)}
+                    </td>
+                    <td className="px-4 py-3 text-right">
+                      {formatCurrency(row.byte_total as string)}
+                    </td>
+                    <td className="px-4 py-3 text-right text-primary-light">
+                      {formatCurrency(row.bank_income as string)}
+                    </td>
+                    <td className={`px-4 py-3 text-right font-medium ${gap > 0 ? "text-amber-600" : "text-primary-light"}`}>
+                      {gap > 0 ? "+" : ""}{formatCurrency(gap)}
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
   );
 }

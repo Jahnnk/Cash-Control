@@ -1,0 +1,50 @@
+"use server";
+
+import { db } from "@/db";
+import { sql } from "drizzle-orm";
+import { revalidatePath } from "next/cache";
+
+export async function upsertDailyRecord(data: {
+  date: string;
+  byteCash: number;
+  byteCreditDay: number;
+  byteCreditCollected: number;
+  byteCreditBalance: number;
+  byteDiscounts: number;
+  byteTotal: number;
+  bankIncome: number;
+  bankExpense: number;
+  bankBalanceReal: number | null;
+}) {
+  await db.execute(sql`
+    INSERT INTO daily_records (
+      date, byte_cash, byte_credit_day, byte_credit_collected,
+      byte_credit_balance, byte_discounts, byte_total,
+      bank_income, bank_expense, bank_balance_real
+    ) VALUES (
+      ${data.date}, ${data.byteCash}, ${data.byteCreditDay}, ${data.byteCreditCollected},
+      ${data.byteCreditBalance}, ${data.byteDiscounts}, ${data.byteTotal},
+      ${data.bankIncome}, ${data.bankExpense}, ${data.bankBalanceReal}
+    )
+    ON CONFLICT (date) DO UPDATE SET
+      byte_cash = ${data.byteCash},
+      byte_credit_day = ${data.byteCreditDay},
+      byte_credit_collected = ${data.byteCreditCollected},
+      byte_credit_balance = ${data.byteCreditBalance},
+      byte_discounts = ${data.byteDiscounts},
+      byte_total = ${data.byteTotal},
+      bank_income = ${data.bankIncome},
+      bank_expense = ${data.bankExpense},
+      bank_balance_real = ${data.bankBalanceReal}
+  `);
+  revalidatePath("/dashboard");
+  revalidatePath("/registro");
+  revalidatePath("/reportes");
+}
+
+export async function getDailyRecord(date: string) {
+  const result = await db.execute(sql`
+    SELECT * FROM daily_records WHERE date = ${date}
+  `);
+  return result.rows[0] || null;
+}

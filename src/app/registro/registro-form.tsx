@@ -1,114 +1,82 @@
 "use client";
 
-import { useState } from "react";
-import { createSale } from "@/app/actions/sales";
-import { createCollection } from "@/app/actions/collections";
-import { createExpense } from "@/app/actions/expenses";
-import { upsertBankBalance } from "@/app/actions/bank";
+import { useState, useEffect } from "react";
+import { upsertDailyRecord, getDailyRecord } from "@/app/actions/daily-records";
+import { createExpense, deleteExpense } from "@/app/actions/expenses";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
-import { Trash2, Plus, Save, Loader2 } from "lucide-react";
-
-type Client = {
-  id: string;
-  name: string;
-  type: string;
-  paymentPattern: string | null;
-  isActive: boolean;
-  createdAt: Date;
-};
-
-type SaleItem = {
-  id: string;
-  clientId: string;
-  clientName: string;
-  amount: number;
-  discount: number;
-  notes: string;
-};
-
-type CollectionItem = {
-  id: string;
-  clientId: string;
-  clientName: string;
-  amount: number;
-  notes: string;
-};
+import { Trash2, Plus, Save, Loader2, RefreshCw } from "lucide-react";
 
 type ExpenseItem = {
   id: string;
   category: string;
   concept: string;
   amount: number;
+  isNew: boolean; // true = not yet saved
 };
 
-export function RegistroForm({ clients }: { clients: Client[] }) {
+export function RegistroForm() {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"ventas" | "cobros" | "egresos">("ventas");
+  const [activeTab, setActiveTab] = useState<"byte" | "egresos">("byte");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [loading, setLoading] = useState(false);
 
-  // Shared date
+  // Date
   const [date, setDate] = useState(getYesterday());
 
-  // Sales state
-  const [salesList, setSalesList] = useState<SaleItem[]>([]);
-  const [saleClient, setSaleClient] = useState("");
-  const [saleAmount, setSaleAmount] = useState("");
-  const [saleDiscount, setSaleDiscount] = useState("0");
-  const [saleNotes, setSaleNotes] = useState("");
+  // Byte fields
+  const [byteCash, setByteCash] = useState("0");
+  const [byteCreditDay, setByteCreditDay] = useState("0");
+  const [byteCreditCollected, setByteCreditCollected] = useState("0");
+  const [byteDiscounts, setByteDiscounts] = useState("0");
 
-  // Collections state
-  const [collectionsList, setCollectionsList] = useState<CollectionItem[]>([]);
-  const [colClient, setColClient] = useState("");
-  const [colAmount, setColAmount] = useState("");
-  const [colNotes, setColNotes] = useState("");
+  // Bank fields
+  const [bankIncome, setBankIncome] = useState("0");
+  const [bankExpense, setBankExpense] = useState("0");
+  const [bankBalanceReal, setBankBalanceReal] = useState("");
 
-  // Expenses state
+  // Expenses
   const [expensesList, setExpensesList] = useState<ExpenseItem[]>([]);
   const [expCategory, setExpCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [expConcept, setExpConcept] = useState("");
   const [expAmount, setExpAmount] = useState("");
 
-  // Bank balance
-  const [bankClosing, setBankClosing] = useState("");
+  // Computed
+  const byteTotal =
+    parseFloat(byteCash || "0") +
+    parseFloat(byteCreditDay || "0") -
+    parseFloat(byteDiscounts || "0");
+  const byteCreditBalance =
+    parseFloat(byteCreditDay || "0") - parseFloat(byteCreditCollected || "0");
 
-  function addSale() {
-    if (!saleClient || !saleAmount) return;
-    const client = clients.find((c) => c.id === saleClient);
-    setSalesList([
-      ...salesList,
-      {
-        id: crypto.randomUUID(),
-        clientId: saleClient,
-        clientName: client?.name || "",
-        amount: parseFloat(saleAmount),
-        discount: parseFloat(saleDiscount) || 0,
-        notes: saleNotes,
-      },
-    ]);
-    setSaleAmount("");
-    setSaleDiscount("0");
-    setSaleNotes("");
-  }
-
-  function addCollection() {
-    if (!colClient || !colAmount) return;
-    const client = clients.find((c) => c.id === colClient);
-    setCollectionsList([
-      ...collectionsList,
-      {
-        id: crypto.randomUUID(),
-        clientId: colClient,
-        clientName: client?.name || "",
-        amount: parseFloat(colAmount),
-        notes: colNotes,
-      },
-    ]);
-    setColAmount("");
-    setColNotes("");
-  }
+  // Load existing record when date changes
+  useEffect(() => {
+    setLoading(true);
+    getDailyRecord(date).then((record) => {
+      if (record) {
+        setByteCash(String(record.byte_cash || 0));
+        setByteCreditDay(String(record.byte_credit_day || 0));
+        setByteCreditCollected(String(record.byte_credit_collected || 0));
+        setByteDiscounts(String(record.byte_discounts || 0));
+        setBankIncome(String(record.bank_income || 0));
+        setBankExpense(String(record.bank_expense || 0));
+        setBankBalanceReal(
+          record.bank_balance_real !== null ? String(record.bank_balance_real) : ""
+        );
+      } else {
+        setByteCash("0");
+        setByteCreditDay("0");
+        setByteCreditCollected("0");
+        setByteDiscounts("0");
+        setBankIncome("0");
+        setBankExpense("0");
+        setBankBalanceReal("");
+      }
+      setLoading(false);
+    });
+  }, [date]);
 
   function addExpense() {
     if (!expConcept || !expAmount) return;
@@ -119,6 +87,7 @@ export function RegistroForm({ clients }: { clients: Client[] }) {
         category: expCategory,
         concept: expConcept,
         amount: parseFloat(expAmount),
+        isNew: true,
       },
     ]);
     setExpConcept("");
@@ -128,29 +97,22 @@ export function RegistroForm({ clients }: { clients: Client[] }) {
   async function handleSaveAll() {
     setSaving(true);
     try {
-      // Save all sales
-      for (const sale of salesList) {
-        await createSale({
-          clientId: sale.clientId,
-          date,
-          amount: sale.amount,
-          discount: sale.discount,
-          notes: sale.notes,
-        });
-      }
+      // Save daily record (Byte + Bank)
+      await upsertDailyRecord({
+        date,
+        byteCash: parseFloat(byteCash || "0"),
+        byteCreditDay: parseFloat(byteCreditDay || "0"),
+        byteCreditCollected: parseFloat(byteCreditCollected || "0"),
+        byteCreditBalance,
+        byteDiscounts: parseFloat(byteDiscounts || "0"),
+        byteTotal,
+        bankIncome: parseFloat(bankIncome || "0"),
+        bankExpense: parseFloat(bankExpense || "0"),
+        bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
+      });
 
-      // Save all collections
-      for (const col of collectionsList) {
-        await createCollection({
-          clientId: col.clientId,
-          date,
-          amount: col.amount,
-          notes: col.notes,
-        });
-      }
-
-      // Save all expenses
-      for (const exp of expensesList) {
+      // Save new expenses
+      for (const exp of expensesList.filter((e) => e.isNew)) {
         await createExpense({
           date,
           category: exp.category,
@@ -159,19 +121,8 @@ export function RegistroForm({ clients }: { clients: Client[] }) {
         });
       }
 
-      // Save bank balance if provided
-      if (bankClosing) {
-        await upsertBankBalance({
-          date,
-          closingBalance: parseFloat(bankClosing),
-        });
-      }
-
       setSaved(true);
-      setSalesList([]);
-      setCollectionsList([]);
       setExpensesList([]);
-      setBankClosing("");
       setTimeout(() => setSaved(false), 3000);
       router.refresh();
     } catch (error) {
@@ -182,12 +133,9 @@ export function RegistroForm({ clients }: { clients: Client[] }) {
     }
   }
 
-  const totalItems = salesList.length + collectionsList.length + expensesList.length + (bankClosing ? 1 : 0);
-
   const tabs = [
-    { key: "ventas" as const, label: "Ventas Byte", count: salesList.length },
-    { key: "cobros" as const, label: "Cobros", count: collectionsList.length },
-    { key: "egresos" as const, label: "Egresos", count: expensesList.length },
+    { key: "byte" as const, label: "Byte + Banco" },
+    { key: "egresos" as const, label: `Egresos${expensesList.length > 0 ? ` (${expensesList.length})` : ""}` },
   ];
 
   return (
@@ -218,345 +166,167 @@ export function RegistroForm({ clients }: { clients: Client[] }) {
             }`}
           >
             {tab.label}
-            {tab.count > 0 && (
-              <span className="ml-2 bg-primary-light text-white text-xs px-2 py-0.5 rounded-full">
-                {tab.count}
-              </span>
-            )}
           </button>
         ))}
       </div>
 
-      {/* Tab Content */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        {/* VENTAS TAB */}
-        {activeTab === "ventas" && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {loading ? (
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
+          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
+          Cargando...
+        </div>
+      ) : (
+        <div className="bg-white rounded-xl border border-gray-200 p-6">
+          {/* BYTE + BANCO TAB */}
+          {activeTab === "byte" && (
+            <div className="space-y-6">
+              {/* Byte Section */}
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                <select
-                  value={saleClient}
-                  onChange={(e) => setSaleClient(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="">Seleccionar...</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-blue-500" />
+                  Resumen Byte
+                </h3>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                  <Field label="Contado" value={byteCash} onChange={setByteCash} />
+                  <Field label="Crédito del día" value={byteCreditDay} onChange={setByteCreditDay} />
+                  <Field label="Créditos cobrados" value={byteCreditCollected} onChange={setByteCreditCollected} />
+                  <Field label="Descuentos" value={byteDiscounts} onChange={setByteDiscounts} />
+                </div>
+                <div className="grid grid-cols-2 gap-4 mt-3">
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-xs text-gray-500">Total Byte</div>
+                    <div className="text-lg font-bold text-gray-900">
+                      {formatCurrency(byteTotal)}
+                    </div>
+                  </div>
+                  <div className="bg-gray-50 rounded-lg p-3">
+                    <div className="text-xs text-gray-500">Saldo créditos</div>
+                    <div className={`text-lg font-bold ${byteCreditBalance > 0 ? "text-amber-600" : "text-primary-light"}`}>
+                      {formatCurrency(byteCreditBalance)}
+                    </div>
+                  </div>
+                </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={saleAmount}
-                  onChange={(e) => setSaleAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Descuento</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={saleDiscount}
-                  onChange={(e) => setSaleDiscount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={addSale}
-                  disabled={!saleClient || !saleAmount}
-                  className="w-full bg-primary text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center justify-center gap-2"
-                >
-                  <Plus className="w-4 h-4" /> Agregar venta
-                </button>
+
+              {/* Bank Section */}
+              <div className="border-t border-gray-200 pt-6">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+                  <span className="w-2 h-2 rounded-full bg-primary-light" />
+                  Cuentas Bancarias (BCP)
+                </h3>
+                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
+                  <Field label="Ingreso BCP" value={bankIncome} onChange={setBankIncome} color="text-primary-light" />
+                  <Field label="Egreso BCP" value={bankExpense} onChange={setBankExpense} color="text-red-600" />
+                  <Field label="Saldo BCP Real" value={bankBalanceReal} onChange={setBankBalanceReal} placeholder="Ver en app BCP" />
+                </div>
               </div>
             </div>
+          )}
 
-            {salesList.length > 0 && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="px-4 py-2 text-left font-medium text-gray-600">Cliente</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-600">Monto</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-600">Desc.</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-600">Neto</th>
-                      <th className="px-4 py-2 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {salesList.map((s) => (
-                      <tr key={s.id}>
-                        <td className="px-4 py-2">{s.clientName}</td>
-                        <td className="px-4 py-2 text-right">{formatCurrency(s.amount)}</td>
-                        <td className="px-4 py-2 text-right">{formatCurrency(s.discount)}</td>
-                        <td className="px-4 py-2 text-right font-medium">
-                          {formatCurrency(s.amount - s.discount)}
-                        </td>
-                        <td className="px-4 py-2">
-                          <button
-                            onClick={() => setSalesList(salesList.filter((x) => x.id !== s.id))}
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
-                      </tr>
+          {/* EGRESOS TAB */}
+          {activeTab === "egresos" && (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
+                  <select
+                    value={expCategory}
+                    onChange={(e) => setExpCategory(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {EXPENSE_CATEGORIES.map((cat) => (
+                      <option key={cat} value={cat}>{cat}</option>
                     ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-gray-50 font-semibold">
-                      <td className="px-4 py-2">Total</td>
-                      <td className="px-4 py-2 text-right">
-                        {formatCurrency(salesList.reduce((s, r) => s + r.amount, 0))}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {formatCurrency(salesList.reduce((s, r) => s + r.discount, 0))}
-                      </td>
-                      <td className="px-4 py-2 text-right">
-                        {formatCurrency(salesList.reduce((s, r) => s + (r.amount - r.discount), 0))}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
+                  <input
+                    type="text"
+                    value={expConcept}
+                    onChange={(e) => setExpConcept(e.target.value)}
+                    placeholder="Descripción del gasto"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    onKeyDown={(e) => e.key === "Enter" && addExpense()}
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    value={expAmount}
+                    onChange={(e) => setExpAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    onKeyDown={(e) => e.key === "Enter" && addExpense()}
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    onClick={addExpense}
+                    disabled={!expConcept || !expAmount}
+                    className="w-full bg-primary text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center justify-center gap-2"
+                  >
+                    <Plus className="w-4 h-4" /> Agregar
+                  </button>
+                </div>
               </div>
-            )}
-          </div>
-        )}
 
-        {/* COBROS TAB */}
-        {activeTab === "cobros" && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Cliente</label>
-                <select
-                  value={colClient}
-                  onChange={(e) => setColClient(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="">Seleccionar...</option>
-                  {clients.map((c) => (
-                    <option key={c.id} value={c.id}>{c.name}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Monto cobrado</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={colAmount}
-                  onChange={(e) => setColAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={addCollection}
-                  disabled={!colClient || !colAmount}
-                  className="w-full bg-primary text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center justify-center gap-2"
-                >
-                  <Plus className="w-4 h-4" /> Agregar cobro
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Nota (opcional)</label>
-              <input
-                type="text"
-                value={colNotes}
-                onChange={(e) => setColNotes(e.target.value)}
-                placeholder="Transferencia, depósito, etc."
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-              />
-            </div>
-
-            {collectionsList.length > 0 && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="px-4 py-2 text-left font-medium text-gray-600">Cliente</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-600">Monto</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-600">Nota</th>
-                      <th className="px-4 py-2 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {collectionsList.map((c) => (
-                      <tr key={c.id}>
-                        <td className="px-4 py-2">{c.clientName}</td>
-                        <td className="px-4 py-2 text-right font-medium text-primary-light">
-                          {formatCurrency(c.amount)}
-                        </td>
-                        <td className="px-4 py-2 text-gray-500">{c.notes || "—"}</td>
-                        <td className="px-4 py-2">
-                          <button
-                            onClick={() =>
-                              setCollectionsList(collectionsList.filter((x) => x.id !== c.id))
-                            }
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
+              {expensesList.length > 0 && (
+                <div className="border border-gray-200 rounded-lg overflow-hidden">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="bg-gray-50">
+                        <th className="px-4 py-2 text-left font-medium text-gray-600">Categoría</th>
+                        <th className="px-4 py-2 text-left font-medium text-gray-600">Concepto</th>
+                        <th className="px-4 py-2 text-right font-medium text-gray-600">Monto</th>
+                        <th className="px-4 py-2 w-10"></th>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-gray-50 font-semibold">
-                      <td className="px-4 py-2">Total</td>
-                      <td className="px-4 py-2 text-right text-primary-light">
-                        {formatCurrency(collectionsList.reduce((s, r) => s + r.amount, 0))}
-                      </td>
-                      <td></td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* EGRESOS TAB */}
-        {activeTab === "egresos" && (
-          <div className="space-y-4">
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-                <select
-                  value={expCategory}
-                  onChange={(e) => setExpCategory(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  {EXPENSE_CATEGORIES.map((cat) => (
-                    <option key={cat} value={cat}>{cat}</option>
-                  ))}
-                </select>
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
-                <input
-                  type="text"
-                  value={expConcept}
-                  onChange={(e) => setExpConcept(e.target.value)}
-                  placeholder="Descripción del gasto"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  value={expAmount}
-                  onChange={(e) => setExpAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
-              <div className="flex items-end">
-                <button
-                  onClick={addExpense}
-                  disabled={!expConcept || !expAmount}
-                  className="w-full bg-primary text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center justify-center gap-2"
-                >
-                  <Plus className="w-4 h-4" /> Agregar egreso
-                </button>
-              </div>
-            </div>
-
-            {expensesList.length > 0 && (
-              <div className="border border-gray-200 rounded-lg overflow-hidden">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="px-4 py-2 text-left font-medium text-gray-600">Categoría</th>
-                      <th className="px-4 py-2 text-left font-medium text-gray-600">Concepto</th>
-                      <th className="px-4 py-2 text-right font-medium text-gray-600">Monto</th>
-                      <th className="px-4 py-2 w-10"></th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {expensesList.map((e) => (
-                      <tr key={e.id}>
-                        <td className="px-4 py-2 text-gray-600">{e.category}</td>
-                        <td className="px-4 py-2">{e.concept}</td>
-                        <td className="px-4 py-2 text-right font-medium text-red-600">
-                          {formatCurrency(e.amount)}
+                    </thead>
+                    <tbody className="divide-y divide-gray-100">
+                      {expensesList.map((e) => (
+                        <tr key={e.id}>
+                          <td className="px-4 py-2 text-gray-600">{e.category}</td>
+                          <td className="px-4 py-2">{e.concept}</td>
+                          <td className="px-4 py-2 text-right font-medium text-red-600">
+                            {formatCurrency(e.amount)}
+                          </td>
+                          <td className="px-4 py-2">
+                            <button
+                              onClick={() =>
+                                setExpensesList(expensesList.filter((x) => x.id !== e.id))
+                              }
+                              className="text-red-500 hover:text-red-700"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                    <tfoot>
+                      <tr className="bg-gray-50 font-semibold">
+                        <td className="px-4 py-2" colSpan={2}>Total</td>
+                        <td className="px-4 py-2 text-right text-red-600">
+                          {formatCurrency(expensesList.reduce((s, r) => s + r.amount, 0))}
                         </td>
-                        <td className="px-4 py-2">
-                          <button
-                            onClick={() =>
-                              setExpensesList(expensesList.filter((x) => x.id !== e.id))
-                            }
-                            className="text-red-500 hover:text-red-700"
-                          >
-                            <Trash2 className="w-4 h-4" />
-                          </button>
-                        </td>
+                        <td></td>
                       </tr>
-                    ))}
-                  </tbody>
-                  <tfoot>
-                    <tr className="bg-gray-50 font-semibold">
-                      <td className="px-4 py-2" colSpan={2}>Total</td>
-                      <td className="px-4 py-2 text-right text-red-600">
-                        {formatCurrency(expensesList.reduce((s, r) => s + r.amount, 0))}
-                      </td>
-                      <td></td>
-                    </tr>
-                  </tfoot>
-                </table>
-              </div>
-            )}
-          </div>
-        )}
-      </div>
-
-      {/* Bank Balance */}
-      <div className="bg-white rounded-xl border border-gray-200 p-6">
-        <h3 className="text-sm font-semibold text-gray-900 mb-3">Saldo de banco al cierre del día</h3>
-        <div className="flex gap-4 items-end">
-          <div className="flex-1 max-w-xs">
-            <input
-              type="number"
-              step="0.01"
-              value={bankClosing}
-              onChange={(e) => setBankClosing(e.target.value)}
-              placeholder="Saldo del banco hoy"
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-            />
-          </div>
-          {bankClosing && (
-            <span className="text-sm text-gray-600 pb-2">
-              {formatCurrency(parseFloat(bankClosing) || 0)}
-            </span>
+                    </tfoot>
+                  </table>
+                </div>
+              )}
+            </div>
           )}
         </div>
-      </div>
+      )}
 
-      {/* Save All */}
-      <div className="flex items-center justify-between bg-white rounded-xl border border-gray-200 p-6">
-        <div className="text-sm text-gray-600">
-          {totalItems > 0
-            ? `${totalItems} registros pendientes de guardar`
-            : "No hay registros pendientes"}
-        </div>
+      {/* Save */}
+      <div className="flex items-center justify-end">
         <button
           onClick={handleSaveAll}
-          disabled={totalItems === 0 || saving}
+          disabled={saving}
           className="bg-primary text-white rounded-lg px-6 py-3 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center gap-2"
         >
           {saving ? (
@@ -569,10 +339,38 @@ export function RegistroForm({ clients }: { clients: Client[] }) {
       </div>
 
       {saved && (
-        <div className="fixed bottom-6 right-6 bg-primary-light text-white px-6 py-3 rounded-lg shadow-lg text-sm font-medium animate-fade-in">
-          Todos los registros guardados correctamente
+        <div className="fixed bottom-6 right-6 bg-primary-light text-white px-6 py-3 rounded-lg shadow-lg text-sm font-medium">
+          Guardado correctamente
         </div>
       )}
+    </div>
+  );
+}
+
+function Field({
+  label,
+  value,
+  onChange,
+  placeholder,
+  color,
+}: {
+  label: string;
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  color?: string;
+}) {
+  return (
+    <div>
+      <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
+      <input
+        type="number"
+        step="0.01"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder || "0.00"}
+        className={`w-full border border-gray-300 rounded-lg px-3 py-2 text-sm ${color || ""}`}
+      />
     </div>
   );
 }
