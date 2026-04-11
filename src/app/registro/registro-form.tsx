@@ -34,32 +34,27 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
   const [byteCreditCollected, setByteCreditCollected] = useState("0");
   const [byteDiscounts, setByteDiscounts] = useState("0");
 
-  // Bank: lists of individual amounts
+  // Bank income: list of individual amounts
   const [incomeItems, setIncomeItems] = useState<AmountItem[]>([]);
-  const [expenseItems, setExpenseItems] = useState<AmountItem[]>([]);
   const [bankBalanceReal, setBankBalanceReal] = useState("");
 
-  // New income/expense inputs
+  // New income input
   const [newIncomeAmt, setNewIncomeAmt] = useState("");
   const [newIncomeNote, setNewIncomeNote] = useState("");
-  const [newExpenseAmt, setNewExpenseAmt] = useState("");
-  const [newExpenseNote, setNewExpenseNote] = useState("");
-
   const incomeInputRef = useRef<HTMLInputElement>(null);
-  const expenseInputRef = useRef<HTMLInputElement>(null);
 
-  // Expenses tab
+  // Egresos: unified list with category + method (replaces both "Egresos BCP" and old "Egresos" tab)
   const [expensesList, setExpensesList] = useState<ExpenseItem[]>([]);
   const [expCategory, setExpCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [expConcept, setExpConcept] = useState("");
   const [expAmount, setExpAmount] = useState("");
   const [expMethod, setExpMethod] = useState("transferencia");
 
-  // Computed - Total Byte = Contado + Crédito del día (descuentos NO restan)
+  // Computed
   const byteTotal = parseFloat(byteCash || "0") + parseFloat(byteCreditDay || "0");
   const byteCreditBalance = parseFloat(byteCreditDay || "0") - parseFloat(byteCreditCollected || "0");
   const bankIncomeTotal = incomeItems.reduce((s, i) => s + i.amount, 0);
-  const bankExpenseTotal = expenseItems.reduce((s, i) => s + i.amount, 0);
+  const expensesTotal = expensesList.reduce((s, i) => s + i.amount, 0);
 
   // Load existing record when date changes
   useEffect(() => {
@@ -73,17 +68,10 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
         setBankBalanceReal(
           record.bank_balance_real !== null ? String(record.bank_balance_real) : ""
         );
-        // Load saved totals as a single item each (from DB we only have totals)
         const savedIncome = Number(record.bank_income) || 0;
-        const savedExpense = Number(record.bank_expense) || 0;
         setIncomeItems(
           savedIncome > 0
             ? [{ id: crypto.randomUUID(), amount: savedIncome, note: "Guardado" }]
-            : []
-        );
-        setExpenseItems(
-          savedExpense > 0
-            ? [{ id: crypto.randomUUID(), amount: savedExpense, note: "Guardado" }]
             : []
         );
       } else {
@@ -93,8 +81,8 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
         setByteDiscounts("0");
         setBankBalanceReal("");
         setIncomeItems([]);
-        setExpenseItems([]);
       }
+      setExpensesList([]);
       setLoading(false);
     });
   }, [date]);
@@ -108,17 +96,6 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
     setNewIncomeAmt("");
     setNewIncomeNote("");
     incomeInputRef.current?.focus();
-  }
-
-  function addBankExpense() {
-    if (!newExpenseAmt) return;
-    setExpenseItems([
-      ...expenseItems,
-      { id: crypto.randomUUID(), amount: parseFloat(newExpenseAmt), note: newExpenseNote },
-    ]);
-    setNewExpenseAmt("");
-    setNewExpenseNote("");
-    expenseInputRef.current?.focus();
   }
 
   function addExpense() {
@@ -141,6 +118,7 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
   async function handleSaveAll() {
     setSaving(true);
     try {
+      // Save daily record — bank_expense comes from the total of egresos
       await upsertDailyRecord({
         date,
         byteCash: parseFloat(byteCash || "0"),
@@ -150,10 +128,11 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
         byteDiscounts: parseFloat(byteDiscounts || "0"),
         byteTotal,
         bankIncome: bankIncomeTotal,
-        bankExpense: bankExpenseTotal,
+        bankExpense: expensesTotal,
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
       });
 
+      // Save individual expenses with category
       for (const exp of expensesList.filter((e) => e.isNew)) {
         await createExpense({
           date,
@@ -178,7 +157,12 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
 
   const tabs = [
     { key: "byte" as const, label: "Byte + Banco" },
-    { key: "egresos" as const, label: `Egresos${expensesList.length > 0 ? ` (${expensesList.length})` : ""}` },
+    {
+      key: "egresos" as const,
+      label: expensesList.length > 0
+        ? `Egresos (${expensesList.length}) — ${formatCurrency(expensesTotal)}`
+        : "Egresos",
+    },
   ];
 
   return (
@@ -238,9 +222,7 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
                 <div className="grid grid-cols-2 gap-4 mt-3">
                   <div className="bg-gray-50 rounded-lg p-3">
                     <div className="text-xs text-gray-500">Total Byte (Contado + Crédito)</div>
-                    <div className="text-lg font-bold text-gray-900">
-                      {formatCurrency(byteTotal)}
-                    </div>
+                    <div className="text-lg font-bold text-gray-900">{formatCurrency(byteTotal)}</div>
                   </div>
                   <div className="bg-gray-50 rounded-lg p-3">
                     <div className="text-xs text-gray-500">Saldo créditos</div>
@@ -251,120 +233,62 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
                 </div>
               </div>
 
-              {/* Bank Section */}
+              {/* Bank Ingresos Section */}
               <div className="border-t border-gray-200 pt-6">
                 <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-primary-light" />
-                  Cuentas Bancarias (BCP)
+                  Ingresos Bancarios (BCP)
                 </h3>
 
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  {/* Ingresos BCP */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-medium text-gray-700">Ingresos BCP</label>
-                      <span className="text-sm font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</span>
-                    </div>
-                    <div className="flex gap-2 mb-2">
-                      <input
-                        ref={incomeInputRef}
-                        type="number"
-                        step="0.01"
-                        value={newIncomeAmt}
-                        onChange={(e) => setNewIncomeAmt(e.target.value)}
-                        placeholder="Monto"
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                        onKeyDown={(e) => e.key === "Enter" && addIncome()}
-                      />
-                      <input
-                        type="text"
-                        value={newIncomeNote}
-                        onChange={(e) => setNewIncomeNote(e.target.value)}
-                        placeholder="Nota (opc.)"
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                        onKeyDown={(e) => e.key === "Enter" && addIncome()}
-                      />
-                      <button
-                        onClick={addIncome}
-                        disabled={!newIncomeAmt}
-                        className="bg-primary-light text-white rounded-lg px-3 py-1.5 text-sm hover:bg-primary-light/90 disabled:opacity-40"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {incomeItems.length > 0 && (
-                      <div className="space-y-1">
-                        {incomeItems.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between bg-green-50 rounded-lg px-3 py-1.5 text-sm">
-                            <span className="text-primary-light font-medium">{formatCurrency(item.amount)}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-500 text-xs">{item.note}</span>
-                              <button
-                                onClick={() => setIncomeItems(incomeItems.filter((x) => x.id !== item.id))}
-                                className="text-red-400 hover:text-red-600"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Egresos BCP */}
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className="text-sm font-medium text-gray-700">Egresos BCP</label>
-                      <span className="text-sm font-bold text-red-600">{formatCurrency(bankExpenseTotal)}</span>
-                    </div>
-                    <div className="flex gap-2 mb-2">
-                      <input
-                        ref={expenseInputRef}
-                        type="number"
-                        step="0.01"
-                        value={newExpenseAmt}
-                        onChange={(e) => setNewExpenseAmt(e.target.value)}
-                        placeholder="Monto"
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                        onKeyDown={(e) => e.key === "Enter" && addBankExpense()}
-                      />
-                      <input
-                        type="text"
-                        value={newExpenseNote}
-                        onChange={(e) => setNewExpenseNote(e.target.value)}
-                        placeholder="Nota (opc.)"
-                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                        onKeyDown={(e) => e.key === "Enter" && addBankExpense()}
-                      />
-                      <button
-                        onClick={addBankExpense}
-                        disabled={!newExpenseAmt}
-                        className="bg-red-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-red-600 disabled:opacity-40"
-                      >
-                        <Plus className="w-4 h-4" />
-                      </button>
-                    </div>
-                    {expenseItems.length > 0 && (
-                      <div className="space-y-1">
-                        {expenseItems.map((item) => (
-                          <div key={item.id} className="flex items-center justify-between bg-red-50 rounded-lg px-3 py-1.5 text-sm">
-                            <span className="text-red-600 font-medium">{formatCurrency(item.amount)}</span>
-                            <div className="flex items-center gap-2">
-                              <span className="text-gray-500 text-xs">{item.note}</span>
-                              <button
-                                onClick={() => setExpenseItems(expenseItems.filter((x) => x.id !== item.id))}
-                                className="text-red-400 hover:text-red-600"
-                              >
-                                <Trash2 className="w-3 h-3" />
-                              </button>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
+                <div className="flex items-center justify-between mb-2">
+                  <label className="text-sm font-medium text-gray-700">Ingresos del día</label>
+                  <span className="text-sm font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</span>
                 </div>
+                <div className="flex gap-2 mb-2">
+                  <input
+                    ref={incomeInputRef}
+                    type="number"
+                    step="0.01"
+                    value={newIncomeAmt}
+                    onChange={(e) => setNewIncomeAmt(e.target.value)}
+                    placeholder="Monto"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                    onKeyDown={(e) => e.key === "Enter" && addIncome()}
+                  />
+                  <input
+                    type="text"
+                    value={newIncomeNote}
+                    onChange={(e) => setNewIncomeNote(e.target.value)}
+                    placeholder="Nota (opc.)"
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                    onKeyDown={(e) => e.key === "Enter" && addIncome()}
+                  />
+                  <button
+                    onClick={addIncome}
+                    disabled={!newIncomeAmt}
+                    className="bg-primary-light text-white rounded-lg px-3 py-1.5 text-sm hover:bg-primary-light/90 disabled:opacity-40"
+                  >
+                    <Plus className="w-4 h-4" />
+                  </button>
+                </div>
+                {incomeItems.length > 0 && (
+                  <div className="space-y-1">
+                    {incomeItems.map((item) => (
+                      <div key={item.id} className="flex items-center justify-between bg-green-50 rounded-lg px-3 py-1.5 text-sm">
+                        <span className="text-primary-light font-medium">{formatCurrency(item.amount)}</span>
+                        <div className="flex items-center gap-2">
+                          <span className="text-gray-500 text-xs">{item.note}</span>
+                          <button
+                            onClick={() => setIncomeItems(incomeItems.filter((x) => x.id !== item.id))}
+                            className="text-red-400 hover:text-red-600"
+                          >
+                            <Trash2 className="w-3 h-3" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
 
                 {/* Saldo BCP Real */}
                 <div className="mt-4 max-w-xs">
@@ -374,7 +298,7 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
             </div>
           )}
 
-          {/* EGRESOS TAB */}
+          {/* EGRESOS TAB — unified: monto por monto con categoría y método */}
           {activeTab === "egresos" && (
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
@@ -478,9 +402,9 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
                     </tbody>
                     <tfoot>
                       <tr className="bg-gray-50 font-semibold">
-                        <td className="px-4 py-2" colSpan={3}>Total</td>
+                        <td className="px-4 py-2" colSpan={3}>Total egresos del día</td>
                         <td className="px-4 py-2 text-right text-red-600">
-                          {formatCurrency(expensesList.reduce((s, r) => s + r.amount, 0))}
+                          {formatCurrency(expensesTotal)}
                         </td>
                         <td></td>
                       </tr>
@@ -500,11 +424,7 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
           disabled={saving}
           className="bg-primary text-white rounded-lg px-6 py-3 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center gap-2"
         >
-          {saving ? (
-            <Loader2 className="w-4 h-4 animate-spin" />
-          ) : (
-            <Save className="w-4 h-4" />
-          )}
+          {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {saving ? "Guardando..." : "Guardar todo"}
         </button>
       </div>
