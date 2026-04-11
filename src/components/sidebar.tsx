@@ -8,6 +8,7 @@ import {
   PenLine,
   Users,
   BarChart3,
+  Settings,
   Menu,
   X,
 } from "lucide-react";
@@ -17,6 +18,7 @@ const nav = [
   { href: "/registro", label: "Registro Diario", icon: PenLine },
   { href: "/clientes", label: "Clientes", icon: Users },
   { href: "/reportes", label: "Reportes", icon: BarChart3 },
+  { href: "/configuracion", label: "Configuración", icon: Settings },
 ];
 
 export function Sidebar() {

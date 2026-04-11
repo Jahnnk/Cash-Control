@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { upsertDailyRecord, getDailyRecord } from "@/app/actions/daily-records";
 import { createExpense } from "@/app/actions/expenses";
-import { EXPENSE_CATEGORIES } from "@/lib/constants";
+// Categories come from DB now
 import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { Trash2, Plus, Save, Loader2, RefreshCw } from "lucide-react";
@@ -19,7 +19,7 @@ type ExpenseItem = {
   isNew: boolean;
 };
 
-export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
+export function RegistroForm({ initialDate, categories }: { initialDate?: string | null; categories: string[] }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"byte" | "egresos">("byte");
   const [saving, setSaving] = useState(false);
@@ -45,7 +45,7 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
 
   // Egresos: unified list with category + method (replaces both "Egresos BCP" and old "Egresos" tab)
   const [expensesList, setExpensesList] = useState<ExpenseItem[]>([]);
-  const [expCategory, setExpCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
+  const [expCategory, setExpCategory] = useState<string>(categories[0] || "Otros");
   const [expConcept, setExpConcept] = useState("");
   const [expAmount, setExpAmount] = useState("");
   const [expMethod, setExpMethod] = useState("transferencia");
@@ -309,7 +309,7 @@ export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
                     onChange={(e) => setExpCategory(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   >
-                    {EXPENSE_CATEGORIES.map((cat) => (
+                    {categories.map((cat) => (
                       <option key={cat} value={cat}>{cat}</option>
                     ))}
                   </select>

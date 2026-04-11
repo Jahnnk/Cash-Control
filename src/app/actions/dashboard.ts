@@ -30,7 +30,7 @@ export async function getDashboardData() {
   const totalCollected = parseFloat(cxcResult.rows[0].total_collected as string);
   const accountsReceivable = Math.max(0, totalByte - totalCollected);
 
-  // Monthly expenses
+  // Monthly expenses total
   const expResult = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) as total
     FROM expenses
@@ -38,12 +38,21 @@ export async function getDashboardData() {
   `);
   const monthlyExpenses = parseFloat(expResult.rows[0].total as string);
 
+  // Monthly expenses by method (transferencia vs efectivo)
+  const expByMethod = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(CASE WHEN payment_method != 'efectivo' THEN amount ELSE 0 END), 0) as bank_expenses,
+      COALESCE(SUM(CASE WHEN payment_method = 'efectivo' THEN amount ELSE 0 END), 0) as cash_expenses
+    FROM expenses
+    WHERE date >= ${startOfMonth} AND date <= ${today}
+  `);
+
   // Days of coverage
   const dayOfMonth = new Date().getDate();
   const avgDailyExpense = dayOfMonth > 0 ? monthlyExpenses / dayOfMonth : 0;
   const daysCovered = avgDailyExpense > 0 ? Math.floor(bankBalance / avgDailyExpense) : 999;
 
-  // Last 7 days from daily_records + expenses
+  // Last 7 days from daily_records + expenses split by method
   const last7Days = await db.execute(sql`
     WITH dates AS (
       SELECT generate_series(
@@ -56,13 +65,14 @@ export async function getDashboardData() {
       d.date,
       COALESCE(dr.byte_total, 0) as byte_total,
       COALESCE(dr.bank_income, 0) as bank_income,
-      COALESCE(dr.bank_expense, 0) as bank_expense,
       dr.bank_balance_real,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date), 0) as expenses_total,
       COALESCE(dr.byte_credit_day, 0) as byte_credit_day,
       COALESCE(dr.byte_credit_collected, 0) as byte_credit_collected,
       COALESCE(dr.byte_cash, 0) as byte_cash,
-      COALESCE(dr.byte_discounts, 0) as byte_discounts
+      COALESCE(dr.byte_discounts, 0) as byte_discounts,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method != 'efectivo'), 0) as bank_expenses,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method = 'efectivo'), 0) as cash_expenses,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date), 0) as expenses_total
     FROM dates d
     LEFT JOIN daily_records dr ON dr.date = d.date
     ORDER BY d.date ASC
@@ -79,26 +89,48 @@ export async function getDashboardData() {
     WHERE date >= ${startOfMonth} AND date <= ${today}
   `);
 
-  // Reconciliation: Byte collections vs Bank income per day (current month)
+  // Bank reconciliation: only bank movements (transfers/yape), NOT cash
+  // Ingresos BCP vs Egresos bancarios (no efectivo)
   const reconciliation = await db.execute(sql`
+    WITH daily AS (
+      SELECT
+        dr.date,
+        COALESCE(dr.bank_income, 0) as bank_income,
+        COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0) as bank_expenses,
+        dr.bank_balance_real
+      FROM daily_records dr
+      WHERE dr.date >= ${startOfMonth} AND dr.date <= ${today}
+        AND (COALESCE(dr.byte_total, 0) > 0 OR COALESCE(dr.bank_income, 0) > 0)
+    )
     SELECT
       date,
-      COALESCE(byte_cash, 0) as byte_cash,
-      COALESCE(byte_credit_collected, 0) as byte_credit_collected,
-      (COALESCE(byte_cash, 0) + COALESCE(byte_credit_collected, 0)) as byte_collected,
-      COALESCE(bank_income, 0) as bank_income,
-      (COALESCE(byte_cash, 0) + COALESCE(byte_credit_collected, 0)) - COALESCE(bank_income, 0) as difference
-    FROM daily_records
-    WHERE date >= ${startOfMonth} AND date <= ${today}
-      AND (COALESCE(byte_total, 0) > 0 OR COALESCE(bank_income, 0) > 0)
+      bank_income,
+      bank_expenses,
+      (bank_income - bank_expenses) as bank_net,
+      bank_balance_real
+    FROM daily
     ORDER BY date ASC
   `);
 
-  // Accumulated totals for reconciliation
   const reconTotals = await db.execute(sql`
     SELECT
-      COALESCE(SUM(COALESCE(byte_cash, 0) + COALESCE(byte_credit_collected, 0)), 0) as total_byte_collected,
-      COALESCE(SUM(bank_income), 0) as total_bank_income
+      COALESCE(SUM(bank_income), 0) as total_bank_income,
+      COALESCE((
+        SELECT SUM(amount) FROM expenses
+        WHERE date >= ${startOfMonth} AND date <= ${today} AND payment_method != 'efectivo'
+      ), 0) as total_bank_expenses
+    FROM daily_records
+    WHERE date >= ${startOfMonth} AND date <= ${today}
+  `);
+
+  // Cash summary (efectivo): Contado Byte + cobros efectivo vs egresos efectivo
+  const cashSummary = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(byte_cash), 0) as total_cash_income,
+      COALESCE((
+        SELECT SUM(amount) FROM expenses
+        WHERE date >= ${startOfMonth} AND date <= ${today} AND payment_method = 'efectivo'
+      ), 0) as total_cash_expenses
     FROM daily_records
     WHERE date >= ${startOfMonth} AND date <= ${today}
   `);
@@ -110,9 +142,11 @@ export async function getDashboardData() {
     monthlyExpenses,
     daysCovered,
     avgDailyExpense,
+    expByMethod: expByMethod.rows[0],
     last7Days: last7Days.rows,
     monthlyByte: monthlyByte.rows[0],
     reconciliation: reconciliation.rows,
     reconTotals: reconTotals.rows[0],
+    cashSummary: cashSummary.rows[0],
   };
 }
