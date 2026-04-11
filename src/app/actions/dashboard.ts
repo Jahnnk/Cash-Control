@@ -79,6 +79,30 @@ export async function getDashboardData() {
     WHERE date >= ${startOfMonth} AND date <= ${today}
   `);
 
+  // Reconciliation: Byte collections vs Bank income per day (current month)
+  const reconciliation = await db.execute(sql`
+    SELECT
+      date,
+      COALESCE(byte_cash, 0) as byte_cash,
+      COALESCE(byte_credit_collected, 0) as byte_credit_collected,
+      (COALESCE(byte_cash, 0) + COALESCE(byte_credit_collected, 0)) as byte_collected,
+      COALESCE(bank_income, 0) as bank_income,
+      (COALESCE(byte_cash, 0) + COALESCE(byte_credit_collected, 0)) - COALESCE(bank_income, 0) as difference
+    FROM daily_records
+    WHERE date >= ${startOfMonth} AND date <= ${today}
+      AND (COALESCE(byte_total, 0) > 0 OR COALESCE(bank_income, 0) > 0)
+    ORDER BY date ASC
+  `);
+
+  // Accumulated totals for reconciliation
+  const reconTotals = await db.execute(sql`
+    SELECT
+      COALESCE(SUM(COALESCE(byte_cash, 0) + COALESCE(byte_credit_collected, 0)), 0) as total_byte_collected,
+      COALESCE(SUM(bank_income), 0) as total_bank_income
+    FROM daily_records
+    WHERE date >= ${startOfMonth} AND date <= ${today}
+  `);
+
   return {
     bankBalance,
     bankDate,
@@ -88,5 +112,7 @@ export async function getDashboardData() {
     avgDailyExpense,
     last7Days: last7Days.rows,
     monthlyByte: monthlyByte.rows[0],
+    reconciliation: reconciliation.rows,
+    reconTotals: reconTotals.rows[0],
   };
 }

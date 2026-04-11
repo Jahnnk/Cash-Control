@@ -19,6 +19,8 @@ type DashboardData = {
   avgDailyExpense: number;
   last7Days: Record<string, unknown>[];
   monthlyByte: Record<string, unknown>;
+  reconciliation: Record<string, unknown>[];
+  reconTotals: Record<string, unknown>;
 };
 
 export function DashboardClient({ data }: { data: DashboardData }) {
@@ -149,6 +151,107 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           </table>
         </div>
       </div>
+
+      {/* Reconciliation: Byte vs Bank */}
+      {data.reconciliation.length > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+            <h2 className="text-lg font-semibold text-gray-900">
+              Conciliación: Byte vs Banco
+            </h2>
+            {(() => {
+              const totalDiff =
+                parseFloat((data.reconTotals.total_byte_collected as string) || "0") -
+                parseFloat((data.reconTotals.total_bank_income as string) || "0");
+              const absDiff = Math.abs(totalDiff);
+              if (absDiff < 1) return <span className="text-xs text-green-600 bg-green-50 px-2 py-1 rounded-full">Cuadrado</span>;
+              return (
+                <span className={`text-xs px-2 py-1 rounded-full font-medium ${
+                  totalDiff > 0 ? "bg-amber-50 text-amber-700" : "bg-blue-50 text-blue-700"
+                }`}>
+                  {totalDiff > 0
+                    ? `Byte cobró ${formatCurrency(absDiff)} más que banco`
+                    : `Banco recibió ${formatCurrency(absDiff)} más que Byte`}
+                </span>
+              );
+            })()}
+          </div>
+          <div className="overflow-x-auto">
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="bg-gray-50 text-gray-600 text-left">
+                  <th className="px-4 py-3 font-medium">Fecha</th>
+                  <th className="px-4 py-3 font-medium text-right">Contado Byte</th>
+                  <th className="px-4 py-3 font-medium text-right">Créd. Cobr. Byte</th>
+                  <th className="px-4 py-3 font-medium text-right font-semibold">Total cobrado Byte</th>
+                  <th className="px-4 py-3 font-medium text-right font-semibold">Ingreso BCP</th>
+                  <th className="px-4 py-3 font-medium text-right">Diferencia</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-gray-100">
+                {data.reconciliation.map((row) => {
+                  const diff = parseFloat((row.difference as string) || "0");
+                  const hasDiff = Math.abs(diff) >= 1;
+                  return (
+                    <tr key={row.date as string} className={hasDiff ? "bg-amber-50/50" : "hover:bg-gray-50"}>
+                      <td className="px-4 py-3 font-medium">
+                        {formatDateShort(row.date as string)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-gray-600">
+                        {formatCurrency(row.byte_cash as string)}
+                      </td>
+                      <td className="px-4 py-3 text-right text-blue-600">
+                        {formatCurrency(row.byte_credit_collected as string)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold">
+                        {formatCurrency(row.byte_collected as string)}
+                      </td>
+                      <td className="px-4 py-3 text-right font-semibold text-primary-light">
+                        {formatCurrency(row.bank_income as string)}
+                      </td>
+                      <td className={`px-4 py-3 text-right font-medium ${
+                        !hasDiff ? "text-green-600" :
+                        diff > 0 ? "text-amber-600" : "text-blue-600"
+                      }`}>
+                        {!hasDiff ? "✓" : (
+                          <>
+                            {diff > 0 ? "+" : ""}{formatCurrency(diff)}
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+              <tfoot>
+                <tr className="bg-gray-50 font-semibold">
+                  <td className="px-4 py-3" colSpan={3}>Total mes</td>
+                  <td className="px-4 py-3 text-right">
+                    {formatCurrency(data.reconTotals.total_byte_collected as string)}
+                  </td>
+                  <td className="px-4 py-3 text-right text-primary-light">
+                    {formatCurrency(data.reconTotals.total_bank_income as string)}
+                  </td>
+                  <td className={`px-4 py-3 text-right font-bold ${
+                    (() => {
+                      const d = parseFloat((data.reconTotals.total_byte_collected as string) || "0") -
+                        parseFloat((data.reconTotals.total_bank_income as string) || "0");
+                      return Math.abs(d) < 1 ? "text-green-600" : d > 0 ? "text-amber-600" : "text-blue-600";
+                    })()
+                  }`}>
+                    {(() => {
+                      const d = parseFloat((data.reconTotals.total_byte_collected as string) || "0") -
+                        parseFloat((data.reconTotals.total_bank_income as string) || "0");
+                      if (Math.abs(d) < 1) return "✓";
+                      return `${d > 0 ? "+" : ""}${formatCurrency(d)}`;
+                    })()}
+                  </td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
