@@ -15,17 +15,18 @@ type ExpenseItem = {
   category: string;
   concept: string;
   amount: number;
+  paymentMethod: string;
   isNew: boolean;
 };
 
-export function RegistroForm() {
+export function RegistroForm({ initialDate }: { initialDate?: string | null }) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"byte" | "egresos">("byte");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  const [date, setDate] = useState(getYesterday());
+  const [date, setDate] = useState(initialDate || getYesterday());
 
   // Byte fields
   const [byteCash, setByteCash] = useState("0");
@@ -52,6 +53,7 @@ export function RegistroForm() {
   const [expCategory, setExpCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [expConcept, setExpConcept] = useState("");
   const [expAmount, setExpAmount] = useState("");
+  const [expMethod, setExpMethod] = useState("transferencia");
 
   // Computed - Total Byte = Contado + Crédito del día (descuentos NO restan)
   const byteTotal = parseFloat(byteCash || "0") + parseFloat(byteCreditDay || "0");
@@ -128,6 +130,7 @@ export function RegistroForm() {
         category: expCategory,
         concept: expConcept,
         amount: parseFloat(expAmount),
+        paymentMethod: expMethod,
         isNew: true,
       },
     ]);
@@ -157,6 +160,7 @@ export function RegistroForm() {
           category: exp.category,
           concept: exp.concept,
           amount: exp.amount,
+          paymentMethod: exp.paymentMethod,
         });
       }
 
@@ -373,7 +377,7 @@ export function RegistroForm() {
           {/* EGRESOS TAB */}
           {activeTab === "egresos" && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
                   <select
@@ -409,6 +413,18 @@ export function RegistroForm() {
                     onKeyDown={(e) => e.key === "Enter" && addExpense()}
                   />
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Método</label>
+                  <select
+                    value={expMethod}
+                    onChange={(e) => setExpMethod(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="transferencia">Transferencia</option>
+                    <option value="efectivo">Efectivo</option>
+                    <option value="yape">Yape</option>
+                  </select>
+                </div>
                 <div className="flex items-end">
                   <button
                     onClick={addExpense}
@@ -427,6 +443,7 @@ export function RegistroForm() {
                       <tr className="bg-gray-50">
                         <th className="px-4 py-2 text-left font-medium text-gray-600">Categoría</th>
                         <th className="px-4 py-2 text-left font-medium text-gray-600">Concepto</th>
+                        <th className="px-4 py-2 text-center font-medium text-gray-600">Método</th>
                         <th className="px-4 py-2 text-right font-medium text-gray-600">Monto</th>
                         <th className="px-4 py-2 w-10"></th>
                       </tr>
@@ -436,6 +453,15 @@ export function RegistroForm() {
                         <tr key={e.id}>
                           <td className="px-4 py-2 text-gray-600">{e.category}</td>
                           <td className="px-4 py-2">{e.concept}</td>
+                          <td className="px-4 py-2 text-center">
+                            <span className={`text-xs px-2 py-0.5 rounded-full ${
+                              e.paymentMethod === "efectivo" ? "bg-amber-50 text-amber-700" :
+                              e.paymentMethod === "yape" ? "bg-purple-50 text-purple-700" :
+                              "bg-blue-50 text-blue-700"
+                            }`}>
+                              {e.paymentMethod === "transferencia" ? "Transfer." : e.paymentMethod === "efectivo" ? "Efectivo" : "Yape"}
+                            </span>
+                          </td>
                           <td className="px-4 py-2 text-right font-medium text-red-600">
                             {formatCurrency(e.amount)}
                           </td>
@@ -452,7 +478,7 @@ export function RegistroForm() {
                     </tbody>
                     <tfoot>
                       <tr className="bg-gray-50 font-semibold">
-                        <td className="px-4 py-2" colSpan={2}>Total</td>
+                        <td className="px-4 py-2" colSpan={3}>Total</td>
                         <td className="px-4 py-2 text-right text-red-600">
                           {formatCurrency(expensesList.reduce((s, r) => s + r.amount, 0))}
                         </td>
