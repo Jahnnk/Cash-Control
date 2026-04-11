@@ -154,44 +154,56 @@ export function DashboardClient({ data }: { data: DashboardData }) {
         </div>
       </div>
 
-      {/* Bank Reconciliation: only bank movements (transfers/yape) */}
+      {/* Bank Reconciliation: Byte expected vs BCP actual */}
       {data.reconciliation.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-6 py-4 border-b border-gray-100">
             <h2 className="text-lg font-semibold text-gray-900">
               Conciliación Bancaria
             </h2>
-            <p className="text-xs text-gray-500 mt-1">Solo movimientos por transferencia/yape — efectivo va aparte</p>
+            <p className="text-xs text-gray-500 mt-1">Compara lo que Byte dice que entró al banco (Digital + Créd. cobrados) vs lo que BCP muestra</p>
           </div>
           <div className="overflow-x-auto">
             <table className="w-full text-sm">
               <thead>
                 <tr className="bg-gray-50 text-gray-600 text-left">
-                  <th className="px-4 py-3 font-medium">Fecha</th>
-                  <th className="px-4 py-3 font-medium text-right">Ingreso BCP</th>
-                  <th className="px-4 py-3 font-medium text-right">Egreso bancario</th>
-                  <th className="px-4 py-3 font-medium text-right">Neto banco</th>
-                  <th className="px-4 py-3 font-medium text-right">Saldo BCP</th>
+                  <th className="px-3 py-3 font-medium">Fecha</th>
+                  <th className="px-3 py-3 font-medium text-right">Byte esperado</th>
+                  <th className="px-3 py-3 font-medium text-right">Ingreso BCP</th>
+                  <th className="px-3 py-3 font-medium text-right">Diferencia</th>
+                  <th className="px-3 py-3 font-medium text-right">Egreso banco</th>
+                  <th className="px-3 py-3 font-medium text-right">Neto banco</th>
+                  <th className="px-3 py-3 font-medium text-right">Saldo BCP</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
                 {data.reconciliation.map((row) => {
+                  const diff = parseFloat((row.income_diff as string) || "0");
+                  const hasDiff = Math.abs(diff) >= 1;
                   const net = parseFloat((row.bank_net as string) || "0");
                   return (
-                    <tr key={row.date as string} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-medium">
+                    <tr key={row.date as string} className={hasDiff ? "bg-amber-50/50" : "hover:bg-gray-50"}>
+                      <td className="px-3 py-3 font-medium">
                         {formatDateShort(row.date as string)}
                       </td>
-                      <td className="px-4 py-3 text-right text-primary-light font-medium">
+                      <td className="px-3 py-3 text-right text-gray-700">
+                        {formatCurrency(row.byte_expected_bank as string)}
+                      </td>
+                      <td className="px-3 py-3 text-right text-primary-light font-medium">
                         {formatCurrency(row.bank_income as string)}
                       </td>
-                      <td className="px-4 py-3 text-right text-red-600">
+                      <td className={`px-3 py-3 text-right font-medium ${
+                        !hasDiff ? "text-green-600" : diff > 0 ? "text-amber-600" : "text-blue-600"
+                      }`}>
+                        {!hasDiff ? "✓" : `${diff > 0 ? "+" : ""}${formatCurrency(diff)}`}
+                      </td>
+                      <td className="px-3 py-3 text-right text-red-600">
                         {formatCurrency(row.bank_expenses as string)}
                       </td>
-                      <td className={`px-4 py-3 text-right font-semibold ${net >= 0 ? "text-primary-light" : "text-red-600"}`}>
+                      <td className={`px-3 py-3 text-right font-semibold ${net >= 0 ? "text-primary-light" : "text-red-600"}`}>
                         {net >= 0 ? "+" : ""}{formatCurrency(net)}
                       </td>
-                      <td className="px-4 py-3 text-right font-semibold">
+                      <td className="px-3 py-3 text-right font-semibold">
                         {row.bank_balance_real
                           ? formatCurrency(row.bank_balance_real as string)
                           : "—"}
@@ -200,31 +212,6 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                   );
                 })}
               </tbody>
-              <tfoot>
-                <tr className="bg-gray-50 font-semibold">
-                  <td className="px-4 py-3">Total mes</td>
-                  <td className="px-4 py-3 text-right text-primary-light">
-                    {formatCurrency(data.reconTotals.total_bank_income as string)}
-                  </td>
-                  <td className="px-4 py-3 text-right text-red-600">
-                    {formatCurrency(data.reconTotals.total_bank_expenses as string)}
-                  </td>
-                  <td className={`px-4 py-3 text-right font-bold ${
-                    (() => {
-                      const n = parseFloat((data.reconTotals.total_bank_income as string) || "0") -
-                        parseFloat((data.reconTotals.total_bank_expenses as string) || "0");
-                      return n >= 0 ? "text-primary-light" : "text-red-600";
-                    })()
-                  }`}>
-                    {(() => {
-                      const n = parseFloat((data.reconTotals.total_bank_income as string) || "0") -
-                        parseFloat((data.reconTotals.total_bank_expenses as string) || "0");
-                      return `${n >= 0 ? "+" : ""}${formatCurrency(n)}`;
-                    })()}
-                  </td>
-                  <td className="px-4 py-3"></td>
-                </tr>
-              </tfoot>
             </table>
           </div>
         </div>

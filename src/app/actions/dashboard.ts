@@ -89,12 +89,15 @@ export async function getDashboardData() {
     WHERE date >= ${startOfMonth} AND date <= ${today}
   `);
 
-  // Bank reconciliation: only bank movements (transfers/yape), NOT cash
-  // Ingresos BCP vs Egresos bancarios (no efectivo)
+  // Bank reconciliation: what Byte says should have entered bank vs what BCP shows
+  // Expected bank income = Digital payments + Credit collections (NOT cash/efectivo)
   const reconciliation = await db.execute(sql`
     WITH daily AS (
       SELECT
         dr.date,
+        COALESCE(dr.byte_digital, 0) as byte_digital,
+        COALESCE(dr.byte_credit_collected, 0) as byte_credit_collected,
+        (COALESCE(dr.byte_digital, 0) + COALESCE(dr.byte_credit_collected, 0)) as byte_expected_bank,
         COALESCE(dr.bank_income, 0) as bank_income,
         COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0) as bank_expenses,
         dr.bank_balance_real
@@ -104,7 +107,11 @@ export async function getDashboardData() {
     )
     SELECT
       date,
+      byte_digital,
+      byte_credit_collected,
+      byte_expected_bank,
       bank_income,
+      (byte_expected_bank - bank_income) as income_diff,
       bank_expenses,
       (bank_income - bank_expenses) as bank_net,
       bank_balance_real

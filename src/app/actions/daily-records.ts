@@ -6,28 +6,36 @@ import { revalidatePath } from "next/cache";
 
 export async function upsertDailyRecord(data: {
   date: string;
-  byteCash: number;
+  // Byte fields
+  byteCashPhysical: number; // Efectivo (caja física, NO va al banco)
+  byteDigital: number; // Yape + Transfer + Tarjeta + Plin (va al banco)
   byteCreditDay: number;
   byteCreditCollected: number;
   byteCreditBalance: number;
   byteDiscounts: number;
   byteTotal: number;
+  // Bank fields
   bankIncome: number;
   bankExpense: number;
   bankBalanceReal: number | null;
 }) {
   await db.execute(sql`
     INSERT INTO daily_records (
-      date, byte_cash, byte_credit_day, byte_credit_collected,
+      date, byte_cash_physical, byte_digital, byte_cash,
+      byte_credit_day, byte_credit_collected,
       byte_credit_balance, byte_discounts, byte_total,
       bank_income, bank_expense, bank_balance_real
     ) VALUES (
-      ${data.date}, ${data.byteCash}, ${data.byteCreditDay}, ${data.byteCreditCollected},
+      ${data.date}, ${data.byteCashPhysical}, ${data.byteDigital},
+      ${data.byteCashPhysical + data.byteDigital},
+      ${data.byteCreditDay}, ${data.byteCreditCollected},
       ${data.byteCreditBalance}, ${data.byteDiscounts}, ${data.byteTotal},
       ${data.bankIncome}, ${data.bankExpense}, ${data.bankBalanceReal}
     )
     ON CONFLICT (date) DO UPDATE SET
-      byte_cash = ${data.byteCash},
+      byte_cash_physical = ${data.byteCashPhysical},
+      byte_digital = ${data.byteDigital},
+      byte_cash = ${data.byteCashPhysical + data.byteDigital},
       byte_credit_day = ${data.byteCreditDay},
       byte_credit_collected = ${data.byteCreditCollected},
       byte_credit_balance = ${data.byteCreditBalance},
