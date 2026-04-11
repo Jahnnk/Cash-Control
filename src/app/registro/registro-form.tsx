@@ -2,12 +2,19 @@
 
 import { useState, useEffect, useRef } from "react";
 import { upsertDailyRecord, getDailyRecord } from "@/app/actions/daily-records";
+import { saveBankIncomeItems, getBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense } from "@/app/actions/expenses";
 import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { Trash2, Plus, Save, Loader2, RefreshCw } from "lucide-react";
 
-type AmountItem = { id: string; amount: number; note: string };
+type IncomeItem = {
+  id: string;
+  amount: number;
+  clientId: string | null;
+  clientName: string;
+  note: string;
+};
 
 type ExpenseItem = {
   id: string;
@@ -18,7 +25,17 @@ type ExpenseItem = {
   isNew: boolean;
 };
 
-export function RegistroForm({ initialDate, categories }: { initialDate?: string | null; categories: string[] }) {
+type ClientOption = { id: string; name: string };
+
+export function RegistroForm({
+  initialDate,
+  categories,
+  clients,
+}: {
+  initialDate?: string | null;
+  categories: string[];
+  clients: ClientOption[];
+}) {
   const router = useRouter();
   const [activeTab, setActiveTab] = useState<"byte" | "egresos">("byte");
   const [saving, setSaving] = useState(false);
@@ -27,17 +44,18 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
 
   const [date, setDate] = useState(initialDate || getYesterday());
 
-  // Byte fields — split contado into physical cash vs digital
-  const [byteCashPhysical, setByteCashPhysical] = useState("0"); // Efectivo (caja)
-  const [byteDigital, setByteDigital] = useState("0"); // Yape+Transfer+Tarjeta+Plin
+  // Byte fields
+  const [byteCashPhysical, setByteCashPhysical] = useState("0");
+  const [byteDigital, setByteDigital] = useState("0");
   const [byteCreditDay, setByteCreditDay] = useState("0");
   const [byteCreditCollected, setByteCreditCollected] = useState("0");
   const [byteDiscounts, setByteDiscounts] = useState("0");
 
-  // Bank income: list of individual amounts from BCP app
-  const [incomeItems, setIncomeItems] = useState<AmountItem[]>([]);
+  // Bank income: individual items with optional client
+  const [incomeItems, setIncomeItems] = useState<IncomeItem[]>([]);
   const [bankBalanceReal, setBankBalanceReal] = useState("");
   const [newIncomeAmt, setNewIncomeAmt] = useState("");
+  const [newIncomeClient, setNewIncomeClient] = useState("");
   const [newIncomeNote, setNewIncomeNote] = useState("");
   const incomeInputRef = useRef<HTMLInputElement>(null);
 
@@ -55,51 +73,86 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
   const bankIncomeTotal = incomeItems.reduce((s, i) => s + i.amount, 0);
   const expensesTotal = expensesList.reduce((s, i) => s + i.amount, 0);
 
-  // What SHOULD have entered the bank from Byte: Digital payments + Credit collections
-  // (Efectivo stays in physical cash, doesn't go to bank)
+  // Split income: daily Byte (no client) vs client payments
+  const incomeByte = incomeItems.filter((i) => !i.clientId).reduce((s, i) => s + i.amount, 0);
+  const incomeClients = incomeItems.filter((i) => i.clientId).reduce((s, i) => s + i.amount, 0);
+
+  // Expected bank income from Byte: Digital + Créd. cobrados
   const byteExpectedBank = parseFloat(byteDigital || "0") + parseFloat(byteCreditCollected || "0");
+  // Verification compares Byte expected vs income WITHOUT client (daily Byte income)
+  const bankDiff = byteExpectedBank - incomeByte;
 
   // Load existing record when date changes
   useEffect(() => {
     setLoading(true);
-    getDailyRecord(date).then((record) => {
-      if (record) {
-        setByteCashPhysical(String(record.byte_cash_physical || 0));
-        setByteDigital(String(record.byte_digital || 0));
-        setByteCreditDay(String(record.byte_credit_day || 0));
-        setByteCreditCollected(String(record.byte_credit_collected || 0));
-        setByteDiscounts(String(record.byte_discounts || 0));
-        setBankBalanceReal(
-          record.bank_balance_real !== null ? String(record.bank_balance_real) : ""
-        );
-        const savedIncome = Number(record.bank_income) || 0;
-        setIncomeItems(
-          savedIncome > 0
-            ? [{ id: crypto.randomUUID(), amount: savedIncome, note: "Guardado" }]
-            : []
-        );
-      } else {
-        setByteCashPhysical("0");
-        setByteDigital("0");
-        setByteCreditDay("0");
-        setByteCreditCollected("0");
-        setByteDiscounts("0");
-        setBankBalanceReal("");
-        setIncomeItems([]);
+    Promise.all([getDailyRecord(date), getBankIncomeItems(date)]).then(
+      ([record, items]) => {
+        if (record) {
+          setByteCashPhysical(String(record.byte_cash_physical || 0));
+          setByteDigital(String(record.byte_digital || 0));
+          setByteCreditDay(String(record.byte_credit_day || 0));
+          setByteCreditCollected(String(record.byte_credit_collected || 0));
+          setByteDiscounts(String(record.byte_discounts || 0));
+          setBankBalanceReal(
+            record.bank_balance_real !== null ? String(record.bank_balance_real) : ""
+          );
+        } else {
+          setByteCashPhysical("0");
+          setByteDigital("0");
+          setByteCreditDay("0");
+          setByteCreditCollected("0");
+          setByteDiscounts("0");
+          setBankBalanceReal("");
+        }
+
+        // Load saved income items
+        if (items.length > 0) {
+          setIncomeItems(
+            items.map((item) => ({
+              id: crypto.randomUUID(),
+              amount: Number(item.amount),
+              clientId: (item.client_id as string) || null,
+              clientName: (item.client_name as string) || "",
+              note: (item.note as string) || "",
+            }))
+          );
+        } else if (record && Number(record.bank_income) > 0) {
+          // Backward compat: old records without individual items
+          setIncomeItems([
+            {
+              id: crypto.randomUUID(),
+              amount: Number(record.bank_income),
+              clientId: null,
+              clientName: "",
+              note: "Guardado (sin detalle)",
+            },
+          ]);
+        } else {
+          setIncomeItems([]);
+        }
+
+        setExpensesList([]);
+        setLoading(false);
       }
-      setExpensesList([]);
-      setLoading(false);
-    });
+    );
   }, [date]);
 
   function addIncome() {
     if (!newIncomeAmt) return;
+    const client = clients.find((c) => c.id === newIncomeClient);
     setIncomeItems([
       ...incomeItems,
-      { id: crypto.randomUUID(), amount: parseFloat(newIncomeAmt), note: newIncomeNote },
+      {
+        id: crypto.randomUUID(),
+        amount: parseFloat(newIncomeAmt),
+        clientId: newIncomeClient || null,
+        clientName: client?.name || "",
+        note: newIncomeNote,
+      },
     ]);
     setNewIncomeAmt("");
     setNewIncomeNote("");
+    setNewIncomeClient("");
     incomeInputRef.current?.focus();
   }
 
@@ -137,6 +190,16 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
       });
 
+      // Save individual income items with client info
+      await saveBankIncomeItems(
+        date,
+        incomeItems.map((i) => ({
+          amount: i.amount,
+          clientId: i.clientId,
+          note: i.note,
+        }))
+      );
+
       for (const exp of expensesList.filter((e) => e.isNew)) {
         await createExpense({
           date,
@@ -158,9 +221,6 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
       setSaving(false);
     }
   }
-
-  // Reconciliation preview: difference between what Byte says entered bank vs what BCP shows
-  const bankDiff = byteExpectedBank - bankIncomeTotal;
 
   const tabs = [
     { key: "byte" as const, label: "Byte + Banco" },
@@ -214,7 +274,7 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
           {/* BYTE + BANCO TAB */}
           {activeTab === "byte" && (
             <div className="space-y-6">
-              {/* Byte Section */}
+              {/* Byte Ventas */}
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-blue-500" />
@@ -233,7 +293,7 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                 </div>
               </div>
 
-              {/* Byte Totales — split by method */}
+              {/* Byte Totales */}
               <div className="border-t border-gray-200 pt-6">
                 <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-amber-500" />
@@ -245,10 +305,7 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Efectivo <span className="text-xs text-gray-400">(caja física)</span>
                     </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={byteCashPhysical}
+                    <input type="number" step="0.01" value={byteCashPhysical}
                       onChange={(e) => setByteCashPhysical(e.target.value)}
                       placeholder="0.00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -258,10 +315,7 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                     <label className="block text-sm font-medium text-gray-700 mb-1">
                       Digital <span className="text-xs text-gray-400">(Yape+Transfer+Tarjeta+Plin)</span>
                     </label>
-                    <input
-                      type="number"
-                      step="0.01"
-                      value={byteDigital}
+                    <input type="number" step="0.01" value={byteDigital}
                       onChange={(e) => setByteDigital(e.target.value)}
                       placeholder="0.00"
                       className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
@@ -274,18 +328,28 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                 </div>
               </div>
 
-              {/* Bank Ingresos Section */}
+              {/* Bank Income Section */}
               <div className="border-t border-gray-200 pt-6">
                 <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
                   <span className="w-2 h-2 rounded-full bg-primary-light" />
-                  Movimientos BCP (del app del banco)
+                  Ingresos BCP (del app del banco)
                 </h3>
-                <p className="text-xs text-gray-500 mb-3">Ingresos que ves en tu cuenta BCP</p>
+                <p className="text-xs text-gray-500 mb-3">
+                  Agrega cada ingreso. Si es pago de un cliente por crédito antiguo, selecciona el cliente.
+                </p>
 
                 <div className="flex items-center justify-between mb-2">
-                  <label className="text-sm font-medium text-gray-700">Ingresos del día</label>
-                  <span className="text-sm font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</span>
+                  <div className="text-sm text-gray-600">
+                    Total: <span className="font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</span>
+                    {incomeClients > 0 && (
+                      <span className="text-xs text-gray-400 ml-2">
+                        (Byte día: {formatCurrency(incomeByte)} · Clientes: {formatCurrency(incomeClients)})
+                      </span>
+                    )}
+                  </div>
                 </div>
+
+                {/* Add income form */}
                 <div className="flex gap-2 mb-2">
                   <input
                     ref={incomeInputRef}
@@ -294,15 +358,25 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                     value={newIncomeAmt}
                     onChange={(e) => setNewIncomeAmt(e.target.value)}
                     placeholder="Monto"
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                    className="w-28 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
                     onKeyDown={(e) => e.key === "Enter" && addIncome()}
                   />
+                  <select
+                    value={newIncomeClient}
+                    onChange={(e) => setNewIncomeClient(e.target.value)}
+                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                  >
+                    <option value="">Ingreso del día (sin cliente)</option>
+                    {clients.map((c) => (
+                      <option key={c.id} value={c.id}>Pago de {c.name}</option>
+                    ))}
+                  </select>
                   <input
                     type="text"
                     value={newIncomeNote}
                     onChange={(e) => setNewIncomeNote(e.target.value)}
-                    placeholder="Nota (opc.)"
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                    placeholder="Nota"
+                    className="w-32 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
                     onKeyDown={(e) => e.key === "Enter" && addIncome()}
                   />
                   <button
@@ -313,11 +387,27 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                     <Plus className="w-4 h-4" />
                   </button>
                 </div>
+
+                {/* Income items list */}
                 {incomeItems.length > 0 && (
                   <div className="space-y-1">
                     {incomeItems.map((item) => (
-                      <div key={item.id} className="flex items-center justify-between bg-green-50 rounded-lg px-3 py-1.5 text-sm">
-                        <span className="text-primary-light font-medium">{formatCurrency(item.amount)}</span>
+                      <div
+                        key={item.id}
+                        className={`flex items-center justify-between rounded-lg px-3 py-1.5 text-sm ${
+                          item.clientId ? "bg-blue-50" : "bg-green-50"
+                        }`}
+                      >
+                        <div className="flex items-center gap-2">
+                          <span className={`font-medium ${item.clientId ? "text-blue-700" : "text-primary-light"}`}>
+                            {formatCurrency(item.amount)}
+                          </span>
+                          {item.clientId && (
+                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
+                              {item.clientName}
+                            </span>
+                          )}
+                        </div>
                         <div className="flex items-center gap-2">
                           <span className="text-gray-500 text-xs">{item.note}</span>
                           <button
@@ -338,18 +428,18 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                 </div>
               </div>
 
-              {/* Quick reconciliation check */}
-              {(byteExpectedBank > 0 || bankIncomeTotal > 0) && (
+              {/* Verification */}
+              {(byteExpectedBank > 0 || incomeByte > 0) && (
                 <div className={`rounded-lg p-4 ${Math.abs(bankDiff) < 1 ? "bg-green-50 border border-green-200" : "bg-amber-50 border border-amber-200"}`}>
                   <div className="text-sm font-semibold text-gray-900 mb-2">Verificación rápida</div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
-                      <div className="text-xs text-gray-500">Debió entrar al banco (Digital + Créd. cobr.)</div>
+                      <div className="text-xs text-gray-500">Byte esperado en banco (Digital + Créd. cobr.)</div>
                       <div className="font-bold text-gray-900">{formatCurrency(byteExpectedBank)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500">Ingresó al BCP (real)</div>
-                      <div className="font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</div>
+                      <div className="text-xs text-gray-500">Ingresó al BCP (sin pagos de clientes)</div>
+                      <div className="font-bold text-primary-light">{formatCurrency(incomeByte)}</div>
                     </div>
                     <div>
                       <div className="text-xs text-gray-500">Diferencia</div>
@@ -358,6 +448,11 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                       </div>
                     </div>
                   </div>
+                  {incomeClients > 0 && (
+                    <div className="mt-2 text-xs text-blue-700 bg-blue-50 rounded px-2 py-1">
+                      Además ingresaron {formatCurrency(incomeClients)} por pagos de clientes (créditos antiguos)
+                    </div>
+                  )}
                 </div>
               )}
             </div>
@@ -369,57 +464,37 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-                  <select
-                    value={expCategory}
-                    onChange={(e) => setExpCategory(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  >
-                    {categories.map((cat) => (
-                      <option key={cat} value={cat}>{cat}</option>
-                    ))}
+                  <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                    {categories.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
                   </select>
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
-                  <input
-                    type="text"
-                    value={expConcept}
-                    onChange={(e) => setExpConcept(e.target.value)}
+                  <input type="text" value={expConcept} onChange={(e) => setExpConcept(e.target.value)}
                     placeholder="Descripción del gasto"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    onKeyDown={(e) => e.key === "Enter" && addExpense()}
-                  />
+                    onKeyDown={(e) => e.key === "Enter" && addExpense()} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-                  <input
-                    type="number"
-                    step="0.01"
-                    value={expAmount}
-                    onChange={(e) => setExpAmount(e.target.value)}
+                  <input type="number" step="0.01" value={expAmount} onChange={(e) => setExpAmount(e.target.value)}
                     placeholder="0.00"
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    onKeyDown={(e) => e.key === "Enter" && addExpense()}
-                  />
+                    onKeyDown={(e) => e.key === "Enter" && addExpense()} />
                 </div>
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">Método</label>
-                  <select
-                    value={expMethod}
-                    onChange={(e) => setExpMethod(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  >
+                  <select value={expMethod} onChange={(e) => setExpMethod(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
                     <option value="transferencia">Transferencia</option>
                     <option value="efectivo">Efectivo</option>
                     <option value="yape">Yape</option>
                   </select>
                 </div>
                 <div className="flex items-end">
-                  <button
-                    onClick={addExpense}
-                    disabled={!expConcept || !expAmount}
-                    className="w-full bg-primary text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center justify-center gap-2"
-                  >
+                  <button onClick={addExpense} disabled={!expConcept || !expAmount}
+                    className="w-full bg-primary text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center justify-center gap-2">
                     <Plus className="w-4 h-4" /> Agregar
                   </button>
                 </div>
@@ -451,16 +526,10 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                               {e.paymentMethod === "transferencia" ? "Transfer." : e.paymentMethod === "efectivo" ? "Efectivo" : "Yape"}
                             </span>
                           </td>
-                          <td className="px-4 py-2 text-right font-medium text-red-600">
-                            {formatCurrency(e.amount)}
-                          </td>
+                          <td className="px-4 py-2 text-right font-medium text-red-600">{formatCurrency(e.amount)}</td>
                           <td className="px-4 py-2">
-                            <button
-                              onClick={() => setExpensesList(expensesList.filter((x) => x.id !== e.id))}
-                              className="text-red-500 hover:text-red-700"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
+                            <button onClick={() => setExpensesList(expensesList.filter((x) => x.id !== e.id))}
+                              className="text-red-500 hover:text-red-700"><Trash2 className="w-4 h-4" /></button>
                           </td>
                         </tr>
                       ))}
@@ -468,9 +537,7 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
                     <tfoot>
                       <tr className="bg-gray-50 font-semibold">
                         <td className="px-4 py-2" colSpan={3}>Total egresos del día</td>
-                        <td className="px-4 py-2 text-right text-red-600">
-                          {formatCurrency(expensesTotal)}
-                        </td>
+                        <td className="px-4 py-2 text-right text-red-600">{formatCurrency(expensesTotal)}</td>
                         <td></td>
                       </tr>
                     </tfoot>
@@ -484,11 +551,8 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
 
       {/* Save */}
       <div className="flex items-center justify-end">
-        <button
-          onClick={handleSaveAll}
-          disabled={saving}
-          className="bg-primary text-white rounded-lg px-6 py-3 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center gap-2"
-        >
+        <button onClick={handleSaveAll} disabled={saving}
+          className="bg-primary text-white rounded-lg px-6 py-3 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center gap-2">
           {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
           {saving ? "Guardando..." : "Guardar todo"}
         </button>
@@ -503,28 +567,15 @@ export function RegistroForm({ initialDate, categories }: { initialDate?: string
   );
 }
 
-function Field({
-  label,
-  value,
-  onChange,
-  placeholder,
-}: {
-  label: string;
-  value: string;
-  onChange: (v: string) => void;
-  placeholder?: string;
+function Field({ label, value, onChange, placeholder }: {
+  label: string; value: string; onChange: (v: string) => void; placeholder?: string;
 }) {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <input
-        type="number"
-        step="0.01"
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
+      <input type="number" step="0.01" value={value} onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || "0.00"}
-        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-      />
+        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
     </div>
   );
 }
