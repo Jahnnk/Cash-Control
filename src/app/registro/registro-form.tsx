@@ -1,19 +1,21 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { upsertDailyRecord, getDailyRecord } from "@/app/actions/daily-records";
-import { createExpense, deleteExpense } from "@/app/actions/expenses";
+import { createExpense } from "@/app/actions/expenses";
 import { EXPENSE_CATEGORIES } from "@/lib/constants";
 import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import { Trash2, Plus, Save, Loader2, RefreshCw } from "lucide-react";
+
+type AmountItem = { id: string; amount: number; note: string };
 
 type ExpenseItem = {
   id: string;
   category: string;
   concept: string;
   amount: number;
-  isNew: boolean; // true = not yet saved
+  isNew: boolean;
 };
 
 export function RegistroForm() {
@@ -23,7 +25,6 @@ export function RegistroForm() {
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
 
-  // Date
   const [date, setDate] = useState(getYesterday());
 
   // Byte fields
@@ -32,24 +33,31 @@ export function RegistroForm() {
   const [byteCreditCollected, setByteCreditCollected] = useState("0");
   const [byteDiscounts, setByteDiscounts] = useState("0");
 
-  // Bank fields
-  const [bankIncome, setBankIncome] = useState("0");
-  const [bankExpense, setBankExpense] = useState("0");
+  // Bank: lists of individual amounts
+  const [incomeItems, setIncomeItems] = useState<AmountItem[]>([]);
+  const [expenseItems, setExpenseItems] = useState<AmountItem[]>([]);
   const [bankBalanceReal, setBankBalanceReal] = useState("");
 
-  // Expenses
+  // New income/expense inputs
+  const [newIncomeAmt, setNewIncomeAmt] = useState("");
+  const [newIncomeNote, setNewIncomeNote] = useState("");
+  const [newExpenseAmt, setNewExpenseAmt] = useState("");
+  const [newExpenseNote, setNewExpenseNote] = useState("");
+
+  const incomeInputRef = useRef<HTMLInputElement>(null);
+  const expenseInputRef = useRef<HTMLInputElement>(null);
+
+  // Expenses tab
   const [expensesList, setExpensesList] = useState<ExpenseItem[]>([]);
   const [expCategory, setExpCategory] = useState<string>(EXPENSE_CATEGORIES[0]);
   const [expConcept, setExpConcept] = useState("");
   const [expAmount, setExpAmount] = useState("");
 
-  // Computed
-  const byteTotal =
-    parseFloat(byteCash || "0") +
-    parseFloat(byteCreditDay || "0") -
-    parseFloat(byteDiscounts || "0");
-  const byteCreditBalance =
-    parseFloat(byteCreditDay || "0") - parseFloat(byteCreditCollected || "0");
+  // Computed - Total Byte = Contado + Crédito del día (descuentos NO restan)
+  const byteTotal = parseFloat(byteCash || "0") + parseFloat(byteCreditDay || "0");
+  const byteCreditBalance = parseFloat(byteCreditDay || "0") - parseFloat(byteCreditCollected || "0");
+  const bankIncomeTotal = incomeItems.reduce((s, i) => s + i.amount, 0);
+  const bankExpenseTotal = expenseItems.reduce((s, i) => s + i.amount, 0);
 
   // Load existing record when date changes
   useEffect(() => {
@@ -60,23 +68,56 @@ export function RegistroForm() {
         setByteCreditDay(String(record.byte_credit_day || 0));
         setByteCreditCollected(String(record.byte_credit_collected || 0));
         setByteDiscounts(String(record.byte_discounts || 0));
-        setBankIncome(String(record.bank_income || 0));
-        setBankExpense(String(record.bank_expense || 0));
         setBankBalanceReal(
           record.bank_balance_real !== null ? String(record.bank_balance_real) : ""
+        );
+        // Load saved totals as a single item each (from DB we only have totals)
+        const savedIncome = Number(record.bank_income) || 0;
+        const savedExpense = Number(record.bank_expense) || 0;
+        setIncomeItems(
+          savedIncome > 0
+            ? [{ id: crypto.randomUUID(), amount: savedIncome, note: "Guardado" }]
+            : []
+        );
+        setExpenseItems(
+          savedExpense > 0
+            ? [{ id: crypto.randomUUID(), amount: savedExpense, note: "Guardado" }]
+            : []
         );
       } else {
         setByteCash("0");
         setByteCreditDay("0");
         setByteCreditCollected("0");
         setByteDiscounts("0");
-        setBankIncome("0");
-        setBankExpense("0");
         setBankBalanceReal("");
+        setIncomeItems([]);
+        setExpenseItems([]);
       }
       setLoading(false);
     });
   }, [date]);
+
+  function addIncome() {
+    if (!newIncomeAmt) return;
+    setIncomeItems([
+      ...incomeItems,
+      { id: crypto.randomUUID(), amount: parseFloat(newIncomeAmt), note: newIncomeNote },
+    ]);
+    setNewIncomeAmt("");
+    setNewIncomeNote("");
+    incomeInputRef.current?.focus();
+  }
+
+  function addBankExpense() {
+    if (!newExpenseAmt) return;
+    setExpenseItems([
+      ...expenseItems,
+      { id: crypto.randomUUID(), amount: parseFloat(newExpenseAmt), note: newExpenseNote },
+    ]);
+    setNewExpenseAmt("");
+    setNewExpenseNote("");
+    expenseInputRef.current?.focus();
+  }
 
   function addExpense() {
     if (!expConcept || !expAmount) return;
@@ -97,7 +138,6 @@ export function RegistroForm() {
   async function handleSaveAll() {
     setSaving(true);
     try {
-      // Save daily record (Byte + Bank)
       await upsertDailyRecord({
         date,
         byteCash: parseFloat(byteCash || "0"),
@@ -106,12 +146,11 @@ export function RegistroForm() {
         byteCreditBalance,
         byteDiscounts: parseFloat(byteDiscounts || "0"),
         byteTotal,
-        bankIncome: parseFloat(bankIncome || "0"),
-        bankExpense: parseFloat(bankExpense || "0"),
+        bankIncome: bankIncomeTotal,
+        bankExpense: bankExpenseTotal,
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
       });
 
-      // Save new expenses
       for (const exp of expensesList.filter((e) => e.isNew)) {
         await createExpense({
           date,
@@ -190,11 +229,11 @@ export function RegistroForm() {
                   <Field label="Contado" value={byteCash} onChange={setByteCash} />
                   <Field label="Crédito del día" value={byteCreditDay} onChange={setByteCreditDay} />
                   <Field label="Créditos cobrados" value={byteCreditCollected} onChange={setByteCreditCollected} />
-                  <Field label="Descuentos" value={byteDiscounts} onChange={setByteDiscounts} />
+                  <Field label="Descuentos (info)" value={byteDiscounts} onChange={setByteDiscounts} />
                 </div>
                 <div className="grid grid-cols-2 gap-4 mt-3">
                   <div className="bg-gray-50 rounded-lg p-3">
-                    <div className="text-xs text-gray-500">Total Byte</div>
+                    <div className="text-xs text-gray-500">Total Byte (Contado + Crédito)</div>
                     <div className="text-lg font-bold text-gray-900">
                       {formatCurrency(byteTotal)}
                     </div>
@@ -214,9 +253,117 @@ export function RegistroForm() {
                   <span className="w-2 h-2 rounded-full bg-primary-light" />
                   Cuentas Bancarias (BCP)
                 </h3>
-                <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-                  <Field label="Ingreso BCP" value={bankIncome} onChange={setBankIncome} color="text-primary-light" />
-                  <Field label="Egreso BCP" value={bankExpense} onChange={setBankExpense} color="text-red-600" />
+
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                  {/* Ingresos BCP */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-gray-700">Ingresos BCP</label>
+                      <span className="text-sm font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</span>
+                    </div>
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        ref={incomeInputRef}
+                        type="number"
+                        step="0.01"
+                        value={newIncomeAmt}
+                        onChange={(e) => setNewIncomeAmt(e.target.value)}
+                        placeholder="Monto"
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                        onKeyDown={(e) => e.key === "Enter" && addIncome()}
+                      />
+                      <input
+                        type="text"
+                        value={newIncomeNote}
+                        onChange={(e) => setNewIncomeNote(e.target.value)}
+                        placeholder="Nota (opc.)"
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                        onKeyDown={(e) => e.key === "Enter" && addIncome()}
+                      />
+                      <button
+                        onClick={addIncome}
+                        disabled={!newIncomeAmt}
+                        className="bg-primary-light text-white rounded-lg px-3 py-1.5 text-sm hover:bg-primary-light/90 disabled:opacity-40"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {incomeItems.length > 0 && (
+                      <div className="space-y-1">
+                        {incomeItems.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between bg-green-50 rounded-lg px-3 py-1.5 text-sm">
+                            <span className="text-primary-light font-medium">{formatCurrency(item.amount)}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 text-xs">{item.note}</span>
+                              <button
+                                onClick={() => setIncomeItems(incomeItems.filter((x) => x.id !== item.id))}
+                                className="text-red-400 hover:text-red-600"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Egresos BCP */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className="text-sm font-medium text-gray-700">Egresos BCP</label>
+                      <span className="text-sm font-bold text-red-600">{formatCurrency(bankExpenseTotal)}</span>
+                    </div>
+                    <div className="flex gap-2 mb-2">
+                      <input
+                        ref={expenseInputRef}
+                        type="number"
+                        step="0.01"
+                        value={newExpenseAmt}
+                        onChange={(e) => setNewExpenseAmt(e.target.value)}
+                        placeholder="Monto"
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                        onKeyDown={(e) => e.key === "Enter" && addBankExpense()}
+                      />
+                      <input
+                        type="text"
+                        value={newExpenseNote}
+                        onChange={(e) => setNewExpenseNote(e.target.value)}
+                        placeholder="Nota (opc.)"
+                        className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
+                        onKeyDown={(e) => e.key === "Enter" && addBankExpense()}
+                      />
+                      <button
+                        onClick={addBankExpense}
+                        disabled={!newExpenseAmt}
+                        className="bg-red-500 text-white rounded-lg px-3 py-1.5 text-sm hover:bg-red-600 disabled:opacity-40"
+                      >
+                        <Plus className="w-4 h-4" />
+                      </button>
+                    </div>
+                    {expenseItems.length > 0 && (
+                      <div className="space-y-1">
+                        {expenseItems.map((item) => (
+                          <div key={item.id} className="flex items-center justify-between bg-red-50 rounded-lg px-3 py-1.5 text-sm">
+                            <span className="text-red-600 font-medium">{formatCurrency(item.amount)}</span>
+                            <div className="flex items-center gap-2">
+                              <span className="text-gray-500 text-xs">{item.note}</span>
+                              <button
+                                onClick={() => setExpenseItems(expenseItems.filter((x) => x.id !== item.id))}
+                                className="text-red-400 hover:text-red-600"
+                              >
+                                <Trash2 className="w-3 h-3" />
+                              </button>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* Saldo BCP Real */}
+                <div className="mt-4 max-w-xs">
                   <Field label="Saldo BCP Real" value={bankBalanceReal} onChange={setBankBalanceReal} placeholder="Ver en app BCP" />
                 </div>
               </div>
@@ -294,9 +441,7 @@ export function RegistroForm() {
                           </td>
                           <td className="px-4 py-2">
                             <button
-                              onClick={() =>
-                                setExpensesList(expensesList.filter((x) => x.id !== e.id))
-                              }
+                              onClick={() => setExpensesList(expensesList.filter((x) => x.id !== e.id))}
                               className="text-red-500 hover:text-red-700"
                             >
                               <Trash2 className="w-4 h-4" />
