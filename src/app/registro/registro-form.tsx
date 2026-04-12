@@ -6,7 +6,10 @@ import { saveBankIncomeItems, getBankIncomeItems } from "@/app/actions/bank-inco
 import { createExpense } from "@/app/actions/expenses";
 import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
-import { Trash2, Plus, Save, Loader2, RefreshCw } from "lucide-react";
+import {
+  Trash2, Plus, Save, Loader2, RefreshCw,
+  ArrowDownLeft, ArrowUpRight, DollarSign, User,
+} from "lucide-react";
 
 type IncomeItem = {
   id: string;
@@ -37,11 +40,10 @@ export function RegistroForm({
   clients: ClientOption[];
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"byte" | "egresos">("byte");
+  const [activeTab, setActiveTab] = useState<"byte" | "movimientos">("byte");
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
-
   const [date, setDate] = useState(initialDate || getYesterday());
 
   // Byte fields
@@ -50,39 +52,33 @@ export function RegistroForm({
   const [byteCreditDay, setByteCreditDay] = useState("0");
   const [byteCreditCollected, setByteCreditCollected] = useState("0");
   const [byteDiscounts, setByteDiscounts] = useState("0");
-
-  // Bank income: individual items with optional client
-  const [incomeItems, setIncomeItems] = useState<IncomeItem[]>([]);
   const [bankBalanceReal, setBankBalanceReal] = useState("");
-  const [newIncomeAmt, setNewIncomeAmt] = useState("");
-  const [newIncomeClient, setNewIncomeClient] = useState("");
-  const [newIncomeNote, setNewIncomeNote] = useState("");
-  const incomeInputRef = useRef<HTMLInputElement>(null);
 
-  // Egresos
+  // Transactions (Board-style)
+  const [incomeItems, setIncomeItems] = useState<IncomeItem[]>([]);
   const [expensesList, setExpensesList] = useState<ExpenseItem[]>([]);
-  const [expCategory, setExpCategory] = useState<string>(categories[0] || "Otros");
-  const [expConcept, setExpConcept] = useState("");
-  const [expAmount, setExpAmount] = useState("");
-  const [expMethod, setExpMethod] = useState("transferencia");
+
+  // Quick-add state
+  const [txType, setTxType] = useState<"ingreso" | "egreso">("ingreso");
+  const [txAmount, setTxAmount] = useState("");
+  const [txClient, setTxClient] = useState("");
+  const [txCategory, setTxCategory] = useState(categories[0] || "Otros");
+  const [txConcept, setTxConcept] = useState("");
+  const [txMethod, setTxMethod] = useState("transferencia");
+  const [txNote, setTxNote] = useState("");
+  const amountRef = useRef<HTMLInputElement>(null);
 
   // Computed
-  const byteContadoTotal = parseFloat(byteCashPhysical || "0") + parseFloat(byteDigital || "0");
-  const byteTotal = byteContadoTotal + parseFloat(byteCreditDay || "0");
+  const byteTotal = parseFloat(byteCashPhysical || "0") + parseFloat(byteDigital || "0") + parseFloat(byteCreditDay || "0");
   const byteCreditBalance = parseFloat(byteCreditDay || "0") - parseFloat(byteCreditCollected || "0");
   const bankIncomeTotal = incomeItems.reduce((s, i) => s + i.amount, 0);
   const expensesTotal = expensesList.reduce((s, i) => s + i.amount, 0);
-
-  // Split income: daily Byte (no client) vs client payments
   const incomeByte = incomeItems.filter((i) => !i.clientId).reduce((s, i) => s + i.amount, 0);
   const incomeClients = incomeItems.filter((i) => i.clientId).reduce((s, i) => s + i.amount, 0);
-
-  // Expected bank income from Byte: Digital + Créd. cobrados
   const byteExpectedBank = parseFloat(byteDigital || "0") + parseFloat(byteCreditCollected || "0");
-  // Verification compares Byte expected vs income WITHOUT client (daily Byte income)
   const bankDiff = byteExpectedBank - incomeByte;
 
-  // Load existing record when date changes
+  // Load existing record
   useEffect(() => {
     setLoading(true);
     Promise.all([getDailyRecord(date), getBankIncomeItems(date)]).then(
@@ -93,84 +89,58 @@ export function RegistroForm({
           setByteCreditDay(String(record.byte_credit_day || 0));
           setByteCreditCollected(String(record.byte_credit_collected || 0));
           setByteDiscounts(String(record.byte_discounts || 0));
-          setBankBalanceReal(
-            record.bank_balance_real !== null ? String(record.bank_balance_real) : ""
-          );
+          setBankBalanceReal(record.bank_balance_real !== null ? String(record.bank_balance_real) : "");
         } else {
-          setByteCashPhysical("0");
-          setByteDigital("0");
-          setByteCreditDay("0");
-          setByteCreditCollected("0");
-          setByteDiscounts("0");
-          setBankBalanceReal("");
+          setByteCashPhysical("0"); setByteDigital("0"); setByteCreditDay("0");
+          setByteCreditCollected("0"); setByteDiscounts("0"); setBankBalanceReal("");
         }
-
-        // Load saved income items
         if (items.length > 0) {
-          setIncomeItems(
-            items.map((item) => ({
-              id: crypto.randomUUID(),
-              amount: Number(item.amount),
-              clientId: (item.client_id as string) || null,
-              clientName: (item.client_name as string) || "",
-              note: (item.note as string) || "",
-            }))
-          );
+          setIncomeItems(items.map((item) => ({
+            id: crypto.randomUUID(),
+            amount: Number(item.amount),
+            clientId: (item.client_id as string) || null,
+            clientName: (item.client_name as string) || "",
+            note: (item.note as string) || "",
+          })));
         } else if (record && Number(record.bank_income) > 0) {
-          // Backward compat: old records without individual items
-          setIncomeItems([
-            {
-              id: crypto.randomUUID(),
-              amount: Number(record.bank_income),
-              clientId: null,
-              clientName: "",
-              note: "Guardado (sin detalle)",
-            },
-          ]);
+          setIncomeItems([{ id: crypto.randomUUID(), amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado" }]);
         } else {
           setIncomeItems([]);
         }
-
         setExpensesList([]);
         setLoading(false);
       }
     );
   }, [date]);
 
-  function addIncome() {
-    if (!newIncomeAmt) return;
-    const client = clients.find((c) => c.id === newIncomeClient);
-    setIncomeItems([
-      ...incomeItems,
-      {
-        id: crypto.randomUUID(),
-        amount: parseFloat(newIncomeAmt),
-        clientId: newIncomeClient || null,
-        clientName: client?.name || "",
-        note: newIncomeNote,
-      },
-    ]);
-    setNewIncomeAmt("");
-    setNewIncomeNote("");
-    setNewIncomeClient("");
-    incomeInputRef.current?.focus();
-  }
+  function addTransaction() {
+    if (!txAmount || parseFloat(txAmount) <= 0) return;
 
-  function addExpense() {
-    if (!expConcept || !expAmount) return;
-    setExpensesList([
-      ...expensesList,
-      {
+    if (txType === "ingreso") {
+      const client = clients.find((c) => c.id === txClient);
+      setIncomeItems([...incomeItems, {
         id: crypto.randomUUID(),
-        category: expCategory,
-        concept: expConcept,
-        amount: parseFloat(expAmount),
-        paymentMethod: expMethod,
+        amount: parseFloat(txAmount),
+        clientId: txClient || null,
+        clientName: client?.name || "",
+        note: txNote,
+      }]);
+    } else {
+      if (!txConcept) return;
+      setExpensesList([...expensesList, {
+        id: crypto.randomUUID(),
+        category: txCategory,
+        concept: txConcept,
+        amount: parseFloat(txAmount),
+        paymentMethod: txMethod,
         isNew: true,
-      },
-    ]);
-    setExpConcept("");
-    setExpAmount("");
+      }]);
+      setTxConcept("");
+    }
+
+    setTxAmount("");
+    setTxNote("");
+    amountRef.current?.focus();
   }
 
   async function handleSaveAll() {
@@ -189,27 +159,10 @@ export function RegistroForm({
         bankExpense: expensesTotal,
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
       });
-
-      // Save individual income items with client info
-      await saveBankIncomeItems(
-        date,
-        incomeItems.map((i) => ({
-          amount: i.amount,
-          clientId: i.clientId,
-          note: i.note,
-        }))
-      );
-
+      await saveBankIncomeItems(date, incomeItems.map((i) => ({ amount: i.amount, clientId: i.clientId, note: i.note })));
       for (const exp of expensesList.filter((e) => e.isNew)) {
-        await createExpense({
-          date,
-          category: exp.category,
-          concept: exp.concept,
-          amount: exp.amount,
-          paymentMethod: exp.paymentMethod,
-        });
+        await createExpense({ date, category: exp.category, concept: exp.concept, amount: exp.amount, paymentMethod: exp.paymentMethod });
       }
-
       setSaved(true);
       setExpensesList([]);
       setTimeout(() => setSaved(false), 3000);
@@ -223,42 +176,42 @@ export function RegistroForm({
   }
 
   const tabs = [
-    { key: "byte" as const, label: "Byte + Banco" },
-    {
-      key: "egresos" as const,
-      label: expensesList.length > 0
-        ? `Egresos (${expensesList.length}) — ${formatCurrency(expensesTotal)}`
-        : "Egresos",
-    },
+    { key: "byte" as const, label: "Byte" },
+    { key: "movimientos" as const, label: `Movimientos${(incomeItems.length + expensesList.length) > 0 ? ` (${incomeItems.length + expensesList.length})` : ""}` },
   ];
 
   return (
     <div className="space-y-6">
+      {/* Header */}
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Registro Diario</h1>
         <div className="flex items-center gap-3">
           <label className="text-sm text-gray-600">Fecha:</label>
-          <input
-            type="date"
-            value={date}
-            onChange={(e) => setDate(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-          />
+          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+            className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
         </div>
+      </div>
+
+      {/* Saldo BCP */}
+      <div className="bg-primary text-white rounded-xl p-5 flex items-center justify-between">
+        <div>
+          <div className="text-sm text-white/70">Saldo BCP Real</div>
+          <div className="text-3xl font-bold">
+            {bankBalanceReal ? formatCurrency(parseFloat(bankBalanceReal)) : "—"}
+          </div>
+        </div>
+        <input type="number" step="0.01" value={bankBalanceReal} onChange={(e) => setBankBalanceReal(e.target.value)}
+          placeholder="Ingresar saldo"
+          className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 text-right text-lg w-48 focus:bg-white/20" />
       </div>
 
       {/* Tabs */}
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
         {tabs.map((tab) => (
-          <button
-            key={tab.key}
-            onClick={() => setActiveTab(tab.key)}
+          <button key={tab.key} onClick={() => setActiveTab(tab.key)}
             className={`flex-1 py-2.5 px-4 rounded-md text-sm font-medium transition-colors ${
-              activeTab === tab.key
-                ? "bg-white text-primary shadow-sm"
-                : "text-gray-600 hover:text-gray-900"
-            }`}
-          >
+              activeTab === tab.key ? "bg-white text-primary shadow-sm" : "text-gray-600 hover:text-gray-900"
+            }`}>
             {tab.label}
           </button>
         ))}
@@ -266,20 +219,16 @@ export function RegistroForm({
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
-          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />
-          Cargando...
+          <RefreshCw className="w-5 h-5 animate-spin mx-auto mb-2" />Cargando...
         </div>
       ) : (
-        <div className="bg-white rounded-xl border border-gray-200 p-6">
-          {/* BYTE + BANCO TAB */}
+        <>
+          {/* BYTE TAB */}
           {activeTab === "byte" && (
-            <div className="space-y-6">
-              {/* Byte Ventas */}
+            <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
+              {/* Ventas */}
               <div>
-                <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-blue-500" />
-                  Resumen Byte — Ventas
-                </h3>
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Resumen Byte — Ventas</h3>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <Field label="Crédito del día" value={byteCreditDay} onChange={setByteCreditDay} />
                   <Field label="Créditos cobrados" value={byteCreditCollected} onChange={setByteCreditCollected} />
@@ -292,153 +241,29 @@ export function RegistroForm({
                   </div>
                 </div>
               </div>
-
-              {/* Byte Totales */}
-              <div className="border-t border-gray-200 pt-6">
-                <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-amber-500" />
-                  Byte — Totales (métodos de cobro)
-                </h3>
-                <p className="text-xs text-gray-500 mb-3">De la pestaña &quot;Totales&quot; en Byte</p>
+              {/* Totales */}
+              <div className="border-t border-gray-200 pt-4">
+                <h3 className="text-sm font-semibold text-gray-900 mb-3">Byte — Totales</h3>
                 <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Efectivo <span className="text-xs text-gray-400">(caja física)</span>
-                    </label>
-                    <input type="number" step="0.01" value={byteCashPhysical}
-                      onChange={(e) => setByteCashPhysical(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">
-                      Digital <span className="text-xs text-gray-400">(Yape+Transfer+Tarjeta+Plin)</span>
-                    </label>
-                    <input type="number" step="0.01" value={byteDigital}
-                      onChange={(e) => setByteDigital(e.target.value)}
-                      placeholder="0.00"
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    />
-                  </div>
+                  <Field label="Efectivo (caja)" value={byteCashPhysical} onChange={setByteCashPhysical} />
+                  <Field label="Digital (Yape+Transfer+Tarjeta+Plin)" value={byteDigital} onChange={setByteDigital} />
                 </div>
                 <div className="bg-gray-50 rounded-lg p-3 mt-3">
-                  <div className="text-xs text-gray-500">Total Byte (Crédito día + Efectivo + Digital)</div>
+                  <div className="text-xs text-gray-500">Total Byte</div>
                   <div className="text-lg font-bold text-gray-900">{formatCurrency(byteTotal)}</div>
                 </div>
               </div>
-
-              {/* Bank Income Section */}
-              <div className="border-t border-gray-200 pt-6">
-                <h3 className="text-sm font-semibold text-gray-900 mb-1 flex items-center gap-2">
-                  <span className="w-2 h-2 rounded-full bg-primary-light" />
-                  Ingresos BCP (del app del banco)
-                </h3>
-                <p className="text-xs text-gray-500 mb-3">
-                  Agrega cada ingreso. Si es pago de un cliente por crédito antiguo, selecciona el cliente.
-                </p>
-
-                <div className="flex items-center justify-between mb-2">
-                  <div className="text-sm text-gray-600">
-                    Total: <span className="font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</span>
-                    {incomeClients > 0 && (
-                      <span className="text-xs text-gray-400 ml-2">
-                        (Byte día: {formatCurrency(incomeByte)} · Clientes: {formatCurrency(incomeClients)})
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Add income form */}
-                <div className="flex gap-2 mb-2">
-                  <input
-                    ref={incomeInputRef}
-                    type="number"
-                    step="0.01"
-                    value={newIncomeAmt}
-                    onChange={(e) => setNewIncomeAmt(e.target.value)}
-                    placeholder="Monto"
-                    className="w-28 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                    onKeyDown={(e) => e.key === "Enter" && addIncome()}
-                  />
-                  <select
-                    value={newIncomeClient}
-                    onChange={(e) => setNewIncomeClient(e.target.value)}
-                    className="flex-1 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                  >
-                    <option value="">Ingreso del día (sin cliente)</option>
-                    {clients.map((c) => (
-                      <option key={c.id} value={c.id}>Pago de {c.name}</option>
-                    ))}
-                  </select>
-                  <input
-                    type="text"
-                    value={newIncomeNote}
-                    onChange={(e) => setNewIncomeNote(e.target.value)}
-                    placeholder="Nota"
-                    className="w-32 border border-gray-300 rounded-lg px-3 py-1.5 text-sm"
-                    onKeyDown={(e) => e.key === "Enter" && addIncome()}
-                  />
-                  <button
-                    onClick={addIncome}
-                    disabled={!newIncomeAmt}
-                    className="bg-primary-light text-white rounded-lg px-3 py-1.5 text-sm hover:bg-primary-light/90 disabled:opacity-40"
-                  >
-                    <Plus className="w-4 h-4" />
-                  </button>
-                </div>
-
-                {/* Income items list */}
-                {incomeItems.length > 0 && (
-                  <div className="space-y-1">
-                    {incomeItems.map((item) => (
-                      <div
-                        key={item.id}
-                        className={`flex items-center justify-between rounded-lg px-3 py-1.5 text-sm ${
-                          item.clientId ? "bg-blue-50" : "bg-green-50"
-                        }`}
-                      >
-                        <div className="flex items-center gap-2">
-                          <span className={`font-medium ${item.clientId ? "text-blue-700" : "text-primary-light"}`}>
-                            {formatCurrency(item.amount)}
-                          </span>
-                          {item.clientId && (
-                            <span className="text-xs bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                              {item.clientName}
-                            </span>
-                          )}
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-gray-500 text-xs">{item.note}</span>
-                          <button
-                            onClick={() => setIncomeItems(incomeItems.filter((x) => x.id !== item.id))}
-                            className="text-red-400 hover:text-red-600"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-
-                {/* Saldo BCP Real */}
-                <div className="mt-4 max-w-xs">
-                  <Field label="Saldo BCP Real" value={bankBalanceReal} onChange={setBankBalanceReal} placeholder="Ver en app BCP" />
-                </div>
-              </div>
-
-              {/* Verification */}
+              {/* Verificación */}
               {(byteExpectedBank > 0 || incomeByte > 0) && (
-                <div className={`rounded-lg p-4 ${Math.abs(bankDiff) < 1 ? "bg-green-50 border border-green-200" : "bg-amber-50 border border-amber-200"}`}>
-                  <div className="text-sm font-semibold text-gray-900 mb-2">Verificación rápida</div>
+                <div className={`rounded-lg p-4 border ${Math.abs(bankDiff) < 1 ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
+                  <div className="text-sm font-semibold text-gray-900 mb-2">Verificación</div>
                   <div className="grid grid-cols-3 gap-4 text-sm">
                     <div>
-                      <div className="text-xs text-gray-500">Byte esperado en banco (Digital + Créd. cobr.)</div>
-                      <div className="font-bold text-gray-900">{formatCurrency(byteExpectedBank)}</div>
+                      <div className="text-xs text-gray-500">Byte esperado</div>
+                      <div className="font-bold">{formatCurrency(byteExpectedBank)}</div>
                     </div>
                     <div>
-                      <div className="text-xs text-gray-500">Ingresó al BCP (sin pagos de clientes)</div>
+                      <div className="text-xs text-gray-500">BCP real (sin clientes)</div>
                       <div className="font-bold text-primary-light">{formatCurrency(incomeByte)}</div>
                     </div>
                     <div>
@@ -450,7 +275,7 @@ export function RegistroForm({
                   </div>
                   {incomeClients > 0 && (
                     <div className="mt-2 text-xs text-blue-700 bg-blue-50 rounded px-2 py-1">
-                      Además ingresaron {formatCurrency(incomeClients)} por pagos de clientes (créditos antiguos)
+                      + {formatCurrency(incomeClients)} por pagos de clientes
                     </div>
                   )}
                 </div>
@@ -458,95 +283,163 @@ export function RegistroForm({
             </div>
           )}
 
-          {/* EGRESOS TAB */}
-          {activeTab === "egresos" && (
+          {/* MOVIMIENTOS TAB — Board style */}
+          {activeTab === "movimientos" && (
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Categoría</label>
-                  <select value={expCategory} onChange={(e) => setExpCategory(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                    {categories.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
-                  </select>
+              {/* Summary bar */}
+              <div className="grid grid-cols-3 gap-3">
+                <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                  <div className="text-xs text-gray-500 mb-1">Ingresos</div>
+                  <div className="text-xl font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
-                  <input type="text" value={expConcept} onChange={(e) => setExpConcept(e.target.value)}
-                    placeholder="Descripción del gasto"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    onKeyDown={(e) => e.key === "Enter" && addExpense()} />
+                <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                  <div className="text-xs text-gray-500 mb-1">Egresos</div>
+                  <div className="text-xl font-bold text-red-600">{formatCurrency(expensesTotal)}</div>
                 </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto</label>
-                  <input type="number" step="0.01" value={expAmount} onChange={(e) => setExpAmount(e.target.value)}
-                    placeholder="0.00"
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                    onKeyDown={(e) => e.key === "Enter" && addExpense()} />
-                </div>
-                <div>
-                  <label className="block text-sm font-medium text-gray-700 mb-1">Método</label>
-                  <select value={expMethod} onChange={(e) => setExpMethod(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                    <option value="transferencia">Transferencia</option>
-                    <option value="efectivo">Efectivo</option>
-                    <option value="yape">Yape</option>
-                  </select>
-                </div>
-                <div className="flex items-end">
-                  <button onClick={addExpense} disabled={!expConcept || !expAmount}
-                    className="w-full bg-primary text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 disabled:opacity-40 flex items-center justify-center gap-2">
-                    <Plus className="w-4 h-4" /> Agregar
-                  </button>
+                <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                  <div className="text-xs text-gray-500 mb-1">Neto</div>
+                  <div className={`text-xl font-bold ${bankIncomeTotal - expensesTotal >= 0 ? "text-primary-light" : "text-red-600"}`}>
+                    {formatCurrency(bankIncomeTotal - expensesTotal)}
+                  </div>
                 </div>
               </div>
 
-              {expensesList.length > 0 && (
-                <div className="border border-gray-200 rounded-lg overflow-hidden">
-                  <table className="w-full text-sm">
-                    <thead>
-                      <tr className="bg-gray-50">
-                        <th className="px-4 py-2 text-left font-medium text-gray-600">Categoría</th>
-                        <th className="px-4 py-2 text-left font-medium text-gray-600">Concepto</th>
-                        <th className="px-4 py-2 text-center font-medium text-gray-600">Método</th>
-                        <th className="px-4 py-2 text-right font-medium text-gray-600">Monto</th>
-                        <th className="px-4 py-2 w-10"></th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-gray-100">
-                      {expensesList.map((e) => (
-                        <tr key={e.id}>
-                          <td className="px-4 py-2 text-gray-600">{e.category}</td>
-                          <td className="px-4 py-2">{e.concept}</td>
-                          <td className="px-4 py-2 text-center">
-                            <span className={`text-xs px-2 py-0.5 rounded-full ${
-                              e.paymentMethod === "efectivo" ? "bg-amber-50 text-amber-700" :
-                              e.paymentMethod === "yape" ? "bg-purple-50 text-purple-700" :
-                              "bg-blue-50 text-blue-700"
+              {/* Quick add — Board style */}
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                {/* Type toggle */}
+                <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
+                  <button onClick={() => setTxType("ingreso")}
+                    className={`flex-1 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                      txType === "ingreso" ? "bg-primary-light text-white shadow-sm" : "text-gray-600"
+                    }`}>
+                    <ArrowDownLeft className="w-4 h-4" /> Ingreso
+                  </button>
+                  <button onClick={() => setTxType("egreso")}
+                    className={`flex-1 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
+                      txType === "egreso" ? "bg-red-500 text-white shadow-sm" : "text-gray-600"
+                    }`}>
+                    <ArrowUpRight className="w-4 h-4" /> Egreso
+                  </button>
+                </div>
+
+                {/* Amount input — big and prominent */}
+                <div className="mb-4">
+                  <input ref={amountRef} type="number" step="0.01" value={txAmount}
+                    onChange={(e) => setTxAmount(e.target.value)}
+                    placeholder="0.00"
+                    onKeyDown={(e) => e.key === "Enter" && addTransaction()}
+                    className={`w-full text-center text-3xl font-bold border-0 border-b-2 py-3 focus:outline-none ${
+                      txType === "ingreso" ? "border-primary-light text-primary-light" : "border-red-400 text-red-600"
+                    }`} />
+                </div>
+
+                {/* Context fields */}
+                {txType === "ingreso" ? (
+                  <div className="grid grid-cols-2 gap-3 mb-3">
+                    <select value={txClient} onChange={(e) => setTxClient(e.target.value)}
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                      <option value="">Ingreso del día</option>
+                      {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
+                    </select>
+                    <input type="text" value={txNote} onChange={(e) => setTxNote(e.target.value)}
+                      placeholder="Nota (opcional)"
+                      onKeyDown={(e) => e.key === "Enter" && addTransaction()}
+                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                ) : (
+                  <div className="space-y-3 mb-3">
+                    <div className="grid grid-cols-2 gap-3">
+                      <select value={txCategory} onChange={(e) => setTxCategory(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        {categories.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
+                      </select>
+                      <select value={txMethod} onChange={(e) => setTxMethod(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        <option value="transferencia">Transferencia</option>
+                        <option value="efectivo">Efectivo</option>
+                        <option value="yape">Yape</option>
+                      </select>
+                    </div>
+                    <input type="text" value={txConcept} onChange={(e) => setTxConcept(e.target.value)}
+                      placeholder="Concepto del gasto"
+                      onKeyDown={(e) => e.key === "Enter" && addTransaction()}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                  </div>
+                )}
+
+                <button onClick={addTransaction}
+                  disabled={!txAmount || (txType === "egreso" && !txConcept)}
+                  className={`w-full py-2.5 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-2 disabled:opacity-40 ${
+                    txType === "ingreso" ? "bg-primary-light hover:bg-primary-light/90" : "bg-red-500 hover:bg-red-600"
+                  }`}>
+                  <Plus className="w-4 h-4" /> Agregar {txType}
+                </button>
+              </div>
+
+              {/* Transaction feed — Board style */}
+              {(incomeItems.length > 0 || expensesList.length > 0) && (
+                <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+                  <div className="divide-y divide-gray-100">
+                    {/* Income items */}
+                    {incomeItems.map((item) => (
+                      <div key={item.id} className="flex items-center px-4 py-3 hover:bg-gray-50 group">
+                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
+                          item.clientId ? "bg-blue-100" : "bg-green-100"
+                        }`}>
+                          {item.clientId
+                            ? <User className="w-4 h-4 text-blue-600" />
+                            : <ArrowDownLeft className="w-4 h-4 text-primary-light" />}
+                        </div>
+                        <div className="ml-3 flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900">
+                            {item.clientId ? `Pago de ${item.clientName}` : "Ingreso del día"}
+                          </div>
+                          {item.note && <div className="text-xs text-gray-500 truncate">{item.note}</div>}
+                        </div>
+                        <div className="text-sm font-bold text-primary-light ml-3">
+                          +{formatCurrency(item.amount)}
+                        </div>
+                        <button onClick={() => setIncomeItems(incomeItems.filter((x) => x.id !== item.id))}
+                          className="ml-2 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+
+                    {/* Expense items */}
+                    {expensesList.map((item) => (
+                      <div key={item.id} className="flex items-center px-4 py-3 hover:bg-gray-50 group">
+                        <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                          <ArrowUpRight className="w-4 h-4 text-red-600" />
+                        </div>
+                        <div className="ml-3 flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-900">{item.concept}</div>
+                          <div className="text-xs text-gray-500 flex items-center gap-2">
+                            <span>{item.category}</span>
+                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                              item.paymentMethod === "efectivo" ? "bg-amber-100 text-amber-700" :
+                              item.paymentMethod === "yape" ? "bg-purple-100 text-purple-700" :
+                              "bg-blue-100 text-blue-700"
                             }`}>
-                              {e.paymentMethod === "transferencia" ? "Transfer." : e.paymentMethod === "efectivo" ? "Efectivo" : "Yape"}
+                              {item.paymentMethod === "transferencia" ? "Transfer." : item.paymentMethod === "efectivo" ? "Efectivo" : "Yape"}
                             </span>
-                          </td>
-                          <td className="px-4 py-2 text-right font-medium text-red-600">{formatCurrency(e.amount)}</td>
-                          <td className="px-4 py-2">
-                            <button onClick={() => setExpensesList(expensesList.filter((x) => x.id !== e.id))}
-                              className="text-red-500 hover:text-red-700"><Trash2 className="w-4 h-4" /></button>
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                    <tfoot>
-                      <tr className="bg-gray-50 font-semibold">
-                        <td className="px-4 py-2" colSpan={3}>Total egresos del día</td>
-                        <td className="px-4 py-2 text-right text-red-600">{formatCurrency(expensesTotal)}</td>
-                        <td></td>
-                      </tr>
-                    </tfoot>
-                  </table>
+                          </div>
+                        </div>
+                        <div className="text-sm font-bold text-red-600 ml-3">
+                          -{formatCurrency(item.amount)}
+                        </div>
+                        <button onClick={() => setExpensesList(expensesList.filter((x) => x.id !== item.id))}
+                          className="ml-2 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </div>
           )}
-        </div>
+        </>
       )}
 
       {/* Save */}
