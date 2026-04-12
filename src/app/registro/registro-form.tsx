@@ -45,6 +45,8 @@ export function RegistroForm({
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
   const [date, setDate] = useState(initialDate || getYesterday());
+  const [editingSaldo, setEditingSaldo] = useState(false);
+  const saldoInputRef = useRef<HTMLInputElement>(null);
 
   // Byte fields
   const [byteCashPhysical, setByteCashPhysical] = useState("0");
@@ -202,9 +204,29 @@ export function RegistroForm({
             {bankBalanceReal ? formatCurrency(parseFloat(bankBalanceReal)) : "—"}
           </div>
         </div>
-        <input type="number" step="0.01" value={bankBalanceReal} onChange={(e) => setBankBalanceReal(e.target.value)}
-          placeholder="Ingresar saldo"
-          className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 text-right text-lg w-48 focus:bg-white/20" />
+        {editingSaldo ? (
+          <div className="flex items-center gap-2">
+            <input
+              ref={saldoInputRef}
+              type="number"
+              step="0.01"
+              value={bankBalanceReal}
+              onChange={(e) => setBankBalanceReal(e.target.value)}
+              placeholder="0.00"
+              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingSaldo(false); }}
+              onBlur={() => setEditingSaldo(false)}
+              className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 text-right text-lg w-48 focus:bg-white/20"
+              autoFocus
+            />
+          </div>
+        ) : (
+          <button
+            onClick={() => { setEditingSaldo(true); setTimeout(() => saldoInputRef.current?.focus(), 50); }}
+            className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-4 py-2 text-sm text-white/80 transition-colors"
+          >
+            Editar saldo
+          </button>
+        )}
       </div>
 
       {/* Tabs */}
