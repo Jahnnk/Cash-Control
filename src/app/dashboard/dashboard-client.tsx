@@ -6,6 +6,7 @@ import {
   Landmark,
   Receipt,
   TrendingDown,
+  TrendingUp,
   ShieldCheck,
   Pencil,
 } from "lucide-react";
@@ -40,7 +41,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
 
       {/* Top Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
         <Card
           icon={<Landmark className="w-5 h-5 text-primary-light" />}
           label="Saldo en banco"
@@ -49,11 +50,11 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           accent="primary"
         />
         <Card
-          icon={<Receipt className="w-5 h-5 text-amber-600" />}
-          label="Cuentas por cobrar"
-          value={formatCurrency(data.accountsReceivable)}
-          sub="Byte total - Cobros BCP"
-          accent="amber"
+          icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
+          label="Ingresos del mes"
+          value={formatCurrency((data.monthlyByte?.month_bank_income as string) || "0")}
+          sub="Ingresos BCP"
+          accent="primary"
         />
         <Card
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
@@ -61,6 +62,13 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           value={formatCurrency(data.monthlyExpenses)}
           sub={`Promedio: ${formatCurrency(data.avgDailyExpense)}/día`}
           accent="red"
+        />
+        <Card
+          icon={<Receipt className="w-5 h-5 text-amber-600" />}
+          label="Cuentas por cobrar"
+          value={formatCurrency(data.accountsReceivable)}
+          sub="Byte total - Cobros BCP"
+          accent="amber"
         />
         <Card
           icon={<ShieldCheck className="w-5 h-5 text-primary-light" />}
