@@ -56,3 +56,12 @@ export async function getDailyRecord(date: string) {
   `);
   return result.rows[0] || null;
 }
+
+export async function getLastBankBalance(beforeDate: string) {
+  const result = await db.execute(sql`
+    SELECT bank_balance_real, date FROM daily_records
+    WHERE bank_balance_real IS NOT NULL AND date < ${beforeDate}
+    ORDER BY date DESC LIMIT 1
+  `);
+  return result.rows[0] || null;
+}

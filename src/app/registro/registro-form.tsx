@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { upsertDailyRecord, getDailyRecord } from "@/app/actions/daily-records";
+import { upsertDailyRecord, getDailyRecord, getLastBankBalance } from "@/app/actions/daily-records";
 import { saveBankIncomeItems, getBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense } from "@/app/actions/expenses";
 import { formatCurrency, getYesterday } from "@/lib/utils";
@@ -81,8 +81,8 @@ export function RegistroForm({
   // Load existing record
   useEffect(() => {
     setLoading(true);
-    Promise.all([getDailyRecord(date), getBankIncomeItems(date)]).then(
-      ([record, items]) => {
+    Promise.all([getDailyRecord(date), getBankIncomeItems(date), getLastBankBalance(date)]).then(
+      ([record, items, lastBalance]) => {
         if (record) {
           setByteCashPhysical(String(record.byte_cash_physical || 0));
           setByteDigital(String(record.byte_digital || 0));
@@ -92,7 +92,9 @@ export function RegistroForm({
           setBankBalanceReal(record.bank_balance_real !== null ? String(record.bank_balance_real) : "");
         } else {
           setByteCashPhysical("0"); setByteDigital("0"); setByteCreditDay("0");
-          setByteCreditCollected("0"); setByteDiscounts("0"); setBankBalanceReal("");
+          setByteCreditCollected("0"); setByteDiscounts("0");
+          // Pre-fill with last known bank balance
+          setBankBalanceReal(lastBalance ? String(lastBalance.bank_balance_real) : "");
         }
         if (items.length > 0) {
           setIncomeItems(items.map((item) => ({
