@@ -78,6 +78,9 @@ export function RegistroForm({
   const [txNote, setTxNote] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
 
+  // Filter state for movements
+  const [viewFilter, setViewFilter] = useState<"todos" | "banco" | "efectivo">("todos");
+
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editAmount, setEditAmount] = useState("");
@@ -475,23 +478,44 @@ export function RegistroForm({
           {/* MOVIMIENTOS TAB — Board style */}
           {activeTab === "movimientos" && (
             <div className="space-y-4">
-              {/* Summary bar */}
-              <div className="grid grid-cols-3 gap-3">
-                <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                  <div className="text-xs text-gray-500 mb-1">Ingresos</div>
-                  <div className="text-xl font-bold text-primary-light">{formatCurrency(bankIncomeTotal)}</div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                  <div className="text-xs text-gray-500 mb-1">Egresos</div>
-                  <div className="text-xl font-bold text-red-600">{formatCurrency(expensesTotal)}</div>
-                </div>
-                <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                  <div className="text-xs text-gray-500 mb-1">Neto</div>
-                  <div className={`text-xl font-bold ${bankIncomeTotal - expensesTotal >= 0 ? "text-primary-light" : "text-red-600"}`}>
-                    {formatCurrency(bankIncomeTotal - expensesTotal)}
-                  </div>
-                </div>
+              {/* Filter toggle: Todos / Banco / Efectivo */}
+              <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
+                {(["todos", "banco", "efectivo"] as const).map((f) => (
+                  <button key={f} onClick={() => setViewFilter(f)}
+                    className={`flex-1 py-2 rounded-md text-xs font-medium transition-colors ${
+                      viewFilter === f ? "bg-white text-primary shadow-sm" : "text-gray-500"
+                    }`}>
+                    {f === "todos" ? "Todos" : f === "banco" ? "Banco (Transfer./Yape)" : "Efectivo"}
+                  </button>
+                ))}
               </div>
+
+              {/* Summary bar — filtered */}
+              {(() => {
+                const filteredExpenses = viewFilter === "todos" ? expensesList
+                  : viewFilter === "banco" ? expensesList.filter((e) => e.paymentMethod !== "efectivo")
+                  : expensesList.filter((e) => e.paymentMethod === "efectivo");
+                const filteredIncome = viewFilter === "efectivo" ? 0 : bankIncomeTotal; // income is always bank
+                const filteredEgreso = filteredExpenses.reduce((s, e) => s + e.amount, 0);
+                return (
+                  <div className="grid grid-cols-3 gap-3">
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                      <div className="text-xs text-gray-500 mb-1">Ingresos{viewFilter !== "todos" ? ` (${viewFilter})` : ""}</div>
+                      <div className="text-xl font-bold text-primary-light">{formatCurrency(filteredIncome)}</div>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                      <div className="text-xs text-gray-500 mb-1">Egresos{viewFilter !== "todos" ? ` (${viewFilter})` : ""}</div>
+                      <div className="text-xl font-bold text-red-600">{formatCurrency(filteredEgreso)}</div>
+                    </div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
+                      <div className="text-xs text-gray-500 mb-1">Neto</div>
+                      <div className={`text-xl font-bold ${filteredIncome - filteredEgreso >= 0 ? "text-primary-light" : "text-red-600"}`}>
+                        {formatCurrency(filteredIncome - filteredEgreso)}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Quick add — Board style */}
               <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -569,8 +593,8 @@ export function RegistroForm({
               {(incomeItems.length > 0 || expensesList.length > 0) && (
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <div className="divide-y divide-gray-100">
-                    {/* Income items */}
-                    {incomeItems.map((item, idx) => (
+                    {/* Income items — hidden in "efectivo" filter since income is bank */}
+                    {viewFilter !== "efectivo" && incomeItems.map((item, idx) => (
                       editingId === item.id ? (
                         <div key={item.id} className="px-4 py-3 bg-green-50 space-y-2">
                           <div className="flex items-center gap-2">
@@ -611,8 +635,8 @@ export function RegistroForm({
                       )
                     ))}
 
-                    {/* Expense items */}
-                    {expensesList.map((item, idx) => (
+                    {/* Expense items — filtered by method */}
+                    {expensesList.filter((e) => viewFilter === "todos" ? true : viewFilter === "banco" ? e.paymentMethod !== "efectivo" : e.paymentMethod === "efectivo").map((item, idx) => (
                       editingId === item.id ? (
                         <div key={item.id} className="px-4 py-3 bg-red-50 space-y-2">
                           <div className="flex items-center gap-2">
