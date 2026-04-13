@@ -8,7 +8,7 @@ import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import {
   Trash2, Plus, Save, Loader2, RefreshCw, Pencil, Check, X,
-  ArrowDownLeft, ArrowUpRight, DollarSign, User,
+  ArrowDownLeft, ArrowUpRight, ChevronUp, ChevronDown, DollarSign, User,
 } from "lucide-react";
 
 type IncomeItem = {
@@ -234,6 +234,22 @@ export function RegistroForm({
   async function handleDeleteExpense(item: ExpenseItem) {
     if (item.dbId) await deleteExpense(item.dbId);
     setExpensesList(expensesList.filter((x) => x.id !== item.id));
+  }
+
+  function moveIncome(index: number, direction: -1 | 1) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= incomeItems.length) return;
+    const arr = [...incomeItems];
+    [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
+    setIncomeItems(arr);
+  }
+
+  function moveExpense(index: number, direction: -1 | 1) {
+    const newIndex = index + direction;
+    if (newIndex < 0 || newIndex >= expensesList.length) return;
+    const arr = [...expensesList];
+    [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
+    setExpensesList(arr);
   }
 
   async function handleSaveAll() {
@@ -504,7 +520,7 @@ export function RegistroForm({
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <div className="divide-y divide-gray-100">
                     {/* Income items */}
-                    {incomeItems.map((item) => (
+                    {incomeItems.map((item, idx) => (
                       editingId === item.id ? (
                         <div key={item.id} className="px-4 py-3 bg-green-50 space-y-2">
                           <div className="flex items-center gap-2">
@@ -531,20 +547,22 @@ export function RegistroForm({
                             {item.note && <div className="text-xs text-gray-500 truncate">{item.note}</div>}
                           </div>
                           <div className="text-sm font-bold text-primary-light ml-3">+{formatCurrency(item.amount)}</div>
-                          <button onClick={() => startEditIncome(item)}
-                            className="ml-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-light transition-opacity">
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleDeleteIncome(item)}
-                            className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => moveIncome(idx, -1)} disabled={idx === 0}
+                              className="text-gray-300 hover:text-gray-500 p-0.5 disabled:opacity-30"><ChevronUp className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => moveIncome(idx, 1)} disabled={idx === incomeItems.length - 1}
+                              className="text-gray-300 hover:text-gray-500 p-0.5 disabled:opacity-30"><ChevronDown className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => startEditIncome(item)}
+                              className="text-gray-400 hover:text-primary-light p-0.5 ml-1"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => handleDeleteIncome(item)}
+                              className="text-red-400 hover:text-red-600 p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
                         </div>
                       )
                     ))}
 
                     {/* Expense items */}
-                    {expensesList.map((item) => (
+                    {expensesList.map((item, idx) => (
                       editingId === item.id ? (
                         <div key={item.id} className="px-4 py-3 bg-red-50 space-y-2">
                           <div className="flex items-center gap-2">
@@ -586,14 +604,16 @@ export function RegistroForm({
                             </div>
                           </div>
                           <div className="text-sm font-bold text-red-600 ml-3">-{formatCurrency(item.amount)}</div>
-                          <button onClick={() => startEditExpense(item)}
-                            className="ml-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-light transition-opacity">
-                            <Pencil className="w-3.5 h-3.5" />
-                          </button>
-                          <button onClick={() => handleDeleteExpense(item)}
-                            className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
-                            <Trash2 className="w-3.5 h-3.5" />
-                          </button>
+                          <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                            <button onClick={() => moveExpense(idx, -1)} disabled={idx === 0}
+                              className="text-gray-300 hover:text-gray-500 p-0.5 disabled:opacity-30"><ChevronUp className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => moveExpense(idx, 1)} disabled={idx === expensesList.length - 1}
+                              className="text-gray-300 hover:text-gray-500 p-0.5 disabled:opacity-30"><ChevronDown className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => startEditExpense(item)}
+                              className="text-gray-400 hover:text-primary-light p-0.5 ml-1"><Pencil className="w-3.5 h-3.5" /></button>
+                            <button onClick={() => handleDeleteExpense(item)}
+                              className="text-red-400 hover:text-red-600 p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
+                          </div>
                         </div>
                       )
                     ))}
