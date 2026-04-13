@@ -32,6 +32,12 @@ type ExpenseItem = {
 
 type ClientOption = { id: string; name: string };
 
+function isToRegularize(item: ExpenseItem): boolean {
+  const cat = item.category.toLowerCase();
+  const concept = item.concept.toLowerCase();
+  return cat === "desconocido" || concept.includes("por regularizar") || concept.includes("pendiente");
+}
+
 export function RegistroForm({
   initialDate,
   categories,
@@ -86,10 +92,19 @@ export function RegistroForm({
   const byteCreditBalance = parseFloat(byteCreditDay || "0") - parseFloat(byteCreditCollected || "0");
   const bankIncomeTotal = incomeItems.reduce((s, i) => s + i.amount, 0);
   const expensesTotal = expensesList.reduce((s, i) => s + i.amount, 0);
+  const expensesBankTotal = expensesList.filter((e) => e.paymentMethod !== "efectivo").reduce((s, i) => s + i.amount, 0);
   const incomeByte = incomeItems.filter((i) => !i.clientId).reduce((s, i) => s + i.amount, 0);
   const incomeClients = incomeItems.filter((i) => i.clientId).reduce((s, i) => s + i.amount, 0);
   const byteExpectedBank = parseFloat(byteDigital || "0") + parseFloat(byteCreditCollected || "0");
   const bankDiff = byteExpectedBank - incomeByte;
+
+  // Previous day balance for dynamic calculation
+  const [prevBalance, setPrevBalance] = useState<number | null>(null);
+  // Dynamic bank balance = previous balance + today's bank income - today's bank expenses
+  const dynamicBalance = prevBalance !== null ? prevBalance + bankIncomeTotal - expensesBankTotal : null;
+
+  // Count items to regularize
+  const pendingRegularize = expensesList.filter((e) => isToRegularize(e)).length;
 
   // Load existing record + income items + expenses
   useEffect(() => {
@@ -112,6 +127,8 @@ export function RegistroForm({
         setByteCreditCollected("0"); setByteDiscounts("0");
         setBankBalanceReal(lastBalance ? String(lastBalance.bank_balance_real) : "");
       }
+      // Store previous day balance for dynamic calculation
+      setPrevBalance(lastBalance ? parseFloat(lastBalance.bank_balance_real as string) : null);
 
       // Load income items
       if (items.length > 0) {
@@ -318,13 +335,15 @@ export function RegistroForm({
       </div>
 
       {/* Saldo BCP */}
-      <div className="bg-primary text-white rounded-xl p-5 flex items-center justify-between">
-        <div>
-          <div className="text-sm text-white/70">Saldo BCP Real</div>
-          <div className="text-3xl font-bold">
-            {bankBalanceReal ? formatCurrency(parseFloat(bankBalanceReal)) : "—"}
+      <div className="bg-primary text-white rounded-xl p-5">
+        <div className="flex items-center justify-between">
+          <div>
+            <div className="text-sm text-white/70">Saldo BCP Real</div>
+            <div className="text-3xl font-bold">
+              {bankBalanceReal ? formatCurrency(parseFloat(bankBalanceReal)) : "—"}
+            </div>
           </div>
-        </div>
+          <div className="flex items-center gap-3">
         {editingSaldo ? (
           <div className="flex items-center gap-2">
             <input
@@ -347,6 +366,31 @@ export function RegistroForm({
           >
             Editar saldo
           </button>
+        )}
+          </div>
+        </div>
+        {/* Dynamic balance row */}
+        {dynamicBalance !== null && (bankIncomeTotal > 0 || expensesBankTotal > 0) && (
+          <div className="mt-3 pt-3 border-t border-white/20 flex items-center justify-between text-sm">
+            <div className="text-white/60">
+              Saldo calculado: {prevBalance !== null ? formatCurrency(prevBalance) : "—"} + {formatCurrency(bankIncomeTotal)} ingresos − {formatCurrency(expensesBankTotal)} egresos banco
+            </div>
+            <div className="font-bold text-white">
+              = {formatCurrency(dynamicBalance)}
+              {bankBalanceReal && Math.abs(dynamicBalance - parseFloat(bankBalanceReal)) >= 1 && (
+                <span className="ml-2 text-yellow-300 text-xs">
+                  (dif: {formatCurrency(dynamicBalance - parseFloat(bankBalanceReal))})
+                </span>
+              )}
+            </div>
+          </div>
+        )}
+        {/* Pending to regularize alert */}
+        {pendingRegularize > 0 && (
+          <div className="mt-3 pt-3 border-t border-white/20 flex items-center gap-2 text-yellow-300 text-sm">
+            <span className="w-2 h-2 rounded-full bg-yellow-300 animate-pulse" />
+            {pendingRegularize} gasto{pendingRegularize > 1 ? "s" : ""} por regularizar
+          </div>
         )}
       </div>
 
@@ -593,12 +637,17 @@ export function RegistroForm({
                           </div>
                         </div>
                       ) : (
-                        <div key={item.id} className="flex items-center px-4 py-3 hover:bg-gray-50 group">
-                          <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                            <ArrowUpRight className="w-4 h-4 text-red-600" />
+                        <div key={item.id} className={`flex items-center px-4 py-3 group ${isToRegularize(item) ? "bg-yellow-50 border-l-4 border-l-yellow-400" : "hover:bg-gray-50"}`}>
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isToRegularize(item) ? "bg-yellow-100" : "bg-red-100"}`}>
+                            <ArrowUpRight className={`w-4 h-4 ${isToRegularize(item) ? "text-yellow-600" : "text-red-600"}`} />
                           </div>
                           <div className="ml-3 flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900">{item.concept}</div>
+                            <div className="text-sm font-medium text-gray-900 flex items-center gap-2">
+                              {item.concept}
+                              {isToRegularize(item) && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-200 text-yellow-800 font-medium animate-pulse">Regularizar</span>
+                              )}
+                            </div>
                             <div className="text-xs text-gray-500 flex items-center gap-2">
                               <span>{item.category}</span>
                               <span className={`px-1.5 py-0.5 rounded text-[10px] ${
