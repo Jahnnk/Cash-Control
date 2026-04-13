@@ -26,6 +26,21 @@ export async function createExpense(data: {
   revalidatePath("/presupuesto");
 }
 
+export async function updateExpense(id: string, data: {
+  category?: string;
+  concept?: string;
+  amount?: number;
+  paymentMethod?: string;
+}) {
+  if (data.category !== undefined) await db.execute(sql`UPDATE expenses SET category = ${data.category} WHERE id = ${id}`);
+  if (data.concept !== undefined) await db.execute(sql`UPDATE expenses SET concept = ${data.concept} WHERE id = ${id}`);
+  if (data.amount !== undefined) await db.execute(sql`UPDATE expenses SET amount = ${data.amount} WHERE id = ${id}`);
+  if (data.paymentMethod !== undefined) await db.execute(sql`UPDATE expenses SET payment_method = ${data.paymentMethod} WHERE id = ${id}`);
+  revalidatePath("/registro");
+  revalidatePath("/dashboard");
+  revalidatePath("/presupuesto");
+}
+
 export async function deleteExpense(id: string) {
   await db.delete(expenses).where(eq(expenses.id, id));
   revalidatePath("/registro");

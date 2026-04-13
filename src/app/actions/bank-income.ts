@@ -28,6 +28,20 @@ export async function saveBankIncomeItems(
   revalidatePath("/registro");
 }
 
+export async function updateBankIncomeItem(id: string, data: { amount?: number; clientId?: string | null; note?: string }) {
+  if (data.amount !== undefined) await db.execute(sql`UPDATE bank_income_items SET amount = ${data.amount} WHERE id = ${id}`);
+  if (data.clientId !== undefined) await db.execute(sql`UPDATE bank_income_items SET client_id = ${data.clientId} WHERE id = ${id}`);
+  if (data.note !== undefined) await db.execute(sql`UPDATE bank_income_items SET note = ${data.note} WHERE id = ${id}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/registro");
+}
+
+export async function deleteBankIncomeItem(id: string) {
+  await db.execute(sql`DELETE FROM bank_income_items WHERE id = ${id}`);
+  revalidatePath("/dashboard");
+  revalidatePath("/registro");
+}
+
 export async function getBankIncomeItems(date: string) {
   const result = await db.execute(sql`
     SELECT bi.*, c.name as client_name

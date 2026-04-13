@@ -2,17 +2,18 @@
 
 import { useState, useEffect, useRef } from "react";
 import { upsertDailyRecord, getDailyRecord, getLastBankBalance } from "@/app/actions/daily-records";
-import { saveBankIncomeItems, getBankIncomeItems } from "@/app/actions/bank-income";
-import { createExpense, deleteExpense, getExpensesByDate } from "@/app/actions/expenses";
+import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem } from "@/app/actions/bank-income";
+import { createExpense, deleteExpense, updateExpense, getExpensesByDate } from "@/app/actions/expenses";
 import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import {
-  Trash2, Plus, Save, Loader2, RefreshCw,
+  Trash2, Plus, Save, Loader2, RefreshCw, Pencil, Check, X,
   ArrowDownLeft, ArrowUpRight, DollarSign, User,
 } from "lucide-react";
 
 type IncomeItem = {
   id: string;
+  dbId: string | null;
   amount: number;
   clientId: string | null;
   clientName: string;
@@ -71,6 +72,15 @@ export function RegistroForm({
   const [txNote, setTxNote] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
 
+  // Editing state
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [editAmount, setEditAmount] = useState("");
+  const [editConcept, setEditConcept] = useState("");
+  const [editCategory, setEditCategory] = useState("");
+  const [editMethod, setEditMethod] = useState("");
+  const [editClient, setEditClient] = useState("");
+  const [editNote, setEditNote] = useState("");
+
   // Computed
   const byteTotal = parseFloat(byteCashPhysical || "0") + parseFloat(byteDigital || "0") + parseFloat(byteCreditDay || "0");
   const byteCreditBalance = parseFloat(byteCreditDay || "0") - parseFloat(byteCreditCollected || "0");
@@ -107,13 +117,14 @@ export function RegistroForm({
       if (items.length > 0) {
         setIncomeItems(items.map((item) => ({
           id: crypto.randomUUID(),
+          dbId: (item.id as string) || null,
           amount: Number(item.amount),
           clientId: (item.client_id as string) || null,
           clientName: (item.client_name as string) || "",
           note: (item.note as string) || "",
         })));
       } else if (record && Number(record.bank_income) > 0) {
-        setIncomeItems([{ id: crypto.randomUUID(), amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado" }]);
+        setIncomeItems([{ id: crypto.randomUUID(), dbId: null, amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado" }]);
       } else {
         setIncomeItems([]);
       }
@@ -144,6 +155,7 @@ export function RegistroForm({
       const client = clients.find((c) => c.id === txClient);
       setIncomeItems([...incomeItems, {
         id: crypto.randomUUID(),
+        dbId: null,
         amount: parseFloat(txAmount),
         clientId: txClient || null,
         clientName: client?.name || "",
@@ -166,6 +178,62 @@ export function RegistroForm({
     setTxAmount("");
     setTxNote("");
     amountRef.current?.focus();
+  }
+
+  function startEditIncome(item: IncomeItem) {
+    setEditingId(item.id);
+    setEditAmount(String(item.amount));
+    setEditClient(item.clientId || "");
+    setEditNote(item.note);
+  }
+
+  function startEditExpense(item: ExpenseItem) {
+    setEditingId(item.id);
+    setEditAmount(String(item.amount));
+    setEditConcept(item.concept);
+    setEditCategory(item.category);
+    setEditMethod(item.paymentMethod);
+  }
+
+  async function saveEditIncome(item: IncomeItem) {
+    const newAmount = parseFloat(editAmount) || item.amount;
+    const client = clients.find((c) => c.id === editClient);
+    // Update local state
+    setIncomeItems(incomeItems.map((i) =>
+      i.id === item.id
+        ? { ...i, amount: newAmount, clientId: editClient || null, clientName: client?.name || "", note: editNote }
+        : i
+    ));
+    // Update in DB if saved
+    if (item.dbId) {
+      await updateBankIncomeItem(item.dbId, { amount: newAmount, clientId: editClient || null, note: editNote });
+    }
+    setEditingId(null);
+  }
+
+  async function saveEditExpense(item: ExpenseItem) {
+    const newAmount = parseFloat(editAmount) || item.amount;
+    // Update local state
+    setExpensesList(expensesList.map((e) =>
+      e.id === item.id
+        ? { ...e, amount: newAmount, concept: editConcept, category: editCategory, paymentMethod: editMethod }
+        : e
+    ));
+    // Update in DB if saved
+    if (item.dbId) {
+      await updateExpense(item.dbId, { amount: newAmount, concept: editConcept, category: editCategory, paymentMethod: editMethod });
+    }
+    setEditingId(null);
+  }
+
+  async function handleDeleteIncome(item: IncomeItem) {
+    if (item.dbId) await deleteBankIncomeItem(item.dbId);
+    setIncomeItems(incomeItems.filter((x) => x.id !== item.id));
+  }
+
+  async function handleDeleteExpense(item: ExpenseItem) {
+    if (item.dbId) await deleteExpense(item.dbId);
+    setExpensesList(expensesList.filter((x) => x.id !== item.id));
   }
 
   async function handleSaveAll() {
@@ -437,60 +505,97 @@ export function RegistroForm({
                   <div className="divide-y divide-gray-100">
                     {/* Income items */}
                     {incomeItems.map((item) => (
-                      <div key={item.id} className="flex items-center px-4 py-3 hover:bg-gray-50 group">
-                        <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${
-                          item.clientId ? "bg-blue-100" : "bg-green-100"
-                        }`}>
-                          {item.clientId
-                            ? <User className="w-4 h-4 text-blue-600" />
-                            : <ArrowDownLeft className="w-4 h-4 text-primary-light" />}
-                        </div>
-                        <div className="ml-3 flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900">
-                            {item.clientId ? `Pago de ${item.clientName}` : "Ingreso del día"}
+                      editingId === item.id ? (
+                        <div key={item.id} className="px-4 py-3 bg-green-50 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input type="number" step="0.01" value={editAmount} onChange={(e) => setEditAmount(e.target.value)}
+                              className="w-28 border border-gray-300 rounded px-2 py-1 text-sm" autoFocus />
+                            <select value={editClient} onChange={(e) => setEditClient(e.target.value)}
+                              className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm">
+                              <option value="">Ingreso del día</option>
+                              {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
+                            </select>
+                            <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)}
+                              placeholder="Nota" className="w-28 border border-gray-300 rounded px-2 py-1 text-sm" />
+                            <button onClick={() => saveEditIncome(item)} className="text-primary-light p-1"><Check className="w-4 h-4" /></button>
+                            <button onClick={() => setEditingId(null)} className="text-gray-400 p-1"><X className="w-4 h-4" /></button>
                           </div>
-                          {item.note && <div className="text-xs text-gray-500 truncate">{item.note}</div>}
                         </div>
-                        <div className="text-sm font-bold text-primary-light ml-3">
-                          +{formatCurrency(item.amount)}
+                      ) : (
+                        <div key={item.id} className="flex items-center px-4 py-3 hover:bg-gray-50 group">
+                          <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${item.clientId ? "bg-blue-100" : "bg-green-100"}`}>
+                            {item.clientId ? <User className="w-4 h-4 text-blue-600" /> : <ArrowDownLeft className="w-4 h-4 text-primary-light" />}
+                          </div>
+                          <div className="ml-3 flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900">{item.clientId ? `Pago de ${item.clientName}` : "Ingreso del día"}</div>
+                            {item.note && <div className="text-xs text-gray-500 truncate">{item.note}</div>}
+                          </div>
+                          <div className="text-sm font-bold text-primary-light ml-3">+{formatCurrency(item.amount)}</div>
+                          <button onClick={() => startEditIncome(item)}
+                            className="ml-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-light transition-opacity">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => handleDeleteIncome(item)}
+                            className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <button onClick={() => setIncomeItems(incomeItems.filter((x) => x.id !== item.id))}
-                          className="ml-2 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      )
                     ))}
 
                     {/* Expense items */}
                     {expensesList.map((item) => (
-                      <div key={item.id} className="flex items-center px-4 py-3 hover:bg-gray-50 group">
-                        <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
-                          <ArrowUpRight className="w-4 h-4 text-red-600" />
-                        </div>
-                        <div className="ml-3 flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-900">{item.concept}</div>
-                          <div className="text-xs text-gray-500 flex items-center gap-2">
-                            <span>{item.category}</span>
-                            <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                              item.paymentMethod === "efectivo" ? "bg-amber-100 text-amber-700" :
-                              item.paymentMethod === "yape" ? "bg-purple-100 text-purple-700" :
-                              "bg-blue-100 text-blue-700"
-                            }`}>
-                              {item.paymentMethod === "transferencia" ? "Transfer." : item.paymentMethod === "efectivo" ? "Efectivo" : "Yape"}
-                            </span>
+                      editingId === item.id ? (
+                        <div key={item.id} className="px-4 py-3 bg-red-50 space-y-2">
+                          <div className="flex items-center gap-2">
+                            <input type="number" step="0.01" value={editAmount} onChange={(e) => setEditAmount(e.target.value)}
+                              className="w-24 border border-gray-300 rounded px-2 py-1 text-sm" autoFocus />
+                            <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)}
+                              className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm">
+                              {categories.map((c) => (<option key={c} value={c}>{c}</option>))}
+                            </select>
+                            <select value={editMethod} onChange={(e) => setEditMethod(e.target.value)}
+                              className="w-28 border border-gray-300 rounded px-2 py-1 text-sm">
+                              <option value="transferencia">Transfer.</option>
+                              <option value="efectivo">Efectivo</option>
+                              <option value="yape">Yape</option>
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <input type="text" value={editConcept} onChange={(e) => setEditConcept(e.target.value)}
+                              className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm" placeholder="Concepto" />
+                            <button onClick={() => saveEditExpense(item)} className="text-primary-light p-1"><Check className="w-4 h-4" /></button>
+                            <button onClick={() => setEditingId(null)} className="text-gray-400 p-1"><X className="w-4 h-4" /></button>
                           </div>
                         </div>
-                        <div className="text-sm font-bold text-red-600 ml-3">
-                          -{formatCurrency(item.amount)}
+                      ) : (
+                        <div key={item.id} className="flex items-center px-4 py-3 hover:bg-gray-50 group">
+                          <div className="w-8 h-8 rounded-full bg-red-100 flex items-center justify-center shrink-0">
+                            <ArrowUpRight className="w-4 h-4 text-red-600" />
+                          </div>
+                          <div className="ml-3 flex-1 min-w-0">
+                            <div className="text-sm font-medium text-gray-900">{item.concept}</div>
+                            <div className="text-xs text-gray-500 flex items-center gap-2">
+                              <span>{item.category}</span>
+                              <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                item.paymentMethod === "efectivo" ? "bg-amber-100 text-amber-700" :
+                                item.paymentMethod === "yape" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                              }`}>
+                                {item.paymentMethod === "transferencia" ? "Transfer." : item.paymentMethod === "efectivo" ? "Efectivo" : "Yape"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="text-sm font-bold text-red-600 ml-3">-{formatCurrency(item.amount)}</div>
+                          <button onClick={() => startEditExpense(item)}
+                            className="ml-2 opacity-0 group-hover:opacity-100 text-gray-400 hover:text-primary-light transition-opacity">
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button onClick={() => handleDeleteExpense(item)}
+                            className="ml-1 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
                         </div>
-                        <button onClick={async () => {
-                          if (item.dbId) { await deleteExpense(item.dbId); }
-                          setExpensesList(expensesList.filter((x) => x.id !== item.id));
-                        }}
-                          className="ml-2 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
-                          <Trash2 className="w-3.5 h-3.5" />
-                        </button>
-                      </div>
+                      )
                     ))}
                   </div>
                 </div>
