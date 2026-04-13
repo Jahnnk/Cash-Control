@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { upsertDailyRecord, getDailyRecord, getLastBankBalance } from "@/app/actions/daily-records";
 import { saveBankIncomeItems, getBankIncomeItems } from "@/app/actions/bank-income";
-import { createExpense } from "@/app/actions/expenses";
+import { createExpense, deleteExpense, getExpensesByDate } from "@/app/actions/expenses";
 import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import {
@@ -21,6 +21,7 @@ type IncomeItem = {
 
 type ExpenseItem = {
   id: string;
+  dbId: string | null; // ID in database (null if not yet saved)
   category: string;
   concept: string;
   amount: number;
@@ -80,41 +81,60 @@ export function RegistroForm({
   const byteExpectedBank = parseFloat(byteDigital || "0") + parseFloat(byteCreditCollected || "0");
   const bankDiff = byteExpectedBank - incomeByte;
 
-  // Load existing record
+  // Load existing record + income items + expenses
   useEffect(() => {
     setLoading(true);
-    Promise.all([getDailyRecord(date), getBankIncomeItems(date), getLastBankBalance(date)]).then(
-      ([record, items, lastBalance]) => {
-        if (record) {
-          setByteCashPhysical(String(record.byte_cash_physical || 0));
-          setByteDigital(String(record.byte_digital || 0));
-          setByteCreditDay(String(record.byte_credit_day || 0));
-          setByteCreditCollected(String(record.byte_credit_collected || 0));
-          setByteDiscounts(String(record.byte_discounts || 0));
-          setBankBalanceReal(record.bank_balance_real !== null ? String(record.bank_balance_real) : "");
-        } else {
-          setByteCashPhysical("0"); setByteDigital("0"); setByteCreditDay("0");
-          setByteCreditCollected("0"); setByteDiscounts("0");
-          // Pre-fill with last known bank balance
-          setBankBalanceReal(lastBalance ? String(lastBalance.bank_balance_real) : "");
-        }
-        if (items.length > 0) {
-          setIncomeItems(items.map((item) => ({
-            id: crypto.randomUUID(),
-            amount: Number(item.amount),
-            clientId: (item.client_id as string) || null,
-            clientName: (item.client_name as string) || "",
-            note: (item.note as string) || "",
-          })));
-        } else if (record && Number(record.bank_income) > 0) {
-          setIncomeItems([{ id: crypto.randomUUID(), amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado" }]);
-        } else {
-          setIncomeItems([]);
-        }
-        setExpensesList([]);
-        setLoading(false);
+    Promise.all([
+      getDailyRecord(date),
+      getBankIncomeItems(date),
+      getLastBankBalance(date),
+      getExpensesByDate(date),
+    ]).then(([record, items, lastBalance, existingExpenses]) => {
+      if (record) {
+        setByteCashPhysical(String(record.byte_cash_physical || 0));
+        setByteDigital(String(record.byte_digital || 0));
+        setByteCreditDay(String(record.byte_credit_day || 0));
+        setByteCreditCollected(String(record.byte_credit_collected || 0));
+        setByteDiscounts(String(record.byte_discounts || 0));
+        setBankBalanceReal(record.bank_balance_real !== null ? String(record.bank_balance_real) : "");
+      } else {
+        setByteCashPhysical("0"); setByteDigital("0"); setByteCreditDay("0");
+        setByteCreditCollected("0"); setByteDiscounts("0");
+        setBankBalanceReal(lastBalance ? String(lastBalance.bank_balance_real) : "");
       }
-    );
+
+      // Load income items
+      if (items.length > 0) {
+        setIncomeItems(items.map((item) => ({
+          id: crypto.randomUUID(),
+          amount: Number(item.amount),
+          clientId: (item.client_id as string) || null,
+          clientName: (item.client_name as string) || "",
+          note: (item.note as string) || "",
+        })));
+      } else if (record && Number(record.bank_income) > 0) {
+        setIncomeItems([{ id: crypto.randomUUID(), amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado" }]);
+      } else {
+        setIncomeItems([]);
+      }
+
+      // Load existing expenses from DB
+      if (existingExpenses.length > 0) {
+        setExpensesList(existingExpenses.map((exp) => ({
+          id: crypto.randomUUID(),
+          dbId: exp.id as string,
+          category: exp.category as string,
+          concept: exp.concept as string,
+          amount: Number(exp.amount),
+          paymentMethod: (exp.payment_method as string) || "transferencia",
+          isNew: false,
+        })));
+      } else {
+        setExpensesList([]);
+      }
+
+      setLoading(false);
+    });
   }, [date]);
 
   function addTransaction() {
@@ -133,6 +153,7 @@ export function RegistroForm({
       if (!txConcept) return;
       setExpensesList([...expensesList, {
         id: crypto.randomUUID(),
+        dbId: null,
         category: txCategory,
         concept: txConcept,
         amount: parseFloat(txAmount),
@@ -168,8 +189,18 @@ export function RegistroForm({
         await createExpense({ date, category: exp.category, concept: exp.concept, amount: exp.amount, paymentMethod: exp.paymentMethod });
       }
       setSaved(true);
-      setExpensesList([]);
       setTimeout(() => setSaved(false), 3000);
+      // Reload expenses from DB to show saved items with dbId
+      const freshExpenses = await getExpensesByDate(date);
+      setExpensesList(freshExpenses.map((exp) => ({
+        id: crypto.randomUUID(),
+        dbId: exp.id as string,
+        category: exp.category as string,
+        concept: exp.concept as string,
+        amount: Number(exp.amount),
+        paymentMethod: (exp.payment_method as string) || "transferencia",
+        isNew: false,
+      })));
       router.refresh();
     } catch (error) {
       console.error("Error saving:", error);
@@ -452,7 +483,10 @@ export function RegistroForm({
                         <div className="text-sm font-bold text-red-600 ml-3">
                           -{formatCurrency(item.amount)}
                         </div>
-                        <button onClick={() => setExpensesList(expensesList.filter((x) => x.id !== item.id))}
+                        <button onClick={async () => {
+                          if (item.dbId) { await deleteExpense(item.dbId); }
+                          setExpensesList(expensesList.filter((x) => x.id !== item.id));
+                        }}
                           className="ml-2 opacity-0 group-hover:opacity-100 text-red-400 hover:text-red-600 transition-opacity">
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

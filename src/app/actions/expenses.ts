@@ -23,25 +23,37 @@ export async function createExpense(data: {
   });
   revalidatePath("/registro");
   revalidatePath("/dashboard");
+  revalidatePath("/presupuesto");
 }
 
 export async function deleteExpense(id: string) {
   await db.delete(expenses).where(eq(expenses.id, id));
   revalidatePath("/registro");
   revalidatePath("/dashboard");
+  revalidatePath("/presupuesto");
+}
+
+export async function getExpensesByDate(date: string) {
+  const result = await db.execute(sql`
+    SELECT * FROM expenses WHERE date = ${date} ORDER BY created_at ASC
+  `);
+  return result.rows;
 }
 
 export async function getExpensesByDateRange(startDate: string, endDate: string) {
   const result = await db.execute(sql`
-    SELECT * FROM expenses
-    WHERE date >= ${startDate} AND date <= ${endDate}
-    ORDER BY date DESC, created_at DESC
+    SELECT
+      e.*,
+      c.name as client_name
+    FROM expenses e
+    LEFT JOIN clients c ON false
+    WHERE e.date >= ${startDate} AND e.date <= ${endDate}
+    ORDER BY e.date DESC, e.created_at DESC
   `);
   return result.rows;
 }
 
 export async function getExpensesByCategory(month: string) {
-  // month format: 'YYYY-MM'
   const startDate = `${month}-01`;
   const endDate = `${month}-31`;
   const result = await db.execute(sql`
