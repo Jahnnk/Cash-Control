@@ -8,6 +8,7 @@ import {
   PenLine,
   Users,
   BarChart3,
+  PieChart,
   Settings,
   Menu,
   X,
@@ -16,6 +17,7 @@ import {
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
   { href: "/registro", label: "Registro Diario", icon: PenLine },
+  { href: "/presupuesto", label: "Presupuesto", icon: PieChart },
   { href: "/clientes", label: "Clientes", icon: Users },
   { href: "/reportes", label: "Reportes", icon: BarChart3 },
   { href: "/configuracion", label: "Configuración", icon: Settings },
