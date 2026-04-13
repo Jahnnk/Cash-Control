@@ -48,7 +48,13 @@ export async function getBankIncomeItems(date: string) {
     FROM bank_income_items bi
     LEFT JOIN clients c ON c.id = bi.client_id
     WHERE bi.date = ${date}
-    ORDER BY bi.created_at ASC
+    ORDER BY bi.sort_order ASC, bi.created_at ASC
   `);
   return result.rows;
+}
+
+export async function reorderBankIncomeItems(items: { id: string; sortOrder: number }[]) {
+  for (const item of items) {
+    await db.execute(sql`UPDATE bank_income_items SET sort_order = ${item.sortOrder} WHERE id = ${item.id}`);
+  }
 }

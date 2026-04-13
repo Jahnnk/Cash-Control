@@ -50,9 +50,16 @@ export async function deleteExpense(id: string) {
 
 export async function getExpensesByDate(date: string) {
   const result = await db.execute(sql`
-    SELECT * FROM expenses WHERE date = ${date} ORDER BY created_at ASC
+    SELECT * FROM expenses WHERE date = ${date} ORDER BY sort_order ASC, created_at ASC
   `);
   return result.rows;
+}
+
+export async function reorderExpenses(items: { id: string; sortOrder: number }[]) {
+  for (const item of items) {
+    await db.execute(sql`UPDATE expenses SET sort_order = ${item.sortOrder} WHERE id = ${item.id}`);
+  }
+  revalidatePath("/registro");
 }
 
 export async function getExpensesByDateRange(startDate: string, endDate: string) {

@@ -2,8 +2,8 @@
 
 import { useState, useEffect, useRef } from "react";
 import { upsertDailyRecord, getDailyRecord, getLastBankBalance } from "@/app/actions/daily-records";
-import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem } from "@/app/actions/bank-income";
-import { createExpense, deleteExpense, updateExpense, getExpensesByDate } from "@/app/actions/expenses";
+import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
+import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
 import { formatCurrency, getYesterday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import {
@@ -236,20 +236,26 @@ export function RegistroForm({
     setExpensesList(expensesList.filter((x) => x.id !== item.id));
   }
 
-  function moveIncome(index: number, direction: -1 | 1) {
+  async function moveIncome(index: number, direction: -1 | 1) {
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= incomeItems.length) return;
     const arr = [...incomeItems];
     [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
     setIncomeItems(arr);
+    // Persist order for saved items
+    const saved = arr.filter((i) => i.dbId).map((i, idx) => ({ id: i.dbId!, sortOrder: idx }));
+    if (saved.length > 0) await reorderBankIncomeItems(saved);
   }
 
-  function moveExpense(index: number, direction: -1 | 1) {
+  async function moveExpense(index: number, direction: -1 | 1) {
     const newIndex = index + direction;
     if (newIndex < 0 || newIndex >= expensesList.length) return;
     const arr = [...expensesList];
     [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
     setExpensesList(arr);
+    // Persist order for saved items
+    const saved = arr.filter((e) => e.dbId).map((e, idx) => ({ id: e.dbId!, sortOrder: idx }));
+    if (saved.length > 0) await reorderExpenses(saved);
   }
 
   async function handleSaveAll() {
