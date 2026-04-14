@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals } from "@/app/actions/daily-records";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
-import { formatCurrency, getYesterday } from "@/lib/utils";
+import { formatCurrency, getToday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import {
   Trash2, Plus, Save, Loader2, RefreshCw, Pencil, Check, X,
@@ -52,7 +52,7 @@ export function RegistroForm({
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
-  const [date, setDate] = useState(initialDate || getYesterday());
+  const [date, setDate] = useState(initialDate || getToday());
   const [editingSaldo, setEditingSaldo] = useState(false);
   const saldoInputRef = useRef<HTMLInputElement>(null);
 
@@ -69,6 +69,12 @@ export function RegistroForm({
   // Transactions (Board-style)
   const [incomeItems, setIncomeItems] = useState<IncomeItem[]>([]);
   const [expensesList, setExpensesList] = useState<ExpenseItem[]>([]);
+
+  // Refs to always have latest state in async functions
+  const incomeItemsRef = useRef(incomeItems);
+  incomeItemsRef.current = incomeItems;
+  const expensesListRef = useRef(expensesList);
+  expensesListRef.current = expensesList;
 
   // Quick-add state
   const [txType, setTxType] = useState<"ingreso" | "egreso">("ingreso");
@@ -291,44 +297,23 @@ export function RegistroForm({
   }
 
   async function handleSaveAll() {
-    // If there's a pending amount in the quick-add, add it to the list first
-    let currentIncome = [...incomeItems];
-    let currentExpenses = [...expensesList];
-
+    // Step 1: If there's a pending amount in the quick-add input, add it first
     if (txAmount && parseFloat(txAmount) > 0) {
-      if (txType === "ingreso") {
-        const client = clients.find((c) => c.id === txClient);
-        currentIncome = [...currentIncome, {
-          id: crypto.randomUUID(),
-          dbId: null,
-          amount: parseFloat(txAmount),
-          clientId: txClient || null,
-          clientName: client?.name || "",
-          note: txNote,
-        }];
-        setIncomeItems(currentIncome);
-      } else {
-        currentExpenses = [...currentExpenses, {
-          id: crypto.randomUUID(),
-          dbId: null,
-          category: txCategory,
-          concept: txConcept || txCategory,
-          amount: parseFloat(txAmount),
-          paymentMethod: txMethod,
-          isNew: true,
-        }];
-        setExpensesList(currentExpenses);
-      }
-      setTxAmount("");
-      setTxConcept("");
-      setTxNote("");
+      addTransaction();
+      // Wait a tick for state to update
+      await new Promise(resolve => setTimeout(resolve, 50));
     }
-
-    const saveIncomeTotal = currentIncome.reduce((s, i) => s + i.amount, 0);
-    const saveExpenseTotal = currentExpenses.reduce((s, i) => s + i.amount, 0);
 
     setSaving(true);
     try {
+      // Step 2: Read current state fresh (after any addTransaction)
+      // We need to use a callback pattern to get the latest state
+      const latestIncome = incomeItemsRef.current;
+      const latestExpenses = expensesListRef.current;
+
+      const totalIncome = latestIncome.reduce((s: number, i: IncomeItem) => s + i.amount, 0);
+      const totalExpense = latestExpenses.reduce((s: number, i: ExpenseItem) => s + i.amount, 0);
+
       await upsertDailyRecord({
         date,
         byteCashPhysical: parseFloat(byteCashPhysical || "0"),
@@ -340,12 +325,12 @@ export function RegistroForm({
         byteTotal,
         byteCashSale: byteCashSaleNum,
         byteCashSaleMethod,
-        bankIncome: saveIncomeTotal,
-        bankExpense: saveExpenseTotal,
+        bankIncome: totalIncome,
+        bankExpense: totalExpense,
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
       });
-      await saveBankIncomeItems(date, currentIncome.map((i) => ({ amount: i.amount, clientId: i.clientId, note: i.note })));
-      for (const exp of currentExpenses.filter((e) => e.isNew)) {
+      await saveBankIncomeItems(date, latestIncome.map((i: IncomeItem) => ({ amount: i.amount, clientId: i.clientId, note: i.note })));
+      for (const exp of latestExpenses.filter((e: ExpenseItem) => e.isNew)) {
         await createExpense({ date, category: exp.category, concept: exp.concept, amount: exp.amount, paymentMethod: exp.paymentMethod });
       }
       setSaved(true);
