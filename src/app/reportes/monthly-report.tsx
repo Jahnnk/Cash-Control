@@ -86,24 +86,20 @@ export function MonthlyReport() {
         <>
           {/* Summary cards — clickable */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <button onClick={() => toggleBreakdown("byte")} className="text-left">
-              <div className={`bg-white rounded-xl border-2 p-5 transition-colors ${
+            <div onClick={() => toggleBreakdown("byte")} className={`cursor-pointer bg-white rounded-xl border-2 p-5 transition-colors ${
                 expandedCard === "byte" ? "border-primary-light" : "border-gray-200 hover:border-gray-300"
               }`}>
-                <div className="text-sm text-gray-600 mb-1">Ventas Byte</div>
-                <div className="text-xl font-bold text-gray-900">{formatCurrency(data.totals.total_byte as string)}</div>
-                <div className="text-[10px] text-primary-light mt-1">Click para ver detalle diario</div>
-              </div>
-            </button>
-            <button onClick={() => toggleBreakdown("income")} className="text-left">
-              <div className={`bg-white rounded-xl border-2 p-5 transition-colors ${
+              <div className="text-sm text-gray-600 mb-1">Ventas Byte</div>
+              <div className="text-xl font-bold text-gray-900">{formatCurrency(data.totals.total_byte as string)}</div>
+              <div className="text-[10px] text-primary-light mt-1">Click para ver detalle diario</div>
+            </div>
+            <div onClick={() => toggleBreakdown("income")} className={`cursor-pointer bg-white rounded-xl border-2 p-5 transition-colors ${
                 expandedCard === "income" ? "border-primary-light" : "border-gray-200 hover:border-gray-300"
               }`}>
-                <div className="text-sm text-gray-600 mb-1">Ingresos BCP</div>
-                <div className="text-xl font-bold text-primary-light">{formatCurrency(data.totals.total_income as string)}</div>
-                <div className="text-[10px] text-primary-light mt-1">Click para ver detalle diario</div>
-              </div>
-            </button>
+              <div className="text-sm text-gray-600 mb-1">Ingresos BCP</div>
+              <div className="text-xl font-bold text-primary-light">{formatCurrency(data.totals.total_income as string)}</div>
+              <div className="text-[10px] text-primary-light mt-1">Click para ver detalle diario</div>
+            </div>
             <SummaryCard
               label="Egresos totales"
               value={formatCurrency(data.totals.total_expenses as string)}
