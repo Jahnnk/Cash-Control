@@ -1,22 +1,22 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import { getMonthlyReport, getDailyBreakdown } from "@/app/actions/reports";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
-import { X } from "lucide-react";
+import { ChevronDown, ChevronUp, X } from "lucide-react";
 import {
-  PieChart,
-  Pie,
-  Cell,
-  ResponsiveContainer,
-  Tooltip,
-  Legend,
+  PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
 } from "recharts";
 
 const PIE_COLORS = [
   "#004C40", "#098B5F", "#22C55E", "#EAB308", "#F97316",
   "#DC2626", "#8B5CF6", "#3B82F6", "#EC4899", "#6B7280",
   "#14B8A6", "#A855F7", "#F59E0B",
+];
+
+const MONTHS = [
+  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
+  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
 function getCurrentMonth() {
@@ -34,31 +34,38 @@ export function MonthlyReport() {
   const [month, setMonth] = useState(getCurrentMonth());
   const [data, setData] = useState<MonthlyData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [expandedCard, setExpandedCard] = useState<"byte" | "income" | null>(null);
-  const [breakdownData, setBreakdownData] = useState<Record<string, unknown>[] | null>(null);
-  const [breakdownLoading, setBreakdownLoading] = useState(false);
+  const [showDetail, setShowDetail] = useState<"byte" | "income" | null>(null);
+  const [detailData, setDetailData] = useState<Record<string, unknown>[] | null>(null);
+  const [detailLoading, setDetailLoading] = useState(false);
+
+  const [selectedYear] = useState(new Date().getFullYear());
+  const monthNum = parseInt(month.split("-")[1]) - 1;
 
   useEffect(() => {
     setLoading(true);
-    setExpandedCard(null);
-    setBreakdownData(null);
+    setShowDetail(null);
+    setDetailData(null);
     getMonthlyReport(month).then((d) => {
       setData(d);
       setLoading(false);
     });
   }, [month]);
 
-  async function toggleBreakdown(type: "byte" | "income") {
-    if (expandedCard === type) {
-      setExpandedCard(null);
-      setBreakdownData(null);
+  const handleCardClick = useCallback(async (type: "byte" | "income") => {
+    if (showDetail === type) {
+      setShowDetail(null);
+      setDetailData(null);
       return;
     }
-    setBreakdownLoading(true);
-    setExpandedCard(type);
+    setShowDetail(type);
+    setDetailLoading(true);
     const result = await getDailyBreakdown(month, type);
-    setBreakdownData(result);
-    setBreakdownLoading(false);
+    setDetailData(result);
+    setDetailLoading(false);
+  }, [showDetail, month]);
+
+  function changeMonth(m: number) {
+    setMonth(`${selectedYear}-${String(m + 1).padStart(2, "0")}`);
   }
 
   const donutData = data?.byCategory.map((row) => ({
@@ -68,14 +75,18 @@ export function MonthlyReport() {
 
   return (
     <div className="space-y-6">
+      {/* Month selector — dropdown style */}
       <div className="flex items-center gap-3">
         <label className="text-sm text-gray-600">Mes:</label>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
+        <select
+          value={monthNum}
+          onChange={(e) => changeMonth(parseInt(e.target.value))}
           className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        />
+        >
+          {MONTHS.map((name, i) => (
+            <option key={i} value={i}>{name} {selectedYear}</option>
+          ))}
+        </select>
       </div>
 
       {loading ? (
@@ -84,62 +95,66 @@ export function MonthlyReport() {
         </div>
       ) : data ? (
         <>
-          {/* Summary cards — clickable */}
+          {/* Summary cards */}
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            <div onClick={() => toggleBreakdown("byte")} className={`cursor-pointer bg-white rounded-xl border-2 p-5 transition-colors ${
-                expandedCard === "byte" ? "border-primary-light" : "border-gray-200 hover:border-gray-300"
-              }`}>
-              <div className="text-sm text-gray-600 mb-1">Ventas Byte</div>
-              <div className="text-xl font-bold text-gray-900">{formatCurrency(data.totals.total_byte as string)}</div>
-              <div className="text-[10px] text-primary-light mt-1">Click para ver detalle diario</div>
-            </div>
-            <div onClick={() => toggleBreakdown("income")} className={`cursor-pointer bg-white rounded-xl border-2 p-5 transition-colors ${
-                expandedCard === "income" ? "border-primary-light" : "border-gray-200 hover:border-gray-300"
-              }`}>
-              <div className="text-sm text-gray-600 mb-1">Ingresos BCP</div>
-              <div className="text-xl font-bold text-primary-light">{formatCurrency(data.totals.total_income as string)}</div>
-              <div className="text-[10px] text-primary-light mt-1">Click para ver detalle diario</div>
-            </div>
-            <SummaryCard
-              label="Egresos totales"
-              value={formatCurrency(data.totals.total_expenses as string)}
-              color="text-red-600"
+            {/* Ventas Byte — clickable */}
+            <ClickableCard
+              label="Ventas Byte"
+              value={formatCurrency(data.totals.total_byte as string)}
+              color="text-gray-900"
+              isExpanded={showDetail === "byte"}
+              onClick={() => handleCardClick("byte")}
             />
-            <SummaryCard
-              label="Variación saldo banco"
-              value={formatCurrency(data.bankEndBalance - data.bankStartBalance)}
-              color={data.bankEndBalance - data.bankStartBalance >= 0 ? "text-primary-light" : "text-red-600"}
+            {/* Ingresos BCP — clickable */}
+            <ClickableCard
+              label="Ingresos BCP"
+              value={formatCurrency(data.totals.total_income as string)}
+              color="text-primary-light"
+              isExpanded={showDetail === "income"}
+              onClick={() => handleCardClick("income")}
             />
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="text-sm text-gray-600 mb-1">Egresos totales</div>
+              <div className="text-xl font-bold text-red-600">{formatCurrency(data.totals.total_expenses as string)}</div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-5">
+              <div className="text-sm text-gray-600 mb-1">Variación saldo banco</div>
+              <div className={`text-xl font-bold ${data.bankEndBalance - data.bankStartBalance >= 0 ? "text-primary-light" : "text-red-600"}`}>
+                {formatCurrency(data.bankEndBalance - data.bankStartBalance)}
+              </div>
+            </div>
           </div>
 
-          {/* Expanded breakdown */}
-          {expandedCard && (
+          {/* Detail panel */}
+          {showDetail && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900">
-                  {expandedCard === "byte" ? "Ventas Byte por día" : "Ingresos BCP por día"}
+                  {showDetail === "byte" ? "Ventas Byte por día" : "Ingresos BCP por día"}
                 </h3>
-                <button onClick={() => { setExpandedCard(null); setBreakdownData(null); }}
-                  className="text-gray-400 hover:text-gray-600 p-1"><X className="w-4 h-4" /></button>
+                <button onClick={() => { setShowDetail(null); setDetailData(null); }}
+                  className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100">
+                  <X className="w-4 h-4" />
+                </button>
               </div>
-              {breakdownLoading ? (
-                <div className="p-8 text-center text-gray-500 text-sm">Cargando...</div>
-              ) : breakdownData && breakdownData.length > 0 ? (
+              {detailLoading ? (
+                <div className="p-8 text-center text-gray-500 text-sm">Cargando detalle...</div>
+              ) : detailData && detailData.length > 0 ? (
                 <div className="overflow-x-auto">
-                  {expandedCard === "byte" ? (
+                  {showDetail === "byte" ? (
                     <table className="w-full text-sm">
                       <thead>
                         <tr className="bg-gray-50 text-gray-600 text-left">
                           <th className="px-4 py-3 font-medium">Fecha</th>
                           <th className="px-4 py-3 font-medium text-right">Crédito día</th>
-                          <th className="px-4 py-3 font-medium text-right">Venta contado</th>
+                          <th className="px-4 py-3 font-medium text-right">Contado</th>
                           <th className="px-4 py-3 font-medium text-right">Efectivo</th>
                           <th className="px-4 py-3 font-medium text-right">Digital</th>
-                          <th className="px-4 py-3 font-medium text-right font-semibold">Total Byte</th>
+                          <th className="px-4 py-3 font-medium text-right font-semibold">Total</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-gray-100">
-                        {breakdownData.map((row) => (
+                        {detailData.map((row) => (
                           <tr key={row.date as string} className="hover:bg-gray-50">
                             <td className="px-4 py-2.5 font-medium">{formatDateShort(row.date as string)}</td>
                             <td className="px-4 py-2.5 text-right">{formatCurrency(row.byte_credit_day as string)}</td>
@@ -153,19 +168,18 @@ export function MonthlyReport() {
                       <tfoot>
                         <tr className="bg-gray-50 font-semibold">
                           <td className="px-4 py-3">Total</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(breakdownData.reduce((s, r) => s + Number(r.byte_credit_day), 0))}</td>
-                          <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(breakdownData.reduce((s, r) => s + Number(r.byte_cash_sale), 0))}</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(breakdownData.reduce((s, r) => s + Number(r.byte_cash_physical), 0))}</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(breakdownData.reduce((s, r) => s + Number(r.byte_digital), 0))}</td>
-                          <td className="px-4 py-3 text-right font-bold">{formatCurrency(breakdownData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
+                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_credit_day), 0))}</td>
+                          <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_sale), 0))}</td>
+                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_physical), 0))}</td>
+                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_digital), 0))}</td>
+                          <td className="px-4 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
                         </tr>
                       </tfoot>
                     </table>
                   ) : (
-                    /* Income breakdown — grouped by date */
                     (() => {
-                      const byDate = new Map<string, { items: typeof breakdownData; total: number }>();
-                      for (const row of breakdownData) {
+                      const byDate = new Map<string, { items: typeof detailData; total: number }>();
+                      for (const row of detailData) {
                         const d = row.date as string;
                         if (!byDate.has(d)) byDate.set(d, { items: [], total: 0 });
                         const entry = byDate.get(d)!;
@@ -183,9 +197,7 @@ export function MonthlyReport() {
                               <div className="space-y-0.5">
                                 {items.map((item, i) => (
                                   <div key={i} className="flex items-center justify-between text-xs text-gray-500 pl-4">
-                                    <span>
-                                      {item.client_name ? `Pago de ${item.client_name}` : (item.note || "Ingreso")}
-                                    </span>
+                                    <span>{item.client_name ? `Pago de ${item.client_name}` : (item.note || "Ingreso")}</span>
                                     <span className="text-primary-light font-medium">+{formatCurrency(item.amount as string)}</span>
                                   </div>
                                 ))}
@@ -194,9 +206,7 @@ export function MonthlyReport() {
                           ))}
                           <div className="px-4 py-3 bg-gray-50 flex items-center justify-between font-semibold text-sm">
                             <span>Total</span>
-                            <span className="text-primary-light">
-                              {formatCurrency(breakdownData.reduce((s, r) => s + Number(r.amount), 0))}
-                            </span>
+                            <span className="text-primary-light">{formatCurrency(detailData.reduce((s, r) => s + Number(r.amount), 0))}</span>
                           </div>
                         </div>
                       );
@@ -261,11 +271,29 @@ export function MonthlyReport() {
   );
 }
 
-function SummaryCard({ label, value, color = "text-gray-900" }: { label: string; value: string; color?: string }) {
+function ClickableCard({
+  label, value, color, isExpanded, onClick,
+}: {
+  label: string; value: string; color: string; isExpanded: boolean; onClick: () => void;
+}) {
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-5">
-      <div className="text-sm text-gray-600 mb-1">{label}</div>
-      <div className={`text-xl font-bold ${color}`}>{value}</div>
+    <div
+      role="button"
+      tabIndex={0}
+      onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter") onClick(); }}
+      className={`cursor-pointer select-none bg-white rounded-xl border-2 p-5 transition-all active:scale-[0.98] ${
+        isExpanded ? "border-primary-light shadow-md" : "border-gray-200 hover:border-primary-light/50 hover:shadow-sm"
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="text-sm text-gray-600">{label}</div>
+        {isExpanded ? <ChevronUp className="w-4 h-4 text-primary-light" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
+      </div>
+      <div className={`text-xl font-bold ${color} mt-1`}>{value}</div>
+      <div className="text-[10px] text-primary-light mt-1">
+        {isExpanded ? "Click para cerrar" : "Ver detalle diario"}
+      </div>
     </div>
   );
 }
