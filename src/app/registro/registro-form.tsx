@@ -256,22 +256,32 @@ export function RegistroForm({
     setEditingId(null);
   }
 
+  async function recalcAndUpdateBalance(newIncome: IncomeItem[], newExpenses: ExpenseItem[]) {
+    const totalInc = newIncome.reduce((s, i) => s + i.amount, 0);
+    const bankExp = newExpenses.filter(e => e.paymentMethod !== "efectivo").reduce((s, e) => s + e.amount, 0);
+    if (prevBalance !== null) {
+      const newBal = Math.round((prevBalance + totalInc - bankExp) * 100) / 100;
+      setBankBalanceReal(String(newBal));
+      await updateBankBalance(date, newBal);
+    }
+  }
+
   async function handleDeleteIncome(item: IncomeItem) {
     if (item.dbId) await deleteBankIncomeItem(item.dbId);
-    const updated = incomeItems.filter((x) => x.id !== item.id);
-    setIncomeItems(updated);
-    // Sync income total
-    const totalInc = updated.reduce((s, i) => s + i.amount, 0);
+    const updatedInc = incomeItems.filter((x) => x.id !== item.id);
+    setIncomeItems(updatedInc);
+    const totalInc = updatedInc.reduce((s, i) => s + i.amount, 0);
     await updateDailyTotals(date, totalInc, null);
+    await recalcAndUpdateBalance(updatedInc, expensesList);
   }
 
   async function handleDeleteExpense(item: ExpenseItem) {
     if (item.dbId) await deleteExpense(item.dbId);
-    const updated = expensesList.filter((x) => x.id !== item.id);
-    setExpensesList(updated);
-    // Sync expense total
-    const totalExp = updated.reduce((s, i) => s + i.amount, 0);
+    const updatedExp = expensesList.filter((x) => x.id !== item.id);
+    setExpensesList(updatedExp);
+    const totalExp = updatedExp.reduce((s, i) => s + i.amount, 0);
     await updateDailyTotals(date, null, totalExp);
+    await recalcAndUpdateBalance(incomeItems, updatedExp);
   }
 
   async function moveIncome(index: number, direction: -1 | 1) {
@@ -333,6 +343,17 @@ export function RegistroForm({
       for (const exp of latestExpenses.filter((e: ExpenseItem) => e.isNew)) {
         await createExpense({ date, category: exp.category, concept: exp.concept, amount: exp.amount, paymentMethod: exp.paymentMethod });
       }
+
+      // Recalculate bank balance dynamically: prev balance + income - bank expenses
+      const bankExpensesOnly = latestExpenses
+        .filter((e: ExpenseItem) => e.paymentMethod !== "efectivo")
+        .reduce((s: number, e: ExpenseItem) => s + e.amount, 0);
+      if (prevBalance !== null) {
+        const newBalance = Math.round((prevBalance + totalIncome - bankExpensesOnly) * 100) / 100;
+        setBankBalanceReal(String(newBalance));
+        await updateBankBalance(date, newBalance);
+      }
+
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
       // Reload expenses from DB to show saved items with dbId
