@@ -13,6 +13,8 @@ export async function upsertDailyRecord(data: {
   byteCreditBalance: number;
   byteDiscounts: number;
   byteTotal: number;
+  byteCashSale: number;
+  byteCashSaleMethod: string;
   bankIncome: number;
   bankExpense: number;
   bankBalanceReal: number | null;
@@ -22,12 +24,14 @@ export async function upsertDailyRecord(data: {
       date, byte_cash_physical, byte_digital, byte_cash,
       byte_credit_day, byte_credit_collected,
       byte_credit_balance, byte_discounts, byte_total,
+      byte_cash_sale, byte_cash_sale_method,
       bank_income, bank_expense, bank_balance_real
     ) VALUES (
       ${data.date}, ${data.byteCashPhysical}, ${data.byteDigital},
       ${data.byteCashPhysical + data.byteDigital},
       ${data.byteCreditDay}, ${data.byteCreditCollected},
       ${data.byteCreditBalance}, ${data.byteDiscounts}, ${data.byteTotal},
+      ${data.byteCashSale}, ${data.byteCashSaleMethod},
       ${data.bankIncome}, ${data.bankExpense}, ${data.bankBalanceReal}
     )
     ON CONFLICT (date) DO UPDATE SET
@@ -39,6 +43,8 @@ export async function upsertDailyRecord(data: {
       byte_credit_balance = ${data.byteCreditBalance},
       byte_discounts = ${data.byteDiscounts},
       byte_total = ${data.byteTotal},
+      byte_cash_sale = ${data.byteCashSale},
+      byte_cash_sale_method = ${data.byteCashSaleMethod},
       bank_income = ${data.bankIncome},
       bank_expense = ${data.bankExpense},
       bank_balance_real = ${data.bankBalanceReal}

@@ -62,6 +62,8 @@ export function RegistroForm({
   const [byteCreditDay, setByteCreditDay] = useState("0");
   const [byteCreditCollected, setByteCreditCollected] = useState("0");
   const [byteDiscounts, setByteDiscounts] = useState("0");
+  const [byteCashSale, setByteCashSale] = useState("0"); // Venta al contado
+  const [byteCashSaleMethod, setByteCashSaleMethod] = useState("yape"); // efectivo, yape, transferencia
   const [bankBalanceReal, setBankBalanceReal] = useState("");
 
   // Transactions (Board-style)
@@ -91,7 +93,8 @@ export function RegistroForm({
   const [editNote, setEditNote] = useState("");
 
   // Computed
-  const byteTotal = parseFloat(byteCashPhysical || "0") + parseFloat(byteDigital || "0") + parseFloat(byteCreditDay || "0");
+  const byteCashSaleNum = parseFloat(byteCashSale || "0");
+  const byteTotal = parseFloat(byteCashPhysical || "0") + parseFloat(byteDigital || "0") + parseFloat(byteCreditDay || "0") + byteCashSaleNum;
   const byteCreditBalance = parseFloat(byteCreditDay || "0") - parseFloat(byteCreditCollected || "0");
   const bankIncomeTotal = incomeItems.reduce((s, i) => s + i.amount, 0);
   const expensesTotal = expensesList.reduce((s, i) => s + i.amount, 0);
@@ -124,10 +127,12 @@ export function RegistroForm({
         setByteCreditDay(String(record.byte_credit_day || 0));
         setByteCreditCollected(String(record.byte_credit_collected || 0));
         setByteDiscounts(String(record.byte_discounts || 0));
+        setByteCashSale(String(record.byte_cash_sale || 0));
+        setByteCashSaleMethod((record.byte_cash_sale_method as string) || "yape");
         setBankBalanceReal(record.bank_balance_real !== null ? String(record.bank_balance_real) : "");
       } else {
         setByteCashPhysical("0"); setByteDigital("0"); setByteCreditDay("0");
-        setByteCreditCollected("0"); setByteDiscounts("0");
+        setByteCreditCollected("0"); setByteDiscounts("0"); setByteCashSale("0"); setByteCashSaleMethod("yape");
         setBankBalanceReal(lastBalance ? String(lastBalance.bank_balance_real) : "");
       }
       // Store previous day balance for dynamic calculation
@@ -297,6 +302,8 @@ export function RegistroForm({
         byteCreditBalance,
         byteDiscounts: parseFloat(byteDiscounts || "0"),
         byteTotal,
+        byteCashSale: byteCashSaleNum,
+        byteCashSaleMethod,
         bankIncome: bankIncomeTotal,
         bankExpense: expensesTotal,
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
@@ -445,6 +452,32 @@ export function RegistroForm({
                     <div className={`text-lg font-bold ${byteCreditBalance > 0 ? "text-amber-600" : "text-primary-light"}`}>
                       {formatCurrency(byteCreditBalance)}
                     </div>
+                  </div>
+                </div>
+                {/* Venta al contado */}
+                <div className="mt-3 p-3 bg-blue-50 rounded-lg border border-blue-100">
+                  <div className="flex items-center gap-3">
+                    <div className="flex-1">
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Venta al contado</label>
+                      <input type="number" step="0.01" value={byteCashSale}
+                        onChange={(e) => setByteCashSale(e.target.value)} placeholder="0.00"
+                        className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 mb-1">Método</label>
+                      <select value={byteCashSaleMethod} onChange={(e) => setByteCashSaleMethod(e.target.value)}
+                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
+                        <option value="efectivo">Efectivo</option>
+                        <option value="yape">Yape</option>
+                        <option value="transferencia">Transferencia</option>
+                      </select>
+                    </div>
+                    {byteCashSaleNum > 0 && (
+                      <div className="bg-white rounded-lg p-2 text-center">
+                        <div className="text-[10px] text-gray-500">Se suma a Byte</div>
+                        <div className="text-sm font-bold text-blue-700">+{formatCurrency(byteCashSaleNum)}</div>
+                      </div>
+                    )}
                   </div>
                 </div>
               </div>
