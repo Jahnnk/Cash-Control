@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
-import { upsertDailyRecord, getDailyRecord, getLastBankBalance } from "@/app/actions/daily-records";
+import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals } from "@/app/actions/daily-records";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
 import { formatCurrency, getYesterday } from "@/lib/utils";
@@ -248,12 +248,20 @@ export function RegistroForm({
 
   async function handleDeleteIncome(item: IncomeItem) {
     if (item.dbId) await deleteBankIncomeItem(item.dbId);
-    setIncomeItems(incomeItems.filter((x) => x.id !== item.id));
+    const updated = incomeItems.filter((x) => x.id !== item.id);
+    setIncomeItems(updated);
+    // Sync income total
+    const totalInc = updated.reduce((s, i) => s + i.amount, 0);
+    await updateDailyTotals(date, totalInc, null);
   }
 
   async function handleDeleteExpense(item: ExpenseItem) {
     if (item.dbId) await deleteExpense(item.dbId);
-    setExpensesList(expensesList.filter((x) => x.id !== item.id));
+    const updated = expensesList.filter((x) => x.id !== item.id);
+    setExpensesList(updated);
+    // Sync expense total
+    const totalExp = updated.reduce((s, i) => s + i.amount, 0);
+    await updateDailyTotals(date, null, totalExp);
   }
 
   async function moveIncome(index: number, direction: -1 | 1) {
@@ -356,8 +364,16 @@ export function RegistroForm({
               value={bankBalanceReal}
               onChange={(e) => setBankBalanceReal(e.target.value)}
               placeholder="0.00"
-              onKeyDown={(e) => { if (e.key === "Enter" || e.key === "Escape") setEditingSaldo(false); }}
-              onBlur={() => setEditingSaldo(false)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === "Escape") {
+                  setEditingSaldo(false);
+                  if (bankBalanceReal) updateBankBalance(date, parseFloat(bankBalanceReal));
+                }
+              }}
+              onBlur={() => {
+                setEditingSaldo(false);
+                if (bankBalanceReal) updateBankBalance(date, parseFloat(bankBalanceReal));
+              }}
               className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 text-right text-lg w-48 focus:bg-white/20"
               autoFocus
             />

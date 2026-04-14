@@ -6,15 +6,13 @@ import { revalidatePath } from "next/cache";
 
 export async function upsertDailyRecord(data: {
   date: string;
-  // Byte fields
-  byteCashPhysical: number; // Efectivo (caja física, NO va al banco)
-  byteDigital: number; // Yape + Transfer + Tarjeta + Plin (va al banco)
+  byteCashPhysical: number;
+  byteDigital: number;
   byteCreditDay: number;
   byteCreditCollected: number;
   byteCreditBalance: number;
   byteDiscounts: number;
   byteTotal: number;
-  // Bank fields
   bankIncome: number;
   bankExpense: number;
   bankBalanceReal: number | null;
@@ -48,6 +46,34 @@ export async function upsertDailyRecord(data: {
   revalidatePath("/dashboard");
   revalidatePath("/registro");
   revalidatePath("/reportes");
+}
+
+export async function updateBankBalance(date: string, balance: number) {
+  // Ensure daily record exists, then update saldo
+  await db.execute(sql`
+    INSERT INTO daily_records (date, bank_balance_real)
+    VALUES (${date}, ${balance})
+    ON CONFLICT (date) DO UPDATE SET bank_balance_real = ${balance}
+  `);
+  revalidatePath("/dashboard");
+  revalidatePath("/registro");
+}
+
+export async function updateDailyTotals(date: string, bankIncome: number | null, bankExpense: number | null) {
+  if (bankIncome !== null) {
+    await db.execute(sql`
+      INSERT INTO daily_records (date, bank_income) VALUES (${date}, ${bankIncome})
+      ON CONFLICT (date) DO UPDATE SET bank_income = ${bankIncome}
+    `);
+  }
+  if (bankExpense !== null) {
+    await db.execute(sql`
+      INSERT INTO daily_records (date, bank_expense) VALUES (${date}, ${bankExpense})
+      ON CONFLICT (date) DO UPDATE SET bank_expense = ${bankExpense}
+    `);
+  }
+  revalidatePath("/dashboard");
+  revalidatePath("/registro");
 }
 
 export async function getDailyRecord(date: string) {
