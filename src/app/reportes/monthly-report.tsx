@@ -197,7 +197,7 @@ export function MonthlyReport() {
                               <div className="space-y-0.5">
                                 {items.map((item, i) => (
                                   <div key={i} className="flex items-center justify-between text-xs text-gray-500 pl-4">
-                                    <span>{item.client_name ? `Pago de ${item.client_name}` : (item.note || "Ingreso")}</span>
+                                    <span>{item.client_name ? `Pago de ${String(item.client_name)}` : (String(item.note || "Ingreso"))}</span>
                                     <span className="text-primary-light font-medium">+{formatCurrency(item.amount as string)}</span>
                                   </div>
                                 ))}
