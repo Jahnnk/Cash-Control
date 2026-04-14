@@ -109,3 +109,32 @@ export async function getDebtAgingReport() {
     totalPending: parseFloat(totals.rows[0].total_byte as string) - parseFloat(totals.rows[0].total_collected as string),
   };
 }
+
+export async function getDailyBreakdown(month: string, type: "byte" | "income") {
+  const startDate = `${month}-01`;
+  const [year, m] = month.split("-").map(Number);
+  const lastDay = new Date(year, m, 0).getDate();
+  const endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
+
+  if (type === "byte") {
+    const result = await db.execute(sql`
+      SELECT date, byte_total, byte_credit_day, byte_cash_sale,
+        COALESCE(byte_cash_physical, 0) as byte_cash_physical,
+        COALESCE(byte_digital, 0) as byte_digital
+      FROM daily_records
+      WHERE date >= ${startDate} AND date <= ${endDate} AND COALESCE(byte_total, 0) > 0
+      ORDER BY date ASC
+    `);
+    return result.rows;
+  } else {
+    // Individual income items per day
+    const result = await db.execute(sql`
+      SELECT bi.date, bi.amount, bi.note, c.name as client_name
+      FROM bank_income_items bi
+      LEFT JOIN clients c ON c.id = bi.client_id
+      WHERE bi.date >= ${startDate} AND bi.date <= ${endDate}
+      ORDER BY bi.date ASC, bi.sort_order ASC
+    `);
+    return result.rows;
+  }
+}
