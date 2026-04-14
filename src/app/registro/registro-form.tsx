@@ -182,12 +182,11 @@ export function RegistroForm({
         note: txNote,
       }]);
     } else {
-      if (!txConcept) return;
       setExpensesList([...expensesList, {
         id: crypto.randomUUID(),
         dbId: null,
         category: txCategory,
-        concept: txConcept,
+        concept: txConcept || txCategory,
         amount: parseFloat(txAmount),
         paymentMethod: txMethod,
         isNew: true,
@@ -533,76 +532,90 @@ export function RegistroForm({
                 );
               })()}
 
-              {/* Quick add — Board style */}
+              {/* Quick add — Excel-style: type amount, Enter, done */}
               <div className="bg-white rounded-xl border border-gray-200 p-4">
-                {/* Type toggle */}
-                <div className="flex gap-1 bg-gray-100 rounded-lg p-1 mb-4">
-                  <button onClick={() => setTxType("ingreso")}
-                    className={`flex-1 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                      txType === "ingreso" ? "bg-primary-light text-white shadow-sm" : "text-gray-600"
-                    }`}>
-                    <ArrowDownLeft className="w-4 h-4" /> Ingreso
+                <div className="flex items-center gap-2">
+                  {/* Type toggle — click to switch */}
+                  <button
+                    onClick={() => setTxType(txType === "ingreso" ? "egreso" : "ingreso")}
+                    className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
+                      txType === "ingreso" ? "bg-green-100 text-primary-light" : "bg-red-100 text-red-600"
+                    }`}
+                    title={`Click para cambiar a ${txType === "ingreso" ? "egreso" : "ingreso"}`}
+                  >
+                    {txType === "ingreso" ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
                   </button>
-                  <button onClick={() => setTxType("egreso")}
-                    className={`flex-1 py-2 rounded-md text-sm font-medium flex items-center justify-center gap-2 transition-colors ${
-                      txType === "egreso" ? "bg-red-500 text-white shadow-sm" : "text-gray-600"
-                    }`}>
-                    <ArrowUpRight className="w-4 h-4" /> Egreso
-                  </button>
-                </div>
 
-                {/* Amount input — big and prominent */}
-                <div className="mb-4">
-                  <input ref={amountRef} type="number" step="0.01" value={txAmount}
+                  {/* Amount — the main input, always focused */}
+                  <input
+                    ref={amountRef}
+                    type="number"
+                    step="0.01"
+                    value={txAmount}
                     onChange={(e) => setTxAmount(e.target.value)}
-                    placeholder="0.00"
-                    onKeyDown={(e) => e.key === "Enter" && addTransaction()}
-                    className={`w-full text-center text-3xl font-bold border-0 border-b-2 py-3 focus:outline-none ${
+                    placeholder="Monto y Enter..."
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") addTransaction();
+                      if (e.key === "Tab" && !e.shiftKey) {
+                        // Tab to switch type
+                        e.preventDefault();
+                        setTxType(txType === "ingreso" ? "egreso" : "ingreso");
+                      }
+                    }}
+                    className={`flex-1 text-xl font-bold border-0 border-b-2 py-2 px-1 focus:outline-none ${
                       txType === "ingreso" ? "border-primary-light text-primary-light" : "border-red-400 text-red-600"
-                    }`} />
+                    }`}
+                    autoFocus
+                  />
+
+                  {/* Quick label */}
+                  <span className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ${
+                    txType === "ingreso" ? "bg-green-100 text-primary-light" : "bg-red-100 text-red-600"
+                  }`}>
+                    {txType === "ingreso" ? "Ingreso" : "Gasto"}
+                  </span>
                 </div>
 
-                {/* Context fields */}
-                {txType === "ingreso" ? (
-                  <div className="grid grid-cols-2 gap-3 mb-3">
-                    <select value={txClient} onChange={(e) => setTxClient(e.target.value)}
-                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                      <option value="">Ingreso del día</option>
-                      {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
-                    </select>
-                    <input type="text" value={txNote} onChange={(e) => setTxNote(e.target.value)}
-                      placeholder="Nota (opcional)"
-                      onKeyDown={(e) => e.key === "Enter" && addTransaction()}
-                      className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                {/* Optional details — collapsed by default, expand on click */}
+                <details className="mt-3">
+                  <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">
+                    Detalles opcionales (categoría, nota, método)
+                  </summary>
+                  <div className="mt-2 space-y-2">
+                    {txType === "ingreso" ? (
+                      <div className="grid grid-cols-2 gap-2">
+                        <select value={txClient} onChange={(e) => setTxClient(e.target.value)}
+                          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                          <option value="">Ingreso del día</option>
+                          {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
+                        </select>
+                        <input type="text" value={txNote} onChange={(e) => setTxNote(e.target.value)}
+                          placeholder="Nota"
+                          onKeyDown={(e) => e.key === "Enter" && addTransaction()}
+                          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        <div className="grid grid-cols-3 gap-2">
+                          <select value={txCategory} onChange={(e) => setTxCategory(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                            {categories.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
+                          </select>
+                          <select value={txMethod} onChange={(e) => setTxMethod(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                            <option value="transferencia">Transferencia</option>
+                            <option value="efectivo">Efectivo</option>
+                            <option value="yape">Yape</option>
+                          </select>
+                          <input type="text" value={txConcept} onChange={(e) => setTxConcept(e.target.value)}
+                            placeholder="Concepto"
+                            onKeyDown={(e) => e.key === "Enter" && addTransaction()}
+                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                        </div>
+                      </div>
+                    )}
                   </div>
-                ) : (
-                  <div className="space-y-3 mb-3">
-                    <div className="grid grid-cols-2 gap-3">
-                      <select value={txCategory} onChange={(e) => setTxCategory(e.target.value)}
-                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                        {categories.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
-                      </select>
-                      <select value={txMethod} onChange={(e) => setTxMethod(e.target.value)}
-                        className="border border-gray-300 rounded-lg px-3 py-2 text-sm">
-                        <option value="transferencia">Transferencia</option>
-                        <option value="efectivo">Efectivo</option>
-                        <option value="yape">Yape</option>
-                      </select>
-                    </div>
-                    <input type="text" value={txConcept} onChange={(e) => setTxConcept(e.target.value)}
-                      placeholder="Concepto del gasto"
-                      onKeyDown={(e) => e.key === "Enter" && addTransaction()}
-                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-                  </div>
-                )}
-
-                <button onClick={addTransaction}
-                  disabled={!txAmount || (txType === "egreso" && !txConcept)}
-                  className={`w-full py-2.5 rounded-lg text-sm font-medium text-white flex items-center justify-center gap-2 disabled:opacity-40 ${
-                    txType === "ingreso" ? "bg-primary-light hover:bg-primary-light/90" : "bg-red-500 hover:bg-red-600"
-                  }`}>
-                  <Plus className="w-4 h-4" /> Agregar {txType}
-                </button>
+                </details>
               </div>
 
               {/* Transaction feed — Board style */}
