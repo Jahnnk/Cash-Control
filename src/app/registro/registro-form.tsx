@@ -291,6 +291,42 @@ export function RegistroForm({
   }
 
   async function handleSaveAll() {
+    // If there's a pending amount in the quick-add, add it to the list first
+    let currentIncome = [...incomeItems];
+    let currentExpenses = [...expensesList];
+
+    if (txAmount && parseFloat(txAmount) > 0) {
+      if (txType === "ingreso") {
+        const client = clients.find((c) => c.id === txClient);
+        currentIncome = [...currentIncome, {
+          id: crypto.randomUUID(),
+          dbId: null,
+          amount: parseFloat(txAmount),
+          clientId: txClient || null,
+          clientName: client?.name || "",
+          note: txNote,
+        }];
+        setIncomeItems(currentIncome);
+      } else {
+        currentExpenses = [...currentExpenses, {
+          id: crypto.randomUUID(),
+          dbId: null,
+          category: txCategory,
+          concept: txConcept || txCategory,
+          amount: parseFloat(txAmount),
+          paymentMethod: txMethod,
+          isNew: true,
+        }];
+        setExpensesList(currentExpenses);
+      }
+      setTxAmount("");
+      setTxConcept("");
+      setTxNote("");
+    }
+
+    const saveIncomeTotal = currentIncome.reduce((s, i) => s + i.amount, 0);
+    const saveExpenseTotal = currentExpenses.reduce((s, i) => s + i.amount, 0);
+
     setSaving(true);
     try {
       await upsertDailyRecord({
@@ -304,12 +340,12 @@ export function RegistroForm({
         byteTotal,
         byteCashSale: byteCashSaleNum,
         byteCashSaleMethod,
-        bankIncome: bankIncomeTotal,
-        bankExpense: expensesTotal,
+        bankIncome: saveIncomeTotal,
+        bankExpense: saveExpenseTotal,
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
       });
-      await saveBankIncomeItems(date, incomeItems.map((i) => ({ amount: i.amount, clientId: i.clientId, note: i.note })));
-      for (const exp of expensesList.filter((e) => e.isNew)) {
+      await saveBankIncomeItems(date, currentIncome.map((i) => ({ amount: i.amount, clientId: i.clientId, note: i.note })));
+      for (const exp of currentExpenses.filter((e) => e.isNew)) {
         await createExpense({ date, category: exp.category, concept: exp.concept, amount: exp.amount, paymentMethod: exp.paymentMethod });
       }
       setSaved(true);
