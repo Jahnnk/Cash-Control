@@ -55,7 +55,6 @@ export async function upsertDailyRecord(data: {
 }
 
 export async function updateBankBalance(date: string, balance: number) {
-  // Ensure daily record exists, then update saldo
   await db.execute(sql`
     INSERT INTO daily_records (date, bank_balance_real)
     VALUES (${date}, ${balance})
@@ -63,6 +62,42 @@ export async function updateBankBalance(date: string, balance: number) {
   `);
   revalidatePath("/dashboard");
   revalidatePath("/registro");
+}
+
+export async function recalcBankBalance(date: string) {
+  // Get previous day's balance
+  const prev = await db.execute(sql`
+    SELECT bank_balance_real FROM daily_records
+    WHERE bank_balance_real IS NOT NULL AND date < ${date}
+    ORDER BY date DESC LIMIT 1
+  `);
+  const prevBal = prev.rows[0] ? parseFloat(prev.rows[0].bank_balance_real as string) : 0;
+
+  // Get today's income total
+  const incResult = await db.execute(sql`
+    SELECT COALESCE(SUM(amount), 0) as total FROM bank_income_items WHERE date = ${date}
+  `);
+  const totalIncome = parseFloat(incResult.rows[0].total as string);
+
+  // Get today's bank expenses (non-cash only)
+  const expResult = await db.execute(sql`
+    SELECT COALESCE(SUM(amount), 0) as total FROM expenses
+    WHERE date = ${date} AND payment_method != 'efectivo'
+  `);
+  const totalBankExp = parseFloat(expResult.rows[0].total as string);
+
+  // Calculate new balance
+  const newBalance = Math.round((prevBal + totalIncome - totalBankExp) * 100) / 100;
+
+  // Update
+  await db.execute(sql`
+    UPDATE daily_records SET bank_balance_real = ${newBalance} WHERE date = ${date}
+  `);
+
+  revalidatePath("/dashboard");
+  revalidatePath("/registro");
+
+  return newBalance;
 }
 
 export async function updateDailyTotals(date: string, bankIncome: number | null, bankExpense: number | null) {

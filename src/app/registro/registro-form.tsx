@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals } from "@/app/actions/daily-records";
+import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance } from "@/app/actions/daily-records";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
 import { formatCurrency, getToday } from "@/lib/utils";
@@ -256,23 +256,14 @@ export function RegistroForm({
     setEditingId(null);
   }
 
-  async function recalcAndUpdateBalance(newIncome: IncomeItem[], newExpenses: ExpenseItem[]) {
-    const totalInc = newIncome.reduce((s, i) => s + i.amount, 0);
-    const bankExp = newExpenses.filter(e => e.paymentMethod !== "efectivo").reduce((s, e) => s + e.amount, 0);
-    if (prevBalance !== null) {
-      const newBal = Math.round((prevBalance + totalInc - bankExp) * 100) / 100;
-      setBankBalanceReal(String(newBal));
-      await updateBankBalance(date, newBal);
-    }
-  }
-
   async function handleDeleteIncome(item: IncomeItem) {
     if (item.dbId) await deleteBankIncomeItem(item.dbId);
     const updatedInc = incomeItems.filter((x) => x.id !== item.id);
     setIncomeItems(updatedInc);
     const totalInc = updatedInc.reduce((s, i) => s + i.amount, 0);
     await updateDailyTotals(date, totalInc, null);
-    await recalcAndUpdateBalance(updatedInc, expensesList);
+    const newBal = await recalcBankBalance(date);
+    setBankBalanceReal(String(newBal));
   }
 
   async function handleDeleteExpense(item: ExpenseItem) {
@@ -281,7 +272,8 @@ export function RegistroForm({
     setExpensesList(updatedExp);
     const totalExp = updatedExp.reduce((s, i) => s + i.amount, 0);
     await updateDailyTotals(date, null, totalExp);
-    await recalcAndUpdateBalance(incomeItems, updatedExp);
+    const newBal = await recalcBankBalance(date);
+    setBankBalanceReal(String(newBal));
   }
 
   async function moveIncome(index: number, direction: -1 | 1) {
@@ -344,15 +336,9 @@ export function RegistroForm({
         await createExpense({ date, category: exp.category, concept: exp.concept, amount: exp.amount, paymentMethod: exp.paymentMethod });
       }
 
-      // Recalculate bank balance dynamically: prev balance + income - bank expenses
-      const bankExpensesOnly = latestExpenses
-        .filter((e: ExpenseItem) => e.paymentMethod !== "efectivo")
-        .reduce((s: number, e: ExpenseItem) => s + e.amount, 0);
-      if (prevBalance !== null) {
-        const newBalance = Math.round((prevBalance + totalIncome - bankExpensesOnly) * 100) / 100;
-        setBankBalanceReal(String(newBalance));
-        await updateBankBalance(date, newBalance);
-      }
+      // Recalculate bank balance on server (uses DB data directly)
+      const newBalance = await recalcBankBalance(date);
+      setBankBalanceReal(String(newBalance));
 
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
