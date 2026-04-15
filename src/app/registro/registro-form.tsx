@@ -509,17 +509,10 @@ export function RegistroForm({
                   </div>
                 </div>
               </div>
-              {/* Totales */}
-              <div className="border-t border-gray-200 pt-4">
-                <h3 className="text-sm font-semibold text-gray-900 mb-3">Byte — Totales</h3>
-                <div className="grid grid-cols-2 gap-4">
-                  <Field label="Efectivo (caja)" value={byteCashPhysical} onChange={setByteCashPhysical} />
-                  <Field label="Digital (Yape+Transfer+Tarjeta+Plin)" value={byteDigital} onChange={setByteDigital} />
-                </div>
-                <div className="bg-gray-50 rounded-lg p-3 mt-3">
-                  <div className="text-xs text-gray-500">Total Byte</div>
-                  <div className="text-lg font-bold text-gray-900">{formatCurrency(byteTotal)}</div>
-                </div>
+              {/* Total Byte */}
+              <div className="bg-gray-50 rounded-lg p-3 mt-3">
+                <div className="text-xs text-gray-500">Total Byte (Crédito día + Venta contado)</div>
+                <div className="text-lg font-bold text-gray-900">{formatCurrency(byteTotal)}</div>
               </div>
               {/* Verificación */}
               {(byteExpectedBank > 0 || incomeByte > 0) && (
