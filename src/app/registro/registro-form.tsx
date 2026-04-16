@@ -341,9 +341,11 @@ export function RegistroForm({
         await createExpense({ date, category: exp.category, concept: exp.concept, amount: exp.amount, paymentMethod: exp.paymentMethod });
       }
 
-      // Recalculate bank balance on server (uses DB data directly)
-      const newBalance = await recalcBankBalance(date);
-      setBankBalanceReal(String(newBalance));
+      // Recalculate bank balance only if there are actual movements
+      if (totalIncome > 0 || totalExpense > 0) {
+        const newBalance = await recalcBankBalance(date);
+        setBankBalanceReal(String(newBalance));
+      }
 
       setSaved(true);
       setTimeout(() => setSaved(false), 3000);
