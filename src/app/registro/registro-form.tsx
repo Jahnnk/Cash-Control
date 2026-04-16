@@ -7,8 +7,8 @@ import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorder
 import { formatCurrency, getToday } from "@/lib/utils";
 import { useRouter } from "next/navigation";
 import {
-  Trash2, Plus, Save, Loader2, RefreshCw, Pencil, Check, X,
-  ArrowDownLeft, ArrowUpRight, ChevronUp, ChevronDown, DollarSign, User,
+  Trash2, Plus, Save, Loader2, RefreshCw, Pencil, Check, X, GripVertical,
+  ArrowDownLeft, ArrowUpRight, DollarSign, User,
 } from "lucide-react";
 
 type IncomeItem = {
@@ -88,6 +88,11 @@ export function RegistroForm({
 
   // Filter state for movements
   const [viewFilter, setViewFilter] = useState<"todos" | "banco" | "efectivo">("todos");
+
+  // Drag and drop state
+  const [dragType, setDragType] = useState<"income" | "expense" | null>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [dragOverIdx, setDragOverIdx] = useState<number | null>(null);
 
   // Editing state
   const [editingId, setEditingId] = useState<string | null>(null);
@@ -276,22 +281,22 @@ export function RegistroForm({
     setBankBalanceReal(String(newBal));
   }
 
-  async function moveIncome(index: number, direction: -1 | 1) {
-    const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= incomeItems.length) return;
+  async function handleDropIncome(fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx) return;
     const arr = [...incomeItems];
-    [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
+    const [moved] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, moved);
     setIncomeItems(arr);
-    // Persist order for saved items
     const saved = arr.filter((i) => i.dbId).map((i, idx) => ({ id: i.dbId!, sortOrder: idx }));
     if (saved.length > 0) await reorderBankIncomeItems(saved);
   }
 
-  async function moveExpense(index: number, direction: -1 | 1) {
-    const newIndex = index + direction;
-    if (newIndex < 0 || newIndex >= expensesList.length) return;
+  async function handleDropExpense(fromIdx: number, toIdx: number) {
+    if (fromIdx === toIdx) return;
     const arr = [...expensesList];
-    [arr[index], arr[newIndex]] = [arr[newIndex], arr[index]];
+    const [moved] = arr.splice(fromIdx, 1);
+    arr.splice(toIdx, 0, moved);
+    setExpensesList(arr);
     setExpensesList(arr);
     // Persist order for saved items
     const saved = arr.filter((e) => e.dbId).map((e, idx) => ({ id: e.dbId!, sortOrder: idx }));
@@ -695,7 +700,15 @@ export function RegistroForm({
                           </div>
                         </div>
                       ) : (
-                        <div key={item.id} className="flex items-center px-4 py-3 hover:bg-gray-50 group">
+                        <div key={item.id}
+                          draggable
+                          onDragStart={() => { setDragType("income"); setDragIdx(idx); }}
+                          onDragOver={(e) => { e.preventDefault(); setDragOverIdx(idx); }}
+                          onDragEnd={() => { if (dragType === "income" && dragIdx !== null && dragOverIdx !== null) handleDropIncome(dragIdx, dragOverIdx); setDragType(null); setDragIdx(null); setDragOverIdx(null); }}
+                          className={`flex items-center px-4 py-3 hover:bg-gray-50 group transition-all ${dragType === "income" && dragOverIdx === idx ? "border-t-2 border-primary-light" : ""} ${dragType === "income" && dragIdx === idx ? "opacity-40" : ""}`}>
+                          <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 text-gray-300 hover:text-gray-500 mr-1 shrink-0">
+                            <GripVertical className="w-4 h-4" />
+                          </div>
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${item.clientId ? "bg-blue-100" : "bg-green-100"}`}>
                             {item.clientId ? <User className="w-4 h-4 text-blue-600" /> : <ArrowDownLeft className="w-4 h-4 text-primary-light" />}
                           </div>
@@ -705,14 +718,10 @@ export function RegistroForm({
                           </div>
                           <div className="text-sm font-bold text-primary-light ml-3">+{formatCurrency(item.amount)}</div>
                           <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => moveIncome(idx, -1)} disabled={idx === 0}
-                              className="text-gray-300 hover:text-gray-500 p-0.5 disabled:opacity-30"><ChevronUp className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => moveIncome(idx, 1)} disabled={idx === incomeItems.length - 1}
-                              className="text-gray-300 hover:text-gray-500 p-0.5 disabled:opacity-30"><ChevronDown className="w-3.5 h-3.5" /></button>
                             <button onClick={() => startEditIncome(item)}
-                              className="text-gray-400 hover:text-primary-light p-0.5 ml-1"><Pencil className="w-3.5 h-3.5" /></button>
+                              className="text-gray-400 hover:text-primary-light p-0.5"><Pencil className="w-3.5 h-3.5" /></button>
                             <button onClick={() => handleDeleteIncome(item)}
-                              className="text-red-400 hover:text-red-600 p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
+                              className="text-red-400 hover:text-red-600 p-0.5 ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         </div>
                       )
@@ -744,7 +753,15 @@ export function RegistroForm({
                           </div>
                         </div>
                       ) : (
-                        <div key={item.id} className={`flex items-center px-4 py-3 group ${isToRegularize(item) ? "bg-yellow-50 border-l-4 border-l-yellow-400" : "hover:bg-gray-50"}`}>
+                        <div key={item.id}
+                          draggable
+                          onDragStart={() => { setDragType("expense"); setDragIdx(idx); }}
+                          onDragOver={(e) => { e.preventDefault(); setDragOverIdx(idx); }}
+                          onDragEnd={() => { if (dragType === "expense" && dragIdx !== null && dragOverIdx !== null) handleDropExpense(dragIdx, dragOverIdx); setDragType(null); setDragIdx(null); setDragOverIdx(null); }}
+                          className={`flex items-center px-4 py-3 group transition-all ${isToRegularize(item) ? "bg-yellow-50 border-l-4 border-l-yellow-400" : "hover:bg-gray-50"} ${dragType === "expense" && dragOverIdx === idx ? "border-t-2 border-red-400" : ""} ${dragType === "expense" && dragIdx === idx ? "opacity-40" : ""}`}>
+                          <div className="cursor-grab active:cursor-grabbing opacity-0 group-hover:opacity-100 text-gray-300 hover:text-gray-500 mr-1 shrink-0">
+                            <GripVertical className="w-4 h-4" />
+                          </div>
                           <div className={`w-8 h-8 rounded-full flex items-center justify-center shrink-0 ${isToRegularize(item) ? "bg-yellow-100" : "bg-red-100"}`}>
                             <ArrowUpRight className={`w-4 h-4 ${isToRegularize(item) ? "text-yellow-600" : "text-red-600"}`} />
                           </div>
@@ -767,14 +784,10 @@ export function RegistroForm({
                           </div>
                           <div className="text-sm font-bold text-red-600 ml-3">-{formatCurrency(item.amount)}</div>
                           <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => moveExpense(idx, -1)} disabled={idx === 0}
-                              className="text-gray-300 hover:text-gray-500 p-0.5 disabled:opacity-30"><ChevronUp className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => moveExpense(idx, 1)} disabled={idx === expensesList.length - 1}
-                              className="text-gray-300 hover:text-gray-500 p-0.5 disabled:opacity-30"><ChevronDown className="w-3.5 h-3.5" /></button>
                             <button onClick={() => startEditExpense(item)}
-                              className="text-gray-400 hover:text-primary-light p-0.5 ml-1"><Pencil className="w-3.5 h-3.5" /></button>
+                              className="text-gray-400 hover:text-primary-light p-0.5"><Pencil className="w-3.5 h-3.5" /></button>
                             <button onClick={() => handleDeleteExpense(item)}
-                              className="text-red-400 hover:text-red-600 p-0.5"><Trash2 className="w-3.5 h-3.5" /></button>
+                              className="text-red-400 hover:text-red-600 p-0.5 ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         </div>
                       )
