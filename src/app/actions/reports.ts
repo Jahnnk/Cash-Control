@@ -3,6 +3,30 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 
+export async function getLast7Days() {
+  const rows = await db.execute(sql`
+    WITH dates AS (
+      SELECT generate_series(
+        CURRENT_DATE - INTERVAL '6 days',
+        CURRENT_DATE,
+        '1 day'
+      )::date as date
+    )
+    SELECT
+      d.date,
+      COALESCE(dr.byte_total, 0) as byte_total,
+      COALESCE(dr.bank_income, 0) as bank_income,
+      dr.bank_balance_real,
+      COALESCE(dr.byte_credit_day, 0) as byte_credit_day,
+      COALESCE(dr.byte_credit_collected, 0) as byte_credit_collected,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date), 0) as expenses_total
+    FROM dates d
+    LEFT JOIN daily_records dr ON dr.date = d.date
+    ORDER BY d.date ASC
+  `);
+  return rows.rows;
+}
+
 export async function getWeeklyReport(startDate: string, endDate: string) {
   const dailySummary = await db.execute(sql`
     WITH dates AS (
