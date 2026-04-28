@@ -1,6 +1,7 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { useSearchParams } from "next/navigation";
 import { getMonthlyReport, getDailyBreakdown } from "@/app/actions/reports";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { ChevronDown, ChevronUp, X } from "lucide-react";
@@ -63,6 +64,18 @@ export function MonthlyReport() {
     setDetailData(result);
     setDetailLoading(false);
   }, [showDetail, month]);
+
+  // Auto-abrir breakdown si llega desde el dashboard con ?breakdown=...
+  const searchParams = useSearchParams();
+  const initialBreakdownApplied = useRef(false);
+  useEffect(() => {
+    if (initialBreakdownApplied.current || loading) return;
+    const requested = searchParams.get("breakdown");
+    if (requested === "byte" || requested === "income" || requested === "expense") {
+      initialBreakdownApplied.current = true;
+      handleCardClick(requested);
+    }
+  }, [searchParams, loading, handleCardClick]);
 
   function changeMonth(m: number) {
     setMonth(`${selectedYear}-${String(m + 1).padStart(2, "0")}`);

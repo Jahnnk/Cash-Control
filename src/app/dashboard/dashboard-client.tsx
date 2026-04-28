@@ -34,6 +34,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           value={formatCurrency(data.bankBalance)}
           sub={data.bankDate ? `al ${formatDate(data.bankDate)}` : "Sin registro"}
           accent="primary"
+          href="/registro"
         />
         <Card
           icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
@@ -41,6 +42,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           value={formatCurrency((data.monthlyByte?.month_bank_income as string) || "0")}
           sub="Ingresos BCP"
           accent="primary"
+          href="/reportes?tab=mensual&breakdown=income"
         />
         <Card
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
@@ -48,6 +50,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           value={formatCurrency(data.monthlyExpenses)}
           sub={`Promedio: ${formatCurrency(data.avgDailyExpense)}/día`}
           accent="red"
+          href="/reportes?tab=mensual&breakdown=expense"
         />
         <Card
           icon={<Receipt className="w-5 h-5 text-amber-600" />}
@@ -55,6 +58,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           value={formatCurrency(data.accountsReceivable)}
           sub="Byte total - Cobros BCP"
           accent="amber"
+          href="/reportes?tab=antig%C3%BCedad"
         />
         <Card
           icon={<ShieldCheck className="w-5 h-5 text-primary-light" />}
@@ -88,12 +92,14 @@ function Card({
   value,
   sub,
   accent,
+  href,
 }: {
   icon: React.ReactNode;
   label: string;
   value: string;
   sub: string;
   accent: "primary" | "amber" | "red";
+  href?: string;
 }) {
   const borderColor =
     accent === "primary"
@@ -102,16 +108,29 @@ function Card({
         ? "border-l-amber-500"
         : "border-l-red-500";
 
-  return (
-    <div className={`bg-white rounded-xl border border-gray-200 border-l-4 ${borderColor} p-5`}>
+  const baseClasses = `bg-white rounded-xl border border-gray-200 border-l-4 ${borderColor} p-5`;
+  const interactiveClasses = "cursor-pointer hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5 transition-all block";
+
+  const content = (
+    <>
       <div className="flex items-center gap-2 mb-2">
         {icon}
         <span className="text-sm text-gray-600">{label}</span>
       </div>
       <div className="text-2xl font-bold text-gray-900">{value}</div>
       <div className="text-xs text-gray-500 mt-1">{sub}</div>
-    </div>
+    </>
   );
+
+  if (href) {
+    return (
+      <Link href={href} className={`${baseClasses} ${interactiveClasses}`}>
+        {content}
+      </Link>
+    );
+  }
+
+  return <div className={baseClasses}>{content}</div>;
 }
 
 function ReportLink({
