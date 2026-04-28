@@ -134,7 +134,7 @@ export async function getDebtAgingReport() {
   };
 }
 
-export async function getDailyBreakdown(month: string, type: "byte" | "income") {
+export async function getDailyBreakdown(month: string, type: "byte" | "income" | "expense") {
   const startDate = `${month}-01`;
   const [year, m] = month.split("-").map(Number);
   const lastDay = new Date(year, m, 0).getDate();
@@ -150,14 +150,23 @@ export async function getDailyBreakdown(month: string, type: "byte" | "income") 
       ORDER BY date ASC
     `);
     return result.rows;
-  } else {
-    // Individual income items per day
+  } else if (type === "income") {
+    // Individual income items per day, most recent day first
     const result = await db.execute(sql`
       SELECT bi.date, bi.amount, bi.note, c.name as client_name
       FROM bank_income_items bi
       LEFT JOIN clients c ON c.id = bi.client_id
       WHERE bi.date >= ${startDate} AND bi.date <= ${endDate}
-      ORDER BY bi.date ASC, bi.sort_order ASC
+      ORDER BY bi.date DESC, bi.sort_order ASC
+    `);
+    return result.rows;
+  } else {
+    // Individual expense items per day, most recent day first, mayor monto primero dentro del día
+    const result = await db.execute(sql`
+      SELECT date, amount, category, concept, notes, payment_method
+      FROM expenses
+      WHERE date >= ${startDate} AND date <= ${endDate}
+      ORDER BY date DESC, amount DESC
     `);
     return result.rows;
   }

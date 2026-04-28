@@ -34,7 +34,7 @@ export function MonthlyReport() {
   const [month, setMonth] = useState(getCurrentMonth());
   const [data, setData] = useState<MonthlyData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showDetail, setShowDetail] = useState<"byte" | "income" | null>(null);
+  const [showDetail, setShowDetail] = useState<"byte" | "income" | "expense" | null>(null);
   const [detailData, setDetailData] = useState<Record<string, unknown>[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
@@ -51,7 +51,7 @@ export function MonthlyReport() {
     });
   }, [month]);
 
-  const handleCardClick = useCallback(async (type: "byte" | "income") => {
+  const handleCardClick = useCallback(async (type: "byte" | "income" | "expense") => {
     if (showDetail === type) {
       setShowDetail(null);
       setDetailData(null);
@@ -113,10 +113,14 @@ export function MonthlyReport() {
               isExpanded={showDetail === "income"}
               onClick={() => handleCardClick("income")}
             />
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="text-sm text-gray-600 mb-1">Egresos totales</div>
-              <div className="text-xl font-bold text-red-600">{formatCurrency(data.totals.total_expenses as string)}</div>
-            </div>
+            {/* Egresos totales — clickable */}
+            <ClickableCard
+              label="Egresos totales"
+              value={formatCurrency(data.totals.total_expenses as string)}
+              color="text-red-600"
+              isExpanded={showDetail === "expense"}
+              onClick={() => handleCardClick("expense")}
+            />
             <div className="bg-white rounded-xl border border-gray-200 p-5">
               <div className="text-sm text-gray-600 mb-1">Variación saldo banco</div>
               <div className={`text-xl font-bold ${data.bankEndBalance - data.bankStartBalance >= 0 ? "text-primary-light" : "text-red-600"}`}>
@@ -130,7 +134,11 @@ export function MonthlyReport() {
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900">
-                  {showDetail === "byte" ? "Ventas Byte por día" : "Ingresos BCP por día"}
+                  {showDetail === "byte"
+                    ? "Ventas Byte por día"
+                    : showDetail === "income"
+                    ? "Ingresos BCP por día"
+                    : "Egresos por día"}
                 </h3>
                 <button onClick={() => { setShowDetail(null); setDetailData(null); }}
                   className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100">
@@ -176,7 +184,7 @@ export function MonthlyReport() {
                         </tr>
                       </tfoot>
                     </table>
-                  ) : (
+                  ) : showDetail === "income" ? (
                     (() => {
                       const byDate = new Map<string, { items: typeof detailData; total: number }>();
                       for (const row of detailData) {
@@ -207,6 +215,50 @@ export function MonthlyReport() {
                           <div className="px-4 py-3 bg-gray-50 flex items-center justify-between font-semibold text-sm">
                             <span>Total</span>
                             <span className="text-primary-light">{formatCurrency(detailData.reduce((s, r) => s + Number(r.amount), 0))}</span>
+                          </div>
+                        </div>
+                      );
+                    })()
+                  ) : (
+                    (() => {
+                      const byDate = new Map<string, { items: typeof detailData; total: number }>();
+                      for (const row of detailData) {
+                        const d = row.date as string;
+                        if (!byDate.has(d)) byDate.set(d, { items: [], total: 0 });
+                        const entry = byDate.get(d)!;
+                        entry.items.push(row);
+                        entry.total += Number(row.amount);
+                      }
+                      return (
+                        <div className="divide-y divide-gray-100">
+                          {Array.from(byDate.entries()).map(([date, { items, total }]) => (
+                            <div key={date} className="px-4 py-3">
+                              <div className="flex items-center justify-between mb-1">
+                                <span className="text-sm font-medium text-gray-900">{formatDateShort(date)}</span>
+                                <span className="text-sm font-bold text-red-600">−{formatCurrency(total)}</span>
+                              </div>
+                              <div className="space-y-1">
+                                {items.map((item, i) => (
+                                  <div key={i} className="pl-4">
+                                    <div className="flex items-center justify-between text-xs text-gray-700">
+                                      <span>
+                                        <span className="font-medium text-gray-900">{String(item.category)}</span>
+                                        <span className="text-gray-400"> · </span>
+                                        <span>{String(item.concept)}</span>
+                                      </span>
+                                      <span className="text-red-600 font-medium">−{formatCurrency(item.amount as string)}</span>
+                                    </div>
+                                    {item.notes ? (
+                                      <div className="text-[11px] text-gray-400 pl-2 mt-0.5">{String(item.notes)}</div>
+                                    ) : null}
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          ))}
+                          <div className="px-4 py-3 bg-gray-50 flex items-center justify-between font-semibold text-sm">
+                            <span>Total</span>
+                            <span className="text-red-600">−{formatCurrency(detailData.reduce((s, r) => s + Number(r.amount), 0))}</span>
                           </div>
                         </div>
                       );
