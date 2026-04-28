@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance } from "@/app/actions/daily-records";
+import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance, getCurrentBankBalance, updateCurrentBankBalance } from "@/app/actions/daily-records";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
 import { formatCurrency, getToday } from "@/lib/utils";
@@ -120,6 +120,10 @@ export function RegistroForm({
   // Dynamic bank balance = previous balance + today's bank income - today's bank expenses
   const dynamicBalance = prevBalance !== null ? prevBalance + bankIncomeTotal - expensesBankTotal : null;
 
+  // Saldo BCP HOY (independiente de la fecha seleccionada): último snapshot manual + flujo posterior
+  const [currentBalance, setCurrentBalance] = useState<number | null>(null);
+  const [currentBalanceInput, setCurrentBalanceInput] = useState("");
+
   // Count items to regularize
   const pendingRegularize = expensesList.filter((e) => isToRegularize(e)).length;
 
@@ -131,7 +135,10 @@ export function RegistroForm({
       getBankIncomeItems(date),
       getLastBankBalance(date),
       getExpensesByDate(date),
-    ]).then(([record, items, lastBalance, existingExpenses]) => {
+      getCurrentBankBalance(),
+    ]).then(([record, items, lastBalance, existingExpenses, current]) => {
+      setCurrentBalance(current.hasAnchor ? current.balance : null);
+      setCurrentBalanceInput(current.hasAnchor ? String(current.balance) : "");
       if (record) {
         setByteCashPhysical(String(record.byte_cash_physical || 0));
         setByteDigital(String(record.byte_digital || 0));
@@ -388,63 +395,85 @@ export function RegistroForm({
 
       {/* Saldo BCP */}
       <div className="bg-primary text-white rounded-xl p-5">
+        {/* Saldo HOY (no depende de la fecha seleccionada) */}
         <div className="flex items-center justify-between">
           <div>
-            <div className="text-sm text-white/70">Saldo BCP Real</div>
+            <div className="text-sm text-white/70">Saldo BCP HOY</div>
             <div className="text-3xl font-bold">
-              {bankBalanceReal ? formatCurrency(parseFloat(bankBalanceReal)) : "—"}
+              {currentBalance !== null ? formatCurrency(currentBalance) : "—"}
             </div>
           </div>
           <div className="flex items-center gap-3">
-        {editingSaldo ? (
-          <div className="flex items-center gap-2">
-            <input
-              ref={saldoInputRef}
-              type="number"
-              step="0.01"
-              value={bankBalanceReal}
-              onChange={(e) => setBankBalanceReal(e.target.value)}
-              placeholder="0.00"
-              onKeyDown={(e) => {
-                if (e.key === "Enter" || e.key === "Escape") {
-                  setEditingSaldo(false);
-                  if (bankBalanceReal) updateBankBalance(date, parseFloat(bankBalanceReal));
-                }
-              }}
-              onBlur={() => {
-                setEditingSaldo(false);
-                if (bankBalanceReal) updateBankBalance(date, parseFloat(bankBalanceReal));
-              }}
-              className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 text-right text-lg w-48 focus:bg-white/20"
-              autoFocus
-            />
-          </div>
-        ) : (
-          <button
-            onClick={() => { setEditingSaldo(true); setTimeout(() => saldoInputRef.current?.focus(), 50); }}
-            className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-4 py-2 text-sm text-white/80 transition-colors"
-          >
-            Editar saldo
-          </button>
-        )}
+            {editingSaldo ? (
+              <div className="flex items-center gap-2">
+                <input
+                  ref={saldoInputRef}
+                  type="number"
+                  step="0.01"
+                  value={currentBalanceInput}
+                  onChange={(e) => setCurrentBalanceInput(e.target.value)}
+                  placeholder="0.00"
+                  onKeyDown={async (e) => {
+                    if (e.key === "Enter" || e.key === "Escape") {
+                      setEditingSaldo(false);
+                      if (currentBalanceInput) {
+                        await updateCurrentBankBalance(parseFloat(currentBalanceInput));
+                        const refreshed = await getCurrentBankBalance();
+                        setCurrentBalance(refreshed.hasAnchor ? refreshed.balance : null);
+                        setCurrentBalanceInput(refreshed.hasAnchor ? String(refreshed.balance) : "");
+                      }
+                    }
+                  }}
+                  onBlur={async () => {
+                    setEditingSaldo(false);
+                    if (currentBalanceInput) {
+                      await updateCurrentBankBalance(parseFloat(currentBalanceInput));
+                      const refreshed = await getCurrentBankBalance();
+                      setCurrentBalance(refreshed.hasAnchor ? refreshed.balance : null);
+                      setCurrentBalanceInput(refreshed.hasAnchor ? String(refreshed.balance) : "");
+                    }
+                  }}
+                  className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 text-right text-lg w-48 focus:bg-white/20"
+                  autoFocus
+                />
+              </div>
+            ) : (
+              <button
+                onClick={() => { setEditingSaldo(true); setTimeout(() => saldoInputRef.current?.focus(), 50); }}
+                className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-4 py-2 text-sm text-white/80 transition-colors"
+              >
+                Editar saldo
+              </button>
+            )}
           </div>
         </div>
-        {/* Dynamic balance row */}
-        {dynamicBalance !== null && (bankIncomeTotal > 0 || expensesBankTotal > 0) && (
-          <div className="mt-3 pt-3 border-t border-white/20 flex items-center justify-between text-sm">
+
+        {/* Saldo al cierre de la fecha seleccionada (histórico) */}
+        <div className="mt-3 pt-3 border-t border-white/20">
+          <div className="flex items-center justify-between text-sm">
             <div className="text-white/60">
-              Saldo calculado: {prevBalance !== null ? formatCurrency(prevBalance) : "—"} + {formatCurrency(bankIncomeTotal)} ingresos − {formatCurrency(expensesBankTotal)} egresos banco
+              Saldo al cierre del {date.split("-").reverse().slice(0, 2).join("/")}
             </div>
-            <div className="font-bold text-white">
-              = {formatCurrency(dynamicBalance)}
-              {bankBalanceReal && Math.abs(dynamicBalance - parseFloat(bankBalanceReal)) >= 1 && (
-                <span className="ml-2 text-yellow-300 text-xs">
-                  (dif: {formatCurrency(dynamicBalance - parseFloat(bankBalanceReal))})
-                </span>
-              )}
+            <div className="font-semibold text-white/90">
+              {bankBalanceReal ? formatCurrency(parseFloat(bankBalanceReal)) : "—"}
             </div>
           </div>
-        )}
+          {dynamicBalance !== null && (bankIncomeTotal > 0 || expensesBankTotal > 0) && (
+            <div className="mt-1 flex items-center justify-between text-xs">
+              <div className="text-white/50">
+                {prevBalance !== null ? formatCurrency(prevBalance) : "—"} + {formatCurrency(bankIncomeTotal)} ingresos − {formatCurrency(expensesBankTotal)} egresos banco
+              </div>
+              <div className="text-white/70">
+                = {formatCurrency(dynamicBalance)}
+                {bankBalanceReal && Math.abs(dynamicBalance - parseFloat(bankBalanceReal)) >= 1 && (
+                  <span className="ml-2 text-yellow-300">
+                    (dif: {formatCurrency(dynamicBalance - parseFloat(bankBalanceReal))})
+                  </span>
+                )}
+              </div>
+            </div>
+          )}
+        </div>
         {/* Pending to regularize alert */}
         {pendingRegularize > 0 && (
           <div className="mt-3 pt-3 border-t border-white/20 flex items-center gap-2 text-yellow-300 text-sm">
