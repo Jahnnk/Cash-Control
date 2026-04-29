@@ -1,4 +1,4 @@
-import { pgTable, uuid, text, numeric, boolean, date, timestamp } from "drizzle-orm/pg-core";
+import { pgTable, uuid, text, numeric, boolean, date, timestamp, jsonb } from "drizzle-orm/pg-core";
 import { sql } from "drizzle-orm";
 
 export const clients = pgTable("clients", {
@@ -61,6 +61,19 @@ export const collections = pgTable("collections", {
   saleId: uuid("sale_id").references(() => sales.id),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+// Auditoría de ediciones/eliminaciones de movimientos (ingresos BCP y egresos)
+export const auditLog = pgTable("audit_log", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  timestamp: timestamp("timestamp").defaultNow().notNull(),
+  action: text("action").notNull(),               // 'edit' | 'delete'
+  recordId: uuid("record_id").notNull(),
+  recordType: text("record_type").notNull(),      // 'income_item' | 'expense'
+  beforeData: jsonb("before_data").notNull(),
+  afterData: jsonb("after_data"),
+  userNote: text("user_note"),
+  dateAffected: date("date_affected").notNull(),
 });
 
 export const bankBalance = pgTable("bank_balance", {

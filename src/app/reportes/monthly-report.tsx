@@ -3,11 +3,15 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
 import { getMonthlyReport, getDailyBreakdown } from "@/app/actions/reports";
+import { getCategories } from "@/app/actions/categories";
+import { getClients } from "@/app/actions/clients";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
-import { ChevronDown, ChevronUp, X } from "lucide-react";
+import { ChevronDown, ChevronUp, X, Pencil, Trash2 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
 } from "recharts";
+import { EditRecordModal, type EditTarget } from "./edit-record-modal";
+import { DeleteRecordModal, type DeleteTarget } from "./delete-record-modal";
 
 const PIE_COLORS = [
   "#004C40", "#098B5F", "#22C55E", "#EAB308", "#F97316",
@@ -64,6 +68,30 @@ export function MonthlyReport() {
     setDetailData(result);
     setDetailLoading(false);
   }, [showDetail, month]);
+
+  // Datos auxiliares para modales (categorías de egresos y clientes para ingresos)
+  const [categories, setCategories] = useState<string[]>([]);
+  const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
+  useEffect(() => {
+    getCategories(true).then((rows) => setCategories(rows.map((r) => r.name as string)));
+    getClients(true).then((rows) => setClients(rows.map((r) => ({ id: r.id as string, name: r.name as string }))));
+  }, []);
+
+  // Estado de modales
+  const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+
+  // Refresca totales del mes + el breakdown abierto (tras edit/delete)
+  const refreshAfterMutation = useCallback(async () => {
+    const [monthly, breakdown] = await Promise.all([
+      getMonthlyReport(month),
+      showDetail ? getDailyBreakdown(month, showDetail) : Promise.resolve(null),
+    ]);
+    setData(monthly);
+    if (breakdown !== null) setDetailData(breakdown);
+    setEditTarget(null);
+    setDeleteTarget(null);
+  }, [month, showDetail]);
 
   // Auto-abrir breakdown si llega desde el dashboard con ?breakdown=...
   const searchParams = useSearchParams();
@@ -217,9 +245,42 @@ export function MonthlyReport() {
                               </div>
                               <div className="space-y-0.5">
                                 {items.map((item, i) => (
-                                  <div key={i} className="flex items-center justify-between text-xs text-gray-500 pl-4">
+                                  <div key={i} className="group flex items-center justify-between text-xs text-gray-500 pl-4 hover:bg-gray-50 rounded -mx-2 px-2 py-0.5">
                                     <span>{item.client_name ? `Pago de ${String(item.client_name)}` : (String(item.note || "Ingreso"))}</span>
-                                    <span className="text-primary-light font-medium">+{formatCurrency(item.amount as string)}</span>
+                                    <div className="flex items-center gap-2">
+                                      <span className="text-primary-light font-medium">+{formatCurrency(item.amount as string)}</span>
+                                      <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 transition-opacity">
+                                        <button
+                                          onClick={() => setEditTarget({
+                                            type: "income",
+                                            id: item.id as string,
+                                            date: item.date as string,
+                                            amount: Number(item.amount),
+                                            note: (item.note as string) || "",
+                                            clientId: (item.client_id as string) || null,
+                                            clientName: (item.client_name as string) || null,
+                                          })}
+                                          className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded"
+                                          aria-label="Editar"
+                                        >
+                                          <Pencil className="w-3 h-3" />
+                                        </button>
+                                        <button
+                                          onClick={() => setDeleteTarget({
+                                            type: "income",
+                                            id: item.id as string,
+                                            date: item.date as string,
+                                            amount: Number(item.amount),
+                                            note: (item.note as string) || "",
+                                            clientName: (item.client_name as string) || null,
+                                          })}
+                                          className="p-1 hover:bg-red-50 hover:text-red-600 rounded"
+                                          aria-label="Eliminar"
+                                        >
+                                          <Trash2 className="w-3 h-3" />
+                                        </button>
+                                      </div>
+                                    </div>
                                   </div>
                                 ))}
                               </div>
@@ -252,14 +313,50 @@ export function MonthlyReport() {
                               </div>
                               <div className="space-y-1">
                                 {items.map((item, i) => (
-                                  <div key={i} className="pl-4">
+                                  <div key={i} className="group pl-4 hover:bg-gray-50 rounded -mx-2 px-2 py-0.5">
                                     <div className="flex items-center justify-between text-xs text-gray-700">
                                       <span>
                                         <span className="font-medium text-gray-900">{String(item.category)}</span>
                                         <span className="text-gray-400"> · </span>
                                         <span>{String(item.concept)}</span>
                                       </span>
-                                      <span className="text-red-600 font-medium">−{formatCurrency(item.amount as string)}</span>
+                                      <div className="flex items-center gap-2">
+                                        <span className="text-red-600 font-medium">−{formatCurrency(item.amount as string)}</span>
+                                        <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 transition-opacity">
+                                          <button
+                                            onClick={() => setEditTarget({
+                                              type: "expense",
+                                              id: item.id as string,
+                                              date: item.date as string,
+                                              amount: Number(item.amount),
+                                              category: item.category as string,
+                                              concept: item.concept as string,
+                                              paymentMethod: (item.payment_method as string) || "transferencia",
+                                              notes: (item.notes as string) || null,
+                                            })}
+                                            className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded"
+                                            aria-label="Editar"
+                                          >
+                                            <Pencil className="w-3 h-3" />
+                                          </button>
+                                          <button
+                                            onClick={() => setDeleteTarget({
+                                              type: "expense",
+                                              id: item.id as string,
+                                              date: item.date as string,
+                                              amount: Number(item.amount),
+                                              category: item.category as string,
+                                              concept: item.concept as string,
+                                              paymentMethod: (item.payment_method as string) || "transferencia",
+                                              notes: (item.notes as string) || null,
+                                            })}
+                                            className="p-1 hover:bg-red-50 hover:text-red-600 rounded"
+                                            aria-label="Eliminar"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
+                                      </div>
                                     </div>
                                     {item.notes ? (
                                       <div className="text-[11px] text-gray-400 pl-2 mt-0.5">{String(item.notes)}</div>
@@ -332,6 +429,23 @@ export function MonthlyReport() {
           </div>
         </>
       ) : null}
+
+      {editTarget && (
+        <EditRecordModal
+          target={editTarget}
+          categories={categories}
+          clients={clients}
+          onClose={() => setEditTarget(null)}
+          onSaved={refreshAfterMutation}
+        />
+      )}
+      {deleteTarget && (
+        <DeleteRecordModal
+          target={deleteTarget}
+          onClose={() => setDeleteTarget(null)}
+          onDeleted={refreshAfterMutation}
+        />
+      )}
     </div>
   );
 }

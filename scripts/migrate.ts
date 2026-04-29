@@ -69,6 +69,23 @@ async function migrate() {
     )
   `;
 
+  await sql`
+    CREATE TABLE IF NOT EXISTS audit_log (
+      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+      timestamp TIMESTAMP NOT NULL DEFAULT now(),
+      action TEXT NOT NULL,
+      record_id UUID NOT NULL,
+      record_type TEXT NOT NULL,
+      before_data JSONB NOT NULL,
+      after_data JSONB,
+      user_note TEXT,
+      date_affected DATE NOT NULL
+    )
+  `;
+  await sql`CREATE INDEX IF NOT EXISTS audit_log_record_idx ON audit_log(record_id, record_type)`;
+  await sql`CREATE INDEX IF NOT EXISTS audit_log_date_idx   ON audit_log(date_affected)`;
+  await sql`CREATE INDEX IF NOT EXISTS audit_log_ts_idx     ON audit_log(timestamp DESC)`;
+
   console.log("All tables created successfully!");
 }
 

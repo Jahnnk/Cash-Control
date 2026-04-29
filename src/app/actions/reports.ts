@@ -153,7 +153,7 @@ export async function getDailyBreakdown(month: string, type: "byte" | "income" |
   } else if (type === "income") {
     // Individual income items per day, most recent day first
     const result = await db.execute(sql`
-      SELECT bi.date, bi.amount, bi.note, c.name as client_name
+      SELECT bi.id, bi.date, bi.amount, bi.note, bi.client_id, c.name as client_name
       FROM bank_income_items bi
       LEFT JOIN clients c ON c.id = bi.client_id
       WHERE bi.date >= ${startDate} AND bi.date <= ${endDate}
@@ -163,7 +163,7 @@ export async function getDailyBreakdown(month: string, type: "byte" | "income" |
   } else {
     // Individual expense items per day, most recent day first, mayor monto primero dentro del día
     const result = await db.execute(sql`
-      SELECT date, amount, category, concept, notes, payment_method
+      SELECT id, date, amount, category, concept, notes, payment_method
       FROM expenses
       WHERE date >= ${startDate} AND date <= ${endDate}
       ORDER BY date DESC, amount DESC
