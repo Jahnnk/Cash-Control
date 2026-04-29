@@ -36,6 +36,10 @@ yarn-error.log*
 # vercel
 .vercel
 
+# backups: ignorar todo excepto los .sql (snapshots de la BD)
+/backups/*
+!/backups/*.sql
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
