@@ -19,18 +19,36 @@ function recalcDailyTotalsQuery(date: string) {
   `;
 }
 
+// Recalcula bank_balance_real EN CADENA desde `date` hasta el último día con datos.
+// Cada saldo posterior usa el saldo recién calculado del día anterior.
 function recalcBankBalanceQuery(date: string) {
   return sql`
-    UPDATE daily_records SET bank_balance_real = ROUND((
-      COALESCE((
-        SELECT bank_balance_real FROM daily_records
-        WHERE date < ${date} AND bank_balance_real IS NOT NULL
-        ORDER BY date DESC LIMIT 1
-      ), 0)
-      + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = ${date}), 0)
-      - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = ${date} AND payment_method != 'efectivo'), 0)
-    )::numeric, 2)
-    WHERE date = ${date}
+    WITH RECURSIVE chain AS (
+      SELECT
+        (${date}::date - INTERVAL '1 day')::date AS date,
+        COALESCE((
+          SELECT bank_balance_real::numeric FROM daily_records
+          WHERE date < ${date} AND bank_balance_real IS NOT NULL
+          ORDER BY date DESC LIMIT 1
+        ), 0) AS calc_balance
+
+      UNION ALL
+
+      SELECT
+        dr.date,
+        ROUND((
+          c.calc_balance
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+        )::numeric, 2)
+      FROM daily_records dr
+      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
+      WHERE dr.date <= (SELECT MAX(date) FROM daily_records)
+    )
+    UPDATE daily_records dr
+    SET bank_balance_real = chain.calc_balance
+    FROM chain
+    WHERE dr.date = chain.date AND dr.date >= ${date}
   `;
 }
 

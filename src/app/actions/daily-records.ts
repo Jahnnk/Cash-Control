@@ -54,48 +54,100 @@ export async function upsertDailyRecord(data: {
   revalidatePath("/reportes");
 }
 
+// Propaga la cadena desde anchorDate+1 hasta MAX, dejando intacto anchorDate.
+// Usa el bank_balance_real de anchorDate como punto fijo.
+async function propagateFromDate(anchorDate: string) {
+  await db.execute(sql`
+    WITH RECURSIVE chain AS (
+      SELECT date, bank_balance_real::numeric AS calc_balance
+      FROM daily_records
+      WHERE date = ${anchorDate} AND bank_balance_real IS NOT NULL
+
+      UNION ALL
+
+      SELECT
+        dr.date,
+        ROUND((
+          c.calc_balance
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+        )::numeric, 2)
+      FROM daily_records dr
+      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
+      WHERE dr.date <= (SELECT MAX(date) FROM daily_records)
+    )
+    UPDATE daily_records dr
+    SET bank_balance_real = chain.calc_balance
+    FROM chain
+    WHERE dr.date = chain.date AND dr.date > ${anchorDate}
+  `);
+}
+
 export async function updateBankBalance(date: string, balance: number) {
   await db.execute(sql`
     INSERT INTO daily_records (date, bank_balance_real)
     VALUES (${date}, ${balance})
     ON CONFLICT (date) DO UPDATE SET bank_balance_real = ${balance}
   `);
+  // Propagar a días posteriores (si los hay) tomando el saldo manual como anclaje
+  await propagateFromDate(date);
   revalidatePath("/dashboard");
   revalidatePath("/registro");
+  revalidatePath("/reportes");
 }
 
+// Recalcula bank_balance_real desde `fromDate` en CADENA hasta el último día con datos.
+// Cada día se calcula como: saldo_dia_previo + ingresos_dia − egresos_no_efectivo_dia.
+// El anclaje es el último bank_balance_real registrado antes de fromDate (0 si no hay).
+// También refresca cache bank_income / bank_expense (no-efectivo) por consistencia.
 export async function recalcBankBalance(date: string) {
-  // Get previous day's balance
-  const prev = await db.execute(sql`
-    SELECT bank_balance_real FROM daily_records
-    WHERE bank_balance_real IS NOT NULL AND date < ${date}
-    ORDER BY date DESC LIMIT 1
-  `);
-  const prevBal = prev.rows[0] ? parseFloat(prev.rows[0].bank_balance_real as string) : 0;
-
-  // Get today's income total
-  const incResult = await db.execute(sql`
-    SELECT COALESCE(SUM(amount), 0) as total FROM bank_income_items WHERE date = ${date}
-  `);
-  const totalIncome = parseFloat(incResult.rows[0].total as string);
-
-  // Get today's bank expenses (non-cash only)
-  const expResult = await db.execute(sql`
-    SELECT COALESCE(SUM(amount), 0) as total FROM expenses
-    WHERE date = ${date} AND payment_method != 'efectivo'
-  `);
-  const totalBankExp = parseFloat(expResult.rows[0].total as string);
-
-  // Calculate new balance
-  const newBalance = Math.round((prevBal + totalIncome - totalBankExp) * 100) / 100;
-
-  // Update
+  // Refresca cache del día afectado primero
   await db.execute(sql`
-    UPDATE daily_records SET bank_balance_real = ${newBalance} WHERE date = ${date}
+    UPDATE daily_records dr SET
+      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0),
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+    WHERE dr.date = ${date}
   `);
+
+  // Recalcula bank_balance_real en cadena desde `date` hasta MAX(date)
+  await db.execute(sql`
+    WITH RECURSIVE chain AS (
+      SELECT
+        (${date}::date - INTERVAL '1 day')::date AS date,
+        COALESCE((
+          SELECT bank_balance_real::numeric FROM daily_records
+          WHERE date < ${date} AND bank_balance_real IS NOT NULL
+          ORDER BY date DESC LIMIT 1
+        ), 0) AS calc_balance
+
+      UNION ALL
+
+      SELECT
+        dr.date,
+        ROUND((
+          c.calc_balance
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+        )::numeric, 2)
+      FROM daily_records dr
+      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
+      WHERE dr.date <= (SELECT MAX(date) FROM daily_records)
+    )
+    UPDATE daily_records dr
+    SET bank_balance_real = chain.calc_balance
+    FROM chain
+    WHERE dr.date = chain.date AND dr.date >= ${date}
+  `);
+
+  // Devolver el saldo del día afectado
+  const result = await db.execute(sql`
+    SELECT bank_balance_real::float as balance FROM daily_records WHERE date = ${date}
+  `);
+  const newBalance = result.rows[0] ? parseFloat(result.rows[0].balance as string) : 0;
 
   revalidatePath("/dashboard");
   revalidatePath("/registro");
+  revalidatePath("/reportes");
 
   return newBalance;
 }
@@ -175,7 +227,10 @@ export async function updateCurrentBankBalance(balance: number) {
     VALUES (${today}, ${balance})
     ON CONFLICT (date) DO UPDATE SET bank_balance_real = ${balance}
   `);
+  // Propagar a días posteriores (caso edge: si hubiera filas con fecha > hoy)
+  await propagateFromDate(today);
   revalidatePath("/dashboard");
   revalidatePath("/registro");
+  revalidatePath("/reportes");
   return today;
 }
