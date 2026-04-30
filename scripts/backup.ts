@@ -85,7 +85,8 @@ async function main() {
   const ts = timestamp();
   const backupDir = join(process.cwd(), "backups");
   if (!existsSync(backupDir)) mkdirSync(backupDir, { recursive: true });
-  const filename = `backup-antes-edit-delete-${ts}.sql`;
+  const label = process.argv[2] || "edit-delete";
+  const filename = `backup-antes-${label}-${ts}.sql`;
   const filepath = join(backupDir, filename);
 
   const out: string[] = [];
