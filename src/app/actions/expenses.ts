@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { expenses } from "@/db/schema";
 import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { recalcBankBalance } from "./daily-records";
 
 export async function createExpense(data: {
   date: string;
@@ -21,6 +22,10 @@ export async function createExpense(data: {
     paymentMethod: data.paymentMethod || "transferencia",
     notes: data.notes || null,
   });
+  // Solo afecta saldo banco si NO es efectivo
+  if ((data.paymentMethod || "transferencia") !== "efectivo") {
+    await recalcBankBalance(data.date);
+  }
   revalidatePath("/registro");
   revalidatePath("/dashboard");
   revalidatePath("/presupuesto");
@@ -32,17 +37,31 @@ export async function updateExpense(id: string, data: {
   amount?: number;
   paymentMethod?: string;
 }) {
+  // Capturar fecha antes para cascade
+  const before = (await db.execute(sql`SELECT date::text as date, payment_method FROM expenses WHERE id = ${id}`)).rows[0] as { date: string; payment_method: string } | undefined;
+
   if (data.category !== undefined) await db.execute(sql`UPDATE expenses SET category = ${data.category} WHERE id = ${id}`);
   if (data.concept !== undefined) await db.execute(sql`UPDATE expenses SET concept = ${data.concept} WHERE id = ${id}`);
   if (data.amount !== undefined) await db.execute(sql`UPDATE expenses SET amount = ${data.amount} WHERE id = ${id}`);
   if (data.paymentMethod !== undefined) await db.execute(sql`UPDATE expenses SET payment_method = ${data.paymentMethod} WHERE id = ${id}`);
+
+  // Recalcular si cambió el monto o el método (cualquiera de los dos puede afectar bank_balance)
+  if (before && (data.amount !== undefined || data.paymentMethod !== undefined)) {
+    await recalcBankBalance(before.date);
+  }
+
   revalidatePath("/registro");
   revalidatePath("/dashboard");
   revalidatePath("/presupuesto");
 }
 
 export async function deleteExpense(id: string) {
+  // Capturar fecha y método antes de borrar
+  const before = (await db.execute(sql`SELECT date::text as date, payment_method FROM expenses WHERE id = ${id}`)).rows[0] as { date: string; payment_method: string } | undefined;
   await db.delete(expenses).where(eq(expenses.id, id));
+  if (before && before.payment_method !== "efectivo") {
+    await recalcBankBalance(before.date);
+  }
   revalidatePath("/registro");
   revalidatePath("/dashboard");
   revalidatePath("/presupuesto");
