@@ -8,48 +8,51 @@ export type SharedRule = {
   id: string;
   category_id: string;
   category_name: string;
+  concept: string;
   atelier_percentage: number;
   fonavi_percentage: number;
   active: boolean;
 };
 
-// Listar todas las reglas (activas + inactivas) con nombre de categoría
 export async function getSharedRules(): Promise<SharedRule[]> {
   const rows = await db.execute(sql`
     SELECT
       r.id::text as id,
       r.category_id::text as category_id,
       ec.name as category_name,
+      r.concept,
       r.atelier_percentage::float as atelier_percentage,
       r.fonavi_percentage::float as fonavi_percentage,
       r.active
     FROM shared_expense_rules r
     JOIN expense_categories ec ON ec.id = r.category_id
-    ORDER BY r.active DESC, ec.name ASC
+    ORDER BY r.active DESC, ec.name ASC, r.concept ASC
   `);
   return rows.rows as unknown as SharedRule[];
 }
 
-// Devolver la regla ACTIVA para un nombre de categoría (lookup desde el form de egreso)
-export async function getActiveRuleForCategory(categoryName: string): Promise<SharedRule | null> {
+// Devuelve TODAS las reglas activas para una categoría (puede haber varias por concepto distinto)
+export async function getActiveRulesForCategory(categoryName: string): Promise<SharedRule[]> {
   const rows = await db.execute(sql`
     SELECT
       r.id::text as id,
       r.category_id::text as category_id,
       ec.name as category_name,
+      r.concept,
       r.atelier_percentage::float as atelier_percentage,
       r.fonavi_percentage::float as fonavi_percentage,
       r.active
     FROM shared_expense_rules r
     JOIN expense_categories ec ON ec.id = r.category_id
     WHERE r.active = true AND ec.name = ${categoryName}
-    LIMIT 1
+    ORDER BY r.concept ASC
   `);
-  return (rows.rows[0] as unknown as SharedRule) ?? null;
+  return rows.rows as unknown as SharedRule[];
 }
 
 export async function createSharedRule(data: {
   categoryId: string;
+  concept: string;
   atelierPercentage: number;
   fonaviPercentage: number;
 }) {
@@ -59,16 +62,18 @@ export async function createSharedRule(data: {
   if (data.atelierPercentage < 0 || data.fonaviPercentage < 0) {
     return { success: false, error: "Los porcentajes no pueden ser negativos" };
   }
+  const concept = data.concept.trim();
+  if (!concept) return { success: false, error: "El concepto no puede estar vacío" };
 
-  // Si ya hay una activa para esa categoría, desactivarla (constraint UNIQUE WHERE active=true)
+  // Si ya hay regla activa para esa (categoría, concepto), desactivarla
   await db.execute(sql`
     UPDATE shared_expense_rules SET active = false, updated_at = now()
-    WHERE category_id = ${data.categoryId} AND active = true
+    WHERE category_id = ${data.categoryId} AND concept = ${concept} AND active = true
   `);
 
   await db.execute(sql`
-    INSERT INTO shared_expense_rules (category_id, atelier_percentage, fonavi_percentage, active)
-    VALUES (${data.categoryId}, ${data.atelierPercentage}, ${data.fonaviPercentage}, true)
+    INSERT INTO shared_expense_rules (category_id, concept, atelier_percentage, fonavi_percentage, active)
+    VALUES (${data.categoryId}, ${concept}, ${data.atelierPercentage}, ${data.fonaviPercentage}, true)
   `);
 
   revalidatePath("/configuracion");
@@ -78,8 +83,7 @@ export async function createSharedRule(data: {
 
 export async function deactivateSharedRule(id: string) {
   await db.execute(sql`
-    UPDATE shared_expense_rules SET active = false, updated_at = now()
-    WHERE id = ${id}
+    UPDATE shared_expense_rules SET active = false, updated_at = now() WHERE id = ${id}
   `);
   revalidatePath("/configuracion");
   revalidatePath("/registro");
@@ -87,14 +91,13 @@ export async function deactivateSharedRule(id: string) {
 }
 
 export async function reactivateSharedRule(id: string) {
-  // Desactivar cualquier otra activa de la misma categoría primero
-  const target = await db.execute(sql`SELECT category_id FROM shared_expense_rules WHERE id = ${id}`);
-  const categoryId = (target.rows[0] as { category_id: string } | undefined)?.category_id;
-  if (!categoryId) return { success: false, error: "Regla no encontrada" };
+  const target = await db.execute(sql`SELECT category_id, concept FROM shared_expense_rules WHERE id = ${id}`);
+  const row = target.rows[0] as { category_id: string; concept: string } | undefined;
+  if (!row) return { success: false, error: "Regla no encontrada" };
 
   await db.execute(sql`
     UPDATE shared_expense_rules SET active = false, updated_at = now()
-    WHERE category_id = ${categoryId} AND active = true
+    WHERE category_id = ${row.category_id} AND concept = ${row.concept} AND active = true
   `);
   await db.execute(sql`
     UPDATE shared_expense_rules SET active = true, updated_at = now() WHERE id = ${id}

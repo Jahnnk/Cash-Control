@@ -45,10 +45,11 @@ export const expenses = pgTable("expenses", {
   fonaviAmount: numeric("fonavi_amount", { precision: 10, scale: 2 }),
 });
 
-// Reglas de gastos compartidos por categoría (Atelier / Fonavi)
+// Reglas de gastos compartidos por (categoría + concepto) — Atelier / Fonavi
 export const sharedExpenseRules = pgTable("shared_expense_rules", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
   categoryId: uuid("category_id").notNull(),
+  concept: text("concept").notNull(),
   atelierPercentage: numeric("atelier_percentage", { precision: 5, scale: 2 }).notNull(),
   fonaviPercentage: numeric("fonavi_percentage", { precision: 5, scale: 2 }).notNull(),
   active: boolean("active").default(true).notNull(),

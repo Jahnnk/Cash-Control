@@ -91,6 +91,7 @@ async function migrate() {
     CREATE TABLE IF NOT EXISTS shared_expense_rules (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
       category_id UUID NOT NULL REFERENCES expense_categories(id),
+      concept TEXT NOT NULL DEFAULT '',
       atelier_percentage NUMERIC(5,2) NOT NULL,
       fonavi_percentage  NUMERIC(5,2) NOT NULL,
       active BOOLEAN NOT NULL DEFAULT true,
@@ -100,7 +101,11 @@ async function migrate() {
       CONSTRAINT pct_positive CHECK (atelier_percentage >= 0 AND fonavi_percentage >= 0)
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS shared_expense_rules_active_cat ON shared_expense_rules(category_id) WHERE active = true`;
+  await sql`ALTER TABLE shared_expense_rules ADD COLUMN IF NOT EXISTS concept TEXT`;
+  await sql`UPDATE shared_expense_rules r SET concept = ec.name FROM expense_categories ec WHERE r.category_id = ec.id AND r.concept IS NULL`;
+  await sql`ALTER TABLE shared_expense_rules ALTER COLUMN concept SET NOT NULL`;
+  await sql`DROP INDEX IF EXISTS shared_expense_rules_active_cat`;
+  await sql`CREATE UNIQUE INDEX IF NOT EXISTS shared_expense_rules_active_cat_concept ON shared_expense_rules(category_id, concept) WHERE active = true`;
 
   await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_shared        BOOLEAN NOT NULL DEFAULT false`;
   await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS shared_rule_id   UUID REFERENCES shared_expense_rules(id)`;
