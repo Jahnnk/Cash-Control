@@ -7,17 +7,31 @@ import { registerFonaviReimbursement, type ReceivableRow } from "@/app/actions/f
 
 export function ReimbursementModal({
   pendingReceivables,
+  preselectedReceivableId,
   onClose,
   onSaved,
 }: {
   pendingReceivables: ReceivableRow[];
+  preselectedReceivableId?: string;
   onClose: () => void;
   onSaved: () => void;
 }) {
   const [date, setDate] = useState(getToday());
-  const [totalAmount, setTotalAmount] = useState("");
+  const [totalAmount, setTotalAmount] = useState(() => {
+    if (preselectedReceivableId) {
+      const r = pendingReceivables.find((x) => x.id === preselectedReceivableId);
+      return r ? r.amount_pending.toFixed(2) : "";
+    }
+    return "";
+  });
   const [note, setNote] = useState("");
-  const [allocations, setAllocations] = useState<Record<string, string>>({}); // receivableId → amount string
+  const [allocations, setAllocations] = useState<Record<string, string>>(() => {
+    if (preselectedReceivableId) {
+      const r = pendingReceivables.find((x) => x.id === preselectedReceivableId);
+      if (r) return { [preselectedReceivableId]: r.amount_pending.toFixed(2) };
+    }
+    return {};
+  });
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 

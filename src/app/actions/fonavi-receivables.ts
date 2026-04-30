@@ -176,7 +176,146 @@ export async function registerFonaviReimbursement(data: {
   return { success: true };
 }
 
-// Anular un reembolso (revierte allocations + actualiza receivables + borra income_item)
+// Listar los reembolsos (allocations) que ha recibido un receivable específico
+export type ReimbursementHistoryItem = {
+  allocation_id: string;
+  income_item_id: string;
+  date: string;
+  amount: number;
+  note: string | null;
+  income_item_total: number;        // monto total del income_item (puede cubrir varios receivables)
+  is_split: boolean;                 // true si el income_item está asignado a >1 receivables
+};
+
+export async function getReimbursementsForReceivable(receivableId: string): Promise<ReimbursementHistoryItem[]> {
+  const rows = (await sql`
+    SELECT
+      a.id::text as allocation_id,
+      a.income_item_id::text as income_item_id,
+      bi.date::text as date,
+      a.amount::float as amount,
+      bi.note,
+      bi.amount::float as income_item_total,
+      (SELECT COUNT(*)::int FROM fonavi_reimbursement_allocations WHERE income_item_id = a.income_item_id) > 1 as is_split
+    FROM fonavi_reimbursement_allocations a
+    JOIN bank_income_items bi ON bi.id = a.income_item_id
+    WHERE a.receivable_id = ${receivableId}
+    ORDER BY bi.date DESC, a.created_at DESC
+  `) as unknown as ReimbursementHistoryItem[];
+  return rows;
+}
+
+// Elimina UNA allocation. Si el income_item solo tenía esa, se borra completo;
+// si tenía varias, se actualiza el monto del income_item y se elimina solo la allocation.
+export async function deleteReimbursementAllocation(allocationId: string): Promise<{ success: true } | { success: false; error: string }> {
+  // Pre-fetch para audit + decisión
+  const allocRows = (await sql`
+    SELECT
+      a.id::text as id,
+      a.income_item_id::text as income_item_id,
+      a.receivable_id::text as receivable_id,
+      a.amount::float as amount,
+      bi.date::text as date,
+      bi.amount::float as income_amount,
+      bi.note,
+      (SELECT COUNT(*)::int FROM fonavi_reimbursement_allocations WHERE income_item_id = a.income_item_id) as alloc_count
+    FROM fonavi_reimbursement_allocations a
+    JOIN bank_income_items bi ON bi.id = a.income_item_id
+    WHERE a.id = ${allocationId}
+  `) as { id: string; income_item_id: string; receivable_id: string; amount: number; date: string; income_amount: number; note: string | null; alloc_count: number }[];
+
+  if (!allocRows[0]) return { success: false, error: "Reembolso no encontrado" };
+  const a = allocRows[0];
+
+  // Snapshot completo del income_item para audit_log
+  const incomeRows = (await sql`SELECT * FROM bank_income_items WHERE id = ${a.income_item_id}`) as Record<string, unknown>[];
+  const incomeSnapshot = incomeRows[0];
+
+  const queries = [];
+
+  if (a.alloc_count === 1) {
+    // Borrar income_item entero (cascade borra la allocation)
+    queries.push(sql`DELETE FROM bank_income_items WHERE id = ${a.income_item_id}`);
+  } else {
+    // Borrar solo la allocation y reducir el monto del income_item
+    queries.push(sql`DELETE FROM fonavi_reimbursement_allocations WHERE id = ${allocationId}`);
+    queries.push(sql`UPDATE bank_income_items SET amount = amount - ${a.amount} WHERE id = ${a.income_item_id}`);
+  }
+
+  // Revertir el receivable
+  queries.push(sql`
+    UPDATE fonavi_receivables
+    SET amount_collected = amount_collected - ${a.amount},
+        status = CASE
+          WHEN (amount_collected - ${a.amount}) <= 0 THEN 'pending'
+          ELSE 'partial'
+        END,
+        collected_at = CASE
+          WHEN (amount_collected - ${a.amount}) >= amount_due THEN collected_at
+          ELSE NULL
+        END
+    WHERE id = ${a.receivable_id}
+  `);
+
+  // Audit
+  queries.push(sql`
+    INSERT INTO audit_log (action, record_id, record_type, before_data, date_affected)
+    VALUES (
+      'delete_reimbursement',
+      ${allocationId}::uuid,
+      'reimbursement_allocation',
+      ${JSON.stringify({ allocation: a, income_item: incomeSnapshot })}::jsonb,
+      ${a.date}
+    )
+  `);
+
+  // Recalc cache + balance cascade
+  queries.push(sql`
+    UPDATE daily_records SET
+      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = ${a.date}), 0),
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE date = ${a.date} AND payment_method != 'efectivo'), 0)
+    WHERE date = ${a.date}
+  `);
+  queries.push(sql`
+    WITH RECURSIVE chain AS (
+      SELECT
+        (${a.date}::date - INTERVAL '1 day')::date AS date,
+        COALESCE((
+          SELECT bank_balance_real::numeric FROM daily_records
+          WHERE date < ${a.date} AND bank_balance_real IS NOT NULL
+          ORDER BY date DESC LIMIT 1
+        ), 0) AS calc_balance
+      UNION ALL
+      SELECT
+        dr.date,
+        ROUND((
+          c.calc_balance
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+        )::numeric, 2)
+      FROM daily_records dr
+      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
+      WHERE dr.date <= (SELECT MAX(date) FROM daily_records)
+    )
+    UPDATE daily_records dr SET bank_balance_real = chain.calc_balance
+    FROM chain
+    WHERE dr.date = chain.date AND dr.date >= ${a.date}
+  `);
+
+  try {
+    await sql.transaction(queries);
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Error al eliminar reembolso" };
+  }
+
+  revalidatePath("/dashboard");
+  revalidatePath("/registro");
+  revalidatePath("/reportes");
+  revalidatePath("/fonavi");
+  return { success: true };
+}
+
+// (legado) Anular un reembolso ENTERO (revierte allocations + actualiza receivables + borra income_item)
 export async function deleteFonaviReimbursement(incomeItemId: string): Promise<{ success: true } | { success: false; error: string }> {
   const item = (await sql`SELECT date::text as date FROM bank_income_items WHERE id = ${incomeItemId} AND is_fonavi_reimbursement = true`) as { date: string }[];
   if (!item[0]) return { success: false, error: "Reembolso no encontrado" };

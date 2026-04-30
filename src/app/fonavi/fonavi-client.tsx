@@ -3,9 +3,10 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
-import { Plus, Loader2 } from "lucide-react";
+import { Plus, History, Wallet } from "lucide-react";
 import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
 import { ReimbursementModal } from "./reimbursement-modal";
+import { ReimbursementHistoryModal } from "./reimbursement-history-modal";
 
 function statusBadge(status: ReceivableRow["status"]) {
   if (status === "collected") return <span className="px-2 py-0.5 rounded-full text-[11px] bg-green-100 text-green-700">Cobrado</span>;
@@ -24,7 +25,9 @@ function agingClass(days: number, status: string) {
 export function FonaviClient({ initialReceivables }: { initialReceivables: ReceivableRow[] }) {
   const router = useRouter();
   const [filter, setFilter] = useState<"all" | "pending">("pending");
-  const [showModal, setShowModal] = useState(false);
+  const [registerFor, setRegisterFor] = useState<ReceivableRow | null>(null);
+  const [registerGeneric, setRegisterGeneric] = useState(false);
+  const [historyFor, setHistoryFor] = useState<ReceivableRow | null>(null);
 
   const filtered = filter === "pending"
     ? initialReceivables.filter((r) => r.status !== "collected")
@@ -39,7 +42,7 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Cuentas por cobrar a Fonavi</h1>
         <button
-          onClick={() => setShowModal(true)}
+          onClick={() => setRegisterGeneric(true)}
           className="bg-violet-600 text-white px-4 py-2 rounded-lg hover:bg-violet-700 flex items-center gap-2 text-sm font-medium"
         >
           <Plus className="w-4 h-4" />
@@ -47,11 +50,10 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
         </button>
       </div>
 
-      {/* Resumen */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div className="bg-white rounded-xl border border-gray-200 border-l-4 border-l-violet-500 p-5">
           <div className="text-sm text-gray-600 mb-1">Total pendiente de cobro</div>
-          <div className="text-2xl font-bold text-violet-700">{formatCurrency(pendingTotal)}</div>
+          <div className={`text-2xl font-bold ${pendingTotal > 0 ? "text-violet-700" : "text-gray-400"}`}>{formatCurrency(pendingTotal)}</div>
         </div>
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="text-sm text-gray-600 mb-1">Cuentas pendientes</div>
@@ -63,23 +65,17 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
         </div>
       </div>
 
-      {/* Filtro */}
       <div className="flex gap-2">
-        <button
-          onClick={() => setFilter("pending")}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium ${filter === "pending" ? "bg-primary text-white" : "bg-white text-gray-600 border border-gray-200"}`}
-        >
+        <button onClick={() => setFilter("pending")}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium ${filter === "pending" ? "bg-primary text-white" : "bg-white text-gray-600 border border-gray-200"}`}>
           Pendientes
         </button>
-        <button
-          onClick={() => setFilter("all")}
-          className={`px-3 py-1.5 rounded-md text-sm font-medium ${filter === "all" ? "bg-primary text-white" : "bg-white text-gray-600 border border-gray-200"}`}
-        >
+        <button onClick={() => setFilter("all")}
+          className={`px-3 py-1.5 rounded-md text-sm font-medium ${filter === "all" ? "bg-primary text-white" : "bg-white text-gray-600 border border-gray-200"}`}>
           Todas
         </button>
       </div>
 
-      {/* Tabla */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {filtered.length === 0 ? (
           <div className="p-8 text-center text-gray-500 text-sm">
@@ -98,6 +94,7 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
                   <th className="px-4 py-3 font-medium text-right">Cobrado</th>
                   <th className="px-4 py-3 font-medium">Estado</th>
                   <th className="px-4 py-3 font-medium text-right">Antigüedad</th>
+                  <th className="px-4 py-3 font-medium text-right">Acciones</th>
                 </tr>
               </thead>
               <tbody className="divide-y divide-gray-100">
@@ -110,11 +107,35 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
                     </td>
                     <td className="px-4 py-2.5 text-right">{formatCurrency(r.amount_total)}</td>
                     <td className="px-4 py-2.5 text-right text-gray-700">{formatCurrency(r.atelier_amount)}</td>
-                    <td className="px-4 py-2.5 text-right font-semibold text-violet-700">{formatCurrency(r.amount_due)}</td>
+                    <td className={`px-4 py-2.5 text-right font-semibold ${r.amount_pending > 0 ? "text-violet-700" : "text-gray-400"}`}>
+                      {formatCurrency(r.amount_pending)}
+                    </td>
                     <td className="px-4 py-2.5 text-right text-green-700">{formatCurrency(r.amount_collected)}</td>
                     <td className="px-4 py-2.5">{statusBadge(r.status)}</td>
                     <td className={`px-4 py-2.5 text-right font-medium ${agingClass(Math.floor(r.days_old), r.status)}`}>
                       {Math.floor(r.days_old)} d
+                    </td>
+                    <td className="px-4 py-2.5 text-right">
+                      <div className="inline-flex items-center gap-2">
+                        {r.status !== "collected" && (
+                          <button
+                            onClick={() => setRegisterFor(r)}
+                            className="text-xs text-violet-700 hover:underline inline-flex items-center gap-1"
+                            title="Registrar reembolso para esta cuenta"
+                          >
+                            <Wallet className="w-3 h-3" /> Registrar
+                          </button>
+                        )}
+                        {r.amount_collected > 0 && (
+                          <button
+                            onClick={() => setHistoryFor(r)}
+                            className="text-xs text-gray-600 hover:underline inline-flex items-center gap-1"
+                            title="Ver historial de reembolsos"
+                          >
+                            <History className="w-3 h-3" /> Historial
+                          </button>
+                        )}
+                      </div>
                     </td>
                   </tr>
                 ))}
@@ -124,11 +145,20 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
         )}
       </div>
 
-      {showModal && (
+      {(registerGeneric || registerFor) && (
         <ReimbursementModal
           pendingReceivables={initialReceivables.filter((r) => r.status !== "collected")}
-          onClose={() => setShowModal(false)}
-          onSaved={() => { setShowModal(false); router.refresh(); }}
+          preselectedReceivableId={registerFor?.id}
+          onClose={() => { setRegisterFor(null); setRegisterGeneric(false); }}
+          onSaved={() => { setRegisterFor(null); setRegisterGeneric(false); router.refresh(); }}
+        />
+      )}
+
+      {historyFor && (
+        <ReimbursementHistoryModal
+          receivable={historyFor}
+          onClose={() => setHistoryFor(null)}
+          onChanged={() => router.refresh()}
         />
       )}
     </div>
