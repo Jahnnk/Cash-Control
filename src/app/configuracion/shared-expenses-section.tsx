@@ -2,20 +2,37 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, X, Loader2, Handshake } from "lucide-react";
-import { createSharedRule, deactivateSharedRule, reactivateSharedRule, type SharedRule } from "@/app/actions/shared-expense-rules";
+import { Plus, X, Loader2, Handshake, Pencil } from "lucide-react";
+import {
+  createSharedRule,
+  updateSharedRule,
+  deactivateSharedRule,
+  reactivateSharedRule,
+  countExpensesForRule,
+  type SharedRule,
+} from "@/app/actions/shared-expense-rules";
 
 type CategoryOpt = { id: string; name: string };
 
 export function SharedExpensesSection({ rules, categories }: { rules: SharedRule[]; categories: CategoryOpt[] }) {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [usageCount, setUsageCount] = useState<number>(0);
+
   const [categoryId, setCategoryId] = useState("");
   const [concept, setConcept] = useState("");
   const [atelierPct, setAtelierPct] = useState("");
   const [fonaviPct, setFonaviPct] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function resetForm() {
+    setCategoryId(""); setConcept(""); setAtelierPct(""); setFonaviPct("");
+    setError(null);
+    setEditingId(null);
+    setUsageCount(0);
+  }
 
   function handleAtelier(v: string) {
     setAtelierPct(v);
@@ -32,7 +49,20 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
     }
   }
 
-  async function handleCreate() {
+  async function startEdit(rule: SharedRule) {
+    setEditingId(rule.id);
+    setCategoryId(rule.category_id);
+    setConcept(rule.concept);
+    setAtelierPct(String(rule.atelier_percentage));
+    setFonaviPct(String(rule.fonavi_percentage));
+    setShowForm(true);
+    setError(null);
+    // Cargar conteo de egresos vinculados
+    const n = await countExpensesForRule(rule.id);
+    setUsageCount(n);
+  }
+
+  async function handleSubmit() {
     setError(null);
     if (!categoryId) { setError("Selecciona una categoría"); return; }
     if (!concept.trim()) { setError("Escribe un concepto"); return; }
@@ -40,11 +70,13 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
     if (!Number.isFinite(a) || !Number.isFinite(f)) { setError("Porcentajes inválidos"); return; }
 
     setSaving(true);
-    const result = await createSharedRule({ categoryId, concept: concept.trim(), atelierPercentage: a, fonaviPercentage: f });
+    const result = editingId
+      ? await updateSharedRule(editingId, { categoryId, concept: concept.trim(), atelierPercentage: a, fonaviPercentage: f })
+      : await createSharedRule({ categoryId, concept: concept.trim(), atelierPercentage: a, fonaviPercentage: f });
     setSaving(false);
     if (!result.success) { setError(result.error ?? "Error"); return; }
 
-    setCategoryId(""); setConcept(""); setAtelierPct(""); setFonaviPct("");
+    resetForm();
     setShowForm(false);
     router.refresh();
   }
@@ -71,8 +103,10 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
           <Handshake className="w-5 h-5 text-violet-600" />
           <h2 className="text-base font-semibold text-gray-900">Gastos compartidos con Fonavi</h2>
         </div>
-        <button onClick={() => setShowForm(!showForm)}
-          className="text-sm bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 flex items-center gap-1.5">
+        <button
+          onClick={() => { if (showForm) { resetForm(); setShowForm(false); } else { setShowForm(true); } }}
+          className="text-sm bg-violet-600 text-white px-3 py-1.5 rounded-lg hover:bg-violet-700 flex items-center gap-1.5"
+        >
           {showForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
           {showForm ? "Cancelar" : "Nueva regla"}
         </button>
@@ -80,11 +114,28 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
 
       <div className="p-6 space-y-4">
         <p className="text-xs text-gray-500">
-          Define qué gastos se comparten y en qué porcentaje. Una categoría puede tener varias reglas (un concepto distinto cada una). Al registrar un egreso, si la categoría tiene reglas, podrás elegir el concepto correspondiente.
+          Define qué gastos se comparten y en qué porcentaje. Una categoría puede tener varias reglas (un concepto distinto cada una).
         </p>
 
         {showForm && (
           <div className="bg-violet-50 border border-violet-100 rounded-lg p-4 space-y-3">
+            <div className="flex items-center justify-between">
+              <div className="text-sm font-semibold text-violet-900">
+                {editingId ? "Editar regla" : "Nueva regla"}
+              </div>
+              {editingId && (
+                <button onClick={() => { resetForm(); setShowForm(false); }} className="text-xs text-gray-600 hover:text-gray-900">
+                  Cancelar edición
+                </button>
+              )}
+            </div>
+
+            {editingId && usageCount > 0 && (
+              <div className="bg-amber-50 border border-amber-100 rounded-lg p-2.5 text-xs text-amber-900">
+                💡 Esta regla ya tiene <strong>{usageCount} {usageCount === 1 ? "egreso registrado" : "egresos registrados"}</strong>. Los cambios solo afectan futuros egresos; los existentes mantienen sus valores históricos.
+              </div>
+            )}
+
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-medium text-gray-700 mb-1">Categoría</label>
@@ -114,17 +165,23 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
               </div>
             </div>
             {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
-            <div className="flex justify-end">
-              <button onClick={handleCreate} disabled={saving}
+            <div className="flex justify-end gap-2">
+              {editingId && (
+                <button onClick={() => { resetForm(); setShowForm(false); }} disabled={saving}
+                  className="px-4 py-2 text-sm text-gray-700 hover:bg-gray-100 rounded-lg disabled:opacity-50">
+                  Cancelar
+                </button>
+              )}
+              <button onClick={handleSubmit} disabled={saving}
                 className="bg-primary text-white px-4 py-2 rounded-lg text-sm hover:bg-primary-light flex items-center gap-2 disabled:opacity-50">
                 {saving && <Loader2 className="w-4 h-4 animate-spin" />}
-                Crear regla
+                {editingId ? "Guardar cambios" : "Crear regla"}
               </button>
             </div>
           </div>
         )}
 
-        {/* Reglas activas agrupadas por categoría */}
+        {/* Reglas activas agrupadas */}
         {grouped.size === 0 ? (
           <div className="text-sm text-gray-500 text-center p-6 border border-dashed border-gray-200 rounded-lg">
             Sin reglas activas. Agrega una para empezar.
@@ -136,16 +193,27 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
                 <div className="text-xs font-semibold text-gray-700 mb-1.5">{categoryName}:</div>
                 <div className="space-y-1.5 pl-3">
                   {group.map((r) => (
-                    <div key={r.id} className="flex items-center justify-between border border-gray-200 rounded-lg p-2.5">
+                    <div key={r.id}
+                      className={`flex items-center justify-between border rounded-lg p-2.5 ${
+                        editingId === r.id ? "border-violet-300 bg-violet-50" : "border-gray-200"
+                      }`}>
                       <div className="text-sm">
                         <span className="text-gray-900">{r.concept}</span>
                         <span className="text-gray-500 ml-2 text-xs">
                           ({r.atelier_percentage}% / {r.fonavi_percentage}%)
                         </span>
                       </div>
-                      <button onClick={() => handleToggle(r)} className="text-xs text-red-600 hover:underline">
-                        Desactivar
-                      </button>
+                      <div className="flex items-center gap-3">
+                        <button
+                          onClick={() => startEdit(r)}
+                          className="text-xs text-primary-light hover:underline flex items-center gap-1"
+                        >
+                          <Pencil className="w-3 h-3" /> Editar
+                        </button>
+                        <button onClick={() => handleToggle(r)} className="text-xs text-red-600 hover:underline">
+                          Desactivar
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

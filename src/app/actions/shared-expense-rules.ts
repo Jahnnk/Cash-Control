@@ -81,6 +81,64 @@ export async function createSharedRule(data: {
   return { success: true };
 }
 
+// Cuenta cuántos egresos están vinculados a una regla (para advertir al editar)
+export async function countExpensesForRule(ruleId: string): Promise<number> {
+  const r = await db.execute(sql`
+    SELECT COUNT(*)::int as n FROM expenses WHERE shared_rule_id = ${ruleId}
+  `);
+  return (r.rows[0] as { n: number }).n;
+}
+
+export async function updateSharedRule(id: string, data: {
+  categoryId: string;
+  concept: string;
+  atelierPercentage: number;
+  fonaviPercentage: number;
+}) {
+  if (Math.round((data.atelierPercentage + data.fonaviPercentage) * 100) / 100 !== 100) {
+    return { success: false, error: "Los porcentajes deben sumar 100%" };
+  }
+  if (data.atelierPercentage < 0 || data.fonaviPercentage < 0) {
+    return { success: false, error: "Los porcentajes no pueden ser negativos" };
+  }
+  const concept = data.concept.trim();
+  if (!concept) return { success: false, error: "El concepto no puede estar vacío" };
+
+  // Solo permitir editar reglas activas
+  const existing = await db.execute(sql`SELECT active FROM shared_expense_rules WHERE id = ${id}`);
+  const row = existing.rows[0] as { active: boolean } | undefined;
+  if (!row) return { success: false, error: "Regla no encontrada" };
+  if (!row.active) return { success: false, error: "Solo se pueden editar reglas activas" };
+
+  // Validar unicidad de (category, concept) entre reglas activas distintas a esta
+  const dup = await db.execute(sql`
+    SELECT 1 FROM shared_expense_rules
+    WHERE active = true AND category_id = ${data.categoryId} AND concept = ${concept} AND id <> ${id}
+    LIMIT 1
+  `);
+  if (dup.rows.length > 0) {
+    return { success: false, error: "Ya existe otra regla activa para esa categoría y concepto" };
+  }
+
+  try {
+    await db.execute(sql`
+      UPDATE shared_expense_rules
+      SET category_id = ${data.categoryId},
+          concept = ${concept},
+          atelier_percentage = ${data.atelierPercentage},
+          fonavi_percentage = ${data.fonaviPercentage},
+          updated_at = now()
+      WHERE id = ${id}
+    `);
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Error al actualizar" };
+  }
+
+  revalidatePath("/configuracion");
+  revalidatePath("/registro");
+  return { success: true };
+}
+
 export async function deactivateSharedRule(id: string) {
   await db.execute(sql`
     UPDATE shared_expense_rules SET active = false, updated_at = now() WHERE id = ${id}
