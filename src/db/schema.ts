@@ -38,6 +38,42 @@ export const expenses = pgTable("expenses", {
   paymentMethod: text("payment_method").default("transferencia").notNull(),
   notes: text("notes"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
+  // Gastos compartidos con Fonavi
+  isShared: boolean("is_shared").default(false).notNull(),
+  sharedRuleId: uuid("shared_rule_id"),
+  atelierAmount: numeric("atelier_amount", { precision: 10, scale: 2 }),
+  fonaviAmount: numeric("fonavi_amount", { precision: 10, scale: 2 }),
+});
+
+// Reglas de gastos compartidos por categoría (Atelier / Fonavi)
+export const sharedExpenseRules = pgTable("shared_expense_rules", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  categoryId: uuid("category_id").notNull(),
+  atelierPercentage: numeric("atelier_percentage", { precision: 5, scale: 2 }).notNull(),
+  fonaviPercentage: numeric("fonavi_percentage", { precision: 5, scale: 2 }).notNull(),
+  active: boolean("active").default(true).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+// Cuentas por cobrar a Fonavi (una por egreso compartido)
+export const fonaviReceivables = pgTable("fonavi_receivables", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  expenseId: uuid("expense_id").notNull(),
+  amountDue: numeric("amount_due", { precision: 10, scale: 2 }).notNull(),
+  amountCollected: numeric("amount_collected", { precision: 10, scale: 2 }).default("0").notNull(),
+  status: text("status").default("pending").notNull(), // pending | partial | collected
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+  collectedAt: timestamp("collected_at"),
+});
+
+// Asignaciones de reembolsos (un income_item puede saldar varias receivables)
+export const fonaviReimbursementAllocations = pgTable("fonavi_reimbursement_allocations", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  incomeItemId: uuid("income_item_id").notNull(),
+  receivableId: uuid("receivable_id").notNull(),
+  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
 // Keep these for backward compat but daily_records is the main source

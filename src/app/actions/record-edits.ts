@@ -207,6 +207,19 @@ export async function deleteExpense(id: string): Promise<Result> {
   const original = before[0];
   const date = original.date as string;
 
+  // Edge case: gasto compartido con reembolsos asignados
+  if (original.is_shared) {
+    const allocs = (await sql`
+      SELECT COUNT(*)::int as n
+      FROM fonavi_reimbursement_allocations a
+      JOIN fonavi_receivables r ON r.id = a.receivable_id
+      WHERE r.expense_id = ${id}
+    `) as { n: number }[];
+    if (allocs[0].n > 0) {
+      return { success: false, error: "No se puede eliminar este egreso porque ya tiene reembolsos registrados. Primero gestiona los reembolsos en 'Cuentas por cobrar Fonavi'." };
+    }
+  }
+
   try {
     await sql.transaction([
       sql`DELETE FROM expenses WHERE id = ${id}`,

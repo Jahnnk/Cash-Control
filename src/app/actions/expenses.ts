@@ -13,15 +13,44 @@ export async function createExpense(data: {
   amount: number;
   paymentMethod?: string;
   notes?: string;
+  // Gastos compartidos (opcional). Si shared=true, los demás campos son obligatorios.
+  shared?: {
+    ruleId: string;
+    atelierAmount: number;
+    fonaviAmount: number;
+  };
 }) {
-  await db.insert(expenses).values({
+  // Validar partición compartida
+  if (data.shared) {
+    const totalSplit = Math.round((data.shared.atelierAmount + data.shared.fonaviAmount) * 100);
+    if (totalSplit !== Math.round(data.amount * 100)) {
+      throw new Error("La suma de las partes (Atelier + Fonavi) debe igualar el monto total");
+    }
+  }
+
+  const insertResult = await db.insert(expenses).values({
     date: data.date,
     category: data.category,
     concept: data.concept,
     amount: data.amount.toFixed(2),
     paymentMethod: data.paymentMethod || "transferencia",
     notes: data.notes || null,
-  });
+    isShared: !!data.shared,
+    sharedRuleId: data.shared?.ruleId ?? null,
+    atelierAmount: data.shared ? data.shared.atelierAmount.toFixed(2) : null,
+    fonaviAmount: data.shared ? data.shared.fonaviAmount.toFixed(2) : null,
+  }).returning({ id: expenses.id });
+
+  const expenseId = insertResult[0].id;
+
+  // Crear cuenta por cobrar a Fonavi si aplica
+  if (data.shared && data.shared.fonaviAmount > 0) {
+    await db.execute(sql`
+      INSERT INTO fonavi_receivables (expense_id, amount_due, status)
+      VALUES (${expenseId}, ${data.shared.fonaviAmount}, 'pending')
+    `);
+  }
+
   // Solo afecta saldo banco si NO es efectivo
   if ((data.paymentMethod || "transferencia") !== "efectivo") {
     await recalcBankBalance(data.date);
@@ -29,6 +58,7 @@ export async function createExpense(data: {
   revalidatePath("/registro");
   revalidatePath("/dashboard");
   revalidatePath("/presupuesto");
+  revalidatePath("/fonavi");
 }
 
 export async function updateExpense(id: string, data: {
@@ -55,16 +85,36 @@ export async function updateExpense(id: string, data: {
   revalidatePath("/presupuesto");
 }
 
-export async function deleteExpense(id: string) {
-  // Capturar fecha y método antes de borrar
-  const before = (await db.execute(sql`SELECT date::text as date, payment_method FROM expenses WHERE id = ${id}`)).rows[0] as { date: string; payment_method: string } | undefined;
+export async function deleteExpense(id: string): Promise<{ success: true } | { success: false; error: string }> {
+  const before = (await db.execute(sql`
+    SELECT date::text as date, payment_method, is_shared FROM expenses WHERE id = ${id}
+  `)).rows[0] as { date: string; payment_method: string; is_shared: boolean } | undefined;
+
+  if (!before) return { success: false, error: "El registro no existe" };
+
+  // Edge case #4 (gastos compartidos): bloquear si ya hay reembolsos asignados
+  if (before.is_shared) {
+    const hasAllocations = (await db.execute(sql`
+      SELECT COUNT(*)::int as n
+      FROM fonavi_reimbursement_allocations a
+      JOIN fonavi_receivables r ON r.id = a.receivable_id
+      WHERE r.expense_id = ${id}
+    `)).rows[0] as { n: number };
+    if (hasAllocations.n > 0) {
+      return { success: false, error: "No se puede eliminar este egreso porque ya tiene reembolsos registrados. Primero gestiona los reembolsos en 'Cuentas por cobrar Fonavi'." };
+    }
+    // Si está pendiente sin allocations: el ON DELETE CASCADE limpia la fonavi_receivable
+  }
+
   await db.delete(expenses).where(eq(expenses.id, id));
-  if (before && before.payment_method !== "efectivo") {
+  if (before.payment_method !== "efectivo") {
     await recalcBankBalance(before.date);
   }
   revalidatePath("/registro");
   revalidatePath("/dashboard");
   revalidatePath("/presupuesto");
+  revalidatePath("/fonavi");
+  return { success: true };
 }
 
 export async function getExpensesByDate(date: string) {

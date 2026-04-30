@@ -9,6 +9,7 @@ import {
   TrendingUp,
   ShieldCheck,
   ArrowRight,
+  Handshake,
 } from "lucide-react";
 
 type DashboardData = {
@@ -19,6 +20,7 @@ type DashboardData = {
   daysCovered: number;
   avgDailyExpense: number;
   monthlyByte: Record<string, unknown>;
+  fonaviReceivables: number;
 };
 
 export function DashboardClient({ data }: { data: DashboardData }) {
@@ -27,7 +29,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
 
       {/* Top Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
         <Card
           icon={<Landmark className="w-5 h-5 text-primary-light" />}
           label="Saldo en banco"
@@ -59,6 +61,14 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           sub="Byte total - Cobros BCP"
           accent="amber"
           href="/reportes?tab=antig%C3%BCedad"
+        />
+        <Card
+          icon={<Handshake className="w-5 h-5 text-violet-600" />}
+          label="Por cobrar Fonavi"
+          value={formatCurrency(data.fonaviReceivables)}
+          sub="Gastos compartidos pendientes"
+          accent="violet"
+          href="/fonavi"
         />
         <Card
           icon={<ShieldCheck className="w-5 h-5 text-primary-light" />}
@@ -98,7 +108,7 @@ function Card({
   label: string;
   value: string;
   sub: string;
-  accent: "primary" | "amber" | "red";
+  accent: "primary" | "amber" | "red" | "violet";
   href?: string;
 }) {
   const borderColor =
@@ -106,7 +116,9 @@ function Card({
       ? "border-l-primary-light"
       : accent === "amber"
         ? "border-l-amber-500"
-        : "border-l-red-500";
+        : accent === "violet"
+          ? "border-l-violet-500"
+          : "border-l-red-500";
 
   const baseClasses = `bg-white rounded-xl border border-gray-200 border-l-4 ${borderColor} p-5`;
   const interactiveClasses = "cursor-pointer hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5 transition-all block";

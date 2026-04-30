@@ -1,92 +1,14 @@
+// Migración aislada para feature gastos compartidos.
+// 100% aditiva: CREATE TABLE IF NOT EXISTS + ALTER TABLE ADD COLUMN IF NOT EXISTS.
 import { neon } from "@neondatabase/serverless";
 import * as dotenv from "dotenv";
-
 dotenv.config({ path: ".env.local" });
 
 const sql = neon(process.env.DATABASE_URL!);
 
-async function migrate() {
-  console.log("Creating tables...");
+async function main() {
+  console.log("Creando tablas y columnas para feature gastos compartidos…");
 
-  await sql`
-    CREATE TABLE IF NOT EXISTS clients (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      name TEXT NOT NULL,
-      type TEXT NOT NULL,
-      payment_pattern TEXT,
-      is_active BOOLEAN NOT NULL DEFAULT true,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS sales (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      client_id UUID NOT NULL REFERENCES clients(id),
-      date DATE NOT NULL,
-      amount NUMERIC(10,2) NOT NULL,
-      discount NUMERIC(10,2) NOT NULL DEFAULT 0,
-      net_amount NUMERIC(10,2) NOT NULL,
-      notes TEXT,
-      is_collected BOOLEAN NOT NULL DEFAULT false,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS collections (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      client_id UUID NOT NULL REFERENCES clients(id),
-      date DATE NOT NULL,
-      amount NUMERIC(10,2) NOT NULL,
-      sale_id UUID REFERENCES sales(id),
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS expenses (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      date DATE NOT NULL,
-      category TEXT NOT NULL,
-      concept TEXT NOT NULL,
-      amount NUMERIC(10,2) NOT NULL,
-      payment_method TEXT NOT NULL DEFAULT 'transferencia',
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS bank_balance (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      date DATE NOT NULL UNIQUE,
-      opening_balance NUMERIC(10,2),
-      closing_balance NUMERIC(10,2),
-      notes TEXT,
-      created_at TIMESTAMP NOT NULL DEFAULT now()
-    )
-  `;
-
-  await sql`
-    CREATE TABLE IF NOT EXISTS audit_log (
-      id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-      timestamp TIMESTAMP NOT NULL DEFAULT now(),
-      action TEXT NOT NULL,
-      record_id UUID NOT NULL,
-      record_type TEXT NOT NULL,
-      before_data JSONB NOT NULL,
-      after_data JSONB,
-      user_note TEXT,
-      date_affected DATE NOT NULL
-    )
-  `;
-  await sql`CREATE INDEX IF NOT EXISTS audit_log_record_idx ON audit_log(record_id, record_type)`;
-  await sql`CREATE INDEX IF NOT EXISTS audit_log_date_idx   ON audit_log(date_affected)`;
-  await sql`CREATE INDEX IF NOT EXISTS audit_log_ts_idx     ON audit_log(timestamp DESC)`;
-
-  // Feature: gastos compartidos con Fonavi
   await sql`
     CREATE TABLE IF NOT EXISTS shared_expense_rules (
       id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
@@ -100,7 +22,10 @@ async function migrate() {
       CONSTRAINT pct_positive CHECK (atelier_percentage >= 0 AND fonavi_percentage >= 0)
     )
   `;
-  await sql`CREATE UNIQUE INDEX IF NOT EXISTS shared_expense_rules_active_cat ON shared_expense_rules(category_id) WHERE active = true`;
+  await sql`
+    CREATE UNIQUE INDEX IF NOT EXISTS shared_expense_rules_active_cat
+      ON shared_expense_rules(category_id) WHERE active = true
+  `;
 
   await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS is_shared        BOOLEAN NOT NULL DEFAULT false`;
   await sql`ALTER TABLE expenses ADD COLUMN IF NOT EXISTS shared_rule_id   UUID REFERENCES shared_expense_rules(id)`;
@@ -137,7 +62,26 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS allocations_income_idx ON fonavi_reimbursement_allocations(income_item_id)`;
   await sql`CREATE INDEX IF NOT EXISTS allocations_receivable_idx ON fonavi_reimbursement_allocations(receivable_id)`;
 
-  console.log("All tables created successfully!");
+  // Verificación
+  const cols = (await sql`
+    SELECT column_name FROM information_schema.columns
+    WHERE table_name = 'expenses' AND column_name IN ('is_shared','shared_rule_id','atelier_amount','fonavi_amount')
+  `) as { column_name: string }[];
+  console.log(`✅ Columnas en expenses: ${cols.map(c => c.column_name).join(", ")}`);
+
+  const tables = (await sql`
+    SELECT table_name FROM information_schema.tables
+    WHERE table_schema = 'public' AND table_name IN ('shared_expense_rules','fonavi_receivables','fonavi_reimbursement_allocations')
+  `) as { table_name: string }[];
+  console.log(`✅ Tablas nuevas: ${tables.map(t => t.table_name).join(", ")}`);
+
+  const counts = (await sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM shared_expense_rules) as rules,
+      (SELECT COUNT(*)::int FROM fonavi_receivables) as receivables,
+      (SELECT COUNT(*)::int FROM fonavi_reimbursement_allocations) as allocations
+  `) as { rules: number; receivables: number; allocations: number }[];
+  console.log(`✅ Filas iniciales: rules=${counts[0].rules}, receivables=${counts[0].receivables}, allocations=${counts[0].allocations}`);
 }
 
-migrate().catch(console.error);
+main().catch((e) => { console.error("ERROR:", e); process.exit(1); });

@@ -12,6 +12,7 @@ import {
   Settings,
   Menu,
   X,
+  Handshake,
 } from "lucide-react";
 
 const nav = [
@@ -19,6 +20,7 @@ const nav = [
   { href: "/registro", label: "Registro Diario", icon: PenLine },
   { href: "/presupuesto", label: "Presupuesto", icon: PieChart },
   { href: "/clientes", label: "Clientes", icon: Users },
+  { href: "/fonavi", label: "Fonavi", icon: Handshake },
   { href: "/reportes", label: "Reportes", icon: BarChart3 },
   { href: "/configuracion", label: "Configuración", icon: Settings },
 ];

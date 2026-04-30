@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useCallback } from "react";
 import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance, getCurrentBankBalance, updateCurrentBankBalance } from "@/app/actions/daily-records";
+import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
 import { formatCurrency, getToday } from "@/lib/utils";
@@ -28,6 +29,14 @@ type ExpenseItem = {
   amount: number;
   paymentMethod: string;
   isNew: boolean;
+  // Si el egreso es compartido con Fonavi
+  shared?: {
+    ruleId: string;
+    atelierAmount: number;
+    fonaviAmount: number;
+    atelierPercentage: number;
+    fonaviPercentage: number;
+  };
 };
 
 type ClientOption = { id: string; name: string };
@@ -124,6 +133,14 @@ export function RegistroForm({
   const [currentBalance, setCurrentBalance] = useState<number | null>(null);
   const [currentBalanceInput, setCurrentBalanceInput] = useState("");
 
+  // Reglas de gastos compartidos (cargadas una vez)
+  const [sharedRules, setSharedRules] = useState<SharedRule[]>([]);
+  const [shareThisExpense, setShareThisExpense] = useState(true); // toggle del form actual
+  useEffect(() => {
+    getSharedRules().then((rules) => setSharedRules(rules.filter((r) => r.active)));
+  }, []);
+  const activeRuleForCategory = sharedRules.find((r) => r.category_name === txCategory) ?? null;
+
   // Count items to regularize
   const pendingRegularize = expensesList.filter((e) => isToRegularize(e)).length;
 
@@ -205,16 +222,31 @@ export function RegistroForm({
         note: txNote,
       }]);
     } else {
+      const amountNum = parseFloat(txAmount);
+      let shared: ExpenseItem["shared"] = undefined;
+      if (activeRuleForCategory && shareThisExpense) {
+        const atelier = Math.round(amountNum * activeRuleForCategory.atelier_percentage) / 100;
+        const fonavi = Math.round((amountNum - atelier) * 100) / 100;
+        shared = {
+          ruleId: activeRuleForCategory.id,
+          atelierAmount: atelier,
+          fonaviAmount: fonavi,
+          atelierPercentage: activeRuleForCategory.atelier_percentage,
+          fonaviPercentage: activeRuleForCategory.fonavi_percentage,
+        };
+      }
       setExpensesList([...expensesList, {
         id: crypto.randomUUID(),
         dbId: null,
         category: txCategory,
         concept: txConcept || txCategory,
-        amount: parseFloat(txAmount),
+        amount: amountNum,
         paymentMethod: txMethod,
         isNew: true,
+        shared,
       }]);
       setTxConcept("");
+      setShareThisExpense(true); // resetear default
     }
 
     setTxAmount("");
@@ -279,7 +311,13 @@ export function RegistroForm({
   }
 
   async function handleDeleteExpense(item: ExpenseItem) {
-    if (item.dbId) await deleteExpense(item.dbId);
+    if (item.dbId) {
+      const result = await deleteExpense(item.dbId);
+      if (!result.success) {
+        alert(result.error);
+        return;
+      }
+    }
     const updatedExp = expensesList.filter((x) => x.id !== item.id);
     setExpensesList(updatedExp);
     const totalExp = updatedExp.reduce((s, i) => s + i.amount, 0);
@@ -345,7 +383,16 @@ export function RegistroForm({
       });
       await saveBankIncomeItems(date, latestIncome.map((i: IncomeItem) => ({ amount: i.amount, clientId: i.clientId, note: i.note })));
       for (const exp of latestExpenses.filter((e: ExpenseItem) => e.isNew)) {
-        await createExpense({ date, category: exp.category, concept: exp.concept, amount: exp.amount, paymentMethod: exp.paymentMethod });
+        await createExpense({
+          date,
+          category: exp.category,
+          concept: exp.concept,
+          amount: exp.amount,
+          paymentMethod: exp.paymentMethod,
+          shared: exp.shared
+            ? { ruleId: exp.shared.ruleId, atelierAmount: exp.shared.atelierAmount, fonaviAmount: exp.shared.fonaviAmount }
+            : undefined,
+        });
       }
 
       // Recalculate bank balance only if there are actual movements
@@ -702,6 +749,29 @@ export function RegistroForm({
                             onKeyDown={(e) => e.key === "Enter" && addTransaction()}
                             className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
                         </div>
+
+                        {/* Banner gasto compartido */}
+                        {activeRuleForCategory && (
+                          <div className="bg-violet-50 border border-violet-100 rounded-lg p-2.5 text-xs flex items-start gap-2">
+                            <span className="text-violet-600 shrink-0">💡</span>
+                            <div className="flex-1 min-w-0">
+                              <div className="text-violet-900 font-medium">
+                                Esta categoría es compartida con Fonavi ({activeRuleForCategory.atelier_percentage}% / {activeRuleForCategory.fonavi_percentage}%)
+                              </div>
+                              {shareThisExpense && txAmount && parseFloat(txAmount) > 0 && (
+                                <div className="text-violet-700 mt-0.5">
+                                  Tu parte: S/ {(parseFloat(txAmount) * activeRuleForCategory.atelier_percentage / 100).toFixed(2)} · Por cobrar a Fonavi: S/ {(parseFloat(txAmount) * activeRuleForCategory.fonavi_percentage / 100).toFixed(2)}
+                                </div>
+                              )}
+                              <label className="flex items-center gap-1.5 mt-1 cursor-pointer">
+                                <input type="checkbox" checked={shareThisExpense}
+                                  onChange={(e) => setShareThisExpense(e.target.checked)}
+                                  className="rounded text-violet-600" />
+                                <span className="text-violet-900">Marcar como gasto compartido</span>
+                              </label>
+                            </div>
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>

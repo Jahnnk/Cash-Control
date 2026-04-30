@@ -30,13 +30,20 @@ export async function getDashboardData() {
   const totalCollected = parseFloat(cxcResult.rows[0].total_collected as string);
   const accountsReceivable = Math.max(0, totalByte - totalCollected);
 
-  // Monthly expenses total
+  // Monthly expenses total — usa atelier_amount cuando es compartido
   const expResult = await db.execute(sql`
-    SELECT COALESCE(SUM(amount), 0) as total
+    SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) as total
     FROM expenses
     WHERE date >= ${startOfMonth} AND date <= ${today}
   `);
   const monthlyExpenses = parseFloat(expResult.rows[0].total as string);
+
+  // Por cobrar a Fonavi (suma del pendiente)
+  const fonaviResult = await db.execute(sql`
+    SELECT COALESCE(SUM(amount_due - amount_collected), 0) as total
+    FROM fonavi_receivables WHERE status != 'collected'
+  `);
+  const fonaviReceivables = parseFloat(fonaviResult.rows[0].total as string);
 
   // Days of coverage
   const dayOfMonth = new Date().getDate();
@@ -62,5 +69,6 @@ export async function getDashboardData() {
     daysCovered,
     avgDailyExpense,
     monthlyByte: monthlyByte.rows[0],
+    fonaviReceivables,
   };
 }

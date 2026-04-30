@@ -61,13 +61,25 @@ export async function getMonthlyReport(month: string) {
   const lastDay = new Date(year, m, 0).getDate();
   const endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
-  // Totals from daily_records
+  // Totals
+  // - total_income: ingresos OPERATIVOS (excluye reembolsos Fonavi, no son ventas)
+  // - total_expenses: parte ATELIER de cada egreso (atelier_amount si es compartido, sino amount)
   const totals = await db.execute(sql`
     SELECT
       COALESCE(SUM(byte_total), 0) as total_byte,
-      COALESCE(SUM(bank_income), 0) as total_income,
+      COALESCE((
+        SELECT SUM(amount) FROM bank_income_items
+        WHERE date >= ${startDate} AND date <= ${endDate} AND is_fonavi_reimbursement = false
+      ), 0) as total_income,
       COALESCE(SUM(bank_expense), 0) as total_bank_expense,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date >= ${startDate} AND date <= ${endDate}), 0) as total_expenses
+      COALESCE((
+        SELECT SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)
+        FROM expenses WHERE date >= ${startDate} AND date <= ${endDate}
+      ), 0) as total_expenses,
+      COALESCE((
+        SELECT SUM(amount) FROM bank_income_items
+        WHERE date >= ${startDate} AND date <= ${endDate} AND is_fonavi_reimbursement = true
+      ), 0) as total_fonavi_reimbursements
     FROM daily_records
     WHERE date >= ${startDate} AND date <= ${endDate}
   `);
@@ -84,9 +96,9 @@ export async function getMonthlyReport(month: string) {
     ORDER BY date DESC LIMIT 1
   `);
 
-  // Expenses by category
+  // Expenses por categoría (parte Atelier)
   const byCategory = await db.execute(sql`
-    SELECT category, SUM(amount) as total
+    SELECT category, SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END) as total
     FROM expenses
     WHERE date >= ${startDate} AND date <= ${endDate}
     GROUP BY category
