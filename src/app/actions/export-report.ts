@@ -76,11 +76,14 @@ function endOfMonth(d: Date): string {
 }
 
 export async function getReportData(period: ExportPeriod): Promise<ReportData> {
+  const t0 = Date.now();
   const { start, end } = period;
+  console.log(`[export] getReportData start=${start} end=${end} label="${period.label}" isMonth=${period.isMonth}`);
 
   // Categorías excluidas del EBITDA
   const excluded = (await sql`SELECT name FROM expense_categories WHERE exclude_from_ebitda = true`) as { name: string }[];
   const excludedSet = new Set(excluded.map((r) => r.name));
+  console.log(`[export] excluded categories: ${[...excludedSet].join(", ") || "(none)"}`);
 
   // Saldo inicial del período: último bank_balance_real con date < start (o 0)
   const bankStartRow = (await sql`
@@ -119,6 +122,8 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
     WHERE date >= ${start} AND date <= ${end}
     ORDER BY date DESC
   `) as Record<string, unknown>[];
+
+  console.log(`[export] incomes rows: ${incomesRows.length}, expenses rows: ${expensesRows.length}`);
 
   // Mapear ingresos
   const incomes = incomesRows.map((r) => ({
@@ -209,21 +214,27 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
     .sort((a, b) => b.totalAtelier - a.totalAtelier);
 
   // Presupuesto vs Real
+  // budgets.budget_percentage = % sobre ingresos ajustados; el monto presupuestado se calcula así
   const budgetsRows = (await sql`
-    SELECT b.category, b.amount::float as amount FROM budgets b
-    WHERE b.month = ${start.substring(0, 7)}
-  `) as { category: string; amount: number }[];
-  const budgetMap = new Map(budgetsRows.map((b) => [b.category, b.amount]));
+    SELECT category_name, budget_percentage::float as pct,
+           threshold_green::int as t_green, threshold_yellow::int as t_yellow
+    FROM budgets WHERE is_active = true
+  `) as { category_name: string; pct: number; t_green: number; t_yellow: number }[];
+  console.log(`[export] active budgets: ${budgetsRows.length}`);
+  const budgetMap = new Map(budgetsRows.map((b) => [b.category_name, b]));
   const allCats = new Set([...catMap.keys(), ...budgetMap.keys()]);
   const budgetVsReal = Array.from(allCats).map((category) => {
-    const budgeted = budgetMap.has(category) ? budgetMap.get(category)! : null;
+    const b = budgetMap.get(category) ?? null;
+    const budgeted = b ? Math.round((incomeAdjusted * b.pct) / 100 * 100) / 100 : null;
     const real = catMap.get(category)?.atelier ?? 0;
     const diff = budgeted !== null ? real - budgeted : 0;
     const pct = budgeted !== null && budgeted > 0 ? (real / budgeted) * 100 : 0;
     let status: "ok" | "near" | "over" | "no-budget" = "no-budget";
-    if (budgeted !== null) {
-      if (real <= budgeted * 0.8) status = "ok";
-      else if (real <= budgeted) status = "near";
+    if (b) {
+      const tGreen = b.t_green ?? 70;
+      const tYellow = b.t_yellow ?? 90;
+      if (pct <= tGreen) status = "ok";
+      else if (pct <= tYellow) status = "near";
       else status = "over";
     }
     return { category, budgeted, real, diff, pct, status };
@@ -319,6 +330,9 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
 
   // B2B aging por cliente (simplificado: usa datos agregados)
   const b2bAtEnd = [{ client: "B2B (agregado)", date: end, total: b2bAtEndRows[0].total_byte, collected: b2bAtEndRows[0].total_collected, pending: b2bReceivablesAtEnd, aging: 0 }];
+
+  console.log(`[export] EBITDA=${ebitda.toFixed(2)} margin=${ebitdaMargin.toFixed(2)}% byCategory=${byCategory.length} cashFlow=${cashFlow.length} comparePrev=${!!comparePrev}`);
+  console.log(`[export] done in ${Date.now() - t0}ms`);
 
   return {
     period,

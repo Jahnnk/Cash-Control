@@ -64,30 +64,52 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
 
     setWorking(true);
     setStatus("Recopilando datos...");
-    const data = await getReportData(period);
 
-    if (!data.hasData) {
-      setError("No hay datos en el período seleccionado");
+    // Timeout de seguridad de 60s contra cuelgue del servidor
+    const TIMEOUT_MS = 60000;
+    let timeoutId: ReturnType<typeof setTimeout> | null = null;
+    const timeout = new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("__TIMEOUT__")), TIMEOUT_MS);
+    });
+
+    try {
+      const data = await Promise.race([getReportData(period), timeout]);
+      if (timeoutId) clearTimeout(timeoutId);
+
+      if (!data.hasData) {
+        setError("No hay datos en el período seleccionado");
+        setWorking(false);
+        return;
+      }
+
+      const baseName = `Yayis-Atelier-Reporte-${safeFilename(period.label)}`;
+
+      if (doExcel) {
+        setStatus("Generando Excel...");
+        const { generateExcel } = await import("./export/excel");
+        await generateExcel(data, `${baseName}.xlsx`);
+      }
+      if (doPdf) {
+        setStatus("Generando PDF ejecutivo...");
+        const { generatePdf } = await import("./export/pdf");
+        await generatePdf(data, `${baseName.replace("Reporte", "Reporte-Ejecutivo")}.pdf`);
+      }
+
+      setStatus("✅ Listo. Archivo(s) descargado(s).");
       setWorking(false);
-      return;
+      setTimeout(onClose, 1500);
+    } catch (e) {
+      if (timeoutId) clearTimeout(timeoutId);
+      const msg = e instanceof Error ? e.message : String(e);
+      console.error("Export failed:", e);
+      if (msg === "__TIMEOUT__") {
+        setError("La generación está tardando más de lo normal. Puede ser un problema temporal del servidor. Reintenta o contacta soporte.");
+      } else {
+        setError(`Error al generar el reporte: ${msg}. Reintenta o contacta soporte.`);
+      }
+      setStatus(null);
+      setWorking(false);
     }
-
-    const baseName = `Yayis-Atelier-Reporte-${safeFilename(period.label)}`;
-
-    if (doExcel) {
-      setStatus("Generando Excel...");
-      const { generateExcel } = await import("./export/excel");
-      await generateExcel(data, `${baseName}.xlsx`);
-    }
-    if (doPdf) {
-      setStatus("Generando PDF ejecutivo...");
-      const { generatePdf } = await import("./export/pdf");
-      await generatePdf(data, `${baseName.replace("Reporte", "Reporte-Ejecutivo")}.pdf`);
-    }
-
-    setStatus("✅ Listo. Archivo(s) descargado(s).");
-    setWorking(false);
-    setTimeout(onClose, 1500);
   }
 
   const currentYear = new Date().getFullYear();
