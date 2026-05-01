@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { createCategory, updateCategory, deleteCategory } from "@/app/actions/categories";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Trash2, Check, X, ToggleLeft, ToggleRight } from "lucide-react";
+import { Plus, Pencil, Check, X, ToggleLeft, ToggleRight } from "lucide-react";
 
 type Category = Record<string, unknown>;
 
@@ -37,10 +37,16 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
     router.refresh();
   }
 
+  async function handleToggleEbitda(id: string, currentExclude: boolean) {
+    await updateCategory(id, { excludeFromEbitda: !currentExclude });
+    router.refresh();
+  }
+
   async function handleDelete(id: string) {
     await deleteCategory(id);
     router.refresh();
   }
+  void handleDelete;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -110,8 +116,22 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                 </div>
               ) : (
                 <>
-                  <span className="text-sm text-gray-900">{name}</span>
                   <div className="flex items-center gap-2">
+                    <span className="text-sm text-gray-900">{name}</span>
+                    {(cat.exclude_from_ebitda as boolean) && (
+                      <span className="text-[10px] uppercase font-semibold text-amber-700 bg-amber-50 border border-amber-100 rounded px-1.5 py-0.5" title="Excluida del cálculo de EBITDA">
+                        No EBITDA
+                      </span>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <label className="text-[11px] text-gray-500 flex items-center gap-1 cursor-pointer" title="Si está marcada, no se considera operativa para el EBITDA">
+                      <input type="checkbox"
+                        checked={!!cat.exclude_from_ebitda}
+                        onChange={() => handleToggleEbitda(id, !!cat.exclude_from_ebitda)}
+                        className="rounded text-amber-600" />
+                      Excluir EBITDA
+                    </label>
                     <button
                       onClick={() => {
                         setEditingId(id);

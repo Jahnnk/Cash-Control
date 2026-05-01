@@ -27,15 +27,19 @@ export async function createCategory(name: string) {
   revalidatePath("/configuracion");
 }
 
-export async function updateCategory(id: string, data: { name?: string; isActive?: boolean }) {
+export async function updateCategory(id: string, data: { name?: string; isActive?: boolean; excludeFromEbitda?: boolean }) {
   if (data.name !== undefined) {
     await db.execute(sql`UPDATE expense_categories SET name = ${data.name.trim()} WHERE id = ${id}`);
   }
   if (data.isActive !== undefined) {
     await db.execute(sql`UPDATE expense_categories SET is_active = ${data.isActive} WHERE id = ${id}`);
   }
+  if (data.excludeFromEbitda !== undefined) {
+    await db.execute(sql`UPDATE expense_categories SET exclude_from_ebitda = ${data.excludeFromEbitda} WHERE id = ${id}`);
+  }
   revalidatePath("/registro");
   revalidatePath("/configuracion");
+  revalidatePath("/reportes");
 }
 
 export async function deleteCategory(id: string) {

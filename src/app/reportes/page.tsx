@@ -2,11 +2,13 @@
 
 import { Suspense, useState } from "react";
 import { useSearchParams } from "next/navigation";
+import { Download } from "lucide-react";
 import { WeeklyReport } from "./weekly-report";
 import { MonthlyReport } from "./monthly-report";
 import { DebtAgingReport } from "./debt-aging-report";
 import { Last7DaysReport } from "./last7-days-report";
 import { ReconciliationSection } from "./reconciliation-section";
+import { ExportModal } from "./export-modal";
 
 type Tab = "semanal" | "mensual" | "ultimos7" | "conciliacion" | "antigüedad";
 
@@ -18,6 +20,7 @@ function ReportesContent() {
   const [activeTab, setActiveTab] = useState<Tab>(
     VALID_TABS.includes(initialTab) ? initialTab : "semanal"
   );
+  const [showExport, setShowExport] = useState(false);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "semanal", label: "Semanal" },
@@ -29,7 +32,16 @@ function ReportesContent() {
 
   return (
     <div className="space-y-6">
-      <h1 className="text-2xl font-bold text-gray-900">Reportes</h1>
+      <div className="flex items-center justify-between">
+        <h1 className="text-2xl font-bold text-gray-900">Reportes</h1>
+        <button
+          onClick={() => setShowExport(true)}
+          className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-light flex items-center gap-2 text-sm font-medium"
+        >
+          <Download className="w-4 h-4" /> Exportar reporte
+        </button>
+      </div>
+      {showExport && <ExportModal onClose={() => setShowExport(false)} />}
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
         {tabs.map((tab) => (

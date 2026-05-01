@@ -142,6 +142,9 @@ async function migrate() {
   await sql`CREATE INDEX IF NOT EXISTS allocations_income_idx ON fonavi_reimbursement_allocations(income_item_id)`;
   await sql`CREATE INDEX IF NOT EXISTS allocations_receivable_idx ON fonavi_reimbursement_allocations(receivable_id)`;
 
+  // EBITDA: flag por categoría para excluir del cálculo operativo
+  await sql`ALTER TABLE expense_categories ADD COLUMN IF NOT EXISTS exclude_from_ebitda BOOLEAN NOT NULL DEFAULT false`;
+
   console.log("All tables created successfully!");
 }
 
