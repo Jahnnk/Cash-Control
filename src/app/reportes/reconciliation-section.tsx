@@ -3,6 +3,7 @@
 import { useState, useEffect } from "react";
 import { getReconciliation } from "@/app/actions/reconciliation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
+import { KPICard } from "@/components/ui/KPICard";
 
 type ReconciliationData = {
   daily: Record<string, unknown>[];
@@ -119,23 +120,34 @@ export function ReconciliationSection() {
             {/* Summary cards */}
             <div className="p-4 border-b border-gray-100 bg-gray-50/50">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <SummaryCard label="Ingresos BCP" value={formatCurrency(totalBankIncome)} color="text-primary-light" />
-                <SummaryCard label="Egresos bancarios" value={formatCurrency(totalBankExpenses)} color="text-red-600" />
-                <SummaryCard label="Neto banco" value={`${bankNet >= 0 ? "+" : ""}${formatCurrency(bankNet)}`}
-                  color={bankNet >= 0 ? "text-primary-light" : "text-red-600"} />
-                <SummaryCard label="Variación saldo" value={`${balanceChange >= 0 ? "+" : ""}${formatCurrency(balanceChange)}`}
-                  color={balanceChange >= 0 ? "text-primary-light" : "text-red-600"}
-                  sub={data.balanceEndDate ? `Saldo actual: ${formatCurrency(data.balanceEnd)}` : undefined} />
+                <KPICard size="compact" title="Ingresos BCP" value={formatCurrency(totalBankIncome)} valueClassName="text-primary-light" />
+                <KPICard size="compact" title="Egresos bancarios" value={formatCurrency(totalBankExpenses)} valueClassName="text-red-600" />
+                <KPICard
+                  size="compact"
+                  title="Neto banco"
+                  value={`${bankNet >= 0 ? "+" : ""}${formatCurrency(bankNet)}`}
+                  valueClassName={bankNet >= 0 ? "text-primary-light" : "text-red-600"}
+                />
+                <KPICard
+                  size="compact"
+                  title="Variación saldo"
+                  value={`${balanceChange >= 0 ? "+" : ""}${formatCurrency(balanceChange)}`}
+                  valueClassName={balanceChange >= 0 ? "text-primary-light" : "text-red-600"}
+                  subtitle={data.balanceEndDate ? `Saldo actual: ${formatCurrency(data.balanceEnd)}` : undefined}
+                />
               </div>
 
               {/* Second row */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
-                <SummaryCard label="Ventas Byte" value={formatCurrency(totalByteSales)} color="text-gray-900" />
-                <SummaryCard label="Byte esperado banco" value={formatCurrency(totalByteExpected)} color="text-gray-700" />
-                <SummaryCard label="Diferencia ingreso"
+                <KPICard size="compact" title="Ventas Byte" value={formatCurrency(totalByteSales)} valueClassName="text-gray-900" />
+                <KPICard size="compact" title="Byte esperado banco" value={formatCurrency(totalByteExpected)} valueClassName="text-gray-700" />
+                <KPICard
+                  size="compact"
+                  title="Diferencia ingreso"
                   value={Math.abs(incomeDiff) < 1 ? "✓ Cuadra" : `${incomeDiff > 0 ? "+" : ""}${formatCurrency(incomeDiff)}`}
-                  color={Math.abs(incomeDiff) < 1 ? "text-green-600" : "text-amber-600"} />
-                <SummaryCard label="Total egresos (todos)" value={formatCurrency(totalExpenses)} color="text-red-600" />
+                  valueClassName={Math.abs(incomeDiff) < 1 ? "text-green-600" : "text-amber-600"}
+                />
+                <KPICard size="compact" title="Total egresos (todos)" value={formatCurrency(totalExpenses)} valueClassName="text-red-600" />
               </div>
 
               {/* Cash summary if any */}
@@ -200,12 +212,3 @@ export function ReconciliationSection() {
   );
 }
 
-function SummaryCard({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
-  return (
-    <div className="bg-white rounded-lg border border-gray-200 p-3">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`text-lg font-bold ${color}`}>{value}</div>
-      {sub && <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>}
-    </div>
-  );
-}

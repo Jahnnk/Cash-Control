@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
+import { KPICard } from "@/components/ui/KPICard";
 import { Plus, History, Wallet } from "lucide-react";
 import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
 import { ReimbursementModal } from "./reimbursement-modal";
@@ -62,18 +63,25 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 border-l-4 border-l-violet-500 p-5">
-          <div className="text-sm text-gray-600 mb-1">Total pendiente de cobro</div>
-          <div className={`text-2xl font-bold ${pendingTotal > 0 ? "text-violet-700" : "text-gray-400"}`}>{formatCurrency(pendingTotal)}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="text-sm text-gray-600 mb-1">Cuentas pendientes</div>
-          <div className="text-2xl font-bold text-gray-900">{initialReceivables.filter(r => r.status !== "collected").length}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="text-sm text-gray-600 mb-1">Cuentas cobradas</div>
-          <div className="text-2xl font-bold text-gray-400">{initialReceivables.filter(r => r.status === "collected").length}</div>
-        </div>
+        <KPICard
+          title="Total pendiente de cobro"
+          value={formatCurrency(pendingTotal)}
+          variant="violet"
+          dim={pendingTotal === 0}
+        />
+        <KPICard
+          title="Cuentas pendientes"
+          value={initialReceivables.filter(r => r.status !== "collected").length}
+          variant="default"
+          withAccentBar={false}
+        />
+        <KPICard
+          title="Cuentas cobradas"
+          value={initialReceivables.filter(r => r.status === "collected").length}
+          variant="default"
+          withAccentBar={false}
+          dim
+        />
       </div>
 
       <div className="flex gap-2">

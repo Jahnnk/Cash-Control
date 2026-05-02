@@ -6,7 +6,8 @@ import { getMonthlyReport, getDailyBreakdown } from "@/app/actions/reports";
 import { getCategories } from "@/app/actions/categories";
 import { getClients } from "@/app/actions/clients";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
-import { ChevronDown, ChevronUp, X, Pencil, Trash2 } from "lucide-react";
+import { KPICard } from "@/components/ui/KPICard";
+import { X, Pencil, Trash2 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
 } from "recharts";
@@ -167,38 +168,46 @@ export function MonthlyReport() {
       ) : data ? (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Ventas Byte — clickable */}
-            <ClickableCard
-              label="Ventas Byte"
-              value={formatCurrency(data.totals.total_byte as string)}
-              color="text-gray-900"
-              isExpanded={showDetail === "byte"}
-              onClick={() => handleCardClick("byte")}
-            />
-            {/* Ingresos BCP — clickable */}
-            <ClickableCard
-              label="Ingresos BCP"
-              value={formatCurrency(data.totals.total_income as string)}
-              color="text-primary-light"
-              isExpanded={showDetail === "income"}
-              onClick={() => handleCardClick("income")}
-            />
-            {/* Egresos totales — clickable */}
-            <ClickableCard
-              label="Egresos totales"
-              value={formatCurrency(data.totals.total_expenses as string)}
-              color="text-red-600"
-              isExpanded={showDetail === "expense"}
-              onClick={() => handleCardClick("expense")}
-            />
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="text-sm text-gray-600 mb-1">Variación saldo banco</div>
-              <div className={`text-xl font-bold ${data.bankEndBalance - data.bankStartBalance >= 0 ? "text-primary-light" : "text-red-600"}`}>
-                {formatCurrency(data.bankEndBalance - data.bankStartBalance)}
+          {(() => {
+            const variation = data.bankEndBalance - data.bankStartBalance;
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <KPICard
+                  title="Ventas Byte"
+                  value={formatCurrency(data.totals.total_byte as string)}
+                  variant="default"
+                  withAccentBar={false}
+                  expanded={showDetail === "byte"}
+                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                  onClick={() => handleCardClick("byte")}
+                />
+                <KPICard
+                  title="Ingresos BCP"
+                  value={formatCurrency(data.totals.total_income as string)}
+                  variant="success"
+                  withAccentBar={false}
+                  expanded={showDetail === "income"}
+                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                  onClick={() => handleCardClick("income")}
+                />
+                <KPICard
+                  title="Egresos totales"
+                  value={formatCurrency(data.totals.total_expenses as string)}
+                  variant="danger"
+                  withAccentBar={false}
+                  expanded={showDetail === "expense"}
+                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                  onClick={() => handleCardClick("expense")}
+                />
+                <KPICard
+                  title="Variación saldo banco"
+                  value={formatCurrency(variation)}
+                  variant={variation >= 0 ? "success" : "danger"}
+                  withAccentBar={false}
+                />
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Detail panel */}
           {showDetail && (
@@ -480,29 +489,3 @@ export function MonthlyReport() {
   );
 }
 
-function ClickableCard({
-  label, value, color, isExpanded, onClick,
-}: {
-  label: string; value: string; color: string; isExpanded: boolean; onClick: () => void;
-}) {
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter") onClick(); }}
-      className={`cursor-pointer select-none bg-white rounded-xl border-2 p-5 transition-all active:scale-[0.98] ${
-        isExpanded ? "border-primary-light shadow-md" : "border-gray-200 hover:border-primary-light/50 hover:shadow-sm"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-600">{label}</div>
-        {isExpanded ? <ChevronUp className="w-4 h-4 text-primary-light" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-      </div>
-      <div className={`text-xl font-bold ${color} mt-1`}>{value}</div>
-      <div className="text-[10px] text-primary-light mt-1">
-        {isExpanded ? "Click para cerrar" : "Ver detalle diario"}
-      </div>
-    </div>
-  );
-}
