@@ -28,6 +28,10 @@ function getCurrentMonth() {
   return new Date().toISOString().substring(0, 7);
 }
 
+function isValidMonth(m: string): boolean {
+  return /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
+}
+
 type MonthlyData = {
   totals: Record<string, unknown>;
   bankStartBalance: number;
@@ -36,14 +40,20 @@ type MonthlyData = {
 };
 
 export function MonthlyReport() {
-  const [month, setMonth] = useState(getCurrentMonth());
+  const searchParams = useSearchParams();
+  const initialMonth = (() => {
+    const m = searchParams.get("mes");
+    return m && isValidMonth(m) ? m : getCurrentMonth();
+  })();
+
+  const [month, setMonth] = useState(initialMonth);
   const [data, setData] = useState<MonthlyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDetail, setShowDetail] = useState<"byte" | "income" | "expense" | null>(null);
   const [detailData, setDetailData] = useState<Record<string, unknown>[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const [selectedYear] = useState(new Date().getFullYear());
+  const selectedYear = parseInt(month.split("-")[0]);
   const monthNum = parseInt(month.split("-")[1]) - 1;
 
   useEffect(() => {
@@ -94,7 +104,6 @@ export function MonthlyReport() {
   }, [month, showDetail]);
 
   // Auto-abrir breakdown si llega desde el dashboard con ?breakdown=...
-  const searchParams = useSearchParams();
   const initialBreakdownApplied = useRef(false);
   useEffect(() => {
     if (initialBreakdownApplied.current || loading) return;
@@ -107,6 +116,10 @@ export function MonthlyReport() {
 
   function changeMonth(m: number) {
     setMonth(`${selectedYear}-${String(m + 1).padStart(2, "0")}`);
+  }
+
+  function changeYear(delta: number) {
+    setMonth(`${selectedYear + delta}-${String(monthNum + 1).padStart(2, "0")}`);
   }
 
   const donutData = data?.byCategory.map((row) => ({
@@ -128,6 +141,23 @@ export function MonthlyReport() {
             <option key={i} value={i}>{name} {selectedYear}</option>
           ))}
         </select>
+        <div className="flex items-center gap-1">
+          <button
+            type="button"
+            onClick={() => changeYear(-1)}
+            className="px-2 py-1 text-sm rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+          >
+            ←
+          </button>
+          <span className="text-sm text-gray-700 w-14 text-center">{selectedYear}</span>
+          <button
+            type="button"
+            onClick={() => changeYear(1)}
+            className="px-2 py-1 text-sm rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
+          >
+            →
+          </button>
+        </div>
       </div>
 
       {loading ? (
