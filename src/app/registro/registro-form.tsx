@@ -47,17 +47,35 @@ function isToRegularize(item: ExpenseItem): boolean {
   return cat === "desconocido" || concept.includes("por regularizar") || concept.includes("pendiente");
 }
 
+const REGISTRO_TAB_KEY = "registro:lastTab";
+
 export function RegistroForm({
   initialDate,
   categories,
   clients,
+  initialTxType,
 }: {
   initialDate?: string | null;
   categories: string[];
   clients: ClientOption[];
+  initialTxType?: "ingreso" | "egreso";
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"byte" | "movimientos">("byte");
+  // Si llega ?tipo= forzamos tab Movimientos. Si no, recordamos sessionStorage; default Movimientos.
+  const [activeTab, setActiveTab] = useState<"byte" | "movimientos">(() => {
+    if (initialTxType) return "movimientos";
+    if (typeof window !== "undefined") {
+      const saved = window.sessionStorage.getItem(REGISTRO_TAB_KEY);
+      if (saved === "byte" || saved === "movimientos") return saved;
+    }
+    return "movimientos";
+  });
+  // Persistir cada cambio de tab
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(REGISTRO_TAB_KEY, activeTab);
+    }
+  }, [activeTab]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -85,8 +103,8 @@ export function RegistroForm({
   const expensesListRef = useRef(expensesList);
   expensesListRef.current = expensesList;
 
-  // Quick-add state
-  const [txType, setTxType] = useState<"ingreso" | "egreso">("ingreso");
+  // Quick-add state — pre-llena desde ?tipo= si vino del Dashboard
+  const [txType, setTxType] = useState<"ingreso" | "egreso">(initialTxType ?? "ingreso");
   const [txAmount, setTxAmount] = useState("");
   const [txClient, setTxClient] = useState("");
   const [txCategory, setTxCategory] = useState(categories[0] || "Otros");
@@ -139,6 +157,14 @@ export function RegistroForm({
   const [selectedRuleId, setSelectedRuleId] = useState<string>(""); // cuando hay varias, el usuario elige
   useEffect(() => {
     getSharedRules().then((rules) => setSharedRules(rules.filter((r) => r.active)));
+  }, []);
+
+  // Si entré con ?tipo=, dar foco al monto al cargar
+  useEffect(() => {
+    if (initialTxType) {
+      setTimeout(() => amountRef.current?.focus(), 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const rulesForCategory = sharedRules.filter((r) => r.category_name === txCategory);
   // Auto-seleccionar si hay solo una; resetear cuando cambia la categoría o el set

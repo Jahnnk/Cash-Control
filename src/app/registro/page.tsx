@@ -11,6 +11,9 @@ type ClientOption = { id: string; name: string };
 function RegistroWithParams() {
   const searchParams = useSearchParams();
   const fechaParam = searchParams.get("fecha");
+  const tipoParam = searchParams.get("tipo");
+  const initialTxType: "ingreso" | "egreso" | undefined =
+    tipoParam === "ingreso" ? "ingreso" : tipoParam === "gasto" ? "egreso" : undefined;
   const [categories, setCategories] = useState<string[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -24,7 +27,14 @@ function RegistroWithParams() {
   }, []);
 
   if (loading) return <div className="p-8 text-center text-gray-500">Cargando...</div>;
-  return <RegistroForm initialDate={fechaParam} categories={categories} clients={clients} />;
+  return (
+    <RegistroForm
+      initialDate={fechaParam}
+      categories={categories}
+      clients={clients}
+      initialTxType={initialTxType}
+    />
+  );
 }
 
 export default function RegistroPage() {
