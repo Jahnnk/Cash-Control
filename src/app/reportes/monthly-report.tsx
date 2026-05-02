@@ -7,6 +7,7 @@ import { getCategories } from "@/app/actions/categories";
 import { getClients } from "@/app/actions/clients";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
+import { MonthSelector } from "@/components/ui/MonthSelector";
 import { X, Pencil, Trash2 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
@@ -18,11 +19,6 @@ const PIE_COLORS = [
   "#004C40", "#098B5F", "#22C55E", "#EAB308", "#F97316",
   "#DC2626", "#8B5CF6", "#3B82F6", "#EC4899", "#6B7280",
   "#14B8A6", "#A855F7", "#F59E0B",
-];
-
-const MONTHS = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
 function getCurrentMonth() {
@@ -54,8 +50,6 @@ export function MonthlyReport() {
   const [detailData, setDetailData] = useState<Record<string, unknown>[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
 
-  const selectedYear = parseInt(month.split("-")[0]);
-  const monthNum = parseInt(month.split("-")[1]) - 1;
 
   useEffect(() => {
     setLoading(true);
@@ -115,14 +109,6 @@ export function MonthlyReport() {
     }
   }, [searchParams, loading, handleCardClick]);
 
-  function changeMonth(m: number) {
-    setMonth(`${selectedYear}-${String(m + 1).padStart(2, "0")}`);
-  }
-
-  function changeYear(delta: number) {
-    setMonth(`${selectedYear + delta}-${String(monthNum + 1).padStart(2, "0")}`);
-  }
-
   const donutData = data?.byCategory.map((row) => ({
     name: row.category as string,
     value: parseFloat(row.total as string),
@@ -130,36 +116,8 @@ export function MonthlyReport() {
 
   return (
     <div className="space-y-6">
-      {/* Month selector — dropdown style */}
-      <div className="flex items-center gap-3">
-        <label className="text-sm text-gray-600">Mes:</label>
-        <select
-          value={monthNum}
-          onChange={(e) => changeMonth(parseInt(e.target.value))}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        >
-          {MONTHS.map((name, i) => (
-            <option key={i} value={i}>{name} {selectedYear}</option>
-          ))}
-        </select>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => changeYear(-1)}
-            className="px-2 py-1 text-sm rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
-          >
-            ←
-          </button>
-          <span className="text-sm text-gray-700 w-14 text-center">{selectedYear}</span>
-          <button
-            type="button"
-            onClick={() => changeYear(1)}
-            className="px-2 py-1 text-sm rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
-          >
-            →
-          </button>
-        </div>
-      </div>
+      {/* Month selector — unificado con el resto de la app */}
+      <MonthSelector value={month} onChange={setMonth} loading={loading} />
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">

@@ -2,9 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useTransition } from "react";
+import { useTransition } from "react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { KPICard, type KPIVariant } from "@/components/ui/KPICard";
+import { MonthSelector, monthLabel } from "@/components/ui/MonthSelector";
 import {
   Landmark,
   Receipt,
@@ -13,8 +14,6 @@ import {
   ShieldCheck,
   ArrowRight,
   Handshake,
-  ChevronLeft,
-  ChevronRight,
   Calendar,
   Plus,
 } from "lucide-react";
@@ -37,47 +36,9 @@ type DashboardData = {
   maxMonth: string;
 };
 
-const MONTHS = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
-
-function monthLabel(month: string): string {
-  const [y, m] = month.split("-").map(Number);
-  return `${MONTHS[m - 1]} ${y}`;
-}
-
-function shiftMonth(month: string, delta: number): string {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function buildMonthOptions(firstMonth: string, maxMonth: string): string[] {
-  const out: string[] = [];
-  let cur = firstMonth;
-  // safety guard to avoid infinite loops
-  for (let i = 0; i < 240; i++) {
-    out.push(cur);
-    if (cur === maxMonth) break;
-    cur = shiftMonth(cur, 1);
-  }
-  return out.reverse(); // más reciente primero
-}
-
 export function DashboardClient({ data }: { data: DashboardData }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-
-  const monthOptions = useMemo(
-    () => buildMonthOptions(data.firstMonth, data.maxMonth),
-    [data.firstMonth, data.maxMonth]
-  );
-
-  const prevMonth = shiftMonth(data.selectedMonth, -1);
-  const nextMonth = shiftMonth(data.selectedMonth, 1);
-  const canGoPrev = data.selectedMonth > data.firstMonth;
-  const canGoNext = data.selectedMonth < data.maxMonth;
 
   const navigateToMonth = (m: string) => {
     startTransition(() => {
@@ -134,49 +95,14 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       )}
 
       {/* Selector de mes */}
-      <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => navigateToMonth(prevMonth)}
-          disabled={!canGoPrev || isPending}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <ChevronLeft className="w-4 h-4" /> Mes anterior
-        </button>
-        <button
-          onClick={() => navigateToMonth(data.currentMonth)}
-          disabled={isPending}
-          className={`px-3 py-1.5 text-sm rounded-md border ${
-            data.isCurrentMonth
-              ? "bg-primary text-white border-primary"
-              : "border-gray-200 text-gray-700 hover:bg-gray-50"
-          }`}
-        >
-          Mes actual
-        </button>
-        <button
-          onClick={() => navigateToMonth(nextMonth)}
-          disabled={!canGoNext || isPending}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Mes siguiente <ChevronRight className="w-4 h-4" />
-        </button>
-        <div className="ml-auto flex items-center gap-2">
-          <label className="text-xs text-gray-500">Otro mes:</label>
-          <select
-            value={data.selectedMonth}
-            onChange={(e) => navigateToMonth(e.target.value)}
-            disabled={isPending}
-            className="border border-gray-200 rounded-md px-2 py-1.5 text-sm text-gray-700 bg-white"
-          >
-            {monthOptions.map((m) => (
-              <option key={m} value={m}>
-                {monthLabel(m)}
-                {m === data.currentMonth ? " (actual)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <MonthSelector
+        value={data.selectedMonth}
+        onChange={navigateToMonth}
+        minMonth={data.firstMonth}
+        maxMonth={data.maxMonth}
+        currentMonth={data.currentMonth}
+        loading={isPending}
+      />
 
       {/* Top Cards — auto-fit para que el grid se reacomode si una card se oculta */}
       <div

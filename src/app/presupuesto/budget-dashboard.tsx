@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { getBudgetDashboard } from "@/app/actions/budgets";
 import { formatCurrency } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
+import { MonthSelector } from "@/components/ui/MonthSelector";
 import { AlertTriangle, TrendingUp, TrendingDown, Percent, DollarSign } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 
@@ -98,15 +99,8 @@ export function BudgetDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Presupuesto</h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        />
-      </div>
+      <h1 className="text-2xl font-bold text-gray-900">Presupuesto</h1>
+      <MonthSelector value={month} onChange={setMonth} loading={loading} />
 
       {/* Alerts */}
       {data.alerts.length > 0 && (
