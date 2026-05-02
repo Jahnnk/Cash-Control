@@ -15,6 +15,7 @@ import {
   ChevronLeft,
   ChevronRight,
   Calendar,
+  Plus,
 } from "lucide-react";
 
 type DashboardData = {
@@ -91,6 +92,19 @@ export function DashboardClient({ data }: { data: DashboardData }) {
 
   const reportMonthQs = `&mes=${data.selectedMonth}`;
 
+  // Cobertura inteligente: la tarjeta solo aparece cuando aporta señal accionable.
+  // > 90 días o sin datos → no se muestra. 30-90 verde, 15-30 amarillo, < 15 rojo.
+  const coverageHasData =
+    !monthHasNoData && data.avgDailyExpense > 0 && data.daysCovered < 999;
+  const coverage: { accent: "primary" | "amber" | "red"; label: string } | null = (() => {
+    if (!coverageHasData) return null;
+    const d = data.daysCovered;
+    if (d > 90) return null;
+    if (d >= 30) return { accent: "primary", label: "Días de operación cubiertos" };
+    if (d >= 15) return { accent: "amber", label: "⚠️ Cobertura baja" };
+    return { accent: "red", label: "🔴 Cobertura crítica" };
+  })();
+
   return (
     <div className={`space-y-6 ${isPending ? "opacity-70 transition-opacity" : ""}`}>
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
@@ -163,8 +177,11 @@ export function DashboardClient({ data }: { data: DashboardData }) {
         </div>
       </div>
 
-      {/* Top Cards */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-4">
+      {/* Top Cards — auto-fit para que el grid se reacomode si una card se oculta */}
+      <div
+        className="grid gap-4"
+        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+      >
         <Card
           icon={<Landmark className="w-5 h-5 text-primary-light" />}
           label="Saldo en banco"
@@ -187,6 +204,10 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           accent="primary"
           href={`/reportes?tab=mensual&breakdown=income${reportMonthQs}`}
           dim={monthHasNoData}
+          secondaryAction={{
+            href: "/registro?tipo=ingreso",
+            title: "Registrar nuevo ingreso",
+          }}
         />
         <Card
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
@@ -202,6 +223,10 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           accent="red"
           href={`/reportes?tab=mensual&breakdown=expense${reportMonthQs}`}
           dim={monthHasNoData}
+          secondaryAction={{
+            href: "/registro?tipo=gasto",
+            title: "Registrar nuevo gasto",
+          }}
         />
         <Card
           icon={<Receipt className="w-5 h-5 text-amber-600" />}
@@ -209,7 +234,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           value={formatCurrency(data.accountsReceivable)}
           sub="Byte total - Cobros BCP"
           accent="amber"
-          href="/reportes?tab=antig%C3%BCedad"
+          href="/reportes?tab=conciliacion"
         />
         <Card
           icon={<Handshake className="w-5 h-5 text-violet-600" />}
@@ -218,20 +243,30 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           sub="Gastos compartidos pendientes"
           accent="violet"
           href="/fonavi"
+          secondaryAction={{
+            href: "/fonavi?accion=registrar-reembolso",
+            title: "Registrar reembolso",
+          }}
         />
-        <Card
-          icon={<ShieldCheck className="w-5 h-5 text-primary-light" />}
-          label="Cobertura"
-          value={`${data.daysCovered > 90 ? "90+" : data.daysCovered} días`}
-          sub={
-            monthHasNoData
-              ? "Sin gasto promedio en este período"
-              : data.isPartial
-                ? "Días de operación cubiertos (parcial)"
-                : "Días de operación cubiertos"
-          }
-          accent="primary"
-        />
+        {coverage && (
+          <Card
+            icon={
+              <ShieldCheck
+                className={`w-5 h-5 ${
+                  coverage.accent === "red"
+                    ? "text-red-600"
+                    : coverage.accent === "amber"
+                      ? "text-amber-600"
+                      : "text-primary-light"
+                }`}
+              />
+            }
+            label="Cobertura"
+            value={`${data.daysCovered} días`}
+            sub={data.isPartial ? `${coverage.label} (parcial)` : coverage.label}
+            accent={coverage.accent}
+          />
+        )}
       </div>
 
       {/* Enlaces a reportes detallados */}
@@ -259,6 +294,7 @@ function Card({
   accent,
   href,
   dim = false,
+  secondaryAction,
 }: {
   icon: React.ReactNode;
   label: string;
@@ -267,6 +303,7 @@ function Card({
   accent: "primary" | "amber" | "red" | "violet";
   href?: string;
   dim?: boolean;
+  secondaryAction?: { href: string; title: string };
 }) {
   const borderColor =
     accent === "primary"
@@ -277,29 +314,58 @@ function Card({
           ? "border-l-violet-500"
           : "border-l-red-500";
 
-  const baseClasses = `bg-white rounded-xl border border-gray-200 border-l-4 ${borderColor} p-5`;
-  const interactiveClasses = "cursor-pointer hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5 transition-all block";
+  const valueColor = dim
+    ? "text-gray-400"
+    : accent === "red"
+      ? "text-red-700"
+      : accent === "amber"
+        ? "text-amber-700"
+        : "text-gray-900";
 
-  const content = (
-    <>
-      <div className="flex items-center gap-2 mb-2">
-        {icon}
-        <span className="text-sm text-gray-600">{label}</span>
+  // Card "viva" (con primary action) usa overlay link a pantalla completa
+  // para que el botón secundario pueda vivir encima sin Links anidados.
+  const isInteractive = !!href;
+  const wrapperClasses = `relative bg-white rounded-xl border border-gray-200 border-l-4 ${borderColor} p-5 group transition-all duration-200 ${
+    isInteractive ? "hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5 active:scale-[0.98]" : ""
+  }`;
+
+  return (
+    <div className={wrapperClasses}>
+      {isInteractive && (
+        <Link
+          href={href!}
+          aria-label={label}
+          className="absolute inset-0 z-10 rounded-xl"
+        >
+          <span className="sr-only">{label}</span>
+        </Link>
+      )}
+
+      {/* Cabecera: ícono + label + (acción secundaria) */}
+      <div className="relative z-20 flex items-start justify-between gap-2 mb-2">
+        <div className="flex items-center gap-2 min-w-0">
+          {icon}
+          <span className="text-sm text-gray-600 truncate">{label}</span>
+        </div>
+        {secondaryAction && (
+          <Link
+            href={secondaryAction.href}
+            title={secondaryAction.title}
+            aria-label={secondaryAction.title}
+            className="shrink-0 inline-flex items-center justify-center w-7 h-7 -mr-1 -mt-1 rounded-full text-gray-400/40 hover:text-primary hover:bg-primary/5 hover:scale-105 transition-all duration-150"
+          >
+            <Plus className="w-4 h-4" />
+          </Link>
+        )}
       </div>
-      <div className={`text-2xl font-bold ${dim ? "text-gray-400" : "text-gray-900"}`}>{value}</div>
-      <div className="text-xs text-gray-500 mt-1">{sub}</div>
-    </>
+
+      {/* Cuerpo (no clickable independiente; el overlay captura el click) */}
+      <div className="relative z-0">
+        <div className={`text-2xl font-semibold ${valueColor}`}>{value}</div>
+        <div className="text-xs text-gray-500 mt-1">{sub}</div>
+      </div>
+    </div>
   );
-
-  if (href) {
-    return (
-      <Link href={href} className={`${baseClasses} ${interactiveClasses}`}>
-        {content}
-      </Link>
-    );
-  }
-
-  return <div className={baseClasses}>{content}</div>;
 }
 
 function ReportLink({

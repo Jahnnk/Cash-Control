@@ -5,21 +5,23 @@ import { useSearchParams } from "next/navigation";
 import { Download } from "lucide-react";
 import { WeeklyReport } from "./weekly-report";
 import { MonthlyReport } from "./monthly-report";
-import { DebtAgingReport } from "./debt-aging-report";
 import { Last7DaysReport } from "./last7-days-report";
 import { ReconciliationSection } from "./reconciliation-section";
 import { ExportModal } from "./export-modal";
 
-type Tab = "semanal" | "mensual" | "ultimos7" | "conciliacion" | "antigüedad";
+type Tab = "semanal" | "mensual" | "ultimos7" | "conciliacion";
 
-const VALID_TABS: Tab[] = ["semanal", "mensual", "ultimos7", "conciliacion", "antigüedad"];
+const VALID_TABS: Tab[] = ["semanal", "mensual", "ultimos7", "conciliacion"];
 
 function ReportesContent() {
   const searchParams = useSearchParams();
-  const initialTab = (searchParams.get("tab") as Tab) || "semanal";
-  const [activeTab, setActiveTab] = useState<Tab>(
-    VALID_TABS.includes(initialTab) ? initialTab : "semanal"
-  );
+  const rawTab = searchParams.get("tab");
+  // Redirección suave: cualquier link viejo a antigüedad ahora abre Conciliación
+  const initialTab: Tab =
+    rawTab === "antigüedad" || rawTab === "antiguedad"
+      ? "conciliacion"
+      : (VALID_TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "semanal");
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [showExport, setShowExport] = useState(false);
 
   const tabs: { key: Tab; label: string }[] = [
@@ -27,7 +29,6 @@ function ReportesContent() {
     { key: "mensual", label: "Mensual" },
     { key: "ultimos7", label: "Últimos 7 días" },
     { key: "conciliacion", label: "Conciliación" },
-    { key: "antigüedad", label: "Antigüedad de deuda" },
   ];
 
   return (
@@ -63,7 +64,6 @@ function ReportesContent() {
       {activeTab === "mensual" && <MonthlyReport />}
       {activeTab === "ultimos7" && <Last7DaysReport />}
       {activeTab === "conciliacion" && <ReconciliationSection />}
-      {activeTab === "antigüedad" && <DebtAgingReport />}
     </div>
   );
 }

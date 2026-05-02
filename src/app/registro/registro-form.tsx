@@ -47,17 +47,35 @@ function isToRegularize(item: ExpenseItem): boolean {
   return cat === "desconocido" || concept.includes("por regularizar") || concept.includes("pendiente");
 }
 
+const REGISTRO_TAB_KEY = "registro:lastTab";
+
 export function RegistroForm({
   initialDate,
   categories,
   clients,
+  initialTxType,
 }: {
   initialDate?: string | null;
   categories: string[];
   clients: ClientOption[];
+  initialTxType?: "ingreso" | "egreso";
 }) {
   const router = useRouter();
-  const [activeTab, setActiveTab] = useState<"byte" | "movimientos">("byte");
+  // Si llega ?tipo= forzamos tab Movimientos. Si no, recordamos sessionStorage; default Movimientos.
+  const [activeTab, setActiveTab] = useState<"byte" | "movimientos">(() => {
+    if (initialTxType) return "movimientos";
+    if (typeof window !== "undefined") {
+      const saved = window.sessionStorage.getItem(REGISTRO_TAB_KEY);
+      if (saved === "byte" || saved === "movimientos") return saved;
+    }
+    return "movimientos";
+  });
+  // Persistir cada cambio de tab
+  useEffect(() => {
+    if (typeof window !== "undefined") {
+      window.sessionStorage.setItem(REGISTRO_TAB_KEY, activeTab);
+    }
+  }, [activeTab]);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -85,8 +103,8 @@ export function RegistroForm({
   const expensesListRef = useRef(expensesList);
   expensesListRef.current = expensesList;
 
-  // Quick-add state
-  const [txType, setTxType] = useState<"ingreso" | "egreso">("ingreso");
+  // Quick-add state — pre-llena desde ?tipo= si vino del Dashboard
+  const [txType, setTxType] = useState<"ingreso" | "egreso">(initialTxType ?? "ingreso");
   const [txAmount, setTxAmount] = useState("");
   const [txClient, setTxClient] = useState("");
   const [txCategory, setTxCategory] = useState(categories[0] || "Otros");
@@ -139,6 +157,14 @@ export function RegistroForm({
   const [selectedRuleId, setSelectedRuleId] = useState<string>(""); // cuando hay varias, el usuario elige
   useEffect(() => {
     getSharedRules().then((rules) => setSharedRules(rules.filter((r) => r.active)));
+  }, []);
+
+  // Si entré con ?tipo=, dar foco al monto al cargar
+  useEffect(() => {
+    if (initialTxType) {
+      setTimeout(() => amountRef.current?.focus(), 100);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
   const rulesForCategory = sharedRules.filter((r) => r.category_name === txCategory);
   // Auto-seleccionar si hay solo una; resetear cuando cambia la categoría o el set
@@ -678,85 +704,111 @@ export function RegistroForm({
                 );
               })()}
 
-              {/* Quick add — Excel-style: type amount, Enter, done */}
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="flex items-center gap-2">
-                  {/* Type toggle — click to switch */}
-                  <button
-                    onClick={() => setTxType(txType === "ingreso" ? "egreso" : "ingreso")}
-                    className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-colors ${
-                      txType === "ingreso" ? "bg-green-100 text-primary-light" : "bg-red-100 text-red-600"
-                    }`}
-                    title={`Click para cambiar a ${txType === "ingreso" ? "egreso" : "ingreso"}`}
-                  >
-                    {txType === "ingreso" ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
-                  </button>
+              {/* Quick add — campos críticos siempre visibles */}
+              {(() => {
+                const amountValid = !!txAmount && parseFloat(txAmount) > 0;
+                const canAdd = txType === "ingreso" ? amountValid : amountValid && !!txCategory;
+                return (
+                  <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+                    {/* Fila 1: tipo + monto + agregar */}
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => setTxType(txType === "ingreso" ? "egreso" : "ingreso")}
+                        className={`shrink-0 w-10 h-10 rounded-full flex items-center justify-center transition-all hover:scale-105 ${
+                          txType === "ingreso" ? "bg-green-100 text-primary-light" : "bg-red-100 text-red-600"
+                        }`}
+                        title={`Click para cambiar a ${txType === "ingreso" ? "egreso" : "ingreso"}`}
+                      >
+                        {txType === "ingreso" ? <ArrowDownLeft className="w-5 h-5" /> : <ArrowUpRight className="w-5 h-5" />}
+                      </button>
 
-                  {/* Amount — the main input, always focused */}
-                  <input
-                    ref={amountRef}
-                    type="number"
-                    step="0.01"
-                    value={txAmount}
-                    onChange={(e) => setTxAmount(e.target.value)}
-                    placeholder="Monto y Enter..."
-                    onKeyDown={(e) => {
-                      if (e.key === "Enter") addTransaction();
-                      if (e.key === "Tab" && !e.shiftKey) {
-                        // Tab to switch type
-                        e.preventDefault();
-                        setTxType(txType === "ingreso" ? "egreso" : "ingreso");
-                      }
-                    }}
-                    className={`flex-1 text-xl font-bold border-0 border-b-2 py-2 px-1 focus:outline-none ${
-                      txType === "ingreso" ? "border-primary-light text-primary-light" : "border-red-400 text-red-600"
-                    }`}
-                    autoFocus
-                  />
+                      <input
+                        ref={amountRef}
+                        type="number"
+                        step="0.01"
+                        value={txAmount}
+                        onChange={(e) => setTxAmount(e.target.value)}
+                        placeholder="Monto y Enter..."
+                        onKeyDown={(e) => {
+                          if (e.key === "Enter" && canAdd) addTransaction();
+                          if (e.key === "Tab" && !e.shiftKey) {
+                            e.preventDefault();
+                            setTxType(txType === "ingreso" ? "egreso" : "ingreso");
+                          }
+                        }}
+                        className={`flex-1 text-xl font-bold border-0 border-b-2 py-2 px-1 focus:outline-none ${
+                          txType === "ingreso" ? "border-primary-light text-primary-light" : "border-red-400 text-red-600"
+                        }`}
+                        autoFocus
+                      />
 
-                  {/* Quick label */}
-                  <span className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ${
-                    txType === "ingreso" ? "bg-green-100 text-primary-light" : "bg-red-100 text-red-600"
-                  }`}>
-                    {txType === "ingreso" ? "Ingreso" : "Gasto"}
-                  </span>
-                </div>
+                      <span className={`text-xs font-medium px-2 py-1 rounded-full shrink-0 ${
+                        txType === "ingreso" ? "bg-green-100 text-primary-light" : "bg-red-100 text-red-600"
+                      }`}>
+                        {txType === "ingreso" ? "Ingreso" : "Gasto"}
+                      </span>
 
-                {/* Optional details — collapsed by default, expand on click */}
-                <details className="mt-3">
-                  <summary className="text-xs text-gray-400 cursor-pointer hover:text-gray-600">
-                    Detalles opcionales (categoría, nota, método)
-                  </summary>
-                  <div className="mt-2 space-y-2">
+                      <button
+                        type="button"
+                        onClick={addTransaction}
+                        disabled={!canAdd}
+                        className={`shrink-0 inline-flex items-center gap-1 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                          canAdd
+                            ? "bg-primary text-white hover:bg-primary/90 active:scale-95"
+                            : "bg-gray-100 text-gray-400 cursor-not-allowed"
+                        }`}
+                      >
+                        <Plus className="w-4 h-4" /> Agregar
+                      </button>
+                    </div>
+
+                    {/* Fila 2: campos críticos (siempre visibles) */}
                     {txType === "ingreso" ? (
-                      <div className="grid grid-cols-2 gap-2">
-                        <select value={txClient} onChange={(e) => setTxClient(e.target.value)}
-                          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <select
+                          value={txClient}
+                          onChange={(e) => setTxClient(e.target.value)}
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        >
                           <option value="">Ingreso del día</option>
                           {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
                         </select>
-                        <input type="text" value={txNote} onChange={(e) => setTxNote(e.target.value)}
-                          placeholder="Nota"
-                          onKeyDown={(e) => e.key === "Enter" && addTransaction()}
-                          className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                        <input
+                          type="text"
+                          value={txNote}
+                          onChange={(e) => setTxNote(e.target.value)}
+                          placeholder="Nota (opcional)"
+                          onKeyDown={(e) => e.key === "Enter" && canAdd && addTransaction()}
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        />
                       </div>
                     ) : (
-                      <div className="space-y-2">
-                        <div className="grid grid-cols-3 gap-2">
-                          <select value={txCategory} onChange={(e) => setTxCategory(e.target.value)}
-                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <select
+                            value={txCategory}
+                            onChange={(e) => setTxCategory(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          >
                             {categories.map((cat) => (<option key={cat} value={cat}>{cat}</option>))}
                           </select>
-                          <select value={txMethod} onChange={(e) => setTxMethod(e.target.value)}
-                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs">
+                          <select
+                            value={txMethod}
+                            onChange={(e) => setTxMethod(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          >
                             <option value="transferencia">Transferencia</option>
                             <option value="efectivo">Efectivo</option>
                             <option value="yape">Yape</option>
                           </select>
-                          <input type="text" value={txConcept} onChange={(e) => setTxConcept(e.target.value)}
-                            placeholder="Concepto"
-                            onKeyDown={(e) => e.key === "Enter" && addTransaction()}
-                            className="border border-gray-200 rounded-lg px-2 py-1.5 text-xs" />
+                          <input
+                            type="text"
+                            value={txConcept}
+                            onChange={(e) => setTxConcept(e.target.value)}
+                            placeholder="Concepto (opcional)"
+                            onKeyDown={(e) => e.key === "Enter" && canAdd && addTransaction()}
+                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          />
                         </div>
 
                         {/* Banner gasto compartido — visible si la categoría tiene 1+ reglas activas */}
@@ -770,14 +822,13 @@ export function RegistroForm({
                                   : `Esta categoría tiene ${rulesForCategory.length} reglas de gasto compartido`}
                               </div>
 
-                              {/* Dropdown de selección si hay varias reglas */}
                               {rulesForCategory.length > 1 && (
                                 <select
                                   value={selectedRuleId}
                                   onChange={(e) => setSelectedRuleId(e.target.value)}
                                   className="w-full border border-violet-200 rounded-md px-2 py-1 text-xs bg-white"
                                 >
-                                  <option value="">— Elegir concepto o "no compartido" —</option>
+                                  <option value="">— Elegir concepto o &quot;no compartido&quot; —</option>
                                   {rulesForCategory.map((r) => (
                                     <option key={r.id} value={r.id}>
                                       {r.concept} ({r.atelier_percentage}% / {r.fonavi_percentage}%)
@@ -786,7 +837,6 @@ export function RegistroForm({
                                 </select>
                               )}
 
-                              {/* Preview del split cuando hay regla seleccionada */}
                               {activeRuleForCategory && shareThisExpense && txAmount && parseFloat(txAmount) > 0 && (
                                 <div className="text-violet-700">
                                   Tu parte: S/ {(parseFloat(txAmount) * activeRuleForCategory.atelier_percentage / 100).toFixed(2)} · Por cobrar a Fonavi: S/ {(parseFloat(txAmount) * activeRuleForCategory.fonavi_percentage / 100).toFixed(2)}
@@ -804,11 +854,11 @@ export function RegistroForm({
                             </div>
                           </div>
                         )}
-                      </div>
+                      </>
                     )}
                   </div>
-                </details>
-              </div>
+                );
+              })()}
 
               {/* Transaction feed — Board style */}
               {(incomeItems.length > 0 || expensesList.length > 0) && (

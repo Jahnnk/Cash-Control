@@ -1,7 +1,7 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { Plus, History, Wallet } from "lucide-react";
 import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
@@ -24,10 +24,21 @@ function agingClass(days: number, status: string) {
 
 export function FonaviClient({ initialReceivables }: { initialReceivables: ReceivableRow[] }) {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "pending">("pending");
   const [registerFor, setRegisterFor] = useState<ReceivableRow | null>(null);
   const [registerGeneric, setRegisterGeneric] = useState(false);
   const [historyFor, setHistoryFor] = useState<ReceivableRow | null>(null);
+
+  // Si llega ?accion=registrar-reembolso, abrir el modal una vez
+  const autoOpenedRef = useRef(false);
+  useEffect(() => {
+    if (autoOpenedRef.current) return;
+    if (searchParams.get("accion") === "registrar-reembolso") {
+      autoOpenedRef.current = true;
+      setRegisterGeneric(true);
+    }
+  }, [searchParams]);
 
   const filtered = filter === "pending"
     ? initialReceivables.filter((r) => r.status !== "collected")
