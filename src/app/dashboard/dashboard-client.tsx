@@ -92,6 +92,19 @@ export function DashboardClient({ data }: { data: DashboardData }) {
 
   const reportMonthQs = `&mes=${data.selectedMonth}`;
 
+  // Cobertura inteligente: la tarjeta solo aparece cuando aporta señal accionable.
+  // > 90 días o sin datos → no se muestra. 30-90 verde, 15-30 amarillo, < 15 rojo.
+  const coverageHasData =
+    !monthHasNoData && data.avgDailyExpense > 0 && data.daysCovered < 999;
+  const coverage: { accent: "primary" | "amber" | "red"; label: string } | null = (() => {
+    if (!coverageHasData) return null;
+    const d = data.daysCovered;
+    if (d > 90) return null;
+    if (d >= 30) return { accent: "primary", label: "Días de operación cubiertos" };
+    if (d >= 15) return { accent: "amber", label: "⚠️ Cobertura baja" };
+    return { accent: "red", label: "🔴 Cobertura crítica" };
+  })();
+
   return (
     <div className={`space-y-6 ${isPending ? "opacity-70 transition-opacity" : ""}`}>
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
@@ -235,19 +248,25 @@ export function DashboardClient({ data }: { data: DashboardData }) {
             title: "Registrar reembolso",
           }}
         />
-        <Card
-          icon={<ShieldCheck className="w-5 h-5 text-primary-light" />}
-          label="Cobertura"
-          value={`${data.daysCovered > 90 ? "90+" : data.daysCovered} días`}
-          sub={
-            monthHasNoData
-              ? "Sin gasto promedio en este período"
-              : data.isPartial
-                ? "Días de operación cubiertos (parcial)"
-                : "Días de operación cubiertos"
-          }
-          accent="primary"
-        />
+        {coverage && (
+          <Card
+            icon={
+              <ShieldCheck
+                className={`w-5 h-5 ${
+                  coverage.accent === "red"
+                    ? "text-red-600"
+                    : coverage.accent === "amber"
+                      ? "text-amber-600"
+                      : "text-primary-light"
+                }`}
+              />
+            }
+            label="Cobertura"
+            value={`${data.daysCovered} días`}
+            sub={data.isPartial ? `${coverage.label} (parcial)` : coverage.label}
+            accent={coverage.accent}
+          />
+        )}
       </div>
 
       {/* Enlaces a reportes detallados */}
