@@ -1,4 +1,5 @@
 import { Sidebar } from "@/components/sidebar";
+import { BusinessBanner } from "@/components/business-banner";
 
 /**
  * Layout del scope consolidado /grupo/...
@@ -11,7 +12,8 @@ export default async function GrupoLayout({ children }: { children: React.ReactN
     <>
       <Sidebar />
       <main className="lg:ml-64 min-h-screen">
-        <div className="p-4 pt-16 lg:p-8 lg:pt-8 max-w-7xl mx-auto">{children}</div>
+        <BusinessBanner scope="grupo" />
+        <div className="p-4 pt-6 lg:p-8 lg:pt-6 max-w-7xl mx-auto">{children}</div>
       </main>
     </>
   );
