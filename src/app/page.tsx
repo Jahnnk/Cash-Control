@@ -29,8 +29,8 @@ export default async function HomeRoleSelector() {
         </header>
 
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-          <RoleCard role="admin" name="Jahnn" description="Acceso total a los 3 negocios" />
-          <RoleCard role="kelly" name="Kelly" description="Fonavi y Centro" />
+          <RoleCard role="admin" name="Jahnn" />
+          <RoleCard role="kelly" name="Kelly" />
         </div>
 
         <p className="text-center text-xs text-gray-400 mt-12">
@@ -41,7 +41,7 @@ export default async function HomeRoleSelector() {
   );
 }
 
-function RoleCard({ role, name, description }: { role: "admin" | "kelly"; name: string; description: string }) {
+function RoleCard({ role, name }: { role: "admin" | "kelly"; name: string }) {
   // server action bound al rol específico (puro server action, sin client component)
   const action = async () => {
     "use server";
@@ -52,13 +52,12 @@ function RoleCard({ role, name, description }: { role: "admin" | "kelly"; name: 
     <form action={action}>
       <button
         type="submit"
-        className="group w-full bg-white rounded-2xl border border-gray-200 p-8 hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5 active:scale-[0.99] transition-all text-left cursor-pointer"
+        className="group w-full bg-white rounded-2xl border border-gray-200 p-12 hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5 active:scale-[0.99] transition-all cursor-pointer flex flex-col items-center justify-center min-h-[200px]"
       >
-        <div className="w-14 h-14 rounded-xl bg-gray-100 text-gray-700 flex items-center justify-center mb-5">
-          <User className="w-7 h-7" />
+        <div className="w-16 h-16 rounded-2xl bg-gray-100 text-gray-700 flex items-center justify-center mb-5">
+          <User className="w-8 h-8" />
         </div>
-        <div className="text-lg font-semibold text-gray-900">{name}</div>
-        <div className="text-sm text-gray-500 mt-1">{description}</div>
+        <div className="text-xl font-semibold text-gray-900">{name}</div>
       </button>
     </form>
   );
