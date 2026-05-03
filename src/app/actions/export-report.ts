@@ -249,7 +249,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
       d.date::text as date,
       COALESCE(dr.bank_balance_real::float, NULL) as bank_balance,
       COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = d.date), 0)::float as income,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method != 'efectivo'), 0)::float as expense
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)::float as expense
     FROM dates d
     LEFT JOIN daily_records dr ON dr.date = d.date
     ORDER BY d.date ASC

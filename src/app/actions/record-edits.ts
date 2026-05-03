@@ -17,7 +17,7 @@ function recalcDailyTotalsQuery(bId: number, date: string) {
   return sql`
     UPDATE daily_records SET
       bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = ${date}), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = ${date} AND payment_method != 'efectivo'), 0)
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = ${date} AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
     WHERE business_id = ${bId} AND date = ${date}
   `;
 }
@@ -40,7 +40,7 @@ function recalcBankBalanceQuery(bId: number, date: string) {
         ROUND((
           c.calc_balance
           + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method != 'efectivo'), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date

@@ -14,8 +14,8 @@ export async function getReconciliation(startDate: string, endDate: string) {
       (COALESCE(dr.byte_digital, 0) + COALESCE(dr.byte_credit_collected, 0)) as byte_expected_bank,
       COALESCE(dr.bank_income, 0) as bank_income,
       (COALESCE(dr.byte_digital, 0) + COALESCE(dr.byte_credit_collected, 0)) - COALESCE(dr.bank_income, 0) as income_diff,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method != 'efectivo'), 0) as bank_expenses,
-      COALESCE(dr.bank_income, 0) - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method != 'efectivo'), 0) as bank_net,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0) as bank_expenses,
+      COALESCE(dr.bank_income, 0) - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0) as bank_net,
       dr.bank_balance_real,
       COALESCE(dr.byte_total, 0) as byte_total
     FROM daily_records dr
@@ -29,7 +29,7 @@ export async function getReconciliation(startDate: string, endDate: string) {
       COALESCE(SUM(COALESCE(byte_digital, 0) + COALESCE(byte_credit_collected, 0)), 0) as total_byte_expected,
       COALESCE(SUM(bank_income), 0) as total_bank_income,
       COALESCE(SUM(byte_total), 0) as total_byte_sales,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND payment_method != 'efectivo'), 0) as total_bank_expenses,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0) as total_bank_expenses,
       COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND payment_method = 'efectivo'), 0) as total_cash_expenses,
       COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}), 0) as total_expenses,
       COALESCE(SUM(byte_cash_physical), 0) as total_cash_income
