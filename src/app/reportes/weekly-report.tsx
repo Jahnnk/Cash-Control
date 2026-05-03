@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { Pencil } from "lucide-react";
 import { getWeeklyReport } from "@/app/actions/reports";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { DataTable } from "@/components/ui/DataTable";
@@ -14,6 +16,16 @@ import {
   Legend,
   ResponsiveContainer,
 } from "recharts";
+
+/** Devuelve true si dateStr está dentro de los últimos 7 días (incluye hoy). */
+function isWithinLast7Days(dateStr: string): boolean {
+  const date = new Date(dateStr + "T00:00:00");
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const sevenDaysAgo = new Date(today);
+  sevenDaysAgo.setDate(today.getDate() - 6);
+  return date >= sevenDaysAgo && date <= today;
+}
 
 function getWeekRange(weeksAgo: number = 0) {
   const now = new Date();
@@ -33,11 +45,16 @@ function getWeekRange(weeksAgo: number = 0) {
 }
 
 export function WeeklyReport() {
+  const router = useRouter();
   const [weeksAgo, setWeeksAgo] = useState(0);
   const [data, setData] = useState<Record<string, unknown>[] | null>(null);
   const [loading, setLoading] = useState(true);
 
   const range = getWeekRange(weeksAgo);
+
+  function editDay(dateStr: string) {
+    router.push(`/registro?fecha=${dateStr}`);
+  }
 
   useEffect(() => {
     setLoading(true);
@@ -117,6 +134,25 @@ export function WeeklyReport() {
               { key: "bank_income", header: "Ingreso BCP", align: "right", cellClassName: "text-primary-light font-medium", render: (row) => formatCurrency(row.bank_income as string) },
               { key: "expenses_total", header: "Egresos", align: "right", cellClassName: "text-red-600", render: (row) => formatCurrency(row.expenses_total as string) },
               { key: "bank_balance_real", header: "Saldo BCP", align: "right", cellClassName: "font-semibold", render: (row) => row.bank_balance_real ? formatCurrency(row.bank_balance_real as string) : "—" },
+              {
+                key: "edit",
+                header: "",
+                width: "w-10",
+                render: (row) => {
+                  const date = row.date as string;
+                  const editable = isWithinLast7Days(date);
+                  if (!editable) return null;
+                  return (
+                    <button
+                      onClick={() => editDay(date)}
+                      className="text-gray-400 hover:text-primary-light p-1 rounded"
+                      title="Editar este día"
+                    >
+                      <Pencil className="w-3.5 h-3.5" />
+                    </button>
+                  );
+                },
+              },
             ]}
           />
         </>

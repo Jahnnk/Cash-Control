@@ -1,8 +1,9 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance, getCurrentBankBalance, updateCurrentBankBalance } from "@/app/actions/daily-records";
+import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance, updateCurrentBankBalance } from "@/app/actions/daily-records";
 import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
+import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
 import { formatCurrency, getToday } from "@/lib/utils";
@@ -147,9 +148,14 @@ export function RegistroForm({
   // Dynamic bank balance = previous balance + today's bank income - today's bank expenses
   const dynamicBalance = prevBalance !== null ? prevBalance + bankIncomeTotal - expensesBankTotal : null;
 
-  // Saldo BCP HOY (independiente de la fecha seleccionada): último snapshot manual + flujo posterior
-  const [currentBalance, setCurrentBalance] = useState<number | null>(null);
+  // Saldo BCP HOY — fuente única vía hook unificado (también usado por Dashboard y Conciliación)
+  const { current: currentBalanceVal, hasAnchor, refresh: refreshBankBalance } = useBankBalance();
+  const currentBalance = hasAnchor ? currentBalanceVal : null;
   const [currentBalanceInput, setCurrentBalanceInput] = useState("");
+  // Sincroniza el input editable cuando el hook resuelve / cambia el valor
+  useEffect(() => {
+    setCurrentBalanceInput(hasAnchor ? String(currentBalanceVal) : "");
+  }, [currentBalanceVal, hasAnchor]);
 
   // Reglas de gastos compartidos (cargadas una vez)
   const [sharedRules, setSharedRules] = useState<SharedRule[]>([]);
@@ -187,10 +193,9 @@ export function RegistroForm({
       getBankIncomeItems(date),
       getLastBankBalance(date),
       getExpensesByDate(date),
-      getCurrentBankBalance(),
-    ]).then(([record, items, lastBalance, existingExpenses, current]) => {
-      setCurrentBalance(current.hasAnchor ? current.balance : null);
-      setCurrentBalanceInput(current.hasAnchor ? String(current.balance) : "");
+    ]).then(([record, items, lastBalance, existingExpenses]) => {
+      // currentBalance ya viene del hook useBankBalance(), no necesitamos cargarlo acá.
+      if (currentBalance !== null) setCurrentBalanceInput(String(currentBalance));
       if (record) {
         setByteCashPhysical(String(record.byte_cash_physical || 0));
         setByteDigital(String(record.byte_digital || 0));
@@ -500,9 +505,7 @@ export function RegistroForm({
                       setEditingSaldo(false);
                       if (currentBalanceInput) {
                         await updateCurrentBankBalance(parseFloat(currentBalanceInput));
-                        const refreshed = await getCurrentBankBalance();
-                        setCurrentBalance(refreshed.hasAnchor ? refreshed.balance : null);
-                        setCurrentBalanceInput(refreshed.hasAnchor ? String(refreshed.balance) : "");
+                        await refreshBankBalance();
                       }
                     }
                   }}
@@ -510,9 +513,7 @@ export function RegistroForm({
                     setEditingSaldo(false);
                     if (currentBalanceInput) {
                       await updateCurrentBankBalance(parseFloat(currentBalanceInput));
-                      const refreshed = await getCurrentBankBalance();
-                      setCurrentBalance(refreshed.hasAnchor ? refreshed.balance : null);
-                      setCurrentBalanceInput(refreshed.hasAnchor ? String(refreshed.balance) : "");
+                      await refreshBankBalance();
                     }
                   }}
                   className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 text-right text-lg w-48 focus:bg-white/20"

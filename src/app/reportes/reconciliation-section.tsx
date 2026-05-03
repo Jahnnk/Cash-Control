@@ -5,6 +5,7 @@ import { getReconciliation } from "@/app/actions/reconciliation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { DataTable } from "@/components/ui/DataTable";
+import { useBankBalance } from "@/hooks/useBankBalance";
 
 type ReconciliationData = {
   daily: Record<string, unknown>[];
@@ -48,6 +49,7 @@ export function ReconciliationSection() {
   const [customEnd, setCustomEnd] = useState("");
   const [data, setData] = useState<ReconciliationData | null>(null);
   const [loading, setLoading] = useState(true);
+  const { current: bankBalanceNow, isLoading: balanceLoading } = useBankBalance();
 
   const range = getDateRange(period, customStart, customEnd);
 
@@ -134,7 +136,11 @@ export function ReconciliationSection() {
                   title="Variación saldo"
                   value={`${balanceChange >= 0 ? "+" : ""}${formatCurrency(balanceChange)}`}
                   valueClassName={balanceChange >= 0 ? "text-primary-light" : "text-red-600"}
-                  subtitle={data.balanceEndDate ? `Saldo actual: ${formatCurrency(data.balanceEnd)}` : undefined}
+                  subtitle={
+                    balanceLoading
+                      ? "Saldo actual: …"
+                      : `Saldo actual: ${formatCurrency(bankBalanceNow)}`
+                  }
                 />
               </div>
 
