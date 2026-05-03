@@ -15,20 +15,22 @@ export async function getClients(activeOnly = true) {
 }
 
 export async function getClientsWithBalance() {
+  // El cálculo de pending_amount usaba LEFT JOIN sales (tabla eliminada en
+  // Ola 4). El sistema vivo no atribuye ingresos por cliente
+  // (bank_income_items.client_id está siempre NULL), así que pending_amount
+  // siempre era 0 para clientes activos. Devolvemos la lista plana.
   const result = await db.execute(sql`
     SELECT
-      c.id,
-      c.name,
-      c.type,
-      c.payment_pattern,
-      c.is_active,
-      COALESCE(SUM(CASE WHEN s.is_collected = false THEN s.net_amount ELSE 0 END), 0) as pending_amount,
-      MIN(CASE WHEN s.is_collected = false THEN s.date ELSE NULL END) as oldest_pending_date
-    FROM clients c
-    LEFT JOIN sales s ON s.client_id = c.id
-    WHERE c.is_active = true
-    GROUP BY c.id, c.name, c.type, c.payment_pattern, c.is_active
-    ORDER BY pending_amount DESC
+      id,
+      name,
+      type,
+      payment_pattern,
+      is_active,
+      0::numeric AS pending_amount,
+      NULL::date AS oldest_pending_date
+    FROM clients
+    WHERE is_active = true
+    ORDER BY name
   `);
   return result.rows;
 }
