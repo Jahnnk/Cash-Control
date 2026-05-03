@@ -47,7 +47,7 @@ export const dailyRecords = pgTable(
   "daily_records",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    businessId: integer("business_id").notNull().default(1).references(() => businesses.id),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
     date: date("date").notNull(),
     // Byte fields
     byteCash: numeric("byte_cash", { precision: 10, scale: 2 }).default("0"),
@@ -83,7 +83,7 @@ export const expenses = pgTable(
   "expenses",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    businessId: integer("business_id").notNull().default(1).references(() => businesses.id),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
     date: date("date").notNull(),
     category: text("category").notNull(),
     concept: text("concept").notNull(),
@@ -111,7 +111,7 @@ export const bankIncomeItems = pgTable(
   "bank_income_items",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    businessId: integer("business_id").notNull().default(1).references(() => businesses.id),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
     date: date("date").notNull(),
     amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
     clientId: uuid("client_id"),
@@ -134,7 +134,7 @@ export const expenseCategories = pgTable(
   "expense_categories",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    businessId: integer("business_id").notNull().default(1).references(() => businesses.id),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
     name: text("name").notNull(),
     isActive: boolean("is_active").default(true).notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
@@ -155,7 +155,7 @@ export const budgets = pgTable(
   "budgets",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    businessId: integer("business_id").notNull().default(1).references(() => businesses.id),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
     categoryName: text("category_name").notNull(),
     budgetPercentage: numeric("budget_percentage", { precision: 5, scale: 2 }),
     costType: text("cost_type").notNull(),
@@ -180,7 +180,7 @@ export const auditLog = pgTable(
   "audit_log",
   {
     id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-    businessId: integer("business_id").notNull().default(1).references(() => businesses.id),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
     timestamp: timestamp("timestamp").defaultNow().notNull(),
     action: text("action").notNull(),
     recordId: uuid("record_id").notNull(),
