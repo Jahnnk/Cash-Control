@@ -1,6 +1,6 @@
-# Multi-Tenant — Notas para Olas 6 y 7
+# Multi-Tenant — Estado post Olas 5-9
 
-**Estado actual (post Ola 5):** la BD es multi-tenant a nivel schema; **toda la data vive en Atelier (`business_id = 1`)** porque las server actions todavía no filtran ni eligen negocio. La UI sigue mostrando exactamente el mismo comportamiento de antes.
+**Estado:** sistema multi-negocio funcional. Atelier conserva su data histórica intacta. Fonavi y Centro están vacíos y listos para recibir movimientos.
 
 ## Tabla raíz: `businesses`
 
@@ -10,106 +10,131 @@
 | 2 | `fonavi` | Yayi's Fonavi | Cafetería Fonavi |
 | 3 | `centro` | Yayi's Centro | Cafetería Centro |
 
-`code` es UNIQUE; el frontend usa `code` (string), nunca `id`.
+`code` es UNIQUE; el routing y la UI usan `code` (string), nunca `id`.
+
+## Arquitectura de routing
+
+```
+/                                    → pantalla selectora de negocio
+/atelier/dashboard, /atelier/...     → 7 pantallas (incluye Clientes y Fonavi)
+/fonavi/dashboard,  /fonavi/...      → 5 pantallas (sin Clientes ni Fonavi)
+/centro/dashboard,  /centro/...      → 5 pantallas (sin Clientes ni Fonavi)
+/grupo/dashboard, /grupo/reportes    → vista consolidada
+```
+
+## Cómo se resuelve el negocio activo
+
+```
+Request HTTP llega
+    │
+    ├─ middleware.ts (src/middleware.ts):
+    │     1. Extrae primer segmento (atelier|fonavi|centro|grupo).
+    │     2. Inyecta header `x-active-business: <segmento>` en la request entrante.
+    │     3. Setea cookie `yayis_business=<segmento>` en el response.
+    │
+    ├─ Server components (page.tsx, layout.tsx):
+    │     leen `params.negocio` para validar / personalizar UI.
+    │
+    └─ Server actions (src/app/actions/*):
+          activeBusinessId() lee del header (esta request) o cookie (fallback).
+          Cada query lleva WHERE business_id = $bId.
+```
+
+**Importante:** el middleware modifica la request *antes* de que llegue a server components y actions, así que TODO el ciclo de la request ve el negocio correcto. Sin middleware, server components no podrían setear cookies (Next 16 lo prohíbe).
 
 ## Tablas multi-tenant (con `business_id` NOT NULL)
 
-Cada fila pertenece a UN solo negocio. Las queries DEBEN filtrar por `business_id` para no mezclar datos entre negocios.
+`daily_records`, `expenses`, `bank_income_items`, `expense_categories`, `budgets`, `audit_log`.
 
-| Tabla | Filas hoy | UNIQUE compuesto | Comentario |
-|---|---|---|---|
-| `daily_records` | 30 | `(business_id, date)` | Un registro Byte+Bank por día por negocio |
-| `expenses` | 126 | — | Egresos diarios |
-| `bank_income_items` | 120 | — | Ingresos individuales al banco |
-| `expense_categories` | 18 | `(business_id, name)` | Cada negocio tiene su set |
-| `budgets` | 17 | `(business_id, category_name)` | Configuración de tope por categoría |
-| `audit_log` | 13 | — | Trazabilidad de ediciones |
-
-**Total migrado:** 324 filas, todas con `business_id = 1`.
-
-**Default a nivel SQL y TS:** `business_id` tiene `DEFAULT 1` en BD y en Drizzle. Esto es transitorio — permite que las server actions de hoy (que no pasan `businessId`) sigan funcionando contra Atelier sin cambios. **Eliminar el DEFAULT es Ola 7**, cuando todas las queries pasen `businessId` explícito.
+Todas las queries en `src/app/actions/*` filtran por `business_id`. El **DEFAULT 1 fue eliminado en Ola 7** — cualquier INSERT que omita `business_id` ahora falla con NOT NULL violation. Esto es intencional: obliga a que toda escritura sea consciente del negocio activo.
 
 ## Tablas exclusivas Atelier (sin `business_id`)
 
-Modelan funcionalidad que solo existe en Atelier. **No se filtran por negocio.** La UI debe ocultar las features asociadas cuando el negocio activo no sea Atelier.
+- `clients` — clientes B2B
+- `shared_expense_rules` — reglas Atelier↔Fonavi
+- `fonavi_receivables` — cuentas por cobrar a Fonavi
+- `fonavi_reimbursement_allocations` — asignación de reembolsos
 
-| Tabla | Razón |
+**Cross-tenant guards activos:**
+- `/[negocio]/clientes` y `/[negocio]/fonavi`: `notFound()` si `negocio !== "atelier"`.
+- `/[negocio]/configuracion`: la sección "Gastos compartidos con Fonavi" solo se renderiza si negocio es Atelier.
+- `getFonaviReceivables()`: tira `Error("Esta sección solo está disponible en Atelier")` si se llama desde otro negocio.
+- `createExpense({shared: ...})`: tira si se intenta registrar gasto compartido desde Fonavi/Centro.
+
+## Sidebar adaptativo
+
+| Item | Atelier | Fonavi | Centro | Grupo |
+|---|---|---|---|---|
+| Dashboard | ✓ | ✓ | ✓ | ✓ |
+| Registro Diario | ✓ | ✓ | ✓ | — |
+| Presupuesto | ✓ | ✓ | ✓ | — |
+| Clientes | ✓ | — | — | — |
+| Fonavi | ✓ | — | — | — |
+| Reportes | ✓ | ✓ | ✓ | ✓ |
+| Configuración | ✓ | ✓ | ✓ | — |
+
+Selector permanente arriba del sidebar (dropdown con los 4 scopes + opción "Cambiar negocio" → vuelve a la pantalla raíz).
+
+## Helpers
+
+`src/lib/businesses.ts`:
+- `BusinessCode = 'atelier' | 'fonavi' | 'centro'`
+- `getBusinesses()`, `getBusinessByCode(code)`, `isValidBusinessCode(value)`
+
+`src/lib/active-business.ts`:
+- `getActiveBusiness(code?)` — header → cookie → null
+- `requireActiveBusiness()` — tira si no hay
+- `activeBusinessId()` — atajo `.id`
+- `setActiveBusinessCookie(code)` — solo desde server actions / route handlers
+- `isValidScopeCode(value)` — permite también `'grupo'`
+
+## Vista Grupo (consolidada)
+
+`src/app/actions/grupo.ts` → `getGroupDashboard()`:
+- Calcula saldo BCP por negocio (método híbrido: anchor + flujo).
+- Suma ingresos del mes (excluye reembolsos Fonavi).
+- Suma gastos del mes usando `atelier_amount` cuando `is_shared=true` para **NO duplicar la parte Fonavi**.
+- Devuelve totales + breakdown por negocio.
+
+## ⚠️ Pendiente (CAMBIO 7.5 del prompt original)
+
+**Gastos compartidos automáticos NO implementados.** Hoy cuando Atelier registra un gasto compartido:
+- ✅ Se registra en `expenses` de Atelier con `is_shared=true`, `atelier_amount`, `fonavi_amount`.
+- ✅ Se crea fila en `fonavi_receivables` con la deuda.
+- ❌ NO se crea fila en `expenses` de Fonavi (auto-mirror).
+
+El prompt original pidió "auto-crear gasto en Fonavi", pero **requiere decisiones de negocio que no están especificadas**:
+- ¿Con qué categoría se registra en Fonavi? (Las categorías son por negocio.)
+- ¿En qué fecha — la del gasto Atelier o la del reembolso?
+- ¿Con qué método de pago?
+- ¿Afecta el saldo BCP de Fonavi inmediatamente, o solo cuando se paga el reembolso?
+
+**Cuando Jahnn defina las reglas, agregar la lógica en `createExpense()` de `src/app/actions/expenses.ts` para auto-mirror.**
+
+Mientras tanto: el comportamiento actual de Atelier (registrar el gasto + crear receivable) sigue funcionando intacto. El reembolso (lado Fonavi) se registra manualmente como ingreso a Atelier desde la modal de "Cuentas por cobrar Fonavi" — workflow inalterado.
+
+## Smoke tests cross-tenant ejecutados
+
+| Test | Resultado |
 |---|---|
-| `clients` | Clientes B2B (Fonavi/Centro venden a consumidor final) |
-| `shared_expense_rules` | Reglas Atelier↔Fonavi |
-| `fonavi_receivables` | Cuentas por cobrar a Fonavi |
-| `fonavi_reimbursement_allocations` | Asignación de reembolsos |
+| `/` carga selector | ✅ 200 |
+| `/atelier/*` (7 rutas) | ✅ 200 — data S/1,879.60 al 30/04/2026 intacta |
+| `/fonavi/*` (5 rutas) | ✅ 200 — saldo S/0.00, sin movimientos (vacío correcto) |
+| `/centro/*` (3 rutas) | ✅ 200 — vacío |
+| `/grupo/*` (2 rutas) | ✅ 200 — totales = 1,879.60 (Atelier) + 0 + 0 |
+| `/fonavi/clientes` | ✅ 404 (Atelier-only) |
+| `/fonavi/fonavi` | ✅ 404 (Atelier-only) |
+| `/inventado/dashboard` | ✅ 404 (negocio inválido) |
 
-## Diagrama de filtrado (Ola 7)
+## Backups
 
-```
-Request HTTP
-   │
-   ├─ Resolver de negocio (Ola 6):
-   │     1. URL ?negocio=fonavi     → fonavi
-   │     2. cookie business=centro  → centro
-   │     3. fallback                → atelier
-   │
-   ├─ businessId activo en context (Server Component / hook)
-   │
-   ├─ Server actions multi-tenant (Ola 7):
-   │     SELECT ... WHERE business_id = $activeId
-   │     INSERT ... VALUES (..., business_id = $activeId)
-   │
-   └─ Server actions Atelier-only (sin cambio):
-         clients, shared_expense_rules, fonavi_*
-         La UI las muestra solo cuando activeBusiness === 'atelier'.
-```
+- `backups/backup-antes-ola-5-2026-05-03-135513.sql` — pre fundación BD multi-tenant.
+- `backups/backup-antes-ola-7-...` — pre DROP DEFAULT.
 
-## Helpers ya creados (Ola 5)
+## Migraciones aplicadas (orden)
 
-`src/lib/businesses.ts` expone:
-
-```ts
-type BusinessCode = 'atelier' | 'fonavi' | 'centro';
-const DEFAULT_BUSINESS_CODE = 'atelier';
-
-getBusinesses(): Promise<Business[]>          // 3 negocios activos
-getBusinessByCode(code: string): Promise<Business | null>
-isValidBusinessCode(value: string): boolean   // type guard
-```
-
-## TODOs explícitos
-
-### Ola 6 — UI de selector de negocio
-
-- [ ] Componente `<BusinessSelector>` en sidebar (encima de la nav).
-- [ ] Server action `getActiveBusiness()` que resuelve negocio según URL → cookie → fallback.
-- [ ] Hook `useBusiness()` para que client components conozcan el negocio activo.
-- [ ] Cookie `yayis_business` (httpOnly) que persiste entre sesiones.
-- [ ] Query param `?negocio=<code>` con prioridad sobre la cookie (deep links).
-- [ ] Mostrar el nombre del negocio activo en el header (claridad visual).
-- [ ] Layout adaptado: cuando `activeBusiness !== 'atelier'`, ocultar links a `/clientes` y `/fonavi`.
-
-### Ola 7 — Filtrado en server actions
-
-- [ ] **Auditar TODAS las server actions** (`src/app/actions/*.ts`) y agregarles `WHERE business_id = $businessId` o `INSERT ... business_id = $businessId`.
-- [ ] Lista mínima a tocar:
-  - `dashboard.ts` (getDashboardData)
-  - `daily-records.ts` (upsert / getDailyRecord / getLastBankBalance / getCurrentBankBalance)
-  - `bank-balance.ts` (getUnifiedBankBalance — ¡crítico!)
-  - `bank-income.ts` (saveBankIncomeItems / getBankIncomeItems / update / delete / reorder)
-  - `expenses.ts` (createExpense / get / update / delete / reorder)
-  - `categories.ts` (getCategories / create / update / toggle)
-  - `budgets.ts` (getBudgets / getBudgetDashboard)
-  - `reports.ts` (getMonthlyReport / getDailyBreakdown / getWeeklyReport)
-  - `reconciliation.ts` (getReconciliation)
-  - `month-range.ts` (getAvailableMonthRange)
-  - `record-edits.ts` (recalc cascade)
-  - `export-report.ts`
-- [ ] Tabla `audit_log`: pasar businessId al insertar.
-- [ ] Tablas Atelier-only (`clients`, `shared_expense_rules`, `fonavi_receivables`, `fonavi_reimbursement_allocations`): NO agregar filtro; las queries siguen como están. La UI ya no las llamará desde Fonavi/Centro.
-- [ ] Una vez todas las actions pasen `businessId`, **eliminar `DEFAULT 1`** de las 6 tablas (script `drop-business-id-default.ts`).
-- [ ] Seed de configuración inicial para Fonavi y Centro: copiar las 18 categorías y los 17 budgets de Atelier como punto de partida (script opcional o manual desde la UI).
-
-### Comportamiento esperado tras Ola 7
-
-- Atelier: idéntico a hoy.
-- Fonavi/Centro: empiezan vacíos (0 daily_records, 0 expenses, 0 bank_income_items, 0 categories, 0 budgets) hasta que se siembren.
-- Sidebar muestra selector de negocio. Las páginas se ven igual; los datos cambian según el negocio activo.
-- Saldo BCP: cada negocio tiene su saldo independiente (Atelier sigue mostrando S/1,879.60 al 30/04/2026; Fonavi y Centro empiezan en S/0.00 sin anchor).
+1. `create-businesses-table.ts` — tabla `businesses` + 3 seeds.
+2. `add-business-id-to-tables.ts` — columna `business_id NOT NULL FK + idx + UNIQUEs compuestos`.
+3. `drop-orphan-uniques.ts` — quita UNIQUEs viejos no compuestos.
+4. `set-business-id-default.ts` — DEFAULT 1 transitorio.
+5. `drop-business-id-default.ts` — quita DEFAULT (Ola 7).
