@@ -9,6 +9,7 @@ import { getAvailableMonthRange } from "@/app/actions/month-range";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { MonthSelector } from "@/components/ui/MonthSelector";
+import { DataTable } from "@/components/ui/DataTable";
 import { X, Pencil, Trash2 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
@@ -201,40 +202,30 @@ export function MonthlyReport() {
               ) : detailData && detailData.length > 0 ? (
                 <div className="overflow-x-auto">
                   {showDetail === "byte" ? (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-50 text-gray-600 text-left">
-                          <th className="px-4 py-3 font-medium">Fecha</th>
-                          <th className="px-4 py-3 font-medium text-right">Crédito día</th>
-                          <th className="px-4 py-3 font-medium text-right">Contado</th>
-                          <th className="px-4 py-3 font-medium text-right">Efectivo</th>
-                          <th className="px-4 py-3 font-medium text-right">Digital</th>
-                          <th className="px-4 py-3 font-medium text-right font-semibold">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {detailData.map((row) => (
-                          <tr key={row.date as string} className="hover:bg-gray-50">
-                            <td className="px-4 py-2.5 font-medium">{formatDateShort(row.date as string)}</td>
-                            <td className="px-4 py-2.5 text-right">{formatCurrency(row.byte_credit_day as string)}</td>
-                            <td className="px-4 py-2.5 text-right text-blue-600">{formatCurrency(row.byte_cash_sale as string)}</td>
-                            <td className="px-4 py-2.5 text-right text-gray-500">{formatCurrency(row.byte_cash_physical as string)}</td>
-                            <td className="px-4 py-2.5 text-right text-gray-500">{formatCurrency(row.byte_digital as string)}</td>
-                            <td className="px-4 py-2.5 text-right font-bold">{formatCurrency(row.byte_total as string)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
+                    <DataTable
+                      rowKey={(row) => row.date as string}
+                      data={detailData}
+                      withCard={false}
+                      size="compact"
+                      columns={[
+                        { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
+                        { key: "byte_credit_day", header: "Crédito día", align: "right", render: (row) => formatCurrency(row.byte_credit_day as string) },
+                        { key: "byte_cash_sale", header: "Contado", align: "right", cellClassName: "text-blue-600", render: (row) => formatCurrency(row.byte_cash_sale as string) },
+                        { key: "byte_cash_physical", header: "Efectivo", align: "right", cellClassName: "text-gray-500", render: (row) => formatCurrency(row.byte_cash_physical as string) },
+                        { key: "byte_digital", header: "Digital", align: "right", cellClassName: "text-gray-500", render: (row) => formatCurrency(row.byte_digital as string) },
+                        { key: "byte_total", header: "Total", align: "right", cellClassName: "font-bold", render: (row) => formatCurrency(row.byte_total as string) },
+                      ]}
+                      footer={(
                         <tr className="bg-gray-50 font-semibold">
-                          <td className="px-4 py-3">Total</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_credit_day), 0))}</td>
-                          <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_sale), 0))}</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_physical), 0))}</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_digital), 0))}</td>
-                          <td className="px-4 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
+                          <td className="px-3 py-3">Total</td>
+                          <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_credit_day), 0))}</td>
+                          <td className="px-3 py-3 text-right text-blue-600">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_sale), 0))}</td>
+                          <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_physical), 0))}</td>
+                          <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_digital), 0))}</td>
+                          <td className="px-3 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
                         </tr>
-                      </tfoot>
-                    </table>
+                      )}
+                    />
                   ) : showDetail === "income" ? (
                     (() => {
                       const byDate = new Map<string, { items: typeof detailData; total: number }>();
@@ -414,27 +405,36 @@ export function MonthlyReport() {
               <div className="px-6 py-4 border-b border-gray-100">
                 <h3 className="text-sm font-semibold text-gray-900">Detalle por categoría</h3>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="px-6 py-3 text-left font-medium text-gray-600">Categoría</th>
-                      <th className="px-6 py-3 text-right font-medium text-gray-600">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {data.byCategory.map((row, i) => (
-                      <tr key={row.category as string}>
-                        <td className="px-6 py-3 flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                          {row.category as string}
-                        </td>
-                        <td className="px-6 py-3 text-right font-medium">{formatCurrency(row.total as string)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                rowKey={(row) => row.category as string}
+                data={data.byCategory}
+                withCard={false}
+                columns={[
+                  {
+                    key: "category",
+                    header: "Categoría",
+                    cellClassName: "px-6",
+                    headerClassName: "px-6",
+                    render: (row, i) => (
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
+                        />
+                        {row.category as string}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "total",
+                    header: "Total",
+                    align: "right",
+                    cellClassName: "px-6 font-medium",
+                    headerClassName: "px-6",
+                    render: (row) => formatCurrency(row.total as string),
+                  },
+                ]}
+              />
             </div>
           </div>
         </>

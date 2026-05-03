@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { getLast7Days } from "@/app/actions/reports";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
+import { DataTable } from "@/components/ui/DataTable";
 
 export function Last7DaysReport() {
   const router = useRouter();
@@ -20,68 +21,58 @@ export function Last7DaysReport() {
     router.push(`/registro?fecha=${formatted}`);
   }
 
+  const data = rows ?? [];
+  const isLoading = rows === null;
+
+  const footer = data.length > 0 ? (
+    <tr className="bg-gray-50 font-semibold">
+      <td className="px-4 py-3">Total</td>
+      <td className="px-4 py-3 text-right">{formatCurrency(sum(data, "byte_total"))}</td>
+      <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(sum(data, "byte_credit_day"))}</td>
+      <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(sum(data, "byte_credit_collected"))}</td>
+      <td className="px-4 py-3 text-right text-primary-light">{formatCurrency(sum(data, "bank_income"))}</td>
+      <td className="px-4 py-3 text-right text-red-600">{formatCurrency(sum(data, "expenses_total"))}</td>
+      <td className="px-4 py-3"></td>
+      <td></td>
+    </tr>
+  ) : undefined;
+
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
       <div className="px-6 py-4 border-b border-gray-100">
         <h2 className="text-lg font-semibold text-gray-900">Últimos 7 días</h2>
         <p className="text-xs text-gray-500 mt-0.5">Resumen día por día con acceso rápido a edición</p>
       </div>
-      {rows === null ? (
-        <div className="p-8 text-center text-gray-500 text-sm">Cargando...</div>
-      ) : (
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="bg-gray-50 text-gray-600 text-left">
-                <th className="px-4 py-3 font-medium">Fecha</th>
-                <th className="px-4 py-3 font-medium text-right">Byte Total</th>
-                <th className="px-4 py-3 font-medium text-right">Créd. Día</th>
-                <th className="px-4 py-3 font-medium text-right">Créd. Cobr.</th>
-                <th className="px-4 py-3 font-medium text-right">Ingreso BCP</th>
-                <th className="px-4 py-3 font-medium text-right">Egresos</th>
-                <th className="px-4 py-3 font-medium text-right">Saldo BCP</th>
-                <th className="px-4 py-3 w-10"></th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {rows.map((row) => (
-                <tr key={row.date as string} className="hover:bg-gray-50 group">
-                  <td className="px-4 py-3 font-medium">{formatDateShort(row.date as string)}</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(row.byte_total as string)}</td>
-                  <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(row.byte_credit_day as string)}</td>
-                  <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(row.byte_credit_collected as string)}</td>
-                  <td className="px-4 py-3 text-right text-primary-light font-medium">{formatCurrency(row.bank_income as string)}</td>
-                  <td className="px-4 py-3 text-right text-red-600">{formatCurrency(row.expenses_total as string)}</td>
-                  <td className="px-4 py-3 text-right font-semibold">
-                    {row.bank_balance_real ? formatCurrency(row.bank_balance_real as string) : "—"}
-                  </td>
-                  <td className="px-4 py-3">
-                    <button
-                      onClick={() => editDay(row.date as string)}
-                      className="opacity-0 group-hover:opacity-100 transition-opacity text-gray-400 hover:text-primary-light p-1 rounded"
-                      title="Editar este día"
-                    >
-                      <Pencil className="w-3.5 h-3.5" />
-                    </button>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-            <tfoot>
-              <tr className="bg-gray-50 font-semibold">
-                <td className="px-4 py-3">Total</td>
-                <td className="px-4 py-3 text-right">{formatCurrency(sum(rows, "byte_total"))}</td>
-                <td className="px-4 py-3 text-right text-gray-600">{formatCurrency(sum(rows, "byte_credit_day"))}</td>
-                <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(sum(rows, "byte_credit_collected"))}</td>
-                <td className="px-4 py-3 text-right text-primary-light">{formatCurrency(sum(rows, "bank_income"))}</td>
-                <td className="px-4 py-3 text-right text-red-600">{formatCurrency(sum(rows, "expenses_total"))}</td>
-                <td className="px-4 py-3"></td>
-                <td></td>
-              </tr>
-            </tfoot>
-          </table>
-        </div>
-      )}
+      <DataTable
+        rowKey={(row) => row.date as string}
+        data={data}
+        isLoading={isLoading}
+        withCard={false}
+        footer={footer}
+        columns={[
+          { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
+          { key: "byte_total", header: "Byte Total", align: "right", render: (row) => formatCurrency(row.byte_total as string) },
+          { key: "byte_credit_day", header: "Créd. Día", align: "right", cellClassName: "text-gray-600", render: (row) => formatCurrency(row.byte_credit_day as string) },
+          { key: "byte_credit_collected", header: "Créd. Cobr.", align: "right", cellClassName: "text-blue-600", render: (row) => formatCurrency(row.byte_credit_collected as string) },
+          { key: "bank_income", header: "Ingreso BCP", align: "right", cellClassName: "text-primary-light font-medium", render: (row) => formatCurrency(row.bank_income as string) },
+          { key: "expenses_total", header: "Egresos", align: "right", cellClassName: "text-red-600", render: (row) => formatCurrency(row.expenses_total as string) },
+          { key: "bank_balance_real", header: "Saldo BCP", align: "right", cellClassName: "font-semibold", render: (row) => row.bank_balance_real ? formatCurrency(row.bank_balance_real as string) : "—" },
+          {
+            key: "edit",
+            header: "",
+            width: "w-10",
+            render: (row) => (
+              <button
+                onClick={() => editDay(row.date as string)}
+                className="text-gray-400 hover:text-primary-light p-1 rounded"
+                title="Editar este día"
+              >
+                <Pencil className="w-3.5 h-3.5" />
+              </button>
+            ),
+          },
+        ]}
+      />
     </div>
   );
 }
