@@ -185,40 +185,6 @@ export async function getLastBankBalance(beforeDate: string) {
   return result.rows[0] || null;
 }
 
-// Saldo BCP "hoy real": último snapshot manual + flujo posterior hasta hoy.
-// Híbrido: el snapshot ancla la verdad; los movimientos registrados después se aplican.
-export async function getCurrentBankBalance() {
-  const today = new Date().toISOString().slice(0, 10);
-
-  const anchor = await db.execute(sql`
-    SELECT bank_balance_real, date FROM daily_records
-    WHERE bank_balance_real IS NOT NULL AND date <= ${today}
-    ORDER BY date DESC LIMIT 1
-  `);
-
-  if (!anchor.rows[0]) {
-    return { balance: 0, anchorDate: null as string | null, hasAnchor: false };
-  }
-
-  const anchorBalance = parseFloat(anchor.rows[0].bank_balance_real as string);
-  const anchorDate = anchor.rows[0].date as string;
-
-  const inc = await db.execute(sql`
-    SELECT COALESCE(SUM(amount), 0) as total FROM bank_income_items
-    WHERE date > ${anchorDate} AND date <= ${today}
-  `);
-  const exp = await db.execute(sql`
-    SELECT COALESCE(SUM(amount), 0) as total FROM expenses
-    WHERE date > ${anchorDate} AND date <= ${today} AND payment_method != 'efectivo'
-  `);
-
-  const incomePost = parseFloat(inc.rows[0].total as string);
-  const expensePost = parseFloat(exp.rows[0].total as string);
-  const balance = Math.round((anchorBalance + incomePost - expensePost) * 100) / 100;
-
-  return { balance, anchorDate, hasAnchor: true };
-}
-
 // Editar el saldo BCP de "hoy real" (no de la fecha seleccionada).
 export async function updateCurrentBankBalance(balance: number) {
   const today = new Date().toISOString().slice(0, 10);

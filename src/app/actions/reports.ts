@@ -3,30 +3,6 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 
-export async function getLast7Days() {
-  const rows = await db.execute(sql`
-    WITH dates AS (
-      SELECT generate_series(
-        CURRENT_DATE - INTERVAL '6 days',
-        CURRENT_DATE,
-        '1 day'
-      )::date as date
-    )
-    SELECT
-      d.date,
-      COALESCE(dr.byte_total, 0) as byte_total,
-      COALESCE(dr.bank_income, 0) as bank_income,
-      dr.bank_balance_real,
-      COALESCE(dr.byte_credit_day, 0) as byte_credit_day,
-      COALESCE(dr.byte_credit_collected, 0) as byte_credit_collected,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date), 0) as expenses_total
-    FROM dates d
-    LEFT JOIN daily_records dr ON dr.date = d.date
-    ORDER BY d.date ASC
-  `);
-  return rows.rows;
-}
-
 export async function getWeeklyReport(startDate: string, endDate: string) {
   const dailySummary = await db.execute(sql`
     WITH dates AS (
@@ -114,35 +90,6 @@ export async function getMonthlyReport(month: string) {
       ? parseFloat(bankEnd.rows[0].bank_balance_real as string)
       : 0,
     byCategory: byCategory.rows,
-  };
-}
-
-export async function getDebtAgingReport() {
-  // With daily_records, CxC is global: total byte - total collected
-  // We show it as a single summary, not per-client aging
-  const result = await db.execute(sql`
-    SELECT
-      date,
-      byte_total,
-      bank_income,
-      (COALESCE(byte_total, 0) - COALESCE(bank_income, 0)) as daily_gap
-    FROM daily_records
-    WHERE COALESCE(byte_total, 0) > 0 OR COALESCE(bank_income, 0) > 0
-    ORDER BY date ASC
-  `);
-
-  const totals = await db.execute(sql`
-    SELECT
-      COALESCE(SUM(byte_total), 0) as total_byte,
-      COALESCE(SUM(bank_income), 0) as total_collected
-    FROM daily_records
-  `);
-
-  return {
-    dailyData: result.rows,
-    totalByte: parseFloat(totals.rows[0].total_byte as string),
-    totalCollected: parseFloat(totals.rows[0].total_collected as string),
-    totalPending: parseFloat(totals.rows[0].total_byte as string) - parseFloat(totals.rows[0].total_collected as string),
   };
 }
 

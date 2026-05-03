@@ -77,29 +77,6 @@ export const fonaviReimbursementAllocations = pgTable("fonavi_reimbursement_allo
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
-// Keep these for backward compat but daily_records is the main source
-export const sales = pgTable("sales", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  clientId: uuid("client_id").notNull().references(() => clients.id),
-  date: date("date").notNull(),
-  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
-  discount: numeric("discount", { precision: 10, scale: 2 }).default("0").notNull(),
-  netAmount: numeric("net_amount", { precision: 10, scale: 2 }).notNull(),
-  notes: text("notes"),
-  isCollected: boolean("is_collected").default(false).notNull(),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
-export const collections = pgTable("collections", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  clientId: uuid("client_id").notNull().references(() => clients.id),
-  date: date("date").notNull(),
-  amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
-  saleId: uuid("sale_id").references(() => sales.id),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
-
 // Auditoría de ediciones/eliminaciones de movimientos (ingresos BCP y egresos)
 export const auditLog = pgTable("audit_log", {
   id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
@@ -113,11 +90,3 @@ export const auditLog = pgTable("audit_log", {
   dateAffected: date("date_affected").notNull(),
 });
 
-export const bankBalance = pgTable("bank_balance", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  date: date("date").notNull().unique(),
-  openingBalance: numeric("opening_balance", { precision: 10, scale: 2 }),
-  closingBalance: numeric("closing_balance", { precision: 10, scale: 2 }),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});

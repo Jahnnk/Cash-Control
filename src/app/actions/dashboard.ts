@@ -3,6 +3,7 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { getAvailableMonthRange } from "./month-range";
+import { getUnifiedBankBalance } from "./bank-balance";
 
 function isValidMonth(m: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
@@ -34,17 +35,12 @@ export async function getDashboardData(monthInput?: string) {
   const monthEndDate = isCurrentMonth ? today : endOfMonth;
 
   // ───── KPIs FIJOS (snapshot al día de hoy) ─────
-
-  // Saldo bancario más reciente
-  const bankResult = await db.execute(sql`
-    SELECT bank_balance_real, date FROM daily_records
-    WHERE bank_balance_real IS NOT NULL
-    ORDER BY date DESC LIMIT 1
-  `);
-  const bankBalance = bankResult.rows[0]
-    ? parseFloat(bankResult.rows[0].bank_balance_real as string)
-    : 0;
-  const bankDate = bankResult.rows[0]?.date as string | null;
+  // Nota: el saldo bancario no viaja por aquí. La card "Saldo en banco"
+  // del Dashboard usa <BankBalanceCard /> con useBankBalance() (Ola 3).
+  // Aquí solo lo necesitamos para el cálculo de Cobertura más abajo,
+  // y reusamos la misma fuente de verdad unificada.
+  const bankSnapshot = await getUnifiedBankBalance();
+  const bankBalance = bankSnapshot.current;
 
   // Cuentas por cobrar B2B (acumulado histórico)
   const cxcResult = await db.execute(sql`
@@ -104,8 +100,6 @@ export async function getDashboardData(monthInput?: string) {
   const { minMonth: firstMonth, maxMonth } = await getAvailableMonthRange();
 
   return {
-    bankBalance,
-    bankDate,
     accountsReceivable,
     monthlyExpenses,
     daysCovered,

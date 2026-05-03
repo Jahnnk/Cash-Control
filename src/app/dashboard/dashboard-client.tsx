@@ -21,8 +21,6 @@ import {
 } from "lucide-react";
 
 type DashboardData = {
-  bankBalance: number;
-  bankDate: string | null;
   accountsReceivable: number;
   monthlyExpenses: number;
   daysCovered: number;
