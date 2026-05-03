@@ -86,8 +86,9 @@ export function Sidebar() {
         onClick={() => setOpen(true)}
         className="fixed top-2 left-2 z-50 lg:hidden bg-white rounded-lg p-2 shadow-md"
         aria-label="Abrir menú"
+        style={{ color: theme.color }}
       >
-        <Menu className="w-5 h-5 text-primary" />
+        <Menu className="w-5 h-5" />
       </button>
 
       {open && (
@@ -95,7 +96,8 @@ export function Sidebar() {
       )}
 
       <aside
-        className={`fixed top-0 left-0 h-full w-64 bg-primary text-white z-50 flex flex-col transition-transform duration-200 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
+        className={`fixed top-0 left-0 h-full w-64 text-white z-50 flex flex-col transition-all duration-200 ease-out lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
+        style={{ backgroundColor: theme.color }}
       >
         {/* Header — switcher con dot del color del negocio */}
         <div className="relative border-b border-white/10">
@@ -104,22 +106,12 @@ export function Sidebar() {
             className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors text-left"
           >
             <div className="flex items-center gap-3 min-w-0">
-              <div
-                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
-                style={{ backgroundColor: theme.colorSoft, color: "#FFFFFF" }}
-              >
+              <div className="w-9 h-9 rounded-lg bg-white/15 flex items-center justify-center shrink-0">
                 <ScopeIcon className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-semibold truncate flex items-center gap-2">
-                  <span
-                    className="w-2 h-2 rounded-full shrink-0"
-                    style={{ backgroundColor: theme.color }}
-                    aria-hidden
-                  />
-                  {theme.label}
-                </div>
-                <div className="text-[11px] text-white/60 truncate">{theme.description}</div>
+                <div className="text-sm font-semibold truncate">{theme.label}</div>
+                <div className="text-[11px] text-white/70 truncate">{theme.description}</div>
               </div>
             </div>
             <ChevronDown className={`w-4 h-4 text-white/60 transition-transform shrink-0 ${switcherOpen ? "rotate-180" : ""}`} />
@@ -204,10 +196,10 @@ export function Sidebar() {
                 onClick={() => setOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
                   active
-                    ? "text-white bg-white/15"
-                    : "text-white/70 hover:bg-white/10 hover:text-white"
+                    ? "text-white bg-black/25 border-l-[3px] border-white/80"
+                    : "text-white/75 hover:bg-white/10 hover:text-white border-l-[3px] border-transparent"
                 }`}
-                style={active ? { borderLeft: `3px solid ${theme.color}`, paddingLeft: "calc(1rem - 3px)" } : undefined}
+                style={{ paddingLeft: "calc(1rem - 3px)" }}
               >
                 <item.icon className="w-5 h-5 shrink-0" />
                 {item.label}
