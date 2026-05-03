@@ -3,11 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { formatCurrency, formatDate } from "@/lib/utils";
+import { formatCurrency } from "@/lib/utils";
 import { KPICard, type KPIVariant } from "@/components/ui/KPICard";
 import { MonthSelector, monthLabel } from "@/components/ui/MonthSelector";
+import { BankBalanceCard } from "@/components/banking/BankBalanceCard";
 import {
-  Landmark,
   Receipt,
   TrendingDown,
   TrendingUp,
@@ -109,14 +109,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
         className="grid gap-4"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
       >
-        <KPICard
-          icon={<Landmark className="w-5 h-5 text-primary-light" />}
-          title="Saldo en banco"
-          value={formatCurrency(data.bankBalance)}
-          subtitle={data.bankDate ? `al ${formatDate(data.bankDate)}` : "Sin registro"}
-          variant="default"
-          href="/registro"
-        />
+        <BankBalanceCard />
         <KPICard
           icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
           title={`Ingresos · ${monthLabel(data.selectedMonth)}`}
