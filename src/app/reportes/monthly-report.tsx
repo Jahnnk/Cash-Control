@@ -5,8 +5,12 @@ import { useSearchParams } from "next/navigation";
 import { getMonthlyReport, getDailyBreakdown } from "@/app/actions/reports";
 import { getCategories } from "@/app/actions/categories";
 import { getClients } from "@/app/actions/clients";
+import { getAvailableMonthRange } from "@/app/actions/month-range";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
-import { ChevronDown, ChevronUp, X, Pencil, Trash2 } from "lucide-react";
+import { KPICard } from "@/components/ui/KPICard";
+import { MonthSelector } from "@/components/ui/MonthSelector";
+import { DataTable } from "@/components/ui/DataTable";
+import { X, Pencil, Trash2 } from "lucide-react";
 import {
   PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend,
 } from "recharts";
@@ -17,11 +21,6 @@ const PIE_COLORS = [
   "#004C40", "#098B5F", "#22C55E", "#EAB308", "#F97316",
   "#DC2626", "#8B5CF6", "#3B82F6", "#EC4899", "#6B7280",
   "#14B8A6", "#A855F7", "#F59E0B",
-];
-
-const MONTHS = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
 ];
 
 function getCurrentMonth() {
@@ -52,9 +51,12 @@ export function MonthlyReport() {
   const [showDetail, setShowDetail] = useState<"byte" | "income" | "expense" | null>(null);
   const [detailData, setDetailData] = useState<Record<string, unknown>[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [monthRange, setMonthRange] = useState<{ minMonth: string; maxMonth: string; currentMonth: string } | null>(null);
 
-  const selectedYear = parseInt(month.split("-")[0]);
-  const monthNum = parseInt(month.split("-")[1]) - 1;
+  // Carga el rango navegable una sola vez (compartido con Dashboard y Presupuesto)
+  useEffect(() => {
+    getAvailableMonthRange().then(setMonthRange);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -114,14 +116,6 @@ export function MonthlyReport() {
     }
   }, [searchParams, loading, handleCardClick]);
 
-  function changeMonth(m: number) {
-    setMonth(`${selectedYear}-${String(m + 1).padStart(2, "0")}`);
-  }
-
-  function changeYear(delta: number) {
-    setMonth(`${selectedYear + delta}-${String(monthNum + 1).padStart(2, "0")}`);
-  }
-
   const donutData = data?.byCategory.map((row) => ({
     name: row.category as string,
     value: parseFloat(row.total as string),
@@ -129,36 +123,15 @@ export function MonthlyReport() {
 
   return (
     <div className="space-y-6">
-      {/* Month selector — dropdown style */}
-      <div className="flex items-center gap-3">
-        <label className="text-sm text-gray-600">Mes:</label>
-        <select
-          value={monthNum}
-          onChange={(e) => changeMonth(parseInt(e.target.value))}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        >
-          {MONTHS.map((name, i) => (
-            <option key={i} value={i}>{name} {selectedYear}</option>
-          ))}
-        </select>
-        <div className="flex items-center gap-1">
-          <button
-            type="button"
-            onClick={() => changeYear(-1)}
-            className="px-2 py-1 text-sm rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
-          >
-            ←
-          </button>
-          <span className="text-sm text-gray-700 w-14 text-center">{selectedYear}</span>
-          <button
-            type="button"
-            onClick={() => changeYear(1)}
-            className="px-2 py-1 text-sm rounded border border-gray-200 text-gray-600 hover:bg-gray-50"
-          >
-            →
-          </button>
-        </div>
-      </div>
+      {/* Month selector — unificado con el resto de la app */}
+      <MonthSelector
+        value={month}
+        onChange={setMonth}
+        minMonth={monthRange?.minMonth}
+        maxMonth={monthRange?.maxMonth}
+        currentMonth={monthRange?.currentMonth}
+        loading={loading}
+      />
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
@@ -167,38 +140,46 @@ export function MonthlyReport() {
       ) : data ? (
         <>
           {/* Summary cards */}
-          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-            {/* Ventas Byte — clickable */}
-            <ClickableCard
-              label="Ventas Byte"
-              value={formatCurrency(data.totals.total_byte as string)}
-              color="text-gray-900"
-              isExpanded={showDetail === "byte"}
-              onClick={() => handleCardClick("byte")}
-            />
-            {/* Ingresos BCP — clickable */}
-            <ClickableCard
-              label="Ingresos BCP"
-              value={formatCurrency(data.totals.total_income as string)}
-              color="text-primary-light"
-              isExpanded={showDetail === "income"}
-              onClick={() => handleCardClick("income")}
-            />
-            {/* Egresos totales — clickable */}
-            <ClickableCard
-              label="Egresos totales"
-              value={formatCurrency(data.totals.total_expenses as string)}
-              color="text-red-600"
-              isExpanded={showDetail === "expense"}
-              onClick={() => handleCardClick("expense")}
-            />
-            <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="text-sm text-gray-600 mb-1">Variación saldo banco</div>
-              <div className={`text-xl font-bold ${data.bankEndBalance - data.bankStartBalance >= 0 ? "text-primary-light" : "text-red-600"}`}>
-                {formatCurrency(data.bankEndBalance - data.bankStartBalance)}
+          {(() => {
+            const variation = data.bankEndBalance - data.bankStartBalance;
+            return (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+                <KPICard
+                  title="Ventas Byte"
+                  value={formatCurrency(data.totals.total_byte as string)}
+                  variant="default"
+                  withAccentBar={false}
+                  expanded={showDetail === "byte"}
+                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                  onClick={() => handleCardClick("byte")}
+                />
+                <KPICard
+                  title="Ingresos BCP"
+                  value={formatCurrency(data.totals.total_income as string)}
+                  variant="success"
+                  withAccentBar={false}
+                  expanded={showDetail === "income"}
+                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                  onClick={() => handleCardClick("income")}
+                />
+                <KPICard
+                  title="Egresos totales"
+                  value={formatCurrency(data.totals.total_expenses as string)}
+                  variant="danger"
+                  withAccentBar={false}
+                  expanded={showDetail === "expense"}
+                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                  onClick={() => handleCardClick("expense")}
+                />
+                <KPICard
+                  title="Variación saldo banco"
+                  value={formatCurrency(variation)}
+                  variant={variation >= 0 ? "success" : "danger"}
+                  withAccentBar={false}
+                />
               </div>
-            </div>
-          </div>
+            );
+          })()}
 
           {/* Detail panel */}
           {showDetail && (
@@ -221,40 +202,30 @@ export function MonthlyReport() {
               ) : detailData && detailData.length > 0 ? (
                 <div className="overflow-x-auto">
                   {showDetail === "byte" ? (
-                    <table className="w-full text-sm">
-                      <thead>
-                        <tr className="bg-gray-50 text-gray-600 text-left">
-                          <th className="px-4 py-3 font-medium">Fecha</th>
-                          <th className="px-4 py-3 font-medium text-right">Crédito día</th>
-                          <th className="px-4 py-3 font-medium text-right">Contado</th>
-                          <th className="px-4 py-3 font-medium text-right">Efectivo</th>
-                          <th className="px-4 py-3 font-medium text-right">Digital</th>
-                          <th className="px-4 py-3 font-medium text-right font-semibold">Total</th>
-                        </tr>
-                      </thead>
-                      <tbody className="divide-y divide-gray-100">
-                        {detailData.map((row) => (
-                          <tr key={row.date as string} className="hover:bg-gray-50">
-                            <td className="px-4 py-2.5 font-medium">{formatDateShort(row.date as string)}</td>
-                            <td className="px-4 py-2.5 text-right">{formatCurrency(row.byte_credit_day as string)}</td>
-                            <td className="px-4 py-2.5 text-right text-blue-600">{formatCurrency(row.byte_cash_sale as string)}</td>
-                            <td className="px-4 py-2.5 text-right text-gray-500">{formatCurrency(row.byte_cash_physical as string)}</td>
-                            <td className="px-4 py-2.5 text-right text-gray-500">{formatCurrency(row.byte_digital as string)}</td>
-                            <td className="px-4 py-2.5 text-right font-bold">{formatCurrency(row.byte_total as string)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                      <tfoot>
+                    <DataTable
+                      rowKey={(row) => row.date as string}
+                      data={detailData}
+                      withCard={false}
+                      size="compact"
+                      columns={[
+                        { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
+                        { key: "byte_credit_day", header: "Crédito día", align: "right", render: (row) => formatCurrency(row.byte_credit_day as string) },
+                        { key: "byte_cash_sale", header: "Contado", align: "right", cellClassName: "text-blue-600", render: (row) => formatCurrency(row.byte_cash_sale as string) },
+                        { key: "byte_cash_physical", header: "Efectivo", align: "right", cellClassName: "text-gray-500", render: (row) => formatCurrency(row.byte_cash_physical as string) },
+                        { key: "byte_digital", header: "Digital", align: "right", cellClassName: "text-gray-500", render: (row) => formatCurrency(row.byte_digital as string) },
+                        { key: "byte_total", header: "Total", align: "right", cellClassName: "font-bold", render: (row) => formatCurrency(row.byte_total as string) },
+                      ]}
+                      footer={(
                         <tr className="bg-gray-50 font-semibold">
-                          <td className="px-4 py-3">Total</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_credit_day), 0))}</td>
-                          <td className="px-4 py-3 text-right text-blue-600">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_sale), 0))}</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_physical), 0))}</td>
-                          <td className="px-4 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_digital), 0))}</td>
-                          <td className="px-4 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
+                          <td className="px-3 py-3">Total</td>
+                          <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_credit_day), 0))}</td>
+                          <td className="px-3 py-3 text-right text-blue-600">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_sale), 0))}</td>
+                          <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_physical), 0))}</td>
+                          <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_digital), 0))}</td>
+                          <td className="px-3 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
                         </tr>
-                      </tfoot>
-                    </table>
+                      )}
+                    />
                   ) : showDetail === "income" ? (
                     (() => {
                       const byDate = new Map<string, { items: typeof detailData; total: number }>();
@@ -434,27 +405,36 @@ export function MonthlyReport() {
               <div className="px-6 py-4 border-b border-gray-100">
                 <h3 className="text-sm font-semibold text-gray-900">Detalle por categoría</h3>
               </div>
-              <div className="overflow-x-auto">
-                <table className="w-full text-sm">
-                  <thead>
-                    <tr className="bg-gray-50">
-                      <th className="px-6 py-3 text-left font-medium text-gray-600">Categoría</th>
-                      <th className="px-6 py-3 text-right font-medium text-gray-600">Total</th>
-                    </tr>
-                  </thead>
-                  <tbody className="divide-y divide-gray-100">
-                    {data.byCategory.map((row, i) => (
-                      <tr key={row.category as string}>
-                        <td className="px-6 py-3 flex items-center gap-2">
-                          <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }} />
-                          {row.category as string}
-                        </td>
-                        <td className="px-6 py-3 text-right font-medium">{formatCurrency(row.total as string)}</td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+              <DataTable
+                rowKey={(row) => row.category as string}
+                data={data.byCategory}
+                withCard={false}
+                columns={[
+                  {
+                    key: "category",
+                    header: "Categoría",
+                    cellClassName: "px-6",
+                    headerClassName: "px-6",
+                    render: (row, i) => (
+                      <span className="flex items-center gap-2">
+                        <span
+                          className="w-3 h-3 rounded-full shrink-0"
+                          style={{ backgroundColor: PIE_COLORS[i % PIE_COLORS.length] }}
+                        />
+                        {row.category as string}
+                      </span>
+                    ),
+                  },
+                  {
+                    key: "total",
+                    header: "Total",
+                    align: "right",
+                    cellClassName: "px-6 font-medium",
+                    headerClassName: "px-6",
+                    render: (row) => formatCurrency(row.total as string),
+                  },
+                ]}
+              />
             </div>
           </div>
         </>
@@ -480,29 +460,3 @@ export function MonthlyReport() {
   );
 }
 
-function ClickableCard({
-  label, value, color, isExpanded, onClick,
-}: {
-  label: string; value: string; color: string; isExpanded: boolean; onClick: () => void;
-}) {
-  return (
-    <div
-      role="button"
-      tabIndex={0}
-      onClick={onClick}
-      onKeyDown={(e) => { if (e.key === "Enter") onClick(); }}
-      className={`cursor-pointer select-none bg-white rounded-xl border-2 p-5 transition-all active:scale-[0.98] ${
-        isExpanded ? "border-primary-light shadow-md" : "border-gray-200 hover:border-primary-light/50 hover:shadow-sm"
-      }`}
-    >
-      <div className="flex items-center justify-between">
-        <div className="text-sm text-gray-600">{label}</div>
-        {isExpanded ? <ChevronUp className="w-4 h-4 text-primary-light" /> : <ChevronDown className="w-4 h-4 text-gray-400" />}
-      </div>
-      <div className={`text-xl font-bold ${color} mt-1`}>{value}</div>
-      <div className="text-[10px] text-primary-light mt-1">
-        {isExpanded ? "Click para cerrar" : "Ver detalle diario"}
-      </div>
-    </div>
-  );
-}

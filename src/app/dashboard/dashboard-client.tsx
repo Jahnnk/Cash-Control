@@ -2,8 +2,10 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useMemo, useTransition } from "react";
+import { useTransition } from "react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import { KPICard, type KPIVariant } from "@/components/ui/KPICard";
+import { MonthSelector, monthLabel } from "@/components/ui/MonthSelector";
 import {
   Landmark,
   Receipt,
@@ -12,8 +14,6 @@ import {
   ShieldCheck,
   ArrowRight,
   Handshake,
-  ChevronLeft,
-  ChevronRight,
   Calendar,
   Plus,
 } from "lucide-react";
@@ -36,47 +36,9 @@ type DashboardData = {
   maxMonth: string;
 };
 
-const MONTHS = [
-  "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
-  "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",
-];
-
-function monthLabel(month: string): string {
-  const [y, m] = month.split("-").map(Number);
-  return `${MONTHS[m - 1]} ${y}`;
-}
-
-function shiftMonth(month: string, delta: number): string {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-}
-
-function buildMonthOptions(firstMonth: string, maxMonth: string): string[] {
-  const out: string[] = [];
-  let cur = firstMonth;
-  // safety guard to avoid infinite loops
-  for (let i = 0; i < 240; i++) {
-    out.push(cur);
-    if (cur === maxMonth) break;
-    cur = shiftMonth(cur, 1);
-  }
-  return out.reverse(); // más reciente primero
-}
-
 export function DashboardClient({ data }: { data: DashboardData }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
-
-  const monthOptions = useMemo(
-    () => buildMonthOptions(data.firstMonth, data.maxMonth),
-    [data.firstMonth, data.maxMonth]
-  );
-
-  const prevMonth = shiftMonth(data.selectedMonth, -1);
-  const nextMonth = shiftMonth(data.selectedMonth, 1);
-  const canGoPrev = data.selectedMonth > data.firstMonth;
-  const canGoNext = data.selectedMonth < data.maxMonth;
 
   const navigateToMonth = (m: string) => {
     startTransition(() => {
@@ -96,13 +58,13 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   // > 90 días o sin datos → no se muestra. 30-90 verde, 15-30 amarillo, < 15 rojo.
   const coverageHasData =
     !monthHasNoData && data.avgDailyExpense > 0 && data.daysCovered < 999;
-  const coverage: { accent: "primary" | "amber" | "red"; label: string } | null = (() => {
+  const coverage: { variant: KPIVariant; iconColor: string; label: string } | null = (() => {
     if (!coverageHasData) return null;
     const d = data.daysCovered;
     if (d > 90) return null;
-    if (d >= 30) return { accent: "primary", label: "Días de operación cubiertos" };
-    if (d >= 15) return { accent: "amber", label: "⚠️ Cobertura baja" };
-    return { accent: "red", label: "🔴 Cobertura crítica" };
+    if (d >= 30) return { variant: "default", iconColor: "text-primary-light", label: "Días de operación cubiertos" };
+    if (d >= 15) return { variant: "warning", iconColor: "text-amber-600", label: "⚠️ Cobertura baja" };
+    return { variant: "danger", iconColor: "text-red-600", label: "🔴 Cobertura crítica" };
   })();
 
   return (
@@ -133,138 +95,96 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       )}
 
       {/* Selector de mes */}
-      <div className="bg-white rounded-xl border border-gray-200 p-3 flex flex-wrap items-center gap-2">
-        <button
-          onClick={() => navigateToMonth(prevMonth)}
-          disabled={!canGoPrev || isPending}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          <ChevronLeft className="w-4 h-4" /> Mes anterior
-        </button>
-        <button
-          onClick={() => navigateToMonth(data.currentMonth)}
-          disabled={isPending}
-          className={`px-3 py-1.5 text-sm rounded-md border ${
-            data.isCurrentMonth
-              ? "bg-primary text-white border-primary"
-              : "border-gray-200 text-gray-700 hover:bg-gray-50"
-          }`}
-        >
-          Mes actual
-        </button>
-        <button
-          onClick={() => navigateToMonth(nextMonth)}
-          disabled={!canGoNext || isPending}
-          className="flex items-center gap-1 px-3 py-1.5 text-sm rounded-md border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          Mes siguiente <ChevronRight className="w-4 h-4" />
-        </button>
-        <div className="ml-auto flex items-center gap-2">
-          <label className="text-xs text-gray-500">Otro mes:</label>
-          <select
-            value={data.selectedMonth}
-            onChange={(e) => navigateToMonth(e.target.value)}
-            disabled={isPending}
-            className="border border-gray-200 rounded-md px-2 py-1.5 text-sm text-gray-700 bg-white"
-          >
-            {monthOptions.map((m) => (
-              <option key={m} value={m}>
-                {monthLabel(m)}
-                {m === data.currentMonth ? " (actual)" : ""}
-              </option>
-            ))}
-          </select>
-        </div>
-      </div>
+      <MonthSelector
+        value={data.selectedMonth}
+        onChange={navigateToMonth}
+        minMonth={data.firstMonth}
+        maxMonth={data.maxMonth}
+        currentMonth={data.currentMonth}
+        loading={isPending}
+      />
 
       {/* Top Cards — auto-fit para que el grid se reacomode si una card se oculta */}
       <div
         className="grid gap-4"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
       >
-        <Card
+        <KPICard
           icon={<Landmark className="w-5 h-5 text-primary-light" />}
-          label="Saldo en banco"
+          title="Saldo en banco"
           value={formatCurrency(data.bankBalance)}
-          sub={data.bankDate ? `al ${formatDate(data.bankDate)}` : "Sin registro"}
-          accent="primary"
+          subtitle={data.bankDate ? `al ${formatDate(data.bankDate)}` : "Sin registro"}
+          variant="default"
           href="/registro"
         />
-        <Card
+        <KPICard
           icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
-          label={`Ingresos · ${monthLabel(data.selectedMonth)}`}
+          title={`Ingresos · ${monthLabel(data.selectedMonth)}`}
           value={formatCurrency(monthlyIncome)}
-          sub={
+          subtitle={
             monthHasNoData
               ? "Sin movimientos en este período"
               : data.isPartial
                 ? "Ingresos BCP (parcial)"
                 : "Ingresos BCP"
           }
-          accent="primary"
+          variant="default"
           href={`/reportes?tab=mensual&breakdown=income${reportMonthQs}`}
           dim={monthHasNoData}
           secondaryAction={{
             href: "/registro?tipo=ingreso",
-            title: "Registrar nuevo ingreso",
+            label: "Registrar nuevo ingreso",
+            icon: <Plus className="w-4 h-4" />,
           }}
         />
-        <Card
+        <KPICard
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
-          label={`Gastos · ${monthLabel(data.selectedMonth)}`}
+          title={`Gastos · ${monthLabel(data.selectedMonth)}`}
           value={formatCurrency(data.monthlyExpenses)}
-          sub={
+          subtitle={
             monthHasNoData
               ? "Sin movimientos en este período"
               : data.isPartial
                 ? `Promedio: ${formatCurrency(data.avgDailyExpense)}/día (parcial)`
                 : `Promedio: ${formatCurrency(data.avgDailyExpense)}/día`
           }
-          accent="red"
+          variant="danger"
           href={`/reportes?tab=mensual&breakdown=expense${reportMonthQs}`}
           dim={monthHasNoData}
           secondaryAction={{
             href: "/registro?tipo=gasto",
-            title: "Registrar nuevo gasto",
+            label: "Registrar nuevo gasto",
+            icon: <Plus className="w-4 h-4" />,
           }}
         />
-        <Card
+        <KPICard
           icon={<Receipt className="w-5 h-5 text-amber-600" />}
-          label="Cuentas por cobrar"
+          title="Cuentas por cobrar"
           value={formatCurrency(data.accountsReceivable)}
-          sub="Byte total - Cobros BCP"
-          accent="amber"
+          subtitle="Byte total - Cobros BCP"
+          variant="warning"
           href="/reportes?tab=conciliacion"
         />
-        <Card
+        <KPICard
           icon={<Handshake className="w-5 h-5 text-violet-600" />}
-          label="Por cobrar Fonavi"
+          title="Por cobrar Fonavi"
           value={formatCurrency(data.fonaviReceivables)}
-          sub="Gastos compartidos pendientes"
-          accent="violet"
+          subtitle="Gastos compartidos pendientes"
+          variant="violet"
           href="/fonavi"
           secondaryAction={{
             href: "/fonavi?accion=registrar-reembolso",
-            title: "Registrar reembolso",
+            label: "Registrar reembolso",
+            icon: <Plus className="w-4 h-4" />,
           }}
         />
         {coverage && (
-          <Card
-            icon={
-              <ShieldCheck
-                className={`w-5 h-5 ${
-                  coverage.accent === "red"
-                    ? "text-red-600"
-                    : coverage.accent === "amber"
-                      ? "text-amber-600"
-                      : "text-primary-light"
-                }`}
-              />
-            }
-            label="Cobertura"
+          <KPICard
+            icon={<ShieldCheck className={`w-5 h-5 ${coverage.iconColor}`} />}
+            title="Cobertura"
             value={`${data.daysCovered} días`}
-            sub={data.isPartial ? `${coverage.label} (parcial)` : coverage.label}
-            accent={coverage.accent}
+            subtitle={data.isPartial ? `${coverage.label} (parcial)` : coverage.label}
+            variant={coverage.variant}
           />
         )}
       </div>
@@ -281,88 +201,6 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           title="Conciliación bancaria"
           description="Byte esperado vs BCP real por semana, mes o rango"
         />
-      </div>
-    </div>
-  );
-}
-
-function Card({
-  icon,
-  label,
-  value,
-  sub,
-  accent,
-  href,
-  dim = false,
-  secondaryAction,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  sub: string;
-  accent: "primary" | "amber" | "red" | "violet";
-  href?: string;
-  dim?: boolean;
-  secondaryAction?: { href: string; title: string };
-}) {
-  const borderColor =
-    accent === "primary"
-      ? "border-l-primary-light"
-      : accent === "amber"
-        ? "border-l-amber-500"
-        : accent === "violet"
-          ? "border-l-violet-500"
-          : "border-l-red-500";
-
-  const valueColor = dim
-    ? "text-gray-400"
-    : accent === "red"
-      ? "text-red-700"
-      : accent === "amber"
-        ? "text-amber-700"
-        : "text-gray-900";
-
-  // Card "viva" (con primary action) usa overlay link a pantalla completa
-  // para que el botón secundario pueda vivir encima sin Links anidados.
-  const isInteractive = !!href;
-  const wrapperClasses = `relative bg-white rounded-xl border border-gray-200 border-l-4 ${borderColor} p-5 group transition-all duration-200 ${
-    isInteractive ? "hover:shadow-md hover:border-gray-300 hover:-translate-y-0.5 active:scale-[0.98]" : ""
-  }`;
-
-  return (
-    <div className={wrapperClasses}>
-      {isInteractive && (
-        <Link
-          href={href!}
-          aria-label={label}
-          className="absolute inset-0 z-10 rounded-xl"
-        >
-          <span className="sr-only">{label}</span>
-        </Link>
-      )}
-
-      {/* Cabecera: ícono + label + (acción secundaria) */}
-      <div className="relative z-20 flex items-start justify-between gap-2 mb-2">
-        <div className="flex items-center gap-2 min-w-0">
-          {icon}
-          <span className="text-sm text-gray-600 truncate">{label}</span>
-        </div>
-        {secondaryAction && (
-          <Link
-            href={secondaryAction.href}
-            title={secondaryAction.title}
-            aria-label={secondaryAction.title}
-            className="shrink-0 inline-flex items-center justify-center w-7 h-7 -mr-1 -mt-1 rounded-full text-gray-400/40 hover:text-primary hover:bg-primary/5 hover:scale-105 transition-all duration-150"
-          >
-            <Plus className="w-4 h-4" />
-          </Link>
-        )}
-      </div>
-
-      {/* Cuerpo (no clickable independiente; el overlay captura el click) */}
-      <div className="relative z-0">
-        <div className={`text-2xl font-semibold ${valueColor}`}>{value}</div>
-        <div className="text-xs text-gray-500 mt-1">{sub}</div>
       </div>
     </div>
   );

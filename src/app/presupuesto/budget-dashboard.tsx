@@ -2,7 +2,10 @@
 
 import { useState, useEffect } from "react";
 import { getBudgetDashboard } from "@/app/actions/budgets";
+import { getAvailableMonthRange } from "@/app/actions/month-range";
 import { formatCurrency } from "@/lib/utils";
+import { KPICard } from "@/components/ui/KPICard";
+import { MonthSelector } from "@/components/ui/MonthSelector";
 import { AlertTriangle, TrendingUp, TrendingDown, Percent, DollarSign } from "lucide-react";
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from "recharts";
 
@@ -65,6 +68,12 @@ export function BudgetDashboard() {
   const [month, setMonth] = useState(getCurrentMonth());
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [monthRange, setMonthRange] = useState<{ minMonth: string; maxMonth: string; currentMonth: string } | null>(null);
+
+  // Carga el rango navegable una sola vez (compartido con Dashboard y Reportes)
+  useEffect(() => {
+    getAvailableMonthRange().then(setMonthRange);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -97,15 +106,15 @@ export function BudgetDashboard() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Presupuesto</h1>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-sm"
-        />
-      </div>
+      <h1 className="text-2xl font-bold text-gray-900">Presupuesto</h1>
+      <MonthSelector
+        value={month}
+        onChange={setMonth}
+        minMonth={monthRange?.minMonth}
+        maxMonth={monthRange?.maxMonth}
+        currentMonth={monthRange?.currentMonth}
+        loading={loading}
+      />
 
       {/* Alerts */}
       {data.alerts.length > 0 && (
@@ -130,29 +139,29 @@ export function BudgetDashboard() {
 
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-        <SummaryCard
+        <KPICard
           icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
-          label="Ingresos brutos"
+          title="Ingresos brutos"
           value={formatCurrency(data.grossIncome)}
-          accent="primary"
+          variant="default"
         />
-        <SummaryCard
+        <KPICard
           icon={<TrendingDown className="w-5 h-5 text-red-600" />}
-          label="Total gastado"
+          title="Total gastado"
           value={formatCurrency(data.totalSpent)}
-          accent="red"
+          variant="danger"
         />
-        <SummaryCard
+        <KPICard
           icon={<Percent className="w-5 h-5 text-amber-600" />}
-          label="% gastado"
+          title="% gastado"
           value={noData ? "—" : `${data.spentPct}%`}
-          accent="amber"
+          variant="warning"
         />
-        <SummaryCard
+        <KPICard
           icon={<DollarSign className="w-5 h-5 text-primary-light" />}
-          label="Utilidad estimada"
+          title="Utilidad estimada"
           value={formatCurrency(data.utilidad)}
-          accent={data.utilidad >= 0 ? "primary" : "red"}
+          variant={data.utilidad >= 0 ? "default" : "danger"}
         />
       </div>
 
@@ -268,26 +277,3 @@ export function BudgetDashboard() {
   );
 }
 
-function SummaryCard({
-  icon,
-  label,
-  value,
-  accent,
-}: {
-  icon: React.ReactNode;
-  label: string;
-  value: string;
-  accent: "primary" | "red" | "amber";
-}) {
-  const borderColor =
-    accent === "primary" ? "border-l-primary-light" : accent === "amber" ? "border-l-amber-500" : "border-l-red-500";
-  return (
-    <div className={`bg-white rounded-xl border border-gray-200 border-l-4 ${borderColor} p-5`}>
-      <div className="flex items-center gap-2 mb-2">
-        {icon}
-        <span className="text-sm text-gray-600">{label}</span>
-      </div>
-      <div className="text-2xl font-bold text-gray-900">{value}</div>
-    </div>
-  );
-}

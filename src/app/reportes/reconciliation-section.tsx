@@ -3,6 +3,8 @@
 import { useState, useEffect } from "react";
 import { getReconciliation } from "@/app/actions/reconciliation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
+import { KPICard } from "@/components/ui/KPICard";
+import { DataTable } from "@/components/ui/DataTable";
 
 type ReconciliationData = {
   daily: Record<string, unknown>[];
@@ -119,23 +121,34 @@ export function ReconciliationSection() {
             {/* Summary cards */}
             <div className="p-4 border-b border-gray-100 bg-gray-50/50">
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-                <SummaryCard label="Ingresos BCP" value={formatCurrency(totalBankIncome)} color="text-primary-light" />
-                <SummaryCard label="Egresos bancarios" value={formatCurrency(totalBankExpenses)} color="text-red-600" />
-                <SummaryCard label="Neto banco" value={`${bankNet >= 0 ? "+" : ""}${formatCurrency(bankNet)}`}
-                  color={bankNet >= 0 ? "text-primary-light" : "text-red-600"} />
-                <SummaryCard label="Variación saldo" value={`${balanceChange >= 0 ? "+" : ""}${formatCurrency(balanceChange)}`}
-                  color={balanceChange >= 0 ? "text-primary-light" : "text-red-600"}
-                  sub={data.balanceEndDate ? `Saldo actual: ${formatCurrency(data.balanceEnd)}` : undefined} />
+                <KPICard size="compact" title="Ingresos BCP" value={formatCurrency(totalBankIncome)} valueClassName="text-primary-light" />
+                <KPICard size="compact" title="Egresos bancarios" value={formatCurrency(totalBankExpenses)} valueClassName="text-red-600" />
+                <KPICard
+                  size="compact"
+                  title="Neto banco"
+                  value={`${bankNet >= 0 ? "+" : ""}${formatCurrency(bankNet)}`}
+                  valueClassName={bankNet >= 0 ? "text-primary-light" : "text-red-600"}
+                />
+                <KPICard
+                  size="compact"
+                  title="Variación saldo"
+                  value={`${balanceChange >= 0 ? "+" : ""}${formatCurrency(balanceChange)}`}
+                  valueClassName={balanceChange >= 0 ? "text-primary-light" : "text-red-600"}
+                  subtitle={data.balanceEndDate ? `Saldo actual: ${formatCurrency(data.balanceEnd)}` : undefined}
+                />
               </div>
 
               {/* Second row */}
               <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 mt-3">
-                <SummaryCard label="Ventas Byte" value={formatCurrency(totalByteSales)} color="text-gray-900" />
-                <SummaryCard label="Byte esperado banco" value={formatCurrency(totalByteExpected)} color="text-gray-700" />
-                <SummaryCard label="Diferencia ingreso"
+                <KPICard size="compact" title="Ventas Byte" value={formatCurrency(totalByteSales)} valueClassName="text-gray-900" />
+                <KPICard size="compact" title="Byte esperado banco" value={formatCurrency(totalByteExpected)} valueClassName="text-gray-700" />
+                <KPICard
+                  size="compact"
+                  title="Diferencia ingreso"
                   value={Math.abs(incomeDiff) < 1 ? "✓ Cuadra" : `${incomeDiff > 0 ? "+" : ""}${formatCurrency(incomeDiff)}`}
-                  color={Math.abs(incomeDiff) < 1 ? "text-green-600" : "text-amber-600"} />
-                <SummaryCard label="Total egresos (todos)" value={formatCurrency(totalExpenses)} color="text-red-600" />
+                  valueClassName={Math.abs(incomeDiff) < 1 ? "text-green-600" : "text-amber-600"}
+                />
+                <KPICard size="compact" title="Total egresos (todos)" value={formatCurrency(totalExpenses)} valueClassName="text-red-600" />
               </div>
 
               {/* Cash summary if any */}
@@ -154,45 +167,50 @@ export function ReconciliationSection() {
             </div>
 
             {/* Daily detail table */}
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="bg-gray-50 text-gray-600 text-left">
-                    <th className="px-3 py-3 font-medium">Fecha</th>
-                    <th className="px-3 py-3 font-medium text-right">Byte esperado</th>
-                    <th className="px-3 py-3 font-medium text-right">Ingreso BCP</th>
-                    <th className="px-3 py-3 font-medium text-right">Diferencia</th>
-                    <th className="px-3 py-3 font-medium text-right">Egreso banco</th>
-                    <th className="px-3 py-3 font-medium text-right">Neto banco</th>
-                    <th className="px-3 py-3 font-medium text-right">Saldo BCP</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-gray-100">
-                  {data.daily.map((row) => {
+            <DataTable
+              rowKey={(row) => row.date as string}
+              data={data.daily}
+              size="compact"
+              withCard={false}
+              rowClassName={(row) => {
+                const diff = parseFloat((row.income_diff as string) || "0");
+                return Math.abs(diff) >= 1 ? "bg-amber-50/50" : undefined;
+              }}
+              columns={[
+                { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
+                { key: "byte_expected_bank", header: "Byte esperado", align: "right", cellClassName: "text-gray-700", render: (row) => formatCurrency(row.byte_expected_bank as string) },
+                { key: "bank_income", header: "Ingreso BCP", align: "right", cellClassName: "text-primary-light font-medium", render: (row) => formatCurrency(row.bank_income as string) },
+                {
+                  key: "income_diff",
+                  header: "Diferencia",
+                  align: "right",
+                  render: (row) => {
                     const diff = parseFloat((row.income_diff as string) || "0");
                     const hasDiff = Math.abs(diff) >= 1;
+                    return (
+                      <span className={`font-medium ${!hasDiff ? "text-green-600" : diff > 0 ? "text-amber-600" : "text-blue-600"}`}>
+                        {!hasDiff ? "✓" : `${diff > 0 ? "+" : ""}${formatCurrency(diff)}`}
+                      </span>
+                    );
+                  },
+                },
+                { key: "bank_expenses", header: "Egreso banco", align: "right", cellClassName: "text-red-600", render: (row) => formatCurrency(row.bank_expenses as string) },
+                {
+                  key: "bank_net",
+                  header: "Neto banco",
+                  align: "right",
+                  render: (row) => {
                     const net = parseFloat((row.bank_net as string) || "0");
                     return (
-                      <tr key={row.date as string} className={hasDiff ? "bg-amber-50/50" : "hover:bg-gray-50"}>
-                        <td className="px-3 py-2.5 font-medium">{formatDateShort(row.date as string)}</td>
-                        <td className="px-3 py-2.5 text-right text-gray-700">{formatCurrency(row.byte_expected_bank as string)}</td>
-                        <td className="px-3 py-2.5 text-right text-primary-light font-medium">{formatCurrency(row.bank_income as string)}</td>
-                        <td className={`px-3 py-2.5 text-right font-medium ${!hasDiff ? "text-green-600" : diff > 0 ? "text-amber-600" : "text-blue-600"}`}>
-                          {!hasDiff ? "✓" : `${diff > 0 ? "+" : ""}${formatCurrency(diff)}`}
-                        </td>
-                        <td className="px-3 py-2.5 text-right text-red-600">{formatCurrency(row.bank_expenses as string)}</td>
-                        <td className={`px-3 py-2.5 text-right font-semibold ${net >= 0 ? "text-primary-light" : "text-red-600"}`}>
-                          {net >= 0 ? "+" : ""}{formatCurrency(net)}
-                        </td>
-                        <td className="px-3 py-2.5 text-right font-semibold">
-                          {row.bank_balance_real ? formatCurrency(row.bank_balance_real as string) : "—"}
-                        </td>
-                      </tr>
+                      <span className={`font-semibold ${net >= 0 ? "text-primary-light" : "text-red-600"}`}>
+                        {net >= 0 ? "+" : ""}{formatCurrency(net)}
+                      </span>
                     );
-                  })}
-                </tbody>
-              </table>
-            </div>
+                  },
+                },
+                { key: "bank_balance_real", header: "Saldo BCP", align: "right", cellClassName: "font-semibold", render: (row) => row.bank_balance_real ? formatCurrency(row.bank_balance_real as string) : "—" },
+              ]}
+            />
           </>
         ) : null}
       </div>
@@ -200,12 +218,3 @@ export function ReconciliationSection() {
   );
 }
 
-function SummaryCard({ label, value, color, sub }: { label: string; value: string; color: string; sub?: string }) {
-  return (
-    <div className="bg-white rounded-lg border border-gray-200 p-3">
-      <div className="text-xs text-gray-500">{label}</div>
-      <div className={`text-lg font-bold ${color}`}>{value}</div>
-      {sub && <div className="text-[10px] text-gray-400 mt-0.5">{sub}</div>}
-    </div>
-  );
-}

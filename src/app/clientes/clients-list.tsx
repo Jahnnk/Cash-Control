@@ -4,6 +4,7 @@ import { useState } from "react";
 import { createClient } from "@/app/actions/clients";
 import { formatCurrency } from "@/lib/utils";
 import { CLIENT_TYPES, PAYMENT_PATTERNS } from "@/lib/constants";
+import { DataTable } from "@/components/ui/DataTable";
 import { Plus, X, Users } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -98,64 +99,72 @@ export function ClientsList({ clients }: { clients: ClientRow[] }) {
       )}
 
       {/* Clients table */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {clients.length === 0 ? (
-          <div className="px-6 py-12 text-center text-gray-500">
-            <Users className="w-8 h-8 mx-auto mb-2 text-gray-300" />
-            No hay clientes registrados
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-gray-600 text-left">
-                  <th className="px-6 py-3 font-medium">Nombre</th>
-                  <th className="px-6 py-3 font-medium">Tipo</th>
-                  <th className="px-6 py-3 font-medium">Patrón de pago</th>
-                  <th className="px-6 py-3 font-medium text-right">Saldo pendiente</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {clients.map((c) => (
-                  <tr key={c.id as string} className="hover:bg-gray-50">
-                    <td className="px-6 py-3">
-                      <Link
-                        href={`/clientes/${c.id}`}
-                        className="font-medium text-primary-light hover:underline"
-                      >
-                        {c.name as string}
-                      </Link>
-                    </td>
-                    <td className="px-6 py-3">
-                      <span
-                        className={`text-xs px-2 py-1 rounded-full ${
-                          c.type === "familia"
-                            ? "bg-blue-50 text-blue-700"
-                            : "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {c.type as string}
-                      </span>
-                    </td>
-                    <td className="px-6 py-3 text-gray-600">
-                      {(c.payment_pattern as string) || "—"}
-                    </td>
-                    <td className="px-6 py-3 text-right font-semibold">
-                      {parseFloat(c.pending_amount as string) > 0 ? (
-                        <span className="text-amber-600">
-                          {formatCurrency(c.pending_amount as string)}
-                        </span>
-                      ) : (
-                        <span className="text-gray-400">S/0.00</span>
-                      )}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      {clients.length === 0 ? (
+        <div className="bg-white rounded-xl border border-gray-200 px-6 py-12 text-center text-gray-500">
+          <Users className="w-8 h-8 mx-auto mb-2 text-gray-300" />
+          No hay clientes registrados
+        </div>
+      ) : (
+        <DataTable
+          rowKey={(c) => c.id as string}
+          data={clients}
+          columns={[
+            {
+              key: "name",
+              header: "Nombre",
+              cellClassName: "px-6",
+              headerClassName: "px-6",
+              render: (c) => (
+                <Link
+                  href={`/clientes/${c.id}`}
+                  className="font-medium text-primary-light hover:underline"
+                >
+                  {c.name as string}
+                </Link>
+              ),
+            },
+            {
+              key: "type",
+              header: "Tipo",
+              cellClassName: "px-6",
+              headerClassName: "px-6",
+              render: (c) => (
+                <span
+                  className={`text-xs px-2 py-1 rounded-full ${
+                    c.type === "familia"
+                      ? "bg-blue-50 text-blue-700"
+                      : "bg-gray-100 text-gray-700"
+                  }`}
+                >
+                  {c.type as string}
+                </span>
+              ),
+            },
+            {
+              key: "payment_pattern",
+              header: "Patrón de pago",
+              cellClassName: "px-6 text-gray-600",
+              headerClassName: "px-6",
+              render: (c) => (c.payment_pattern as string) || "—",
+            },
+            {
+              key: "pending_amount",
+              header: "Saldo pendiente",
+              align: "right",
+              cellClassName: "px-6 font-semibold",
+              headerClassName: "px-6",
+              render: (c) =>
+                parseFloat(c.pending_amount as string) > 0 ? (
+                  <span className="text-amber-600">
+                    {formatCurrency(c.pending_amount as string)}
+                  </span>
+                ) : (
+                  <span className="text-gray-400">S/0.00</span>
+                ),
+            },
+          ]}
+        />
+      )}
     </div>
   );
 }

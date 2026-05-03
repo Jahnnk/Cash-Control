@@ -3,6 +3,8 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
+import { KPICard } from "@/components/ui/KPICard";
+import { DataTable } from "@/components/ui/DataTable";
 import { Plus, History, Wallet } from "lucide-react";
 import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
 import { ReimbursementModal } from "./reimbursement-modal";
@@ -62,18 +64,25 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div className="bg-white rounded-xl border border-gray-200 border-l-4 border-l-violet-500 p-5">
-          <div className="text-sm text-gray-600 mb-1">Total pendiente de cobro</div>
-          <div className={`text-2xl font-bold ${pendingTotal > 0 ? "text-violet-700" : "text-gray-400"}`}>{formatCurrency(pendingTotal)}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="text-sm text-gray-600 mb-1">Cuentas pendientes</div>
-          <div className="text-2xl font-bold text-gray-900">{initialReceivables.filter(r => r.status !== "collected").length}</div>
-        </div>
-        <div className="bg-white rounded-xl border border-gray-200 p-5">
-          <div className="text-sm text-gray-600 mb-1">Cuentas cobradas</div>
-          <div className="text-2xl font-bold text-gray-400">{initialReceivables.filter(r => r.status === "collected").length}</div>
-        </div>
+        <KPICard
+          title="Total pendiente de cobro"
+          value={formatCurrency(pendingTotal)}
+          variant="violet"
+          dim={pendingTotal === 0}
+        />
+        <KPICard
+          title="Cuentas pendientes"
+          value={initialReceivables.filter(r => r.status !== "collected").length}
+          variant="default"
+          withAccentBar={false}
+        />
+        <KPICard
+          title="Cuentas cobradas"
+          value={initialReceivables.filter(r => r.status === "collected").length}
+          variant="default"
+          withAccentBar={false}
+          dim
+        />
       </div>
 
       <div className="flex gap-2">
@@ -87,74 +96,87 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
         </button>
       </div>
 
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        {filtered.length === 0 ? (
-          <div className="p-8 text-center text-gray-500 text-sm">
-            {filter === "pending" ? "No hay cuentas pendientes." : "Sin cuentas registradas."}
-          </div>
-        ) : (
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="bg-gray-50 text-gray-600 text-left">
-                  <th className="px-4 py-3 font-medium">Fecha</th>
-                  <th className="px-4 py-3 font-medium">Categoría · Concepto</th>
-                  <th className="px-4 py-3 font-medium text-right">Total pagado</th>
-                  <th className="px-4 py-3 font-medium text-right">Tu parte</th>
-                  <th className="px-4 py-3 font-medium text-right">Por cobrar</th>
-                  <th className="px-4 py-3 font-medium text-right">Cobrado</th>
-                  <th className="px-4 py-3 font-medium">Estado</th>
-                  <th className="px-4 py-3 font-medium text-right">Antigüedad</th>
-                  <th className="px-4 py-3 font-medium text-right">Acciones</th>
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {filtered.map((r) => (
-                  <tr key={r.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-2.5">{formatDateShort(r.expense_date)}</td>
-                    <td className="px-4 py-2.5">
-                      <div className="font-medium text-gray-900">{r.category}</div>
-                      <div className="text-xs text-gray-500">{r.concept}</div>
-                    </td>
-                    <td className="px-4 py-2.5 text-right">{formatCurrency(r.amount_total)}</td>
-                    <td className="px-4 py-2.5 text-right text-gray-700">{formatCurrency(r.atelier_amount)}</td>
-                    <td className={`px-4 py-2.5 text-right font-semibold ${r.amount_pending > 0 ? "text-violet-700" : "text-gray-400"}`}>
-                      {formatCurrency(r.amount_pending)}
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-green-700">{formatCurrency(r.amount_collected)}</td>
-                    <td className="px-4 py-2.5">{statusBadge(r.status)}</td>
-                    <td className={`px-4 py-2.5 text-right font-medium ${agingClass(Math.floor(r.days_old), r.status)}`}>
-                      {Math.floor(r.days_old)} d
-                    </td>
-                    <td className="px-4 py-2.5 text-right">
-                      <div className="inline-flex items-center gap-2">
-                        {r.status !== "collected" && (
-                          <button
-                            onClick={() => setRegisterFor(r)}
-                            className="text-xs text-violet-700 hover:underline inline-flex items-center gap-1"
-                            title="Registrar reembolso para esta cuenta"
-                          >
-                            <Wallet className="w-3 h-3" /> Registrar
-                          </button>
-                        )}
-                        {r.amount_collected > 0 && (
-                          <button
-                            onClick={() => setHistoryFor(r)}
-                            className="text-xs text-gray-600 hover:underline inline-flex items-center gap-1"
-                            title="Ver historial de reembolsos"
-                          >
-                            <History className="w-3 h-3" /> Historial
-                          </button>
-                        )}
-                      </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
-      </div>
+      <DataTable
+        rowKey={(r) => r.id}
+        data={filtered}
+        emptyMessage={filter === "pending" ? "No hay cuentas pendientes." : "Sin cuentas registradas."}
+        columns={[
+          { key: "expense_date", header: "Fecha", render: (r) => formatDateShort(r.expense_date) },
+          {
+            key: "category",
+            header: "Categoría · Concepto",
+            render: (r) => (
+              <>
+                <div className="font-medium text-gray-900">{r.category}</div>
+                <div className="text-xs text-gray-500">{r.concept}</div>
+              </>
+            ),
+          },
+          { key: "amount_total", header: "Total pagado", align: "right", render: (r) => formatCurrency(r.amount_total) },
+          {
+            key: "atelier_amount",
+            header: "Tu parte",
+            align: "right",
+            cellClassName: "text-gray-700",
+            render: (r) => formatCurrency(r.atelier_amount),
+          },
+          {
+            key: "amount_pending",
+            header: "Por cobrar",
+            align: "right",
+            render: (r) => (
+              <span className={`font-semibold ${r.amount_pending > 0 ? "text-violet-700" : "text-gray-400"}`}>
+                {formatCurrency(r.amount_pending)}
+              </span>
+            ),
+          },
+          {
+            key: "amount_collected",
+            header: "Cobrado",
+            align: "right",
+            cellClassName: "text-green-700",
+            render: (r) => formatCurrency(r.amount_collected),
+          },
+          { key: "status", header: "Estado", render: (r) => statusBadge(r.status) },
+          {
+            key: "days_old",
+            header: "Antigüedad",
+            align: "right",
+            render: (r) => (
+              <span className={`font-medium ${agingClass(Math.floor(r.days_old), r.status)}`}>
+                {Math.floor(r.days_old)} d
+              </span>
+            ),
+          },
+          {
+            key: "actions",
+            header: "Acciones",
+            align: "right",
+            render: (r) => (
+              <div className="inline-flex items-center gap-2">
+                {r.status !== "collected" && (
+                  <button
+                    onClick={() => setRegisterFor(r)}
+                    className="text-xs text-violet-700 hover:underline inline-flex items-center gap-1"
+                    title="Registrar reembolso para esta cuenta"
+                  >
+                    <Wallet className="w-3 h-3" /> Registrar
+                  </button>
+                )}
+                {r.amount_collected > 0 && (
+                  <button
+                    onClick={() => setHistoryFor(r)}
+                    className="text-xs text-gray-600 hover:underline inline-flex items-center gap-1"
+                    title="Ver historial de reembolsos"
+                  >
+                    <History className="w-3 h-3" /> Historial
+                  </button>
+                )}
+              </div>
+            ),
+          },
+        ]}
+      />
 
       {(registerGeneric || registerFor) && (
         <ReimbursementModal
