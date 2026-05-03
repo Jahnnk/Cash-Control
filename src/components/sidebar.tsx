@@ -14,19 +14,19 @@ import {
   X,
   Handshake,
   ChevronDown,
-  ChefHat,
-  Coffee,
-  Building2,
   RefreshCcw,
+  LogOut,
+  User,
 } from "lucide-react";
+import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
+import { clearRole } from "@/app/actions/role";
 
-type ScopeKey = "atelier" | "fonavi" | "centro" | "grupo";
+type ScopeKey = ScopeCode;
 
 type NavItem = {
   segment: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  /** Solo se muestra cuando el negocio activo está incluido. */
   scopes: ScopeKey[];
 };
 
@@ -40,17 +40,22 @@ const NAV: NavItem[] = [
   { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro"] },
 ];
 
-const SCOPE_META: Record<ScopeKey, { name: string; subtitle: string; icon: React.ComponentType<{ className?: string }> }> = {
-  atelier: { name: "Yayi's Atelier", subtitle: "Centro de producción · B2B", icon: ChefHat },
-  fonavi:  { name: "Yayi's Fonavi",  subtitle: "Cafetería Fonavi",            icon: Coffee },
-  centro:  { name: "Yayi's Centro",  subtitle: "Cafetería Centro",            icon: Building2 },
-  grupo:   { name: "Grupo Yayi's",   subtitle: "Vista consolidada",           icon: BarChart3 },
-};
-
 function scopeFromPathname(pathname: string): ScopeKey | null {
   const seg = pathname.split("/")[1];
   if (seg === "atelier" || seg === "fonavi" || seg === "centro" || seg === "grupo") return seg;
   return null;
+}
+
+/**
+ * Lee la cookie yayis_role del lado cliente. La cookie no es httpOnly
+ * (decisión del prompt) para que esta lectura funcione.
+ */
+function readRoleCookie(): "admin" | "kelly" | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(/(?:^|;\s*)yayis_role=([^;]+)/);
+  if (!m) return null;
+  const v = decodeURIComponent(m[1]);
+  return v === "admin" || v === "kelly" ? v : null;
 }
 
 export function Sidebar() {
@@ -59,19 +64,17 @@ export function Sidebar() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   const scope = scopeFromPathname(pathname);
-
-  // Si la ruta no tiene scope (ej: la pantalla raíz), no renderizamos sidebar.
-  // Esto evita que aparezca en /, /grupo no incluido o en 404.
   if (!scope) return null;
 
-  const meta = SCOPE_META[scope];
-  const ScopeIcon = meta.icon;
+  const theme = BUSINESS_THEMES[scope];
+  const ScopeIcon = theme.icon;
   const items = useMemo(() => NAV.filter((item) => item.scopes.includes(scope)), [scope]);
+  const role = readRoleCookie();
+  const isKelly = role === "kelly";
 
   function hrefFor(segment: string) {
     return `/${scope}/${segment}`;
   }
-
   function isActive(segment: string) {
     return pathname === hrefFor(segment) || pathname.startsWith(hrefFor(segment) + "/");
   }
@@ -81,7 +84,7 @@ export function Sidebar() {
       {/* Mobile hamburger */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed top-4 left-4 z-50 lg:hidden bg-white rounded-lg p-2 shadow-md"
+        className="fixed top-2 left-2 z-50 lg:hidden bg-white rounded-lg p-2 shadow-md"
         aria-label="Abrir menú"
       >
         <Menu className="w-5 h-5 text-primary" />
@@ -94,19 +97,29 @@ export function Sidebar() {
       <aside
         className={`fixed top-0 left-0 h-full w-64 bg-primary text-white z-50 flex flex-col transition-transform duration-200 lg:translate-x-0 ${open ? "translate-x-0" : "-translate-x-full"}`}
       >
-        {/* Header — switcher de negocio */}
+        {/* Header — switcher con dot del color del negocio */}
         <div className="relative border-b border-white/10">
           <button
             onClick={() => setSwitcherOpen((v) => !v)}
             className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors text-left"
           >
             <div className="flex items-center gap-3 min-w-0">
-              <div className="w-9 h-9 rounded-lg bg-white/10 flex items-center justify-center shrink-0">
+              <div
+                className="w-9 h-9 rounded-lg flex items-center justify-center shrink-0"
+                style={{ backgroundColor: theme.colorSoft, color: "#FFFFFF" }}
+              >
                 <ScopeIcon className="w-5 h-5" />
               </div>
               <div className="min-w-0">
-                <div className="text-sm font-semibold truncate">{meta.name}</div>
-                <div className="text-[11px] text-white/60 truncate">{meta.subtitle}</div>
+                <div className="text-sm font-semibold truncate flex items-center gap-2">
+                  <span
+                    className="w-2 h-2 rounded-full shrink-0"
+                    style={{ backgroundColor: theme.color }}
+                    aria-hidden
+                  />
+                  {theme.label}
+                </div>
+                <div className="text-[11px] text-white/60 truncate">{theme.description}</div>
               </div>
             </div>
             <ChevronDown className={`w-4 h-4 text-white/60 transition-transform shrink-0 ${switcherOpen ? "rotate-180" : ""}`} />
@@ -116,34 +129,44 @@ export function Sidebar() {
             <>
               <div className="fixed inset-0 z-40" onClick={() => setSwitcherOpen(false)} />
               <div className="absolute z-50 left-3 right-3 mt-1 bg-white text-gray-900 rounded-xl shadow-lg border border-gray-200 overflow-hidden animate-in fade-in slide-in-from-top-2 duration-150">
-                {(["atelier", "fonavi", "centro"] as ScopeKey[]).map((s) => {
-                  const m = SCOPE_META[s];
-                  const Icon = m.icon;
-                  const current = s === scope;
-                  return (
-                    <Link
-                      key={s}
-                      href={`/${s}/dashboard`}
-                      onClick={() => { setSwitcherOpen(false); setOpen(false); }}
-                      className={`flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors ${current ? "bg-primary/5" : ""}`}
-                    >
-                      <Icon className={`w-4 h-4 ${current ? "text-primary" : "text-gray-500"}`} />
-                      <span className={`text-sm ${current ? "font-semibold text-primary" : "text-gray-800"}`}>{m.name}</span>
-                    </Link>
-                  );
-                })}
+                {(["atelier", "fonavi", "centro"] as ScopeKey[])
+                  .filter((s) => !(isKelly && s === "atelier"))
+                  .map((s) => {
+                    const m = BUSINESS_THEMES[s];
+                    const Icon = m.icon;
+                    const current = s === scope;
+                    return (
+                      <Link
+                        key={s}
+                        href={`/${s}/dashboard`}
+                        onClick={() => { setSwitcherOpen(false); setOpen(false); }}
+                        className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                        style={current ? { backgroundColor: m.colorSoft } : undefined}
+                      >
+                        <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: m.color }} />
+                        <Icon className="w-4 h-4 text-gray-500" />
+                        <span className={`text-sm ${current ? "font-semibold" : "text-gray-800"}`} style={current ? { color: m.color } : undefined}>
+                          {m.label}
+                        </span>
+                      </Link>
+                    );
+                  })}
                 <div className="border-t border-gray-100" />
                 <Link
                   href="/grupo/dashboard"
                   onClick={() => { setSwitcherOpen(false); setOpen(false); }}
-                  className={`flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors ${scope === "grupo" ? "bg-primary/5" : ""}`}
+                  className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors"
+                  style={scope === "grupo" ? { backgroundColor: BUSINESS_THEMES.grupo.colorSoft } : undefined}
                 >
-                  <BarChart3 className={`w-4 h-4 ${scope === "grupo" ? "text-primary" : "text-gray-500"}`} />
-                  <span className={`text-sm ${scope === "grupo" ? "font-semibold text-primary" : "text-gray-800"}`}>Grupo Yayi&apos;s</span>
+                  <span className="w-2 h-2 rounded-full shrink-0" style={{ backgroundColor: BUSINESS_THEMES.grupo.color }} />
+                  <BarChart3 className="w-4 h-4 text-gray-500" />
+                  <span className={`text-sm ${scope === "grupo" ? "font-semibold" : "text-gray-800"}`} style={scope === "grupo" ? { color: BUSINESS_THEMES.grupo.color } : undefined}>
+                    Grupo Yayi&apos;s
+                  </span>
                 </Link>
                 <div className="border-t border-gray-100" />
                 <Link
-                  href="/"
+                  href="/select-business"
                   onClick={() => { setSwitcherOpen(false); setOpen(false); }}
                   className="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors text-gray-600"
                 >
@@ -163,7 +186,15 @@ export function Sidebar() {
           </button>
         </div>
 
-        <nav className="flex-1 p-3 space-y-1">
+        {/* Indicador de rol activo */}
+        {role && (
+          <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 text-[11px] text-white/60">
+            <User className="w-3 h-3" />
+            <span>Usuario: <span className="font-medium text-white/80">{role === "admin" ? "Jahnn" : "Kelly"}</span></span>
+          </div>
+        )}
+
+        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
           {items.map((item) => {
             const active = isActive(item.segment);
             return (
@@ -173,9 +204,10 @@ export function Sidebar() {
                 onClick={() => setOpen(false)}
                 className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
                   active
-                    ? "bg-white/15 text-white"
+                    ? "text-white bg-white/15"
                     : "text-white/70 hover:bg-white/10 hover:text-white"
                 }`}
+                style={active ? { borderLeft: `3px solid ${theme.color}`, paddingLeft: "calc(1rem - 3px)" } : undefined}
               >
                 <item.icon className="w-5 h-5 shrink-0" />
                 {item.label}
@@ -184,8 +216,29 @@ export function Sidebar() {
           })}
         </nav>
 
+        {/* Footer: botones explícitos para cambiar negocio + cambiar usuario */}
+        <div className="border-t border-white/10 p-3 space-y-1">
+          <Link
+            href="/select-business"
+            onClick={() => setOpen(false)}
+            className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors"
+          >
+            <RefreshCcw className="w-4 h-4 shrink-0" />
+            Cambiar negocio
+          </Link>
+          <form action={clearRole}>
+            <button
+              type="submit"
+              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors text-left"
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              Cambiar usuario
+            </button>
+          </form>
+        </div>
+
         <div className="p-4 border-t border-white/10">
-          <p className="text-xs text-white/40">{meta.name}</p>
+          <p className="text-xs text-white/40">{theme.label}</p>
           <p className="text-xs text-white/40">Cajamarca, Perú</p>
         </div>
       </aside>
