@@ -1,7 +1,6 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
-import { Sidebar } from "@/components/sidebar";
 
 const inter = Inter({
   subsets: ["latin"],
@@ -10,9 +9,14 @@ const inter = Inter({
 
 export const metadata: Metadata = {
   title: "Yayi's Cash Control",
-  description: "Control de caja real para Yayi's Atelier",
+  description: "Control de caja real para los 3 negocios de Yayi's",
 };
 
+/**
+ * Root layout: SIN sidebar. Cada scope (/[negocio]/, /grupo/) tiene su
+ * propio layout que monta el Sidebar. La pantalla raíz (selector de
+ * negocio) tampoco tiene sidebar — vive solo y limpia.
+ */
 export default function RootLayout({
   children,
 }: {
@@ -20,14 +24,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" className={inter.variable}>
-      <body className="min-h-screen">
-        <Sidebar />
-        <main className="lg:ml-64 min-h-screen">
-          <div className="p-4 pt-16 lg:p-8 lg:pt-8 max-w-7xl mx-auto">
-            {children}
-          </div>
-        </main>
-      </body>
+      <body className="min-h-screen bg-gray-50">{children}</body>
     </html>
   );
 }
