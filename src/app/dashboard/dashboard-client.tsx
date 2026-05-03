@@ -214,9 +214,9 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       {/* Enlaces a reportes detallados */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <ReportLink
-          href="/reportes?tab=ultimos7"
-          title="Últimos 7 días"
-          description="Resumen día por día: Byte, ingresos, egresos y saldo"
+          href="/reportes?tab=semanal"
+          title="Reporte semanal"
+          description="Resumen día por día: Byte, ingresos, egresos y saldo · editable últimos 7 días"
         />
         <ReportLink
           href="/reportes?tab=conciliacion"

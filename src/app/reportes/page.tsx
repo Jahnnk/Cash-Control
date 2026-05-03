@@ -5,21 +5,22 @@ import { useSearchParams } from "next/navigation";
 import { Download } from "lucide-react";
 import { WeeklyReport } from "./weekly-report";
 import { MonthlyReport } from "./monthly-report";
-import { Last7DaysReport } from "./last7-days-report";
 import { ReconciliationSection } from "./reconciliation-section";
 import { ExportModal } from "./export-modal";
 
-type Tab = "semanal" | "mensual" | "ultimos7" | "conciliacion";
+type Tab = "semanal" | "mensual" | "conciliacion";
 
-const VALID_TABS: Tab[] = ["semanal", "mensual", "ultimos7", "conciliacion"];
+const VALID_TABS: Tab[] = ["semanal", "mensual", "conciliacion"];
 
 function ReportesContent() {
   const searchParams = useSearchParams();
   const rawTab = searchParams.get("tab");
-  // Redirección suave: cualquier link viejo a antigüedad ahora abre Conciliación
+  // Redirecciones suaves para links viejos:
+  //   - antigüedad → conciliacion (Ola 1)
+  //   - ultimos7   → semanal (Ola 3, ahora con edit inline en filas <7 días)
   const initialTab: Tab =
-    rawTab === "antigüedad" || rawTab === "antiguedad"
-      ? "conciliacion"
+    rawTab === "antigüedad" || rawTab === "antiguedad" || rawTab === "ultimos7"
+      ? rawTab === "ultimos7" ? "semanal" : "conciliacion"
       : (VALID_TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "semanal");
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [showExport, setShowExport] = useState(false);
@@ -27,7 +28,6 @@ function ReportesContent() {
   const tabs: { key: Tab; label: string }[] = [
     { key: "semanal", label: "Semanal" },
     { key: "mensual", label: "Mensual" },
-    { key: "ultimos7", label: "Últimos 7 días" },
     { key: "conciliacion", label: "Conciliación" },
   ];
 
@@ -62,7 +62,6 @@ function ReportesContent() {
 
       {activeTab === "semanal" && <WeeklyReport />}
       {activeTab === "mensual" && <MonthlyReport />}
-      {activeTab === "ultimos7" && <Last7DaysReport />}
       {activeTab === "conciliacion" && <ReconciliationSection />}
     </div>
   );
