@@ -6,7 +6,6 @@ import { formatCurrency } from "@/lib/utils";
 import { CLIENT_TYPES, PAYMENT_PATTERNS } from "@/lib/constants";
 import { DataTable } from "@/components/ui/DataTable";
 import { Plus, X, Users } from "lucide-react";
-import Link from "next/link";
 import { useRouter } from "next/navigation";
 
 type ClientRow = Record<string, unknown>;
@@ -112,16 +111,9 @@ export function ClientsList({ clients }: { clients: ClientRow[] }) {
             {
               key: "name",
               header: "Nombre",
-              cellClassName: "px-6",
+              cellClassName: "px-6 font-medium text-gray-900",
               headerClassName: "px-6",
-              render: (c) => (
-                <Link
-                  href={`/clientes/${c.id}`}
-                  className="font-medium text-primary-light hover:underline"
-                >
-                  {c.name as string}
-                </Link>
-              ),
+              render: (c) => c.name as string,
             },
             {
               key: "type",

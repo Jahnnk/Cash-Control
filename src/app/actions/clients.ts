@@ -1,8 +1,8 @@
 "use server";
 
 import { db } from "@/db";
-import { clients, sales, collections } from "@/db/schema";
-import { eq, desc, sql, and } from "drizzle-orm";
+import { clients } from "@/db/schema";
+import { eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 
 export async function getClients(activeOnly = true) {
@@ -39,43 +39,6 @@ export async function getClientById(id: string) {
     .from(clients)
     .where(eq(clients.id, id));
   return client;
-}
-
-export async function getClientHistory(clientId: string) {
-  const salesData = await db
-    .select()
-    .from(sales)
-    .where(eq(sales.clientId, clientId))
-    .orderBy(desc(sales.date));
-
-  const collectionsData = await db
-    .select()
-    .from(collections)
-    .where(eq(collections.clientId, clientId))
-    .orderBy(desc(collections.date));
-
-  // Calculate average payment days
-  const paidSales = await db.execute(sql`
-    SELECT s.date as sale_date, MIN(col.date) as collection_date
-    FROM sales s
-    JOIN collections col ON col.client_id = s.client_id AND col.date >= s.date
-    WHERE s.client_id = ${clientId} AND s.is_collected = true
-    GROUP BY s.id, s.date
-    ORDER BY s.date DESC
-    LIMIT 20
-  `);
-
-  let avgDays = 0;
-  if (paidSales.rows.length > 0) {
-    const totalDays = paidSales.rows.reduce((sum: number, row: Record<string, unknown>) => {
-      const saleDate = new Date(row.sale_date as string);
-      const collDate = new Date(row.collection_date as string);
-      return sum + Math.round((collDate.getTime() - saleDate.getTime()) / (1000 * 60 * 60 * 24));
-    }, 0);
-    avgDays = Math.round(totalDays / paidSales.rows.length);
-  }
-
-  return { sales: salesData, collections: collectionsData, avgPaymentDays: avgDays };
 }
 
 export async function createClient(data: {
