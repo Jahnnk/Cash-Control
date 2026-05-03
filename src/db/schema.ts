@@ -113,11 +113,3 @@ export const auditLog = pgTable("audit_log", {
   dateAffected: date("date_affected").notNull(),
 });
 
-export const bankBalance = pgTable("bank_balance", {
-  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
-  date: date("date").notNull().unique(),
-  openingBalance: numeric("opening_balance", { precision: 10, scale: 2 }),
-  closingBalance: numeric("closing_balance", { precision: 10, scale: 2 }),
-  notes: text("notes"),
-  createdAt: timestamp("created_at").defaultNow().notNull(),
-});
