@@ -958,20 +958,40 @@ export function RegistroForm({
                             </div>
                             <div className="text-xs text-gray-500 flex items-center gap-2">
                               <span>{item.category}</span>
-                              <span className={`px-1.5 py-0.5 rounded text-[10px] ${
-                                item.paymentMethod === "efectivo" ? "bg-amber-100 text-amber-700" :
-                                item.paymentMethod === "yape" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
-                              }`}>
-                                {item.paymentMethod === "transferencia" ? "Transfer." : item.paymentMethod === "efectivo" ? "Efectivo" : "Yape"}
-                              </span>
+                              {item.paymentMethod === "pendiente_atelier" ? (
+                                <span
+                                  className="px-1.5 py-0.5 rounded text-[10px] bg-violet-100 text-violet-700"
+                                  title="Este gasto fue generado automáticamente al registrarse el gasto compartido en Atelier. Se activará en el saldo BCP cuando se registre el reembolso."
+                                >
+                                  Pendiente con Atelier
+                                </span>
+                              ) : (
+                                <span className={`px-1.5 py-0.5 rounded text-[10px] ${
+                                  item.paymentMethod === "efectivo" ? "bg-amber-100 text-amber-700" :
+                                  item.paymentMethod === "yape" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"
+                                }`}>
+                                  {item.paymentMethod === "transferencia" ? "Transfer." : item.paymentMethod === "efectivo" ? "Efectivo" : "Yape"}
+                                </span>
+                              )}
                             </div>
                           </div>
                           <div className="text-sm font-bold text-red-600 ml-3">-{formatCurrency(item.amount)}</div>
                           <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
-                            <button onClick={() => startEditExpense(item)}
-                              className="text-gray-400 hover:text-primary-light p-0.5"><Pencil className="w-3.5 h-3.5" /></button>
-                            <button onClick={() => handleDeleteExpense(item)}
-                              className="text-red-400 hover:text-red-600 p-0.5 ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                            {item.paymentMethod === "pendiente_atelier" ? (
+                              <span
+                                className="text-[10px] text-gray-400 italic px-1"
+                                title="Este gasto se gestiona desde Atelier"
+                              >
+                                Solo lectura
+                              </span>
+                            ) : (
+                              <>
+                                <button onClick={() => startEditExpense(item)}
+                                  className="text-gray-400 hover:text-primary-light p-0.5"><Pencil className="w-3.5 h-3.5" /></button>
+                                <button onClick={() => handleDeleteExpense(item)}
+                                  className="text-red-400 hover:text-red-600 p-0.5 ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                              </>
+                            )}
                           </div>
                         </div>
                       )

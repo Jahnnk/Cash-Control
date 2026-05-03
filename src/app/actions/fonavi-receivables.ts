@@ -2,8 +2,18 @@
 
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
+import { activeBusinessId } from "@/lib/active-business";
 
 const sql = neon(process.env.DATABASE_URL!);
+const ATELIER_ID = 1;
+
+/** Guard: las cuentas por cobrar a Fonavi son exclusivas de Atelier. */
+async function requireAtelier(): Promise<void> {
+  const bId = await activeBusinessId();
+  if (bId !== ATELIER_ID) {
+    throw new Error("Esta sección solo está disponible en Atelier");
+  }
+}
 
 export type ReceivableRow = {
   id: string;
@@ -24,6 +34,7 @@ export type ReceivableRow = {
 
 // Listar todas las cuentas por cobrar con info del egreso
 export async function getFonaviReceivables(includeCollected = true): Promise<ReceivableRow[]> {
+  await requireAtelier();
   const rows = (await sql`
     SELECT
       fr.id::text as id,
@@ -50,6 +61,7 @@ export async function getFonaviReceivables(includeCollected = true): Promise<Rec
 
 // Total pendiente (para el dashboard)
 export async function getFonaviReceivablesPendingTotal(): Promise<number> {
+  await requireAtelier();
   const r = (await sql`
     SELECT COALESCE(SUM(amount_due - amount_collected), 0)::float as total
     FROM fonavi_receivables WHERE status != 'collected'
@@ -57,13 +69,17 @@ export async function getFonaviReceivablesPendingTotal(): Promise<number> {
   return r[0].total;
 }
 
-// Registrar reembolso: crea bank_income_item con flag + allocations + actualiza receivables
+// Registrar reembolso: crea bank_income_item en ATELIER con flag + allocations
+// + actualiza receivables. CAMBIO 7.5: además, por cada receivable que queda
+// 'collected', activa el gasto-espejo en Fonavi (cambia método de
+// 'pendiente_atelier' a 'transferencia') y recalcula saldo BCP de Fonavi.
 export async function registerFonaviReimbursement(data: {
-  date: string;            // fecha del reembolso (entró al banco)
+  date: string;            // fecha del reembolso (entró al banco de Atelier)
   totalAmount: number;     // monto total recibido
   note: string | null;
   allocations: { receivableId: string; amount: number }[];
 }): Promise<{ success: true } | { success: false; error: string }> {
+  await requireAtelier();
   if (!Number.isFinite(data.totalAmount) || data.totalAmount <= 0) {
     return { success: false, error: "Monto inválido" };
   }
@@ -75,7 +91,7 @@ export async function registerFonaviReimbursement(data: {
     return { success: false, error: "Cada asignación debe ser mayor a 0" };
   }
 
-  // Pre-validar receivables (existen y montos no exceden lo pendiente)
+  // Pre-validar receivables
   for (const alloc of data.allocations) {
     const r = (await sql`
       SELECT amount_due::float as due, amount_collected::float as col, status
@@ -89,26 +105,25 @@ export async function registerFonaviReimbursement(data: {
     }
   }
 
-  // Inserta income_item, captura su id, luego allocations + updates de receivables
+  // 1. Insertar income_item en ATELIER (business_id=1, donde realmente entra el dinero)
   const inserted = (await sql`
-    INSERT INTO bank_income_items (date, amount, client_id, note, is_fonavi_reimbursement)
-    VALUES (${data.date}, ${data.totalAmount}, NULL, ${data.note || "Reembolso Fonavi"}, true)
+    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, is_fonavi_reimbursement)
+    VALUES (1, ${data.date}, ${data.totalAmount}, NULL, ${data.note || "Reembolso Fonavi"}, true)
     RETURNING id::text
   `) as { id: string }[];
   const incomeItemId = inserted[0].id;
 
-  // Asegurar que el daily_record exista para esa fecha
+  // 2. Asegurar daily_record en Atelier para esa fecha
   await sql`
-    INSERT INTO daily_records (date) VALUES (${data.date})
-    ON CONFLICT (date) DO NOTHING
+    INSERT INTO daily_records (business_id, date) VALUES (1, ${data.date})
+    ON CONFLICT (business_id, date) DO NOTHING
   `;
 
-  // Insertar allocations + actualizar receivables
+  // 3. Insertar allocations + actualizar receivables (transacción atómica)
   const txQueries = data.allocations.map((alloc) => sql`
     INSERT INTO fonavi_reimbursement_allocations (income_item_id, receivable_id, amount)
     VALUES (${incomeItemId}::uuid, ${alloc.receivableId}::uuid, ${alloc.amount})
   `);
-
   for (const alloc of data.allocations) {
     txQueries.push(sql`
       UPDATE fonavi_receivables
@@ -124,43 +139,38 @@ export async function registerFonaviReimbursement(data: {
       WHERE id = ${alloc.receivableId}
     `);
   }
-
-  // Recalcular bank_income total + bank_balance_real para esa fecha
+  // Recalcular cache + saldo de ATELIER (business_id=1)
   txQueries.push(sql`
     UPDATE daily_records SET
-      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = ${data.date}), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE date = ${data.date} AND payment_method != 'efectivo'), 0)
-    WHERE date = ${data.date}
+      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = 1 AND date = ${data.date}), 0),
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = 1 AND date = ${data.date} AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
+    WHERE business_id = 1 AND date = ${data.date}
   `);
-
-  // Cascade bank_balance_real desde la fecha
   txQueries.push(sql`
     WITH RECURSIVE chain AS (
       SELECT
         (${data.date}::date - INTERVAL '1 day')::date AS date,
         COALESCE((
           SELECT bank_balance_real::numeric FROM daily_records
-          WHERE date < ${data.date} AND bank_balance_real IS NOT NULL
+          WHERE business_id = 1 AND date < ${data.date} AND bank_balance_real IS NOT NULL
           ORDER BY date DESC LIMIT 1
         ), 0) AS calc_balance
-
       UNION ALL
-
       SELECT
         dr.date,
         ROUND((
           c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = 1 AND date = dr.date), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = 1 AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.date <= (SELECT MAX(date) FROM daily_records)
+      WHERE dr.business_id = 1 AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = 1)
     )
     UPDATE daily_records dr
     SET bank_balance_real = chain.calc_balance
     FROM chain
-    WHERE dr.date = chain.date AND dr.date >= ${data.date}
+    WHERE dr.business_id = 1 AND dr.date = chain.date AND dr.date >= ${data.date}
   `);
 
   try {
@@ -169,10 +179,81 @@ export async function registerFonaviReimbursement(data: {
     return { success: false, error: e instanceof Error ? e.message : "Error al guardar" };
   }
 
-  revalidatePath("/dashboard");
-  revalidatePath("/registro");
-  revalidatePath("/reportes");
-  revalidatePath("/fonavi");
+  // 4. CAMBIO 7.5: activar gastos-espejo en Fonavi para receivables totalmente cobradas.
+  //    Cambia payment_method de 'pendiente_atelier' a 'transferencia' (default).
+  //    Si la receivable solo se cobró parcialmente, NO se activa todavía
+  //    (el gasto-espejo permanece pendiente hasta cobro total).
+  const collectedReceivables = (await sql`
+    SELECT id::text FROM fonavi_receivables
+    WHERE id = ANY(${data.allocations.map((a) => a.receivableId)}::uuid[])
+      AND status = 'collected'
+  `) as { id: string }[];
+
+  if (collectedReceivables.length > 0) {
+    const ids = collectedReceivables.map((r) => r.id);
+    // Capturar las fechas de los gastos-espejo afectados ANTES del UPDATE
+    // para poder recalcular el saldo de Fonavi en cada una.
+    const mirrorRows = (await sql`
+      SELECT date::text AS date FROM expenses
+      WHERE business_id = 2
+        AND payment_method = 'pendiente_atelier'
+        AND linked_receivable_id = ANY(${ids}::uuid[])
+    `) as { date: string }[];
+
+    // UPDATE: el espejo "se activa" como gasto BCP de Fonavi
+    await sql`
+      UPDATE expenses
+      SET payment_method = 'transferencia'
+      WHERE business_id = 2
+        AND payment_method = 'pendiente_atelier'
+        AND linked_receivable_id = ANY(${ids}::uuid[])
+    `;
+
+    // Recalcular saldo BCP de Fonavi por cada fecha afectada (puede haber varias)
+    const uniqueDates = Array.from(new Set(mirrorRows.map((r) => r.date)));
+    for (const fonaviDate of uniqueDates) {
+      // Cache por día
+      await sql`
+        UPDATE daily_records SET
+          bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = 2 AND date = ${fonaviDate} AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
+        WHERE business_id = 2 AND date = ${fonaviDate}
+      `;
+      // Asegurar daily_record en Fonavi
+      await sql`
+        INSERT INTO daily_records (business_id, date) VALUES (2, ${fonaviDate})
+        ON CONFLICT (business_id, date) DO NOTHING
+      `;
+      // Cascade saldo
+      await sql`
+        WITH RECURSIVE chain AS (
+          SELECT
+            (${fonaviDate}::date - INTERVAL '1 day')::date AS date,
+            COALESCE((
+              SELECT bank_balance_real::numeric FROM daily_records
+              WHERE business_id = 2 AND date < ${fonaviDate} AND bank_balance_real IS NOT NULL
+              ORDER BY date DESC LIMIT 1
+            ), 0) AS calc_balance
+          UNION ALL
+          SELECT
+            dr.date,
+            ROUND((
+              c.calc_balance
+              + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = 2 AND date = dr.date), 0)
+              - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = 2 AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
+            )::numeric, 2)
+          FROM daily_records dr
+          JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
+          WHERE dr.business_id = 2 AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = 2)
+        )
+        UPDATE daily_records dr
+        SET bank_balance_real = chain.calc_balance
+        FROM chain
+        WHERE dr.business_id = 2 AND dr.date = chain.date AND dr.date >= ${fonaviDate}
+      `;
+    }
+  }
+
+  revalidatePath("/", "layout");
   return { success: true };
 }
 
@@ -273,7 +354,7 @@ export async function deleteReimbursementAllocation(allocationId: string): Promi
   queries.push(sql`
     UPDATE daily_records SET
       bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = ${a.date}), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE date = ${a.date} AND payment_method != 'efectivo'), 0)
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE date = ${a.date} AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
     WHERE date = ${a.date}
   `);
   queries.push(sql`
@@ -291,7 +372,7 @@ export async function deleteReimbursementAllocation(allocationId: string): Promi
         ROUND((
           c.calc_balance
           + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
@@ -349,7 +430,7 @@ export async function deleteFonaviReimbursement(incomeItemId: string): Promise<{
   queries.push(sql`
     UPDATE daily_records SET
       bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = ${date}), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE date = ${date} AND payment_method != 'efectivo'), 0)
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE date = ${date} AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
     WHERE date = ${date}
   `);
   queries.push(sql`
@@ -367,7 +448,7 @@ export async function deleteFonaviReimbursement(incomeItemId: string): Promise<{
         ROUND((
           c.calc_balance
           + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
