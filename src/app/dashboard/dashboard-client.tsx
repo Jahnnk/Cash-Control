@@ -3,10 +3,11 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, formatDate } from "@/lib/utils";
 import { KPICard, type KPIVariant } from "@/components/ui/KPICard";
 import { MonthSelector, monthLabel } from "@/components/ui/MonthSelector";
 import { BankBalanceCard } from "@/components/banking/BankBalanceCard";
+import { useBankBalance } from "@/hooks/useBankBalance";
 import {
   Receipt,
   TrendingDown,
@@ -16,6 +17,7 @@ import {
   Handshake,
   Calendar,
   Plus,
+  AlertTriangle,
 } from "lucide-react";
 
 type DashboardData = {
@@ -39,6 +41,7 @@ type DashboardData = {
 export function DashboardClient({ data }: { data: DashboardData }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const bank = useBankBalance();
 
   const navigateToMonth = (m: string) => {
     startTransition(() => {
@@ -70,6 +73,32 @@ export function DashboardClient({ data }: { data: DashboardData }) {
   return (
     <div className={`space-y-6 ${isPending ? "opacity-70 transition-opacity" : ""}`}>
       <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+
+      {/* Alerta proactiva de discrepancia en la cadena de saldos bancarios */}
+      {bank.hasDiscrepancy && bank.discrepancyDate && (
+        <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start justify-between gap-3">
+          <div className="flex items-start gap-3 min-w-0">
+            <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-amber-900">
+                El saldo del banco tiene una inconsistencia
+              </div>
+              <div className="text-xs text-amber-700 mt-0.5">
+                Diferencia detectada el {formatDate(bank.discrepancyDate)}
+                {bank.discrepancyAmount !== null && (
+                  <> · {bank.discrepancyAmount > 0 ? "+" : ""}{formatCurrency(bank.discrepancyAmount)}</>
+                )}
+              </div>
+            </div>
+          </div>
+          <Link
+            href="/reportes?tab=conciliacion"
+            className="text-xs font-medium text-amber-900 bg-white border border-amber-300 hover:bg-amber-100 rounded-md px-3 py-1.5 whitespace-nowrap shrink-0"
+          >
+            Revisar en Conciliación →
+          </Link>
+        </div>
+      )}
 
       {/* Banner cuando se está navegando un mes ≠ actual */}
       {!data.isCurrentMonth && (
