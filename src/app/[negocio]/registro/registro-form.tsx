@@ -6,8 +6,10 @@ import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-ru
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
-import { formatCurrency, getToday } from "@/lib/utils";
-import { useRouter } from "next/navigation";
+import { formatCurrency, getToday, formatDate } from "@/lib/utils";
+import { useRouter, usePathname } from "next/navigation";
+import { ConfirmModal } from "@/components/confirm-modal";
+import { getAtelierConfirmEnabled } from "@/lib/atelier-confirm-pref";
 import {
   Trash2, Plus, Save, Loader2, RefreshCw, Pencil, Check, X, GripVertical,
   ArrowDownLeft, ArrowUpRight, DollarSign, User,
@@ -83,6 +85,13 @@ export function RegistroForm({
   const [date, setDate] = useState(initialDate || getToday());
   const [editingSaldo, setEditingSaldo] = useState(false);
   const saldoInputRef = useRef<HTMLInputElement>(null);
+
+  // Confirmación destructiva (solo Atelier, según preferencia local)
+  const pathname = usePathname();
+  const scope = (pathname.split("/")[1] || "") as "atelier" | "fonavi" | "centro" | "grupo" | "";
+  const isAtelier = scope === "atelier";
+  const [pendingDelete, setPendingDelete] = useState<ExpenseItem | IncomeItem | null>(null);
+  const [pendingDeleteKind, setPendingDeleteKind] = useState<"expense" | "income" | null>(null);
 
   // Byte fields
   const [byteCashPhysical, setByteCashPhysical] = useState("0");
@@ -340,7 +349,28 @@ export function RegistroForm({
     setEditingId(null);
   }
 
-  async function handleDeleteIncome(item: IncomeItem) {
+  // Helper: si estamos en Atelier y la preferencia está activada, primero
+  // pedir confirmación. Si no, ejecutar directo.
+  function maybeConfirmDelete(item: ExpenseItem | IncomeItem, kind: "expense" | "income") {
+    if (isAtelier && getAtelierConfirmEnabled()) {
+      setPendingDelete(item);
+      setPendingDeleteKind(kind);
+    } else {
+      void doDelete(item, kind);
+    }
+  }
+
+  async function doDelete(item: ExpenseItem | IncomeItem, kind: "expense" | "income") {
+    if (kind === "income") {
+      await handleDeleteIncomeImpl(item as IncomeItem);
+    } else {
+      await handleDeleteExpenseImpl(item as ExpenseItem);
+    }
+    setPendingDelete(null);
+    setPendingDeleteKind(null);
+  }
+
+  async function handleDeleteIncomeImpl(item: IncomeItem) {
     if (item.dbId) await deleteBankIncomeItem(item.dbId);
     const updatedInc = incomeItems.filter((x) => x.id !== item.id);
     setIncomeItems(updatedInc);
@@ -350,7 +380,11 @@ export function RegistroForm({
     setBankBalanceReal(String(newBal));
   }
 
-  async function handleDeleteExpense(item: ExpenseItem) {
+  async function handleDeleteIncome(item: IncomeItem) {
+    maybeConfirmDelete(item, "income");
+  }
+
+  async function handleDeleteExpenseImpl(item: ExpenseItem) {
     if (item.dbId) {
       const result = await deleteExpense(item.dbId);
       if (!result.success) {
@@ -364,6 +398,10 @@ export function RegistroForm({
     await updateDailyTotals(date, null, totalExp);
     const newBal = await recalcBankBalance(date);
     setBankBalanceReal(String(newBal));
+  }
+
+  async function handleDeleteExpense(item: ExpenseItem) {
+    maybeConfirmDelete(item, "expense");
   }
 
   async function handleDropIncome(fromIdx: number, toIdx: number) {
@@ -1017,6 +1055,29 @@ export function RegistroForm({
         <div className="fixed bottom-6 right-6 bg-primary-light text-white px-6 py-3 rounded-lg shadow-lg text-sm font-medium">
           Guardado correctamente
         </div>
+      )}
+
+      {/* Confirmación destructiva (solo Atelier, según preferencia local) */}
+      {isAtelier && pendingDelete && pendingDeleteKind && (
+        <ConfirmModal
+          open
+          scope="atelier"
+          title={pendingDeleteKind === "expense" ? "Eliminar gasto" : "Eliminar ingreso"}
+          description={
+            <>
+              <span className="block">Vas a eliminar un {pendingDeleteKind === "expense" ? "gasto" : "ingreso"} de <strong>Yayi&apos;s Atelier</strong>.</span>
+              <span className="block mt-1 text-gray-700">
+                Monto: <strong>{formatCurrency((pendingDelete as { amount: number }).amount)}</strong>
+                {" · "}Fecha: <strong>{formatDate(date)}</strong>
+              </span>
+              <span className="block mt-2 text-xs text-gray-500">Esta acción no se puede deshacer.</span>
+            </>
+          }
+          confirmLabel="Sí, eliminar"
+          cancelLabel="Cancelar"
+          onConfirm={() => doDelete(pendingDelete!, pendingDeleteKind!)}
+          onCancel={() => { setPendingDelete(null); setPendingDeleteKind(null); }}
+        />
       )}
     </div>
   );

@@ -4,6 +4,7 @@ import { getSharedRules } from "@/app/actions/shared-expense-rules";
 import { CategoriesManager } from "./categories-manager";
 import { BudgetConfig } from "./budget-config";
 import { SharedExpensesSection } from "./shared-expenses-section";
+import { AtelierConfirmToggle } from "./atelier-confirm-toggle";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +30,7 @@ export default async function ConfiguracionPage({
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
+      {isAtelier && <AtelierConfirmToggle />}
       {isAtelier && (
         <SharedExpensesSection rules={sharedRules} categories={activeCategories} />
       )}
