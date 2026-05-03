@@ -2,6 +2,7 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { getAvailableMonthRange } from "./month-range";
 
 function isValidMonth(m: string): boolean {
   return /^\d{4}-(0[1-9]|1[0-2])$/.test(m);
@@ -14,12 +15,6 @@ function getMonthBounds(month: string) {
   const lastDay = new Date(y, m, 0).getDate();
   const last = `${month}-${String(lastDay).padStart(2, "0")}`;
   return { first, last, daysInMonth: lastDay };
-}
-
-function shiftMonth(month: string, delta: number): string {
-  const [y, m] = month.split("-").map(Number);
-  const d = new Date(y, m - 1 + delta, 1);
-  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
 }
 
 export async function getDashboardData(monthInput?: string) {
@@ -105,20 +100,8 @@ export async function getDashboardData(monthInput?: string) {
   const daysCovered =
     avgDailyExpense > 0 ? Math.floor(bankBalance / avgDailyExpense) : 999;
 
-  // Mes mínimo navegable (primer mes con data)
-  const firstMonthRes = await db.execute(sql`
-    SELECT TO_CHAR(MIN(date), 'YYYY-MM') as first_month
-    FROM (
-      SELECT date FROM daily_records
-      UNION ALL
-      SELECT date FROM expenses
-    ) all_dates
-  `);
-  const firstMonth =
-    (firstMonthRes.rows[0]?.first_month as string | null) ?? currentMonth;
-
-  // Mes máximo navegable (12 meses adelante del actual)
-  const maxMonth = shiftMonth(currentMonth, 12);
+  // Rango navegable consistente con Reportes/Mensual y Presupuesto
+  const { minMonth: firstMonth, maxMonth } = await getAvailableMonthRange();
 
   return {
     bankBalance,

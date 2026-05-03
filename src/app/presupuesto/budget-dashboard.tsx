@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { getBudgetDashboard } from "@/app/actions/budgets";
+import { getAvailableMonthRange } from "@/app/actions/month-range";
 import { formatCurrency } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { MonthSelector } from "@/components/ui/MonthSelector";
@@ -67,6 +68,12 @@ export function BudgetDashboard() {
   const [month, setMonth] = useState(getCurrentMonth());
   const [data, setData] = useState<DashboardData | null>(null);
   const [loading, setLoading] = useState(true);
+  const [monthRange, setMonthRange] = useState<{ minMonth: string; maxMonth: string; currentMonth: string } | null>(null);
+
+  // Carga el rango navegable una sola vez (compartido con Dashboard y Reportes)
+  useEffect(() => {
+    getAvailableMonthRange().then(setMonthRange);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -100,7 +107,14 @@ export function BudgetDashboard() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Presupuesto</h1>
-      <MonthSelector value={month} onChange={setMonth} loading={loading} />
+      <MonthSelector
+        value={month}
+        onChange={setMonth}
+        minMonth={monthRange?.minMonth}
+        maxMonth={monthRange?.maxMonth}
+        currentMonth={monthRange?.currentMonth}
+        loading={loading}
+      />
 
       {/* Alerts */}
       {data.alerts.length > 0 && (

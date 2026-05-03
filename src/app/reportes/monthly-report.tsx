@@ -5,6 +5,7 @@ import { useSearchParams } from "next/navigation";
 import { getMonthlyReport, getDailyBreakdown } from "@/app/actions/reports";
 import { getCategories } from "@/app/actions/categories";
 import { getClients } from "@/app/actions/clients";
+import { getAvailableMonthRange } from "@/app/actions/month-range";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { MonthSelector } from "@/components/ui/MonthSelector";
@@ -49,7 +50,12 @@ export function MonthlyReport() {
   const [showDetail, setShowDetail] = useState<"byte" | "income" | "expense" | null>(null);
   const [detailData, setDetailData] = useState<Record<string, unknown>[] | null>(null);
   const [detailLoading, setDetailLoading] = useState(false);
+  const [monthRange, setMonthRange] = useState<{ minMonth: string; maxMonth: string; currentMonth: string } | null>(null);
 
+  // Carga el rango navegable una sola vez (compartido con Dashboard y Presupuesto)
+  useEffect(() => {
+    getAvailableMonthRange().then(setMonthRange);
+  }, []);
 
   useEffect(() => {
     setLoading(true);
@@ -117,7 +123,14 @@ export function MonthlyReport() {
   return (
     <div className="space-y-6">
       {/* Month selector — unificado con el resto de la app */}
-      <MonthSelector value={month} onChange={setMonth} loading={loading} />
+      <MonthSelector
+        value={month}
+        onChange={setMonth}
+        minMonth={monthRange?.minMonth}
+        maxMonth={monthRange?.maxMonth}
+        currentMonth={monthRange?.currentMonth}
+        loading={loading}
+      />
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">
