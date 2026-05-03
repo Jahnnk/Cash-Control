@@ -3,33 +3,34 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { activeBusinessId } from "@/lib/active-business";
 
 export async function getBudgets(activeOnly = true) {
+  const bId = await activeBusinessId();
   const result = activeOnly
-    ? await db.execute(sql`SELECT * FROM budgets WHERE is_active = true ORDER BY has_traffic_light DESC, budget_percentage DESC`)
-    : await db.execute(sql`SELECT * FROM budgets ORDER BY has_traffic_light DESC, budget_percentage DESC`);
+    ? await db.execute(sql`SELECT * FROM budgets WHERE business_id = ${bId} AND is_active = true ORDER BY has_traffic_light DESC, budget_percentage DESC`)
+    : await db.execute(sql`SELECT * FROM budgets WHERE business_id = ${bId} ORDER BY has_traffic_light DESC, budget_percentage DESC`);
   return result.rows;
 }
 
 export async function getBudgetDashboard(month: string) {
+  const bId = await activeBusinessId();
   const startDate = `${month}-01`;
   const [year, m] = month.split("-").map(Number);
   const lastDay = new Date(year, m, 0).getDate();
   const endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
-  // Ingresos brutos del período (bank_income)
   const incomeResult = await db.execute(sql`
     SELECT COALESCE(SUM(bank_income), 0) as total
     FROM daily_records
-    WHERE date >= ${startDate} AND date <= ${endDate}
+    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
   `);
   const grossIncome = parseFloat(incomeResult.rows[0].total as string);
 
-  // Gasto real por categoría
   const expensesByCategory = await db.execute(sql`
     SELECT category, SUM(amount) as total
     FROM expenses
-    WHERE date >= ${startDate} AND date <= ${endDate}
+    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
     GROUP BY category
   `);
 
@@ -41,12 +42,10 @@ export async function getBudgetDashboard(month: string) {
     totalSpent += amount;
   }
 
-  // All active budgets
   const budgets = await db.execute(sql`
-    SELECT * FROM budgets WHERE is_active = true ORDER BY has_traffic_light DESC, budget_percentage DESC
+    SELECT * FROM budgets WHERE business_id = ${bId} AND is_active = true ORDER BY has_traffic_light DESC, budget_percentage DESC
   `);
 
-  // Build dashboard data
   const categories = budgets.rows.map((b) => {
     const name = b.category_name as string;
     const pct = parseFloat((b.budget_percentage as string) || "0");
@@ -108,26 +107,26 @@ export async function updateBudget(
     isActive?: boolean;
   }
 ) {
+  const bId = await activeBusinessId();
   if (data.budgetPercentage !== undefined) {
-    await db.execute(sql`UPDATE budgets SET budget_percentage = ${data.budgetPercentage}, updated_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE budgets SET budget_percentage = ${data.budgetPercentage}, updated_at = now() WHERE id = ${id} AND business_id = ${bId}`);
   }
   if (data.costType !== undefined) {
-    await db.execute(sql`UPDATE budgets SET cost_type = ${data.costType}, updated_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE budgets SET cost_type = ${data.costType}, updated_at = now() WHERE id = ${id} AND business_id = ${bId}`);
   }
   if (data.thresholdGreen !== undefined) {
-    await db.execute(sql`UPDATE budgets SET threshold_green = ${data.thresholdGreen}, updated_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE budgets SET threshold_green = ${data.thresholdGreen}, updated_at = now() WHERE id = ${id} AND business_id = ${bId}`);
   }
   if (data.thresholdYellow !== undefined) {
-    await db.execute(sql`UPDATE budgets SET threshold_yellow = ${data.thresholdYellow}, updated_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE budgets SET threshold_yellow = ${data.thresholdYellow}, updated_at = now() WHERE id = ${id} AND business_id = ${bId}`);
   }
   if (data.description !== undefined) {
-    await db.execute(sql`UPDATE budgets SET description = ${data.description}, updated_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE budgets SET description = ${data.description}, updated_at = now() WHERE id = ${id} AND business_id = ${bId}`);
   }
   if (data.isActive !== undefined) {
-    await db.execute(sql`UPDATE budgets SET is_active = ${data.isActive}, updated_at = now() WHERE id = ${id}`);
+    await db.execute(sql`UPDATE budgets SET is_active = ${data.isActive}, updated_at = now() WHERE id = ${id} AND business_id = ${bId}`);
   }
-  revalidatePath("/presupuesto");
-  revalidatePath("/configuracion");
+  revalidatePath("/", "layout");
 }
 
 export async function createBudget(data: {
@@ -137,10 +136,10 @@ export async function createBudget(data: {
   hasTrafficLight: boolean;
   description?: string;
 }) {
+  const bId = await activeBusinessId();
   await db.execute(sql`
-    INSERT INTO budgets (category_name, budget_percentage, cost_type, has_traffic_light, description)
-    VALUES (${data.categoryName}, ${data.budgetPercentage}, ${data.costType}, ${data.hasTrafficLight}, ${data.description || null})
+    INSERT INTO budgets (business_id, category_name, budget_percentage, cost_type, has_traffic_light, description)
+    VALUES (${bId}, ${data.categoryName}, ${data.budgetPercentage}, ${data.costType}, ${data.hasTrafficLight}, ${data.description || null})
   `);
-  revalidatePath("/presupuesto");
-  revalidatePath("/configuracion");
+  revalidatePath("/", "layout");
 }

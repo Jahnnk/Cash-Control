@@ -36,15 +36,26 @@ type DashboardData = {
   maxMonth: string;
 };
 
-export function DashboardClient({ data }: { data: DashboardData }) {
+export function DashboardClient({
+  data,
+  negocio,
+  isAtelier,
+}: {
+  data: DashboardData;
+  negocio: string;
+  isAtelier: boolean;
+}) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
   const bank = useBankBalance();
 
+  const dashHref = `/${negocio}/dashboard`;
+  const reportesHref = (qs: string) => `/${negocio}/reportes${qs ? `?${qs}` : ""}`;
+
   const navigateToMonth = (m: string) => {
     startTransition(() => {
-      if (m === data.currentMonth) router.push("/dashboard");
-      else router.push(`/dashboard?mes=${m}`);
+      if (m === data.currentMonth) router.push(dashHref);
+      else router.push(`${dashHref}?mes=${m}`);
     });
   };
 
@@ -90,7 +101,7 @@ export function DashboardClient({ data }: { data: DashboardData }) {
             </div>
           </div>
           <Link
-            href="/reportes?tab=conciliacion"
+            href={reportesHref("tab=conciliacion")}
             className="text-xs font-medium text-amber-900 bg-white border border-amber-300 hover:bg-amber-100 rounded-md px-3 py-1.5 whitespace-nowrap shrink-0"
           >
             Revisar en Conciliación →
@@ -149,10 +160,10 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                 : "Ingresos BCP"
           }
           variant="default"
-          href={`/reportes?tab=mensual&breakdown=income${reportMonthQs}`}
+          href={reportesHref(`tab=mensual&breakdown=income${reportMonthQs}`)}
           dim={monthHasNoData}
           secondaryAction={{
-            href: "/registro?tipo=ingreso",
+            href: `/${negocio}/registro?tipo=ingreso`,
             label: "Registrar nuevo ingreso",
             icon: <Plus className="w-4 h-4" />,
           }}
@@ -169,10 +180,10 @@ export function DashboardClient({ data }: { data: DashboardData }) {
                 : `Promedio: ${formatCurrency(data.avgDailyExpense)}/día`
           }
           variant="danger"
-          href={`/reportes?tab=mensual&breakdown=expense${reportMonthQs}`}
+          href={reportesHref(`tab=mensual&breakdown=expense${reportMonthQs}`)}
           dim={monthHasNoData}
           secondaryAction={{
-            href: "/registro?tipo=gasto",
+            href: `/${negocio}/registro?tipo=gasto`,
             label: "Registrar nuevo gasto",
             icon: <Plus className="w-4 h-4" />,
           }}
@@ -183,21 +194,23 @@ export function DashboardClient({ data }: { data: DashboardData }) {
           value={formatCurrency(data.accountsReceivable)}
           subtitle="Byte total - Cobros BCP"
           variant="warning"
-          href="/reportes?tab=conciliacion"
+          href={reportesHref("tab=conciliacion")}
         />
-        <KPICard
-          icon={<Handshake className="w-5 h-5 text-violet-600" />}
-          title="Por cobrar Fonavi"
-          value={formatCurrency(data.fonaviReceivables)}
-          subtitle="Gastos compartidos pendientes"
-          variant="violet"
-          href="/fonavi"
-          secondaryAction={{
-            href: "/fonavi?accion=registrar-reembolso",
-            label: "Registrar reembolso",
-            icon: <Plus className="w-4 h-4" />,
-          }}
-        />
+        {isAtelier && (
+          <KPICard
+            icon={<Handshake className="w-5 h-5 text-violet-600" />}
+            title="Por cobrar Fonavi"
+            value={formatCurrency(data.fonaviReceivables)}
+            subtitle="Gastos compartidos pendientes"
+            variant="violet"
+            href={`/${negocio}/fonavi`}
+            secondaryAction={{
+              href: `/${negocio}/fonavi?accion=registrar-reembolso`,
+              label: "Registrar reembolso",
+              icon: <Plus className="w-4 h-4" />,
+            }}
+          />
+        )}
         {coverage && (
           <KPICard
             icon={<ShieldCheck className={`w-5 h-5 ${coverage.iconColor}`} />}
@@ -212,12 +225,12 @@ export function DashboardClient({ data }: { data: DashboardData }) {
       {/* Enlaces a reportes detallados */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <ReportLink
-          href="/reportes?tab=semanal"
+          href={reportesHref("tab=semanal")}
           title="Reporte semanal"
           description="Resumen día por día: Byte, ingresos, egresos y saldo · editable últimos 7 días"
         />
         <ReportLink
-          href="/reportes?tab=conciliacion"
+          href={reportesHref("tab=conciliacion")}
           title="Conciliación bancaria"
           description="Byte esperado vs BCP real por semana, mes o rango"
         />

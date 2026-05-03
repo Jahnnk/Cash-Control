@@ -2,6 +2,7 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { activeBusinessId } from "@/lib/active-business";
 
 const MIN_RANGE_MONTHS = 6;
 const FUTURE_MONTHS = 3;
@@ -33,15 +34,16 @@ export async function getAvailableMonthRange(): Promise<{
   maxMonth: string;
   currentMonth: string;
 }> {
+  const bId = await activeBusinessId();
   const today = new Date().toISOString().split("T")[0];
   const currentMonth = today.substring(0, 7);
 
   const res = await db.execute(sql`
     SELECT TO_CHAR(MIN(date), 'YYYY-MM') AS first_month
     FROM (
-      SELECT date FROM daily_records
+      SELECT date FROM daily_records WHERE business_id = ${bId}
       UNION ALL
-      SELECT date FROM expenses
+      SELECT date FROM expenses WHERE business_id = ${bId}
     ) all_dates
   `);
   const firstWithData =

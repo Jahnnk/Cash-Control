@@ -7,11 +7,19 @@ import { SharedExpensesSection } from "./shared-expenses-section";
 
 export const dynamic = "force-dynamic";
 
-export default async function ConfiguracionPage() {
+export default async function ConfiguracionPage({
+  params,
+}: {
+  params: Promise<{ negocio: string }>;
+}) {
+  const { negocio } = await params;
+  const isAtelier = negocio === "atelier";
+
   const [categories, budgets, sharedRules] = await Promise.all([
     getCategories(false),
     getBudgets(false),
-    getSharedRules(),
+    // Reglas compartidas solo aplican a Atelier; evitamos cargarlas en otro negocio.
+    isAtelier ? getSharedRules() : Promise.resolve([]),
   ]);
 
   const activeCategories = (categories as Array<{ id: string; name: string; is_active?: boolean }>)
@@ -21,7 +29,9 @@ export default async function ConfiguracionPage() {
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
-      <SharedExpensesSection rules={sharedRules} categories={activeCategories} />
+      {isAtelier && (
+        <SharedExpensesSection rules={sharedRules} categories={activeCategories} />
+      )}
       <BudgetConfig budgets={budgets} />
       <CategoriesManager categories={categories} />
     </div>

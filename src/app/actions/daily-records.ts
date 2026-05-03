@@ -3,6 +3,12 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
+import { activeBusinessId } from "@/lib/active-business";
+
+/**
+ * Todas las queries filtran por business_id (Ola 7). El INSERT/UPDATE en
+ * daily_records usa el UNIQUE compuesto (business_id, date).
+ */
 
 export async function upsertDailyRecord(data: {
   date: string;
@@ -19,14 +25,17 @@ export async function upsertDailyRecord(data: {
   bankExpense: number;
   bankBalanceReal: number | null;
 }) {
+  const bId = await activeBusinessId();
   await db.execute(sql`
     INSERT INTO daily_records (
+      business_id,
       date, byte_cash_physical, byte_digital, byte_cash,
       byte_credit_day, byte_credit_collected,
       byte_credit_balance, byte_discounts, byte_total,
       byte_cash_sale, byte_cash_sale_method,
       bank_income, bank_expense, bank_balance_real
     ) VALUES (
+      ${bId},
       ${data.date}, ${data.byteCashPhysical}, ${data.byteDigital},
       ${data.byteCashPhysical + data.byteDigital},
       ${data.byteCreditDay}, ${data.byteCreditCollected},
@@ -34,7 +43,7 @@ export async function upsertDailyRecord(data: {
       ${data.byteCashSale}, ${data.byteCashSaleMethod},
       ${data.bankIncome}, ${data.bankExpense}, ${data.bankBalanceReal}
     )
-    ON CONFLICT (date) DO UPDATE SET
+    ON CONFLICT (business_id, date) DO UPDATE SET
       byte_cash_physical = ${data.byteCashPhysical},
       byte_digital = ${data.byteDigital},
       byte_cash = ${data.byteCashPhysical + data.byteDigital},
@@ -49,19 +58,20 @@ export async function upsertDailyRecord(data: {
       bank_expense = ${data.bankExpense},
       bank_balance_real = ${data.bankBalanceReal}
   `);
-  revalidatePath("/dashboard");
-  revalidatePath("/registro");
-  revalidatePath("/reportes");
+  revalidatePath("/", "layout");
 }
 
-// Propaga la cadena desde anchorDate+1 hasta MAX, dejando intacto anchorDate.
-// Usa el bank_balance_real de anchorDate como punto fijo.
-async function propagateFromDate(anchorDate: string) {
+/**
+ * Propaga la cadena del saldo desde anchorDate+1 hasta MAX(date) del
+ * negocio activo. Toda la cascada filtra por business_id para no
+ * recalcular los saldos de otros negocios.
+ */
+async function propagateFromDate(bId: number, anchorDate: string) {
   await db.execute(sql`
     WITH RECURSIVE chain AS (
       SELECT date, bank_balance_real::numeric AS calc_balance
       FROM daily_records
-      WHERE date = ${anchorDate} AND bank_balance_real IS NOT NULL
+      WHERE business_id = ${bId} AND date = ${anchorDate} AND bank_balance_real IS NOT NULL
 
       UNION ALL
 
@@ -69,54 +79,50 @@ async function propagateFromDate(anchorDate: string) {
         dr.date,
         ROUND((
           c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method != 'efectivo'), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.date <= (SELECT MAX(date) FROM daily_records)
+      WHERE dr.business_id = ${bId} AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = ${bId})
     )
     UPDATE daily_records dr
     SET bank_balance_real = chain.calc_balance
     FROM chain
-    WHERE dr.date = chain.date AND dr.date > ${anchorDate}
+    WHERE dr.business_id = ${bId} AND dr.date = chain.date AND dr.date > ${anchorDate}
   `);
 }
 
 export async function updateBankBalance(date: string, balance: number) {
+  const bId = await activeBusinessId();
   await db.execute(sql`
-    INSERT INTO daily_records (date, bank_balance_real)
-    VALUES (${date}, ${balance})
-    ON CONFLICT (date) DO UPDATE SET bank_balance_real = ${balance}
+    INSERT INTO daily_records (business_id, date, bank_balance_real)
+    VALUES (${bId}, ${date}, ${balance})
+    ON CONFLICT (business_id, date) DO UPDATE SET bank_balance_real = ${balance}
   `);
-  // Propagar a días posteriores (si los hay) tomando el saldo manual como anclaje
-  await propagateFromDate(date);
-  revalidatePath("/dashboard");
-  revalidatePath("/registro");
-  revalidatePath("/reportes");
+  await propagateFromDate(bId, date);
+  revalidatePath("/", "layout");
 }
 
-// Recalcula bank_balance_real desde `fromDate` en CADENA hasta el último día con datos.
-// Cada día se calcula como: saldo_dia_previo + ingresos_dia − egresos_no_efectivo_dia.
-// El anclaje es el último bank_balance_real registrado antes de fromDate (0 si no hay).
-// También refresca cache bank_income / bank_expense (no-efectivo) por consistencia.
 export async function recalcBankBalance(date: string) {
-  // Refresca cache del día afectado primero
+  const bId = await activeBusinessId();
+
+  // Refresca cache del día afectado primero (del negocio activo)
   await db.execute(sql`
     UPDATE daily_records dr SET
-      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
-    WHERE dr.date = ${date}
+      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date), 0),
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method != 'efectivo'), 0)
+    WHERE dr.business_id = ${bId} AND dr.date = ${date}
   `);
 
-  // Recalcula bank_balance_real en cadena desde `date` hasta MAX(date)
+  // Recalcula bank_balance_real en cadena desde `date` hasta MAX(date) del negocio
   await db.execute(sql`
     WITH RECURSIVE chain AS (
       SELECT
         (${date}::date - INTERVAL '1 day')::date AS date,
         COALESCE((
           SELECT bank_balance_real::numeric FROM daily_records
-          WHERE date < ${date} AND bank_balance_real IS NOT NULL
+          WHERE business_id = ${bId} AND date < ${date} AND bank_balance_real IS NOT NULL
           ORDER BY date DESC LIMIT 1
         ), 0) AS calc_balance
 
@@ -126,77 +132,73 @@ export async function recalcBankBalance(date: string) {
         dr.date,
         ROUND((
           c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE date = dr.date AND payment_method != 'efectivo'), 0)
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method != 'efectivo'), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.date <= (SELECT MAX(date) FROM daily_records)
+      WHERE dr.business_id = ${bId} AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = ${bId})
     )
     UPDATE daily_records dr
     SET bank_balance_real = chain.calc_balance
     FROM chain
-    WHERE dr.date = chain.date AND dr.date >= ${date}
+    WHERE dr.business_id = ${bId} AND dr.date = chain.date AND dr.date >= ${date}
   `);
 
-  // Devolver el saldo del día afectado
   const result = await db.execute(sql`
-    SELECT bank_balance_real::float as balance FROM daily_records WHERE date = ${date}
+    SELECT bank_balance_real::float as balance FROM daily_records
+    WHERE business_id = ${bId} AND date = ${date}
   `);
   const newBalance = result.rows[0] ? parseFloat(result.rows[0].balance as string) : 0;
 
-  revalidatePath("/dashboard");
-  revalidatePath("/registro");
-  revalidatePath("/reportes");
-
+  revalidatePath("/", "layout");
   return newBalance;
 }
 
 export async function updateDailyTotals(date: string, bankIncome: number | null, bankExpense: number | null) {
+  const bId = await activeBusinessId();
   if (bankIncome !== null) {
     await db.execute(sql`
-      INSERT INTO daily_records (date, bank_income) VALUES (${date}, ${bankIncome})
-      ON CONFLICT (date) DO UPDATE SET bank_income = ${bankIncome}
+      INSERT INTO daily_records (business_id, date, bank_income) VALUES (${bId}, ${date}, ${bankIncome})
+      ON CONFLICT (business_id, date) DO UPDATE SET bank_income = ${bankIncome}
     `);
   }
   if (bankExpense !== null) {
     await db.execute(sql`
-      INSERT INTO daily_records (date, bank_expense) VALUES (${date}, ${bankExpense})
-      ON CONFLICT (date) DO UPDATE SET bank_expense = ${bankExpense}
+      INSERT INTO daily_records (business_id, date, bank_expense) VALUES (${bId}, ${date}, ${bankExpense})
+      ON CONFLICT (business_id, date) DO UPDATE SET bank_expense = ${bankExpense}
     `);
   }
-  revalidatePath("/dashboard");
-  revalidatePath("/registro");
+  revalidatePath("/", "layout");
 }
 
 export async function getDailyRecord(date: string) {
+  const bId = await activeBusinessId();
   const result = await db.execute(sql`
-    SELECT * FROM daily_records WHERE date = ${date}
+    SELECT * FROM daily_records WHERE business_id = ${bId} AND date = ${date}
   `);
   return result.rows[0] || null;
 }
 
 export async function getLastBankBalance(beforeDate: string) {
+  const bId = await activeBusinessId();
   const result = await db.execute(sql`
     SELECT bank_balance_real, date FROM daily_records
-    WHERE bank_balance_real IS NOT NULL AND date < ${beforeDate}
+    WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL AND date < ${beforeDate}
     ORDER BY date DESC LIMIT 1
   `);
   return result.rows[0] || null;
 }
 
-// Editar el saldo BCP de "hoy real" (no de la fecha seleccionada).
 export async function updateCurrentBankBalance(balance: number) {
+  const bId = await activeBusinessId();
   const today = new Date().toISOString().slice(0, 10);
   await db.execute(sql`
-    INSERT INTO daily_records (date, bank_balance_real)
-    VALUES (${today}, ${balance})
-    ON CONFLICT (date) DO UPDATE SET bank_balance_real = ${balance}
+    INSERT INTO daily_records (business_id, date, bank_balance_real)
+    VALUES (${bId}, ${today}, ${balance})
+    ON CONFLICT (business_id, date) DO UPDATE SET bank_balance_real = ${balance}
   `);
-  // Propagar a días posteriores (caso edge: si hubiera filas con fecha > hoy)
-  await propagateFromDate(today);
-  revalidatePath("/dashboard");
-  revalidatePath("/registro");
-  revalidatePath("/reportes");
+  await propagateFromDate(bId, today);
+  revalidatePath("/", "layout");
   return today;
 }

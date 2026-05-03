@@ -2,8 +2,18 @@
 
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
+import { activeBusinessId } from "@/lib/active-business";
 
 const sql = neon(process.env.DATABASE_URL!);
+const ATELIER_ID = 1;
+
+/** Guard: las cuentas por cobrar a Fonavi son exclusivas de Atelier. */
+async function requireAtelier(): Promise<void> {
+  const bId = await activeBusinessId();
+  if (bId !== ATELIER_ID) {
+    throw new Error("Esta sección solo está disponible en Atelier");
+  }
+}
 
 export type ReceivableRow = {
   id: string;
@@ -24,6 +34,7 @@ export type ReceivableRow = {
 
 // Listar todas las cuentas por cobrar con info del egreso
 export async function getFonaviReceivables(includeCollected = true): Promise<ReceivableRow[]> {
+  await requireAtelier();
   const rows = (await sql`
     SELECT
       fr.id::text as id,

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, usePathname } from "next/navigation";
 import { Pencil } from "lucide-react";
 import { getWeeklyReport } from "@/app/actions/reports";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
@@ -46,6 +46,9 @@ function getWeekRange(weeksAgo: number = 0) {
 
 export function WeeklyReport() {
   const router = useRouter();
+  const pathname = usePathname();
+  // El primer segmento es el negocio activo (/[negocio]/...)
+  const negocio = pathname.split("/")[1] || "atelier";
   const [weeksAgo, setWeeksAgo] = useState(0);
   const [data, setData] = useState<Record<string, unknown>[] | null>(null);
   const [loading, setLoading] = useState(true);
@@ -53,7 +56,7 @@ export function WeeklyReport() {
   const range = getWeekRange(weeksAgo);
 
   function editDay(dateStr: string) {
-    router.push(`/registro?fecha=${dateStr}`);
+    router.push(`/${negocio}/registro?fecha=${dateStr}`);
   }
 
   useEffect(() => {

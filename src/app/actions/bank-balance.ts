@@ -2,6 +2,7 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { activeBusinessId } from "@/lib/active-business";
 
 export type BankBalanceSnapshot = {
   /** Saldo BCP HOY calculado dinámicamente (anchor + flujo posterior). */
@@ -37,13 +38,14 @@ const DISCREPANCY_TOLERANCE = 1; // S/1 — bajo este umbral consideramos cuadre
  * con la fecha más antigua afectada.
  */
 export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
+  const bId = await activeBusinessId();
   const today = new Date().toISOString().slice(0, 10);
   const asOf = new Date().toISOString();
 
-  // ── 1. Anchor: último saldo guardado ≤ hoy
+  // ── 1. Anchor: último saldo guardado ≤ hoy (del negocio activo)
   const anchorRes = await db.execute(sql`
     SELECT bank_balance_real, date FROM daily_records
-    WHERE bank_balance_real IS NOT NULL AND date <= ${today}
+    WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL AND date <= ${today}
     ORDER BY date DESC LIMIT 1
   `);
 
@@ -62,14 +64,14 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
   const anchorBalance = parseFloat(anchorRes.rows[0].bank_balance_real as string);
   const anchorDate = anchorRes.rows[0].date as string;
 
-  // ── 2. Flujo bancario posterior al anchor hasta hoy
+  // ── 2. Flujo bancario posterior al anchor hasta hoy (negocio activo)
   const incRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
-    WHERE date > ${anchorDate} AND date <= ${today}
+    WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
   `);
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
-    WHERE date > ${anchorDate} AND date <= ${today} AND payment_method != 'efectivo'
+    WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today} AND payment_method != 'efectivo'
   `);
 
   const incomePost = parseFloat(incRes.rows[0].total as string);
@@ -85,7 +87,7 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     WITH days_with_balance AS (
       SELECT date, bank_balance_real::numeric AS balance
       FROM daily_records
-      WHERE bank_balance_real IS NOT NULL
+      WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL
       ORDER BY date
     ),
     chain AS (
@@ -99,12 +101,13 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     daily_inflow AS (
       SELECT date, COALESCE(SUM(amount), 0) AS inflow
       FROM bank_income_items
+      WHERE business_id = ${bId}
       GROUP BY date
     ),
     daily_outflow AS (
       SELECT date, COALESCE(SUM(amount), 0) AS outflow
       FROM expenses
-      WHERE payment_method != 'efectivo'
+      WHERE business_id = ${bId} AND payment_method != 'efectivo'
       GROUP BY date
     )
     SELECT

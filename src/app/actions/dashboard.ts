@@ -2,6 +2,7 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { activeBusinessId } from "@/lib/active-business";
 import { getAvailableMonthRange } from "./month-range";
 import { getUnifiedBankBalance } from "./bank-balance";
 
@@ -19,6 +20,7 @@ function getMonthBounds(month: string) {
 }
 
 export async function getDashboardData(monthInput?: string) {
+  const bId = await activeBusinessId();
   const today = new Date().toISOString().split("T")[0];
   const currentMonth = today.substring(0, 7);
 
@@ -42,23 +44,27 @@ export async function getDashboardData(monthInput?: string) {
   const bankSnapshot = await getUnifiedBankBalance();
   const bankBalance = bankSnapshot.current;
 
-  // Cuentas por cobrar B2B (acumulado histórico)
+  // Cuentas por cobrar B2B (acumulado histórico, scope del negocio activo)
   const cxcResult = await db.execute(sql`
     SELECT
       COALESCE(SUM(byte_total), 0) as total_byte,
       COALESCE(SUM(bank_income), 0) as total_collected
     FROM daily_records
+    WHERE business_id = ${bId}
   `);
   const totalByte = parseFloat(cxcResult.rows[0].total_byte as string);
   const totalCollected = parseFloat(cxcResult.rows[0].total_collected as string);
   const accountsReceivable = Math.max(0, totalByte - totalCollected);
 
-  // Por cobrar a Fonavi
-  const fonaviResult = await db.execute(sql`
-    SELECT COALESCE(SUM(amount_due - amount_collected), 0) as total
-    FROM fonavi_receivables WHERE status != 'collected'
-  `);
-  const fonaviReceivables = parseFloat(fonaviResult.rows[0].total as string);
+  // Por cobrar a Fonavi (tabla exclusiva Atelier — sólo se calcula si activo es Atelier)
+  let fonaviReceivables = 0;
+  if (bId === 1) {
+    const fonaviResult = await db.execute(sql`
+      SELECT COALESCE(SUM(amount_due - amount_collected), 0) as total
+      FROM fonavi_receivables WHERE status != 'collected'
+    `);
+    fonaviReceivables = parseFloat(fonaviResult.rows[0].total as string);
+  }
 
   // ───── KPIs ADAPTABLES al mes seleccionado ─────
 
@@ -74,7 +80,7 @@ export async function getDashboardData(monthInput?: string) {
     const expResult = await db.execute(sql`
       SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) as total
       FROM expenses
-      WHERE date >= ${startOfMonth} AND date <= ${monthEndDate}
+      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate}
     `);
     monthlyExpenses = parseFloat(expResult.rows[0].total as string);
 
@@ -85,7 +91,7 @@ export async function getDashboardData(monthInput?: string) {
         COALESCE(SUM(byte_credit_day), 0) as month_credit_day,
         COALESCE(SUM(byte_credit_collected), 0) as month_credit_collected
       FROM daily_records
-      WHERE date >= ${startOfMonth} AND date <= ${monthEndDate}
+      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate}
     `);
     monthlyByte = monthlyByteRes.rows[0] as Record<string, unknown>;
   }
