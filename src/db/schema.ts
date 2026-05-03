@@ -97,6 +97,11 @@ export const expenses = pgTable(
     sharedRuleId: uuid("shared_rule_id"),
     atelierAmount: numeric("atelier_amount", { precision: 10, scale: 2 }),
     fonaviAmount: numeric("fonavi_amount", { precision: 10, scale: 2 }),
+    // Auto-mirror Atelier→Fonavi (CAMBIO 7.5):
+    // En el gasto-espejo de Fonavi, estas FKs apuntan al padre Atelier
+    // y a la receivable. NULL en gastos normales o en el lado Atelier.
+    linkedAtelierExpenseId: uuid("linked_atelier_expense_id"),
+    linkedReceivableId: uuid("linked_receivable_id"),
   },
   (t) => ({
     businessIdx: index("idx_expenses_business_id").on(t.businessId),
