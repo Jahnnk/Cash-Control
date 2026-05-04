@@ -2,13 +2,14 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDownCircle, ArrowUpCircle, HandCoins, Plus, X, Trash2 } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, HandCoins, Plus, X, Trash2, Pencil, AlertTriangle } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { KPICard } from "@/components/ui/KPICard";
 import { formatCurrency, formatDate, getToday } from "@/lib/utils";
 import {
   createLoan,
   createRefund,
+  updateLoanMovement,
   deleteLoanMovement,
   type LoanMovement,
   type LoansSummary,
@@ -19,6 +20,8 @@ type Mode = null | "loan" | "refund";
 export function LoansClient({ summary }: { summary: LoansSummary }) {
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
+  const [editing, setEditing] = useState<LoanMovement | null>(null);
+  const [confirmDelete, setConfirmDelete] = useState<LoanMovement | null>(null);
   const [pending, startTransition] = useTransition();
 
   const [date, setDate] = useState(getToday());
@@ -39,11 +42,54 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
 
   function closeModal() {
     setMode(null);
+    setEditing(null);
     resetForm();
+  }
+
+  function openEdit(m: LoanMovement) {
+    setEditing(m);
+    setMode(m.kind);
+    setDate(m.date);
+    setAmount(String(m.amount));
+    const pm = m.paymentMethod;
+    setPaymentMethod(
+      pm === "transferencia" || pm === "yape" || pm === "efectivo" ? pm : "efectivo"
+    );
+    // El concept de un préstamo viene del campo `note` con formato
+    // "concepto — notas". Lo separamos cuando es posible para pre-llenar
+    // ambos campos. En devoluciones, concept y notes son columnas distintas.
+    if (m.kind === "loan") {
+      const sep = " — ";
+      const idx = m.concept.indexOf(sep);
+      if (idx >= 0) {
+        setConcept(m.concept.slice(0, idx));
+        setNotes(m.concept.slice(idx + sep.length));
+      } else {
+        setConcept(m.concept);
+        setNotes("");
+      }
+    } else {
+      setConcept(m.concept);
+      setNotes(m.notes ?? "");
+    }
+    setError(null);
   }
 
   async function handleSubmit() {
     setError(null);
+    if (!date) {
+      setError(
+        mode === "loan"
+          ? "La fecha del préstamo es obligatoria"
+          : "La fecha de la devolución es obligatoria"
+      );
+      return;
+    }
+    const today = getToday();
+    if (date > today) {
+      setError("La fecha no puede ser futura");
+      return;
+    }
     const amountNum = parseFloat(amount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setError("Ingresa un monto válido mayor a cero");
@@ -63,8 +109,17 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
           concept: concept.trim(),
           notes: notes.trim() || undefined,
         };
-        if (mode === "loan") await createLoan(payload);
-        else if (mode === "refund") await createRefund(payload);
+        if (editing) {
+          const r = await updateLoanMovement(editing.id, editing.kind, payload);
+          if (!r.success) {
+            setError(r.error);
+            return;
+          }
+        } else if (mode === "loan") {
+          await createLoan(payload);
+        } else if (mode === "refund") {
+          await createRefund(payload);
+        }
         closeModal();
         router.refresh();
       } catch (e) {
@@ -73,13 +128,18 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
     });
   }
 
-  async function handleDelete(m: LoanMovement) {
-    const label = m.kind === "loan" ? "préstamo" : "devolución";
-    if (!confirm(`¿Eliminar este ${label} de ${formatCurrency(m.amount)} del ${formatDate(m.date)}?`)) return;
+  function handleConfirmDelete() {
+    if (!confirmDelete) return;
+    const m = confirmDelete;
     startTransition(async () => {
       const r = await deleteLoanMovement(m.id, m.kind);
-      if (r.success) router.refresh();
-      else alert(r.error);
+      if (r.success) {
+        setConfirmDelete(null);
+        router.refresh();
+      } else {
+        // Mantener modal abierto y mostrar error inline
+        alert(r.error);
+      }
     });
   }
 
@@ -141,16 +201,26 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
       key: "actions",
       header: "",
       align: "right",
-      width: "w-12",
+      width: "w-20",
       render: (r) => (
-        <button
-          type="button"
-          onClick={() => handleDelete(r)}
-          className="text-gray-400 hover:text-red-600 transition-colors p-1"
-          aria-label="Eliminar"
-        >
-          <Trash2 className="w-4 h-4" />
-        </button>
+        <div className="flex items-center justify-end gap-1">
+          <button
+            type="button"
+            onClick={() => openEdit(r)}
+            className="text-gray-400 hover:text-emerald-700 transition-colors p-1"
+            aria-label="Editar"
+          >
+            <Pencil className="w-4 h-4" />
+          </button>
+          <button
+            type="button"
+            onClick={() => setConfirmDelete(r)}
+            className="text-gray-400 hover:text-red-600 transition-colors p-1"
+            aria-label="Eliminar"
+          >
+            <Trash2 className="w-4 h-4" />
+          </button>
+        </div>
       ),
     },
   ];
@@ -225,7 +295,9 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
           >
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-lg font-semibold text-gray-900">
-                {mode === "loan" ? "Registrar préstamo" : "Registrar devolución"}
+                {editing
+                  ? (mode === "loan" ? "Editar préstamo" : "Editar devolución")
+                  : (mode === "loan" ? "Registrar préstamo" : "Registrar devolución")}
               </h3>
               <button onClick={closeModal} className="text-gray-400 hover:text-gray-600">
                 <X className="w-5 h-5" />
@@ -240,10 +312,14 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {mode === "loan" ? "Fecha del préstamo" : "Fecha de la devolución"}
+                </label>
                 <input
                   type="date"
                   value={date}
+                  max={getToday()}
+                  required
                   onChange={(e) => setDate(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
@@ -316,9 +392,76 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
                     mode === "loan" ? "bg-emerald-600 hover:bg-emerald-700" : "bg-orange-600 hover:bg-orange-700"
                   }`}
                 >
-                  {pending ? "Guardando..." : "Guardar"}
+                  {pending ? "Guardando..." : (editing ? "Guardar cambios" : "Guardar")}
                 </button>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal de confirmación de eliminación */}
+      {confirmDelete && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !pending && setConfirmDelete(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start gap-3 mb-4">
+              <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                <AlertTriangle className="w-5 h-5 text-red-600" />
+              </div>
+              <div className="min-w-0">
+                <h3 className="text-lg font-semibold text-gray-900">
+                  ¿Eliminar este movimiento?
+                </h3>
+                <p className="text-sm text-gray-500 mt-0.5">
+                  Esta acción no se puede deshacer.
+                </p>
+              </div>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1 mb-5">
+              <div>
+                <span className="text-gray-500">Tipo: </span>
+                <span className="font-medium text-gray-900">
+                  {confirmDelete.kind === "loan" ? "Préstamo" : "Devolución"}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500">Concepto: </span>
+                <span className="text-gray-900">{confirmDelete.concept}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Monto: </span>
+                <span className="font-medium text-gray-900">
+                  {formatCurrency(confirmDelete.amount)}
+                </span>
+              </div>
+              <div>
+                <span className="text-gray-500">Fecha: </span>
+                <span className="text-gray-900">{formatDate(confirmDelete.date)}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setConfirmDelete(null)}
+                disabled={pending}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleConfirmDelete}
+                disabled={pending}
+                className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50"
+              >
+                {pending ? "Eliminando..." : "Sí, eliminar"}
+              </button>
             </div>
           </div>
         </div>

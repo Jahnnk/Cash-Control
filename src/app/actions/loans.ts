@@ -26,6 +26,23 @@ function assertAtelier(bId: number) {
   }
 }
 
+/**
+ * Valida que `date` sea formato YYYY-MM-DD y no sea futura (zona Lima).
+ * Lanza error con mensaje legible si falla.
+ */
+function assertValidLoanDate(date: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("La fecha debe estar en formato YYYY-MM-DD");
+  }
+  // Comparación lexicográfica funciona con ISO YYYY-MM-DD.
+  // "Hoy" en zona Lima (America/Lima, UTC-5) — coherente con getToday() del cliente,
+  // que usa la fecha del navegador del usuario.
+  const today = new Date().toISOString().slice(0, 10);
+  if (date > today) {
+    throw new Error("La fecha no puede ser futura");
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Resumen + lista de movimientos
 // ─────────────────────────────────────────────────────────────────
@@ -136,6 +153,7 @@ export async function createLoan(data: {
 }) {
   const bId = await activeBusinessId();
   assertAtelier(bId);
+  assertValidLoanDate(data.date);
 
   if (data.amount <= 0) throw new Error("El monto debe ser mayor a cero");
 
@@ -187,6 +205,7 @@ export async function createRefund(data: {
 }) {
   const bId = await activeBusinessId();
   assertAtelier(bId);
+  assertValidLoanDate(data.date);
 
   if (data.amount <= 0) throw new Error("El monto debe ser mayor a cero");
 
@@ -214,6 +233,137 @@ export async function createRefund(data: {
 }
 
 // ─────────────────────────────────────────────────────────────────
+// Editar movimiento de préstamo (loan o refund)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Calcula los totales pendientes excluyendo una fila concreta. Útil para
+ * simular el saldo después de un update/delete y rechazar si quedaría
+ * en negativo.
+ */
+async function getTotalsExcluding(
+  bId: number,
+  excludeKind: "loan" | "refund",
+  excludeId: string
+): Promise<{ loaned: number; refunded: number }> {
+  const loanedRow = (await db.execute(sql`
+    SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
+    WHERE business_id = ${bId} AND is_special_loan = true
+      AND ${excludeKind === "loan" ? sql`id <> ${excludeId}` : sql`true`}
+  `)).rows[0] as { total: string };
+  const refundedRow = (await db.execute(sql`
+    SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
+    WHERE business_id = ${bId} AND is_special_loan = true
+      AND ${excludeKind === "refund" ? sql`id <> ${excludeId}` : sql`true`}
+  `)).rows[0] as { total: string };
+  return {
+    loaned: parseFloat(loanedRow.total),
+    refunded: parseFloat(refundedRow.total),
+  };
+}
+
+export async function updateLoanMovement(
+  id: string,
+  kind: "loan" | "refund",
+  data: {
+    date: string;
+    amount: number;
+    paymentMethod: "efectivo" | "transferencia" | "yape";
+    concept: string;
+    notes?: string;
+  }
+): Promise<{ success: true } | { success: false; error: string }> {
+  const bId = await activeBusinessId();
+  assertAtelier(bId);
+  assertValidLoanDate(data.date);
+
+  if (data.amount <= 0) {
+    return { success: false, error: "El monto debe ser mayor a cero" };
+  }
+  if (!data.concept.trim()) {
+    return { success: false, error: "El concepto es obligatorio" };
+  }
+
+  if (kind === "loan") {
+    const before = (await db.execute(sql`
+      SELECT date::text AS date, amount::float AS amount
+      FROM bank_income_items
+      WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
+    `)).rows[0] as { date: string; amount: number } | undefined;
+    if (!before) return { success: false, error: "Préstamo no encontrado" };
+
+    // Coherencia: el nuevo total prestado (excluyendo este registro) +
+    // el monto editado debe dejar el saldo pendiente >= 0.
+    const totals = await getTotalsExcluding(bId, "loan", id);
+    const newPending =
+      Math.round((totals.loaned + data.amount - totals.refunded) * 100) / 100;
+    if (newPending < 0) {
+      return {
+        success: false,
+        error: "Esta operación dejaría el saldo pendiente en negativo. Verifica los montos.",
+      };
+    }
+
+    const note = data.notes
+      ? `${data.concept.trim()} — ${data.notes.trim()}`
+      : data.concept.trim();
+    await db.execute(sql`
+      UPDATE bank_income_items
+      SET date = ${data.date}, amount = ${data.amount.toFixed(2)}, note = ${note}
+      WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
+    `);
+    // Asegurar daily_record para la fecha nueva
+    await db.execute(sql`
+      INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${data.date})
+      ON CONFLICT (business_id, date) DO NOTHING
+    `);
+    // Recalcular ambas fechas (vieja y nueva) por si cambiaron
+    await recalcBankBalance(before.date);
+    if (before.date !== data.date) await recalcBankBalance(data.date);
+  } else {
+    const before = (await db.execute(sql`
+      SELECT date::text AS date, payment_method, amount::float AS amount
+      FROM expenses
+      WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
+    `)).rows[0] as { date: string; payment_method: string; amount: number } | undefined;
+    if (!before) return { success: false, error: "Devolución no encontrada" };
+
+    const totals = await getTotalsExcluding(bId, "refund", id);
+    const newPending =
+      Math.round((totals.loaned - totals.refunded - data.amount) * 100) / 100;
+    if (newPending < 0) {
+      return {
+        success: false,
+        error: "Esta operación dejaría el saldo pendiente en negativo. Verifica los montos.",
+      };
+    }
+
+    await db.execute(sql`
+      UPDATE expenses
+      SET date = ${data.date},
+          amount = ${data.amount.toFixed(2)},
+          payment_method = ${data.paymentMethod},
+          concept = ${data.concept.trim()},
+          notes = ${data.notes?.trim() || null}
+      WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
+    `);
+    await db.execute(sql`
+      INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${data.date})
+      ON CONFLICT (business_id, date) DO NOTHING
+    `);
+    if (before.payment_method !== "efectivo") await recalcBankBalance(before.date);
+    if (data.paymentMethod !== "efectivo" && before.date !== data.date) {
+      await recalcBankBalance(data.date);
+    } else if (data.paymentMethod !== "efectivo" && before.date === data.date) {
+      await recalcBankBalance(data.date);
+    }
+  }
+
+  revalidatePath("/", "layout");
+  return { success: true };
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Eliminar movimiento de préstamo (loan o refund)
 // ─────────────────────────────────────────────────────────────────
 
@@ -226,10 +376,22 @@ export async function deleteLoanMovement(
 
   if (kind === "loan") {
     const before = (await db.execute(sql`
-      SELECT date::text AS date FROM bank_income_items
+      SELECT date::text AS date, amount::float AS amount FROM bank_income_items
       WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
-    `)).rows[0] as { date: string } | undefined;
+    `)).rows[0] as { date: string; amount: number } | undefined;
     if (!before) return { success: false, error: "Préstamo no encontrado" };
+
+    // Coherencia: borrar este préstamo no debe dejar pendingBalance < 0.
+    const totals = await getTotalsExcluding(bId, "loan", id);
+    const newPending =
+      Math.round((totals.loaned - totals.refunded) * 100) / 100;
+    if (newPending < 0) {
+      return {
+        success: false,
+        error: "Esta operación dejaría el saldo pendiente en negativo. Verifica los montos.",
+      };
+    }
+
     await db.execute(sql`
       DELETE FROM bank_income_items
       WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
@@ -241,6 +403,19 @@ export async function deleteLoanMovement(
       WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
     `)).rows[0] as { date: string; payment_method: string } | undefined;
     if (!before) return { success: false, error: "Devolución no encontrada" };
+
+    // Borrar una devolución solo aumenta pendingBalance, así que no puede
+    // volverse negativo. Pero validamos por simetría / paranoia.
+    const totals = await getTotalsExcluding(bId, "refund", id);
+    const newPending =
+      Math.round((totals.loaned - totals.refunded) * 100) / 100;
+    if (newPending < 0) {
+      return {
+        success: false,
+        error: "Esta operación dejaría el saldo pendiente en negativo. Verifica los montos.",
+      };
+    }
+
     await db.execute(sql`
       DELETE FROM expenses
       WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
