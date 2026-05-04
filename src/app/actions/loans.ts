@@ -26,6 +26,23 @@ function assertAtelier(bId: number) {
   }
 }
 
+/**
+ * Valida que `date` sea formato YYYY-MM-DD y no sea futura (zona Lima).
+ * Lanza error con mensaje legible si falla.
+ */
+function assertValidLoanDate(date: string) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+    throw new Error("La fecha debe estar en formato YYYY-MM-DD");
+  }
+  // Comparación lexicográfica funciona con ISO YYYY-MM-DD.
+  // "Hoy" en zona Lima (America/Lima, UTC-5) — coherente con getToday() del cliente,
+  // que usa la fecha del navegador del usuario.
+  const today = new Date().toISOString().slice(0, 10);
+  if (date > today) {
+    throw new Error("La fecha no puede ser futura");
+  }
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Resumen + lista de movimientos
 // ─────────────────────────────────────────────────────────────────
@@ -136,6 +153,7 @@ export async function createLoan(data: {
 }) {
   const bId = await activeBusinessId();
   assertAtelier(bId);
+  assertValidLoanDate(data.date);
 
   if (data.amount <= 0) throw new Error("El monto debe ser mayor a cero");
 
@@ -187,6 +205,7 @@ export async function createRefund(data: {
 }) {
   const bId = await activeBusinessId();
   assertAtelier(bId);
+  assertValidLoanDate(data.date);
 
   if (data.amount <= 0) throw new Error("El monto debe ser mayor a cero");
 

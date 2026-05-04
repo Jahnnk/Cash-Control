@@ -44,6 +44,19 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
 
   async function handleSubmit() {
     setError(null);
+    if (!date) {
+      setError(
+        mode === "loan"
+          ? "La fecha del préstamo es obligatoria"
+          : "La fecha de la devolución es obligatoria"
+      );
+      return;
+    }
+    const today = getToday();
+    if (date > today) {
+      setError("La fecha no puede ser futura");
+      return;
+    }
     const amountNum = parseFloat(amount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setError("Ingresa un monto válido mayor a cero");
@@ -240,10 +253,14 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
 
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Fecha</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  {mode === "loan" ? "Fecha del préstamo" : "Fecha de la devolución"}
+                </label>
                 <input
                   type="date"
                   value={date}
+                  max={getToday()}
+                  required
                   onChange={(e) => setDate(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
