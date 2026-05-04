@@ -6,8 +6,9 @@ import { KPICard } from "@/components/ui/KPICard";
 import { formatCurrency, formatDate } from "@/lib/utils";
 
 export type BankBalanceCardProps = {
-  /** Si se pasa, sobre-escribe el href primario (default: /registro). */
-  href?: string;
+  /** Href primario al hacer click. Requerido — el caller debe pasar la
+   *  ruta con prefijo de negocio (ej: `/atelier/registro`). */
+  href: string;
   /** Tamaño de la tarjeta (compact para Conciliación). */
   size?: "default" | "compact";
 };
@@ -18,7 +19,7 @@ export type BankBalanceCardProps = {
  * actual. Lee del hook `useBankBalance()` así que las 3 pantallas siempre
  * muestran el mismo número.
  */
-export function BankBalanceCard({ href = "/registro", size = "default" }: BankBalanceCardProps) {
+export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps) {
   const { current, anchorDate, hasAnchor, isLoading } = useBankBalance();
 
   const subtitle = isLoading

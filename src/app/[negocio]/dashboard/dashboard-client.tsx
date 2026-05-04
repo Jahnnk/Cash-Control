@@ -149,7 +149,7 @@ export function DashboardClient({
         className="grid gap-4"
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
       >
-        <BankBalanceCard />
+        <BankBalanceCard href={`/${negocio}/registro`} />
         <KPICard
           icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
           title={`Ingresos · ${monthLabel(data.selectedMonth)}`}

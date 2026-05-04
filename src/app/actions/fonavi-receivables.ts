@@ -389,10 +389,7 @@ export async function deleteReimbursementAllocation(allocationId: string): Promi
     return { success: false, error: e instanceof Error ? e.message : "Error al eliminar reembolso" };
   }
 
-  revalidatePath("/dashboard");
-  revalidatePath("/registro");
-  revalidatePath("/reportes");
-  revalidatePath("/fonavi");
+  revalidatePath("/", "layout");
   return { success: true };
 }
 
@@ -465,9 +462,6 @@ export async function deleteFonaviReimbursement(incomeItemId: string): Promise<{
     return { success: false, error: e instanceof Error ? e.message : "Error al anular" };
   }
 
-  revalidatePath("/dashboard");
-  revalidatePath("/registro");
-  revalidatePath("/reportes");
-  revalidatePath("/fonavi");
+  revalidatePath("/", "layout");
   return { success: true };
 }
