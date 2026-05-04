@@ -27,10 +27,11 @@ export async function getBudgetDashboard(month: string) {
   `);
   const grossIncome = parseFloat(incomeResult.rows[0].total as string);
 
+  // Excluye préstamos del socio: no son gasto operativo.
   const expensesByCategory = await db.execute(sql`
     SELECT category, SUM(amount) as total
     FROM expenses
-    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
+    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false
     GROUP BY category
   `);
 

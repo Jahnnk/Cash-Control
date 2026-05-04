@@ -102,6 +102,9 @@ export const expenses = pgTable(
     // y a la receivable. NULL en gastos normales o en el lado Atelier.
     linkedAtelierExpenseId: uuid("linked_atelier_expense_id"),
     linkedReceivableId: uuid("linked_receivable_id"),
+    // Préstamos del socio (Jahnn → Atelier). Filtra estos egresos fuera
+    // de reportes operativos para que no contaminen ingresos/EBITDA.
+    isSpecialLoan: boolean("is_special_loan").default(false).notNull(),
   },
   (t) => ({
     businessIdx: index("idx_expenses_business_id").on(t.businessId),
@@ -124,6 +127,9 @@ export const bankIncomeItems = pgTable(
     sortOrder: integer("sort_order").default(0).notNull(),
     isFonaviReimbursement: boolean("is_fonavi_reimbursement").default(false).notNull(),
     receivableId: uuid("receivable_id"),
+    // Devoluciones de préstamos del socio (Atelier → Jahnn). Igual que
+    // los egresos isSpecialLoan, se excluyen de ingresos del mes/EBITDA.
+    isSpecialLoan: boolean("is_special_loan").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
@@ -144,6 +150,9 @@ export const expenseCategories = pgTable(
     isActive: boolean("is_active").default(true).notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     excludeFromEbitda: boolean("exclude_from_ebitda").default(false).notNull(),
+    // True solo para "Préstamos del socio" en Atelier. Se filtra de
+    // reportes operativos (ingresos/EBITDA/categorías/presupuesto/grupo).
+    isSpecialLoan: boolean("is_special_loan").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({

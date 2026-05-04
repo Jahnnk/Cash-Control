@@ -5,7 +5,32 @@ import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 
+/**
+ * Categorías "operativas" — usadas en el selector de Registro Diario.
+ * Excluye categorías marcadas como is_special_loan=true (Préstamos del
+ * socio) para que no aparezcan como opción de gasto regular.
+ */
 export async function getCategories(activeOnly = true) {
+  const bId = await activeBusinessId();
+  const result = activeOnly
+    ? await db.execute(sql`
+        SELECT * FROM expense_categories
+        WHERE business_id = ${bId} AND is_active = true AND is_special_loan = false
+        ORDER BY sort_order, name
+      `)
+    : await db.execute(sql`
+        SELECT * FROM expense_categories
+        WHERE business_id = ${bId} AND is_special_loan = false
+        ORDER BY sort_order, name
+      `);
+  return result.rows;
+}
+
+/**
+ * Versión completa para configuración / auditoría — incluye categorías
+ * especiales (Préstamos del socio).
+ */
+export async function getAllCategoriesIncludingSpecial(activeOnly = true) {
   const bId = await activeBusinessId();
   const result = activeOnly
     ? await db.execute(sql`

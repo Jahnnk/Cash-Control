@@ -18,6 +18,7 @@ import {
   Calendar,
   Plus,
   AlertTriangle,
+  HandCoins,
 } from "lucide-react";
 
 type DashboardData = {
@@ -27,6 +28,7 @@ type DashboardData = {
   avgDailyExpense: number;
   monthlyByte: Record<string, unknown>;
   fonaviReceivables: number;
+  partnerLoanBalance: number;
   selectedMonth: string;
   currentMonth: string;
   isCurrentMonth: boolean;
@@ -209,6 +211,16 @@ export function DashboardClient({
               label: "Registrar reembolso",
               icon: <Plus className="w-4 h-4" />,
             }}
+          />
+        )}
+        {isAtelier && data.partnerLoanBalance > 0 && (
+          <KPICard
+            icon={<HandCoins className="w-5 h-5 text-amber-600" />}
+            title="Deuda con socio"
+            value={formatCurrency(data.partnerLoanBalance)}
+            subtitle="Préstamos personales pendientes"
+            variant="warning"
+            href={`/${negocio}/prestamos-socio`}
           />
         )}
         {coverage && (

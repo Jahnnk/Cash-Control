@@ -17,6 +17,7 @@ import {
   RefreshCcw,
   LogOut,
   User,
+  HandCoins,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -36,6 +37,7 @@ const NAV: NavItem[] = [
   { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro"] },
   { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },
   { segment: "fonavi",        label: "Fonavi",          icon: Handshake,       scopes: ["atelier"] },
+  { segment: "prestamos-socio", label: "Préstamos socio", icon: HandCoins,     scopes: ["atelier"] },
   { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro"] },
 ];
