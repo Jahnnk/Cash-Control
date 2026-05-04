@@ -58,12 +58,25 @@ export async function getDashboardData(monthInput?: string) {
 
   // Por cobrar a Fonavi (tabla exclusiva Atelier — sólo se calcula si activo es Atelier)
   let fonaviReceivables = 0;
+  let partnerLoanBalance = 0;
   if (bId === 1) {
     const fonaviResult = await db.execute(sql`
       SELECT COALESCE(SUM(amount_due - amount_collected), 0) as total
       FROM fonavi_receivables WHERE status != 'collected'
     `);
     fonaviReceivables = parseFloat(fonaviResult.rows[0].total as string);
+
+    // Saldo pendiente de "Préstamos del socio" (lo que Atelier debe a Jahnn)
+    const loanRes = await db.execute(sql`
+      SELECT
+        COALESCE((SELECT SUM(amount) FROM bank_income_items
+          WHERE business_id = ${bId} AND is_special_loan = true), 0) AS loaned,
+        COALESCE((SELECT SUM(amount) FROM expenses
+          WHERE business_id = ${bId} AND is_special_loan = true), 0) AS refunded
+    `);
+    const loaned = parseFloat(loanRes.rows[0].loaned as string);
+    const refunded = parseFloat(loanRes.rows[0].refunded as string);
+    partnerLoanBalance = Math.max(0, Math.round((loaned - refunded) * 100) / 100);
   }
 
   // ───── KPIs ADAPTABLES al mes seleccionado ─────
@@ -77,10 +90,11 @@ export async function getDashboardData(monthInput?: string) {
   };
 
   if (!isFuture) {
+    // Excluye préstamos del socio: no son gasto operativo del negocio.
     const expResult = await db.execute(sql`
       SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) as total
       FROM expenses
-      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate}
+      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false
     `);
     monthlyExpenses = parseFloat(expResult.rows[0].total as string);
 
@@ -112,6 +126,7 @@ export async function getDashboardData(monthInput?: string) {
     avgDailyExpense,
     monthlyByte,
     fonaviReceivables,
+    partnerLoanBalance,
     // Metadatos del mes
     selectedMonth: month,
     currentMonth,
