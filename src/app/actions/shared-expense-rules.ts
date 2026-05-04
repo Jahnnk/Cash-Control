@@ -76,8 +76,7 @@ export async function createSharedRule(data: {
     VALUES (${data.categoryId}, ${concept}, ${data.atelierPercentage}, ${data.fonaviPercentage}, true)
   `);
 
-  revalidatePath("/configuracion");
-  revalidatePath("/registro");
+  revalidatePath("/", "layout");
   return { success: true };
 }
 
@@ -134,8 +133,7 @@ export async function updateSharedRule(id: string, data: {
     return { success: false, error: e instanceof Error ? e.message : "Error al actualizar" };
   }
 
-  revalidatePath("/configuracion");
-  revalidatePath("/registro");
+  revalidatePath("/", "layout");
   return { success: true };
 }
 
@@ -143,8 +141,7 @@ export async function deactivateSharedRule(id: string) {
   await db.execute(sql`
     UPDATE shared_expense_rules SET active = false, updated_at = now() WHERE id = ${id}
   `);
-  revalidatePath("/configuracion");
-  revalidatePath("/registro");
+  revalidatePath("/", "layout");
   return { success: true };
 }
 
@@ -160,7 +157,6 @@ export async function reactivateSharedRule(id: string) {
   await db.execute(sql`
     UPDATE shared_expense_rules SET active = true, updated_at = now() WHERE id = ${id}
   `);
-  revalidatePath("/configuracion");
-  revalidatePath("/registro");
+  revalidatePath("/", "layout");
   return { success: true };
 }

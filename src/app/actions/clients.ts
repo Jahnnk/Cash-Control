@@ -53,8 +53,7 @@ export async function createClient(data: {
     type: data.type,
     paymentPattern: data.paymentPattern || null,
   });
-  revalidatePath("/clientes");
-  revalidatePath("/dashboard");
+  revalidatePath("/", "layout");
 }
 
 export async function updateClient(
@@ -62,6 +61,5 @@ export async function updateClient(
   data: { name?: string; type?: string; paymentPattern?: string; isActive?: boolean }
 ) {
   await db.update(clients).set(data).where(eq(clients.id, id));
-  revalidatePath("/clientes");
-  revalidatePath("/dashboard");
+  revalidatePath("/", "layout");
 }
