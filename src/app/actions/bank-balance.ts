@@ -69,7 +69,8 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
   // aparte y no impactan el cálculo de saldo BCP (ver /atelier/prestamos-socio).
   const incRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
-    WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today} AND is_special_loan = false
+    WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
+      AND is_special_loan = false AND payment_method <> 'efectivo'
   `);
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
@@ -103,7 +104,7 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     daily_inflow AS (
       SELECT date, COALESCE(SUM(amount), 0) AS inflow
       FROM bank_income_items
-      WHERE business_id = ${bId} AND is_special_loan = false
+      WHERE business_id = ${bId} AND is_special_loan = false AND payment_method <> 'efectivo'
       GROUP BY date
     ),
     daily_outflow AS (

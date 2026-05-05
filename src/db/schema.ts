@@ -130,6 +130,9 @@ export const bankIncomeItems = pgTable(
     // Devoluciones de préstamos del socio (Atelier → Jahnn). Igual que
     // los egresos isSpecialLoan, se excluyen de ingresos del mes/EBITDA.
     isSpecialLoan: boolean("is_special_loan").default(false).notNull(),
+    // Método con el que se recibió el ingreso. Si es 'efectivo' NO afecta
+    // el saldo BCP (mismo patrón que expenses.payment_method).
+    paymentMethod: text("payment_method").default("transferencia").notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({

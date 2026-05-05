@@ -8,7 +8,7 @@ import { recalcBankBalance } from "./daily-records";
 
 export async function saveBankIncomeItems(
   date: string,
-  items: { amount: number; clientId: string | null; note: string }[]
+  items: { amount: number; clientId: string | null; note: string; paymentMethod?: string }[]
 ) {
   const bId = await activeBusinessId();
   // Delete y re-insert SOLO de items operativos. Los préstamos del socio
@@ -21,13 +21,15 @@ export async function saveBankIncomeItems(
   `);
 
   for (const item of items) {
+    const method = item.paymentMethod ?? "transferencia";
     await db.execute(sql`
-      INSERT INTO bank_income_items (business_id, date, amount, client_id, note)
-      VALUES (${bId}, ${date}, ${item.amount}, ${item.clientId}, ${item.note || null})
+      INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method)
+      VALUES (${bId}, ${date}, ${item.amount}, ${item.clientId}, ${item.note || null}, ${method})
     `);
   }
 
-  // Cache total en daily_records (del mismo negocio)
+  // Cache total en daily_records (banco + efectivo, ingresos brutos del día).
+  // La distinción banco/efectivo se aplica solo en el cálculo de saldo BCP.
   const total = items.reduce((s, i) => s + i.amount, 0);
   await db.execute(sql`
     UPDATE daily_records SET bank_income = ${total}

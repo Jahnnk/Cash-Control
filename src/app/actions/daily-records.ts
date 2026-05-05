@@ -79,7 +79,7 @@ async function propagateFromDate(bId: number, anchorDate: string) {
         dr.date,
         ROUND((
           c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false), 0)
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false AND payment_method <> 'efectivo'), 0)
           - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false), 0)
         )::numeric, 2)
       FROM daily_records dr
@@ -107,7 +107,10 @@ export async function updateBankBalance(date: string, balance: number) {
 export async function recalcBankBalance(date: string) {
   const bId = await activeBusinessId();
 
-  // Refresca cache del día afectado primero (del negocio activo)
+  // Refresca cache del día afectado. `bank_income` mantiene la semántica
+  // histórica de "ingresos brutos del día" (banco + efectivo), que es lo
+  // que dashboard/reportes/CxC consumen. La distinción banco vs efectivo
+  // solo aplica al saldo BCP en la cadena recursiva más abajo.
   await db.execute(sql`
     UPDATE daily_records dr SET
       bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false), 0),
@@ -132,7 +135,7 @@ export async function recalcBankBalance(date: string) {
         dr.date,
         ROUND((
           c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false), 0)
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false AND payment_method <> 'efectivo'), 0)
           - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false), 0)
         )::numeric, 2)
       FROM daily_records dr

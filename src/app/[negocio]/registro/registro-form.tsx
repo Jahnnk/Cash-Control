@@ -22,6 +22,7 @@ type IncomeItem = {
   clientId: string | null;
   clientName: string;
   note: string;
+  paymentMethod: string; // efectivo | transferencia | yape (default transferencia)
 };
 
 type ExpenseItem = {
@@ -120,6 +121,7 @@ export function RegistroForm({
   const [txCategory, setTxCategory] = useState(categories[0] || "Otros");
   const [txConcept, setTxConcept] = useState("");
   const [txMethod, setTxMethod] = useState("transferencia");
+  const [txIncomeMethod, setTxIncomeMethod] = useState("transferencia");
   const [txNote, setTxNote] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
 
@@ -231,9 +233,10 @@ export function RegistroForm({
           clientId: (item.client_id as string) || null,
           clientName: (item.client_name as string) || "",
           note: (item.note as string) || "",
+          paymentMethod: (item.payment_method as string) || "transferencia",
         })));
       } else if (record && Number(record.bank_income) > 0) {
-        setIncomeItems([{ id: crypto.randomUUID(), dbId: null, amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado" }]);
+        setIncomeItems([{ id: crypto.randomUUID(), dbId: null, amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado", paymentMethod: "transferencia" }]);
       } else {
         setIncomeItems([]);
       }
@@ -269,6 +272,7 @@ export function RegistroForm({
         clientId: txClient || null,
         clientName: client?.name || "",
         note: txNote,
+        paymentMethod: txIncomeMethod,
       }]);
     } else {
       const amountNum = parseFloat(txAmount);
@@ -459,7 +463,7 @@ export function RegistroForm({
         bankExpense: totalExpense,
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
       });
-      await saveBankIncomeItems(date, latestIncome.map((i: IncomeItem) => ({ amount: i.amount, clientId: i.clientId, note: i.note })));
+      await saveBankIncomeItems(date, latestIncome.map((i: IncomeItem) => ({ amount: i.amount, clientId: i.clientId, note: i.note, paymentMethod: i.paymentMethod })));
       for (const exp of latestExpenses.filter((e: ExpenseItem) => e.isNew)) {
         await createExpense({
           date,
@@ -721,7 +725,10 @@ export function RegistroForm({
                 const filteredExpenses = viewFilter === "todos" ? expensesList
                   : viewFilter === "banco" ? expensesList.filter((e) => e.paymentMethod !== "efectivo")
                   : expensesList.filter((e) => e.paymentMethod === "efectivo");
-                const filteredIncome = viewFilter === "efectivo" ? 0 : bankIncomeTotal; // income is always bank
+                const filteredIncomeItems = viewFilter === "todos" ? incomeItems
+                  : viewFilter === "banco" ? incomeItems.filter((i) => i.paymentMethod !== "efectivo")
+                  : incomeItems.filter((i) => i.paymentMethod === "efectivo");
+                const filteredIncome = filteredIncomeItems.reduce((s, i) => s + i.amount, 0);
                 const filteredEgreso = filteredExpenses.reduce((s, e) => s + e.amount, 0);
                 return (
                   <div className="grid grid-cols-3 gap-3">
@@ -803,7 +810,7 @@ export function RegistroForm({
 
                     {/* Fila 2: campos críticos (siempre visibles) */}
                     {txType === "ingreso" ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
                         <select
                           value={txClient}
                           onChange={(e) => setTxClient(e.target.value)}
@@ -811,6 +818,15 @@ export function RegistroForm({
                         >
                           <option value="">Ingreso del día</option>
                           {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
+                        </select>
+                        <select
+                          value={txIncomeMethod}
+                          onChange={(e) => setTxIncomeMethod(e.target.value)}
+                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                        >
+                          <option value="transferencia">Transferencia</option>
+                          <option value="efectivo">Efectivo</option>
+                          <option value="yape">Yape</option>
                         </select>
                         <input
                           type="text"
@@ -903,8 +919,13 @@ export function RegistroForm({
               {(incomeItems.length > 0 || expensesList.length > 0) && (
                 <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
                   <div className="divide-y divide-gray-100">
-                    {/* Income items — hidden in "efectivo" filter since income is bank */}
-                    {viewFilter !== "efectivo" && incomeItems.map((item, idx) => (
+                    {/* Income items — filtrados según viewFilter por payment_method */}
+                    {(viewFilter === "todos"
+                      ? incomeItems
+                      : viewFilter === "banco"
+                        ? incomeItems.filter((i) => i.paymentMethod !== "efectivo")
+                        : incomeItems.filter((i) => i.paymentMethod === "efectivo")
+                    ).map((item, idx) => (
                       editingId === item.id ? (
                         <div key={item.id} className="px-4 py-3 bg-green-50 space-y-2">
                           <div className="flex items-center gap-2">
