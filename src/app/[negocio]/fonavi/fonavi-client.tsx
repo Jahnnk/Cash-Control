@@ -1,12 +1,13 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useTransition } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { DataTable } from "@/components/ui/DataTable";
-import { Plus, History, Wallet } from "lucide-react";
+import { Plus, History, Wallet, CheckCircle2, AlertTriangle, X } from "lucide-react";
 import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
+import { markReceivableAsCollected } from "@/app/actions/fonavi-receivables";
 import { ReimbursementModal } from "./reimbursement-modal";
 import { ReimbursementHistoryModal } from "./reimbursement-history-modal";
 
@@ -31,6 +32,24 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
   const [registerFor, setRegisterFor] = useState<ReceivableRow | null>(null);
   const [registerGeneric, setRegisterGeneric] = useState(false);
   const [historyFor, setHistoryFor] = useState<ReceivableRow | null>(null);
+  const [markCollectedFor, setMarkCollectedFor] = useState<ReceivableRow | null>(null);
+  const [pending, startTransition] = useTransition();
+  const [markError, setMarkError] = useState<string | null>(null);
+
+  function handleMarkAsCollected() {
+    if (!markCollectedFor) return;
+    setMarkError(null);
+    const id = markCollectedFor.id;
+    startTransition(async () => {
+      const r = await markReceivableAsCollected(id);
+      if (r.success) {
+        setMarkCollectedFor(null);
+        router.refresh();
+      } else {
+        setMarkError(r.error);
+      }
+    });
+  }
 
   // Si llega ?accion=registrar-reembolso, abrir el modal una vez
   const autoOpenedRef = useRef(false);
@@ -38,6 +57,7 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
     if (autoOpenedRef.current) return;
     if (searchParams.get("accion") === "registrar-reembolso") {
       autoOpenedRef.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- intencional: auto-open por query param al primer mount
       setRegisterGeneric(true);
     }
   }, [searchParams]);
@@ -155,13 +175,22 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
             render: (r) => (
               <div className="inline-flex items-center gap-2">
                 {r.status !== "collected" && (
-                  <button
-                    onClick={() => setRegisterFor(r)}
-                    className="text-xs text-violet-700 hover:underline inline-flex items-center gap-1"
-                    title="Registrar reembolso para esta cuenta"
-                  >
-                    <Wallet className="w-3 h-3" /> Registrar
-                  </button>
+                  <>
+                    <button
+                      onClick={() => setRegisterFor(r)}
+                      className="text-xs text-violet-700 hover:underline inline-flex items-center gap-1"
+                      title="Registrar reembolso para esta cuenta"
+                    >
+                      <Wallet className="w-3 h-3" /> Registrar
+                    </button>
+                    <button
+                      onClick={() => { setMarkError(null); setMarkCollectedFor(r); }}
+                      className="text-xs text-emerald-700 hover:underline inline-flex items-center gap-1"
+                      title="Marcar como cobrado sin generar ingreso (si el pago ya fue registrado antes)"
+                    >
+                      <CheckCircle2 className="w-3 h-3" /> Marcar cobrado
+                    </button>
+                  </>
                 )}
                 {r.amount_collected > 0 && (
                   <button
@@ -193,6 +222,84 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
           onClose={() => setHistoryFor(null)}
           onChanged={() => router.refresh()}
         />
+      )}
+
+      {markCollectedFor && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !pending && setMarkCollectedFor(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-amber-50 flex items-center justify-center shrink-0">
+                  <AlertTriangle className="w-5 h-5 text-amber-600" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Marcar como cobrado
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Esta opción marca la CxC como cobrada <strong>sin generar un ingreso nuevo</strong>.
+                    Úsala cuando el pago ya fue registrado previamente como ingreso normal.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => !pending && setMarkCollectedFor(null)}
+                className="text-gray-400 hover:text-gray-600 shrink-0"
+                aria-label="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1 mb-5">
+              <div>
+                <span className="text-gray-500">Categoría: </span>
+                <span className="font-medium text-gray-900">{markCollectedFor.category}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Concepto: </span>
+                <span className="text-gray-900">{markCollectedFor.concept}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Monto a cerrar: </span>
+                <span className="font-medium text-gray-900">{formatCurrency(markCollectedFor.amount_pending)}</span>
+              </div>
+              <div>
+                <span className="text-gray-500">Fecha del gasto: </span>
+                <span className="text-gray-900">{formatDateShort(markCollectedFor.expense_date)}</span>
+              </div>
+            </div>
+
+            {markError && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-4">
+                {markError}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end">
+              <button
+                onClick={() => setMarkCollectedFor(null)}
+                disabled={pending}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleMarkAsCollected}
+                disabled={pending}
+                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50"
+              >
+                {pending ? "Marcando..." : "Sí, marcar como cobrado"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

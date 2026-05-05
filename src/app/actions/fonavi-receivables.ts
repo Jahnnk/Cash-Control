@@ -465,3 +465,113 @@ export async function deleteFonaviReimbursement(incomeItemId: string): Promise<{
   revalidatePath("/", "layout");
   return { success: true };
 }
+
+/**
+ * Marca una receivable como cobrada SIN crear un bank_income_item nuevo.
+ * Pensado para cuando el pago real ya fue registrado previamente como
+ * ingreso normal (cliente=Fonavi) y el usuario quiere cerrar la deuda
+ * formal sin doble-contabilizar.
+ *
+ * Flujo:
+ *   1. Validar que la receivable exista y no esté ya cobrada.
+ *   2. UPDATE fonavi_receivables: amount_collected=amount_due,
+ *      status='collected', collected_at=now().
+ *   3. Activar el gasto-espejo en Fonavi (payment_method
+ *      'pendiente_atelier' → 'transferencia') igual que el flujo formal,
+ *      para que aparezca como gasto BCP real de Fonavi.
+ *   4. Recalcular saldo BCP de Fonavi en cascada.
+ *
+ * NO toca bank_income_items ni fonavi_reimbursement_allocations.
+ */
+export async function markReceivableAsCollected(
+  receivableId: string
+): Promise<{ success: true } | { success: false; error: string }> {
+  await requireAtelier();
+
+  const r = (await sql`
+    SELECT amount_due::float as due, amount_collected::float as col, status
+    FROM fonavi_receivables WHERE id = ${receivableId}
+  `) as { due: number; col: number; status: string }[];
+  if (!r[0]) return { success: false, error: "Cuenta por cobrar no encontrada" };
+  if (r[0].status === "collected") {
+    return { success: false, error: "Esta cuenta ya está cobrada" };
+  }
+
+  // Capturar fechas de los gastos-espejo afectados ANTES del UPDATE
+  // para poder recalcular saldo Fonavi después.
+  const mirrorRows = (await sql`
+    SELECT date::text AS date FROM expenses
+    WHERE business_id = 2
+      AND payment_method = 'pendiente_atelier'
+      AND linked_receivable_id = ${receivableId}
+  `) as { date: string }[];
+
+  // 1. Cerrar receivable
+  await sql`
+    UPDATE fonavi_receivables
+    SET amount_collected = amount_due,
+        status = 'collected',
+        collected_at = now()
+    WHERE id = ${receivableId} AND status != 'collected'
+  `;
+
+  // 2. Activar gasto-espejo en Fonavi
+  await sql`
+    UPDATE expenses
+    SET payment_method = 'transferencia'
+    WHERE business_id = 2
+      AND payment_method = 'pendiente_atelier'
+      AND linked_receivable_id = ${receivableId}
+  `;
+
+  // 3. Recalcular saldo BCP de Fonavi para cada fecha afectada
+  const uniqueDates = Array.from(new Set(mirrorRows.map((m) => m.date)));
+  for (const fonaviDate of uniqueDates) {
+    await sql`
+      INSERT INTO daily_records (business_id, date) VALUES (2, ${fonaviDate})
+      ON CONFLICT (business_id, date) DO NOTHING
+    `;
+    await sql`
+      UPDATE daily_records SET
+        bank_expense = COALESCE((SELECT SUM(amount) FROM expenses
+          WHERE business_id = 2 AND date = ${fonaviDate}
+            AND payment_method NOT IN ('efectivo','pendiente_atelier')
+            AND is_special_loan = false), 0)
+      WHERE business_id = 2 AND date = ${fonaviDate}
+    `;
+    await sql`
+      WITH RECURSIVE chain AS (
+        SELECT
+          (${fonaviDate}::date - INTERVAL '1 day')::date AS date,
+          COALESCE((
+            SELECT bank_balance_real::numeric FROM daily_records
+            WHERE business_id = 2 AND date < ${fonaviDate} AND bank_balance_real IS NOT NULL
+            ORDER BY date DESC LIMIT 1
+          ), 0) AS calc_balance
+        UNION ALL
+        SELECT
+          dr.date,
+          ROUND((
+            c.calc_balance
+            + COALESCE((SELECT SUM(amount) FROM bank_income_items
+                WHERE business_id = 2 AND date = dr.date
+                  AND is_special_loan = false AND payment_method <> 'efectivo'), 0)
+            - COALESCE((SELECT SUM(amount) FROM expenses
+                WHERE business_id = 2 AND date = dr.date
+                  AND payment_method NOT IN ('efectivo','pendiente_atelier')
+                  AND is_special_loan = false), 0)
+          )::numeric, 2)
+        FROM daily_records dr
+        JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
+        WHERE dr.business_id = 2 AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = 2)
+      )
+      UPDATE daily_records dr
+      SET bank_balance_real = chain.calc_balance
+      FROM chain
+      WHERE dr.business_id = 2 AND dr.date = chain.date AND dr.date >= ${fonaviDate}
+    `;
+  }
+
+  revalidatePath("/", "layout");
+  return { success: true };
+}
