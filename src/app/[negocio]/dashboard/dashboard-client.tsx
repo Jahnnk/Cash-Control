@@ -2,18 +2,20 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useTransition } from "react";
+import { useState, useTransition } from "react";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { MonthSelector, monthLabel } from "@/components/ui/MonthSelector";
 import { BankBalanceCard } from "@/components/banking/BankBalanceCard";
 import { CashBalanceCard } from "@/components/banking/CashBalanceCard";
+import { InternalTransferModal } from "@/components/banking/InternalTransferModal";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import {
   Receipt,
   TrendingDown,
   TrendingUp,
   ArrowRight,
+  ArrowRightLeft,
   Handshake,
   Calendar,
   Plus,
@@ -49,6 +51,7 @@ export function DashboardClient({
 }) {
   const router = useRouter();
   const [isPending, startTransition] = useTransition();
+  const [transferOpen, setTransferOpen] = useState(false);
   const bank = useBankBalance();
 
   const dashHref = `/${negocio}/dashboard`;
@@ -70,7 +73,18 @@ export function DashboardClient({
 
   return (
     <div className={`space-y-6 ${isPending ? "opacity-70 transition-opacity" : ""}`}>
-      <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+      <div className="flex items-center justify-between gap-3">
+        <h1 className="text-2xl font-bold text-gray-900">Dashboard</h1>
+        <button
+          onClick={() => setTransferOpen(true)}
+          className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-3 py-1.5"
+          title="Mover dinero entre la caja efectivo y la cuenta BCP"
+        >
+          <ArrowRightLeft className="w-4 h-4" />
+          Transferencia interna
+        </button>
+      </div>
+      <InternalTransferModal open={transferOpen} onClose={() => setTransferOpen(false)} />
 
       {/* Alerta proactiva de discrepancia en la cadena de saldos bancarios */}
       {bank.hasDiscrepancy && bank.discrepancyDate && (

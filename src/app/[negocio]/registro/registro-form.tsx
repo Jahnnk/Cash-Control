@@ -6,6 +6,9 @@ import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-ru
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
+import { getInternalTransfersByDate, deleteInternalTransfer, type InternalTransfer } from "@/app/actions/internal-transfers";
+import { InternalTransferModal } from "@/components/banking/InternalTransferModal";
+import { ArrowRightLeft, AlertTriangle } from "lucide-react";
 import { formatCurrency, getToday, formatDate } from "@/lib/utils";
 import { useRouter, usePathname } from "next/navigation";
 import { ConfirmModal } from "@/components/confirm-modal";
@@ -128,6 +131,12 @@ export function RegistroForm({
   // Filter state for movements
   const [viewFilter, setViewFilter] = useState<"todos" | "banco" | "efectivo">("todos");
 
+  // Transferencias internas del día (cargadas aparte, deduplicadas por pair_id)
+  const [internalTransfers, setInternalTransfers] = useState<InternalTransfer[]>([]);
+  const [transferModalOpen, setTransferModalOpen] = useState(false);
+  const [editingTransfer, setEditingTransfer] = useState<InternalTransfer | null>(null);
+  const [confirmDeleteTransfer, setConfirmDeleteTransfer] = useState<InternalTransfer | null>(null);
+
   // Sincroniza el método por default (ingresos y egresos) con la pestaña
   // activa. Efectivo → "efectivo"; Banco → "transferencia"; Todos → no
   // hace nada (mantiene el último valor para no sorprender).
@@ -217,7 +226,9 @@ export function RegistroForm({
       getBankIncomeItems(date),
       getLastBankBalance(date),
       getExpensesByDate(date),
-    ]).then(([record, items, lastBalance, existingExpenses]) => {
+      getInternalTransfersByDate(date),
+    ]).then(([record, items, lastBalance, existingExpenses, transfers]) => {
+      setInternalTransfers(transfers as InternalTransfer[]);
       // currentBalance ya viene del hook useBankBalance(), no necesitamos cargarlo acá.
       if (currentBalance !== null) setCurrentBalanceInput(String(currentBalance));
       if (record) {
@@ -1068,9 +1079,122 @@ export function RegistroForm({
                         </div>
                       )
                     ))}
+
+                    {/* Transferencias internas — visibles en las 3 pestañas (afectan ambas cuentas) */}
+                    {internalTransfers.map((t) => (
+                      <div key={t.pairId}
+                        className="flex items-center px-4 py-3 group bg-blue-50/30 hover:bg-blue-50 transition-colors">
+                        <div className="w-8 h-8 rounded-full flex items-center justify-center shrink-0 bg-blue-100">
+                          <ArrowRightLeft className="w-4 h-4 text-blue-600" />
+                        </div>
+                        <div className="ml-3 flex-1 min-w-0">
+                          <div className="text-sm font-medium text-gray-700">
+                            Transferencia interna · {t.direction === "efectivo_to_banco" ? "Depósito a BCP" : "Retiro de BCP"}
+                          </div>
+                          <div className="text-xs text-gray-500 flex items-center gap-2">
+                            <span className="px-1.5 py-0.5 rounded text-[10px] bg-blue-100 text-blue-700">
+                              {t.direction === "efectivo_to_banco" ? "Efectivo → BCP" : "BCP → Efectivo"}
+                            </span>
+                            {t.note && <span className="truncate">{t.note}</span>}
+                          </div>
+                        </div>
+                        <div className="text-sm font-medium text-blue-700 ml-3">{formatCurrency(t.amount)}</div>
+                        <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => { setEditingTransfer(t); setTransferModalOpen(true); }}
+                            className="text-gray-400 hover:text-blue-600 p-0.5"
+                            aria-label="Editar transferencia"
+                          >
+                            <Pencil className="w-3.5 h-3.5" />
+                          </button>
+                          <button
+                            onClick={() => setConfirmDeleteTransfer(t)}
+                            className="text-red-400 hover:text-red-600 p-0.5 ml-1"
+                            aria-label="Eliminar transferencia"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
                 </div>
               )}
+            </div>
+          )}
+
+          {/* Modal de transferencia interna (crear o editar) */}
+          <InternalTransferModal
+            open={transferModalOpen}
+            onClose={() => { setTransferModalOpen(false); setEditingTransfer(null); router.refresh(); }}
+            editing={editingTransfer ? {
+              pairId: editingTransfer.pairId,
+              direction: editingTransfer.direction,
+              amount: editingTransfer.amount,
+              date: editingTransfer.date,
+              note: editingTransfer.note,
+            } : undefined}
+          />
+
+          {/* Modal de confirmación de eliminación de transferencia */}
+          {confirmDeleteTransfer && (
+            <div
+              className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+              onClick={() => setConfirmDeleteTransfer(null)}
+            >
+              <div
+                className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="flex items-start gap-3 mb-4">
+                  <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+                    <AlertTriangle className="w-5 h-5 text-red-600" />
+                  </div>
+                  <div>
+                    <h3 className="text-lg font-semibold text-gray-900">¿Eliminar esta transferencia?</h3>
+                    <p className="text-sm text-gray-500 mt-1">
+                      Esta acción eliminará ambos movimientos vinculados (la entrada y la salida). Los saldos se recalcularán automáticamente.
+                    </p>
+                  </div>
+                </div>
+                <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1 mb-5">
+                  <div>
+                    <span className="text-gray-500">Tipo: </span>
+                    <span className="text-gray-900">{confirmDeleteTransfer.direction === "efectivo_to_banco" ? "Depósito (Efectivo → BCP)" : "Retiro (BCP → Efectivo)"}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Monto: </span>
+                    <span className="font-medium text-gray-900">{formatCurrency(confirmDeleteTransfer.amount)}</span>
+                  </div>
+                  <div>
+                    <span className="text-gray-500">Fecha: </span>
+                    <span className="text-gray-900">{confirmDeleteTransfer.date}</span>
+                  </div>
+                </div>
+                <div className="flex gap-2 justify-end">
+                  <button
+                    onClick={() => setConfirmDeleteTransfer(null)}
+                    className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={async () => {
+                      const t = confirmDeleteTransfer;
+                      const r = await deleteInternalTransfer(t.pairId);
+                      if (r.success) {
+                        setConfirmDeleteTransfer(null);
+                        router.refresh();
+                      } else {
+                        alert(r.error);
+                      }
+                    }}
+                    className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg"
+                  >
+                    Sí, eliminar ambas patas
+                  </button>
+                </div>
+              </div>
             </div>
           )}
         </>
