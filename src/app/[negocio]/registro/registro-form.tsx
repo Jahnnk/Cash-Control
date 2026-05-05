@@ -128,6 +128,19 @@ export function RegistroForm({
   // Filter state for movements
   const [viewFilter, setViewFilter] = useState<"todos" | "banco" | "efectivo">("todos");
 
+  // Sincroniza el método por default (ingresos y egresos) con la pestaña
+  // activa. Efectivo → "efectivo"; Banco → "transferencia"; Todos → no
+  // hace nada (mantiene el último valor para no sorprender).
+  useEffect(() => {
+    if (viewFilter === "efectivo") {
+      setTxIncomeMethod("efectivo");
+      setTxMethod("efectivo");
+    } else if (viewFilter === "banco") {
+      setTxIncomeMethod("transferencia");
+      setTxMethod("transferencia");
+    }
+  }, [viewFilter]);
+
   // Drag and drop state
   const [dragType, setDragType] = useState<"income" | "expense" | null>(null);
   const [dragIdx, setDragIdx] = useState<number | null>(null);
