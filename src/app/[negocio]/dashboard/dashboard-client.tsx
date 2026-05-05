@@ -7,6 +7,7 @@ import { formatCurrency, formatDate } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { MonthSelector, monthLabel } from "@/components/ui/MonthSelector";
 import { BankBalanceCard } from "@/components/banking/BankBalanceCard";
+import { CashBalanceCard } from "@/components/banking/CashBalanceCard";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import {
   Receipt,
@@ -136,6 +137,7 @@ export function DashboardClient({
         style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
       >
         <BankBalanceCard href={`/${negocio}/registro`} />
+        <CashBalanceCard href={`/${negocio}/registro`} />
         <KPICard
           icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
           title={`Ingresos · ${monthLabel(data.selectedMonth)}`}

@@ -9,7 +9,8 @@ export type KPIVariant =
   | "warning"
   | "danger"
   | "info"
-  | "violet";
+  | "violet"
+  | "emerald";
 
 export type KPISize = "default" | "compact";
 
@@ -51,6 +52,7 @@ const VARIANT_BORDER: Record<KPIVariant, string> = {
   danger: "border-l-red-500",
   info: "border-l-blue-500",
   violet: "border-l-violet-500",
+  emerald: "border-l-emerald-400",
 };
 
 const VARIANT_VALUE_COLOR: Record<KPIVariant, string> = {
@@ -60,6 +62,7 @@ const VARIANT_VALUE_COLOR: Record<KPIVariant, string> = {
   danger: "text-red-700",
   info: "text-blue-700",
   violet: "text-violet-700",
+  emerald: "text-emerald-600",
 };
 
 export function KPICard({

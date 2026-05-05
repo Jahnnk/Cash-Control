@@ -152,3 +152,39 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     discrepancyAmount: null,
   };
 }
+
+export type CashBalanceSnapshot = {
+  /** Saldo de caja física en efectivo del negocio activo, acumulado histórico. */
+  current: number;
+  /** Timestamp ISO de cuándo se calculó. */
+  asOf: string;
+};
+
+/**
+ * Saldo de caja física en efectivo del negocio activo.
+ * = SUM(bank_income_items.amount WHERE payment_method='efectivo')
+ * − SUM(expenses.amount         WHERE payment_method='efectivo')
+ *
+ * Excluye is_special_loan=true en ambas tablas para que los préstamos
+ * del socio no contaminen el saldo operativo (mismo principio que el
+ * saldo BCP). No usa daily_records, va directo a las tablas fuente.
+ */
+export async function getCashBalance(): Promise<CashBalanceSnapshot> {
+  const bId = await activeBusinessId();
+  const asOf = new Date().toISOString();
+
+  const incRes = await db.execute(sql`
+    SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
+    WHERE business_id = ${bId} AND payment_method = 'efectivo' AND is_special_loan = false
+  `);
+  const expRes = await db.execute(sql`
+    SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
+    WHERE business_id = ${bId} AND payment_method = 'efectivo' AND is_special_loan = false
+  `);
+
+  const income = parseFloat(incRes.rows[0].total as string);
+  const expense = parseFloat(expRes.rows[0].total as string);
+  const current = Math.round((income - expense) * 100) / 100;
+
+  return { current, asOf };
+}
