@@ -94,7 +94,7 @@ export async function getDashboardData(monthInput?: string) {
     const expResult = await db.execute(sql`
       SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) as total
       FROM expenses
-      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false
+      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false AND is_internal_transfer = false
     `);
     monthlyExpenses = parseFloat(expResult.rows[0].total as string);
 

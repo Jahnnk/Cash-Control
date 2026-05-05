@@ -113,8 +113,8 @@ export async function recalcBankBalance(date: string) {
   // solo aplica al saldo BCP en la cadena recursiva más abajo.
   await db.execute(sql`
     UPDATE daily_records dr SET
-      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false), 0)
+      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false AND is_internal_transfer = false), 0),
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false AND is_internal_transfer = false), 0)
     WHERE dr.business_id = ${bId} AND dr.date = ${date}
   `);
 

@@ -138,11 +138,16 @@ export async function updateExpense(id: string, data: {
 }) {
   const bId = await activeBusinessId();
   const before = (await db.execute(sql`
-    SELECT date::text as date, payment_method FROM expenses
+    SELECT date::text as date, payment_method, is_internal_transfer FROM expenses
     WHERE id = ${id} AND business_id = ${bId}
-  `)).rows[0] as { date: string; payment_method: string } | undefined;
+  `)).rows[0] as { date: string; payment_method: string; is_internal_transfer: boolean } | undefined;
 
   if (!before) return; // No-op si no es del negocio activo
+  if (before.is_internal_transfer) {
+    throw new Error(
+      "No se puede editar una transferencia interna desde el feed de gastos. Usa el módulo de Transferencia Interna."
+    );
+  }
 
   if (data.category !== undefined) await db.execute(sql`UPDATE expenses SET category = ${data.category} WHERE id = ${id} AND business_id = ${bId}`);
   if (data.concept !== undefined) await db.execute(sql`UPDATE expenses SET concept = ${data.concept} WHERE id = ${id} AND business_id = ${bId}`);
@@ -158,11 +163,14 @@ export async function updateExpense(id: string, data: {
 export async function deleteExpense(id: string): Promise<{ success: true } | { success: false; error: string }> {
   const bId = await activeBusinessId();
   const before = (await db.execute(sql`
-    SELECT date::text as date, payment_method, is_shared FROM expenses
+    SELECT date::text as date, payment_method, is_shared, is_internal_transfer FROM expenses
     WHERE id = ${id} AND business_id = ${bId}
-  `)).rows[0] as { date: string; payment_method: string; is_shared: boolean } | undefined;
+  `)).rows[0] as { date: string; payment_method: string; is_shared: boolean; is_internal_transfer: boolean } | undefined;
 
   if (!before) return { success: false, error: "El registro no existe en este negocio" };
+  if (before.is_internal_transfer) {
+    return { success: false, error: "No se puede borrar una transferencia interna desde el feed de gastos. Usa el módulo de Transferencia Interna." };
+  }
 
   if (before.is_shared) {
     const hasAllocations = (await db.execute(sql`
@@ -186,9 +194,10 @@ export async function deleteExpense(id: string): Promise<{ success: true } | { s
 
 export async function getExpensesByDate(date: string) {
   const bId = await activeBusinessId();
+  // Excluye transferencias internas: tienen su propia sección en el feed.
   const result = await db.execute(sql`
     SELECT * FROM expenses
-    WHERE business_id = ${bId} AND date = ${date}
+    WHERE business_id = ${bId} AND date = ${date} AND is_internal_transfer = false
     ORDER BY sort_order ASC, created_at ASC
   `);
   return result.rows;
