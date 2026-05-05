@@ -4,7 +4,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useTransition } from "react";
 import { formatCurrency, formatDate } from "@/lib/utils";
-import { KPICard, type KPIVariant } from "@/components/ui/KPICard";
+import { KPICard } from "@/components/ui/KPICard";
 import { MonthSelector, monthLabel } from "@/components/ui/MonthSelector";
 import { BankBalanceCard } from "@/components/banking/BankBalanceCard";
 import { useBankBalance } from "@/hooks/useBankBalance";
@@ -12,7 +12,6 @@ import {
   Receipt,
   TrendingDown,
   TrendingUp,
-  ShieldCheck,
   ArrowRight,
   Handshake,
   Calendar,
@@ -67,19 +66,6 @@ export function DashboardClient({
   const monthHasNoData = data.isFuture || (incomeIsZero && expenseIsZero);
 
   const reportMonthQs = `&mes=${data.selectedMonth}`;
-
-  // Cobertura inteligente: la tarjeta solo aparece cuando aporta señal accionable.
-  // > 90 días o sin datos → no se muestra. 30-90 verde, 15-30 amarillo, < 15 rojo.
-  const coverageHasData =
-    !monthHasNoData && data.avgDailyExpense > 0 && data.daysCovered < 999;
-  const coverage: { variant: KPIVariant; iconColor: string; label: string } | null = (() => {
-    if (!coverageHasData) return null;
-    const d = data.daysCovered;
-    if (d > 90) return null;
-    if (d >= 30) return { variant: "default", iconColor: "text-primary-light", label: "Días de operación cubiertos" };
-    if (d >= 15) return { variant: "warning", iconColor: "text-amber-600", label: "⚠️ Cobertura baja" };
-    return { variant: "danger", iconColor: "text-red-600", label: "🔴 Cobertura crítica" };
-  })();
 
   return (
     <div className={`space-y-6 ${isPending ? "opacity-70 transition-opacity" : ""}`}>
@@ -221,15 +207,6 @@ export function DashboardClient({
             subtitle="Préstamos personales pendientes"
             variant="warning"
             href={`/${negocio}/prestamos-socio`}
-          />
-        )}
-        {coverage && (
-          <KPICard
-            icon={<ShieldCheck className={`w-5 h-5 ${coverage.iconColor}`} />}
-            title="Cobertura"
-            value={`${data.daysCovered} días`}
-            subtitle={data.isPartial ? `${coverage.label} (parcial)` : coverage.label}
-            variant={coverage.variant}
           />
         )}
       </div>
