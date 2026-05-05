@@ -105,6 +105,11 @@ export const expenses = pgTable(
     // Préstamos del socio (Jahnn → Atelier). Filtra estos egresos fuera
     // de reportes operativos para que no contaminen ingresos/EBITDA.
     isSpecialLoan: boolean("is_special_loan").default(false).notNull(),
+    // Transferencia interna entre cuentas del mismo negocio (Efectivo↔BCP).
+    // Igual que isSpecialLoan, se excluye de reportes operativos pero
+    // SÍ afecta saldos reales (cada pata mueve su cuenta).
+    isInternalTransfer: boolean("is_internal_transfer").default(false).notNull(),
+    transferPairId: uuid("transfer_pair_id"),
   },
   (t) => ({
     businessIdx: index("idx_expenses_business_id").on(t.businessId),
@@ -133,6 +138,9 @@ export const bankIncomeItems = pgTable(
     // Método con el que se recibió el ingreso. Si es 'efectivo' NO afecta
     // el saldo BCP (mismo patrón que expenses.payment_method).
     paymentMethod: text("payment_method").default("transferencia").notNull(),
+    // Transferencia interna Efectivo↔BCP — pata "ingreso" del par.
+    isInternalTransfer: boolean("is_internal_transfer").default(false).notNull(),
+    transferPairId: uuid("transfer_pair_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
