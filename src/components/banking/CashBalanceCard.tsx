@@ -20,10 +20,16 @@ export type CashBalanceCardProps = {
 export function CashBalanceCard({ href, size = "default" }: CashBalanceCardProps) {
   const { current, asOf, isLoading } = useCashBalance();
 
+  // asOf llega como ISO timestamp UTC. Para mostrar la fecha local
+  // (Cajamarca / Lima, UTC−5), convertimos antes de extraer YYYY-MM-DD.
+  // "en-CA" produce el formato ISO sortable directo.
+  const todayLima = asOf
+    ? new Date(asOf).toLocaleDateString("en-CA", { timeZone: "America/Lima" })
+    : null;
   const subtitle = isLoading
     ? "Calculando..."
-    : asOf
-      ? `al ${formatDate(asOf.slice(0, 10))}`
+    : todayLima
+      ? `al ${formatDate(todayLima)}`
       : "—";
 
   return (
