@@ -165,9 +165,15 @@ export type CashBalanceSnapshot = {
  * = SUM(bank_income_items.amount WHERE payment_method='efectivo')
  * − SUM(expenses.amount         WHERE payment_method='efectivo')
  *
- * Excluye is_special_loan=true en ambas tablas para que los préstamos
- * del socio no contaminen el saldo operativo (mismo principio que el
- * saldo BCP). No usa daily_records, va directo a las tablas fuente.
+ * IMPORTANTE: NO excluye is_special_loan=true. Los préstamos del socio
+ * entregados en efectivo y las devoluciones en efectivo SON flujos de
+ * caja física real (entra/sale dinero de la caja), aunque no formen
+ * parte del resultado operativo. Diferencia con el saldo BCP:
+ *   - saldo BCP: solo flujos operativos (excluye préstamos socio).
+ *   - saldo efectivo: TODA la caja física, sin distinguir si es
+ *     operativo o préstamo, porque el dinero físico no distingue.
+ *
+ * No usa daily_records — va directo a las tablas fuente.
  */
 export async function getCashBalance(): Promise<CashBalanceSnapshot> {
   const bId = await activeBusinessId();
@@ -175,11 +181,11 @@ export async function getCashBalance(): Promise<CashBalanceSnapshot> {
 
   const incRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
-    WHERE business_id = ${bId} AND payment_method = 'efectivo' AND is_special_loan = false
+    WHERE business_id = ${bId} AND payment_method = 'efectivo'
   `);
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
-    WHERE business_id = ${bId} AND payment_method = 'efectivo' AND is_special_loan = false
+    WHERE business_id = ${bId} AND payment_method = 'efectivo'
   `);
 
   const income = parseFloat(incRes.rows[0].total as string);
