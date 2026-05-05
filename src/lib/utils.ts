@@ -26,14 +26,24 @@ export function cn(...classes: (string | boolean | undefined | null)[]): string 
   return classes.filter(Boolean).join(" ");
 }
 
-export function getYesterday(): string {
-  const d = new Date();
-  d.setDate(d.getDate() - 1);
-  return d.toISOString().split("T")[0];
+/**
+ * Hoy en zona Lima (America/Lima, UTC−5) en formato YYYY-MM-DD.
+ * `en-CA` produce el ISO sortable directo. NO uses toISOString() porque
+ * devuelve UTC y entre 19:00–23:59 hora Lima ya es el día siguiente UTC,
+ * causando bugs en selectores y subtitles "al fecha".
+ */
+export function getToday(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
-export function getToday(): string {
-  return new Date().toISOString().split("T")[0];
+/**
+ * Ayer en zona Lima — basado en getToday() para consistencia.
+ */
+export function getYesterday(): string {
+  const today = getToday();
+  const d = new Date(today + "T12:00:00");
+  d.setDate(d.getDate() - 1);
+  return d.toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
 export function daysBetween(dateStr: string): number {
