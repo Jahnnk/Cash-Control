@@ -15,12 +15,13 @@ export async function saveBankIncomeItems(
   // (is_special_loan=true) viven en esta misma tabla pero se gestionan
   // desde /atelier/prestamos-socio — NO deben tocarse desde el feed de
   // Registro Diario.
-  // No tocar préstamos del socio ni patas de transferencias internas:
-  // tienen sus propios módulos para gestionarlas.
+  // No tocar préstamos del socio, patas de transferencias internas, ni
+  // ventas Byte: cada una tiene su propio módulo de gestión.
   await db.execute(sql`
     DELETE FROM bank_income_items
     WHERE business_id = ${bId} AND date = ${date}
       AND is_special_loan = false AND is_internal_transfer = false
+      AND is_byte_sale = false
   `);
 
   for (const item of items) {
@@ -48,10 +49,11 @@ export async function updateBankIncomeItem(id: string, data: { amount?: number; 
   // Cross-tenant guard + bloqueo de filas no-operativas:
   // - is_special_loan=true → módulo Préstamos del Socio
   // - is_internal_transfer=true → módulo Transferencia Interna
+  // - is_byte_sale=true → sección Resumen Byte
   const target = (await db.execute(sql`
-    SELECT date::text as date, is_special_loan, is_internal_transfer
+    SELECT date::text as date, is_special_loan, is_internal_transfer, is_byte_sale
     FROM bank_income_items WHERE id = ${id} AND business_id = ${bId}
-  `)).rows[0] as { date: string; is_special_loan: boolean; is_internal_transfer: boolean } | undefined;
+  `)).rows[0] as { date: string; is_special_loan: boolean; is_internal_transfer: boolean; is_byte_sale: boolean } | undefined;
   if (target?.is_special_loan) {
     throw new Error(
       "No se puede editar un préstamo del socio desde el feed de banco. Usa el módulo de Préstamos del Socio."
@@ -60,6 +62,11 @@ export async function updateBankIncomeItem(id: string, data: { amount?: number; 
   if (target?.is_internal_transfer) {
     throw new Error(
       "No se puede editar una transferencia interna desde el feed de banco. Usa el módulo de Transferencia Interna."
+    );
+  }
+  if (target?.is_byte_sale) {
+    throw new Error(
+      "No se puede editar una venta Byte desde el feed de banco. Usa la sección Resumen Byte."
     );
   }
 
@@ -76,9 +83,9 @@ export async function updateBankIncomeItem(id: string, data: { amount?: number; 
 export async function deleteBankIncomeItem(id: string) {
   const bId = await activeBusinessId();
   const row = (await db.execute(sql`
-    SELECT date::text as date, is_special_loan, is_internal_transfer
+    SELECT date::text as date, is_special_loan, is_internal_transfer, is_byte_sale
     FROM bank_income_items WHERE id = ${id} AND business_id = ${bId}
-  `)).rows[0] as { date: string; is_special_loan: boolean; is_internal_transfer: boolean } | undefined;
+  `)).rows[0] as { date: string; is_special_loan: boolean; is_internal_transfer: boolean; is_byte_sale: boolean } | undefined;
   if (row?.is_special_loan) {
     throw new Error(
       "No se puede borrar un préstamo del socio desde el feed de banco. Usa el módulo de Préstamos del Socio."
@@ -87,6 +94,11 @@ export async function deleteBankIncomeItem(id: string) {
   if (row?.is_internal_transfer) {
     throw new Error(
       "No se puede borrar una transferencia interna desde el feed de banco. Usa el módulo de Transferencia Interna."
+    );
+  }
+  if (row?.is_byte_sale) {
+    throw new Error(
+      "No se puede borrar una venta Byte desde el feed de banco. Usa la sección Resumen Byte."
     );
   }
   await db.execute(sql`DELETE FROM bank_income_items WHERE id = ${id} AND business_id = ${bId}`);
@@ -102,7 +114,7 @@ export async function getBankIncomeItems(date: string) {
     SELECT bi.*, c.name as client_name
     FROM bank_income_items bi
     LEFT JOIN clients c ON c.id = bi.client_id
-    WHERE bi.business_id = ${bId} AND bi.date = ${date} AND bi.is_special_loan = false AND bi.is_internal_transfer = false
+    WHERE bi.business_id = ${bId} AND bi.date = ${date} AND bi.is_special_loan = false AND bi.is_internal_transfer = false AND bi.is_byte_sale = false
     ORDER BY bi.sort_order ASC, bi.created_at ASC
   `);
   return result.rows;
