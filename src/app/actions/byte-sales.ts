@@ -64,9 +64,10 @@ export async function saveByteSales(
   }
 
   // 1. Borrar filas Byte previas del día (idempotente)
+  // No tocar filas archivadas (de resets previos).
   await db.execute(sql`
     DELETE FROM bank_income_items
-    WHERE business_id = ${bId} AND date = ${date} AND is_byte_sale = true
+    WHERE business_id = ${bId} AND date = ${date} AND is_byte_sale = true AND archived = false
   `);
 
   // 2. Insertar 1 fila por cada método con monto > 0
@@ -107,7 +108,7 @@ export async function getByteSales(date: string): Promise<ByteSalesData> {
   const rows = await db.execute(sql`
     SELECT payment_method, amount::float AS amount
     FROM bank_income_items
-    WHERE business_id = ${bId} AND date = ${date} AND is_byte_sale = true
+    WHERE business_id = ${bId} AND date = ${date} AND is_byte_sale = true AND archived = false
   `);
 
   const out: ByteSalesData = {

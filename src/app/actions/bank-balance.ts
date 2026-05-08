@@ -39,17 +39,45 @@ const DISCREPANCY_TOLERANCE = 1; // S/1 — bajo este umbral consideramos cuadre
  */
 export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
   const bId = await activeBusinessId();
-  const today = new Date().toISOString().slice(0, 10);
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const asOf = new Date().toISOString();
 
-  // ── 1. Anchor: último saldo guardado ≤ hoy (del negocio activo)
+  // ── 0. Configuración inicial post-reset (Fonavi/Centro). Si el negocio
+  // tiene system_start_date, los movimientos pre-reset están archivados
+  // y el saldo inicial se inyecta como anchor virtual. Atelier no tiene
+  // system_start_date — comportamiento legacy intacto.
+  const cfgRes = await db.execute(sql`
+    SELECT system_start_date::text AS start, initial_bcp_balance::float AS init_bcp,
+           initial_balance_date::text AS init_date
+    FROM businesses WHERE id = ${bId}
+  `);
+  const cfg = cfgRes.rows[0] as
+    | { start: string | null; init_bcp: number; init_date: string | null }
+    | undefined;
+  const hasReset = !!(cfg?.start);
+
+  // ── 1. Anchor: último saldo guardado ≤ hoy en filas NO archivadas
   const anchorRes = await db.execute(sql`
     SELECT bank_balance_real, date FROM daily_records
     WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL AND date <= ${today}
+      AND archived = false
     ORDER BY date DESC LIMIT 1
   `);
 
-  if (!anchorRes.rows[0]) {
+  let anchorBalance: number;
+  let anchorDate: string;
+  let hasAnchor: boolean;
+
+  if (anchorRes.rows[0]) {
+    anchorBalance = parseFloat(anchorRes.rows[0].bank_balance_real as string);
+    anchorDate = anchorRes.rows[0].date as string;
+    hasAnchor = true;
+  } else if (hasReset && cfg?.init_date) {
+    // Sin anchor real pero con config inicial: usar saldo inicial como anchor virtual.
+    anchorBalance = cfg.init_bcp ?? 0;
+    anchorDate = cfg.init_date;
+    hasAnchor = true;
+  } else {
     return {
       current: 0,
       asOf,
@@ -61,20 +89,17 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     };
   }
 
-  const anchorBalance = parseFloat(anchorRes.rows[0].bank_balance_real as string);
-  const anchorDate = anchorRes.rows[0].date as string;
-
-  // ── 2. Flujo bancario posterior al anchor hasta hoy (negocio activo)
-  // Excluimos is_special_loan=true: los préstamos del socio se trackean
-  // aparte y no impactan el cálculo de saldo BCP (ver /atelier/prestamos-socio).
+  // ── 2. Flujo bancario posterior al anchor hasta hoy (no archivado)
   const incRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
     WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
-      AND is_special_loan = false AND payment_method <> 'efectivo'
+      AND is_special_loan = false AND payment_method <> 'efectivo' AND archived = false
   `);
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
-    WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false
+    WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
+      AND payment_method NOT IN ('efectivo','pendiente_atelier')
+      AND is_special_loan = false AND archived = false
   `);
 
   const incomePost = parseFloat(incRes.rows[0].total as string);
@@ -90,7 +115,7 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     WITH days_with_balance AS (
       SELECT date, bank_balance_real::numeric AS balance
       FROM daily_records
-      WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL
+      WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL AND archived = false
       ORDER BY date
     ),
     chain AS (
@@ -104,13 +129,13 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     daily_inflow AS (
       SELECT date, COALESCE(SUM(amount), 0) AS inflow
       FROM bank_income_items
-      WHERE business_id = ${bId} AND is_special_loan = false AND payment_method <> 'efectivo'
+      WHERE business_id = ${bId} AND is_special_loan = false AND payment_method <> 'efectivo' AND archived = false
       GROUP BY date
     ),
     daily_outflow AS (
       SELECT date, COALESCE(SUM(amount), 0) AS outflow
       FROM expenses
-      WHERE business_id = ${bId} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false
+      WHERE business_id = ${bId} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false AND archived = false
       GROUP BY date
     )
     SELECT
@@ -135,7 +160,7 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
       current,
       asOf,
       anchorDate,
-      hasAnchor: true,
+      hasAnchor,
       hasDiscrepancy: true,
       discrepancyDate: row.date as string,
       discrepancyAmount: Math.round(parseFloat(row.diff as string) * 100) / 100,
@@ -146,7 +171,7 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     current,
     asOf,
     anchorDate,
-    hasAnchor: true,
+    hasAnchor,
     hasDiscrepancy: false,
     discrepancyDate: null,
     discrepancyAmount: null,
@@ -179,18 +204,24 @@ export async function getCashBalance(): Promise<CashBalanceSnapshot> {
   const bId = await activeBusinessId();
   const asOf = new Date().toISOString();
 
+  // Saldo inicial post-reset (Fonavi/Centro). Atelier no tiene config inicial.
+  const cfgRes = await db.execute(sql`
+    SELECT initial_cash_balance::float AS init FROM businesses WHERE id = ${bId}
+  `);
+  const initialCash = (cfgRes.rows[0] as { init: number } | undefined)?.init ?? 0;
+
   const incRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
-    WHERE business_id = ${bId} AND payment_method = 'efectivo'
+    WHERE business_id = ${bId} AND payment_method = 'efectivo' AND archived = false
   `);
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
-    WHERE business_id = ${bId} AND payment_method = 'efectivo'
+    WHERE business_id = ${bId} AND payment_method = 'efectivo' AND archived = false
   `);
 
   const income = parseFloat(incRes.rows[0].total as string);
   const expense = parseFloat(expRes.rows[0].total as string);
-  const current = Math.round((income - expense) * 100) / 100;
+  const current = Math.round((initialCash + income - expense) * 100) / 100;
 
   return { current, asOf };
 }

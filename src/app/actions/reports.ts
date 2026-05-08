@@ -20,7 +20,7 @@ export async function getWeeklyReport(startDate: string, endDate: string) {
       COALESCE(dr.bank_income, 0) as bank_income,
       COALESCE(dr.bank_expense, 0) as bank_expense,
       dr.bank_balance_real,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = d.date), 0) as expenses_total
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = d.date AND archived = false), 0) as expenses_total
     FROM dates d
     LEFT JOIN daily_records dr ON dr.date = d.date AND dr.business_id = ${bId}
     ORDER BY d.date ASC
@@ -40,12 +40,12 @@ export async function getMonthlyReport(month: string) {
       COALESCE(SUM(byte_total), 0) as total_byte,
       COALESCE((
         SELECT SUM(amount) FROM bank_income_items
-        WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false
+        WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false AND archived = false
       ), 0) as total_income,
       COALESCE(SUM(bank_expense), 0) as total_bank_expense,
       COALESCE((
         SELECT SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)
-        FROM expenses WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false
+        FROM expenses WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
       ), 0) as total_expenses,
       COALESCE((
         SELECT SUM(amount) FROM bank_income_items
@@ -69,7 +69,7 @@ export async function getMonthlyReport(month: string) {
   const byCategory = await db.execute(sql`
     SELECT category, SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END) as total
     FROM expenses
-    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false
+    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
     GROUP BY category
     ORDER BY total DESC
   `);
@@ -104,7 +104,7 @@ export async function getDailyBreakdown(month: string, type: "byte" | "income" |
       SELECT bi.id, bi.date, bi.amount, bi.note, bi.client_id, c.name as client_name
       FROM bank_income_items bi
       LEFT JOIN clients c ON c.id = bi.client_id
-      WHERE bi.business_id = ${bId} AND bi.date >= ${startDate} AND bi.date <= ${endDate} AND bi.is_special_loan = false AND bi.is_internal_transfer = false
+      WHERE bi.business_id = ${bId} AND bi.date >= ${startDate} AND bi.date <= ${endDate} AND bi.is_special_loan = false AND bi.is_internal_transfer = false AND bi.archived = false
       ORDER BY bi.date DESC, bi.sort_order ASC
     `);
     return result.rows;
@@ -112,7 +112,7 @@ export async function getDailyBreakdown(month: string, type: "byte" | "income" |
     const result = await db.execute(sql`
       SELECT id, date, amount, category, concept, notes, payment_method
       FROM expenses
-      WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false
+      WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
       ORDER BY date DESC, amount DESC
     `);
     return result.rows;

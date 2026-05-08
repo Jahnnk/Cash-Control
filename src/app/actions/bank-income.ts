@@ -21,7 +21,7 @@ export async function saveBankIncomeItems(
     DELETE FROM bank_income_items
     WHERE business_id = ${bId} AND date = ${date}
       AND is_special_loan = false AND is_internal_transfer = false
-      AND is_byte_sale = false
+      AND is_byte_sale = false AND archived = false
   `);
 
   for (const item of items) {
@@ -114,7 +114,7 @@ export async function getBankIncomeItems(date: string) {
     SELECT bi.*, c.name as client_name
     FROM bank_income_items bi
     LEFT JOIN clients c ON c.id = bi.client_id
-    WHERE bi.business_id = ${bId} AND bi.date = ${date} AND bi.is_special_loan = false AND bi.is_internal_transfer = false AND bi.is_byte_sale = false
+    WHERE bi.business_id = ${bId} AND bi.date = ${date} AND bi.is_special_loan = false AND bi.is_internal_transfer = false AND bi.is_byte_sale = false AND bi.archived = false
     ORDER BY bi.sort_order ASC, bi.created_at ASC
   `);
   return result.rows;

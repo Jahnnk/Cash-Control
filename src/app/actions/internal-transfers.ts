@@ -148,7 +148,7 @@ export async function getInternalTransfersByDate(date: string): Promise<Internal
       notes,
       created_at::text AS created_at
     FROM expenses
-    WHERE business_id = ${bId} AND date = ${date} AND is_internal_transfer = true
+    WHERE business_id = ${bId} AND date = ${date} AND is_internal_transfer = true AND archived = false
     ORDER BY created_at ASC
   `);
   return r.rows.map((row) => {

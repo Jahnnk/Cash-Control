@@ -55,11 +55,11 @@ export async function getGroupDashboard(monthInput?: string) {
       const anchorDate = anchorRes.rows[0].date as string;
       const incRes = await db.execute(sql`
         SELECT COALESCE(SUM(amount), 0) AS t FROM bank_income_items
-        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND is_special_loan = false
+        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND is_special_loan = false AND archived = false
       `);
       const expRes = await db.execute(sql`
         SELECT COALESCE(SUM(amount), 0) AS t FROM expenses
-        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false
+        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false AND archived = false
       `);
       bankBalance = Math.round((anchor + parseFloat(incRes.rows[0].t as string) - parseFloat(expRes.rows[0].t as string)) * 100) / 100;
     }
@@ -67,7 +67,7 @@ export async function getGroupDashboard(monthInput?: string) {
     // Ingresos del mes (operativos: excluye reembolsos Fonavi y préstamos socio)
     const incomeRes = await db.execute(sql`
       SELECT COALESCE(SUM(amount), 0) AS t FROM bank_income_items
-      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false
+      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false AND archived = false
     `);
     const monthlyIncome = parseFloat(incomeRes.rows[0].t as string);
 
@@ -76,7 +76,7 @@ export async function getGroupDashboard(monthInput?: string) {
     const expRes = await db.execute(sql`
       SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) AS t
       FROM expenses
-      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false AND is_internal_transfer = false
+      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
     `);
     const monthlyExpenses = parseFloat(expRes.rows[0].t as string);
 

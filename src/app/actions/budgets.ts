@@ -31,7 +31,7 @@ export async function getBudgetDashboard(month: string) {
   const expensesByCategory = await db.execute(sql`
     SELECT category, SUM(amount) as total
     FROM expenses
-    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false
+    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
     GROUP BY category
   `);
 

@@ -50,7 +50,7 @@ export async function getDashboardData(monthInput?: string) {
       COALESCE(SUM(byte_total), 0) as total_byte,
       COALESCE(SUM(bank_income), 0) as total_collected
     FROM daily_records
-    WHERE business_id = ${bId}
+    WHERE business_id = ${bId} AND archived = false
   `);
   const totalByte = parseFloat(cxcResult.rows[0].total_byte as string);
   const totalCollected = parseFloat(cxcResult.rows[0].total_collected as string);
@@ -94,7 +94,7 @@ export async function getDashboardData(monthInput?: string) {
     const expResult = await db.execute(sql`
       SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) as total
       FROM expenses
-      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false AND is_internal_transfer = false
+      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
     `);
     monthlyExpenses = parseFloat(expResult.rows[0].total as string);
 
@@ -105,7 +105,7 @@ export async function getDashboardData(monthInput?: string) {
         COALESCE(SUM(byte_credit_day), 0) as month_credit_day,
         COALESCE(SUM(byte_credit_collected), 0) as month_credit_collected
       FROM daily_records
-      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate}
+      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND archived = false
     `);
     monthlyByte = monthlyByteRes.rows[0] as Record<string, unknown>;
   }

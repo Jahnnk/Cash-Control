@@ -194,10 +194,10 @@ export async function deleteExpense(id: string): Promise<{ success: true } | { s
 
 export async function getExpensesByDate(date: string) {
   const bId = await activeBusinessId();
-  // Excluye transferencias internas: tienen su propia sección en el feed.
+  // Excluye transferencias internas y archivados.
   const result = await db.execute(sql`
     SELECT * FROM expenses
-    WHERE business_id = ${bId} AND date = ${date} AND is_internal_transfer = false
+    WHERE business_id = ${bId} AND date = ${date} AND is_internal_transfer = false AND archived = false
     ORDER BY sort_order ASC, created_at ASC
   `);
   return result.rows;
