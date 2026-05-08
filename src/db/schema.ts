@@ -141,6 +141,9 @@ export const bankIncomeItems = pgTable(
     // Transferencia interna Efectivo↔BCP — pata "ingreso" del par.
     isInternalTransfer: boolean("is_internal_transfer").default(false).notNull(),
     transferPairId: uuid("transfer_pair_id"),
+    // Venta del Byte (POS-cafetería B2C) — diferenciada de ingresos
+    // manuales para reportes específicos. SÍ cuenta como ingreso operativo.
+    isByteSale: boolean("is_byte_sale").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
