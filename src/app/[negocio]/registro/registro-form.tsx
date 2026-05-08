@@ -9,6 +9,7 @@ import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorder
 import { getInternalTransfersByDate, deleteInternalTransfer, type InternalTransfer } from "@/app/actions/internal-transfers";
 import { InternalTransferModal } from "@/components/banking/InternalTransferModal";
 import { ArrowRightLeft, AlertTriangle } from "lucide-react";
+import { ResumenByteB2C } from "./resumen-byte-b2c";
 import { formatCurrency, getToday, formatDate } from "@/lib/utils";
 import { useRouter, usePathname } from "next/navigation";
 import { ConfirmModal } from "@/components/confirm-modal";
@@ -651,7 +652,10 @@ export function RegistroForm({
       ) : (
         <>
           {/* BYTE TAB */}
-          {activeTab === "byte" && (
+          {activeTab === "byte" && !isAtelier && (
+            <ResumenByteB2C date={date} />
+          )}
+          {activeTab === "byte" && isAtelier && (
             <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-6">
               {/* Ventas */}
               <div>
