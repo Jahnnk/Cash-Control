@@ -31,6 +31,14 @@ export const businesses = pgTable("businesses", {
   name: varchar("name", { length: 100 }).notNull(),
   description: text("description"),
   active: boolean("active").default(true).notNull(),
+  // Configuración inicial post-reset: cuando system_start_date está
+  // seteado, los cálculos de saldo usan los saldos iniciales más los
+  // movimientos no-archivados desde esa fecha. Si es NULL, comportamiento
+  // legacy (Atelier).
+  systemStartDate: date("system_start_date"),
+  initialBcpBalance: numeric("initial_bcp_balance", { precision: 12, scale: 2 }).default("0").notNull(),
+  initialCashBalance: numeric("initial_cash_balance", { precision: 12, scale: 2 }).default("0").notNull(),
+  initialBalanceDate: date("initial_balance_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });
@@ -65,6 +73,8 @@ export const dailyRecords = pgTable(
     bankExpense: numeric("bank_expense", { precision: 10, scale: 2 }).default("0"),
     bankBalanceReal: numeric("bank_balance_real", { precision: 10, scale: 2 }),
     notes: text("notes"),
+    // Soft-delete para reset por negocio.
+    archived: boolean("archived").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
@@ -110,6 +120,8 @@ export const expenses = pgTable(
     // SÍ afecta saldos reales (cada pata mueve su cuenta).
     isInternalTransfer: boolean("is_internal_transfer").default(false).notNull(),
     transferPairId: uuid("transfer_pair_id"),
+    // Soft-delete para reset por negocio.
+    archived: boolean("archived").default(false).notNull(),
   },
   (t) => ({
     businessIdx: index("idx_expenses_business_id").on(t.businessId),
@@ -144,6 +156,9 @@ export const bankIncomeItems = pgTable(
     // Venta del Byte (POS-cafetería B2C) — diferenciada de ingresos
     // manuales para reportes específicos. SÍ cuenta como ingreso operativo.
     isByteSale: boolean("is_byte_sale").default(false).notNull(),
+    // Soft-delete para reset por negocio. archived=true se filtra de
+    // todos los cálculos operativos pero la fila persiste para auditoría.
+    archived: boolean("archived").default(false).notNull(),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
