@@ -7,6 +7,7 @@ import { BudgetConfig } from "./budget-config";
 import { SharedExpensesSection } from "./shared-expenses-section";
 import { AtelierConfirmToggle } from "./atelier-confirm-toggle";
 import { InitialConfigSection } from "./initial-config-section";
+import { ExcelImportButton } from "./excel-import-button";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function ConfiguracionPage({
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
+      <ExcelImportButton negocio={negocio} />
       {!isAtelier && initialConfig && (
         <InitialConfigSection initial={initialConfig} />
       )}
