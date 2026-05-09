@@ -213,6 +213,9 @@ export const importBatches = pgTable("import_batches", {
   status: text("status").default("completed").notNull(),
   rollbackAvailable: boolean("rollback_available").default(true),
   notes: text("notes"),
+  // JSONB con los ParseWarning estructurados emitidos por excel-importer.ts
+  // (defensas tolerantes Prompt 18). Se llena al confirmar el import.
+  warningsJson: jsonb("warnings_json"),
 });
 
 /**

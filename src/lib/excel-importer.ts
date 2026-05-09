@@ -36,6 +36,36 @@ export type ParsedMovement = {
   note: string;
 };
 
+/**
+ * Warning estructurado emitido por el parser cuando detecta y/o
+ * autocorrige errores recurrentes de Kelly. Se persiste en
+ * import_batches.warnings_json para auditoría histórica y se muestra
+ * en el preview del modal de import.
+ *
+ * - reason='empty_type'    → Caso A: la celda 'tipo' venía vacía.
+ * - reason='type_mismatch' → Caso B: el tipo I/G no coincide con
+ *                            la columna donde estaba el monto.
+ * - reason='empty_date'    → Caso C: la fila tenía la celda fecha
+ *                            vacía y no había forward-fill posible.
+ *
+ * severity='autocorrected' → la fila se importa con corrección.
+ * severity='blocking_error' → la fila NO se importa; el botón
+ *                            "Confirmar import" se deshabilita.
+ */
+export type ParseWarning = {
+  rowNumber: number;
+  date: string | null;
+  amount: number;
+  column: "ie" | "ic" | "ge" | "gc" | "mixed" | "none";
+  description: string;
+  reason: "empty_type" | "type_mismatch" | "empty_date";
+  originalType?: string | null;
+  correctedType?: "I" | "G";
+  originalDate?: null;
+  correctedDate?: string;     // YYYY-MM-DD
+  severity: "autocorrected" | "blocking_error";
+};
+
 export type ParseResult = {
   saldoInicial: {
     efectivo: number | null;
@@ -45,6 +75,8 @@ export type ParseResult = {
   movimientos: ParsedMovement[];
   errores: string[];
   warnings: string[];
+  /** Warnings estructurados de los Casos A/B/C (Prompt 18). */
+  parseWarnings: ParseWarning[];
   rangoFechas: { start: string | null; end: string | null };
   categoriasUnicas: string[];
   totales: {
@@ -147,6 +179,37 @@ function inferIncomePaymentMethod(concepto: string): "yape_plin" | "pos" | "tran
   return "transferencia";
 }
 
+const MONTH_ABBREV_MAP: Record<string, number> = {
+  ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6,
+  JUL: 7, AGO: 8, SET: 9, SEP: 9, OCT: 10, NOV: 11, DIC: 12,
+};
+
+/**
+ * Extrae el mes/año del nombre de una pestaña ("Ing&Gtos Abr26",
+ * "Control de VTAS-Abr26", etc.) y devuelve el último día calendario
+ * de ese mes en formato YYYY-MM-DD. Maneja años bisiestos correctamente.
+ *
+ * Acepta abreviaciones de 3 letras case-insensitive:
+ *   ENE FEB MAR ABR MAY JUN JUL AGO SET SEP OCT NOV DIC
+ *
+ * El año es de 2 dígitos y se interpreta como 20xx.
+ *
+ * Devuelve null si el patrón no matchea (no se puede deducir el mes).
+ */
+export function getLastDayOfSheetMonth(sheetName: string): string | null {
+  // Buscamos un patrón <abreviación-3-letras><año-2-dígitos> en cualquier
+  // parte del nombre de hoja, ej. "Ing&Gtos Abr26", "Control de VTAS-Set26".
+  const m = sheetName.match(/([A-Za-z]{3})\s*(\d{2})\b/);
+  if (!m) return null;
+  const month = MONTH_ABBREV_MAP[m[1].toUpperCase()];
+  if (!month) return null;
+  const year = 2000 + parseInt(m[2], 10);
+  // new Date(year, month, 0) → día 0 del mes siguiente = último día del mes
+  // actual. Maneja bisiestos automáticamente (Feb24 → 29, Feb25 → 28).
+  const lastDay = new Date(year, month, 0).getDate();
+  return `${year}-${String(month).padStart(2, "0")}-${String(lastDay).padStart(2, "0")}`;
+}
+
 // ─────────────────────────────────────────────────────────────────
 // Sheet listing
 // ─────────────────────────────────────────────────────────────────
@@ -192,6 +255,10 @@ export function parseExcelFile(
   const ws = wb.Sheets[chosen];
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
 
+  // Último día del mes según nombre de hoja — fallback de Caso C cuando
+  // la fila tiene fecha vacía y no hay forward-fill posible.
+  const lastDayOfSheetMonth = getLastDayOfSheetMonth(chosen);
+
   let saldoInicialEfectivo: number | null = null;
   let saldoInicialBcp: number | null = null;
   let fechaCierre: string | null = null;
@@ -199,6 +266,7 @@ export function parseExcelFile(
   const movimientos: ParsedMovement[] = [];
   const categorias = new Set<string>();
   const distMethod: Record<string, number> = { transferencia: 0, efectivo: 0, yape_plin: 0, pos: 0 };
+  const parseWarnings: ParseWarning[] = [];
 
   let ultimaFechaValida: string | null = null;
   let ingresos = 0, egresos = 0, devoluciones = 0, ventasByte = 0;
@@ -236,14 +304,153 @@ export function parseExcelFile(
       continue;
     }
 
-    // Filtro: tipo debe ser 'I' o 'G'
-    if (tipoRaw !== "I" && tipoRaw !== "G") continue;
+    // ─── DEFENSAS TOLERANTES (Prompt 18, Casos A/B/C) ───
+    // Detectar dónde está el monto ANTES de filtrar por tipo, para
+    // poder autocorregir filas con tipo vacío o mismatch.
+    const hasIncomeAmount = ie > 0 || ic > 0;
+    const hasExpenseAmount = ge > 0 || gc > 0;
+    const hasAnyAmount = hasIncomeAmount || hasExpenseAmount;
+    const hasMixedAmounts = hasIncomeAmount && hasExpenseAmount;
+    const description = clean(concepto);
 
-    // Forward-fill de fecha
+    // Filtrar filas no-informativas para no emitir warnings ruidosos
+    // sobre filas de saldo, totales acumulados o filas con concepto
+    // basura ("N/A", "SC", vacío). Solo aplicamos defensas A/B/C a
+    // filas con descripción real Y grupo distinto de "SALDO".
+    const isInformativeRow =
+      description.length > 0 &&
+      !isBasura(description) &&
+      grupoRaw.toUpperCase() !== "SALDO";
+
+    // Determinar la columna donde está el monto principal (para reporte
+    // del warning). Si hay mixto la marcamos 'mixed', si no hay nada 'none'.
+    const detectedAmount =
+      ie > 0 ? ie : ic > 0 ? ic : ge > 0 ? ge : gc > 0 ? gc : 0;
+    const detectedColumn: ParseWarning["column"] =
+      hasMixedAmounts ? "mixed" :
+      ie > 0 ? "ie" : ic > 0 ? "ic" : ge > 0 ? "ge" : gc > 0 ? "gc" : "none";
+
+    // Filtro original: tipo debe ser 'I' o 'G'. Antes era un descarte
+    // silencioso; ahora aplicamos Caso A (tipo vacío con autocorrección).
+    let normalizedTipo: "I" | "G" | null =
+      tipoRaw === "I" ? "I" : tipoRaw === "G" ? "G" : null;
+
+    // Caso A — tipo vacío con monto detectable.
+    // Solo aplicamos a filas informativas para no inflar la lista de
+    // warnings con saldos / filas de resumen / basura.
+    if (normalizedTipo === null) {
+      if (!hasAnyAmount) continue; // descarte normal: ni tipo ni monto
+      if (!isInformativeRow) continue; // saldos / basura → silencioso como antes
+      if (hasMixedAmounts) {
+        // Bloqueante: imposible deducir intención
+        parseWarnings.push({
+          rowNumber: excelRow,
+          date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
+          amount: detectedAmount,
+          column: "mixed",
+          description,
+          reason: "empty_type",
+          originalType: null,
+          severity: "blocking_error",
+        });
+        continue;
+      }
+      // Autocorrección: deducir tipo según dónde estuvo el monto
+      const corrected: "I" | "G" = hasIncomeAmount ? "I" : "G";
+      normalizedTipo = corrected;
+      parseWarnings.push({
+        rowNumber: excelRow,
+        date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
+        amount: detectedAmount,
+        column: detectedColumn,
+        description,
+        reason: "empty_type",
+        originalType: null,
+        correctedType: corrected,
+        severity: "autocorrected",
+      });
+    }
+
+    // Caso B — tipo declarado pero monto en columna del lado opuesto
+    // (sin mixto). El caso `tipo='G' con monto en ie/ic` ya estaba
+    // tratado abajo como "devolución legítima"; ahora lo tagueamos
+    // también con un warning para auditoría sin cambiar la lógica
+    // de devolución.
+    // Solo aplicamos warnings a filas informativas para evitar ruido
+    // de saldos/basura. Las filas no-informativas mantienen la lógica
+    // original (siguen el flujo y son descartadas por amount==0 o por
+    // los filtros existentes).
+    let isCasoBLegitimate = false; // Caso B autocorregido (no devolución)
+    if (isInformativeRow && !hasMixedAmounts && hasAnyAmount) {
+      if (normalizedTipo === "I" && hasExpenseAmount && !hasIncomeAmount) {
+        parseWarnings.push({
+          rowNumber: excelRow,
+          date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
+          amount: detectedAmount,
+          column: detectedColumn,
+          description,
+          reason: "type_mismatch",
+          originalType: "I",
+          correctedType: "G",
+          severity: "autocorrected",
+        });
+        normalizedTipo = "G";
+        isCasoBLegitimate = true;
+      } else if (normalizedTipo === "G" && hasIncomeAmount && !hasExpenseAmount) {
+        // Esto coincide con la lógica preexistente de "devolución".
+        // La conservamos (isRefund=true, prefijo [DEVOLUCION] en nota)
+        // pero ahora también emitimos un warning estructurado.
+        parseWarnings.push({
+          rowNumber: excelRow,
+          date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
+          amount: detectedAmount,
+          column: detectedColumn,
+          description,
+          reason: "type_mismatch",
+          originalType: "G",
+          correctedType: "I",
+          severity: "autocorrected",
+        });
+      }
+    } else if (isInformativeRow && hasMixedAmounts) {
+      // tipo presente + montos en ambos lados → ambiguo, bloqueante
+      parseWarnings.push({
+        rowNumber: excelRow,
+        date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
+        amount: detectedAmount,
+        column: "mixed",
+        description,
+        reason: "type_mismatch",
+        originalType: normalizedTipo,
+        severity: "blocking_error",
+      });
+      continue;
+    }
+
+    // Forward-fill de fecha (defensa existente). Caso C nuevo cuando
+    // ni la fila ni el forward-fill aportan fecha.
     let fecha = toDateStr(fechaRaw);
     if (!fecha) {
-      if (ultimaFechaValida) fecha = ultimaFechaValida;
-      else {
+      if (ultimaFechaValida) {
+        fecha = ultimaFechaValida;
+      } else if (hasAnyAmount && description && lastDayOfSheetMonth) {
+        // Caso C — fecha vacía + monto + descripción → último día del
+        // mes de la pestaña. El propietario confirmó que esos gastos
+        // pertenecen al mes anterior cuando Kelly los registra a
+        // inicios del siguiente.
+        fecha = lastDayOfSheetMonth;
+        parseWarnings.push({
+          rowNumber: excelRow,
+          date: lastDayOfSheetMonth,
+          amount: detectedAmount,
+          column: detectedColumn,
+          description,
+          reason: "empty_date",
+          originalDate: null,
+          correctedDate: lastDayOfSheetMonth,
+          severity: "autocorrected",
+        });
+      } else {
         warnings.push(`Fila ${excelRow}: sin fecha y no hay fecha previa válida — saltada`);
         continue;
       }
@@ -252,12 +459,19 @@ export function parseExcelFile(
     }
 
     // Detección de devoluciones: tipo='G' pero monto en columnas de ingreso
+    // (efectivo/cuenta). Mantiene el comportamiento histórico —
+    // detectado independientemente del Caso B para preservar el
+    // tagging [DEVOLUCION] en la nota.
     let isRefund = false;
-    let effectiveType: "income" | "expense" = tipoRaw === "I" ? "income" : "expense";
-    if (tipoRaw === "G" && (ie > 0 || ic > 0) && !(ge > 0) && !(gc > 0)) {
+    let effectiveType: "income" | "expense" = normalizedTipo === "I" ? "income" : "expense";
+    if (normalizedTipo === "G" && hasIncomeAmount && !hasExpenseAmount) {
       isRefund = true;
       effectiveType = "income";
     }
+    // Si Caso B ya re-tipó normalizedTipo a su lado correcto, effectiveType
+    // ya lo refleja arriba (income si I, expense si G), y no marcamos
+    // refund — es un caso B "limpio" (Kelly se equivocó), no un refund.
+    void isCasoBLegitimate;
 
     // Determinar monto y dirección
     let amount = 0;
@@ -348,6 +562,7 @@ export function parseExcelFile(
     movimientos,
     errores,
     warnings,
+    parseWarnings,
     rangoFechas: { start, end },
     categoriasUnicas: Array.from(categorias).sort(),
     totales: {
@@ -372,6 +587,7 @@ function emptyResult(errores: string[], warnings: string[]): ParseResult {
     movimientos: [],
     errores,
     warnings,
+    parseWarnings: [],
     rangoFechas: { start: null, end: null },
     categoriasUnicas: [],
     totales: {

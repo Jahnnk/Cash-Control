@@ -261,6 +261,22 @@ export async function executeExcelImport(
     return { success: false, error: "Control de VTAS: " + controlVtasResult.errores.join("; ") };
   }
 
+  // Bloqueo si el parser detectó filas que no puede autocorregir
+  // (Casos A/B mixtos según Prompt 18). El usuario debe arreglar el
+  // Excel antes de re-intentar.
+  const blockingWarnings = parseResult?.parseWarnings.filter(
+    (w) => w.severity === "blocking_error",
+  ) ?? [];
+  if (blockingWarnings.length > 0) {
+    const filas = blockingWarnings.map((w) => `R${w.rowNumber}`).join(", ");
+    return {
+      success: false,
+      error:
+        `${blockingWarnings.length} fila(s) del Excel tienen tipo y montos contradictorios y el parser no puede autocorregirlas: ${filas}. ` +
+        "Pídele a Kelly que arregle estas filas antes de importar.",
+    };
+  }
+
   // Rango unificado
   const starts = [parseResult?.rangoFechas.start, controlVtasResult?.rangoFechas.start].filter(Boolean) as string[];
   const ends = [parseResult?.rangoFechas.end, controlVtasResult?.rangoFechas.end].filter(Boolean) as string[];
@@ -274,15 +290,22 @@ export async function executeExcelImport(
 
   // 1. Crear batch
   const sheetLabel = [ingGtosSheet, controlVtasSheet].filter(Boolean).join(" + ");
+  // Persistencia de warnings estructurados (Prompt 18). null si no hay
+  // ninguno para no llenar la tabla con []s vacíos.
+  const warningsJson =
+    parseResult?.parseWarnings.length
+      ? JSON.stringify(parseResult.parseWarnings)
+      : null;
   const batchRes = await db.execute(sql`
     INSERT INTO import_batches (
       business_id, file_name, sheet_name, date_range_start, date_range_end,
-      movements_count, ingresos_count, egresos_count
+      movements_count, ingresos_count, egresos_count, warnings_json
     ) VALUES (
       ${bId}, ${fileName}, ${sheetLabel}, ${start}, ${end},
       ${parseResult?.movimientos.length ?? 0},
       ${parseResult?.ingresos ?? 0},
-      ${parseResult?.egresos ?? 0}
+      ${parseResult?.egresos ?? 0},
+      ${warningsJson}::jsonb
     )
     RETURNING id::text AS id
   `);

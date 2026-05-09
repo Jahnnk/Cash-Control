@@ -460,6 +460,12 @@ function PreviewStep({
     ? cv.propinas.reduce((s, t) => s + t.amount, 0)
     : 0;
 
+  // Warnings estructurados del parser (Prompt 18 — Casos A/B/C)
+  const parseWarnings = p?.parseWarnings ?? [];
+  const blockingWarnings = parseWarnings.filter((w) => w.severity === "blocking_error");
+  const autocorrectedWarnings = parseWarnings.filter((w) => w.severity === "autocorrected");
+  const hasBlocking = blockingWarnings.length > 0;
+
   return (
     <div className="space-y-4 text-sm">
       <Section icon="📅" title="Rango y archivo">
@@ -472,6 +478,13 @@ function PreviewStep({
             : "—"
         } />
       </Section>
+
+      {parseWarnings.length > 0 && (
+        <ParseWarningsSection
+          autocorrected={autocorrectedWarnings}
+          blocking={blockingWarnings}
+        />
+      )}
 
       {p && p.saldoInicial.fechaCierre && (p.saldoInicial.efectivo !== null || p.saldoInicial.bcp !== null) && (
         <Section icon="📊" title="Saldo inicial detectado (Ing&Gtos)">
@@ -550,7 +563,12 @@ function PreviewStep({
         <button onClick={onCancel} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg">
           Cancelar
         </button>
-        <button onClick={onContinue} className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg">
+        <button
+          onClick={onContinue}
+          disabled={hasBlocking}
+          title={hasBlocking ? "Hay filas bloqueantes que el parser no puede autocorregir. Pídele a Kelly que arregle el Excel antes de importar." : undefined}
+          className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
+        >
           Importar
         </button>
       </div>
@@ -698,4 +716,136 @@ function Row({ label, value }: { label: string; value: string }) {
       <span className="text-gray-900 font-medium">{value}</span>
     </div>
   );
+}
+
+// ParseWarning estructura — duplicada acá para evitar import circular
+type ParseWarningRow = {
+  rowNumber: number;
+  date: string | null;
+  amount: number;
+  column: "ie" | "ic" | "ge" | "gc" | "mixed" | "none";
+  description: string;
+  reason: "empty_type" | "type_mismatch" | "empty_date";
+  originalType?: string | null;
+  correctedType?: "I" | "G";
+  originalDate?: null;
+  correctedDate?: string;
+  severity: "autocorrected" | "blocking_error";
+};
+
+function ParseWarningsSection({
+  autocorrected,
+  blocking,
+}: {
+  autocorrected: ParseWarningRow[];
+  blocking: ParseWarningRow[];
+}) {
+  // Agrupar por rowNumber para mostrar 1 fila aunque haya 2 warnings
+  // (combo Caso A + Caso C en R262-R270 del Centro abril 2026).
+  const grouped = new Map<number, ParseWarningRow[]>();
+  for (const w of [...autocorrected, ...blocking]) {
+    if (!grouped.has(w.rowNumber)) grouped.set(w.rowNumber, []);
+    grouped.get(w.rowNumber)!.push(w);
+  }
+  const rowsSorted = Array.from(grouped.entries()).sort((a, b) => a[0] - b[0]);
+
+  const headerCls = blocking.length > 0 ? "text-red-600" : "text-amber-600";
+  const headerIcon = blocking.length > 0 ? "⛔" : "⚠️";
+
+  return (
+    <div className="border rounded-lg border-amber-200 bg-amber-50/40 overflow-hidden">
+      <div className="px-4 py-3 border-b border-amber-100">
+        <div className={`text-sm font-semibold ${headerCls}`}>
+          {headerIcon} Advertencias del parser ({autocorrected.length} autocorregidas
+          {blocking.length > 0 ? `, ${blocking.length} bloqueantes` : ""})
+        </div>
+        {blocking.length > 0 && (
+          <p className="text-xs text-red-700 mt-1">
+            Hay errores que el parser no puede resolver. Pídele a Kelly que arregle estas filas antes de importar.
+          </p>
+        )}
+        <p className="text-[11px] text-gray-600 mt-1">
+          El parser detecta automáticamente: tipo (I/G) vacío con monto en una sola columna,
+          tipo que no coincide con la columna del monto, y fecha vacía con monto/descripción
+          (se asigna al último día del mes de la pestaña).
+        </p>
+      </div>
+      <div className="overflow-x-auto">
+        <table className="w-full text-xs">
+          <thead className="bg-amber-100/40 text-gray-700">
+            <tr>
+              <th className="text-left px-3 py-2 font-medium">Fila Excel</th>
+              <th className="text-left px-3 py-2 font-medium">Fecha</th>
+              <th className="text-left px-3 py-2 font-medium">Concepto</th>
+              <th className="text-right px-3 py-2 font-medium">Monto</th>
+              <th className="text-left px-3 py-2 font-medium">Problema</th>
+              <th className="text-left px-3 py-2 font-medium">Acción del parser</th>
+            </tr>
+          </thead>
+          <tbody className="divide-y divide-amber-100">
+            {rowsSorted.map(([rn, wars]) => {
+              const anyBlocking = wars.some((w) => w.severity === "blocking_error");
+              const bg = anyBlocking ? "bg-red-50" : "bg-amber-50";
+              const w0 = wars[0];
+              const fechaShow = w0.correctedDate ?? w0.date;
+              const problemas = wars.map(describeProblem).join(" + ");
+              const acciones = wars.map(describeAction).join(" + ");
+              return (
+                <tr key={rn} className={bg}>
+                  <td className="px-3 py-2 font-medium text-gray-900">R{rn}</td>
+                  <td className="px-3 py-2">{fechaShow ? formatDate(fechaShow) : "—"}</td>
+                  <td className="px-3 py-2 text-gray-700 max-w-[20rem] truncate" title={w0.description}>
+                    {w0.description || "—"}
+                  </td>
+                  <td className="px-3 py-2 text-right font-medium">
+                    {formatCurrency(w0.amount)}
+                  </td>
+                  <td className="px-3 py-2 text-gray-700">{problemas}</td>
+                  <td className={`px-3 py-2 ${anyBlocking ? "text-red-700" : "text-emerald-700"}`}>
+                    {acciones}
+                  </td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function describeProblem(w: ParseWarningRow): string {
+  if (w.reason === "empty_type") {
+    return w.severity === "blocking_error"
+      ? "Tipo vacío + montos en columnas mixtas"
+      : `Tipo vacío con monto en columna ${columnLabel(w.column)}`;
+  }
+  if (w.reason === "type_mismatch") {
+    return w.severity === "blocking_error"
+      ? `Tipo='${w.originalType}' + montos contradictorios en ambos lados`
+      : `Tipo='${w.originalType}' pero monto en columna de ${w.correctedType === "G" ? "egreso" : "ingreso"}`;
+  }
+  return "Fecha vacía";
+}
+
+function describeAction(w: ParseWarningRow): string {
+  if (w.severity === "blocking_error") return "❌ NO importable";
+  if (w.reason === "empty_type") {
+    return `✅ Tratado como ${w.correctedType === "G" ? "egreso (G)" : "ingreso (I)"}`;
+  }
+  if (w.reason === "type_mismatch") {
+    return `✅ Corregido a ${w.correctedType === "G" ? "egreso" : "ingreso"}`;
+  }
+  return `✅ Fecha asignada al último día del mes`;
+}
+
+function columnLabel(c: ParseWarningRow["column"]): string {
+  switch (c) {
+    case "ie": return "ingreso efectivo";
+    case "ic": return "ingreso cuenta";
+    case "ge": return "egreso efectivo";
+    case "gc": return "egreso cuenta";
+    case "mixed": return "mixta";
+    case "none": return "—";
+  }
 }
