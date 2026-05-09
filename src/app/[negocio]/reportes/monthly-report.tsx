@@ -16,6 +16,7 @@ import {
 } from "recharts";
 import { EditRecordModal, type EditTarget } from "./edit-record-modal";
 import { DeleteRecordModal, type DeleteTarget } from "./delete-record-modal";
+import { RoundingAlertsSection } from "./rounding-alerts-section";
 
 const PIE_COLORS = [
   "#004C40", "#098B5F", "#22C55E", "#EAB308", "#F97316",
@@ -190,6 +191,9 @@ export function MonthlyReport() {
               </div>
             );
           })()}
+
+          {/* Alertas de redondeo (Control de VTAS) */}
+          <RoundingAlertsSection month={month} />
 
           {/* Detail panel */}
           {showDetail && (

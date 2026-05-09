@@ -38,6 +38,7 @@ const NAV: NavItem[] = [
   { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },
   { segment: "fonavi",        label: "Fonavi",          icon: Handshake,       scopes: ["atelier"] },
   { segment: "prestamos-socio", label: "Préstamos socio", icon: HandCoins,     scopes: ["atelier"] },
+  { segment: "propinas",      label: "Propinas",        icon: HandCoins,       scopes: ["atelier", "fonavi", "centro"] },
   { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro"] },
 ];
@@ -66,11 +67,16 @@ export function Sidebar() {
   const [switcherOpen, setSwitcherOpen] = useState(false);
 
   const scope = scopeFromPathname(pathname);
+  // useMemo SIEMPRE se llama en el mismo orden — no condicional.
+  const items = useMemo(
+    () => (scope ? NAV.filter((item) => item.scopes.includes(scope)) : []),
+    [scope]
+  );
+
   if (!scope) return null;
 
   const theme = BUSINESS_THEMES[scope];
   const ScopeIcon = theme.icon;
-  const items = useMemo(() => NAV.filter((item) => item.scopes.includes(scope)), [scope]);
   const role = readRoleCookie();
   const isKelly = role === "kelly";
 
