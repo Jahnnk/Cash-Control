@@ -297,7 +297,7 @@ export async function executeExcelImport(
 
   // ─── PROCESAR Ing&Gtos (si aplica) ───────────────────────────────
   if (parseResult) {
-    // 2. Archivar manuales existentes en el rango (este negocio, no-importados)
+    // 2a. Archivar manuales existentes en el rango (este negocio, no-importados)
     if (options.archivarManualesExistentes) {
       const r1 = await db.execute(sql`
         UPDATE bank_income_items SET archived = true
@@ -313,6 +313,24 @@ export async function executeExcelImport(
       `);
       archivedCount = (r1.rowCount ?? 0) + (r2.rowCount ?? 0);
     }
+
+    // 2b. IDEMPOTENCIA: borrar registros importados PREVIOS en el
+    // mismo rango. Sin esto, re-importar el mismo Excel duplicaría
+    // todos los movimientos (bug Prompt 16: card "Egresos totales"
+    // mostraba 2x). El patrón es idéntico al ya usado más abajo
+    // para byte_sales_daily / tips_pending / rounding_alerts.
+    await db.execute(sql`
+      DELETE FROM bank_income_items
+      WHERE business_id = ${bId}
+        AND date BETWEEN ${start} AND ${end}
+        AND imported_from_excel = true
+    `);
+    await db.execute(sql`
+      DELETE FROM expenses
+      WHERE business_id = ${bId}
+        AND date BETWEEN ${start} AND ${end}
+        AND imported_from_excel = true
+    `);
 
     // 3. Crear categorías nuevas
     if (options.crearCategoriasNuevas) {
