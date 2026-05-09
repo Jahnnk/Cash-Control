@@ -29,8 +29,10 @@ export function ExcelImportModal({
   const [step, setStep] = useState<Step>("select");
   const [fileBase64, setFileBase64] = useState<string | null>(null);
   const [fileName, setFileName] = useState<string>("");
-  const [sheetCandidates, setSheetCandidates] = useState<string[]>([]);
-  const [selectedSheet, setSelectedSheet] = useState<string>("");
+  const [ingGtosCandidates, setIngGtosCandidates] = useState<string[]>([]);
+  const [controlVtasCandidates, setControlVtasCandidates] = useState<string[]>([]);
+  const [selectedIngGtos, setSelectedIngGtos] = useState<string | null>(null);
+  const [selectedControlVtas, setSelectedControlVtas] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [result, setResult] = useState<Extract<ImportResult, { success: true }> | null>(null);
@@ -45,8 +47,10 @@ export function ExcelImportModal({
     setStep("select");
     setFileBase64(null);
     setFileName("");
-    setSheetCandidates([]);
-    setSelectedSheet("");
+    setIngGtosCandidates([]);
+    setControlVtasCandidates([]);
+    setSelectedIngGtos(null);
+    setSelectedControlVtas(null);
     setPreview(null);
     setError(null);
     setResult(null);
@@ -72,29 +76,28 @@ export function ExcelImportModal({
     startTransition(async () => {
       try {
         const r = await listExcelSheets(b64);
-        if (r.candidatesIngGtos.length === 0) {
-          setError("El archivo no contiene pestañas con formato 'Ing&Gtos'. ¿Es el formato correcto de Kelly?");
+        if (r.candidatesIngGtos.length === 0 && r.candidatesControlVtas.length === 0) {
+          setError("El archivo no contiene pestañas 'Ing&Gtos' ni 'Control de VTAS'. ¿Es el formato correcto de Kelly?");
           return;
         }
-        setSheetCandidates(r.candidatesIngGtos);
-        if (r.candidatesIngGtos.length === 1) {
-          // 1 sola pestaña: directo a preview
-          setSelectedSheet(r.candidatesIngGtos[0]);
-          await loadPreview(b64, file.name, r.candidatesIngGtos[0]);
-        } else {
-          // Default: la última (más reciente)
-          setSelectedSheet(r.candidatesIngGtos[r.candidatesIngGtos.length - 1]);
-          setStep("sheets");
-        }
+        setIngGtosCandidates(r.candidatesIngGtos);
+        setControlVtasCandidates(r.candidatesControlVtas);
+
+        // Defaults: la pestaña más reciente de cada tipo (última del array)
+        const defaultIngGtos = r.candidatesIngGtos[r.candidatesIngGtos.length - 1] ?? null;
+        const defaultControlVtas = r.candidatesControlVtas[r.candidatesControlVtas.length - 1] ?? null;
+        setSelectedIngGtos(defaultIngGtos);
+        setSelectedControlVtas(defaultControlVtas);
+        setStep("sheets");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al leer archivo");
       }
     });
   }
 
-  async function loadPreview(b64: string, fName: string, sheet: string) {
+  async function loadPreview(b64: string, fName: string, ingGtos: string | null, controlVtas: string | null) {
     setError(null);
-    const p = await previewExcelImport(b64, fName, sheet);
+    const p = await previewExcelImport(b64, fName, ingGtos, controlVtas);
     if ("error" in p) {
       setError(p.error);
       return;
@@ -104,17 +107,22 @@ export function ExcelImportModal({
   }
 
   function handleSheetSelected() {
-    if (!fileBase64 || !selectedSheet) return;
+    if (!fileBase64) return;
+    if (!selectedIngGtos && !selectedControlVtas) {
+      setError("Debes seleccionar al menos una pestaña a importar.");
+      return;
+    }
     startTransition(async () => {
-      await loadPreview(fileBase64, fileName, selectedSheet);
+      await loadPreview(fileBase64, fileName, selectedIngGtos, selectedControlVtas);
     });
   }
 
   function handleExecute() {
-    if (!fileBase64 || !selectedSheet) return;
+    if (!fileBase64) return;
+    if (!selectedIngGtos && !selectedControlVtas) return;
     setError(null);
     startTransition(async () => {
-      const r = await executeExcelImport(fileBase64, fileName, selectedSheet, {
+      const r = await executeExcelImport(fileBase64, fileName, selectedIngGtos, selectedControlVtas, {
         aplicarSaldoInicial,
         archivarManualesExistentes,
         crearCategoriasNuevas,
@@ -170,9 +178,12 @@ export function ExcelImportModal({
 
           {step === "sheets" && (
             <SheetsStep
-              candidates={sheetCandidates}
-              selected={selectedSheet}
-              onSelect={setSelectedSheet}
+              ingGtosCandidates={ingGtosCandidates}
+              controlVtasCandidates={controlVtasCandidates}
+              selectedIngGtos={selectedIngGtos}
+              selectedControlVtas={selectedControlVtas}
+              onSelectIngGtos={setSelectedIngGtos}
+              onSelectControlVtas={setSelectedControlVtas}
               onContinue={handleSheetSelected}
               onBack={() => setStep("select")}
               pending={pending}
@@ -189,7 +200,7 @@ export function ExcelImportModal({
               setArchivarManualesExistentes={setArchivarManualesExistentes}
               crearCategoriasNuevas={crearCategoriasNuevas}
               setCrearCategoriasNuevas={setCrearCategoriasNuevas}
-              onBack={() => setStep(sheetCandidates.length > 1 ? "sheets" : "select")}
+              onBack={() => setStep("sheets")}
               onContinue={() => setStep("confirm")}
               onCancel={handleClose}
             />
@@ -327,11 +338,17 @@ function SelectStep({ onFile, pending }: { onFile: (f: File) => void; pending: b
 }
 
 function SheetsStep({
-  candidates, selected, onSelect, onContinue, onBack, pending,
+  ingGtosCandidates, controlVtasCandidates,
+  selectedIngGtos, selectedControlVtas,
+  onSelectIngGtos, onSelectControlVtas,
+  onContinue, onBack, pending,
 }: {
-  candidates: string[];
-  selected: string;
-  onSelect: (s: string) => void;
+  ingGtosCandidates: string[];
+  controlVtasCandidates: string[];
+  selectedIngGtos: string | null;
+  selectedControlVtas: string | null;
+  onSelectIngGtos: (s: string | null) => void;
+  onSelectControlVtas: (s: string | null) => void;
   onContinue: () => void;
   onBack: () => void;
   pending: boolean;
@@ -339,27 +356,69 @@ function SheetsStep({
   return (
     <div className="space-y-4">
       <div>
-        <h4 className="text-sm font-semibold text-gray-900 mb-2">Selecciona la pestaña a importar</h4>
-        <p className="text-xs text-gray-500">Detectamos varias pestañas Ing&Gtos. Default: la más reciente.</p>
+        <h4 className="text-sm font-semibold text-gray-900 mb-1">Pestañas detectadas</h4>
+        <p className="text-xs text-gray-500">
+          Marca las pestañas a importar. Las dos del mes más reciente vienen pre-seleccionadas.
+        </p>
       </div>
-      <div className="space-y-2">
-        {candidates.map((s) => (
-          <label key={s} className={`flex items-center gap-3 px-3 py-2.5 border rounded-lg cursor-pointer transition-colors ${selected === s ? "border-emerald-400 bg-emerald-50/50" : "border-gray-200 hover:bg-gray-50"}`}>
-            <input
-              type="radio"
-              checked={selected === s}
-              onChange={() => onSelect(s)}
-              className="text-emerald-600"
-            />
-            <span className="text-sm font-medium text-gray-900">{s}</span>
-          </label>
-        ))}
-      </div>
+
+      {ingGtosCandidates.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+            Ing&amp;Gtos · ingresos / egresos / saldo inicial
+          </div>
+          <div className="space-y-2">
+            {ingGtosCandidates.map((s) => (
+              <label key={s} className={`flex items-center gap-3 px-3 py-2.5 border rounded-lg cursor-pointer transition-colors ${selectedIngGtos === s ? "border-emerald-400 bg-emerald-50/50" : "border-gray-200 hover:bg-gray-50"}`}>
+                <input
+                  type="checkbox"
+                  checked={selectedIngGtos === s}
+                  onChange={(e) => onSelectIngGtos(e.target.checked ? s : null)}
+                  className="text-emerald-600"
+                />
+                <span className="text-sm font-medium text-gray-900">{s}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {controlVtasCandidates.length > 0 && (
+        <div>
+          <div className="text-xs font-semibold uppercase tracking-wide text-gray-500 mb-2">
+            Control de VTAS · ventas Byte / propinas / alertas
+          </div>
+          <div className="space-y-2">
+            {controlVtasCandidates.map((s) => (
+              <label key={s} className={`flex items-center gap-3 px-3 py-2.5 border rounded-lg cursor-pointer transition-colors ${selectedControlVtas === s ? "border-blue-400 bg-blue-50/50" : "border-gray-200 hover:bg-gray-50"}`}>
+                <input
+                  type="checkbox"
+                  checked={selectedControlVtas === s}
+                  onChange={(e) => onSelectControlVtas(e.target.checked ? s : null)}
+                  className="text-blue-600"
+                />
+                <span className="text-sm font-medium text-gray-900">{s}</span>
+              </label>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {ingGtosCandidates.length === 0 && controlVtasCandidates.length === 0 && (
+        <div className="text-sm text-amber-700 bg-amber-50 border border-amber-200 rounded-lg p-3">
+          No se detectaron pestañas con formato esperado.
+        </div>
+      )}
+
       <div className="flex gap-2 justify-end pt-2">
         <button onClick={onBack} disabled={pending} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50">
           Atrás
         </button>
-        <button onClick={onContinue} disabled={pending} className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50 inline-flex items-center gap-2">
+        <button
+          onClick={onContinue}
+          disabled={pending || (!selectedIngGtos && !selectedControlVtas)}
+          className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50 inline-flex items-center gap-2"
+        >
           {pending && <Loader2 className="w-4 h-4 animate-spin" />}
           Continuar
         </button>
@@ -388,21 +447,34 @@ function PreviewStep({
   onCancel: () => void;
 }) {
   const p = preview.parseResult;
+  const cv = preview.controlVtasResult;
   const totalManuales = preview.manualesEnRango.ingresos + preview.manualesEnRango.egresos;
   const otrosNegocios = Object.values(preview.saldosAntes).filter(
     (s) => s.code.toLowerCase() !== negocioLabel.toLowerCase()
   );
 
+  const cvTotalVentas = cv
+    ? cv.ventasDiarias.reduce((s, v) => s + v.total, 0)
+    : 0;
+  const cvTotalPropinas = cv
+    ? cv.propinas.reduce((s, t) => s + t.amount, 0)
+    : 0;
+
   return (
     <div className="space-y-4 text-sm">
       <Section icon="📅" title="Rango y archivo">
         <Row label="Archivo" value={preview.fileName} />
-        <Row label="Pestaña" value={preview.sheetName} />
-        <Row label="Rango" value={`${formatDate(p.rangoFechas.start ?? "")} → ${formatDate(p.rangoFechas.end ?? "")}`} />
+        {preview.ingGtosSheet && <Row label="Pestaña Ing&Gtos" value={preview.ingGtosSheet} />}
+        {preview.controlVtasSheet && <Row label="Pestaña Control de VTAS" value={preview.controlVtasSheet} />}
+        <Row label="Rango" value={
+          preview.rangoUnificado.start && preview.rangoUnificado.end
+            ? `${formatDate(preview.rangoUnificado.start)} → ${formatDate(preview.rangoUnificado.end)}`
+            : "—"
+        } />
       </Section>
 
-      {p.saldoInicial.fechaCierre && (p.saldoInicial.efectivo !== null || p.saldoInicial.bcp !== null) && (
-        <Section icon="📊" title="Saldo inicial detectado">
+      {p && p.saldoInicial.fechaCierre && (p.saldoInicial.efectivo !== null || p.saldoInicial.bcp !== null) && (
+        <Section icon="📊" title="Saldo inicial detectado (Ing&Gtos)">
           <Row label={`Efectivo al ${formatDate(p.saldoInicial.fechaCierre)}`} value={formatCurrency(p.saldoInicial.efectivo ?? 0)} />
           <Row label={`BCP al ${formatDate(p.saldoInicial.fechaCierre)}`} value={formatCurrency(p.saldoInicial.bcp ?? 0)} />
           <label className="flex items-center gap-2 text-xs text-gray-700 mt-2 cursor-pointer">
@@ -412,19 +484,30 @@ function PreviewStep({
         </Section>
       )}
 
-      <Section icon="📋" title="Movimientos a importar">
-        <Row label="Total" value={String(p.movimientos.length)} />
-        <Row label="Ingresos / Egresos" value={`${p.ingresos} / ${p.egresos}`} />
-        <Row label="Devoluciones" value={String(p.devoluciones)} />
-        <Row label="Ventas Byte" value={String(p.ventasByte)} />
-      </Section>
+      {p && (
+        <Section icon="📋" title="De Ing&Gtos: movimientos a importar">
+          <Row label="Total" value={String(p.movimientos.length)} />
+          <Row label="Ingresos / Egresos" value={`${p.ingresos} / ${p.egresos}`} />
+          <Row label="Devoluciones" value={String(p.devoluciones)} />
+          <Row label="Saldos finales (calculados)" value={`Ef ${formatCurrency(p.totales.saldoFinalEfectivo)} · BCP ${formatCurrency(p.totales.saldoFinalBcp)}`} />
+        </Section>
+      )}
 
-      <Section icon="💰" title="Saldos finales calculados">
-        <Row label="Efectivo" value={formatCurrency(p.totales.saldoFinalEfectivo)} />
-        <Row label="BCP" value={formatCurrency(p.totales.saldoFinalBcp)} />
-      </Section>
+      {cv && (
+        <Section icon="☕" title="De Control de VTAS: 3 capas">
+          <Row label="Días de ventas Byte" value={String(cv.ventasDiarias.length)} />
+          <Row label="Total ventas (Ef + Yape + POS)" value={formatCurrency(cvTotalVentas)} />
+          <Row label="Propinas detectadas" value={`${cv.propinas.length} · ${formatCurrency(cvTotalPropinas)}`} />
+          <Row label="Alertas de redondeo" value={String(cv.alertasRedondeo.length)} />
+          {(preview.byteSalesDailyEnRango > 0 || preview.tipsPendingEnRango > 0 || preview.roundingAlertsEnRango > 0) && (
+            <p className="text-[11px] text-amber-700 mt-2">
+              ⚠ Existen registros previos en el rango ({preview.byteSalesDailyEnRango} ventas Byte, {preview.tipsPendingEnRango} propinas pending, {preview.roundingAlertsEnRango} alertas pending) que serán reemplazados.
+            </p>
+          )}
+        </Section>
+      )}
 
-      {preview.categoriasNuevas.length > 0 && (
+      {p && preview.categoriasNuevas.length > 0 && (
         <Section icon="🏷️" title={`Categorías nuevas a crear: ${preview.categoriasNuevas.length}`}>
           <div className="text-xs text-gray-600 mb-2 break-words">
             {preview.categoriasNuevas.join(", ")}
@@ -436,7 +519,7 @@ function PreviewStep({
         </Section>
       )}
 
-      {totalManuales > 0 && (
+      {p && totalManuales > 0 && (
         <Section icon="⚠️" title={`En ${negocioLabel}, movimientos manuales del rango`} variant="warning">
           <Row label="Ingresos" value={String(preview.manualesEnRango.ingresos)} />
           <Row label="Egresos" value={String(preview.manualesEnRango.egresos)} />
@@ -499,14 +582,23 @@ function ConfirmStep({
           <p className="text-xs text-amber-800">
             Solo <strong>{negocioLabel}</strong> será modificado. <strong>{otros}</strong> intactos.
           </p>
-          {archivar && (
+          {archivar && preview.parseResult && (
             <p className="text-xs text-amber-800 mt-2">
               Se archivarán {preview.manualesEnRango.ingresos + preview.manualesEnRango.egresos} movimientos manuales del rango (recuperables).
             </p>
           )}
-          <p className="text-xs text-amber-800 mt-2">
-            Se importarán <strong>{preview.parseResult.movimientos.length}</strong> movimientos.
-          </p>
+          {preview.parseResult && (
+            <p className="text-xs text-amber-800 mt-2">
+              Se importarán <strong>{preview.parseResult.movimientos.length}</strong> movimientos de Ing&Gtos.
+            </p>
+          )}
+          {preview.controlVtasResult && (
+            <p className="text-xs text-amber-800 mt-2">
+              Se importarán <strong>{preview.controlVtasResult.ventasDiarias.length}</strong> días de ventas Byte,
+              <strong> {preview.controlVtasResult.propinas.length}</strong> propinas y
+              <strong> {preview.controlVtasResult.alertasRedondeo.length}</strong> alertas de redondeo.
+            </p>
+          )}
         </div>
       </div>
       <div className="flex gap-2 justify-end pt-2">
