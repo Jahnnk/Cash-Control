@@ -224,11 +224,11 @@ export function MonthlyReport() {
                       size="compact"
                       columns={[
                         { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
-                        { key: "efectivo", header: "Efectivo", align: "right", cellClassName: "text-emerald-700", render: (row) => formatCurrency(row.efectivo as number) },
-                        { key: "yape_plin", header: "Yape/Plin", align: "right", cellClassName: "text-purple-700", render: (row) => formatCurrency(row.yape_plin as number) },
-                        { key: "pos", header: "POS", align: "right", cellClassName: "text-blue-700", render: (row) => formatCurrency(row.pos as number) },
-                        { key: "transferencia", header: "Transfer.", align: "right", cellClassName: "text-blue-600", render: (row) => formatCurrency(row.transferencia as number) },
-                        { key: "total_dia", header: "Total", align: "right", cellClassName: "font-bold", render: (row) => formatCurrency(row.total_dia as number) },
+                        { key: "efectivo", header: "Efectivo", align: "right", cellClassName: "text-emerald-700", render: (row) => formatCurrency(Number(row.efectivo ?? 0)) },
+                        { key: "yape_plin", header: "Yape/Plin", align: "right", cellClassName: "text-purple-700", render: (row) => formatCurrency(Number(row.yape_plin ?? 0)) },
+                        { key: "pos", header: "POS", align: "right", cellClassName: "text-blue-700", render: (row) => formatCurrency(Number(row.pos ?? 0)) },
+                        { key: "transferencia", header: "Transfer.", align: "right", cellClassName: "text-blue-600", render: (row) => formatCurrency(Number(row.transferencia ?? 0)) },
+                        { key: "total_dia", header: "Total", align: "right", cellClassName: "font-bold", render: (row) => formatCurrency(Number(row.total_dia ?? 0)) },
                       ]}
                       footer={(
                         <tr className="bg-gray-50 font-semibold">

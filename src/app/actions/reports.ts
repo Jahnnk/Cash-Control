@@ -134,11 +134,17 @@ export async function getDailyBreakdown(
       WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
     `);
     if (((dailyCheck.rows[0] as { n: number } | undefined)?.n ?? 0) > 0) {
+      // Devolvemos `transferencia: 0` explícito porque byte_sales_daily
+      // no la modela (Control de VTAS solo trae Efectivo/Yape/POS), pero
+      // el cliente comparte la tabla del formato byte_b2c que sí espera
+      // esa columna. Sin el 0 explícito, formatCurrency(undefined)
+      // crasheaba el render.
       const result = await db.execute(sql`
         SELECT date::text AS date,
                efectivo::float AS efectivo,
                yape_plin::float AS yape_plin,
                pos::float AS pos,
+               0::float AS transferencia,
                total::float AS total_dia
         FROM byte_sales_daily
         WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
