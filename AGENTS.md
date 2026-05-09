@@ -21,3 +21,45 @@ NO aplica a:
 - DELETE dentro de `executeExcelImport` y similares — tienen idempotencia
   por diseño (DELETE WHERE imported_from_excel = true seguido de INSERT
   en la misma operación), no son destructivos en producción.
+
+# Convenciones técnicas
+
+## Parsers de Excel
+
+Detectar columnas dinámicamente leyendo el header, nunca asumir offsets
+fijos. El rango `!ref` de Excel cambia según si la columna A tiene datos
+o no, lo que rompe parsers basados en posiciones absolutas.
+
+Patrón a seguir (ver `src/lib/control-vtas-parser.ts`):
+
+```ts
+const headerRow = rows[0] ?? [];
+let dateColIdx = -1;
+for (let c = 0; c < headerRow.length; c++) {
+  if (typeof headerRow[c] === "string" && /^\s*fecha\s*$/i.test(headerRow[c])) {
+    dateColIdx = c;
+    break;
+  }
+}
+if (dateColIdx === -1) {
+  errores.push(`No encontré columna 'Fecha' en '${sheetName}'.`);
+  return emptyResult(errores, warnings);
+}
+// El resto de columnas se derivan relativas a dateColIdx (idx+1, idx+2…).
+```
+
+Además, loggear el offset detectado al inicio del parser para auditoría
+posterior en logs de Vercel:
+
+```ts
+console.log(
+  `[parser-name] sheetName="${sheetName}" dateColIdx=${dateColIdx} headerRow.length=${headerRow.length}`,
+);
+```
+
+Caso histórico (Prompt 19): el parser de Control de VTAS asumía
+`row[0] = Fecha` validado contra Fonavi (`!ref=B1:L211`, idx 0 = col B).
+En Centro (`!ref=A1:L211`, idx 0 = col A vacía) producía 0 días
+silenciosamente. El bug pasó desapercibido en producción hasta que el
+usuario notó que el card "Ventas Byte" caía al fallback legacy tras
+re-importar.

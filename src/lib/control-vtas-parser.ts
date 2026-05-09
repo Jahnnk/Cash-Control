@@ -139,6 +139,51 @@ export function parseControlVtas(
   }
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
 
+  // Detección dinámica de la columna "Fecha" en el header (fila 0).
+  // CRÍTICO: el rango !ref del Excel cambia según si la columna A
+  // tiene datos o no. En Fonavi !ref=B1:L211 → idx 0 del array = col B.
+  // En Centro !ref=A1:L211 → idx 0 = col A (vacía). Sin esta detección,
+  // el parser asumía idx 0 = Fecha y producía 0 días silenciosamente
+  // para Centro. Ver AGENTS.md "Parsers de Excel".
+  const headerRow = rows[0] ?? [];
+  let dateColIdx = -1;
+  for (let c = 0; c < headerRow.length; c++) {
+    const cell = headerRow[c];
+    if (typeof cell === "string" && /^\s*fecha\s*$/i.test(cell)) {
+      dateColIdx = c;
+      break;
+    }
+  }
+  // Log de auditoría — visible en logs de Vercel para debug post-import.
+  console.log(
+    `[control-vtas-parser] sheetName="${sheetName}" dateColIdx=${dateColIdx} headerRow.length=${headerRow.length}`,
+  );
+  if (dateColIdx === -1) {
+    errores.push(
+      `No encontré columna 'Fecha' en el header de '${sheetName}'. Headers leídos: [${headerRow.map((h) => (h === null || h === undefined ? "—" : `"${String(h).slice(0, 20)}"`)).join(", ")}]`,
+    );
+    return emptyResult(errores, warnings);
+  }
+
+  // Offsets relativos a la columna "Fecha". Layout esperado tras el
+  // header "Fecha":
+  //   +0 Fecha (solo en primera fila del día)
+  //   +1 Día de la semana
+  //   +2 Concepto QuipuPOS
+  //   +3 Monto QuipuPOS
+  //   +4 Concepto Cuentas    ← el que importamos
+  //   +5 Monto Cuentas       ← el que importamos
+  //   +6 Diferencia (Comparativo)
+  //   +7 Referencia "(1)" "(2)" ...
+  //   +8 Nota descriptiva
+  const idxFecha = dateColIdx;
+  const idxConceptoQuipu = dateColIdx + 2;
+  const idxMontoQuipu = dateColIdx + 3;
+  const idxConceptoCuentas = dateColIdx + 4;
+  const idxMontoCuentas = dateColIdx + 5;
+  const idxDiferencia = dateColIdx + 6;
+  const idxNota = dateColIdx + 8;
+
   // Mes/año esperado según el nombre de la hoja. Filas con fechas
   // fuera de este mes son ruido (totales generales, validaciones,
   // huérfanos arrastrados de otros meses) y se descartan.
@@ -156,17 +201,7 @@ export function parseControlVtas(
   let ultimaFecha: string | null = null;
   let emptyRowStreak = 0;
 
-  // Header en fila 0 (índice 0). Datos desde índice 1.
-  // Mapeo de columnas (verificado contra Excel real):
-  //   idx 0 = Fecha (solo en primera fila del día)
-  //   idx 1 = Día de la semana
-  //   idx 2 = Concepto QuipuPOS
-  //   idx 3 = Monto QuipuPOS
-  //   idx 4 = Concepto Cuentas    ← el que importamos
-  //   idx 5 = Monto Cuentas       ← el que importamos
-  //   idx 6 = Diferencia (Comparativo)
-  //   idx 7 = Referencia "(1)" "(2)" ...
-  //   idx 8 = Nota descriptiva
+  // Header en fila 0. Datos desde fila 1.
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] || [];
 
@@ -174,8 +209,8 @@ export function parseControlVtas(
     // 2+ vacías seguidas → cortar el parseo (fin de la sección de
     // datos, lo siguiente son totales del mes / validaciones).
     const filaVacia =
-      row[0] == null && row[2] == null && row[3] == null &&
-      row[4] == null && row[5] == null;
+      row[idxFecha] == null && row[idxConceptoQuipu] == null && row[idxMontoQuipu] == null &&
+      row[idxConceptoCuentas] == null && row[idxMontoCuentas] == null;
     if (filaVacia) {
       emptyRowStreak++;
       if (emptyRowStreak >= 2) {
@@ -188,12 +223,12 @@ export function parseControlVtas(
     }
     emptyRowStreak = 0;
 
-    // Forward-fill fecha (idx 0). Si la celda contiene una fecha
-    // INVÁLIDA (ej. "31/04/2026" — abril no tiene 31 días), la
-    // descartamos y NO heredamos la última fecha vista, para que
-    // las filas siguientes (que probablemente son totales del mes
-    // o ruido) no se asignen al último día real del mes.
-    const fechaRaw = row[0];
+    // Forward-fill fecha. Si la celda contiene una fecha INVÁLIDA
+    // (ej. "31/04/2026" — abril no tiene 31 días), la descartamos y
+    // NO heredamos la última fecha vista, para que las filas
+    // siguientes (totales del mes o ruido) no se asignen al último
+    // día real del mes.
+    const fechaRaw = row[idxFecha];
     let fecha = toDateStr(fechaRaw);
     const fechaCellHasContent = fechaRaw != null && String(fechaRaw).trim() !== "";
     if (!fecha) {
@@ -218,11 +253,11 @@ export function parseControlVtas(
       ultimaFecha = fecha;
     }
 
-    const conceptoCuentas = clean(row[4]);
-    const montoQuipupos = toNum(row[3]);
-    const montoCuentas = toNum(row[5]);
-    const diferencia = toNum(row[6]);
-    const nota = clean(row[8]);
+    const conceptoCuentas = clean(row[idxConceptoCuentas]);
+    const montoQuipupos = toNum(row[idxMontoQuipu]);
+    const montoCuentas = toNum(row[idxMontoCuentas]);
+    const diferencia = toNum(row[idxDiferencia]);
+    const nota = clean(row[idxNota]);
 
     if (!conceptoCuentas) continue;
     if (conceptoCuentas === "Total") continue;
