@@ -35,20 +35,33 @@ export async function getMonthlyReport(month: string) {
   const lastDay = new Date(year, m, 0).getDate();
   const endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
+  // ¿Hay datos importados en byte_sales_daily? Si sí, esa es la fuente
+  // de verdad (ventas brutas de Control de VTAS). Si no, fallback al
+  // cálculo legacy (cobros: byte_total Atelier + is_byte_sale=true B2C).
+  const byteDailyExists = (await db.execute(sql`
+    SELECT COUNT(*)::int AS n FROM byte_sales_daily
+    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
+  `)).rows[0] as { n: number };
+  const byteSalesSource: "byte_sales_daily" | "legacy" =
+    byteDailyExists.n > 0 ? "byte_sales_daily" : "legacy";
+
   const totals = await db.execute(sql`
     SELECT
-      -- Ventas Byte: suma daily_records.byte_total (Atelier B2B) +
-      -- bank_income_items con is_byte_sale=true (Fonavi/Centro B2C).
-      -- En Atelier no hay rows con is_byte_sale=true; en Fonavi/Centro
-      -- byte_total siempre es 0 → no hay doble conteo posible.
-      (
-        COALESCE((SELECT SUM(byte_total) FROM daily_records
-          WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND archived = false), 0)
-        +
-        COALESCE((SELECT SUM(amount) FROM bank_income_items
-          WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
-            AND is_byte_sale = true AND archived = false), 0)
-      ) as total_byte,
+      -- Ventas Byte: si hay byte_sales_daily, usa esa fuente (ventas
+      -- brutas). Si no, fallback legacy (cobros).
+      CASE WHEN ${byteSalesSource === "byte_sales_daily"} THEN
+        COALESCE((SELECT SUM(efectivo + yape_plin + pos) FROM byte_sales_daily
+          WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}), 0)
+      ELSE
+        (
+          COALESCE((SELECT SUM(byte_total) FROM daily_records
+            WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND archived = false), 0)
+          +
+          COALESCE((SELECT SUM(amount) FROM bank_income_items
+            WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
+              AND is_byte_sale = true AND archived = false), 0)
+        )
+      END as total_byte,
       -- Ingresos BCP: excluye ventas Byte (ya contadas arriba) para no
       -- doble-contar en el reporte.
       COALESCE((
@@ -93,10 +106,12 @@ export async function getMonthlyReport(month: string) {
     bankStartBalance: bankStart.rows[0] ? parseFloat(bankStart.rows[0].bank_balance_real as string) : 0,
     bankEndBalance: bankEnd.rows[0] ? parseFloat(bankEnd.rows[0].bank_balance_real as string) : 0,
     byCategory: byCategory.rows,
+    byteSalesSource, // "byte_sales_daily" (ventas brutas) | "legacy" (cobros)
   };
 }
 
 export type DailyBreakdownResult =
+  | { format: "byte_daily"; rows: Record<string, unknown>[] }
   | { format: "byte_atelier"; rows: Record<string, unknown>[] }
   | { format: "byte_b2c"; rows: Record<string, unknown>[] }
   | { format: "income"; rows: Record<string, unknown>[] }
@@ -113,7 +128,26 @@ export async function getDailyBreakdown(
   const endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
   if (type === "byte") {
-    // ¿Hay ventas Byte B2C en el mes (Fonavi/Centro)?
+    // PRIORIDAD 1: byte_sales_daily (Control de VTAS importado)
+    const dailyCheck = await db.execute(sql`
+      SELECT COUNT(*)::int AS n FROM byte_sales_daily
+      WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
+    `);
+    if (((dailyCheck.rows[0] as { n: number } | undefined)?.n ?? 0) > 0) {
+      const result = await db.execute(sql`
+        SELECT date::text AS date,
+               efectivo::float AS efectivo,
+               yape_plin::float AS yape_plin,
+               pos::float AS pos,
+               total::float AS total_dia
+        FROM byte_sales_daily
+        WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
+        ORDER BY date ASC
+      `);
+      return { format: "byte_daily", rows: result.rows };
+    }
+
+    // PRIORIDAD 2: bank_income_items con is_byte_sale=true (Fonavi/Centro pre-Control de VTAS)
     const b2cCheck = await db.execute(sql`
       SELECT COUNT(*)::int AS n FROM bank_income_items
       WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}

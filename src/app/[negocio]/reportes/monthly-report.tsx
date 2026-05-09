@@ -36,6 +36,7 @@ type MonthlyData = {
   bankStartBalance: number;
   bankEndBalance: number;
   byCategory: Record<string, unknown>[];
+  byteSalesSource?: "byte_sales_daily" | "legacy";
 };
 
 export function MonthlyReport() {
@@ -151,6 +152,11 @@ export function MonthlyReport() {
                 <KPICard
                   title="Ventas Byte"
                   value={formatCurrency(data.totals.total_byte as string)}
+                  subtitle={
+                    data.byteSalesSource === "byte_sales_daily"
+                      ? "ventas brutas (Control de VTAS)"
+                      : "cobros (importa Control de VTAS para ventas brutas)"
+                  }
                   variant="default"
                   withAccentBar={false}
                   expanded={showDetail === "byte"}
@@ -205,7 +211,7 @@ export function MonthlyReport() {
                 <div className="p-8 text-center text-gray-500 text-sm">Cargando detalle...</div>
               ) : detailData && detailData.length > 0 ? (
                 <div className="overflow-x-auto">
-                  {showDetail === "byte" && detailResult?.format === "byte_b2c" ? (
+                  {showDetail === "byte" && (detailResult?.format === "byte_daily" || detailResult?.format === "byte_b2c") ? (
                     /* B2C: Fonavi/Centro — desglose por payment_method */
                     <DataTable
                       rowKey={(row) => row.date as string}
