@@ -2,7 +2,7 @@
 
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useSearchParams } from "next/navigation";
-import { getMonthlyReport, getDailyBreakdown } from "@/app/actions/reports";
+import { getMonthlyReport, getDailyBreakdown, type DailyBreakdownResult } from "@/app/actions/reports";
 import { getCategories } from "@/app/actions/categories";
 import { getClients } from "@/app/actions/clients";
 import { getAvailableMonthRange } from "@/app/actions/month-range";
@@ -49,7 +49,8 @@ export function MonthlyReport() {
   const [data, setData] = useState<MonthlyData | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDetail, setShowDetail] = useState<"byte" | "income" | "expense" | null>(null);
-  const [detailData, setDetailData] = useState<Record<string, unknown>[] | null>(null);
+  const [detailResult, setDetailResult] = useState<DailyBreakdownResult | null>(null);
+  const detailData = detailResult?.rows ?? null;
   const [detailLoading, setDetailLoading] = useState(false);
   const [monthRange, setMonthRange] = useState<{ minMonth: string; maxMonth: string; currentMonth: string } | null>(null);
 
@@ -59,25 +60,27 @@ export function MonthlyReport() {
   }, []);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- patrón intencional de fetch al cambiar mes */
     setLoading(true);
     setShowDetail(null);
-    setDetailData(null);
+    setDetailResult(null);
     getMonthlyReport(month).then((d) => {
       setData(d);
       setLoading(false);
     });
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [month]);
 
   const handleCardClick = useCallback(async (type: "byte" | "income" | "expense") => {
     if (showDetail === type) {
       setShowDetail(null);
-      setDetailData(null);
+      setDetailResult(null);
       return;
     }
     setShowDetail(type);
     setDetailLoading(true);
     const result = await getDailyBreakdown(month, type);
-    setDetailData(result);
+    setDetailResult(result);
     setDetailLoading(false);
   }, [showDetail, month]);
 
@@ -100,7 +103,7 @@ export function MonthlyReport() {
       showDetail ? getDailyBreakdown(month, showDetail) : Promise.resolve(null),
     ]);
     setData(monthly);
-    if (breakdown !== null) setDetailData(breakdown);
+    if (breakdown !== null) setDetailResult(breakdown);
     setEditTarget(null);
     setDeleteTarget(null);
   }, [month, showDetail]);
@@ -112,6 +115,7 @@ export function MonthlyReport() {
     const requested = searchParams.get("breakdown");
     if (requested === "byte" || requested === "income" || requested === "expense") {
       initialBreakdownApplied.current = true;
+      // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-open por query param al primer mount
       handleCardClick(requested);
     }
   }, [searchParams, loading, handleCardClick]);
@@ -192,7 +196,7 @@ export function MonthlyReport() {
                     ? "Ingresos BCP por día"
                     : "Egresos por día"}
                 </h3>
-                <button onClick={() => { setShowDetail(null); setDetailData(null); }}
+                <button onClick={() => { setShowDetail(null); setDetailResult(null); }}
                   className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100">
                   <X className="w-4 h-4" />
                 </button>
@@ -201,7 +205,34 @@ export function MonthlyReport() {
                 <div className="p-8 text-center text-gray-500 text-sm">Cargando detalle...</div>
               ) : detailData && detailData.length > 0 ? (
                 <div className="overflow-x-auto">
-                  {showDetail === "byte" ? (
+                  {showDetail === "byte" && detailResult?.format === "byte_b2c" ? (
+                    /* B2C: Fonavi/Centro — desglose por payment_method */
+                    <DataTable
+                      rowKey={(row) => row.date as string}
+                      data={detailData}
+                      withCard={false}
+                      size="compact"
+                      columns={[
+                        { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
+                        { key: "efectivo", header: "Efectivo", align: "right", cellClassName: "text-emerald-700", render: (row) => formatCurrency(row.efectivo as number) },
+                        { key: "yape_plin", header: "Yape/Plin", align: "right", cellClassName: "text-purple-700", render: (row) => formatCurrency(row.yape_plin as number) },
+                        { key: "pos", header: "POS", align: "right", cellClassName: "text-blue-700", render: (row) => formatCurrency(row.pos as number) },
+                        { key: "transferencia", header: "Transfer.", align: "right", cellClassName: "text-blue-600", render: (row) => formatCurrency(row.transferencia as number) },
+                        { key: "total_dia", header: "Total", align: "right", cellClassName: "font-bold", render: (row) => formatCurrency(row.total_dia as number) },
+                      ]}
+                      footer={(
+                        <tr className="bg-gray-50 font-semibold">
+                          <td className="px-3 py-3">Total</td>
+                          <td className="px-3 py-3 text-right text-emerald-700">{formatCurrency(detailData.reduce((s, r) => s + Number(r.efectivo ?? 0), 0))}</td>
+                          <td className="px-3 py-3 text-right text-purple-700">{formatCurrency(detailData.reduce((s, r) => s + Number(r.yape_plin ?? 0), 0))}</td>
+                          <td className="px-3 py-3 text-right text-blue-700">{formatCurrency(detailData.reduce((s, r) => s + Number(r.pos ?? 0), 0))}</td>
+                          <td className="px-3 py-3 text-right text-blue-600">{formatCurrency(detailData.reduce((s, r) => s + Number(r.transferencia ?? 0), 0))}</td>
+                          <td className="px-3 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.total_dia ?? 0), 0))}</td>
+                        </tr>
+                      )}
+                    />
+                  ) : showDetail === "byte" ? (
+                    /* Atelier B2B legacy: byte_credit_day, byte_cash_sale, etc. */
                     <DataTable
                       rowKey={(row) => row.date as string}
                       data={detailData}
