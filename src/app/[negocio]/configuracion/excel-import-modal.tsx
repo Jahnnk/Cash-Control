@@ -221,35 +221,107 @@ export function ExcelImportModal({
 // ─────────────────────────────────────────────────────────────────
 
 function SelectStep({ onFile, pending }: { onFile: (f: File) => void; pending: boolean }) {
+  const [isDragging, setIsDragging] = useState(false);
+  const [dragError, setDragError] = useState<string | null>(null);
+
+  const XLSX_MIME = [
+    "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    "application/vnd.ms-excel",
+  ];
+
+  function isXlsx(file: File): boolean {
+    if (file.name.toLowerCase().endsWith(".xlsx")) return true;
+    return XLSX_MIME.includes(file.type);
+  }
+
+  function handleDragEnter(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (pending) return;
+    setIsDragging(true);
+    setDragError(null);
+  }
+
+  function handleDragLeave(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    // Solo desactivar si el cursor realmente salió del contenedor (no
+    // si pasa sobre un hijo).
+    const related = e.relatedTarget as Node | null;
+    if (related && e.currentTarget.contains(related)) return;
+    setIsDragging(false);
+  }
+
+  function handleDragOver(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    if (e.dataTransfer) e.dataTransfer.dropEffect = "copy";
+  }
+
+  function handleDrop(e: React.DragEvent) {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (pending) return;
+    const files = Array.from(e.dataTransfer.files ?? []);
+    const xlsx = files.find(isXlsx);
+    if (!xlsx) {
+      setDragError("Tipo de archivo no soportado. Solo se acepta .xlsx (Excel de Kelly).");
+      return;
+    }
+    onFile(xlsx);
+  }
+
   return (
     <div className="space-y-3">
-      <label className={`block border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${pending ? "opacity-50 cursor-wait" : "border-gray-300 hover:border-emerald-400 hover:bg-emerald-50/30"}`}>
+      <label
+        onDragEnter={handleDragEnter}
+        onDragLeave={handleDragLeave}
+        onDragOver={handleDragOver}
+        onDrop={handleDrop}
+        className={`relative block border-2 border-dashed rounded-xl p-8 text-center cursor-pointer transition-colors ${
+          pending
+            ? "opacity-50 cursor-wait border-gray-300"
+            : isDragging
+              ? "border-emerald-600 bg-emerald-50"
+              : "border-gray-300 hover:border-emerald-400 hover:bg-emerald-50/30"
+        }`}
+      >
         <input
           type="file"
-          accept=".xlsx"
+          accept=".xlsx,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel"
           className="hidden"
           disabled={pending}
           onChange={(e) => {
+            setDragError(null);
             const f = e.target.files?.[0];
             if (f) onFile(f);
           }}
         />
-        {pending ? (
-          <div className="flex items-center justify-center gap-2 text-gray-600 text-sm">
-            <Loader2 className="w-4 h-4 animate-spin" /> Procesando archivo...
-          </div>
-        ) : (
-          <>
-            <Upload className="w-8 h-8 text-gray-400 mx-auto mb-2" />
-            <div className="text-sm font-medium text-gray-700">
-              Click o arrastra el archivo .xlsx aquí
+        <div className="pointer-events-none">
+          {pending ? (
+            <div className="flex items-center justify-center gap-2 text-gray-600 text-sm">
+              <Loader2 className="w-4 h-4 animate-spin" /> Procesando archivo...
             </div>
-            <div className="text-xs text-gray-500 mt-1">
-              Formato esperado: Excel de Kelly (pestaña Ing&Gtos)
-            </div>
-          </>
-        )}
+          ) : (
+            <>
+              <Upload className={`w-8 h-8 mx-auto mb-2 ${isDragging ? "text-emerald-600" : "text-gray-400"}`} />
+              <div className="text-sm font-medium text-gray-700">
+                {isDragging ? "Suelta el archivo aquí" : "Click o arrastra el archivo .xlsx aquí"}
+              </div>
+              <div className="text-xs text-gray-500 mt-1">
+                Formato esperado: Excel de Kelly (pestaña Ing&Gtos)
+              </div>
+            </>
+          )}
+        </div>
       </label>
+      {dragError && (
+        <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>{dragError}</span>
+        </div>
+      )}
     </div>
   );
 }
