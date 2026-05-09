@@ -149,7 +149,7 @@ export function MonthlyReport() {
           {(() => {
             const variation = data.bankEndBalance - data.bankStartBalance;
             return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <KPICard
                   title="Ventas Byte"
                   value={formatCurrency(data.totals.total_byte as string)}
@@ -165,13 +165,21 @@ export function MonthlyReport() {
                   onClick={() => handleCardClick("byte")}
                 />
                 <KPICard
-                  title="Ingresos BCP"
+                  title="Otros ingresos"
                   value={formatCurrency(data.totals.total_income as string)}
+                  subtitle="Devoluciones, sobrantes, reembolsos (no ventas)"
                   variant="success"
                   withAccentBar={false}
                   expanded={showDetail === "income"}
                   expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
                   onClick={() => handleCardClick("income")}
+                />
+                <KPICard
+                  title="Total ingresos del mes"
+                  value={formatCurrency(data.totals.total_ingresos_del_mes as number)}
+                  subtitle="Ventas Byte + Otros ingresos"
+                  variant="emerald"
+                  withAccentBar={false}
                 />
                 <KPICard
                   title="Egresos totales"
@@ -203,7 +211,7 @@ export function MonthlyReport() {
                   {showDetail === "byte"
                     ? "Ventas Byte por día"
                     : showDetail === "income"
-                    ? "Ingresos BCP por día"
+                    ? "Otros ingresos por día"
                     : "Egresos por día"}
                 </h3>
                 <button onClick={() => { setShowDetail(null); setDetailResult(null); }}

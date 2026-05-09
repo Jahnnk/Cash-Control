@@ -62,8 +62,11 @@ export async function getMonthlyReport(month: string) {
               AND is_byte_sale = true AND archived = false), 0)
         )
       END as total_byte,
-      -- Ingresos BCP: excluye ventas Byte (ya contadas arriba) para no
-      -- doble-contar en el reporte.
+      -- Otros ingresos: excluye ventas Byte (ya contadas en total_byte)
+      -- para no doble-contar. Son devoluciones, sobrantes, reembolsos
+      -- entre negocios, etc. Se renderiza como "Otros ingresos" en UI;
+      -- el campo SQL conserva el nombre legacy (total_income) para no
+      -- romper consumidores. Pueden venir tanto de BCP como de efectivo.
       COALESCE((
         SELECT SUM(amount) FROM bank_income_items
         WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
@@ -101,8 +104,16 @@ export async function getMonthlyReport(month: string) {
     ORDER BY total DESC
   `);
 
+  // Total ingresos del mes = Ventas Byte + Otros ingresos (no-ventas).
+  // Se calcula acá (no en cliente) para que el componente reciba el
+  // valor ya listo y los reportes/exports lo puedan consumir igual.
+  const totalsRow = totals.rows[0] as Record<string, unknown>;
+  const totalByteNum = parseFloat((totalsRow.total_byte as string) || "0");
+  const totalIncomeNum = parseFloat((totalsRow.total_income as string) || "0");
+  const totalIngresosDelMes = totalByteNum + totalIncomeNum;
+
   return {
-    totals: totals.rows[0],
+    totals: { ...totalsRow, total_ingresos_del_mes: totalIngresosDelMes },
     bankStartBalance: bankStart.rows[0] ? parseFloat(bankStart.rows[0].bank_balance_real as string) : 0,
     bankEndBalance: bankEnd.rows[0] ? parseFloat(bankEnd.rows[0].bank_balance_real as string) : 0,
     byCategory: byCategory.rows,
@@ -193,8 +204,8 @@ export async function getDailyBreakdown(
     `);
     return { format: "byte_atelier", rows: result.rows };
   } else if (type === "income") {
-    // Excluye Byte para que el desglose de "Ingresos BCP" no incluya ventas
-    // (las ventas tienen su propio card "Ventas Byte" con desglose).
+    // Excluye Byte para que el desglose de "Otros ingresos" no incluya
+    // ventas (las ventas tienen su propio card "Ventas Byte" con desglose).
     const result = await db.execute(sql`
       SELECT bi.id, bi.date, bi.amount, bi.note, bi.client_id, c.name as client_name
       FROM bank_income_items bi

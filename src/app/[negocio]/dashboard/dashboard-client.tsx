@@ -160,8 +160,8 @@ export function DashboardClient({
             monthHasNoData
               ? "Sin movimientos en este período"
               : data.isPartial
-                ? "Ingresos BCP (parcial)"
-                : "Ingresos BCP"
+                ? "Otros ingresos (parcial)"
+                : "Otros ingresos"
           }
           variant="default"
           href={reportesHref(`tab=mensual&breakdown=income${reportMonthQs}`)}
