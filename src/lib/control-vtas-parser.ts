@@ -101,6 +101,30 @@ export function listControlVtasSheets(buffer: Buffer | ArrayBuffer): string[] {
   return wb.SheetNames.filter((n) => /^control\s*de\s*vtas[\s\-]?[A-Za-z]{3}\d{2}$/i.test(n));
 }
 
+/**
+ * Extrae mes/año del nombre de la hoja "Control de VTAS-ABR26".
+ * Devuelve null si el patrón no matchea.
+ *
+ * Crítico para evitar que filas posteriores al último día (totales
+ * generales del mes con etiquetas "Efectivo"/"Yape"/"POS") sean
+ * forward-filled a una fecha del mes y sobrescriban valores reales.
+ * Ver bug: SUMMARY-V2 abril 2026 tenía "31/04/2026" inválido en col B
+ * → forward-fill mantenía 2026-04-30 → totales del mes (S/36,986.40)
+ * sobrescribían día 30 real (S/1,533.70) → mes inflado al doble.
+ */
+function parseSheetMonth(sheetName: string): { year: number; month: number } | null {
+  const m = sheetName.match(/Control\s*de\s*VTAS[\s\-]?([A-Za-z]{3})(\d{2})/i);
+  if (!m) return null;
+  const monthMap: Record<string, number> = {
+    ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6,
+    JUL: 7, AGO: 8, SEP: 9, OCT: 10, NOV: 11, DIC: 12,
+  };
+  const month = monthMap[m[1].toUpperCase()];
+  if (!month) return null;
+  const year = 2000 + parseInt(m[2], 10);
+  return { year, month };
+}
+
 export function parseControlVtas(
   buffer: Buffer | ArrayBuffer,
   sheetName: string
@@ -115,11 +139,22 @@ export function parseControlVtas(
   }
   const rows = XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null }) as unknown[][];
 
+  // Mes/año esperado según el nombre de la hoja. Filas con fechas
+  // fuera de este mes son ruido (totales generales, validaciones,
+  // huérfanos arrastrados de otros meses) y se descartan.
+  const sheetMonth = parseSheetMonth(sheetName);
+  if (!sheetMonth) {
+    warnings.push(
+      `No pude extraer mes/año del nombre de hoja '${sheetName}'. Procesando sin validación de mes (riesgoso).`,
+    );
+  }
+
   const ventasPorDia = new Map<string, ByteSalesDaily>();
   const propinas: TipPending[] = [];
   const alertas: RoundingAlert[] = [];
 
   let ultimaFecha: string | null = null;
+  let emptyRowStreak = 0;
 
   // Header en fila 0 (índice 0). Datos desde índice 1.
   // Mapeo de columnas (verificado contra Excel real):
@@ -135,13 +170,51 @@ export function parseControlVtas(
   for (let i = 1; i < rows.length; i++) {
     const row = rows[i] || [];
 
-    // Forward-fill fecha (idx 0)
+    // Detección de fila vacía: ninguna celda relevante tiene contenido.
+    // 2+ vacías seguidas → cortar el parseo (fin de la sección de
+    // datos, lo siguiente son totales del mes / validaciones).
+    const filaVacia =
+      row[0] == null && row[2] == null && row[3] == null &&
+      row[4] == null && row[5] == null;
+    if (filaVacia) {
+      emptyRowStreak++;
+      if (emptyRowStreak >= 2) {
+        // Reset de fecha — cualquier fila siguiente sin fecha propia
+        // se descarta en lugar de heredar. Y break definitivo.
+        ultimaFecha = null;
+        break;
+      }
+      continue;
+    }
+    emptyRowStreak = 0;
+
+    // Forward-fill fecha (idx 0). Si la celda contiene una fecha
+    // INVÁLIDA (ej. "31/04/2026" — abril no tiene 31 días), la
+    // descartamos y NO heredamos la última fecha vista, para que
+    // las filas siguientes (que probablemente son totales del mes
+    // o ruido) no se asignen al último día real del mes.
     const fechaRaw = row[0];
     let fecha = toDateStr(fechaRaw);
+    const fechaCellHasContent = fechaRaw != null && String(fechaRaw).trim() !== "";
     if (!fecha) {
+      if (fechaCellHasContent) {
+        // Hay algo en la celda fecha pero no parsea → fecha basura.
+        // Romper forward-fill para que no contamine días reales.
+        ultimaFecha = null;
+        continue;
+      }
       if (ultimaFecha) fecha = ultimaFecha;
       else continue;
     } else {
+      // Validar que la fecha caiga dentro del mes esperado por el
+      // nombre de la hoja. Cualquier cosa fuera es ruido.
+      if (sheetMonth) {
+        const [fy, fm] = fecha.split("-").map(Number);
+        if (fy !== sheetMonth.year || fm !== sheetMonth.month) {
+          ultimaFecha = null;
+          continue;
+        }
+      }
       ultimaFecha = fecha;
     }
 
