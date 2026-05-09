@@ -122,11 +122,38 @@ export const expenses = pgTable(
     transferPairId: uuid("transfer_pair_id"),
     // Soft-delete para reset por negocio.
     archived: boolean("archived").default(false).notNull(),
+    // Trazabilidad de importación masiva desde Excel.
+    importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
+    importBatchId: uuid("import_batch_id"),
   },
   (t) => ({
     businessIdx: index("idx_expenses_business_id").on(t.businessId),
   })
 );
+
+/**
+ * Registro de cada importación masiva desde Excel. Auditoría +
+ * habilita rollback futuro (filtrar por import_batch_id).
+ */
+export const importBatches = pgTable("import_batches", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: integer("business_id").notNull().references(() => businesses.id),
+  importedAt: timestamp("imported_at", { withTimezone: true }).defaultNow().notNull(),
+  importedBy: text("imported_by"),
+  fileName: text("file_name"),
+  sheetName: text("sheet_name"),
+  dateRangeStart: date("date_range_start"),
+  dateRangeEnd: date("date_range_end"),
+  movementsCount: integer("movements_count"),
+  ingresosCount: integer("ingresos_count"),
+  egresosCount: integer("egresos_count"),
+  initialCashApplied: numeric("initial_cash_applied", { precision: 12, scale: 2 }),
+  initialBcpApplied: numeric("initial_bcp_applied", { precision: 12, scale: 2 }),
+  archivedCount: integer("archived_count"),
+  status: text("status").default("completed").notNull(),
+  rollbackAvailable: boolean("rollback_available").default(true),
+  notes: text("notes"),
+});
 
 /**
  * Ingresos individuales registrados al banco (multi-tenant).
@@ -159,6 +186,11 @@ export const bankIncomeItems = pgTable(
     // Soft-delete para reset por negocio. archived=true se filtra de
     // todos los cálculos operativos pero la fila persiste para auditoría.
     archived: boolean("archived").default(false).notNull(),
+    // Devolución (gasto registrado como ingreso por compensación).
+    isRefund: boolean("is_refund").default(false).notNull(),
+    // Trazabilidad de importación masiva desde Excel.
+    importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
+    importBatchId: uuid("import_batch_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
   },
   (t) => ({
