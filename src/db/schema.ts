@@ -132,6 +132,66 @@ export const expenses = pgTable(
 );
 
 /**
+ * Ventas Byte por día (Control de VTAS de Kelly).
+ * Una fila por business_id + date. Total es columna generada.
+ */
+export const byteSalesDaily = pgTable(
+  "byte_sales_daily",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
+    date: date("date").notNull(),
+    efectivo: numeric("efectivo", { precision: 12, scale: 2 }).default("0").notNull(),
+    yapePlin: numeric("yape_plin", { precision: 12, scale: 2 }).default("0").notNull(),
+    pos: numeric("pos", { precision: 12, scale: 2 }).default("0").notNull(),
+    importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
+    importBatchId: uuid("import_batch_id"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => ({
+    businessDateUnique: unique("byte_sales_daily_business_date_unique").on(t.businessId, t.date),
+  })
+);
+
+/** Propinas pendientes de pagar a colaboradores. */
+export const tipsPending = pgTable("tips_pending", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: integer("business_id").notNull().references(() => businesses.id),
+  date: date("date").notNull(),
+  amount: numeric("amount", { precision: 12, scale: 2 }).notNull(),
+  source: text("source").default("excel").notNull(),         // 'excel' | 'manual'
+  sourceConcept: text("source_concept"),                     // Yape | POS | Ventas al Crédito
+  noteText: text("note_text"),
+  collaboratorName: text("collaborator_name"),
+  status: text("status").default("pending").notNull(),       // pending | paid | cancelled
+  paidAt: date("paid_at"),
+  paidInPayrollId: uuid("paid_in_payroll_id"),
+  importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
+  importBatchId: uuid("import_batch_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/** Alertas de redondeo (diferencias QuipuPOS vs Cuentas no-propina). */
+export const roundingAlerts = pgTable("rounding_alerts", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: integer("business_id").notNull().references(() => businesses.id),
+  date: date("date").notNull(),
+  paymentMethod: text("payment_method").notNull(),           // yape_plin | pos
+  amountQuipupos: numeric("amount_quipupos", { precision: 12, scale: 2 }),
+  amountCuentas: numeric("amount_cuentas", { precision: 12, scale: 2 }),
+  difference: numeric("difference", { precision: 12, scale: 2 }).notNull(),
+  noteText: text("note_text"),
+  status: text("status").default("pending").notNull(),       // pending | reviewed | resolved
+  resolvedNote: text("resolved_note"),
+  resolvedAt: timestamp("resolved_at", { withTimezone: true }),
+  importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
+  importBatchId: uuid("import_batch_id"),
+  createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+});
+
+/**
  * Registro de cada importación masiva desde Excel. Auditoría +
  * habilita rollback futuro (filtrar por import_batch_id).
  */
