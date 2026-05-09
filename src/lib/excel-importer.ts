@@ -42,15 +42,29 @@ export type ParsedMovement = {
  * import_batches.warnings_json para auditoría histórica y se muestra
  * en el preview del modal de import.
  *
- * - reason='empty_type'    → Caso A: la celda 'tipo' venía vacía.
- * - reason='type_mismatch' → Caso B: el tipo I/G no coincide con
- *                            la columna donde estaba el monto.
- * - reason='empty_date'    → Caso C: la fila tenía la celda fecha
- *                            vacía y no había forward-fill posible.
+ * - reason='empty_type'      → Caso A: la celda 'tipo' venía vacía.
+ * - reason='type_mismatch'   → Caso B: el tipo I/G no coincide con
+ *                              la columna donde estaba el monto.
+ * - reason='empty_date'      → Caso C: la fila tenía la celda fecha
+ *                              vacía y no había forward-fill posible.
+ * - reason='balance_row'     → fila informativa de saldo acumulado
+ *                              (ej. "SALDOS EFECTIVO (ENE-MAR)")
+ *                              que el parser silencia para no inflar
+ *                              ingresos/egresos. Se loggea para
+ *                              auditoría histórica.
+ * - reason='stale_forward_fill' → la fecha viene por forward-fill
+ *                              y está ≥3 días antes del último día
+ *                              del mes. Posible registro tardío de
+ *                              una fila que debería ser fin de mes.
  *
- * severity='autocorrected' → la fila se importa con corrección.
+ * severity='autocorrected'  → la fila se importa con corrección.
  * severity='blocking_error' → la fila NO se importa; el botón
- *                            "Confirmar import" se deshabilita.
+ *                             "Confirmar import" se deshabilita.
+ * severity='silenced'       → la fila se descarta a propósito (no
+ *                             se importa) y se documenta el motivo.
+ * severity='info'           → la fila se importa normalmente, pero
+ *                             el usuario debería revisarla antes de
+ *                             confirmar. Mensaje accionable.
  */
 export type ParseWarning = {
   rowNumber: number;
@@ -58,12 +72,18 @@ export type ParseWarning = {
   amount: number;
   column: "ie" | "ic" | "ge" | "gc" | "mixed" | "none";
   description: string;
-  reason: "empty_type" | "type_mismatch" | "empty_date";
+  reason:
+    | "empty_type"
+    | "type_mismatch"
+    | "empty_date"
+    | "balance_row"
+    | "stale_forward_fill";
   originalType?: string | null;
   correctedType?: "I" | "G";
   originalDate?: null;
   correctedDate?: string;     // YYYY-MM-DD
-  severity: "autocorrected" | "blocking_error";
+  message?: string;           // mensaje accionable para info/silenced
+  severity: "autocorrected" | "blocking_error" | "silenced" | "info";
 };
 
 export type ParseResult = {
@@ -313,15 +333,6 @@ export function parseExcelFile(
     const hasMixedAmounts = hasIncomeAmount && hasExpenseAmount;
     const description = clean(concepto);
 
-    // Filtrar filas no-informativas para no emitir warnings ruidosos
-    // sobre filas de saldo, totales acumulados o filas con concepto
-    // basura ("N/A", "SC", vacío). Solo aplicamos defensas A/B/C a
-    // filas con descripción real Y grupo distinto de "SALDO".
-    const isInformativeRow =
-      description.length > 0 &&
-      !isBasura(description) &&
-      grupoRaw.toUpperCase() !== "SALDO";
-
     // Determinar la columna donde está el monto principal (para reporte
     // del warning). Si hay mixto la marcamos 'mixed', si no hay nada 'none'.
     const detectedAmount =
@@ -329,6 +340,42 @@ export function parseExcelFile(
     const detectedColumn: ParseWarning["column"] =
       hasMixedAmounts ? "mixed" :
       ie > 0 ? "ie" : ic > 0 ? "ic" : ge > 0 ? "ge" : gc > 0 ? "gc" : "none";
+
+    // Detectar filas de saldo acumulado que Kelly registra al cierre
+    // de mes (ej. "SALDOS EFECTIVO (ENE-MAR)", "SALDOS CTA CTE (ENE-FEB)").
+    // Estas filas tienen descripción real pero NO son movimientos del
+    // mes — si las importamos, inflan ingresos. Las silenciamos y
+    // dejamos rastro en parseWarnings/warnings_json para auditoría.
+    const isBalanceAccumulatorRow = /\bSALDO[S]?\s+(EFECTIVO|CTA|CUENTA|BCP)\b/i.test(description);
+
+    // Filtrar filas no-informativas para no emitir warnings ruidosos
+    // sobre filas de saldo, totales acumulados o filas con concepto
+    // basura ("N/A", "SC", vacío). Solo aplicamos defensas A/B/C a
+    // filas con descripción real Y grupo distinto de "SALDO" Y que
+    // no sean acumuladores de saldo previo.
+    const isInformativeRow =
+      description.length > 0 &&
+      !isBasura(description) &&
+      grupoRaw.toUpperCase() !== "SALDO" &&
+      !isBalanceAccumulatorRow;
+
+    // Si es fila de saldo acumulado con monto detectable, loggear
+    // como silenced y descartar (no la procesamos). Esto cierra el
+    // hueco de R278/R279 en Centro Abril 2026.
+    if (isBalanceAccumulatorRow && hasAnyAmount) {
+      parseWarnings.push({
+        rowNumber: excelRow,
+        date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
+        amount: detectedAmount,
+        column: detectedColumn,
+        description,
+        reason: "balance_row",
+        message:
+          "Fila de saldo acumulado de meses anteriores — descartada para no inflar ingresos/egresos del mes actual.",
+        severity: "silenced",
+      });
+      continue;
+    }
 
     // Filtro original: tipo debe ser 'I' o 'G'. Antes era un descarte
     // silencioso; ahora aplicamos Caso A (tipo vacío con autocorrección).
@@ -338,6 +385,8 @@ export function parseExcelFile(
     // Caso A — tipo vacío con monto detectable.
     // Solo aplicamos a filas informativas para no inflar la lista de
     // warnings con saldos / filas de resumen / basura.
+    let tipoFueCasoA = false; // se setea si Caso A se disparó (para
+                              // posible warning stale_forward_fill abajo).
     if (normalizedTipo === null) {
       if (!hasAnyAmount) continue; // descarte normal: ni tipo ni monto
       if (!isInformativeRow) continue; // saldos / basura → silencioso como antes
@@ -358,6 +407,7 @@ export function parseExcelFile(
       // Autocorrección: deducir tipo según dónde estuvo el monto
       const corrected: "I" | "G" = hasIncomeAmount ? "I" : "G";
       normalizedTipo = corrected;
+      tipoFueCasoA = true;
       parseWarnings.push({
         rowNumber: excelRow,
         date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
@@ -430,9 +480,11 @@ export function parseExcelFile(
     // Forward-fill de fecha (defensa existente). Caso C nuevo cuando
     // ni la fila ni el forward-fill aportan fecha.
     let fecha = toDateStr(fechaRaw);
+    let fechaFueForwardFilled = false;
     if (!fecha) {
       if (ultimaFechaValida) {
         fecha = ultimaFechaValida;
+        fechaFueForwardFilled = true;
       } else if (hasAnyAmount && description && lastDayOfSheetMonth) {
         // Caso C — fecha vacía + monto + descripción → último día del
         // mes de la pestaña. El propietario confirmó que esos gastos
@@ -456,6 +508,33 @@ export function parseExcelFile(
       }
     } else {
       ultimaFechaValida = fecha;
+    }
+
+    // Warning info de "fwd-fill desfasado": si Caso A se disparó Y la
+    // fecha vino por forward-fill (no explícita) Y la fecha está ≥3
+    // días antes del último día del mes, es señal de que Kelly pudo
+    // haber registrado tarde una fila de cierre de mes y la fecha
+    // heredada NO refleja la intención real. Loggeamos sin cambiar
+    // la fecha (conservador) para que el usuario revise antes de
+    // confirmar el import.
+    if (tipoFueCasoA && fechaFueForwardFilled && lastDayOfSheetMonth) {
+      const fechaTs = new Date(fecha + "T00:00:00Z").getTime();
+      const lastTs = new Date(lastDayOfSheetMonth + "T00:00:00Z").getTime();
+      const diffDays = Math.round((lastTs - fechaTs) / (1000 * 60 * 60 * 24));
+      if (diffDays >= 3) {
+        parseWarnings.push({
+          rowNumber: excelRow,
+          date: fecha,
+          amount: detectedAmount,
+          column: detectedColumn,
+          description,
+          reason: "stale_forward_fill",
+          message:
+            `La fecha (${fecha}) vino del forward-fill y está ${diffDays} días antes del último día del mes (${lastDayOfSheetMonth}). ` +
+            "Si esta fila pertenece al cierre del mes, edítala en el Excel poniendo la fecha correcta (recomendado el último día del mes) antes de confirmar.",
+          severity: "info",
+        });
+      }
     }
 
     // Detección de devoluciones: tipo='G' pero monto en columnas de ingreso

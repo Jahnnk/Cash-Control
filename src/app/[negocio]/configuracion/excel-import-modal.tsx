@@ -460,10 +460,14 @@ function PreviewStep({
     ? cv.propinas.reduce((s, t) => s + t.amount, 0)
     : 0;
 
-  // Warnings estructurados del parser (Prompt 18 — Casos A/B/C)
+  // Warnings estructurados del parser (Prompt 18 — Casos A/B/C +
+  // ajustes Prompt 18.1: silenced para saldos acumulados, info para
+  // fwd-fill desfasado).
   const parseWarnings = p?.parseWarnings ?? [];
   const blockingWarnings = parseWarnings.filter((w) => w.severity === "blocking_error");
   const autocorrectedWarnings = parseWarnings.filter((w) => w.severity === "autocorrected");
+  const silencedWarnings = parseWarnings.filter((w) => w.severity === "silenced");
+  const infoWarnings = parseWarnings.filter((w) => w.severity === "info");
   const hasBlocking = blockingWarnings.length > 0;
 
   return (
@@ -483,6 +487,8 @@ function PreviewStep({
         <ParseWarningsSection
           autocorrected={autocorrectedWarnings}
           blocking={blockingWarnings}
+          silenced={silencedWarnings}
+          info={infoWarnings}
         />
       )}
 
@@ -725,25 +731,36 @@ type ParseWarningRow = {
   amount: number;
   column: "ie" | "ic" | "ge" | "gc" | "mixed" | "none";
   description: string;
-  reason: "empty_type" | "type_mismatch" | "empty_date";
+  reason:
+    | "empty_type"
+    | "type_mismatch"
+    | "empty_date"
+    | "balance_row"
+    | "stale_forward_fill";
   originalType?: string | null;
   correctedType?: "I" | "G";
   originalDate?: null;
   correctedDate?: string;
-  severity: "autocorrected" | "blocking_error";
+  message?: string;
+  severity: "autocorrected" | "blocking_error" | "silenced" | "info";
 };
 
 function ParseWarningsSection({
   autocorrected,
   blocking,
+  silenced,
+  info,
 }: {
   autocorrected: ParseWarningRow[];
   blocking: ParseWarningRow[];
+  silenced: ParseWarningRow[];
+  info: ParseWarningRow[];
 }) {
-  // Agrupar por rowNumber para mostrar 1 fila aunque haya 2 warnings
-  // (combo Caso A + Caso C en R262-R270 del Centro abril 2026).
+  // Agrupar por rowNumber para mostrar 1 fila aunque tenga múltiples
+  // warnings (combo Caso A + Caso C, o Caso A + stale_forward_fill).
+  const all = [...autocorrected, ...blocking, ...silenced, ...info];
   const grouped = new Map<number, ParseWarningRow[]>();
-  for (const w of [...autocorrected, ...blocking]) {
+  for (const w of all) {
     if (!grouped.has(w.rowNumber)) grouped.set(w.rowNumber, []);
     grouped.get(w.rowNumber)!.push(w);
   }
@@ -752,22 +769,35 @@ function ParseWarningsSection({
   const headerCls = blocking.length > 0 ? "text-red-600" : "text-amber-600";
   const headerIcon = blocking.length > 0 ? "⛔" : "⚠️";
 
+  // Resumen del header: counts por severity
+  const counts: string[] = [];
+  if (autocorrected.length) counts.push(`${autocorrected.length} autocorregidas`);
+  if (blocking.length) counts.push(`${blocking.length} bloqueantes`);
+  if (silenced.length) counts.push(`${silenced.length} silenciadas`);
+  if (info.length) counts.push(`${info.length} para revisar`);
+
   return (
     <div className="border rounded-lg border-amber-200 bg-amber-50/40 overflow-hidden">
       <div className="px-4 py-3 border-b border-amber-100">
         <div className={`text-sm font-semibold ${headerCls}`}>
-          {headerIcon} Advertencias del parser ({autocorrected.length} autocorregidas
-          {blocking.length > 0 ? `, ${blocking.length} bloqueantes` : ""})
+          {headerIcon} Advertencias del parser ({counts.join(", ")})
         </div>
         {blocking.length > 0 && (
           <p className="text-xs text-red-700 mt-1">
             Hay errores que el parser no puede resolver. Pídele a Kelly que arregle estas filas antes de importar.
           </p>
         )}
+        {info.length > 0 && (
+          <p className="text-xs text-blue-700 mt-1">
+            Hay {info.length} fila(s) marcadas para revisar — el parser las importa pero conviene verificar fechas o conceptos antes de confirmar.
+          </p>
+        )}
         <p className="text-[11px] text-gray-600 mt-1">
-          El parser detecta automáticamente: tipo (I/G) vacío con monto en una sola columna,
-          tipo que no coincide con la columna del monto, y fecha vacía con monto/descripción
-          (se asigna al último día del mes de la pestaña).
+          El parser detecta: tipo vacío con monto en una sola columna (autocorregido),
+          tipo que no coincide con la columna del monto (autocorregido),
+          fecha vacía con monto/descripción (asignada al último día del mes),
+          filas de saldo acumulado de meses anteriores (silenciadas),
+          y filas con fecha forward-filled desfasada (info para revisar).
         </p>
       </div>
       <div className="overflow-x-auto">
@@ -785,13 +815,25 @@ function ParseWarningsSection({
           <tbody className="divide-y divide-amber-100">
             {rowsSorted.map(([rn, wars]) => {
               const anyBlocking = wars.some((w) => w.severity === "blocking_error");
-              const bg = anyBlocking ? "bg-red-50" : "bg-amber-50";
+              const anySilenced = wars.some((w) => w.severity === "silenced");
+              const anyInfo = wars.some((w) => w.severity === "info");
+              const bg =
+                anyBlocking ? "bg-red-50" :
+                anySilenced ? "bg-gray-50" :
+                anyInfo ? "bg-blue-50" :
+                "bg-amber-50";
+              const actionCls =
+                anyBlocking ? "text-red-700" :
+                anySilenced ? "text-gray-600" :
+                anyInfo ? "text-blue-700" :
+                "text-emerald-700";
               const w0 = wars[0];
               const fechaShow = w0.correctedDate ?? w0.date;
               const problemas = wars.map(describeProblem).join(" + ");
               const acciones = wars.map(describeAction).join(" + ");
+              const tooltip = wars.map((w) => w.message).filter(Boolean).join("\n");
               return (
-                <tr key={rn} className={bg}>
+                <tr key={rn} className={bg} title={tooltip || undefined}>
                   <td className="px-3 py-2 font-medium text-gray-900">R{rn}</td>
                   <td className="px-3 py-2">{fechaShow ? formatDate(fechaShow) : "—"}</td>
                   <td className="px-3 py-2 text-gray-700 max-w-[20rem] truncate" title={w0.description}>
@@ -801,7 +843,7 @@ function ParseWarningsSection({
                     {formatCurrency(w0.amount)}
                   </td>
                   <td className="px-3 py-2 text-gray-700">{problemas}</td>
-                  <td className={`px-3 py-2 ${anyBlocking ? "text-red-700" : "text-emerald-700"}`}>
+                  <td className={`px-3 py-2 ${actionCls}`}>
                     {acciones}
                   </td>
                 </tr>
@@ -825,11 +867,19 @@ function describeProblem(w: ParseWarningRow): string {
       ? `Tipo='${w.originalType}' + montos contradictorios en ambos lados`
       : `Tipo='${w.originalType}' pero monto en columna de ${w.correctedType === "G" ? "egreso" : "ingreso"}`;
   }
+  if (w.reason === "balance_row") {
+    return "Fila de saldo acumulado de meses anteriores";
+  }
+  if (w.reason === "stale_forward_fill") {
+    return "Fecha heredada por forward-fill — posiblemente desfasada";
+  }
   return "Fecha vacía";
 }
 
 function describeAction(w: ParseWarningRow): string {
   if (w.severity === "blocking_error") return "❌ NO importable";
+  if (w.severity === "silenced") return "⏸ Silenciada (no se importa)";
+  if (w.severity === "info") return "👁 Importada — revisar fecha";
   if (w.reason === "empty_type") {
     return `✅ Tratado como ${w.correctedType === "G" ? "egreso (G)" : "ingreso (I)"}`;
   }

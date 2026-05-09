@@ -291,6 +291,124 @@ function findWarning(ws: ParseWarning[], rowNumber: number): ParseWarning | unde
 }
 
 // ═══════════════════════════════════════════════════════════════════
+// 3. Decisión 1 (silenced) y Decisión 2 (info) — Prompt 18.1
+// ═══════════════════════════════════════════════════════════════════
+console.log("\n═══ Decisión 1 (silenced) y 2 (info) ═══");
+
+// ─── Test S1: SALDOS EFECTIVO con monto en ie → silenced ──────────
+{
+  const buf = buildExcel([
+    ["2026-04-30", "", "SALDOS", "", "", "SALDOS EFECTIVO (ENE-MAR)", "", "", 1718.03, null, null, null],
+  ]);
+  const r = parseExcelFile(buf, "Ing&Gtos Abr26");
+  const m = r.movimientos.find((x) => x.amount === 1718.03);
+  const w = findWarning(r.parseWarnings, 4);
+  assert("S1: SALDOS EFECTIVO no se importa",
+    !m, "no debió importarse");
+  assert("S1: emite warning balance_row/silenced",
+    !!w && w.reason === "balance_row" && w.severity === "silenced");
+  assert("S1: warning incluye message accionable",
+    !!w?.message && w.message.includes("saldo acumulado"));
+}
+
+// ─── Test S2: SALDOS CTA CTE con monto en ic → silenced ───────────
+{
+  const buf = buildExcel([
+    ["2026-04-30", "", "SALDOS", "", "", "SALDOS CTA CTE (ENE-MAR)", "", "", null, 6694.34, null, null],
+  ]);
+  const r = parseExcelFile(buf, "Ing&Gtos Abr26");
+  const m = r.movimientos.find((x) => x.amount === 6694.34);
+  const w = findWarning(r.parseWarnings, 4);
+  assert("S2: SALDOS CTA CTE no se importa",
+    !m);
+  assert("S2: emite warning balance_row/silenced",
+    !!w && w.reason === "balance_row" && w.severity === "silenced");
+}
+
+// ─── Test S3: variantes (CUENTA, BCP) ─────────────────────────────
+{
+  const buf = buildExcel([
+    ["2026-04-30", "", "", "", "", "SALDO BCP DICIEMBRE", "", "", null, 100, null, null],
+    ["2026-04-30", "", "", "", "", "SALDOS CUENTA AL CIERRE", "", "", null, 200, null, null],
+  ]);
+  const r = parseExcelFile(buf, "Ing&Gtos Abr26");
+  const silenced = r.parseWarnings.filter((w) => w.severity === "silenced");
+  assert("S3: detecta variantes 'SALDO BCP' y 'SALDOS CUENTA' (case-insensitive)",
+    silenced.length === 2, JSON.stringify(silenced));
+}
+
+// ─── Test S4: descripción común con palabra 'saldo' suelto NO matchea
+{
+  // "PAGO POR SALDO PENDIENTE" no debe matchear el regex (no termina
+  // en EFECTIVO/CTA/CUENTA/BCP).
+  const buf = buildExcel([
+    ["2026-04-15", "G", "OTROS", "", "", "PAGO POR SALDO PENDIENTE", "", "", null, null, 50, null],
+  ]);
+  const r = parseExcelFile(buf, "Ing&Gtos Abr26");
+  const m = r.movimientos.find((x) => x.amount === 50);
+  const silenced = r.parseWarnings.filter((w) => w.severity === "silenced");
+  assert("S4: 'SALDO PENDIENTE' (sin match) NO se silencia",
+    !!m && silenced.length === 0);
+}
+
+// ─── Test I1: stale_forward_fill cuando Caso A + fwd-fill ≥3d antes
+{
+  const buf = buildExcel([
+    // Fila explícita 20/04 con tipo OK
+    ["2026-04-20", "G", "GASTOS", "", "", "PRIMERO 20/04", "", "", null, null, 100, null],
+    // Fila siguiente: fecha vacía + tipo vacío + monto + descripción
+    [null,         "",  "AFP",    "", "", "AFP REZAGADO",  "", "", null, null, 200, null],
+  ]);
+  const r = parseExcelFile(buf, "Ing&Gtos Abr26");
+  const m = r.movimientos.find((x) => x.note.includes("AFP REZAGADO"));
+  const wInfo = r.parseWarnings.find((w) => w.reason === "stale_forward_fill");
+  const wA = r.parseWarnings.find((w) => w.reason === "empty_type");
+  assert("I1: fila se importa con fecha 2026-04-20 (forward-fill, NO Caso C)",
+    !!m && m.date === "2026-04-20");
+  assert("I1: emite warning empty_type (Caso A) autocorregido",
+    !!wA && wA.severity === "autocorrected");
+  assert("I1: emite warning stale_forward_fill/info (10 días antes de 30/04)",
+    !!wInfo && wInfo.severity === "info" && wInfo.date === "2026-04-20");
+  assert("I1: warning info incluye message accionable mencionando último día",
+    !!wInfo?.message && wInfo.message.includes("último día del mes"));
+}
+
+// ─── Test I2: Caso A con fwd-fill ≤2d antes → NO emite info ────────
+{
+  const buf = buildExcel([
+    ["2026-04-29", "G", "GASTOS", "", "", "PRIMERO 29/04", "", "", null, null, 100, null],
+    [null,         "",  "AFP",    "", "", "AFP CASI ULTIMO","", "", null, null, 200, null],
+  ]);
+  const r = parseExcelFile(buf, "Ing&Gtos Abr26");
+  const wInfo = r.parseWarnings.find((w) => w.reason === "stale_forward_fill");
+  assert("I2: fwd-fill 29/04 está a 1d de 30/04 → NO emite stale_forward_fill",
+    !wInfo);
+}
+
+// ─── Test I3: Caso A con fecha EXPLÍCITA (no fwd-fill) → NO emite info
+{
+  const buf = buildExcel([
+    ["2026-04-15", "", "AFP", "", "", "AFP EXPLICITA", "", "", null, null, 200, null],
+  ]);
+  const r = parseExcelFile(buf, "Ing&Gtos Abr26");
+  const wInfo = r.parseWarnings.find((w) => w.reason === "stale_forward_fill");
+  assert("I3: Caso A con fecha explícita 15/04 → NO emite stale_forward_fill",
+    !wInfo);
+}
+
+// ─── Test I4: tipo declarado normal + fwd-fill desfasado → NO emite info
+{
+  const buf = buildExcel([
+    ["2026-04-10", "G", "GASTOS", "", "", "PRIMERO", "", "", null, null, 100, null],
+    [null,         "G", "GASTOS", "", "", "SEGUNDO", "", "", null, null, 200, null],
+  ]);
+  const r = parseExcelFile(buf, "Ing&Gtos Abr26");
+  const wInfo = r.parseWarnings.find((w) => w.reason === "stale_forward_fill");
+  assert("I4: tipo='G' explícito + fwd-fill 10/04 → NO emite info (no era Caso A)",
+    !wInfo);
+}
+
+// ═══════════════════════════════════════════════════════════════════
 console.log(`\n${"═".repeat(50)}`);
 console.log(passed === passed + failed ? `✅ ${passed}/${passed + failed} tests pasaron` :
   `${passed} pasaron, ${failed} fallaron de ${passed + failed} totales`);
