@@ -208,9 +208,9 @@ export function MonthlyReport() {
                   );
                 })()}
                 <KPICard
-                  title="Total ingresos del mes"
+                  title="Total cobros del mes"
                   value={formatCurrency(data.totals.total_ingresos_del_mes as number)}
-                  subtitle="Ventas Byte + Otros ingresos"
+                  subtitle="Cobros Byte + Otros ingresos"
                   variant="emerald"
                   withAccentBar={false}
                   expanded={showDetail === "total_income"}
@@ -253,7 +253,7 @@ export function MonthlyReport() {
                     : showDetail === "income"
                     ? "Otros ingresos por día"
                     : showDetail === "total_income"
-                    ? "Total ingresos por día"
+                    ? "Total cobros por día"
                     : showDetail === "bank_variation"
                     ? "Variación saldo banco por día"
                     : showDetail === "credit_sales"
@@ -322,7 +322,7 @@ export function MonthlyReport() {
                       )}
                     />
                   ) : showDetail === "total_income" ? (
-                    /* Total ingresos del mes — Ventas Byte + Otros por día */
+                    /* Total cobros del mes — Ventas Byte + Otros por día */
                     <DataTable
                       rowKey={(row) => row.date as string}
                       data={detailData}
@@ -332,7 +332,7 @@ export function MonthlyReport() {
                         { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
                         { key: "ventas_byte", header: "Ventas Byte", align: "right", cellClassName: "text-primary", render: (row) => formatCurrency(Number(row.ventas_byte ?? 0)) },
                         { key: "otros_ingresos", header: "Otros ingresos", align: "right", cellClassName: "text-primary-light", render: (row) => formatCurrency(Number(row.otros_ingresos ?? 0)) },
-                        { key: "total_dia", header: "Total ingresos día", align: "right", cellClassName: "font-bold text-emerald-700", render: (row) => formatCurrency(Number(row.total_dia ?? 0)) },
+                        { key: "total_dia", header: "Total cobros día", align: "right", cellClassName: "font-bold text-emerald-700", render: (row) => formatCurrency(Number(row.total_dia ?? 0)) },
                       ]}
                       footer={(
                         <tr className="bg-gray-50 font-semibold">
