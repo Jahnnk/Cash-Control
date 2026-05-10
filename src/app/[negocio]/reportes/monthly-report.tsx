@@ -43,7 +43,7 @@ type MonthlyData = {
   byteSalesSource?: "byte_sales_daily" | "legacy";
 };
 
-type DetailType = "byte" | "income" | "expense" | "total_income" | "bank_variation";
+type DetailType = "byte" | "income" | "expense" | "total_income" | "bank_variation" | "credit_sales";
 
 export function MonthlyReport() {
   const searchParams = useSearchParams();
@@ -120,7 +120,10 @@ export function MonthlyReport() {
   useEffect(() => {
     if (initialBreakdownApplied.current || loading) return;
     const requested = searchParams.get("breakdown");
-    if (requested === "byte" || requested === "income" || requested === "expense" || requested === "total_income" || requested === "bank_variation") {
+    if (
+      requested === "byte" || requested === "income" || requested === "expense" ||
+      requested === "total_income" || requested === "bank_variation" || requested === "credit_sales"
+    ) {
       initialBreakdownApplied.current = true;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-open por query param al primer mount
       handleCardClick(requested);
@@ -160,7 +163,7 @@ export function MonthlyReport() {
                 ? data.bankVariation
                 : data.bankEndBalance - data.bankStartBalance;
             return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 <KPICard
                   title="Ventas Byte"
                   value={formatCurrency(data.totals.total_byte as string)}
@@ -185,6 +188,25 @@ export function MonthlyReport() {
                   expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
                   onClick={() => handleCardClick("income")}
                 />
+                {(() => {
+                  const credit = Number(data.totals.total_credit_sales ?? 0);
+                  const hasCredit = credit > 0;
+                  return (
+                    <KPICard
+                      title="Ventas a crédito"
+                      value={formatCurrency(credit)}
+                      subtitle={hasCredit
+                        ? "Ventas no cobradas en el mes (pendientes)"
+                        : "Sin créditos pendientes este mes."}
+                      variant="warning"
+                      withAccentBar={false}
+                      dim={!hasCredit}
+                      expanded={showDetail === "credit_sales"}
+                      expandedHint={hasCredit ? { open: "Click para cerrar", closed: "Ver detalle diario" } : undefined}
+                      onClick={hasCredit ? () => handleCardClick("credit_sales") : undefined}
+                    />
+                  );
+                })()}
                 <KPICard
                   title="Total ingresos del mes"
                   value={formatCurrency(data.totals.total_ingresos_del_mes as number)}
@@ -234,6 +256,8 @@ export function MonthlyReport() {
                     ? "Total ingresos por día"
                     : showDetail === "bank_variation"
                     ? "Variación saldo banco por día"
+                    : showDetail === "credit_sales"
+                    ? "Ventas a crédito por día"
                     : "Egresos por día"}
                 </h3>
                 <button onClick={() => { setShowDetail(null); setDetailResult(null); }}
@@ -316,6 +340,28 @@ export function MonthlyReport() {
                           <td className="px-3 py-3 text-right text-primary">{formatCurrency(detailData.reduce((s, r) => s + Number(r.ventas_byte ?? 0), 0))}</td>
                           <td className="px-3 py-3 text-right text-primary-light">{formatCurrency(detailData.reduce((s, r) => s + Number(r.otros_ingresos ?? 0), 0))}</td>
                           <td className="px-3 py-3 text-right font-bold text-emerald-700">{formatCurrency(detailData.reduce((s, r) => s + Number(r.total_dia ?? 0), 0))}</td>
+                        </tr>
+                      )}
+                    />
+                  ) : showDetail === "credit_sales" ? (
+                    /* Ventas a crédito — filas de tips_pending source='Ventas al Crédito' */
+                    <DataTable
+                      rowKey={(row) => row.id as string}
+                      data={detailData}
+                      withCard={false}
+                      size="compact"
+                      columns={[
+                        { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
+                        { key: "note_text", header: "Nota / cliente", render: (row) => <span className="text-xs text-gray-700">{(row.note_text as string) || "—"}</span> },
+                        { key: "amount", header: "Monto", align: "right", cellClassName: "text-amber-700 font-medium", render: (row) => formatCurrency(Number(row.amount ?? 0)) },
+                        { key: "status", header: "Estado", render: (row) => <span className="text-xs text-gray-500">{(row.status as string) === "pending" ? "Pendiente" : String(row.status)}</span> },
+                      ]}
+                      footer={(
+                        <tr className="bg-gray-50 font-semibold">
+                          <td className="px-3 py-3">Total</td>
+                          <td className="px-3 py-3" />
+                          <td className="px-3 py-3 text-right text-amber-700">{formatCurrency(detailData.reduce((s, r) => s + Number(r.amount ?? 0), 0))}</td>
+                          <td className="px-3 py-3" />
                         </tr>
                       )}
                     />

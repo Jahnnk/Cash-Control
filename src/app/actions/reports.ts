@@ -103,6 +103,25 @@ export async function getMonthlyReport(month: string) {
   // transferencia + pos + yape_plin van al banco; efectivo va a
   // caja física. Excluye special_loan e internal_transfer porque
   // no son flujo operativo del banco.
+  // Ventas a crédito pendientes del mes: las captura el parser de
+  // Control de VTAS en tips_pending con source_concept='Ventas al
+  // Crédito' (decisión histórica del modelo de datos). Sumamos solo
+  // las imported_from_excel para evitar contar propinas asignadas
+  // manualmente. El monto es el que llegó a Cuentas (col G del
+  // Excel) — la diferencia con QuipuPOS (col E) representa propinas
+  // del cobrador y NO se modela actualmente.
+  const creditSales = await db.execute(sql`
+    SELECT COALESCE(SUM(amount),0)::float AS total
+    FROM tips_pending
+    WHERE business_id = ${bId}
+      AND date BETWEEN ${startDate} AND ${endDate}
+      AND source_concept IN ('Ventas al Crédito', 'Ventas al Credito')
+      AND imported_from_excel = true
+  `);
+  const totalCreditSales = Number(
+    (creditSales.rows[0] as { total: number }).total ?? 0,
+  );
+
   const bcpFlow = await db.execute(sql`
     SELECT
       (SELECT COALESCE(SUM(amount),0)::float FROM bank_income_items
@@ -140,7 +159,11 @@ export async function getMonthlyReport(month: string) {
   const totalIngresosDelMes = totalByteNum + totalIncomeNum;
 
   return {
-    totals: { ...totalsRow, total_ingresos_del_mes: totalIngresosDelMes },
+    totals: {
+      ...totalsRow,
+      total_ingresos_del_mes: totalIngresosDelMes,
+      total_credit_sales: totalCreditSales,
+    },
     bankStartBalance: bankStart.rows[0] ? parseFloat(bankStart.rows[0].bank_balance_real as string) : 0,
     bankEndBalance: bankEnd.rows[0] ? parseFloat(bankEnd.rows[0].bank_balance_real as string) : 0,
     bankIngresosBcp,    // flujo BCP del mes (excluye efectivo)
@@ -158,11 +181,12 @@ export type DailyBreakdownResult =
   | { format: "income"; rows: Record<string, unknown>[] }
   | { format: "expense"; rows: Record<string, unknown>[] }
   | { format: "total_income"; rows: Record<string, unknown>[] }
-  | { format: "bank_variation"; rows: Record<string, unknown>[] };
+  | { format: "bank_variation"; rows: Record<string, unknown>[] }
+  | { format: "credit_sales"; rows: Record<string, unknown>[] };
 
 export async function getDailyBreakdown(
   month: string,
-  type: "byte" | "income" | "expense" | "total_income" | "bank_variation"
+  type: "byte" | "income" | "expense" | "total_income" | "bank_variation" | "credit_sales"
 ): Promise<DailyBreakdownResult> {
   const bId = await activeBusinessId();
   const startDate = `${month}-01`;
@@ -339,6 +363,23 @@ export async function getDailyBreakdown(
       ORDER BY d.date DESC
     `);
     return { format: "bank_variation", rows: result.rows };
+  } else if (type === "credit_sales") {
+    // Drilldown del card "Ventas a crédito": filas individuales de
+    // tips_pending con source_concept='Ventas al Crédito' importadas
+    // del Excel. Una fila por entrada del Excel (puede haber varias
+    // por día). Ordenado descendente por fecha. Filas con monto = 0
+    // se omiten por construcción (el parser no inserta importes 0).
+    const result = await db.execute(sql`
+      SELECT id::text, date::text, amount::float, note_text,
+             source_concept, status
+      FROM tips_pending
+      WHERE business_id = ${bId}
+        AND date BETWEEN ${startDate} AND ${endDate}
+        AND source_concept IN ('Ventas al Crédito', 'Ventas al Credito')
+        AND imported_from_excel = true
+      ORDER BY date DESC, amount DESC
+    `);
+    return { format: "credit_sales", rows: result.rows };
   } else {
     const result = await db.execute(sql`
       SELECT id, date, amount, category, concept, notes, payment_method
