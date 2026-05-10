@@ -36,9 +36,14 @@ type MonthlyData = {
   totals: Record<string, unknown>;
   bankStartBalance: number;
   bankEndBalance: number;
+  bankIngresosBcp?: number;
+  bankEgresosBcp?: number;
+  bankVariation?: number;
   byCategory: Record<string, unknown>[];
   byteSalesSource?: "byte_sales_daily" | "legacy";
 };
+
+type DetailType = "byte" | "income" | "expense" | "bank_variation";
 
 export function MonthlyReport() {
   const searchParams = useSearchParams();
@@ -50,7 +55,7 @@ export function MonthlyReport() {
   const [month, setMonth] = useState(initialMonth);
   const [data, setData] = useState<MonthlyData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showDetail, setShowDetail] = useState<"byte" | "income" | "expense" | null>(null);
+  const [showDetail, setShowDetail] = useState<DetailType | null>(null);
   const [detailResult, setDetailResult] = useState<DailyBreakdownResult | null>(null);
   const detailData = detailResult?.rows ?? null;
   const [detailLoading, setDetailLoading] = useState(false);
@@ -73,7 +78,7 @@ export function MonthlyReport() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [month]);
 
-  const handleCardClick = useCallback(async (type: "byte" | "income" | "expense") => {
+  const handleCardClick = useCallback(async (type: DetailType) => {
     if (showDetail === type) {
       setShowDetail(null);
       setDetailResult(null);
@@ -115,7 +120,7 @@ export function MonthlyReport() {
   useEffect(() => {
     if (initialBreakdownApplied.current || loading) return;
     const requested = searchParams.get("breakdown");
-    if (requested === "byte" || requested === "income" || requested === "expense") {
+    if (requested === "byte" || requested === "income" || requested === "expense" || requested === "bank_variation") {
       initialBreakdownApplied.current = true;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-open por query param al primer mount
       handleCardClick(requested);
@@ -147,7 +152,13 @@ export function MonthlyReport() {
         <>
           {/* Summary cards */}
           {(() => {
-            const variation = data.bankEndBalance - data.bankStartBalance;
+            // Variación = ingresos BCP - egresos BCP (calculado en
+            // server por flujo del mes). Fallback al diff de balances
+            // bancarios solo si bankVariation no vino (compat).
+            const variation =
+              typeof data.bankVariation === "number"
+                ? data.bankVariation
+                : data.bankEndBalance - data.bankStartBalance;
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4">
                 <KPICard
@@ -193,8 +204,12 @@ export function MonthlyReport() {
                 <KPICard
                   title="Variación saldo banco"
                   value={formatCurrency(variation)}
+                  subtitle="Ingresos BCP − Egresos BCP"
                   variant={variation >= 0 ? "success" : "danger"}
                   withAccentBar={false}
+                  expanded={showDetail === "bank_variation"}
+                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                  onClick={() => handleCardClick("bank_variation")}
                 />
               </div>
             );
@@ -212,6 +227,8 @@ export function MonthlyReport() {
                     ? "Ventas Byte por día"
                     : showDetail === "income"
                     ? "Otros ingresos por día"
+                    : showDetail === "bank_variation"
+                    ? "Variación saldo banco por día"
                     : "Egresos por día"}
                 </h3>
                 <button onClick={() => { setShowDetail(null); setDetailResult(null); }}
@@ -274,6 +291,44 @@ export function MonthlyReport() {
                           <td className="px-3 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
                         </tr>
                       )}
+                    />
+                  ) : showDetail === "bank_variation" ? (
+                    /* Variación saldo banco — Ingresos BCP − Egresos BCP por día */
+                    <DataTable
+                      rowKey={(row) => row.date as string}
+                      data={detailData}
+                      withCard={false}
+                      size="compact"
+                      columns={[
+                        { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
+                        { key: "ingresos_bcp", header: "Ingresos BCP", align: "right", cellClassName: "text-primary-light", render: (row) => formatCurrency(Number(row.ingresos_bcp ?? 0)) },
+                        { key: "egresos_bcp", header: "Egresos BCP", align: "right", cellClassName: "text-red-600", render: (row) => `−${formatCurrency(Number(row.egresos_bcp ?? 0))}` },
+                        {
+                          key: "variacion_dia",
+                          header: "Variación día",
+                          align: "right",
+                          cellClassName: "font-bold",
+                          render: (row) => {
+                            const v = Number(row.variacion_dia ?? 0);
+                            const cls = v >= 0 ? "text-primary-light" : "text-red-600";
+                            return <span className={cls}>{v >= 0 ? "+" : ""}{formatCurrency(v)}</span>;
+                          },
+                        },
+                      ]}
+                      footer={(() => {
+                        const ingTot = detailData.reduce((s, r) => s + Number(r.ingresos_bcp ?? 0), 0);
+                        const egrTot = detailData.reduce((s, r) => s + Number(r.egresos_bcp ?? 0), 0);
+                        const varTot = ingTot - egrTot;
+                        const varCls = varTot >= 0 ? "text-primary-light" : "text-red-600";
+                        return (
+                          <tr className="bg-gray-50 font-semibold">
+                            <td className="px-3 py-3">Total</td>
+                            <td className="px-3 py-3 text-right text-primary-light">{formatCurrency(ingTot)}</td>
+                            <td className="px-3 py-3 text-right text-red-600">−{formatCurrency(egrTot)}</td>
+                            <td className={`px-3 py-3 text-right font-bold ${varCls}`}>{varTot >= 0 ? "+" : ""}{formatCurrency(varTot)}</td>
+                          </tr>
+                        );
+                      })()}
                     />
                   ) : showDetail === "income" ? (
                     (() => {

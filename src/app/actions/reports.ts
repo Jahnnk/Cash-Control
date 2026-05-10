@@ -96,6 +96,33 @@ export async function getMonthlyReport(month: string) {
     ORDER BY date DESC LIMIT 1
   `);
 
+  // Variación saldo banco calculada por flujo BCP del mes (NO por
+  // diff de bank_balance_real, que requiere registro manual diario
+  // y queda S/0 si Kelly no lo lleva — bug histórico que afectaba
+  // a Centro/Fonavi). "BCP" = todo lo que NO sea efectivo:
+  // transferencia + pos + yape_plin van al banco; efectivo va a
+  // caja física. Excluye special_loan e internal_transfer porque
+  // no son flujo operativo del banco.
+  const bcpFlow = await db.execute(sql`
+    SELECT
+      (SELECT COALESCE(SUM(amount),0)::float FROM bank_income_items
+       WHERE business_id = ${bId} AND archived = false
+         AND date BETWEEN ${startDate} AND ${endDate}
+         AND payment_method != 'efectivo'
+         AND is_special_loan = false AND is_internal_transfer = false
+      ) AS ingresos_bcp,
+      (SELECT COALESCE(SUM(amount),0)::float FROM expenses
+       WHERE business_id = ${bId} AND archived = false
+         AND date BETWEEN ${startDate} AND ${endDate}
+         AND payment_method != 'efectivo'
+         AND is_special_loan = false AND is_internal_transfer = false
+      ) AS egresos_bcp
+  `);
+  const bcpRow = bcpFlow.rows[0] as { ingresos_bcp: number; egresos_bcp: number };
+  const bankIngresosBcp = Number(bcpRow.ingresos_bcp ?? 0);
+  const bankEgresosBcp = Number(bcpRow.egresos_bcp ?? 0);
+  const bankVariation = bankIngresosBcp - bankEgresosBcp;
+
   const byCategory = await db.execute(sql`
     SELECT category, SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END) as total
     FROM expenses
@@ -116,6 +143,9 @@ export async function getMonthlyReport(month: string) {
     totals: { ...totalsRow, total_ingresos_del_mes: totalIngresosDelMes },
     bankStartBalance: bankStart.rows[0] ? parseFloat(bankStart.rows[0].bank_balance_real as string) : 0,
     bankEndBalance: bankEnd.rows[0] ? parseFloat(bankEnd.rows[0].bank_balance_real as string) : 0,
+    bankIngresosBcp,    // flujo BCP del mes (excluye efectivo)
+    bankEgresosBcp,
+    bankVariation,      // = bankIngresosBcp - bankEgresosBcp
     byCategory: byCategory.rows,
     byteSalesSource, // "byte_sales_daily" (ventas brutas) | "legacy" (cobros)
   };
@@ -126,11 +156,12 @@ export type DailyBreakdownResult =
   | { format: "byte_atelier"; rows: Record<string, unknown>[] }
   | { format: "byte_b2c"; rows: Record<string, unknown>[] }
   | { format: "income"; rows: Record<string, unknown>[] }
-  | { format: "expense"; rows: Record<string, unknown>[] };
+  | { format: "expense"; rows: Record<string, unknown>[] }
+  | { format: "bank_variation"; rows: Record<string, unknown>[] };
 
 export async function getDailyBreakdown(
   month: string,
-  type: "byte" | "income" | "expense"
+  type: "byte" | "income" | "expense" | "bank_variation"
 ): Promise<DailyBreakdownResult> {
   const bId = await activeBusinessId();
   const startDate = `${month}-01`;
@@ -216,6 +247,43 @@ export async function getDailyBreakdown(
       ORDER BY bi.date DESC, bi.sort_order ASC
     `);
     return { format: "income", rows: result.rows };
+  } else if (type === "bank_variation") {
+    // Drilldown del card "Variación saldo banco": por día, ingresos
+    // BCP - egresos BCP. "BCP" = todo lo que NO sea efectivo. Filas
+    // con 0/0/0 se omiten.
+    const result = await db.execute(sql`
+      WITH dates AS (
+        SELECT generate_series(${startDate}::date, ${endDate}::date, '1 day')::date AS date
+      ),
+      ing AS (
+        SELECT date, COALESCE(SUM(amount),0)::float AS total
+        FROM bank_income_items
+        WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+          AND payment_method != 'efectivo'
+          AND is_special_loan = false AND is_internal_transfer = false
+          AND archived = false
+        GROUP BY date
+      ),
+      egr AS (
+        SELECT date, COALESCE(SUM(amount),0)::float AS total
+        FROM expenses
+        WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+          AND payment_method != 'efectivo'
+          AND is_special_loan = false AND is_internal_transfer = false
+          AND archived = false
+        GROUP BY date
+      )
+      SELECT d.date::text AS date,
+             COALESCE(ing.total, 0)::float AS ingresos_bcp,
+             COALESCE(egr.total, 0)::float AS egresos_bcp,
+             (COALESCE(ing.total,0) - COALESCE(egr.total,0))::float AS variacion_dia
+      FROM dates d
+      LEFT JOIN ing ON ing.date = d.date
+      LEFT JOIN egr ON egr.date = d.date
+      WHERE COALESCE(ing.total,0) > 0 OR COALESCE(egr.total,0) > 0
+      ORDER BY d.date DESC
+    `);
+    return { format: "bank_variation", rows: result.rows };
   } else {
     const result = await db.execute(sql`
       SELECT id, date, amount, category, concept, notes, payment_method
