@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useRef } from "react";
-import { useSearchParams } from "next/navigation";
+import { useSearchParams, useParams } from "next/navigation";
 import { getMonthlyReport, getDailyBreakdown, type DailyBreakdownResult } from "@/app/actions/reports";
 import { getCategories } from "@/app/actions/categories";
 import { getClients } from "@/app/actions/clients";
@@ -45,8 +45,22 @@ type MonthlyData = {
 
 type DetailType = "byte" | "income" | "expense" | "total_income" | "bank_variation" | "credit_sales";
 
+/**
+ * Atelier es B2B: las ventas Byte se cobran por transferencia y ya
+ * están dentro de "Ingresos CTA CTE" del Excel. Sumar Byte + Otros
+ * duplicaría las ventas, por eso el card "Total cobros del mes" NO
+ * se renderiza para Atelier. Centro/Fonavi son B2C y sí necesitan
+ * el total agregado. Ver Prompt 22.
+ */
+function isAtelier(slug: string | null): boolean {
+  return slug === "atelier";
+}
+
 export function MonthlyReport() {
   const searchParams = useSearchParams();
+  const params = useParams<{ negocio?: string }>();
+  const negocio = params?.negocio ?? null;
+  const atelier = isAtelier(negocio);
   const initialMonth = (() => {
     const m = searchParams.get("mes");
     return m && isValidMonth(m) ? m : getCurrentMonth();
@@ -163,7 +177,7 @@ export function MonthlyReport() {
                 ? data.bankVariation
                 : data.bankEndBalance - data.bankStartBalance;
             return (
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
+              <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${atelier ? "xl:grid-cols-5" : "xl:grid-cols-6"} gap-4`}>
                 <KPICard
                   title="Ventas Byte (cobradas)"
                   value={formatCurrency(data.totals.total_byte as string)}
@@ -179,9 +193,13 @@ export function MonthlyReport() {
                   onClick={() => handleCardClick("byte")}
                 />
                 <KPICard
-                  title="Otros ingresos"
+                  title={atelier ? "Ingresos Ctas. y Efectivo" : "Otros ingresos"}
                   value={formatCurrency(data.totals.total_income as string)}
-                  subtitle="Devoluciones, sobrantes, reembolsos (no ventas)"
+                  subtitle={
+                    atelier
+                      ? "Movimientos a CTA CTE y efectivo (incluye ventas B2B)"
+                      : "Devoluciones, sobrantes, reembolsos (no ventas)"
+                  }
                   variant="success"
                   withAccentBar={false}
                   expanded={showDetail === "income"}
@@ -207,16 +225,18 @@ export function MonthlyReport() {
                     />
                   );
                 })()}
-                <KPICard
-                  title="Total cobros del mes"
-                  value={formatCurrency(data.totals.total_ingresos_del_mes as number)}
-                  subtitle="Cobros Byte + Otros ingresos"
-                  variant="emerald"
-                  withAccentBar={false}
-                  expanded={showDetail === "total_income"}
-                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
-                  onClick={() => handleCardClick("total_income")}
-                />
+                {!atelier && (
+                  <KPICard
+                    title="Total cobros del mes"
+                    value={formatCurrency(data.totals.total_ingresos_del_mes as number)}
+                    subtitle="Cobros Byte + Otros ingresos"
+                    variant="emerald"
+                    withAccentBar={false}
+                    expanded={showDetail === "total_income"}
+                    expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                    onClick={() => handleCardClick("total_income")}
+                  />
+                )}
                 <KPICard
                   title="Egresos totales"
                   value={formatCurrency(data.totals.total_expenses as string)}
@@ -251,7 +271,7 @@ export function MonthlyReport() {
                   {showDetail === "byte"
                     ? "Ventas Byte (cobradas) por día"
                     : showDetail === "income"
-                    ? "Otros ingresos por día"
+                    ? (atelier ? "Ingresos a Ctas. y Efectivo por día" : "Otros ingresos por día")
                     : showDetail === "total_income"
                     ? "Total cobros por día"
                     : showDetail === "bank_variation"
