@@ -43,7 +43,7 @@ type MonthlyData = {
   byteSalesSource?: "byte_sales_daily" | "legacy";
 };
 
-type DetailType = "byte" | "income" | "expense" | "bank_variation";
+type DetailType = "byte" | "income" | "expense" | "total_income" | "bank_variation";
 
 export function MonthlyReport() {
   const searchParams = useSearchParams();
@@ -120,7 +120,7 @@ export function MonthlyReport() {
   useEffect(() => {
     if (initialBreakdownApplied.current || loading) return;
     const requested = searchParams.get("breakdown");
-    if (requested === "byte" || requested === "income" || requested === "expense" || requested === "bank_variation") {
+    if (requested === "byte" || requested === "income" || requested === "expense" || requested === "total_income" || requested === "bank_variation") {
       initialBreakdownApplied.current = true;
       // eslint-disable-next-line react-hooks/set-state-in-effect -- auto-open por query param al primer mount
       handleCardClick(requested);
@@ -191,6 +191,9 @@ export function MonthlyReport() {
                   subtitle="Ventas Byte + Otros ingresos"
                   variant="emerald"
                   withAccentBar={false}
+                  expanded={showDetail === "total_income"}
+                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                  onClick={() => handleCardClick("total_income")}
                 />
                 <KPICard
                   title="Egresos totales"
@@ -227,6 +230,8 @@ export function MonthlyReport() {
                     ? "Ventas Byte por día"
                     : showDetail === "income"
                     ? "Otros ingresos por día"
+                    : showDetail === "total_income"
+                    ? "Total ingresos por día"
                     : showDetail === "bank_variation"
                     ? "Variación saldo banco por día"
                     : "Egresos por día"}
@@ -289,6 +294,28 @@ export function MonthlyReport() {
                           <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_physical), 0))}</td>
                           <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_digital), 0))}</td>
                           <td className="px-3 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
+                        </tr>
+                      )}
+                    />
+                  ) : showDetail === "total_income" ? (
+                    /* Total ingresos del mes — Ventas Byte + Otros por día */
+                    <DataTable
+                      rowKey={(row) => row.date as string}
+                      data={detailData}
+                      withCard={false}
+                      size="compact"
+                      columns={[
+                        { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
+                        { key: "ventas_byte", header: "Ventas Byte", align: "right", cellClassName: "text-primary", render: (row) => formatCurrency(Number(row.ventas_byte ?? 0)) },
+                        { key: "otros_ingresos", header: "Otros ingresos", align: "right", cellClassName: "text-primary-light", render: (row) => formatCurrency(Number(row.otros_ingresos ?? 0)) },
+                        { key: "total_dia", header: "Total ingresos día", align: "right", cellClassName: "font-bold text-emerald-700", render: (row) => formatCurrency(Number(row.total_dia ?? 0)) },
+                      ]}
+                      footer={(
+                        <tr className="bg-gray-50 font-semibold">
+                          <td className="px-3 py-3">Total</td>
+                          <td className="px-3 py-3 text-right text-primary">{formatCurrency(detailData.reduce((s, r) => s + Number(r.ventas_byte ?? 0), 0))}</td>
+                          <td className="px-3 py-3 text-right text-primary-light">{formatCurrency(detailData.reduce((s, r) => s + Number(r.otros_ingresos ?? 0), 0))}</td>
+                          <td className="px-3 py-3 text-right font-bold text-emerald-700">{formatCurrency(detailData.reduce((s, r) => s + Number(r.total_dia ?? 0), 0))}</td>
                         </tr>
                       )}
                     />

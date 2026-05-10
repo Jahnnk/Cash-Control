@@ -157,11 +157,12 @@ export type DailyBreakdownResult =
   | { format: "byte_b2c"; rows: Record<string, unknown>[] }
   | { format: "income"; rows: Record<string, unknown>[] }
   | { format: "expense"; rows: Record<string, unknown>[] }
+  | { format: "total_income"; rows: Record<string, unknown>[] }
   | { format: "bank_variation"; rows: Record<string, unknown>[] };
 
 export async function getDailyBreakdown(
   month: string,
-  type: "byte" | "income" | "expense" | "bank_variation"
+  type: "byte" | "income" | "expense" | "total_income" | "bank_variation"
 ): Promise<DailyBreakdownResult> {
   const bId = await activeBusinessId();
   const startDate = `${month}-01`;
@@ -247,6 +248,60 @@ export async function getDailyBreakdown(
       ORDER BY bi.date DESC, bi.sort_order ASC
     `);
     return { format: "income", rows: result.rows };
+  } else if (type === "total_income") {
+    // Drilldown del card "Total ingresos del mes": por día, suma de
+    // Ventas Byte + Otros ingresos. Sigue la misma prioridad que el
+    // card principal: byte_sales_daily si hay datos, fallback legacy
+    // (daily_records.byte_total + bank_income_items con is_byte_sale)
+    // si no hay nada en byte_sales_daily.
+    const dailyCheck = await db.execute(sql`
+      SELECT COUNT(*)::int AS n FROM byte_sales_daily
+      WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
+    `);
+    const useByteDaily = ((dailyCheck.rows[0] as { n: number } | undefined)?.n ?? 0) > 0;
+
+    const result = await db.execute(sql`
+      WITH dates AS (
+        SELECT generate_series(${startDate}::date, ${endDate}::date, '1 day')::date AS date
+      ),
+      byte_per_day AS (
+        ${useByteDaily ? sql`
+          SELECT date, (efectivo + yape_plin + pos)::float AS total
+          FROM byte_sales_daily
+          WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+        ` : sql`
+          SELECT d.date,
+            (
+              COALESCE((SELECT byte_total FROM daily_records dr
+                WHERE dr.business_id = ${bId} AND dr.date = d.date AND dr.archived = false), 0)
+              +
+              COALESCE((SELECT SUM(amount) FROM bank_income_items
+                WHERE business_id = ${bId} AND date = d.date
+                  AND is_byte_sale = true AND archived = false), 0)
+            )::float AS total
+          FROM dates d
+        `}
+      ),
+      otros_per_day AS (
+        SELECT date, COALESCE(SUM(amount),0)::float AS total
+        FROM bank_income_items
+        WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+          AND is_byte_sale = false AND is_special_loan = false
+          AND is_internal_transfer = false AND is_fonavi_reimbursement = false
+          AND archived = false
+        GROUP BY date
+      )
+      SELECT d.date::text AS date,
+             COALESCE(bp.total, 0)::float AS ventas_byte,
+             COALESCE(op.total, 0)::float AS otros_ingresos,
+             (COALESCE(bp.total,0) + COALESCE(op.total,0))::float AS total_dia
+      FROM dates d
+      LEFT JOIN byte_per_day bp ON bp.date = d.date
+      LEFT JOIN otros_per_day op ON op.date = d.date
+      WHERE COALESCE(bp.total,0) + COALESCE(op.total,0) > 0
+      ORDER BY d.date DESC
+    `);
+    return { format: "total_income", rows: result.rows };
   } else if (type === "bank_variation") {
     // Drilldown del card "Variación saldo banco": por día, ingresos
     // BCP - egresos BCP. "BCP" = todo lo que NO sea efectivo. Filas
