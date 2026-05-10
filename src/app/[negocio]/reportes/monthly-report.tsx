@@ -165,11 +165,11 @@ export function MonthlyReport() {
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
                 <KPICard
-                  title="Ventas Byte"
+                  title="Ventas Byte (cobradas)"
                   value={formatCurrency(data.totals.total_byte as string)}
                   subtitle={
                     data.byteSalesSource === "byte_sales_daily"
-                      ? "ventas brutas (Control de VTAS)"
+                      ? "Efectivo + Yape + POS + Transfer (excluye crédito)"
                       : "cobros (importa Control de VTAS para ventas brutas)"
                   }
                   variant="default"
@@ -249,7 +249,7 @@ export function MonthlyReport() {
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900">
                   {showDetail === "byte"
-                    ? "Ventas Byte por día"
+                    ? "Ventas Byte (cobradas) por día"
                     : showDetail === "income"
                     ? "Otros ingresos por día"
                     : showDetail === "total_income"
