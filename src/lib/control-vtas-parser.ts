@@ -20,10 +20,17 @@ import * as XLSX from "xlsx";
 
 export type ByteSalesDaily = {
   date: string;            // YYYY-MM-DD
-  efectivo: number;
-  yape_plin: number;
-  pos: number;
-  total: number;           // computed
+  efectivo: number;        // lado Cuentas col G (lo que entró a caja/banco)
+  yape_plin: number;       // lado Cuentas col G
+  pos: number;             // lado Cuentas col G
+  total: number;           // computed = ef + yp + pos (sin crédito, lado Cuentas)
+  /**
+   * Suma de los montos lado QuipuPOS (col E) del día, incluyendo
+   * la fila de Ventas al Crédito. Permite mostrar el "Total
+   * reportado por POS" del Excel (E194) y el desglose de Ajustes
+   * = total_pos_excel - total - crédito.
+   */
+  total_pos_excel: number;
 };
 
 export type TipPending = {
@@ -267,9 +274,21 @@ export function parseControlVtas(
 
     // Inicializar bucket del día si no existe
     if (!ventasPorDia.has(fecha)) {
-      ventasPorDia.set(fecha, { date: fecha, efectivo: 0, yape_plin: 0, pos: 0, total: 0 });
+      ventasPorDia.set(fecha, {
+        date: fecha,
+        efectivo: 0, yape_plin: 0, pos: 0,
+        total: 0,
+        total_pos_excel: 0,
+      });
     }
     const ventaDia = ventasPorDia.get(fecha)!;
+
+    // Acumulamos el lado QuipuPOS (col E) para todas las categorías del
+    // día (Efectivo, Yape, POS, Ventas al Crédito). Esto reproduce E194
+    // del Excel: el total que el sistema POS reporta vendido.
+    if (montoQuipupos > 0) {
+      ventaDia.total_pos_excel += montoQuipupos;
+    }
 
     if (conceptoCuentas === "Efectivo") {
       if (montoCuentas > 0) ventaDia.efectivo = montoCuentas;
@@ -326,7 +345,11 @@ export function parseControlVtas(
 
   // Computar total y ordenar por fecha
   const ventasDiarias = Array.from(ventasPorDia.values())
-    .map((v) => ({ ...v, total: Math.round((v.efectivo + v.yape_plin + v.pos) * 100) / 100 }))
+    .map((v) => ({
+      ...v,
+      total: Math.round((v.efectivo + v.yape_plin + v.pos) * 100) / 100,
+      total_pos_excel: Math.round(v.total_pos_excel * 100) / 100,
+    }))
     .sort((a, b) => a.date.localeCompare(b.date));
 
   const start = ventasDiarias[0]?.date ?? null;

@@ -178,20 +178,59 @@ export function MonthlyReport() {
                 : data.bankEndBalance - data.bankStartBalance;
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                <KPICard
-                  title="Ventas Byte (cobradas)"
-                  value={formatCurrency(data.totals.total_byte as string)}
-                  subtitle={
-                    data.byteSalesSource === "byte_sales_daily"
-                      ? "Efectivo + Yape + POS + Transfer (excluye crédito)"
-                      : "cobros (importa Control de VTAS para ventas brutas)"
-                  }
-                  variant="default"
-                  withAccentBar={false}
-                  expanded={showDetail === "byte"}
-                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
-                  onClick={() => handleCardClick("byte")}
-                />
+                {(() => {
+                  // Card "Ventas Byte". Cuando hay total_byte_pos del Excel
+                  // (Centro/Fonavi con Control de VTAS re-importado), el
+                  // card muestra el TOTAL reportado por POS (E194) como
+                  // valor principal y un desglose interno Cobradas /
+                  // Crédito / Ajustes. Si no hay total_byte_pos (Atelier
+                  // legacy o meses no re-importados), conserva el render
+                  // anterior con valor Cobradas y sin desglose.
+                  const cobradas = parseFloat((data.totals.total_byte as string) || "0");
+                  const totalPos = data.totals.total_byte_pos as number | null;
+                  const credito = Number(data.totals.total_credit_sales ?? 0);
+                  const hasPos = typeof totalPos === "number" && totalPos > 0;
+                  const ajustes = hasPos ? totalPos - cobradas - credito : 0;
+                  const showBreakdown = hasPos && (credito > 0 || Math.abs(ajustes) > 0.01);
+                  return (
+                    <KPICard
+                      title={hasPos ? "Ventas Byte" : "Ventas Byte (cobradas)"}
+                      value={formatCurrency(hasPos ? totalPos! : cobradas)}
+                      subtitle={
+                        hasPos
+                          ? "Total reportado por POS"
+                          : data.byteSalesSource === "byte_sales_daily"
+                          ? "Efectivo + Yape + POS + Transfer (excluye crédito)"
+                          : "cobros (importa Control de VTAS para ventas brutas)"
+                      }
+                      footer={showBreakdown ? (
+                        <div className="border-t border-gray-100 pt-2 mt-1 space-y-0.5">
+                          <div className="flex justify-between text-slate-600">
+                            <span>Cobradas</span>
+                            <span className="font-medium">{formatCurrency(cobradas)}</span>
+                          </div>
+                          {credito > 0 && (
+                            <div className="flex justify-between text-slate-600">
+                              <span>Crédito</span>
+                              <span className="font-medium">{formatCurrency(credito)}</span>
+                            </div>
+                          )}
+                          {Math.abs(ajustes) > 0.01 && (
+                            <div className={`flex justify-between ${ajustes < 0 ? "text-amber-600" : "text-blue-600"}`}>
+                              <span>Ajustes</span>
+                              <span className="font-medium">{ajustes >= 0 ? "+" : ""}{formatCurrency(ajustes)}</span>
+                            </div>
+                          )}
+                        </div>
+                      ) : undefined}
+                      variant="default"
+                      withAccentBar={false}
+                      expanded={showDetail === "byte"}
+                      expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                      onClick={() => handleCardClick("byte")}
+                    />
+                  );
+                })()}
                 {(() => {
                   // Card "Ingresos Ctas. y Efectivo" — unificado para los 3 negocios
                   // tras Prompt 23. Para Centro/Fonavi muestra ahora el TOTAL de

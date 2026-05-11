@@ -447,18 +447,23 @@ export async function executeExcelImport(
         AND status = 'pending'
     `);
 
-    // INSERT byte_sales_daily
+    // INSERT byte_sales_daily (incluye total_pos_excel = lado QuipuPOS
+    // con crédito; permite el card "Ventas Byte (total POS)" con
+    // desglose Cobradas/Crédito/Ajustes en el reporte mensual).
     for (const v of controlVtasResult.ventasDiarias) {
       await db.execute(sql`
         INSERT INTO byte_sales_daily
-          (business_id, date, efectivo, yape_plin, pos, imported_from_excel, import_batch_id)
+          (business_id, date, efectivo, yape_plin, pos, total_pos_excel,
+           imported_from_excel, import_batch_id)
         VALUES
           (${bId}, ${v.date}, ${v.efectivo.toFixed(2)}, ${v.yape_plin.toFixed(2)},
-           ${v.pos.toFixed(2)}, true, ${batchId}::uuid)
+           ${v.pos.toFixed(2)}, ${v.total_pos_excel.toFixed(2)},
+           true, ${batchId}::uuid)
         ON CONFLICT (business_id, date) DO UPDATE SET
           efectivo = EXCLUDED.efectivo,
           yape_plin = EXCLUDED.yape_plin,
           pos = EXCLUDED.pos,
+          total_pos_excel = EXCLUDED.total_pos_excel,
           imported_from_excel = true,
           import_batch_id = EXCLUDED.import_batch_id,
           updated_at = now()

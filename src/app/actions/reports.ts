@@ -162,11 +162,34 @@ export async function getMonthlyReport(month: string) {
   const totalIncomeNum = parseFloat((totalsRow.total_income as string) || "0");
   const totalIngresosDelMes = totalByteNum + totalIncomeNum;
 
+  // Total Byte reportado por POS (Prompt 24). Solo aplicable cuando
+  // hay datos en byte_sales_daily (Centro/Fonavi con Control de VTAS
+  // importado). Si total_pos_excel está NULL en TODOS los días del mes
+  // (re-import pendiente), devolvemos null y la UI hace fallback al
+  // valor "Cobradas" tradicional sin desglose.
+  let totalBytePos: number | null = null;
+  if (byteSalesSource === "byte_sales_daily") {
+    const tposRow = (await db.execute(sql`
+      SELECT
+        COUNT(*) FILTER (WHERE total_pos_excel IS NOT NULL)::int AS with_pos,
+        COUNT(*)::int AS total_rows,
+        COALESCE(SUM(total_pos_excel),0)::float AS sum_pos
+      FROM byte_sales_daily
+      WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+    `)).rows[0] as { with_pos: number; total_rows: number; sum_pos: number };
+    // Solo exponemos total_byte_pos si TODOS los días tienen el valor.
+    // Mezcla parcial daría números engañosos.
+    if (tposRow.with_pos > 0 && tposRow.with_pos === tposRow.total_rows) {
+      totalBytePos = Number(tposRow.sum_pos);
+    }
+  }
+
   return {
     totals: {
       ...totalsRow,
       total_ingresos_del_mes: totalIngresosDelMes,
       total_credit_sales: totalCreditSales,
+      total_byte_pos: totalBytePos,  // null si no aplica (Atelier legacy / re-import pendiente)
     },
     bankStartBalance: bankStart.rows[0] ? parseFloat(bankStart.rows[0].bank_balance_real as string) : 0,
     bankEndBalance: bankEnd.rows[0] ? parseFloat(bankEnd.rows[0].bank_balance_real as string) : 0,

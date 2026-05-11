@@ -144,6 +144,11 @@ export const byteSalesDaily = pgTable(
     efectivo: numeric("efectivo", { precision: 12, scale: 2 }).default("0").notNull(),
     yapePlin: numeric("yape_plin", { precision: 12, scale: 2 }).default("0").notNull(),
     pos: numeric("pos", { precision: 12, scale: 2 }).default("0").notNull(),
+    // Total reportado por POS del día (suma lado QuipuPOS col E + crédito).
+    // Nullable porque solo se persiste cuando el parser captura ambos lados.
+    // Cuando es null en UI, se hace fallback a (efectivo + yape + pos) =
+    // lado Cuentas sin crédito (comportamiento pre-Prompt 24).
+    totalPosExcel: numeric("total_pos_excel", { precision: 12, scale: 2 }),
     importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
     importBatchId: uuid("import_batch_id"),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
