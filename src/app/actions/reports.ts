@@ -62,16 +62,20 @@ export async function getMonthlyReport(month: string) {
               AND is_byte_sale = true AND archived = false), 0)
         )
       END as total_byte,
-      -- Otros ingresos: excluye ventas Byte (ya contadas en total_byte)
-      -- para no doble-contar. Son devoluciones, sobrantes, reembolsos
-      -- entre negocios, etc. Se renderiza como "Otros ingresos" en UI;
-      -- el campo SQL conserva el nombre legacy (total_income) para no
-      -- romper consumidores. Pueden venir tanto de BCP como de efectivo.
+      -- Ingresos Ctas. y Efectivo: TOTAL de movimientos a CTA CTE y
+      -- caja del mes (J274 del Excel Ing&Gtos). NO filtra is_byte_sale
+      -- — incluye tanto los cobros de Byte que entraron al banco como
+      -- las devoluciones/sobrantes/reembolsos. Se compara CONTRA
+      -- total_byte para conciliar (la diferencia = créditos pendientes
+      -- + ajustes). Nombre SQL legacy (total_income) preservado para
+      -- no romper consumidores y exports históricos.
+      -- Atelier no tiene filas con is_byte_sale=true, así que el cambio
+      -- de semántica solo afecta a Centro/Fonavi (Prompt 23).
       COALESCE((
         SELECT SUM(amount) FROM bank_income_items
         WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
           AND is_fonavi_reimbursement = false AND is_special_loan = false
-          AND is_internal_transfer = false AND is_byte_sale = false AND archived = false
+          AND is_internal_transfer = false AND archived = false
       ), 0) as total_income,
       COALESCE((SELECT SUM(bank_expense) FROM daily_records
         WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND archived = false), 0) as total_bank_expense,
@@ -260,15 +264,21 @@ export async function getDailyBreakdown(
     `);
     return { format: "byte_atelier", rows: result.rows };
   } else if (type === "income") {
-    // Excluye Byte para que el desglose de "Otros ingresos" no incluya
-    // ventas (las ventas tienen su propio card "Ventas Byte" con desglose).
+    // Drilldown del card "Ingresos Ctas. y Efectivo": muestra TODAS las
+    // filas (cobros Byte + devoluciones + sobrantes), porque el card
+    // ahora suma el TOTAL del mes — no solo no-ventas. Se excluyen
+    // transferencias internas, préstamos especiales y reembolsos
+    // Fonavi (no son flujo operativo). is_byte_sale ya NO se filtra.
+    // Atelier: 0 filas con is_byte_sale=true así que el cambio solo
+    // afecta a Centro/Fonavi visualmente.
     const result = await db.execute(sql`
-      SELECT bi.id, bi.date, bi.amount, bi.note, bi.client_id, c.name as client_name
+      SELECT bi.id, bi.date, bi.amount, bi.note, bi.client_id, c.name as client_name,
+             bi.is_byte_sale, bi.payment_method
       FROM bank_income_items bi
       LEFT JOIN clients c ON c.id = bi.client_id
       WHERE bi.business_id = ${bId} AND bi.date >= ${startDate} AND bi.date <= ${endDate}
         AND bi.is_special_loan = false AND bi.is_internal_transfer = false
-        AND bi.is_byte_sale = false AND bi.archived = false
+        AND bi.is_fonavi_reimbursement = false AND bi.archived = false
       ORDER BY bi.date DESC, bi.sort_order ASC
     `);
     return { format: "income", rows: result.rows };

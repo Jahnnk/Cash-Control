@@ -177,7 +177,7 @@ export function MonthlyReport() {
                 ? data.bankVariation
                 : data.bankEndBalance - data.bankStartBalance;
             return (
-              <div className={`grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 ${atelier ? "xl:grid-cols-5" : "xl:grid-cols-6"} gap-4`}>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 <KPICard
                   title="Ventas Byte (cobradas)"
                   value={formatCurrency(data.totals.total_byte as string)}
@@ -192,20 +192,55 @@ export function MonthlyReport() {
                   expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
                   onClick={() => handleCardClick("byte")}
                 />
-                <KPICard
-                  title={atelier ? "Ingresos Ctas. y Efectivo" : "Otros ingresos"}
-                  value={formatCurrency(data.totals.total_income as string)}
-                  subtitle={
-                    atelier
-                      ? "Movimientos a CTA CTE y efectivo (incluye ventas B2B)"
-                      : "Devoluciones, sobrantes, reembolsos (no ventas)"
+                {(() => {
+                  // Card "Ingresos Ctas. y Efectivo" — unificado para los 3 negocios
+                  // tras Prompt 23. Para Centro/Fonavi muestra ahora el TOTAL de
+                  // movimientos a cta+efectivo del mes (incluye cobros Byte), y
+                  // se agrega una pista visual de conciliación contra Ventas Byte.
+                  // Para Atelier no cambia el valor (no tiene is_byte_sale=true).
+                  const ictas = parseFloat((data.totals.total_income as string) || "0");
+                  const byte = parseFloat((data.totals.total_byte as string) || "0");
+                  const diff = ictas - byte;
+                  const showHint =
+                    !atelier && data.byteSalesSource === "byte_sales_daily";
+                  let hintIcon = "";
+                  let hintCls = "";
+                  let hintText = "";
+                  if (showHint) {
+                    if (Math.abs(diff) <= 1) {
+                      hintIcon = "✅";
+                      hintCls = "text-emerald-600";
+                      hintText = "vs Ventas Byte: cuadra exacto";
+                    } else if (diff < 0) {
+                      hintIcon = "⚠️";
+                      hintCls = "text-amber-600";
+                      hintText = `vs Ventas Byte: ${formatCurrency(diff)} (créditos + ajustes de conciliación)`;
+                    } else {
+                      hintIcon = "ℹ️";
+                      hintCls = "text-blue-600";
+                      hintText = `vs Ventas Byte: +${formatCurrency(diff)} (ingresos extra no-Byte)`;
+                    }
                   }
-                  variant="success"
-                  withAccentBar={false}
-                  expanded={showDetail === "income"}
-                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
-                  onClick={() => handleCardClick("income")}
-                />
+                  return (
+                    <KPICard
+                      title="Ingresos Ctas. y Efectivo"
+                      value={formatCurrency(ictas)}
+                      subtitle={
+                        atelier
+                          ? "Movimientos a CTA CTE y efectivo (incluye ventas B2B)"
+                          : "Movimientos a CTA CTE y efectivo del mes"
+                      }
+                      footer={showHint ? (
+                        <span className={`${hintCls} font-medium`}>{hintIcon} {hintText}</span>
+                      ) : undefined}
+                      variant="success"
+                      withAccentBar={false}
+                      expanded={showDetail === "income"}
+                      expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                      onClick={() => handleCardClick("income")}
+                    />
+                  );
+                })()}
                 {(() => {
                   const credit = Number(data.totals.total_credit_sales ?? 0);
                   const hasCredit = credit > 0;
@@ -225,18 +260,17 @@ export function MonthlyReport() {
                     />
                   );
                 })()}
-                {!atelier && (
-                  <KPICard
-                    title="Total cobros del mes"
-                    value={formatCurrency(data.totals.total_ingresos_del_mes as number)}
-                    subtitle="Cobros Byte + Otros ingresos"
-                    variant="emerald"
-                    withAccentBar={false}
-                    expanded={showDetail === "total_income"}
-                    expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
-                    onClick={() => handleCardClick("total_income")}
-                  />
-                )}
+                {/*
+                  Card "Total cobros del mes" eliminado tras Prompt 23
+                  para los 3 negocios. En Centro/Fonavi sumaba Ventas
+                  Byte + Otros ingresos (con la semántica anterior de
+                  "no-byte"); ahora que el card "Ingresos Ctas. y
+                  Efectivo" ya incluye los cobros Byte, ese total
+                  duplicaría las ventas. Se conserva el endpoint
+                  getDailyBreakdown type="total_income" para no romper
+                  consumidores que puedan navegar manualmente al
+                  drilldown via ?breakdown=total_income.
+                */}
                 <KPICard
                   title="Egresos totales"
                   value={formatCurrency(data.totals.total_expenses as string)}
@@ -271,7 +305,7 @@ export function MonthlyReport() {
                   {showDetail === "byte"
                     ? "Ventas Byte (cobradas) por día"
                     : showDetail === "income"
-                    ? (atelier ? "Ingresos a Ctas. y Efectivo por día" : "Otros ingresos por día")
+                    ? "Ingresos a Ctas. y Efectivo por día"
                     : showDetail === "total_income"
                     ? "Total cobros por día"
                     : showDetail === "bank_variation"

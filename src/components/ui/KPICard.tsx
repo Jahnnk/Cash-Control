@@ -43,6 +43,12 @@ export type KPICardProps = {
   valueClassName?: string;
   /** Forzar/desactivar el borde izquierdo coloreado (default: on en size default, off en compact). */
   withAccentBar?: boolean;
+  /**
+   * Nodo extra debajo del subtitle, sobre el expandedHint. Útil para
+   * pistas visuales de conciliación dentro del card (ej. diff vs Byte
+   * en el card "Ingresos Ctas. y Efectivo" — Prompt 23).
+   */
+  footer?: ReactNode;
 };
 
 const VARIANT_BORDER: Record<KPIVariant, string> = {
@@ -78,6 +84,7 @@ export function KPICard({
   expanded,
   expandedHint,
   dim = false,
+  footer,
   valueClassName,
   withAccentBar,
 }: KPICardProps) {
@@ -130,6 +137,7 @@ export function KPICard({
     <div className="relative z-0 mt-2">
       <div className={`${valueSize} ${computedValueColor}`}>{value}</div>
       {subtitle && <div className={subtitleClass}>{subtitle}</div>}
+      {footer && <div className="text-xs mt-2">{footer}</div>}
       {expanded !== undefined && expandedHint && (
         <div className="text-[10px] text-primary-light mt-1">
           {expanded ? expandedHint.open : expandedHint.closed}
