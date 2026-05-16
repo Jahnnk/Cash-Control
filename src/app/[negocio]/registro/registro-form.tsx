@@ -359,6 +359,10 @@ export function RegistroForm({
     // Update in DB if saved
     if (item.dbId) {
       await updateBankIncomeItem(item.dbId, { amount: newAmount, clientId: editClient || null, note: editNote });
+      // Refrescar el hook del saldo BCP HOY — router.refresh() no
+      // basta porque useBankBalance mantiene snapshot local. Ver
+      // src/hooks/useBankBalance.ts (jsdoc del hook).
+      await refreshBankBalance();
     }
     setEditingId(null);
   }
@@ -374,6 +378,7 @@ export function RegistroForm({
     // Update in DB if saved
     if (item.dbId) {
       await updateExpense(item.dbId, { amount: newAmount, concept: editConcept, category: editCategory, paymentMethod: editMethod });
+      await refreshBankBalance();
     }
     setEditingId(null);
   }
@@ -407,6 +412,7 @@ export function RegistroForm({
     await updateDailyTotals(date, totalInc, null);
     const newBal = await recalcBankBalance(date);
     setBankBalanceReal(String(newBal));
+    await refreshBankBalance();
   }
 
   async function handleDeleteIncome(item: IncomeItem) {
@@ -427,6 +433,7 @@ export function RegistroForm({
     await updateDailyTotals(date, null, totalExp);
     const newBal = await recalcBankBalance(date);
     setBankBalanceReal(String(newBal));
+    await refreshBankBalance();
   }
 
   async function handleDeleteExpense(item: ExpenseItem) {
@@ -522,6 +529,10 @@ export function RegistroForm({
         isNew: false,
       })));
       router.refresh();
+      // router.refresh solo invalida Server Components; el hook
+      // useBankBalance es Client Component con snapshot local y
+      // necesita refresh() explícito.
+      await refreshBankBalance();
     } catch (error) {
       console.error("Error saving:", error);
       alert("Error al guardar. Intenta de nuevo.");
