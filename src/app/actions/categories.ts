@@ -2,48 +2,71 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
-import { revalidatePath } from "next/cache";
+import { revalidatePath, updateTag, unstable_cache } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+
+// Cache: las categorías cambian muy rara vez (ediciones manuales en
+// /configuracion). TTL 10 min. Tag global "categories" se invalida en
+// create/update/delete; afecta a los 3 negocios pero las tablas son
+// pequeñas (<50 filas total) y el refetch es trivial.
+const _operativasCached = unstable_cache(
+  async (bId: number, activeOnly: boolean) => {
+    const result = activeOnly
+      ? await db.execute(sql`
+          SELECT * FROM expense_categories
+          WHERE business_id = ${bId} AND is_active = true AND is_special_loan = false
+          ORDER BY sort_order, name
+        `)
+      : await db.execute(sql`
+          SELECT * FROM expense_categories
+          WHERE business_id = ${bId} AND is_special_loan = false
+          ORDER BY sort_order, name
+        `);
+    return result.rows;
+  },
+  ["categories-operativas"],
+  { revalidate: 600, tags: ["categories"] },
+);
+
+const _completasCached = unstable_cache(
+  async (bId: number, activeOnly: boolean) => {
+    const result = activeOnly
+      ? await db.execute(sql`
+          SELECT * FROM expense_categories
+          WHERE business_id = ${bId} AND is_active = true
+          ORDER BY sort_order, name
+        `)
+      : await db.execute(sql`
+          SELECT * FROM expense_categories
+          WHERE business_id = ${bId}
+          ORDER BY sort_order, name
+        `);
+    return result.rows;
+  },
+  ["categories-completas"],
+  { revalidate: 600, tags: ["categories"] },
+);
 
 /**
  * Categorías "operativas" — usadas en el selector de Registro Diario.
  * Excluye categorías marcadas como is_special_loan=true (Préstamos del
  * socio) para que no aparezcan como opción de gasto regular.
+ *
+ * Cacheada con tag "categories" (TTL 10 min). Las mutaciones llaman
+ * updateTag("categories") — API Next.js 16 para read-your-own-writes.
  */
 export async function getCategories(activeOnly = true) {
   const bId = await activeBusinessId();
-  const result = activeOnly
-    ? await db.execute(sql`
-        SELECT * FROM expense_categories
-        WHERE business_id = ${bId} AND is_active = true AND is_special_loan = false
-        ORDER BY sort_order, name
-      `)
-    : await db.execute(sql`
-        SELECT * FROM expense_categories
-        WHERE business_id = ${bId} AND is_special_loan = false
-        ORDER BY sort_order, name
-      `);
-  return result.rows;
+  return _operativasCached(bId, activeOnly);
 }
 
 /**
  * Versión completa para configuración / auditoría — incluye categorías
- * especiales (Préstamos del socio).
+ * especiales (Préstamos del socio). Mismo cache que getCategories.
  */
 export async function getAllCategoriesIncludingSpecial(activeOnly = true) {
   const bId = await activeBusinessId();
-  const result = activeOnly
-    ? await db.execute(sql`
-        SELECT * FROM expense_categories
-        WHERE business_id = ${bId} AND is_active = true
-        ORDER BY sort_order, name
-      `)
-    : await db.execute(sql`
-        SELECT * FROM expense_categories
-        WHERE business_id = ${bId}
-        ORDER BY sort_order, name
-      `);
-  return result.rows;
+  return _completasCached(bId, activeOnly);
 }
 
 export async function createCategory(name: string) {
@@ -55,6 +78,7 @@ export async function createCategory(name: string) {
     INSERT INTO expense_categories (business_id, name, sort_order)
     VALUES (${bId}, ${name.trim()}, ${Number(maxOrder.rows[0].next)})
   `);
+  updateTag("categories");
   revalidatePath("/", "layout");
 }
 
@@ -69,11 +93,13 @@ export async function updateCategory(id: string, data: { name?: string; isActive
   if (data.excludeFromEbitda !== undefined) {
     await db.execute(sql`UPDATE expense_categories SET exclude_from_ebitda = ${data.excludeFromEbitda} WHERE id = ${id} AND business_id = ${bId}`);
   }
+  updateTag("categories");
   revalidatePath("/", "layout");
 }
 
 export async function deleteCategory(id: string) {
   const bId = await activeBusinessId();
   await db.execute(sql`UPDATE expense_categories SET is_active = false WHERE id = ${id} AND business_id = ${bId}`);
+  updateTag("categories");
   revalidatePath("/", "layout");
 }

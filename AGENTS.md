@@ -71,6 +71,42 @@ Para aislar la BD de staging en el futuro: crear una rama Neon
 dedicada para staging y override de `DATABASE_URL` en Vercel Project
 Settings → Environment Variables (scope: Preview deployments).
 
+# Keep-Alive Cron (mantener Neon despierta)
+
+El endpoint `GET /api/keep-alive` hace un `SELECT 1` a Neon para
+evitar que la BD se suspenda por inactividad. Solo responde con
+consulta real durante horario laboral Perú (8 AM - 8 PM); fuera de
+ese rango devuelve `{ok:true, skipped:true}` sin tocar la BD.
+
+## Por qué solo horario laboral
+
+Neon Free tier tiene ~100 horas de compute/mes. Mantener la BD viva
+24/7 nos pasa del límite. 8 AM - 8 PM Perú = 12 hrs/día = ~30 hrs/mes
+de compute real, dentro del límite gratis.
+
+## Variable de entorno
+
+`KEEP_ALIVE_TOKEN` (random `kpalv_*`) — debe estar configurada en
+Vercel para **Production, Preview y Development**. El token vive en
+`.env.local` local y en Vercel Settings → Environment Variables.
+
+## Configuración del cron externo (cron-job.org)
+
+1. Crear cuenta en https://cron-job.org (gratis).
+2. Click **Create cronjob**.
+3. URL: `https://cash-control.vercel.app/api/keep-alive?token=<TOKEN>`
+4. Schedule: **cada 4 minutos**.
+5. Notifications: email solo si falla 3 veces seguidas.
+
+Verificar funcionamiento manual:
+```
+curl "https://cash-control.vercel.app/api/keep-alive?token=<TOKEN>"
+```
+Respuesta esperada (en horario laboral):
+```json
+{"ok":true,"alive":true,"latency_ms":120,"hour_peru":14,"timestamp":"..."}
+```
+
 # Snapshot Neon antes de DELETE en producción
 
 Antes de cualquier `DELETE` en producción, debe existir un snapshot Neon

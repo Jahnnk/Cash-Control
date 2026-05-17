@@ -11,6 +11,14 @@ const ROLE_COOKIE = "yayis_role";
 /** Rutas públicas que NO requieren rol seleccionado. */
 const PUBLIC_PATHS = ["/", "/select-business", "/acceso-denegado"];
 
+/**
+ * Endpoints API públicos que NO requieren cookie de rol. Su propia
+ * autenticación va en cada route handler (ej. /api/keep-alive valida
+ * KEEP_ALIVE_TOKEN). Sin esta excepción el middleware redirige a /
+ * y los cron jobs externos no llegan al handler.
+ */
+const PUBLIC_API_PREFIXES = ["/api/keep-alive"];
+
 /** Scopes permitidos por rol. */
 function allowedScopesForRole(role: Role): Scope[] {
   if (role === "admin") return ["atelier", "fonavi", "centro", "grupo"];
@@ -34,6 +42,10 @@ export function middleware(request: NextRequest) {
 
   // 1. Rutas públicas
   if (PUBLIC_PATHS.includes(pathname)) {
+    return NextResponse.next();
+  }
+  // 1b. APIs públicas (autenticación propia en cada handler)
+  if (PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
   }
 
