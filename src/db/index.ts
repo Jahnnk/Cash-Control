@@ -10,7 +10,12 @@ function getDb() {
       throw new Error("DATABASE_URL is not set");
     }
     const sql = neon(process.env.DATABASE_URL);
-    _db = drizzle(sql, { schema });
+    // Logger SOLO en development. En producción anula el overhead
+    // de stringify de queries grandes. Para Vercel preview/prod
+    // process.env.NODE_ENV es "production", así que el logger queda
+    // apagado automáticamente.
+    const isDev = process.env.NODE_ENV === "development";
+    _db = drizzle(sql, { schema, logger: isDev });
   }
   return _db;
 }
