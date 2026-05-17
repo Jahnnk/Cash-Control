@@ -118,6 +118,20 @@ export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps
     );
   })();
 
+  // BUG fix Prompt Fase 1 — KPICard renderiza un overlay <Link> con
+  // position absolute z-10 cuando recibe href. El body del KPICard
+  // tiene `relative z-0` que CREA un stacking context y atrapa los
+  // z-index internos del footer, dejando los botones del footer por
+  // debajo del overlay globalmente. Resultado: clicks en "Registrar"
+  // / "Actualizar" caían en el Link overlay y navegaban a
+  // /atelier/registro en lugar de abrir el modal.
+  //
+  // Fix: en Atelier NO pasamos href al KPICard. Sin overlay, los
+  // botones del footer reciben los clicks normalmente. UX trade-off:
+  // el card de Atelier ya no es clickeable como link directo a
+  // /atelier/registro — para ir al Registro Diario se usa el
+  // sidebar. Centro/Fonavi conservan href como antes (early return
+  // arriba).
   return (
     <>
       <KPICard
@@ -127,7 +141,6 @@ export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps
         subtitle={subtitle}
         variant="default"
         size={size}
-        href={href}
         dim={isLoading}
         footer={conciliationFooter}
       />
