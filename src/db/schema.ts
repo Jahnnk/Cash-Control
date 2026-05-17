@@ -393,3 +393,31 @@ export const fonaviReimbursementAllocations = pgTable("fonavi_reimbursement_allo
   amount: numeric("amount", { precision: 10, scale: 2 }).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
+
+/**
+ * Conciliación bancaria — Fase 1.
+ * Registro periódico del saldo BCP real (lo que Jahnn ve en la app del
+ * banco) vs el saldo calculado por el sistema en ese mismo momento.
+ * UNIQUE(business_id, check_date) → upsert por día por negocio. La
+ * diferencia se persiste como foto inmutable para auditoría histórica.
+ * Aplica inicialmente solo a Atelier (Fase 1); Centro/Fonavi son fases
+ * posteriores. created_by hardcoded 'jahnn' en esta fase (sin
+ * multiusuario). Ver Prompt Fase 1 de conciliación.
+ */
+export const bankRealChecks = pgTable(
+  "bank_real_checks",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
+    checkDate: date("check_date").notNull(),
+    realBalance: numeric("real_balance", { precision: 12, scale: 2 }).notNull(),
+    systemBalanceAtCheck: numeric("system_balance_at_check", { precision: 12, scale: 2 }).notNull(),
+    difference: numeric("difference", { precision: 12, scale: 2 }).notNull(),
+    notes: text("notes"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    createdBy: varchar("created_by", { length: 100 }).notNull(),
+  },
+  (t) => ({
+    businessDateUnique: unique("bank_real_checks_business_date_unique").on(t.businessId, t.checkDate),
+  })
+);
