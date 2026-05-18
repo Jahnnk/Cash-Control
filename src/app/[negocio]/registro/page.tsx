@@ -14,6 +14,12 @@ function RegistroWithParams() {
   const tipoParam = searchParams.get("tipo");
   const initialTxType: "ingreso" | "egreso" | undefined =
     tipoParam === "ingreso" ? "ingreso" : tipoParam === "gasto" ? "egreso" : undefined;
+  // Pre-fill desde el panel de Investigación de conciliación (Fase 2).
+  // El panel arma URLs como
+  //   ?tipo=ingreso&prefill_amount=29.45&prefill_method=yape_plin
+  const prefillAmountStr = searchParams.get("prefill_amount");
+  const prefillAmount = prefillAmountStr ? parseFloat(prefillAmountStr) : null;
+  const prefillMethod = searchParams.get("prefill_method") ?? null;
   const [categories, setCategories] = useState<string[]>([]);
   const [clients, setClients] = useState<ClientOption[]>([]);
   const [loading, setLoading] = useState(true);
@@ -33,6 +39,8 @@ function RegistroWithParams() {
       categories={categories}
       clients={clients}
       initialTxType={initialTxType}
+      initialTxAmount={prefillAmount && prefillAmount > 0 ? prefillAmount : undefined}
+      initialTxMethod={prefillMethod ?? undefined}
     />
   );
 }

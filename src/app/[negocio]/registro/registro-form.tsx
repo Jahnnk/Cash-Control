@@ -62,11 +62,16 @@ export function RegistroForm({
   categories,
   clients,
   initialTxType,
+  initialTxAmount,
+  initialTxMethod,
 }: {
   initialDate?: string | null;
   categories: string[];
   clients: ClientOption[];
   initialTxType?: "ingreso" | "egreso";
+  /** Pre-fill desde panel de Investigación (Fase 2 conciliación). */
+  initialTxAmount?: number;
+  initialTxMethod?: string;
 }) {
   const router = useRouter();
   // Si llega ?tipo= forzamos tab Movimientos. Si no, recordamos sessionStorage; default Movimientos.
@@ -118,14 +123,22 @@ export function RegistroForm({
   const expensesListRef = useRef(expensesList);
   expensesListRef.current = expensesList;
 
-  // Quick-add state — pre-llena desde ?tipo= si vino del Dashboard
+  // Quick-add state — pre-llena desde ?tipo= si vino del Dashboard,
+  // o desde ?prefill_amount/?prefill_method si vino del panel de
+  // Investigación (Fase 2).
   const [txType, setTxType] = useState<"ingreso" | "egreso">(initialTxType ?? "ingreso");
-  const [txAmount, setTxAmount] = useState("");
+  const [txAmount, setTxAmount] = useState(
+    typeof initialTxAmount === "number" ? initialTxAmount.toFixed(2) : "",
+  );
   const [txClient, setTxClient] = useState("");
   const [txCategory, setTxCategory] = useState(categories[0] || "Otros");
   const [txConcept, setTxConcept] = useState("");
-  const [txMethod, setTxMethod] = useState("transferencia");
-  const [txIncomeMethod, setTxIncomeMethod] = useState("transferencia");
+  const [txMethod, setTxMethod] = useState(
+    initialTxType === "egreso" && initialTxMethod ? initialTxMethod : "transferencia",
+  );
+  const [txIncomeMethod, setTxIncomeMethod] = useState(
+    initialTxType === "ingreso" && initialTxMethod ? initialTxMethod : "transferencia",
+  );
   const [txNote, setTxNote] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
 
