@@ -10,6 +10,8 @@ import { activeBusinessId } from "@/lib/active-business";
 // momento del registro. Decisión tomada en Fase 1 de conciliación.
 // Si necesita cambiarse, hacerlo en nueva sesión.
 
+export type CheckStatus = "pending" | "resolved" | "accepted";
+
 export type BankRealCheck = {
   id: string;
   businessId: number;
@@ -20,6 +22,8 @@ export type BankRealCheck = {
   notes: string | null;
   createdAt: string;
   createdBy: string;
+  status: CheckStatus;
+  statusUpdatedAt: string | null;
 };
 
 /**
@@ -144,10 +148,16 @@ export async function upsertBankRealCheck(input: {
       difference = EXCLUDED.difference,
       notes = EXCLUDED.notes,
       created_at = now(),
-      created_by = EXCLUDED.created_by
+      created_by = EXCLUDED.created_by,
+      -- Cualquier nuevo upsert reabre la investigación: si Jahnn
+      -- vuelve a registrar el saldo real, asumimos que es un nuevo
+      -- ciclo y reseteamos status a 'pending'. Si quería preservar
+      -- "resolved/accepted" debe simplemente NO re-registrar.
+      status = 'pending',
+      status_updated_at = NULL
     RETURNING id::text, business_id, check_date::text, real_balance::float,
               system_balance_at_check::float, difference::float, notes,
-              created_at::text, created_by
+              created_at::text, created_by, status, status_updated_at::text
   `);
   const row = ins.rows[0] as {
     id: string;
@@ -159,6 +169,8 @@ export async function upsertBankRealCheck(input: {
     notes: string | null;
     created_at: string;
     created_by: string;
+    status: CheckStatus;
+    status_updated_at: string | null;
   };
 
   // Refrescar dashboard del negocio activo. Usamos el wildcard
@@ -178,6 +190,8 @@ export async function upsertBankRealCheck(input: {
       notes: row.notes,
       createdAt: row.created_at,
       createdBy: row.created_by,
+      status: row.status,
+      statusUpdatedAt: row.status_updated_at,
     },
   };
 }
@@ -192,7 +206,7 @@ export async function getLatestBankRealCheck(): Promise<BankRealCheck | null> {
   const r = await db.execute(sql`
     SELECT id::text, business_id, check_date::text, real_balance::float,
            system_balance_at_check::float, difference::float, notes,
-           created_at::text, created_by
+           created_at::text, created_by, status, status_updated_at::text
     FROM bank_real_checks
     WHERE business_id = ${bId}
     ORDER BY check_date DESC, created_at DESC
@@ -209,6 +223,8 @@ export async function getLatestBankRealCheck(): Promise<BankRealCheck | null> {
     notes: string | null;
     created_at: string;
     created_by: string;
+    status: CheckStatus;
+    status_updated_at: string | null;
   };
   return {
     id: row.id,
@@ -220,6 +236,8 @@ export async function getLatestBankRealCheck(): Promise<BankRealCheck | null> {
     notes: row.notes,
     createdAt: row.created_at,
     createdBy: row.created_by,
+    status: row.status,
+    statusUpdatedAt: row.status_updated_at,
   };
 }
 
@@ -235,7 +253,7 @@ export async function getBankRealCheckByDate(
   const r = await db.execute(sql`
     SELECT id::text, business_id, check_date::text, real_balance::float,
            system_balance_at_check::float, difference::float, notes,
-           created_at::text, created_by
+           created_at::text, created_by, status, status_updated_at::text
     FROM bank_real_checks
     WHERE business_id = ${bId} AND check_date = ${checkDate}
     LIMIT 1
@@ -251,6 +269,8 @@ export async function getBankRealCheckByDate(
     notes: string | null;
     created_at: string;
     created_by: string;
+    status: CheckStatus;
+    status_updated_at: string | null;
   };
   return {
     id: row.id,
@@ -262,5 +282,321 @@ export async function getBankRealCheckByDate(
     notes: row.notes,
     createdAt: row.created_at,
     createdBy: row.created_by,
+    status: row.status,
+    statusUpdatedAt: row.status_updated_at,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
+// FASE 2 — Investigación de diferencias
+// ─────────────────────────────────────────────────────────────────
+
+export type CandidateAction =
+  | {
+      type: "create_income";
+      prefilledData: { amount: number; paymentMethod?: string; suggestedCategory?: string };
+    }
+  | {
+      type: "create_expense";
+      prefilledData: { amount: number; paymentMethod?: string; suggestedCategory?: string };
+    }
+  | {
+      type: "view_movements";
+      prefilledData: { startDate: string; endDate: string };
+    };
+
+export type Candidate = {
+  type: "exact_match" | "missing_income_hint" | "missing_expense_hint" | "date_range_review";
+  rank: number;
+  title: string;
+  description: string;
+  amount?: number;
+  suggestedAction?: CandidateAction;
+  /** Movimientos existentes que matchearon (solo para exact_match). */
+  matches?: Array<{
+    id: string;
+    kind: "income" | "expense";
+    date: string;
+    amount: number;
+    label: string;
+  }>;
+};
+
+export type InvestigationResult = {
+  checkId: string | null;
+  difference: number;
+  /** "income" si banco real > sistema (falta ingreso); "expense" si banco real < sistema. */
+  missingKind: "income" | "expense" | null;
+  /** Inicio del rango temporal acotado por análisis temporal. */
+  searchStartDate: string | null;
+  /** Fin del rango = checkDate. */
+  searchEndDate: string | null;
+  /** Día anclaje (último check resuelto/aceptado/cuadrado) si existe. */
+  lastCleanDate: string | null;
+  candidates: Candidate[];
+};
+
+const TOL = 0.5; // tolerancia "casi cuadrado" para el ancla temporal
+
+/**
+ * Busca el "último check limpio" anterior a checkDate:
+ *  - status IN ('resolved','accepted'), o
+ *  - |difference| <= TOL (cuadrado natural)
+ * Devuelve null si no hay ninguno. La búsqueda se acota desde ese día
+ * (exclusivo) hacia adelante. Si no hay → default 14 días hacia atrás.
+ */
+async function findLastCleanDate(
+  bId: number,
+  beforeDate: string,
+): Promise<string | null> {
+  const r = await db.execute(sql`
+    SELECT check_date::text AS d FROM bank_real_checks
+    WHERE business_id = ${bId}
+      AND check_date < ${beforeDate}
+      AND (
+        ABS(difference) <= ${TOL}
+        OR status IN ('resolved', 'accepted')
+      )
+    ORDER BY check_date DESC LIMIT 1
+  `);
+  return r.rows[0] ? (r.rows[0].d as string) : null;
+}
+
+/**
+ * Investiga la diferencia del check más reciente del negocio activo
+ * que esté en status='pending' y con difference != 0. Devuelve los
+ * candidatos rankeados o un resultado vacío si no hay nada que
+ * investigar.
+ *
+ * Tres estrategias se ejecutan en orden:
+ *  1. Match exacto: movimientos con monto = |difference| en el rango
+ *     temporal (posible duplicado o ya registrado pero descuadrado).
+ *  2. Sugerencia según signo: Yape/Plin si falta ingreso, ITF/
+ *     comisión si falta egreso (basado en patrones reales de Jahnn).
+ *  3. Date range review: link directo a ver movimientos del rango.
+ */
+export async function investigateDifference(): Promise<InvestigationResult> {
+  const bId = await activeBusinessId();
+  const latest = await getLatestBankRealCheck();
+  if (!latest || latest.status !== "pending" || Math.abs(latest.difference) < 0.01) {
+    return {
+      checkId: latest?.id ?? null,
+      difference: latest?.difference ?? 0,
+      missingKind: null,
+      searchStartDate: null,
+      searchEndDate: null,
+      lastCleanDate: null,
+      candidates: [],
+    };
+  }
+
+  const diff = latest.difference;
+  const absDiff = Math.abs(diff);
+  const missingKind: "income" | "expense" = diff > 0 ? "income" : "expense";
+  const checkDate = latest.checkDate;
+
+  // Acotar el rango temporal (Estrategia 4)
+  const lastClean = await findLastCleanDate(bId, checkDate);
+  const startDate = lastClean ?? (() => {
+    // Default: 14 días hacia atrás desde checkDate.
+    const d = new Date(checkDate + "T00:00:00");
+    d.setDate(d.getDate() - 14);
+    const yyyy = d.getFullYear();
+    const mm = String(d.getMonth() + 1).padStart(2, "0");
+    const dd = String(d.getDate()).padStart(2, "0");
+    return `${yyyy}-${mm}-${dd}`;
+  })();
+  const endDate = checkDate;
+
+  const candidates: Candidate[] = [];
+
+  // ─── Estrategia 1: Match exacto en bank_income_items + expenses ───
+  const exactIncome = await db.execute(sql`
+    SELECT bi.id::text, bi.date::text, bi.amount::float, bi.note,
+           bi.payment_method, c.name AS client_name
+    FROM bank_income_items bi
+    LEFT JOIN clients c ON c.id = bi.client_id
+    WHERE bi.business_id = ${bId} AND bi.archived = false
+      AND bi.date BETWEEN ${startDate} AND ${endDate}
+      AND ABS(bi.amount - ${absDiff.toFixed(2)}::numeric) < 0.01
+    ORDER BY bi.date DESC LIMIT 5
+  `);
+  const exactExpense = await db.execute(sql`
+    SELECT id::text, date::text, amount::float, concept, category, payment_method
+    FROM expenses
+    WHERE business_id = ${bId} AND archived = false
+      AND date BETWEEN ${startDate} AND ${endDate}
+      AND ABS(amount - ${absDiff.toFixed(2)}::numeric) < 0.01
+    ORDER BY date DESC LIMIT 5
+  `);
+  const matches: NonNullable<Candidate["matches"]> = [];
+  for (const r of exactIncome.rows as Array<{
+    id: string; date: string; amount: number; note: string | null;
+    payment_method: string | null; client_name: string | null;
+  }>) {
+    matches.push({
+      id: r.id,
+      kind: "income",
+      date: r.date,
+      amount: Number(r.amount),
+      label: r.client_name
+        ? `Ingreso de ${r.client_name}`
+        : (r.note || `Ingreso ${r.payment_method ?? ""}`).slice(0, 60),
+    });
+  }
+  for (const r of exactExpense.rows as Array<{
+    id: string; date: string; amount: number; concept: string | null;
+    category: string | null; payment_method: string | null;
+  }>) {
+    matches.push({
+      id: r.id,
+      kind: "expense",
+      date: r.date,
+      amount: Number(r.amount),
+      label: `${r.category ?? "Egreso"} · ${(r.concept ?? "").slice(0, 50)}`,
+    });
+  }
+  if (matches.length > 0) {
+    candidates.push({
+      type: "exact_match",
+      rank: 1,
+      title: `${matches.length} movimiento${matches.length > 1 ? "s" : ""} existente${matches.length > 1 ? "s" : ""} de ${formatPEN(absDiff)}`,
+      description:
+        "Hay movimientos del mismo monto en el rango. Revisar si alguno está duplicado o mal registrado.",
+      amount: absDiff,
+      matches,
+      suggestedAction: {
+        type: "view_movements",
+        prefilledData: { startDate, endDate },
+      },
+    });
+  }
+
+  // ─── Estrategia 2: Sugerencia según signo ───
+  if (missingKind === "income") {
+    candidates.push({
+      type: "missing_income_hint",
+      rank: matches.length > 0 ? 2 : 1,
+      title: `¿Recibiste un Yape/Plin de ${formatPEN(absDiff)}?`,
+      description:
+        "Banco real está MÁS alto que el sistema. Patrón típico: Yape/Plin de cliente o vuelto no registrado. Revisar app Yape/Plin del día.",
+      amount: absDiff,
+      suggestedAction: {
+        type: "create_income",
+        prefilledData: { amount: absDiff, paymentMethod: "yape_plin" },
+      },
+    });
+  } else {
+    candidates.push({
+      type: "missing_expense_hint",
+      rank: matches.length > 0 ? 2 : 1,
+      title: `¿Falta un egreso de ${formatPEN(absDiff)}?`,
+      description:
+        "Banco real está MÁS bajo que el sistema. Posibles causas: comisión BCP, ITF, gasto pequeño no registrado, retiro en cajero.",
+      amount: absDiff,
+      suggestedAction: {
+        type: "create_expense",
+        prefilledData: { amount: absDiff, paymentMethod: "transferencia" },
+      },
+    });
+  }
+
+  // ─── Estrategia 4: Date range review ───
+  const countRes = await db.execute(sql`
+    SELECT
+      (SELECT COUNT(*)::int FROM bank_income_items
+       WHERE business_id = ${bId} AND archived = false
+         AND date BETWEEN ${startDate} AND ${endDate}) AS ing_count,
+      (SELECT COUNT(*)::int FROM expenses
+       WHERE business_id = ${bId} AND archived = false
+         AND date BETWEEN ${startDate} AND ${endDate}) AS egr_count
+  `);
+  const counts = countRes.rows[0] as { ing_count: number; egr_count: number };
+  const totalMovs = counts.ing_count + counts.egr_count;
+  candidates.push({
+    type: "date_range_review",
+    rank: 3,
+    title: `Ver todos los movimientos entre ${startDate} y ${endDate}`,
+    description: `${totalMovs} movimiento${totalMovs !== 1 ? "s" : ""} (${counts.ing_count} ingresos · ${counts.egr_count} egresos) en ese rango. Útil para buscar manualmente.`,
+    suggestedAction: {
+      type: "view_movements",
+      prefilledData: { startDate, endDate },
+    },
+  });
+
+  // Ordenar por rank
+  candidates.sort((a, b) => a.rank - b.rank);
+
+  return {
+    checkId: latest.id,
+    difference: diff,
+    missingKind,
+    searchStartDate: startDate,
+    searchEndDate: endDate,
+    lastCleanDate: lastClean,
+    candidates,
+  };
+}
+
+function formatPEN(n: number): string {
+  return `S/${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
+}
+
+export type UpdateCheckStatusResult =
+  | { success: true; check: BankRealCheck }
+  | { success: false; error: string };
+
+/**
+ * Marca un check como 'resolved' o 'accepted'. Setea status_updated_at
+ * a NOW(). Valida que el negocio activo sea dueño del check.
+ */
+export async function updateCheckStatus(
+  checkId: string,
+  newStatus: CheckStatus,
+): Promise<UpdateCheckStatusResult> {
+  if (!["pending", "resolved", "accepted"].includes(newStatus)) {
+    return { success: false, error: "Estado inválido." };
+  }
+  const bId = await activeBusinessId();
+  const r = await db.execute(sql`
+    UPDATE bank_real_checks
+    SET status = ${newStatus}, status_updated_at = now()
+    WHERE id = ${checkId}::uuid AND business_id = ${bId}
+    RETURNING id::text, business_id, check_date::text, real_balance::float,
+              system_balance_at_check::float, difference::float, notes,
+              created_at::text, created_by, status, status_updated_at::text
+  `);
+  if (!r.rows[0]) {
+    return { success: false, error: "Check no encontrado o no pertenece al negocio activo." };
+  }
+  const row = r.rows[0] as {
+    id: string;
+    business_id: number;
+    check_date: string;
+    real_balance: number;
+    system_balance_at_check: number;
+    difference: number;
+    notes: string | null;
+    created_at: string;
+    created_by: string;
+    status: CheckStatus;
+    status_updated_at: string | null;
+  };
+  revalidatePath("/[negocio]/dashboard", "page");
+  return {
+    success: true,
+    check: {
+      id: row.id,
+      businessId: row.business_id,
+      checkDate: row.check_date,
+      realBalance: Number(row.real_balance),
+      systemBalanceAtCheck: Number(row.system_balance_at_check),
+      difference: Number(row.difference),
+      notes: row.notes,
+      createdAt: row.created_at,
+      createdBy: row.created_by,
+      status: row.status,
+      statusUpdatedAt: row.status_updated_at,
+    },
   };
 }
