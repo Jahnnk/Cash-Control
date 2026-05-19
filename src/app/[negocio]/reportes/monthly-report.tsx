@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef } from "react";
-import { useSearchParams, useParams } from "next/navigation";
+import { useState, useEffect, useCallback, useRef, useTransition } from "react";
+import { useSearchParams, useParams, useRouter } from "next/navigation";
 import { getMonthlyReport, getDailyBreakdown, type DailyBreakdownResult } from "@/app/actions/reports";
+import { deleteByteRecord } from "@/app/actions/byte-sales";
+import { AlertTriangle, Loader2 } from "lucide-react";
 import { getCategories } from "@/app/actions/categories";
 import { getClients } from "@/app/actions/clients";
 import { getAvailableMonthRange } from "@/app/actions/month-range";
@@ -57,10 +59,15 @@ function isAtelier(slug: string | null): boolean {
 }
 
 export function MonthlyReport() {
+  const router = useRouter();
   const searchParams = useSearchParams();
   const params = useParams<{ negocio?: string }>();
   const negocio = params?.negocio ?? null;
   const atelier = isAtelier(negocio);
+  // Estado del modal de eliminar venta Byte Atelier (drilldown).
+  const [byteDeleteTarget, setByteDeleteTarget] = useState<{
+    date: string; total: number; summary: string;
+  } | null>(null);
   const initialMonth = (() => {
     const m = searchParams.get("mes");
     return m && isValidMonth(m) ? m : getCurrentMonth();
@@ -402,6 +409,51 @@ export function MonthlyReport() {
                         { key: "byte_cash_physical", header: "Efectivo", align: "right", cellClassName: "text-gray-500", render: (row) => formatCurrency(row.byte_cash_physical as string) },
                         { key: "byte_digital", header: "Digital", align: "right", cellClassName: "text-gray-500", render: (row) => formatCurrency(row.byte_digital as string) },
                         { key: "byte_total", header: "Total", align: "right", cellClassName: "font-bold", render: (row) => formatCurrency(row.byte_total as string) },
+                        // Acciones por fila — solo Atelier por ahora.
+                        {
+                          key: "actions",
+                          header: "",
+                          align: "right",
+                          width: "w-20",
+                          render: (row) => atelier ? (
+                            <div className="inline-flex items-center gap-1">
+                              <button
+                                onClick={() => {
+                                  router.push(`/${negocio}/registro?fecha=${row.date}`);
+                                }}
+                                className="text-gray-400 hover:text-blue-600 transition-colors p-1"
+                                title="Editar (abre Registro Diario de ese día)"
+                                aria-label="Editar"
+                              >
+                                <Pencil className="w-4 h-4" />
+                              </button>
+                              <button
+                                onClick={() => {
+                                  const total = Number(row.byte_total ?? 0);
+                                  const parts: string[] = [];
+                                  const cd = Number(row.byte_credit_day ?? 0);
+                                  const cs = Number(row.byte_cash_sale ?? 0);
+                                  const cp = Number(row.byte_cash_physical ?? 0);
+                                  const d = Number(row.byte_digital ?? 0);
+                                  if (cd > 0) parts.push(`Crédito día ${formatCurrency(cd)}`);
+                                  if (cs > 0) parts.push(`Contado ${formatCurrency(cs)}`);
+                                  if (cp > 0) parts.push(`Efectivo ${formatCurrency(cp)}`);
+                                  if (d > 0) parts.push(`Digital ${formatCurrency(d)}`);
+                                  setByteDeleteTarget({
+                                    date: row.date as string,
+                                    total,
+                                    summary: parts.join(" · "),
+                                  });
+                                }}
+                                className="text-gray-400 hover:text-red-600 transition-colors p-1"
+                                title="Eliminar registro Byte de este día"
+                                aria-label="Eliminar"
+                              >
+                                <Trash2 className="w-4 h-4" />
+                              </button>
+                            </div>
+                          ) : null,
+                        },
                       ]}
                       footer={(
                         <tr className="bg-gray-50 font-semibold">
@@ -411,6 +463,7 @@ export function MonthlyReport() {
                           <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_cash_physical), 0))}</td>
                           <td className="px-3 py-3 text-right">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_digital), 0))}</td>
                           <td className="px-3 py-3 text-right font-bold">{formatCurrency(detailData.reduce((s, r) => s + Number(r.byte_total), 0))}</td>
+                          <td className="px-3 py-3" />
                         </tr>
                       )}
                     />
@@ -726,6 +779,109 @@ export function MonthlyReport() {
           onDeleted={refreshAfterMutation}
         />
       )}
+      {byteDeleteTarget && (
+        <ByteDeleteModal
+          target={byteDeleteTarget}
+          onClose={() => setByteDeleteTarget(null)}
+          onDeleted={refreshAfterMutation}
+        />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Modal de confirmación para eliminar el registro Byte de un día
+ * (Atelier). Se abre desde el botón 🗑 de cada fila del drilldown
+ * "Ventas Byte (cobradas) por día". Llama deleteByteRecord (que
+ * resetea byte_* del daily_record y dispara recalcBankBalance) y
+ * refresca el reporte.
+ */
+function ByteDeleteModal({
+  target,
+  onClose,
+  onDeleted,
+}: {
+  target: { date: string; total: number; summary: string };
+  onClose: () => void;
+  onDeleted: () => void | Promise<void>;
+}) {
+  const [pending, startTransition] = useTransition();
+  const [error, setError] = useState<string | null>(null);
+
+  function submit() {
+    setError(null);
+    startTransition(async () => {
+      const r = await deleteByteRecord(target.date);
+      if (!r.success) {
+        setError(r.error);
+        return;
+      }
+      await onDeleted();
+      onClose();
+    });
+  }
+
+  return (
+    <div
+      className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+      onClick={() => !pending && onClose()}
+    >
+      <div
+        className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="flex items-start gap-3 mb-4">
+          <div className="w-10 h-10 rounded-full bg-red-50 flex items-center justify-center shrink-0">
+            <AlertTriangle className="w-5 h-5 text-red-600" />
+          </div>
+          <div>
+            <h3 className="text-lg font-semibold text-gray-900">¿Eliminar registro Byte?</h3>
+            <p className="text-sm text-gray-500 mt-1">
+              Los saldos posteriores se recalcularán automáticamente.
+            </p>
+          </div>
+        </div>
+        <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1 mb-4">
+          <div className="flex justify-between">
+            <span className="text-gray-500">Fecha</span>
+            <span className="font-medium">{formatDateShort(target.date)}</span>
+          </div>
+          <div className="flex justify-between">
+            <span className="text-gray-500">Total</span>
+            <span className="font-semibold text-gray-900">{formatCurrency(target.total)}</span>
+          </div>
+          {target.summary && (
+            <div className="text-xs text-gray-500 pt-1 border-t border-gray-200 mt-1">
+              {target.summary}
+            </div>
+          )}
+        </div>
+        {error && (
+          <div className="text-sm text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mb-3">
+            {error}
+          </div>
+        )}
+        <div className="flex justify-end gap-2">
+          <button
+            type="button"
+            onClick={() => !pending && onClose()}
+            disabled={pending}
+            className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+          <button
+            type="button"
+            onClick={submit}
+            disabled={pending}
+            className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg disabled:opacity-50"
+          >
+            {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Trash2 className="w-4 h-4" />}
+            Sí, eliminar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

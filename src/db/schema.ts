@@ -416,6 +416,13 @@ export const bankRealChecks = pgTable(
     notes: text("notes"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
     createdBy: varchar("created_by", { length: 100 }).notNull(),
+    // Estado de investigación (Prompt Conciliación Fase 2)
+    //  - 'pending':  diferencia aún no investigada o investigación abierta
+    //  - 'resolved': Jahnn encontró/registró el movimiento faltante
+    //  - 'accepted': Jahnn decidió aceptar la diferencia (no investigar más)
+    // Default 'pending' aplica también a filas previas a la migración.
+    status: varchar("status", { length: 20 }).notNull().default("pending"),
+    statusUpdatedAt: timestamp("status_updated_at"),
   },
   (t) => ({
     businessDateUnique: unique("bank_real_checks_business_date_unique").on(t.businessId, t.checkDate),

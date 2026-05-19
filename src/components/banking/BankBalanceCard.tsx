@@ -1,12 +1,13 @@
 "use client";
 
 import { useEffect, useState, useCallback } from "react";
-import { Landmark, RefreshCw, Check, CircleDot } from "lucide-react";
+import { Landmark, RefreshCw, Check, CircleDot, Search, MoreHorizontal } from "lucide-react";
 import { useParams } from "next/navigation";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { KPICard } from "@/components/ui/KPICard";
 import { formatCurrency, formatDate } from "@/lib/utils";
 import { BankRealCheckModal } from "./BankRealCheckModal";
+import { BankInvestigationModal } from "./BankInvestigationModal";
 import {
   getLatestBankRealCheck,
   type BankRealCheck,
@@ -41,6 +42,7 @@ export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps
   const [latestCheck, setLatestCheck] = useState<BankRealCheck | null>(null);
   const [checkLoading, setCheckLoading] = useState(isAtelier);
   const [modalOpen, setModalOpen] = useState(false);
+  const [investigationOpen, setInvestigationOpen] = useState(false);
 
   const refreshCheck = useCallback(async () => {
     if (!isAtelier) return;
@@ -95,6 +97,7 @@ export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps
     const cuadrado = Math.abs(diff) < 0.01;
     const daysSince = daysBetween(latestCheck.checkDate, todayLima());
     const stale = daysSince >= 3;
+    const status = latestCheck.status;
     if (cuadrado) {
       return (
         <ConciliationRow
@@ -105,6 +108,30 @@ export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps
         />
       );
     }
+    // Estados Fase 2: diferencia + status
+    if (status === "resolved") {
+      return (
+        <ConciliationRow
+          variant="resolved"
+          diff={diff}
+          checkDate={latestCheck.checkDate}
+          createdAt={latestCheck.createdAt}
+          onUpdate={() => setModalOpen(true)}
+        />
+      );
+    }
+    if (status === "accepted") {
+      return (
+        <ConciliationRow
+          variant="accepted"
+          diff={diff}
+          checkDate={latestCheck.checkDate}
+          createdAt={latestCheck.createdAt}
+          onUpdate={() => setModalOpen(true)}
+        />
+      );
+    }
+    // status === "pending" + diferencia != 0 → boton Investigar
     return (
       <ConciliationRow
         variant="diff"
@@ -113,7 +140,8 @@ export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps
         createdAt={latestCheck.createdAt}
         daysSince={daysSince}
         stale={stale}
-        onAction={() => setModalOpen(true)}
+        onInvestigate={() => setInvestigationOpen(true)}
+        onUpdate={() => setModalOpen(true)}
       />
     );
   })();
@@ -149,11 +177,21 @@ export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps
         onClose={() => setModalOpen(false)}
         onSaved={refreshCheck}
       />
+      <BankInvestigationModal
+        open={investigationOpen}
+        onClose={() => setInvestigationOpen(false)}
+        onResolved={refreshCheck}
+      />
     </>
   );
 }
 
-// ─── Footer subcomponente con los 4 estados ────────────────────────
+// ─── Footer subcomponente con los 5 estados ────────────────────────
+//   empty    -> nunca se registró saldo real
+//   ok       -> diferencia ≈ 0 (cuadrado natural)
+//   diff     -> diferencia != 0 + status='pending' → ofrece Investigar
+//   resolved -> diferencia != 0 pero ya fue investigada y resuelta
+//   accepted -> diferencia != 0 aceptada (no se investiga más)
 
 type ConciliationRowProps =
   | { variant: "empty"; onAction: () => void }
@@ -165,7 +203,22 @@ type ConciliationRowProps =
       createdAt: string;
       daysSince: number;
       stale: boolean;
-      onAction: () => void;
+      onInvestigate: () => void;
+      onUpdate: () => void;
+    }
+  | {
+      variant: "resolved";
+      diff: number;
+      checkDate: string;
+      createdAt: string;
+      onUpdate: () => void;
+    }
+  | {
+      variant: "accepted";
+      diff: number;
+      checkDate: string;
+      createdAt: string;
+      onUpdate: () => void;
     };
 
 function ConciliationRow(p: ConciliationRowProps) {
@@ -196,7 +249,38 @@ function ConciliationRow(p: ConciliationRowProps) {
       </button>
     );
   }
-  // variant === "diff"
+  if (p.variant === "resolved") {
+    const sign = p.diff >= 0 ? "+" : "";
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2 text-xs">
+          <span className="flex items-center gap-1.5 text-emerald-700">
+            <Check className="w-3.5 h-3.5" />
+            <span>Resuelto ({sign}{formatCurrency(p.diff)})</span>
+          </span>
+          <span className="text-[11px] text-gray-500">{describeWhen(p.checkDate, p.createdAt)}</span>
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <SecondaryActionButton onClick={p.onUpdate} label="Actualizar" icon="refresh" />
+        </div>
+      </div>
+    );
+  }
+  if (p.variant === "accepted") {
+    const sign = p.diff >= 0 ? "+" : "";
+    return (
+      <div className="space-y-1">
+        <div className="flex items-center justify-between gap-2 text-xs text-gray-600">
+          <span>Diferencia aceptada ({sign}{formatCurrency(p.diff)})</span>
+          <span className="text-[11px] text-gray-500">{describeWhen(p.checkDate, p.createdAt)}</span>
+        </div>
+        <div className="flex items-center justify-end gap-2">
+          <SecondaryActionButton onClick={p.onUpdate} label="Actualizar" icon="refresh" />
+        </div>
+      </div>
+    );
+  }
+  // variant === "diff" — status='pending' con diferencia activa
   const sign = p.diff >= 0 ? "+" : "";
   const lastLabel = p.stale
     ? `Último check: ${formatDate(p.checkDate)} (${p.daysSince} días)`
@@ -216,21 +300,45 @@ function ConciliationRow(p: ConciliationRowProps) {
         <span className={`text-[11px] ${p.stale ? "text-amber-700" : "text-gray-500"}`}>
           {lastLabel}
         </span>
-        <ActionButton onClick={p.onAction} label="Actualizar" />
+        <div className="flex items-center gap-1">
+          <ActionButton onClick={p.onInvestigate} label="Investigar" icon="search" />
+          <SecondaryActionButton onClick={p.onUpdate} label="Actualizar saldo" icon="more" />
+        </div>
       </div>
     </div>
   );
 }
 
-function ActionButton({ onClick, label }: { onClick: () => void; label: string }) {
+function ActionButton({ onClick, label, icon = "refresh" }: { onClick: () => void; label: string; icon?: "refresh" | "search" }) {
+  const Icon = icon === "search" ? Search : RefreshCw;
   return (
     <button
       type="button"
       onClick={(e) => { e.stopPropagation(); e.preventDefault(); onClick(); }}
       className="relative z-20 inline-flex items-center gap-1 px-2 py-0.5 text-[11px] font-medium text-emerald-700 hover:bg-emerald-50 rounded transition-colors"
     >
-      <RefreshCw className="w-3 h-3" />
+      <Icon className="w-3 h-3" />
       {label}
+    </button>
+  );
+}
+
+/**
+ * Botón terciario sutil para acciones secundarias (ej. "Actualizar
+ * saldo" cuando el botón primario es "Investigar"). Mismo z-20 que
+ * el primario para escapar del stacking context del KPICard.
+ */
+function SecondaryActionButton({ onClick, label, icon = "refresh" }: { onClick: () => void; label: string; icon?: "refresh" | "more" }) {
+  const Icon = icon === "more" ? MoreHorizontal : RefreshCw;
+  return (
+    <button
+      type="button"
+      onClick={(e) => { e.stopPropagation(); e.preventDefault(); onClick(); }}
+      title={label}
+      aria-label={label}
+      className="relative z-20 inline-flex items-center justify-center w-6 h-6 text-gray-500 hover:text-gray-700 hover:bg-gray-100 rounded transition-colors"
+    >
+      <Icon className="w-3.5 h-3.5" />
     </button>
   );
 }
