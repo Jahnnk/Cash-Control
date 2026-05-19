@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { Save, Loader2, Coffee, Banknote, Smartphone, ArrowDownToLine, Tag } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { saveByteSales, getByteSales, type ByteSalesData } from "@/app/actions/byte-sales";
+import { ByteDayActionsBar } from "@/components/banking/ByteDayActionsBar";
 
 /**
  * Resumen Byte B2C — Fonavi y Centro (cafeterías).
@@ -189,6 +190,23 @@ export function ResumenByteB2C({ date }: { date: string }) {
               {pending ? "Guardando..." : "Guardar Resumen Byte"}
             </button>
           </div>
+
+          {/* Acciones sobre el registro del día: mover de fecha / eliminar. */}
+          <ByteDayActionsBar
+            date={date}
+            hasData={n(efectivo) + n(pos) + n(yapePlin) + n(transferencia) > 0 || n(descuentos) > 0}
+            total={n(efectivo) + n(pos) + n(yapePlin) + n(transferencia)}
+            summary={[
+              n(efectivo) > 0 ? `Efectivo ${formatCurrency(n(efectivo))}` : null,
+              n(pos) > 0 ? `POS ${formatCurrency(n(pos))}` : null,
+              n(yapePlin) > 0 ? `Yape/Plin ${formatCurrency(n(yapePlin))}` : null,
+              n(transferencia) > 0 ? `Transfer. ${formatCurrency(n(transferencia))}` : null,
+            ].filter(Boolean).join(" · ") || undefined}
+            onChanged={() => {
+              // Limpiar form local — el padre re-cargará vía router.refresh
+              setEfectivo(""); setPos(""); setYapePlin(""); setTransferencia(""); setDescuentos("");
+            }}
+          />
         </>
       )}
     </div>

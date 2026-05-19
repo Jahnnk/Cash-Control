@@ -8,6 +8,7 @@ import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBa
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
 import { getInternalTransfersByDate, deleteInternalTransfer, type InternalTransfer } from "@/app/actions/internal-transfers";
 import { InternalTransferModal } from "@/components/banking/InternalTransferModal";
+import { ByteDayActionsBar } from "@/components/banking/ByteDayActionsBar";
 import { ArrowRightLeft, AlertTriangle } from "lucide-react";
 import { ResumenByteB2C } from "./resumen-byte-b2c";
 import { formatCurrency, getToday, formatDate } from "@/lib/utils";
@@ -754,6 +755,26 @@ export function RegistroForm({
                   )}
                 </div>
               )}
+
+              {/* Acciones sobre el registro Byte del día: mover de fecha / eliminar. */}
+              <ByteDayActionsBar
+                date={date}
+                hasData={byteTotal > 0 || byteCashSaleNum > 0 || parseFloat(byteCreditDay || "0") > 0}
+                total={byteTotal}
+                summary={[
+                  parseFloat(byteCreditDay || "0") > 0 ? `Crédito día ${formatCurrency(parseFloat(byteCreditDay))}` : null,
+                  byteCashSaleNum > 0 ? `Venta contado ${formatCurrency(byteCashSaleNum)}` : null,
+                  parseFloat(byteCreditCollected || "0") > 0 ? `Cobrados ${formatCurrency(parseFloat(byteCreditCollected))}` : null,
+                ].filter(Boolean).join(" · ") || undefined}
+                onChanged={() => {
+                  // Refrescar form local — campos vuelven a leerse del daily_record
+                  // tras el router.refresh del modal padre
+                  setByteCreditDay("");
+                  setByteCreditCollected("");
+                  setByteCashSale("");
+                  setByteDiscounts("");
+                }}
+              />
             </div>
           )}
 
