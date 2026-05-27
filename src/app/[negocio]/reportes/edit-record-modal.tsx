@@ -1,11 +1,24 @@
 "use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { X, Loader2 } from "lucide-react";
 import { updateIncomeItem, updateExpense } from "@/app/actions/record-edits";
 import { formatDateShort } from "@/lib/utils";
 
 type ClientOption = { id: string; name: string };
+
+/**
+ * Atelier es centro de produccion B2B sin POS Byte. Centro y Fonavi
+ * si tienen POS Byte y por eso los cobros llegan al banco mezclados
+ * con cobros B2B — el texto "(ingreso del Byte)" ayuda a distinguir
+ * en esos negocios. En Atelier el texto es confuso porque no aplica.
+ */
+function emptyClientLabel(negocio: string | null): string {
+  return negocio === "atelier"
+    ? "— Sin cliente —"
+    : "— Sin cliente (ingreso del Byte) —";
+}
 
 export type EditTarget =
   | {
@@ -42,6 +55,8 @@ export function EditRecordModal({
   onSaved: () => void;
 }) {
   const isIncome = target.type === "income";
+  const params = useParams<{ negocio?: string }>();
+  const negocio = params?.negocio ?? null;
 
   // Local state
   const [amount, setAmount] = useState(String(target.amount));
@@ -135,7 +150,7 @@ export function EditRecordModal({
                   onChange={(e) => setClientId(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
                 >
-                  <option value="">— Sin cliente (ingreso del Byte) —</option>
+                  <option value="">{emptyClientLabel(negocio)}</option>
                   {clients.map((c) => (
                     <option key={c.id} value={c.id}>{c.name}</option>
                   ))}

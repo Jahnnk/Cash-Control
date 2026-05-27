@@ -1,12 +1,20 @@
 "use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { X, Loader2 } from "lucide-react";
 import { createBankIncomeItem } from "@/app/actions/bank-income";
 import { createExpense } from "@/app/actions/expenses";
 import { formatDateShort } from "@/lib/utils";
 
 type ClientOption = { id: string; name: string };
+
+/** Mismo criterio que EditRecordModal — placeholder condicional por negocio. */
+function emptyClientLabel(negocio: string | null): string {
+  return negocio === "atelier"
+    ? "— Sin cliente —"
+    : "— Sin cliente (ingreso del Byte) —";
+}
 
 export type CreateTarget = {
   type: "income" | "expense";
@@ -52,6 +60,8 @@ export function CreateRecordModal({
 }) {
   const isIncome = target.type === "income";
   const TODAY = todayISO();
+  const params = useParams<{ negocio?: string }>();
+  const negocio = params?.negocio ?? null;
 
   // Campos comunes
   const [date, setDate] = useState(target.date);
@@ -218,7 +228,7 @@ export function CreateRecordModal({
                   onChange={(e) => setClientId(e.target.value)}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
                 >
-                  <option value="">— Sin cliente (ingreso del Byte) —</option>
+                  <option value="">{emptyClientLabel(negocio)}</option>
                   {clients.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.name}

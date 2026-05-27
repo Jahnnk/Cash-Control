@@ -1,9 +1,15 @@
 "use client";
 
 import { useState } from "react";
+import { useParams } from "next/navigation";
 import { X, Loader2, AlertTriangle } from "lucide-react";
 import { deleteIncomeItem, deleteExpense } from "@/app/actions/record-edits";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
+
+/** Mismo criterio que EditRecordModal — Atelier no tiene POS Byte. */
+function emptyClientLabel(negocio: string | null): string {
+  return negocio === "atelier" ? "— Sin cliente —" : "— Sin cliente (Byte) —";
+}
 
 export type DeleteTarget =
   | {
@@ -39,6 +45,8 @@ export function DeleteRecordModal({
   const [confirmText, setConfirmText] = useState("");
   const [deleting, setDeleting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const params = useParams<{ negocio?: string }>();
+  const negocio = params?.negocio ?? null;
 
   const isIncome = target.type === "income";
   const canConfirm = confirmText === CONFIRM_WORD && !deleting;
@@ -80,7 +88,7 @@ export function DeleteRecordModal({
             <DetailRow label="Monto" value={formatCurrency(target.amount)} valueClass="text-red-600 font-semibold" />
             {isIncome ? (
               <>
-                <DetailRow label="Cliente" value={target.clientName ?? "— Sin cliente (Byte) —"} />
+                <DetailRow label="Cliente" value={target.clientName ?? emptyClientLabel(negocio)} />
                 {target.note && <DetailRow label="Nota" value={target.note} />}
               </>
             ) : (
