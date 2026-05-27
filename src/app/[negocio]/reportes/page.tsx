@@ -5,12 +5,13 @@ import { useSearchParams } from "next/navigation";
 import { Download } from "lucide-react";
 import { WeeklyReport } from "./weekly-report";
 import { MonthlyReport } from "./monthly-report";
+import { DailyMovementsReport } from "./daily-movements-report";
 import { ReconciliationSection } from "./reconciliation-section";
 import { ExportModal } from "./export-modal";
 
-type Tab = "semanal" | "mensual" | "conciliacion";
+type Tab = "semanal" | "mensual" | "movimientos" | "conciliacion";
 
-const VALID_TABS: Tab[] = ["semanal", "mensual", "conciliacion"];
+const VALID_TABS: Tab[] = ["semanal", "mensual", "movimientos", "conciliacion"];
 
 function ReportesContent() {
   const searchParams = useSearchParams();
@@ -28,6 +29,7 @@ function ReportesContent() {
   const tabs: { key: Tab; label: string }[] = [
     { key: "semanal", label: "Semanal" },
     { key: "mensual", label: "Mensual" },
+    { key: "movimientos", label: "Movimientos diarios" },
     { key: "conciliacion", label: "Conciliación" },
   ];
 
@@ -62,6 +64,7 @@ function ReportesContent() {
 
       {activeTab === "semanal" && <WeeklyReport />}
       {activeTab === "mensual" && <MonthlyReport />}
+      {activeTab === "movimientos" && <DailyMovementsReport />}
       {activeTab === "conciliacion" && <ReconciliationSection />}
     </div>
   );
