@@ -6,6 +6,66 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { recalcBankBalance } from "./daily-records";
 
+/**
+ * Crea un único ingreso a Ctas. y Efectivo (sin tocar el resto del día).
+ *
+ * Diferencia con `saveBankIncomeItems`: aquella reemplaza TODOS los
+ * ítems operativos del día (DELETE + INSERT), pensada para el flujo
+ * batch de Registro Diario. Esta inserta una sola fila, pensada para
+ * el flujo de creación desde "Movimientos diarios" en Reportes,
+ * donde Jahnn está conciliando contra BCP en vivo y solo quiere
+ * agregar un movimiento puntual.
+ *
+ * Mismas validaciones de tipo que el resto del módulo: solo permite
+ * crear filas operativas normales (is_special_loan=false,
+ * is_internal_transfer=false, is_byte_sale=false). Los flags
+ * especiales tienen sus propios módulos de gestión.
+ *
+ * Garantiza que exista la fila correspondiente en daily_records
+ * (INSERT ... ON CONFLICT DO NOTHING) antes de recalcular saldos,
+ * para evitar que recalcBankBalance sea no-op cuando se registra
+ * en un día completamente nuevo.
+ */
+export async function createBankIncomeItem(data: {
+  date: string;
+  amount: number;
+  clientId?: string | null;
+  note?: string;
+  paymentMethod?: string;
+}): Promise<{ success: true } | { success: false; error: string }> {
+  const bId = await activeBusinessId();
+
+  // Validaciones (consistentes con registro-form y EditRecordModal)
+  if (!Number.isFinite(data.amount) || data.amount <= 0) {
+    return { success: false, error: "El monto debe ser mayor a 0" };
+  }
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
+    return { success: false, error: "Fecha inválida" };
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  if (data.date > today) {
+    return { success: false, error: "No se pueden registrar movimientos con fecha futura" };
+  }
+
+  const method = data.paymentMethod ?? "transferencia";
+
+  // Asegura que exista daily_records para que recalcBankBalance no sea no-op.
+  await db.execute(sql`
+    INSERT INTO daily_records (business_id, date)
+    VALUES (${bId}, ${data.date})
+    ON CONFLICT (business_id, date) DO NOTHING
+  `);
+
+  await db.execute(sql`
+    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method)
+    VALUES (${bId}, ${data.date}, ${data.amount}, ${data.clientId ?? null}, ${data.note?.trim() || null}, ${method})
+  `);
+
+  await recalcBankBalance(data.date);
+  revalidatePath("/", "layout");
+  return { success: true };
+}
+
 export async function saveBankIncomeItems(
   date: string,
   items: { amount: number; clientId: string | null; note: string; paymentMethod?: string }[]
