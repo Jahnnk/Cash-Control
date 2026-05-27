@@ -8,9 +8,14 @@ import { getClients } from "@/app/actions/clients";
 import { getAvailableMonthRange } from "@/app/actions/month-range";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
-import { Pencil, Trash2 } from "lucide-react";
+import { Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
 import { EditRecordModal, type EditTarget } from "./edit-record-modal";
 import { DeleteRecordModal, type DeleteTarget } from "./delete-record-modal";
+import {
+  CreateRecordModal,
+  CreateTypeSelector,
+  type CreateTarget,
+} from "./create-record-modal";
 
 /**
  * Pestaña "Movimientos diarios" — vista combinada de ingresos y egresos
@@ -84,6 +89,16 @@ export function DailyMovementsReport() {
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
+  const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
+  const [showTypeSelector, setShowTypeSelector] = useState(false);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Auto-cierra toast a los 2.5s
+  useEffect(() => {
+    if (!toast) return;
+    const t = setTimeout(() => setToast(null), 2500);
+    return () => clearTimeout(t);
+  }, [toast]);
 
   useEffect(() => {
     getAvailableMonthRange().then(setMonthRange);
@@ -200,46 +215,65 @@ export function DailyMovementsReport() {
           Cargando...
         </div>
       ) : days.length === 0 ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500 text-sm">
-          No hay movimientos a Ctas. y Efectivo en este mes.
+        <div className="bg-white rounded-xl border border-gray-200 p-12 text-center space-y-4">
+          <div className="text-gray-500 text-sm">
+            No hay movimientos a Ctas. y Efectivo en este mes.
+          </div>
+          <button
+            onClick={() => setShowTypeSelector(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors"
+          >
+            <Plus className="w-3.5 h-3.5" />
+            Agregar movimiento
+          </button>
         </div>
       ) : (
         <>
-          {/* Resumen del mes */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center gap-6 text-sm">
-            <div>
-              <div className="text-gray-500 text-xs uppercase tracking-wide">
-                Ingresos del mes
+          {/* Resumen del mes + botón global */}
+          <div className="bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center justify-between gap-4 text-sm">
+            <div className="flex flex-wrap items-center gap-6">
+              <div>
+                <div className="text-gray-500 text-xs uppercase tracking-wide">
+                  Ingresos del mes
+                </div>
+                <div className="text-emerald-600 font-semibold text-base">
+                  {formatCurrency(monthIncomeTotal)}
+                </div>
               </div>
-              <div className="text-emerald-600 font-semibold text-base">
-                {formatCurrency(monthIncomeTotal)}
+              <div>
+                <div className="text-gray-500 text-xs uppercase tracking-wide">
+                  Egresos del mes
+                </div>
+                <div className="text-red-600 font-semibold text-base">
+                  −{formatCurrency(monthExpenseTotal)}
+                </div>
+              </div>
+              <div>
+                <div className="text-gray-500 text-xs uppercase tracking-wide">
+                  Neto del mes
+                </div>
+                <div
+                  className={`font-bold text-base ${
+                    monthNet > 0
+                      ? "text-emerald-600"
+                      : monthNet < 0
+                        ? "text-red-600"
+                        : "text-gray-500"
+                  }`}
+                >
+                  {monthNet >= 0 ? "+" : ""}
+                  {formatCurrency(monthNet)}
+                </div>
               </div>
             </div>
-            <div>
-              <div className="text-gray-500 text-xs uppercase tracking-wide">
-                Egresos del mes
-              </div>
-              <div className="text-red-600 font-semibold text-base">
-                −{formatCurrency(monthExpenseTotal)}
-              </div>
-            </div>
-            <div>
-              <div className="text-gray-500 text-xs uppercase tracking-wide">
-                Neto del mes
-              </div>
-              <div
-                className={`font-bold text-base ${
-                  monthNet > 0
-                    ? "text-emerald-600"
-                    : monthNet < 0
-                      ? "text-red-600"
-                      : "text-gray-500"
-                }`}
-              >
-                {monthNet >= 0 ? "+" : ""}
-                {formatCurrency(monthNet)}
-              </div>
-            </div>
+            <button
+              onClick={() => setShowTypeSelector(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors"
+              title="Agregar un movimiento nuevo (cualquier fecha)"
+            >
+              <Plus className="w-3.5 h-3.5" />
+              Agregar movimiento
+            </button>
           </div>
 
           {days.map((d) => (
@@ -248,6 +282,9 @@ export function DailyMovementsReport() {
               day={d}
               onEdit={setEditTarget}
               onDelete={setDeleteTarget}
+              onCreate={(type) =>
+                setCreateTarget({ type, date: d.date, dateLocked: true })
+              }
             />
           ))}
         </>
@@ -262,6 +299,7 @@ export function DailyMovementsReport() {
           onSaved={async () => {
             await loadData();
             setEditTarget(null);
+            setToast("Cambios guardados");
           }}
         />
       )}
@@ -272,8 +310,49 @@ export function DailyMovementsReport() {
           onDeleted={async () => {
             await loadData();
             setDeleteTarget(null);
+            setToast("Movimiento eliminado");
           }}
         />
+      )}
+
+      {/* Selector de tipo del botón global */}
+      {showTypeSelector && (
+        <CreateTypeSelector
+          onClose={() => setShowTypeSelector(false)}
+          onPick={(type) => {
+            setShowTypeSelector(false);
+            // Default: hoy, fecha editable.
+            setCreateTarget({
+              type,
+              date: new Date().toISOString().slice(0, 10),
+              dateLocked: false,
+            });
+          }}
+        />
+      )}
+
+      {/* Modal de creación */}
+      {createTarget && (
+        <CreateRecordModal
+          target={createTarget}
+          categories={categories}
+          clients={clients}
+          onClose={() => setCreateTarget(null)}
+          onCreated={async () => {
+            const wasIncome = createTarget.type === "income";
+            setCreateTarget(null);
+            await loadData();
+            setToast(wasIncome ? "Ingreso registrado" : "Egreso registrado");
+          }}
+        />
+      )}
+
+      {/* Toast de éxito */}
+      {toast && (
+        <div className="fixed bottom-6 right-6 z-50 bg-emerald-600 text-white px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 text-sm font-medium animate-in fade-in slide-in-from-bottom-2">
+          <CheckCircle2 className="w-4 h-4" />
+          {toast}
+        </div>
       )}
     </div>
   );
@@ -283,10 +362,12 @@ function DayCard({
   day,
   onEdit,
   onDelete,
+  onCreate,
 }: {
   day: DayBlock;
   onEdit: (t: EditTarget) => void;
   onDelete: (t: DeleteTarget) => void;
+  onCreate: (type: "income" | "expense") => void;
 }) {
   const netCls =
     day.net > 0
@@ -321,10 +402,21 @@ function DayCard({
       <div className="grid grid-cols-1 md:grid-cols-2 md:divide-x divide-gray-100">
         {/* Ingresos */}
         <div>
-          <div className="px-4 py-2 bg-emerald-50/60 border-b border-gray-100 flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase text-emerald-700 tracking-wide">
-              Ingresos
-            </span>
+          <div className="px-4 py-2 bg-emerald-50/60 border-b border-gray-100 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase text-emerald-700 tracking-wide">
+                Ingresos
+              </span>
+              <button
+                onClick={() => onCreate("income")}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium text-emerald-700 bg-white border border-emerald-200 rounded hover:bg-emerald-100 hover:border-emerald-300 transition-colors"
+                title="Agregar ingreso a este día"
+                aria-label="Agregar ingreso a este día"
+              >
+                <Plus className="w-3 h-3" />
+                Ingreso
+              </button>
+            </div>
             <span className="text-sm font-bold text-emerald-700">
               {formatCurrency(day.incomeTotal)}
             </span>
@@ -393,10 +485,21 @@ function DayCard({
 
         {/* Egresos */}
         <div>
-          <div className="px-4 py-2 bg-red-50/60 border-b border-gray-100 flex items-center justify-between">
-            <span className="text-[11px] font-semibold uppercase text-red-700 tracking-wide">
-              Egresos
-            </span>
+          <div className="px-4 py-2 bg-red-50/60 border-b border-gray-100 flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="text-[11px] font-semibold uppercase text-red-700 tracking-wide">
+                Egresos
+              </span>
+              <button
+                onClick={() => onCreate("expense")}
+                className="inline-flex items-center gap-0.5 px-1.5 py-0.5 text-[10px] font-medium text-red-700 bg-white border border-red-200 rounded hover:bg-red-100 hover:border-red-300 transition-colors"
+                title="Agregar egreso a este día"
+                aria-label="Agregar egreso a este día"
+              >
+                <Plus className="w-3 h-3" />
+                Egreso
+              </button>
+            </div>
             <span className="text-sm font-bold text-red-700">
               {formatCurrency(day.expenseTotal)}
             </span>
