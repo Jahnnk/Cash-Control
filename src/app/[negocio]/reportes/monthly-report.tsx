@@ -203,6 +203,7 @@ export function MonthlyReport() {
                     <KPICard
                       title={hasPos ? "Ventas Byte" : "Ventas Byte (cobradas)"}
                       value={formatCurrency(hasPos ? totalPos! : cobradas)}
+                      valueClassName="text-[#5d3fbe]"
                       subtitle={
                         hasPos
                           ? "Total reportado por POS"

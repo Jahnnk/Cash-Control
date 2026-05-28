@@ -665,7 +665,10 @@ export function RegistroForm({
             className={`flex-1 py-2.5 px-4 rounded-md text-sm font-medium transition-colors ${
               activeTab === tab.key ? "bg-white text-primary shadow-sm" : "text-gray-600 hover:text-gray-900"
             }`}>
-            {tab.label}
+            {/* La pestaña "Byte" usa el color de marca Byte (#5d3fbe) */}
+            <span style={tab.key === "byte" ? { color: "#5d3fbe" } : undefined}>
+              {tab.label}
+            </span>
           </button>
         ))}
       </div>
