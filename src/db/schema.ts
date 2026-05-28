@@ -125,6 +125,10 @@ export const expenses = pgTable(
     // Trazabilidad de importación masiva desde Excel.
     importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
     importBatchId: uuid("import_batch_id"),
+    // Marca de verificación contra movimientos de la app BCP del banco.
+    // NULL = pendiente de cuadrar; timestamp = cuadrado en esa fecha.
+    // Solo metadata visual: NO afecta saldos ni reportes financieros.
+    bcpVerifiedAt: timestamp("bcp_verified_at"),
   },
   (t) => ({
     businessIdx: index("idx_expenses_business_id").on(t.businessId),
@@ -260,6 +264,10 @@ export const bankIncomeItems = pgTable(
     importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
     importBatchId: uuid("import_batch_id"),
     createdAt: timestamp("created_at").defaultNow().notNull(),
+    // Marca de verificación contra movimientos de la app BCP del banco.
+    // NULL = pendiente de cuadrar; timestamp = cuadrado en esa fecha.
+    // Solo metadata visual: NO afecta saldos ni reportes financieros.
+    bcpVerifiedAt: timestamp("bcp_verified_at"),
   },
   (t) => ({
     businessIdx: index("idx_bank_income_items_business_id").on(t.businessId),
