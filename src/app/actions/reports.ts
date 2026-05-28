@@ -296,7 +296,8 @@ export async function getDailyBreakdown(
     // afecta a Centro/Fonavi visualmente.
     const result = await db.execute(sql`
       SELECT bi.id, bi.date, bi.amount, bi.note, bi.client_id, c.name as client_name,
-             bi.is_byte_sale, bi.payment_method
+             bi.is_byte_sale, bi.payment_method,
+             bi.bcp_verified_at::text AS bcp_verified_at
       FROM bank_income_items bi
       LEFT JOIN clients c ON c.id = bi.client_id
       WHERE bi.business_id = ${bId} AND bi.date >= ${startDate} AND bi.date <= ${endDate}
@@ -415,7 +416,8 @@ export async function getDailyBreakdown(
     return { format: "credit_sales", rows: result.rows };
   } else {
     const result = await db.execute(sql`
-      SELECT id, date, amount, category, concept, notes, payment_method
+      SELECT id, date, amount, category, concept, notes, payment_method,
+             bcp_verified_at::text AS bcp_verified_at
       FROM expenses
       WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
       ORDER BY date DESC, amount DESC
