@@ -11,13 +11,24 @@ type Result = { success: true } | { success: false; error: string };
 
 // ---------- Helpers de recálculo (queries reutilizadas en cada transacción) ----------
 // IMPORTANTE: cada query lleva el bId embebido literal porque sql.transaction
-// no puede ejecutar funciones async dentro.
+// no puede ejecutar funciones async dentro. Por esa restricción de neon NO se
+// puede reutilizar la función async recalcBankBalance() de daily-records.ts
+// dentro de la transacción atómica; en su lugar estas queries replican EXACTO
+// los mismos filtros que la versión canónica (single source of truth lógico).
+//
+// Filtros canónicos (ver daily-records.ts → recalcBankBalance):
+//   - Cache bank_income/bank_expense: excluye is_special_loan, is_internal_transfer
+//     y archived. bank_income incluye efectivo (es "ingreso bruto del día");
+//     bank_expense excluye efectivo y pendiente_atelier.
+//   - Cadena bank_balance_real: excluye is_special_loan y archived en ambos lados;
+//     ingresos excluyen efectivo; egresos excluyen efectivo y pendiente_atelier.
+//     (is_internal_transfer NO se excluye en la cadena: cada pata mueve su cuenta.)
 
 function recalcDailyTotalsQuery(bId: number, date: string) {
   return sql`
     UPDATE daily_records SET
-      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = ${date} AND archived = false), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = ${date} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND archived = false), 0)
+      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = ${date} AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0),
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = ${date} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)
     WHERE business_id = ${bId} AND date = ${date}
   `;
 }
@@ -39,8 +50,8 @@ function recalcBankBalanceQuery(bId: number, date: string) {
         dr.date,
         ROUND((
           c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND archived = false), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND archived = false), 0)
+          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false AND payment_method <> 'efectivo' AND archived = false), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false AND archived = false), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
