@@ -1,0 +1,40 @@
+name: Tests
+
+# Corre en cada push a cualquier rama y en cada PR hacia main.
+# BLOQUEAN el merge: type-check y tests. El lint corre como informativo
+# (no bloquea) porque el codebase arrastra errores de lint preexistentes;
+# una tarea posterior limpiará esa deuda y entonces el lint pasará a
+# bloquear. Para hacer obligatorio este check: Settings → Branches →
+# regla de main → marcar "Tests" como required.
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Type check (bloquea)
+        run: npx tsc --noEmit
+
+      - name: Unit tests (bloquea)
+        run: npm test
+
+      # Informativo: muestra problemas de lint sin frenar el merge.
+      # Pasará a bloqueante tras limpiar la deuda de lint preexistente.
+      - name: Lint (informativo)
+        run: npm run lint
+        continue-on-error: true
