@@ -22,7 +22,7 @@ function ReportesContent() {
   const initialTab: Tab =
     rawTab === "antigüedad" || rawTab === "antiguedad" || rawTab === "ultimos7"
       ? rawTab === "ultimos7" ? "semanal" : "conciliacion"
-      : (VALID_TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "semanal");
+      : (VALID_TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "movimientos");
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [showExport, setShowExport] = useState(false);
 
