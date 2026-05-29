@@ -18,6 +18,7 @@ import {
   LogOut,
   User,
   HandCoins,
+  Banknote,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -37,7 +38,7 @@ const NAV: NavItem[] = [
   { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro"] },
   { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },
   { segment: "fonavi",        label: "Fonavi",          icon: Handshake,       scopes: ["atelier"] },
-  { segment: "prestamos-socio", label: "Préstamos socio", icon: HandCoins,     scopes: ["atelier"] },
+  { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote,      scopes: ["atelier"] },
   { segment: "propinas",      label: "Propinas",        icon: HandCoins,       scopes: ["atelier", "fonavi", "centro"] },
   { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro"] },
@@ -216,16 +217,10 @@ export function Sidebar() {
           })}
         </nav>
 
-        {/* Footer: botones explícitos para cambiar negocio + cambiar usuario */}
+        {/* Footer: cambiar usuario. "Cambiar negocio" vive en el switcher
+            del header (siempre visible) — se quitó de aquí para evitar el
+            doble acceso al mismo destino. */}
         <div className="border-t border-white/10 p-3 space-y-1">
-          <Link
-            href="/select-business"
-            onClick={() => setOpen(false)}
-            className="flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors"
-          >
-            <RefreshCcw className="w-4 h-4 shrink-0" />
-            Cambiar negocio
-          </Link>
           <form action={clearRole}>
             <button
               type="submit"
