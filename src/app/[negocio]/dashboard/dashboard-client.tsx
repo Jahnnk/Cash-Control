@@ -93,10 +93,11 @@ export function DashboardClient({
             <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
             <div className="min-w-0">
               <div className="text-sm font-medium text-amber-900">
-                El saldo del banco tiene una inconsistencia
+                Alerta de consistencia
               </div>
               <div className="text-xs text-amber-700 mt-0.5">
-                Diferencia detectada el {formatDate(bank.discrepancyDate)}
+                El sistema detectó una inconsistencia interna en la cadena de saldos.
+                {" "}Diferencia el {formatDate(bank.discrepancyDate)}
                 {bank.discrepancyAmount !== null && (
                   <> · {bank.discrepancyAmount > 0 ? "+" : ""}{formatCurrency(bank.discrepancyAmount)}</>
                 )}
@@ -107,7 +108,7 @@ export function DashboardClient({
             href={reportesHref("tab=conciliacion")}
             className="text-xs font-medium text-amber-900 bg-white border border-amber-300 hover:bg-amber-100 rounded-md px-3 py-1.5 whitespace-nowrap shrink-0"
           >
-            Revisar en Conciliación →
+            Revisar →
           </Link>
         </div>
       )}
