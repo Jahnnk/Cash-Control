@@ -145,87 +145,123 @@ export function DashboardClient({
         loading={isPending}
       />
 
-      {/* Top Cards — auto-fit para que el grid se reacomode si una card se oculta */}
-      <div
-        className="grid gap-4"
-        style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
-      >
-        <BankBalanceCard href={`/${negocio}/registro`} />
-        <CashBalanceCard href={`/${negocio}/registro`} />
-        <KPICard
-          icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
-          title={`Ingresos · ${monthLabel(data.selectedMonth)}`}
-          value={formatCurrency(monthlyIncome)}
-          subtitle={
-            monthHasNoData
-              ? "Sin movimientos en este período"
-              : data.isPartial
-                ? "Otros ingresos (parcial)"
-                : "Otros ingresos"
-          }
-          variant="default"
-          href={reportesHref(`tab=mensual&breakdown=income${reportMonthQs}`)}
-          dim={monthHasNoData}
-          secondaryAction={{
-            href: `/${negocio}/registro?tipo=ingreso`,
-            label: "Registrar nuevo ingreso",
-            icon: <Plus className="w-4 h-4" />,
-          }}
-        />
-        <KPICard
-          icon={<TrendingDown className="w-5 h-5 text-red-600" />}
-          title={`Gastos · ${monthLabel(data.selectedMonth)}`}
-          value={formatCurrency(data.monthlyExpenses)}
-          subtitle={
-            monthHasNoData
-              ? "Sin movimientos en este período"
-              : data.isPartial
-                ? `Promedio: ${formatCurrency(data.avgDailyExpense)}/día (parcial)`
-                : `Promedio: ${formatCurrency(data.avgDailyExpense)}/día`
-          }
-          variant="danger"
-          href={reportesHref(`tab=mensual&breakdown=expense${reportMonthQs}`)}
-          dim={monthHasNoData}
-          secondaryAction={{
-            href: `/${negocio}/registro?tipo=gasto`,
-            label: "Registrar nuevo gasto",
-            icon: <Plus className="w-4 h-4" />,
-          }}
-        />
-        <KPICard
-          icon={<Receipt className="w-5 h-5 text-amber-600" />}
-          title="Cuentas por cobrar"
-          value={formatCurrency(data.accountsReceivable)}
-          subtitle="Byte total - Cobros BCP"
-          variant="warning"
-          href={reportesHref("tab=conciliacion")}
-        />
-        {isAtelier && (
+      {/* Cards agrupadas en bloques temáticos. Mismos datos, enlaces y
+          acciones que antes — solo cambia la organización visual y, en el
+          bloque de deudas, el color para que no se lean todas como alerta. */}
+
+      {/* Bloque 1 — Saldos */}
+      <section className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+          Saldos
+        </h2>
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+        >
+          <BankBalanceCard href={`/${negocio}/registro`} />
+          <CashBalanceCard href={`/${negocio}/registro`} />
+        </div>
+      </section>
+
+      {/* Bloque 2 — Flujo del mes */}
+      <section className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+          Flujo del mes · {monthLabel(data.selectedMonth)}
+        </h2>
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+        >
           <KPICard
-            icon={<Handshake className="w-5 h-5 text-violet-600" />}
-            title="Por cobrar Fonavi"
-            value={formatCurrency(data.fonaviReceivables)}
-            subtitle="Gastos compartidos pendientes"
-            variant="violet"
-            href={`/${negocio}/fonavi`}
+            icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
+            title={`Ingresos · ${monthLabel(data.selectedMonth)}`}
+            value={formatCurrency(monthlyIncome)}
+            subtitle={
+              monthHasNoData
+                ? "Sin movimientos en este período"
+                : data.isPartial
+                  ? "Otros ingresos (parcial)"
+                  : "Otros ingresos"
+            }
+            variant="default"
+            href={reportesHref(`tab=mensual&breakdown=income${reportMonthQs}`)}
+            dim={monthHasNoData}
             secondaryAction={{
-              href: `/${negocio}/fonavi?accion=registrar-reembolso`,
-              label: "Registrar reembolso",
+              href: `/${negocio}/registro?tipo=ingreso`,
+              label: "Registrar nuevo ingreso",
               icon: <Plus className="w-4 h-4" />,
             }}
           />
-        )}
-        {isAtelier && data.partnerLoanBalance > 0 && (
           <KPICard
-            icon={<HandCoins className="w-5 h-5 text-amber-600" />}
-            title="Deuda con socio"
-            value={formatCurrency(data.partnerLoanBalance)}
-            subtitle="Préstamos personales pendientes"
-            variant="warning"
-            href={`/${negocio}/prestamos-socio`}
+            icon={<TrendingDown className="w-5 h-5 text-red-600" />}
+            title={`Gastos · ${monthLabel(data.selectedMonth)}`}
+            value={formatCurrency(data.monthlyExpenses)}
+            subtitle={
+              monthHasNoData
+                ? "Sin movimientos en este período"
+                : data.isPartial
+                  ? `Promedio: ${formatCurrency(data.avgDailyExpense)}/día (parcial)`
+                  : `Promedio: ${formatCurrency(data.avgDailyExpense)}/día`
+            }
+            variant="danger"
+            href={reportesHref(`tab=mensual&breakdown=expense${reportMonthQs}`)}
+            dim={monthHasNoData}
+            secondaryAction={{
+              href: `/${negocio}/registro?tipo=gasto`,
+              label: "Registrar nuevo gasto",
+              icon: <Plus className="w-4 h-4" />,
+            }}
           />
-        )}
-      </div>
+        </div>
+      </section>
+
+      {/* Bloque 3 — Por cobrar y deudas.
+          Solo "Cuentas por cobrar" conserva el ámbar (alerta accionable de
+          conciliación). "Por cobrar Fonavi" usa violeta y "Deuda con socio"
+          usa azul tenue (info) para que no se lean como idénticas. */}
+      <section className="space-y-2">
+        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+          Por cobrar y deudas
+        </h2>
+        <div
+          className="grid gap-4"
+          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+        >
+          <KPICard
+            icon={<Receipt className="w-5 h-5 text-amber-600" />}
+            title="Cuentas por cobrar"
+            value={formatCurrency(data.accountsReceivable)}
+            subtitle="Byte total - Cobros BCP"
+            variant="warning"
+            href={reportesHref("tab=conciliacion")}
+          />
+          {isAtelier && (
+            <KPICard
+              icon={<Handshake className="w-5 h-5 text-violet-600" />}
+              title="Por cobrar Fonavi"
+              value={formatCurrency(data.fonaviReceivables)}
+              subtitle="Gastos compartidos pendientes"
+              variant="violet"
+              href={`/${negocio}/fonavi`}
+              secondaryAction={{
+                href: `/${negocio}/fonavi?accion=registrar-reembolso`,
+                label: "Registrar reembolso",
+                icon: <Plus className="w-4 h-4" />,
+              }}
+            />
+          )}
+          {isAtelier && data.partnerLoanBalance > 0 && (
+            <KPICard
+              icon={<HandCoins className="w-5 h-5 text-blue-600" />}
+              title="Deuda con socio"
+              value={formatCurrency(data.partnerLoanBalance)}
+              subtitle="Préstamos personales pendientes"
+              variant="info"
+              href={`/${negocio}/prestamos-socio`}
+            />
+          )}
+        </div>
+      </section>
 
       {/* Enlaces a reportes detallados */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
