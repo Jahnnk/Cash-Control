@@ -81,68 +81,84 @@ export function BankBalanceCard({ href, size = "default" }: BankBalanceCardProps
     );
   }
 
-  // Atelier — calcular estado de conciliación
+  // Atelier — calcular estado del "Cuadre de saldo"
   const conciliationFooter = (() => {
     if (checkLoading) return null;
-    // Estado C — nunca registrado
-    if (!latestCheck) {
+    // Fila de estado según el último check registrado.
+    const row = (() => {
+      // Estado C — nunca registrado
+      if (!latestCheck) {
+        return (
+          <ConciliationRow
+            variant="empty"
+            onAction={() => setModalOpen(true)}
+          />
+        );
+      }
+      const diff = Number(latestCheck.difference);
+      const cuadrado = Math.abs(diff) < 0.01;
+      const daysSince = daysBetween(latestCheck.checkDate, todayLima());
+      const stale = daysSince >= 3;
+      const status = latestCheck.status;
+      if (cuadrado) {
+        return (
+          <ConciliationRow
+            variant="ok"
+            checkDate={latestCheck.checkDate}
+            createdAt={latestCheck.createdAt}
+            onAction={() => setModalOpen(true)}
+          />
+        );
+      }
+      // Estados Fase 2: diferencia + status
+      if (status === "resolved") {
+        return (
+          <ConciliationRow
+            variant="resolved"
+            diff={diff}
+            checkDate={latestCheck.checkDate}
+            createdAt={latestCheck.createdAt}
+            onUpdate={() => setModalOpen(true)}
+          />
+        );
+      }
+      if (status === "accepted") {
+        return (
+          <ConciliationRow
+            variant="accepted"
+            diff={diff}
+            checkDate={latestCheck.checkDate}
+            createdAt={latestCheck.createdAt}
+            onUpdate={() => setModalOpen(true)}
+          />
+        );
+      }
+      // status === "pending" + diferencia != 0 → boton Investigar
       return (
         <ConciliationRow
-          variant="empty"
-          onAction={() => setModalOpen(true)}
-        />
-      );
-    }
-    const diff = Number(latestCheck.difference);
-    const cuadrado = Math.abs(diff) < 0.01;
-    const daysSince = daysBetween(latestCheck.checkDate, todayLima());
-    const stale = daysSince >= 3;
-    const status = latestCheck.status;
-    if (cuadrado) {
-      return (
-        <ConciliationRow
-          variant="ok"
-          checkDate={latestCheck.checkDate}
-          createdAt={latestCheck.createdAt}
-          onAction={() => setModalOpen(true)}
-        />
-      );
-    }
-    // Estados Fase 2: diferencia + status
-    if (status === "resolved") {
-      return (
-        <ConciliationRow
-          variant="resolved"
+          variant="diff"
           diff={diff}
           checkDate={latestCheck.checkDate}
           createdAt={latestCheck.createdAt}
+          daysSince={daysSince}
+          stale={stale}
+          onInvestigate={() => setInvestigationOpen(true)}
           onUpdate={() => setModalOpen(true)}
         />
       );
-    }
-    if (status === "accepted") {
-      return (
-        <ConciliationRow
-          variant="accepted"
-          diff={diff}
-          checkDate={latestCheck.checkDate}
-          createdAt={latestCheck.createdAt}
-          onUpdate={() => setModalOpen(true)}
-        />
-      );
-    }
-    // status === "pending" + diferencia != 0 → boton Investigar
+    })();
+
+    // Encabezado "Cuadre de saldo" + microcopy explicativa (1 línea).
     return (
-      <ConciliationRow
-        variant="diff"
-        diff={diff}
-        checkDate={latestCheck.checkDate}
-        createdAt={latestCheck.createdAt}
-        daysSince={daysSince}
-        stale={stale}
-        onInvestigate={() => setInvestigationOpen(true)}
-        onUpdate={() => setModalOpen(true)}
-      />
+      <div className="space-y-1.5">
+        <div>
+          <div className="text-[11px] font-semibold text-gray-600">Cuadre de saldo</div>
+          <div className="text-[10px] text-gray-400 leading-tight">
+            Compara el saldo del sistema con el saldo real de tu cuenta BCP.
+          </div>
+        </div>
+        {row}
+      </div>
     );
   })();
 
@@ -290,7 +306,7 @@ function ConciliationRow(p: ConciliationRowProps) {
       <div className="flex items-center justify-between gap-2 text-xs">
         <span className="flex items-center gap-1.5" style={{ color: "#854F0B" }}>
           <CircleDot className="w-3.5 h-3.5" style={{ color: "#BA7517" }} />
-          <span>vs BCP real</span>
+          <span>Diferencia</span>
         </span>
         <span style={{ color: "#854F0B" }} className="text-[13px] font-medium">
           {sign}{formatCurrency(p.diff)}
