@@ -54,12 +54,14 @@ export function ReconciliationSection() {
   const range = getDateRange(period, customStart, customEnd);
 
   useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- patrón intencional de fetch al cambiar período (igual que monthly-report.tsx) */
     if (period === "rango" && (!customStart || !customEnd)) return;
     setLoading(true);
     getReconciliation(range.start, range.end).then((d) => {
       setData(d);
       setLoading(false);
     });
+    /* eslint-enable react-hooks/set-state-in-effect */
   }, [period, range.start, range.end, customStart, customEnd]);
 
   const periods: { key: Period; label: string }[] = [
@@ -88,8 +90,8 @@ export function ReconciliationSection() {
         <div className="px-6 py-4 border-b border-gray-100">
           <div className="flex items-center justify-between flex-wrap gap-3">
             <div>
-              <h2 className="text-lg font-semibold text-gray-900">Conciliación Bancaria</h2>
-              <p className="text-xs text-gray-500 mt-0.5">Byte esperado vs BCP real · Solo transferencias</p>
+              <h2 className="text-lg font-semibold text-gray-900">Cuadre Byte ↔ banco</h2>
+              <p className="text-xs text-gray-500 mt-0.5">Compara las ventas Byte esperadas con los depósitos reales en el BCP · Solo transferencias</p>
             </div>
             <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
               {periods.map((p) => (

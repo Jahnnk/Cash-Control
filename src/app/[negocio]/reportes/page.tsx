@@ -30,7 +30,9 @@ function ReportesContent() {
     { key: "semanal", label: "Semanal" },
     { key: "mensual", label: "Mensual" },
     { key: "movimientos", label: "Movimientos diarios" },
-    { key: "conciliacion", label: "Conciliación" },
+    // Slug interno "conciliacion" intacto (deep-links del Dashboard);
+    // solo cambia la etiqueta visible (Fase B — naming).
+    { key: "conciliacion", label: "Cuadre Byte ↔ banco" },
   ];
 
   return (
