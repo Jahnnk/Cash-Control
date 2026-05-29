@@ -24,8 +24,12 @@ jobs:
           node-version: 20
           cache: npm
 
+      # npm install (no npm ci): esbuild —dependencia transitiva de vitest—
+      # publica binarios por plataforma como optionalDependencies; npm ci
+      # aborta con EBADPLATFORM al validar los de otras plataformas. npm
+      # install resuelve y omite los no-aplicables sin fallar.
       - name: Install dependencies
-        run: npm ci
+        run: npm install --no-audit --no-fund
 
       - name: Type check (bloquea)
         run: npx tsc --noEmit
