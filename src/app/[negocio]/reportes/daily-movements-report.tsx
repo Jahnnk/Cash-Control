@@ -10,6 +10,7 @@ import {
   toggleBcpVerifiedIncome,
   toggleBcpVerifiedExpense,
 } from "@/app/actions/bcp-verification";
+import { useBankBalance } from "@/hooks/useBankBalance";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
 import { Pencil, Trash2, Plus, CheckCircle2, AlertCircle } from "lucide-react";
@@ -101,6 +102,13 @@ export function DailyMovementsReport() {
   const [incomes, setIncomes] = useState<IncomeRow[]>([]);
   const [expenses, setExpenses] = useState<ExpenseRow[]>([]);
   const [loading, setLoading] = useState(true);
+
+  // Saldo banco HOY — misma fuente que el Dashboard (useBankBalance →
+  // getUnifiedBankBalance). NO es un cálculo nuevo: garantiza que el
+  // número coincida siempre con el Dashboard. Es el saldo actual del
+  // BCP, independiente del mes navegado. Tras cada mutación se llama
+  // bank.refresh() (mismo patrón que Dashboard/BankBalanceCard).
+  const bank = useBankBalance();
   const [monthRange, setMonthRange] = useState<{
     minMonth: string;
     maxMonth: string;
@@ -408,6 +416,14 @@ export function DailyMovementsReport() {
                   <span className="text-xs ml-1">({monthVerifiedPct}%)</span>
                 </div>
               </div>
+              <div title="Saldo actual del banco — no cambia con el mes navegado">
+                <div className="text-gray-500 text-xs uppercase tracking-wide">
+                  Saldo banco hoy
+                </div>
+                <div className="font-semibold text-base text-gray-900">
+                  {bank.isLoading ? "—" : formatCurrency(bank.current)}
+                </div>
+              </div>
             </div>
             <div className="flex items-center gap-2">
               <button
@@ -467,7 +483,7 @@ export function DailyMovementsReport() {
           clients={clients}
           onClose={() => setEditTarget(null)}
           onSaved={async () => {
-            await loadData();
+            await Promise.all([loadData(), bank.refresh()]);
             setEditTarget(null);
             setToast({ msg: "Cambios guardados", tone: "success" });
           }}
@@ -478,7 +494,7 @@ export function DailyMovementsReport() {
           target={deleteTarget}
           onClose={() => setDeleteTarget(null)}
           onDeleted={async () => {
-            await loadData();
+            await Promise.all([loadData(), bank.refresh()]);
             setDeleteTarget(null);
             setToast({ msg: "Movimiento eliminado", tone: "success" });
           }}
@@ -511,7 +527,7 @@ export function DailyMovementsReport() {
           onCreated={async () => {
             const wasIncome = createTarget.type === "income";
             setCreateTarget(null);
-            await loadData();
+            await Promise.all([loadData(), bank.refresh()]);
             setToast({
               msg: wasIncome ? "Ingreso registrado" : "Egreso registrado",
               tone: "success",
