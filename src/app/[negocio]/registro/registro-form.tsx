@@ -689,7 +689,7 @@ export function RegistroForm({
               <div>
                 <h3 className="text-sm font-semibold text-gray-900 mb-3">Resumen Byte — Ventas</h3>
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                  <Field label="Crédito del día" value={byteCreditDay} onChange={setByteCreditDay} />
+                  <Field label="Créditos Otorgados" value={byteCreditDay} onChange={setByteCreditDay} />
                   <Field label="Créditos cobrados" value={byteCreditCollected} onChange={setByteCreditCollected} />
                   <Field label="Descuentos (info)" value={byteDiscounts} onChange={setByteDiscounts} />
                   <div className="bg-gray-50 rounded-lg p-3 flex flex-col justify-center">
@@ -728,7 +728,7 @@ export function RegistroForm({
               </div>
               {/* Total Byte */}
               <div className="bg-gray-50 rounded-lg p-3 mt-3">
-                <div className="text-xs text-gray-500">Total Byte (Crédito día + Venta contado)</div>
+                <div className="text-xs text-gray-500">Total Byte (Créditos Otorgados + Venta contado)</div>
                 <div className="text-lg font-bold text-gray-900">{formatCurrency(byteTotal)}</div>
               </div>
               {/* Verificación */}
@@ -765,7 +765,7 @@ export function RegistroForm({
                 hasData={byteTotal > 0 || byteCashSaleNum > 0 || parseFloat(byteCreditDay || "0") > 0}
                 total={byteTotal}
                 summary={[
-                  parseFloat(byteCreditDay || "0") > 0 ? `Crédito día ${formatCurrency(parseFloat(byteCreditDay))}` : null,
+                  parseFloat(byteCreditDay || "0") > 0 ? `Créditos Otorgados ${formatCurrency(parseFloat(byteCreditDay))}` : null,
                   byteCashSaleNum > 0 ? `Venta contado ${formatCurrency(byteCashSaleNum)}` : null,
                   parseFloat(byteCreditCollected || "0") > 0 ? `Cobrados ${formatCurrency(parseFloat(byteCreditCollected))}` : null,
                 ].filter(Boolean).join(" · ") || undefined}
