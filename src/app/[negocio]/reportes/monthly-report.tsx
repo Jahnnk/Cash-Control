@@ -405,7 +405,7 @@ export function MonthlyReport() {
                       size="compact"
                       columns={[
                         { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
-                        { key: "byte_credit_day", header: "Crédito día", align: "right", render: (row) => formatCurrency(row.byte_credit_day as string) },
+                        { key: "byte_credit_day", header: "Créditos Otorgados", align: "right", render: (row) => formatCurrency(row.byte_credit_day as string) },
                         { key: "byte_cash_sale", header: "Contado", align: "right", cellClassName: "text-blue-600", render: (row) => formatCurrency(row.byte_cash_sale as string) },
                         { key: "byte_cash_physical", header: "Efectivo", align: "right", cellClassName: "text-gray-500", render: (row) => formatCurrency(row.byte_cash_physical as string) },
                         { key: "byte_digital", header: "Digital", align: "right", cellClassName: "text-gray-500", render: (row) => formatCurrency(row.byte_digital as string) },
@@ -436,7 +436,7 @@ export function MonthlyReport() {
                                   const cs = Number(row.byte_cash_sale ?? 0);
                                   const cp = Number(row.byte_cash_physical ?? 0);
                                   const d = Number(row.byte_digital ?? 0);
-                                  if (cd > 0) parts.push(`Crédito día ${formatCurrency(cd)}`);
+                                  if (cd > 0) parts.push(`Créditos Otorgados ${formatCurrency(cd)}`);
                                   if (cs > 0) parts.push(`Contado ${formatCurrency(cs)}`);
                                   if (cp > 0) parts.push(`Efectivo ${formatCurrency(cp)}`);
                                   if (d > 0) parts.push(`Digital ${formatCurrency(d)}`);

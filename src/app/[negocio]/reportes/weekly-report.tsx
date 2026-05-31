@@ -132,7 +132,7 @@ export function WeeklyReport() {
             columns={[
               { key: "date", header: "Fecha", cellClassName: "font-medium", render: (row) => formatDateShort(row.date as string) },
               { key: "byte_total", header: "Byte Total", align: "right", render: (row) => formatCurrency(row.byte_total as string) },
-              { key: "byte_credit_day", header: "Créd. Día", align: "right", cellClassName: "text-gray-600", render: (row) => formatCurrency(row.byte_credit_day as string) },
+              { key: "byte_credit_day", header: "Créditos Otorgados", align: "right", cellClassName: "text-gray-600", render: (row) => formatCurrency(row.byte_credit_day as string) },
               { key: "byte_credit_collected", header: "Créd. Cobr.", align: "right", cellClassName: "text-blue-600", render: (row) => formatCurrency(row.byte_credit_collected as string) },
               { key: "bank_income", header: "Ingreso BCP", align: "right", cellClassName: "text-primary-light font-medium", render: (row) => formatCurrency(row.bank_income as string) },
               { key: "expenses_total", header: "Egresos", align: "right", cellClassName: "text-red-600", render: (row) => formatCurrency(row.expenses_total as string) },
