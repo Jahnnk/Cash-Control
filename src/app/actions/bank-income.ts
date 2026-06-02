@@ -104,7 +104,11 @@ export async function saveBankIncomeItems(
   revalidatePath("/", "layout");
 }
 
-export async function updateBankIncomeItem(id: string, data: { amount?: number; clientId?: string | null; note?: string }) {
+// Métodos válidos al editar el método de pago de un ingreso desde el feed.
+// Solo 'efectivo' NO cuenta para el saldo BCP; el resto sí (regla canónica).
+const ALLOWED_INCOME_METHODS = ["transferencia", "efectivo", "yape", "yape_plin", "plin", "pos"];
+
+export async function updateBankIncomeItem(id: string, data: { amount?: number; clientId?: string | null; note?: string; paymentMethod?: string }) {
   const bId = await activeBusinessId();
   // Cross-tenant guard + bloqueo de filas no-operativas:
   // - is_special_loan=true → módulo Préstamos del Socio
@@ -130,11 +134,18 @@ export async function updateBankIncomeItem(id: string, data: { amount?: number; 
     );
   }
 
+  if (data.paymentMethod !== undefined && !ALLOWED_INCOME_METHODS.includes(data.paymentMethod)) {
+    throw new Error("Método de pago no válido");
+  }
+
   if (data.amount !== undefined) await db.execute(sql`UPDATE bank_income_items SET amount = ${data.amount} WHERE id = ${id} AND business_id = ${bId}`);
   if (data.clientId !== undefined) await db.execute(sql`UPDATE bank_income_items SET client_id = ${data.clientId} WHERE id = ${id} AND business_id = ${bId}`);
   if (data.note !== undefined) await db.execute(sql`UPDATE bank_income_items SET note = ${data.note} WHERE id = ${id} AND business_id = ${bId}`);
+  if (data.paymentMethod !== undefined) await db.execute(sql`UPDATE bank_income_items SET payment_method = ${data.paymentMethod} WHERE id = ${id} AND business_id = ${bId}`);
 
-  if (data.amount !== undefined && target) {
+  // Recalcular el saldo si cambió el monto O el método (efectivo sale del
+  // banco, transferencia/yape entran). Antes solo recalculaba por monto.
+  if ((data.amount !== undefined || data.paymentMethod !== undefined) && target) {
     await recalcBankBalance(target.date);
   }
   revalidatePath("/", "layout");
