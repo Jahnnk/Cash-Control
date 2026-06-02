@@ -584,6 +584,7 @@ export function MonthlyReport() {
                                             note: (item.note as string) || "",
                                             clientId: (item.client_id as string) || null,
                                             clientName: (item.client_name as string) || null,
+                                            paymentMethod: (item.payment_method as string) || "transferencia",
                                           })}
                                           className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded"
                                           aria-label="Editar"

@@ -58,6 +58,7 @@ type IncomeRow = {
   note: string | null;
   client_id: string | null;
   client_name: string | null;
+  payment_method: string | null;
   bcpVerifiedAt: string | null;
 };
 
@@ -171,6 +172,7 @@ export function DailyMovementsReport() {
           note: (r.note as string) || null,
           client_id: (r.client_id as string) || null,
           client_name: (r.client_name as string) || null,
+          payment_method: (r.payment_method as string) || null,
           bcpVerifiedAt: (r.bcp_verified_at as string) || null,
         })),
       );
@@ -707,6 +709,7 @@ function DayCard({
                               note: i.note || "",
                               clientId: i.client_id,
                               clientName: i.client_name,
+                              paymentMethod: i.payment_method || "transferencia",
                             })
                           }
                           className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-400"
