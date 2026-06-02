@@ -351,6 +351,7 @@ export function RegistroForm({
     setEditAmount(String(item.amount));
     setEditClient(item.clientId || "");
     setEditNote(item.note);
+    setEditMethod(item.paymentMethod || "transferencia");
   }
 
   function startEditExpense(item: ExpenseItem) {
@@ -367,12 +368,12 @@ export function RegistroForm({
     // Update local state
     setIncomeItems(incomeItems.map((i) =>
       i.id === item.id
-        ? { ...i, amount: newAmount, clientId: editClient || null, clientName: client?.name || "", note: editNote }
+        ? { ...i, amount: newAmount, clientId: editClient || null, clientName: client?.name || "", note: editNote, paymentMethod: editMethod }
         : i
     ));
     // Update in DB if saved
     if (item.dbId) {
-      await updateBankIncomeItem(item.dbId, { amount: newAmount, clientId: editClient || null, note: editNote });
+      await updateBankIncomeItem(item.dbId, { amount: newAmount, clientId: editClient || null, note: editNote, paymentMethod: editMethod });
       // Refrescar el hook del saldo BCP HOY — router.refresh() no
       // basta porque useBankBalance mantiene snapshot local. Ver
       // src/hooks/useBankBalance.ts (jsdoc del hook).
@@ -1012,8 +1013,20 @@ export function RegistroForm({
                               <option value="">Ingreso del día</option>
                               {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
                             </select>
+                            <select value={editMethod} onChange={(e) => setEditMethod(e.target.value)}
+                              className="w-28 border border-gray-300 rounded px-2 py-1 text-sm"
+                              title="Método de pago (efectivo no cuenta para el saldo BCP)">
+                              <option value="transferencia">Transfer.</option>
+                              <option value="efectivo">Efectivo</option>
+                              <option value="yape">Yape</option>
+                              {!["transferencia", "efectivo", "yape"].includes(editMethod) && (
+                                <option value={editMethod}>{editMethod}</option>
+                              )}
+                            </select>
+                          </div>
+                          <div className="flex items-center gap-2">
                             <input type="text" value={editNote} onChange={(e) => setEditNote(e.target.value)}
-                              placeholder="Nota" className="w-28 border border-gray-300 rounded px-2 py-1 text-sm" />
+                              placeholder="Nota" className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm" />
                             <button onClick={() => saveEditIncome(item)} className="text-primary-light p-1"><Check className="w-4 h-4" /></button>
                             <button onClick={() => setEditingId(null)} className="text-gray-400 p-1"><X className="w-4 h-4" /></button>
                           </div>
