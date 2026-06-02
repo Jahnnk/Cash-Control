@@ -84,9 +84,16 @@ function validateNonEmpty(value: unknown, fieldLabel: string): string | null {
 // INGRESOS (bank_income_items)
 // ============================================================================
 
+// Métodos de pago aceptados al editar un ingreso. Incluye los 3 del form
+// de creación (transferencia/efectivo/yape) + los métodos que pueden existir
+// en filas históricas (yape_plin/plin/pos de ventas Byte B2C), para no
+// rechazar ediciones de monto/nota sobre esas filas ni perder su método.
+// Solo 'efectivo' NO cuenta para el saldo BCP; el resto sí (regla canónica).
+const ALLOWED_INCOME_METHODS = ["transferencia", "efectivo", "yape", "yape_plin", "plin", "pos"];
+
 export async function updateIncomeItem(
   id: string,
-  changes: { amount: number; note: string; clientId: string | null }
+  changes: { amount: number; note: string; clientId: string | null; paymentMethod?: string }
 ): Promise<Result> {
   const bId = await activeBusinessId();
   const amountErr = validateAmount(changes.amount);
@@ -102,13 +109,22 @@ export async function updateIncomeItem(
     if (!clientExists[0]) return { success: false, error: "Cliente no válido" };
   }
 
-  const after = { ...original, amount: String(changes.amount), note: changes.note, client_id: changes.clientId };
+  // Si no llega paymentMethod, se conserva el actual (no-op). Cambiar el
+  // método dispara el mismo recálculo de saldo de abajo (efectivo sale del
+  // banco, transferencia/yape entran), porque recalcBankBalanceQuery filtra
+  // por payment_method.
+  const newMethod = changes.paymentMethod ?? (original.payment_method as string);
+  if (!ALLOWED_INCOME_METHODS.includes(newMethod)) {
+    return { success: false, error: "Método de pago no válido" };
+  }
+
+  const after = { ...original, amount: String(changes.amount), note: changes.note, client_id: changes.clientId, payment_method: newMethod };
 
   try {
     await sql.transaction([
       sql`
         UPDATE bank_income_items
-        SET amount = ${changes.amount}, note = ${changes.note}, client_id = ${changes.clientId}
+        SET amount = ${changes.amount}, note = ${changes.note}, client_id = ${changes.clientId}, payment_method = ${newMethod}
         WHERE id = ${id} AND business_id = ${bId}
       `,
       sql`
