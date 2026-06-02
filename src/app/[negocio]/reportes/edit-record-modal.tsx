@@ -29,6 +29,7 @@ export type EditTarget =
       note: string;
       clientId: string | null;
       clientName: string | null;
+      paymentMethod: string;
     }
   | {
       type: "expense";
@@ -65,7 +66,9 @@ export function EditRecordModal({
 
   const [category, setCategory] = useState(!isIncome ? target.category : "");
   const [concept, setConcept] = useState(!isIncome ? target.concept : "");
-  const [paymentMethod, setPaymentMethod] = useState(!isIncome ? target.paymentMethod : "transferencia");
+  // Método de pago: aplica tanto a ingreso como a egreso. Se inicializa con
+  // el valor real del registro (ambos targets ahora traen paymentMethod).
+  const [paymentMethod, setPaymentMethod] = useState(target.paymentMethod ?? "transferencia");
   const [notes, setNotes] = useState(!isIncome && target.notes ? target.notes : "");
 
   const [saving, setSaving] = useState(false);
@@ -87,6 +90,7 @@ export function EditRecordModal({
           amount: amountNum,
           note: note.trim(),
           clientId: clientId || null,
+          paymentMethod,
         })
       : await updateExpense(target.id, {
           amount: amountNum,
@@ -160,6 +164,41 @@ export function EditRecordModal({
                     </option>
                   )}
                 </select>
+              </div>
+
+              {/* Método de pago — efectivo NO suma al saldo del banco;
+                  transferencia/yape sí. Cambiarlo recalcula el saldo. */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">Método de pago</label>
+                <div className="flex gap-2">
+                  {(["transferencia", "efectivo", "yape"] as const).map((m) => (
+                    <button
+                      key={m}
+                      type="button"
+                      onClick={() => setPaymentMethod(m)}
+                      className={`flex-1 px-3 py-2 text-sm rounded-lg border transition-colors ${
+                        paymentMethod === m
+                          ? "bg-primary-light text-white border-primary-light"
+                          : "bg-white text-gray-700 border-gray-300 hover:border-gray-400"
+                      }`}
+                    >
+                      {m === "transferencia" ? "Transferencia" : m === "efectivo" ? "Efectivo" : "Yape"}
+                    </button>
+                  ))}
+                </div>
+                {target.type === "income" && target.paymentMethod !== paymentMethod && (
+                  <div className="text-[11px] text-amber-600 mt-1">
+                    Cambiar el método recalcula el saldo del banco
+                    {target.paymentMethod === "efectivo" || paymentMethod === "efectivo"
+                      ? " (efectivo no cuenta para el saldo BCP)."
+                      : "."}
+                  </div>
+                )}
+                {!["transferencia", "efectivo", "yape"].includes(paymentMethod) && (
+                  <div className="text-[11px] text-gray-500 mt-1">
+                    Método actual: <span className="font-medium">{paymentMethod}</span> (se conserva si no eliges otro).
+                  </div>
+                )}
               </div>
 
               {/* Nota */}
