@@ -8,6 +8,8 @@ export type ExportPeriod = { start: string; end: string; label: string; isMonth:
 
 export type ReportData = {
   period: ExportPeriod;
+  /** Local del reporte: "Grupo" (los 3) o el nombre del negocio elegido. */
+  scopeLabel: string;
   generatedAt: string;
   hasData: boolean;
   // Resumen
@@ -75,13 +77,32 @@ function endOfMonth(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(last).padStart(2, "0")}`;
 }
 
-export async function getReportData(period: ExportPeriod): Promise<ReportData> {
+/**
+ * Genera la data del reporte. `businessId`:
+ *   - null (default) → Grupo: agrega los 3 negocios (comportamiento histórico).
+ *   - número         → solo ese negocio (Atelier=1, Fonavi=2, Centro=3).
+ * El filtro por negocio se aplica con un predicado null-safe en cada query
+ * (`businessId IS NULL OR business_id = businessId`), por lo que con null el
+ * resultado es idéntico al anterior. NO toca la fórmula del saldo.
+ */
+export async function getReportData(
+  period: ExportPeriod,
+  businessId: number | null = null,
+): Promise<ReportData> {
   const t0 = Date.now();
   const { start, end } = period;
-  console.log(`[export] getReportData start=${start} end=${end} label="${period.label}" isMonth=${period.isMonth}`);
+  console.log(`[export] getReportData start=${start} end=${end} label="${period.label}" isMonth=${period.isMonth} businessId=${businessId ?? "grupo"}`);
+
+  // Etiqueta del local (autoritativa desde la BD). Se usa en encabezados del
+  // reporte y para el nombre de archivo.
+  let scopeLabel = "Grupo";
+  if (businessId !== null) {
+    const bizRow = (await sql`SELECT name FROM businesses WHERE id = ${businessId}`) as { name: string }[];
+    scopeLabel = (bizRow[0]?.name || "Negocio").replace(/^Yayi's\s*/i, "");
+  }
 
   // Categorías excluidas del EBITDA
-  const excluded = (await sql`SELECT name FROM expense_categories WHERE exclude_from_ebitda = true`) as { name: string }[];
+  const excluded = (await sql`SELECT name FROM expense_categories WHERE exclude_from_ebitda = true AND (${businessId}::int IS NULL OR business_id = ${businessId})`) as { name: string }[];
   const excludedSet = new Set(excluded.map((r) => r.name));
   console.log(`[export] excluded categories: ${[...excludedSet].join(", ") || "(none)"}`);
 
@@ -89,6 +110,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
   const bankStartRow = (await sql`
     SELECT bank_balance_real::float as bal FROM daily_records
     WHERE bank_balance_real IS NOT NULL AND date < ${start}
+      AND (${businessId}::int IS NULL OR business_id = ${businessId})
     ORDER BY date DESC LIMIT 1
   `) as { bal: number }[];
   const bankStart = bankStartRow[0]?.bal ?? 0;
@@ -97,6 +119,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
   const bankEndRow = (await sql`
     SELECT bank_balance_real::float as bal FROM daily_records
     WHERE bank_balance_real IS NOT NULL AND date <= ${end}
+      AND (${businessId}::int IS NULL OR business_id = ${businessId})
     ORDER BY date DESC LIMIT 1
   `) as { bal: number }[];
   const bankEnd = bankEndRow[0]?.bal ?? 0;
@@ -109,6 +132,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
     FROM bank_income_items bi
     LEFT JOIN clients c ON c.id = bi.client_id
     WHERE bi.date >= ${start} AND bi.date <= ${end}
+      AND (${businessId}::int IS NULL OR bi.business_id = ${businessId})
     ORDER BY bi.date DESC
   `) as Record<string, unknown>[];
 
@@ -120,6 +144,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
            notes
     FROM expenses
     WHERE date >= ${start} AND date <= ${end}
+      AND (${businessId}::int IS NULL OR business_id = ${businessId})
     ORDER BY date DESC
   `) as Record<string, unknown>[];
 
@@ -174,6 +199,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
     FROM fonavi_receivables fr
     JOIN expenses e ON e.id = fr.expense_id
     WHERE e.date <= ${end} AND fr.status != 'collected'
+      AND (${businessId}::int IS NULL OR e.business_id = ${businessId})
     ORDER BY e.date ASC
   `) as Record<string, unknown>[];
   const fonaviAtEnd = fonaviAtEndRows.map((r) => ({
@@ -188,6 +214,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
       COALESCE(SUM(byte_total), 0)::float as total_byte,
       COALESCE(SUM(bank_income), 0)::float as total_collected
     FROM daily_records WHERE date <= ${end}
+      AND (${businessId}::int IS NULL OR business_id = ${businessId})
   `) as { total_byte: number; total_collected: number }[];
   const b2bReceivablesAtEnd = Math.max(0, b2bAtEndRows[0].total_byte - b2bAtEndRows[0].total_collected);
 
@@ -219,6 +246,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
     SELECT category_name, budget_percentage::float as pct,
            threshold_green::int as t_green, threshold_yellow::int as t_yellow
     FROM budgets WHERE is_active = true
+      AND (${businessId}::int IS NULL OR business_id = ${businessId})
   `) as { category_name: string; pct: number; t_green: number; t_yellow: number }[];
   console.log(`[export] active budgets: ${budgetsRows.length}`);
   const budgetMap = new Map(budgetsRows.map((b) => [b.category_name, b]));
@@ -248,10 +276,10 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
     SELECT
       d.date::text as date,
       COALESCE(dr.bank_balance_real::float, NULL) as bank_balance,
-      COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = d.date), 0)::float as income,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)::float as expense
+      COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = d.date AND (${businessId}::int IS NULL OR business_id = ${businessId})), 0)::float as income,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (${businessId}::int IS NULL OR business_id = ${businessId})), 0)::float as expense
     FROM dates d
-    LEFT JOIN daily_records dr ON dr.date = d.date
+    LEFT JOIN daily_records dr ON dr.date = d.date AND (${businessId}::int IS NULL OR dr.business_id = ${businessId})
     ORDER BY d.date ASC
   `) as Record<string, unknown>[];
   let runningBalance = bankStart;
@@ -289,18 +317,21 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
         COALESCE(SUM(amount), 0)::float as gross,
         COALESCE(SUM(amount) FILTER (WHERE is_fonavi_reimbursement = false), 0)::float as adjusted
       FROM bank_income_items WHERE date >= ${prevStart} AND date <= ${prevEnd}
+        AND (${businessId}::int IS NULL OR business_id = ${businessId})
     `) as { gross: number; adjusted: number }[];
     const prevExpRows = (await sql`
       SELECT
         COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0)::float as atelier,
         COUNT(*)::int as n
       FROM expenses WHERE date >= ${prevStart} AND date <= ${prevEnd}
+        AND (${businessId}::int IS NULL OR business_id = ${businessId})
     `) as { atelier: number; n: number }[];
     const prevExpFinRows = (await sql`
       SELECT COALESCE(SUM(CASE WHEN e.is_shared THEN COALESCE(e.atelier_amount, e.amount) ELSE e.amount END), 0)::float as fin
       FROM expenses e
       JOIN expense_categories ec ON ec.name = e.category
       WHERE e.date >= ${prevStart} AND e.date <= ${prevEnd} AND ec.exclude_from_ebitda = true
+        AND (${businessId}::int IS NULL OR e.business_id = ${businessId})
     `) as { fin: number }[];
 
     const prevIncomeAdj = prevIncRows[0].adjusted;
@@ -336,6 +367,7 @@ export async function getReportData(period: ExportPeriod): Promise<ReportData> {
 
   return {
     period,
+    scopeLabel,
     generatedAt: new Date().toISOString(),
     hasData: incomes.length > 0 || expenses.length > 0,
     summary: {
