@@ -25,7 +25,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
   // ─────────── Pestaña 1: Resumen ───────────
   const ws1 = wb.addWorksheet("Resumen", { views: [{ state: "frozen", ySplit: 4 }] });
   ws1.mergeCells("A1:D1");
-  ws1.getCell("A1").value = "Yayi's · Atelier";
+  ws1.getCell("A1").value = `Yayi's · ${data.scopeLabel}`;
   ws1.getCell("A1").font = { size: 16, bold: true, color: { argb: PRIMARY } };
   ws1.mergeCells("A2:D2");
   ws1.getCell("A2").value = `Reporte ejecutivo · ${data.period.label}`;

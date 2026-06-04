@@ -35,6 +35,15 @@ function safeFilename(label: string): string {
   return label.replace(/\s+/g, "-").replace(/[^a-zA-Z0-9-]/g, "");
 }
 
+// Local a exportar. "Grupo" (businessId null) = los 3 juntos (comportamiento
+// histórico, default). IDs canónicos: Atelier=1, Fonavi=2, Centro=3.
+const SCOPE_OPTIONS: { key: string; label: string; businessId: number | null }[] = [
+  { key: "grupo", label: "Grupo (los 3)", businessId: null },
+  { key: "atelier", label: "Atelier", businessId: 1 },
+  { key: "centro", label: "Centro", businessId: 3 },
+  { key: "fonavi", label: "Fonavi", businessId: 2 },
+];
+
 export function ExportModal({ onClose }: { onClose: () => void }) {
   const [mode, setMode] = useState<"month" | "range" | "year">("month");
   const def = defaultPrevMonth();
@@ -45,6 +54,7 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
   const [yearOnly, setYearOnly] = useState(def.year);
   const [doExcel, setDoExcel] = useState(true);
   const [doPdf, setDoPdf] = useState(true);
+  const [scopeKey, setScopeKey] = useState("grupo");
   const [working, setWorking] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -72,8 +82,10 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
       timeoutId = setTimeout(() => reject(new Error("__TIMEOUT__")), TIMEOUT_MS);
     });
 
+    const scope = SCOPE_OPTIONS.find((s) => s.key === scopeKey) ?? SCOPE_OPTIONS[0];
+
     try {
-      const data = await Promise.race([getReportData(period), timeout]);
+      const data = await Promise.race([getReportData(period, scope.businessId), timeout]);
       if (timeoutId) clearTimeout(timeoutId);
 
       if (!data.hasData) {
@@ -82,7 +94,9 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
         return;
       }
 
-      const baseName = `Yayis-Atelier-Reporte-${safeFilename(period.label)}`;
+      // El nombre de archivo refleja el local elegido (scopeLabel viene del
+      // server: "Grupo" o el nombre del negocio). Ej: Yayis-Atelier-Reporte-...
+      const baseName = `Yayis-${safeFilename(data.scopeLabel)}-Reporte-${safeFilename(period.label)}`;
 
       if (doExcel) {
         setStatus("Generando Excel...");
@@ -126,6 +140,25 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
         </div>
 
         <div className="p-6 space-y-4">
+          {/* Local */}
+          <div>
+            <div className="text-xs font-medium text-gray-700 mb-2">Local</div>
+            <select
+              value={scopeKey}
+              onChange={(e) => setScopeKey(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+            >
+              {SCOPE_OPTIONS.map((s) => (
+                <option key={s.key} value={s.key}>{s.label}</option>
+              ))}
+            </select>
+            <div className="text-[11px] text-gray-500 mt-1">
+              {scopeKey === "grupo"
+                ? "Exporta los 3 negocios juntos (Atelier · Centro · Fonavi)."
+                : "Exporta solo los datos de este local."}
+            </div>
+          </div>
+
           {/* Período */}
           <div>
             <div className="text-xs font-medium text-gray-700 mb-2">Período</div>
