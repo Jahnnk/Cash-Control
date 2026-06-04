@@ -38,7 +38,7 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
     // Footer
     doc.setTextColor(MUTED);
     doc.setFontSize(8);
-    doc.text(`Yayi's · Atelier · Cajamarca, Perú`, margin, pageH - 6);
+    doc.text(`Yayi's · ${data.scopeLabel} · Cajamarca, Perú`, margin, pageH - 6);
     doc.text(`Página ${pageNum}`, pageW - margin, pageH - 6, { align: "right" });
 
     doc.setTextColor(TEXT);
@@ -61,7 +61,7 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
   doc.setFontSize(13);
   doc.setTextColor(PRIMARY_LIGHT);
   doc.setFont("helvetica", "normal");
-  doc.text(`Atelier · ${data.period.label}`, margin, y);
+  doc.text(`${data.scopeLabel} · ${data.period.label}`, margin, y);
   y += 6;
   doc.setFontSize(9);
   doc.setTextColor(MUTED);
