@@ -164,7 +164,39 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
     }, 700, 280);
     if (y + 80 > pageH - 20) { addNewPage(); y = 22; }
     doc.addImage(chartImg, "PNG", margin, y, pageW - margin * 2, 70);
+    y += 76;
   } catch { /* ignorar errores de chart */ }
+
+  // ─── Posición de deudas y por cobrar (SALDOS DE BALANCE, no flujo) ───
+  if (y + 60 > pageH - 20) { addNewPage(); y = 22; }
+  doc.setTextColor(PRIMARY);
+  doc.setFontSize(14);
+  doc.setFont("helvetica", "bold");
+  doc.text("Posición de deudas y por cobrar", margin, y);
+  y += 6;
+  doc.setFontSize(9);
+  doc.setTextColor(MUTED);
+  doc.setFont("helvetica", "normal");
+  doc.text(
+    `Saldos al cierre de ${data.period.label} — son posición de balance, no afectan el EBITDA ni el flujo del período.`,
+    margin, y,
+  );
+  doc.setTextColor(TEXT);
+  y += 6;
+  autoTable(doc, {
+    startY: y,
+    head: [["Concepto", "Saldo"]],
+    body: [
+      ["Deuda con socio (préstamos personales pendientes)", fmtMoney(data.debtPosition.partnerLoan)],
+      ["Por cobrar — gastos compartidos pendientes", fmtMoney(data.debtPosition.fonaviReceivable)],
+      ["Cuentas por cobrar B2B (créditos Byte: Byte total − cobros)", fmtMoney(data.debtPosition.b2bReceivable)],
+    ],
+    headStyles: { fillColor: PRIMARY, textColor: "#FFFFFF" },
+    alternateRowStyles: { fillColor: CREAM },
+    margin: { left: margin, right: margin },
+  });
+  // @ts-expect-error lastAutoTable es agregado dinámicamente por jspdf-autotable
+  y = doc.lastAutoTable.finalY + 8;
 
   // ════════════════════════ PÁGINA 3: FLUJO DE CAJA ════════════════════════
   addNewPage();

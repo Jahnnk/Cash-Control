@@ -39,7 +39,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
   const r1h = ws1.addRow(headers1);
   r1h.eachCell((c) => styleHeader(c));
 
-  const kpis: [string, number, string][] = [
+  const kpis: [string, number | string, string][] = [
     ["Ingresos brutos", data.summary.incomeGross, CURRENCY],
     ["(-) Reembolsos Fonavi", data.summary.fonaviReimbursements, CURRENCY],
     ["= Ingresos ajustados", data.summary.incomeAdjusted, CURRENCY],
@@ -55,12 +55,16 @@ export async function generateExcel(data: ReportData, filename: string): Promise
     ["Saldo banco final (BCP real)", data.summary.bankEnd, CURRENCY],
     ["Diferencia a conciliar (real − teórico)", data.summary.bankEnd - (data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense), CURRENCY],
     ["Variación de caja (real)", data.summary.bankDelta, CURRENCY],
-    ["Cuentas por cobrar Fonavi (final)", data.summary.fonaviReceivablesAtEnd, CURRENCY],
-    ["Cuentas por cobrar B2B (final)", data.summary.b2bReceivablesAtEnd, CURRENCY],
+    // ── Posición de deudas y por cobrar (saldos de balance al cierre; NO
+    //    afectan el EBITDA ni el flujo del período) ──
+    ["POSICIÓN DE DEUDAS Y POR COBRAR (al cierre)", "", CURRENCY],
+    ["Deuda con socio (préstamos personales pendientes)", data.debtPosition.partnerLoan, CURRENCY],
+    ["Por cobrar — gastos compartidos pendientes", data.debtPosition.fonaviReceivable, CURRENCY],
+    ["Cuentas por cobrar B2B (créditos Byte: Byte total − cobros)", data.debtPosition.b2bReceivable, CURRENCY],
   ];
   kpis.forEach(([name, value, fmt], i) => {
     const row = ws1.addRow([name, value]);
-    row.getCell(2).numFmt = fmt;
+    if (typeof value === "number") row.getCell(2).numFmt = fmt;
     if (name.startsWith("=") || name === "EBITDA ajustado" || name === "Margen EBITDA") {
       row.getCell(1).font = { bold: true };
       row.getCell(2).font = { bold: true };
