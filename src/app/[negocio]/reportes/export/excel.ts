@@ -49,8 +49,12 @@ export async function generateExcel(data: ReportData, filename: string): Promise
     ["EBITDA ajustado", data.summary.ebitda, CURRENCY],
     ["Margen EBITDA", data.summary.ebitdaMargin / 100, PCT],
     ["Saldo banco inicial", data.summary.bankStart, CURRENCY],
-    ["Saldo banco final", data.summary.bankEnd, CURRENCY],
-    ["Variación de caja", data.summary.bankDelta, CURRENCY],
+    ["(+) Ingresos al banco (transfer./yape/plin)", data.summary.bankIncome, CURRENCY],
+    ["(-) Egresos del banco", data.summary.bankExpense, CURRENCY],
+    ["= Saldo final teórico (según flujo)", data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense, CURRENCY],
+    ["Saldo banco final (BCP real)", data.summary.bankEnd, CURRENCY],
+    ["Diferencia a conciliar (real − teórico)", data.summary.bankEnd - (data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense), CURRENCY],
+    ["Variación de caja (real)", data.summary.bankDelta, CURRENCY],
     ["Cuentas por cobrar Fonavi (final)", data.summary.fonaviReceivablesAtEnd, CURRENCY],
     ["Cuentas por cobrar B2B (final)", data.summary.b2bReceivablesAtEnd, CURRENCY],
   ];
@@ -140,7 +144,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
 
   // ─────────── Pestaña 6: Flujo de caja ───────────
   const ws6 = wb.addWorksheet("Flujo de caja", { views: [{ state: "frozen", ySplit: 1 }] });
-  const r6h = ws6.addRow(["Fecha", "Saldo inicial", "Ingresos", "Egresos", "Saldo final", "Variación"]);
+  const r6h = ws6.addRow(["Fecha", "Saldo inicial", "Ingresos (banco)", "Egresos (banco)", "Saldo final", "Variación"]);
   r6h.eachCell((c) => styleHeader(c));
   data.cashFlow.forEach((d, i) => {
     const r = ws6.addRow([d.date, d.bankStart, d.income, d.expense, d.bankEnd, d.delta]);
