@@ -45,7 +45,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
     ["= Ingresos ajustados", data.summary.incomeAdjusted, CURRENCY],
     ["Egresos brutos", data.summary.expensesGross, CURRENCY],
     ["Egresos financieros (excl. EBITDA)", data.summary.expensesFinancial, CURRENCY],
-    ["Egresos operativos (atelier)", data.summary.expensesOperative, CURRENCY],
+    ["Egresos operativos", data.summary.expensesOperative, CURRENCY],
     ["EBITDA ajustado", data.summary.ebitda, CURRENCY],
     ["Margen EBITDA", data.summary.ebitdaMargin / 100, PCT],
     ["Saldo banco inicial", data.summary.bankStart, CURRENCY],
@@ -86,7 +86,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
 
   // ─────────── Pestaña 3: Egresos ───────────
   const ws3 = wb.addWorksheet("Egresos detallados", { views: [{ state: "frozen", ySplit: 1 }] });
-  const r3h = ws3.addRow(["Fecha", "Categoría", "Concepto", "Método", "Monto bruto", "Compartido?", "Atelier", "Fonavi", "Notas"]);
+  const r3h = ws3.addRow(["Fecha", "Categoría", "Concepto", "Método", "Monto bruto", "Compartido?", "Parte Atelier", "Parte Fonavi", "Notas"]);
   r3h.eachCell((c) => styleHeader(c));
   data.expenses.forEach((x, i) => {
     const r = ws3.addRow([x.date, x.category, x.concept, x.method, x.amount, x.isShared ? "Sí" : "No", x.atelierAmount, x.fonaviAmount, x.notes]);
@@ -152,7 +152,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
   // ─────────── Pestaña 7: Top 10 ───────────
   if (data.topExpenses.length > 0) {
     const ws7 = wb.addWorksheet("Top 10 egresos", { views: [{ state: "frozen", ySplit: 1 }] });
-    const r7h = ws7.addRow(["Fecha", "Categoría", "Concepto", "Monto (atelier)", "Método"]);
+    const r7h = ws7.addRow(["Fecha", "Categoría", "Concepto", `Monto (${data.scopeLabel})`, "Método"]);
     r7h.eachCell((c) => styleHeader(c));
     data.topExpenses.forEach((x, i) => {
       const r = ws7.addRow([x.date, x.category, x.concept, x.amount, x.method]);
