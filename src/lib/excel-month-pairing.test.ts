@@ -138,3 +138,36 @@ describe("monthRange — rango de fechas del mes", () => {
     expect(monthRange("abril")).toBeNull();
   });
 });
+
+describe("seguridad anti-huérfanos: el borrado cubre el MES COMPLETO", () => {
+  // El reemplazo de un mes debe borrar el rango del mes calendario completo
+  // (día 1 al último), NO solo las fechas del archivo nuevo. Así, un registro
+  // del archivo ANTERIOR con una fecha que el archivo nuevo no trae NO
+  // sobrevive al reemplazo. Esta es la garantía que fullMonthDeleteRange
+  // (excel-import.ts) implementa usando monthRange; aquí se verifica el
+  // contrato a nivel de fechas.
+  it("una fecha presente solo en el archivo viejo cae dentro del rango de borrado", () => {
+    // El archivo nuevo de abril solo trae hasta el día 15.
+    const newFileMaxDate = "2026-04-15";
+    // El archivo viejo tenía un registro el día 28.
+    const oldOnlyDate = "2026-04-28";
+
+    const delRange = monthRange("2026-04")!; // rango de borrado = mes completo
+    expect(delRange).toEqual({ start: "2026-04-01", end: "2026-04-30" });
+
+    // El huérfano (28-abr) SÍ está dentro del rango de borrado del mes completo
+    // → se elimina al reemplazar.
+    expect(delRange.start <= oldOnlyDate && oldOnlyDate <= delRange.end).toBe(true);
+    // El rango de borrado va más allá de la última fecha del archivo nuevo.
+    expect(delRange.end > newFileMaxDate).toBe(true);
+    // Contraste: si se borrara SOLO por el rango del archivo nuevo (hasta el
+    // 15), el huérfano del 28 sobreviviría. Esto demuestra por qué el borrado
+    // por mes completo es necesario.
+    expect(oldOnlyDate <= newFileMaxDate).toBe(false);
+  });
+
+  it("febrero: borra hasta el último día real del mes (bisiesto/no bisiesto)", () => {
+    expect(monthRange("2024-02")!.end).toBe("2024-02-29");
+    expect(monthRange("2025-02")!.end).toBe("2025-02-28");
+  });
+});
