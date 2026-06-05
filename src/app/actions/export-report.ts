@@ -25,6 +25,10 @@ export type ReportData = {
     bankStart: number;
     bankEnd: number;
     bankDelta: number;
+    /** Ingresos que van al banco (transferencia/yape/plin; excluye efectivo). */
+    bankIncome: number;
+    /** Egresos que salen del banco (excluye efectivo y pendiente_atelier). */
+    bankExpense: number;
     fonaviReceivablesAtEnd: number;
     b2bReceivablesAtEnd: number;
   };
@@ -201,6 +205,11 @@ export async function getReportData(
   const fonaviReimbursements = incomes.filter((x) => x.isReimbursement).reduce((s, x) => s + x.amount, 0);
   const incomeAdjusted = incomeGross - fonaviReimbursements;
   const expensesGross = expenses.reduce((s, x) => s + x.amount, 0);
+  // Flujo BANCARIO (regla canónica del saldo): solo lo que entra/sale del
+  // banco. Ingresos por transferencia/yape/plin (excluye efectivo); egresos
+  // por método distinto de efectivo (pendiente_atelier ya excluido en query).
+  const bankIncome = incomes.filter((x) => x.method !== "efectivo").reduce((s, x) => s + x.amount, 0);
+  const bankExpense = expenses.filter((x) => x.method !== "efectivo").reduce((s, x) => s + x.amount, 0);
   let expensesOperative = 0;
   let expensesFinancial = 0;
   for (const x of expenses) {
@@ -299,7 +308,7 @@ export async function getReportData(
     SELECT
       d.date::text as date,
       COALESCE(dr.bank_balance_real::float, NULL) as bank_balance,
-      COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = d.date AND (${businessId}::int IS NULL OR business_id = ${businessId}) AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)::float as income,
+      COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = d.date AND (${businessId}::int IS NULL OR business_id = ${businessId}) AND is_special_loan = false AND is_internal_transfer = false AND archived = false AND payment_method <> 'efectivo'), 0)::float as income,
       COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (${businessId}::int IS NULL OR business_id = ${businessId}) AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)::float as expense
     FROM dates d
     LEFT JOIN daily_records dr ON dr.date = d.date AND (${businessId}::int IS NULL OR dr.business_id = ${businessId}) AND dr.archived = false
@@ -410,6 +419,8 @@ export async function getReportData(
       bankStart,
       bankEnd,
       bankDelta: bankEnd - bankStart,
+      bankIncome,
+      bankExpense,
       fonaviReceivablesAtEnd,
       b2bReceivablesAtEnd,
     },

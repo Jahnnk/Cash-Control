@@ -179,11 +179,18 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
     startY: y,
     head: [["Métrica", "Monto"]],
     body: [
-      ["Saldo inicial", fmtMoney(data.summary.bankStart)],
-      ["(+) Total ingresos del período", fmtMoney(data.summary.incomeGross)],
-      ["(-) Total egresos del período (banco)", fmtMoney(data.summary.expensesGross)],
-      [{ content: "= Saldo final", styles: { fontStyle: "bold" } }, { content: fmtMoney(data.summary.bankEnd), styles: { fontStyle: "bold" } }],
-      ["Variación", fmtMoney(data.summary.bankDelta)],
+      ["Saldo inicial (BCP)", fmtMoney(data.summary.bankStart)],
+      ["(+) Ingresos al banco (transfer./yape/plin)", fmtMoney(data.summary.bankIncome)],
+      ["(-) Egresos del banco", fmtMoney(-data.summary.bankExpense)],
+      [
+        { content: "= Saldo final teórico (según flujo)", styles: { fontStyle: "bold" } },
+        { content: fmtMoney(data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense), styles: { fontStyle: "bold" } },
+      ],
+      ["Saldo BCP real al cierre", fmtMoney(data.summary.bankEnd)],
+      [
+        { content: "Diferencia a conciliar (real − teórico)" },
+        { content: fmtMoney(data.summary.bankEnd - (data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense)) },
+      ],
     ],
     headStyles: { fillColor: PRIMARY, textColor: "#FFFFFF" },
     alternateRowStyles: { fillColor: CREAM },
