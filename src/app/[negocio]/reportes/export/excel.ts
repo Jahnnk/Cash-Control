@@ -105,7 +105,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
 
   // ─────────── Pestaña 4: Por categoría ───────────
   const ws4 = wb.addWorksheet("Egresos por categoría", { views: [{ state: "frozen", ySplit: 1 }] });
-  const r4h = ws4.addRow(["Categoría", "Total bruto", "Total Atelier", "% del total", "# Trans.", "Promedio", "EBITDA?"]);
+  const r4h = ws4.addRow(["Categoría", "Total bruto", `Total ${data.scopeLabel}`, "% del total", "# Trans.", "Promedio", "EBITDA?"]);
   r4h.eachCell((c) => styleHeader(c));
   data.byCategory.forEach((c, i) => {
     const r = ws4.addRow([c.category, c.totalGross, c.totalAtelier, c.pct / 100, c.count, c.avg, c.excludeFromEbitda ? "No" : "Sí"]);
@@ -126,7 +126,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
 
   // ─────────── Pestaña 5: Presupuesto vs Real ───────────
   const ws5 = wb.addWorksheet("Presupuesto vs Real", { views: [{ state: "frozen", ySplit: 1 }] });
-  const r5h = ws5.addRow(["Categoría", "Presupuestado", "Real (atelier)", "Diferencia", "% Cumplimiento", "Estado"]);
+  const r5h = ws5.addRow(["Categoría", "Presupuestado", `Real (${data.scopeLabel})`, "Diferencia", "% Cumplimiento", "Estado"]);
   r5h.eachCell((c) => styleHeader(c));
   data.budgetVsReal.forEach((b, i) => {
     const status = b.status === "ok" ? "✅ Bajo" : b.status === "near" ? "⚠️ Cerca" : b.status === "over" ? "🔴 Sobre" : "—";

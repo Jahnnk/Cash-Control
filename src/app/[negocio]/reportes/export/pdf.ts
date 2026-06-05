@@ -224,7 +224,7 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
 
   autoTable(doc, {
     startY: y,
-    head: [["Categoría", "Monto Atelier", "% del total"]],
+    head: [["Categoría", `Monto ${data.scopeLabel}`, "% del total"]],
     body: data.byCategory.map((c) => [c.category, fmtMoney(c.totalAtelier), fmtPct(c.pct)]),
     headStyles: { fillColor: PRIMARY, textColor: "#FFFFFF" },
     alternateRowStyles: { fillColor: CREAM },
