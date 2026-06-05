@@ -221,7 +221,7 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
       ["Saldo BCP real al cierre", fmtMoney(data.summary.bankEnd)],
       [
         { content: "Diferencia a conciliar (real − teórico)" },
-        { content: fmtMoney(data.summary.bankEnd - (data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense)) },
+        { content: fmtMoney(Math.round((data.summary.bankEnd - (data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense)) * 100) / 100 + 0) },
       ],
     ],
     headStyles: { fillColor: PRIMARY, textColor: "#FFFFFF" },
