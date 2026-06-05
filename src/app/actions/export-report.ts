@@ -1,6 +1,7 @@
 "use server";
 
 import { neon } from "@neondatabase/serverless";
+import { splitExpenses, type ExpenseLike } from "@/lib/expense-split";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -17,9 +18,12 @@ export type ReportData = {
     incomeGross: number;
     incomeAdjusted: number;       // sin reembolsos Fonavi
     fonaviReimbursements: number;
-    expensesGross: number;         // todos
-    expensesOperative: number;     // sin financieras + atelier_amount en compartidos
+    expensesGross: number;         // desembolso total (montos completos)
+    expensesOperative: number;     // sin financieras + atelier_amount en compartidos (base EBITDA)
     expensesFinancial: number;     // las excluidas del EBITDA
+    /** Porción Fonavi de gastos compartidos (gross − porción Atelier). Línea
+     *  de reconciliación: gross − fonaviShared − financial = operative. */
+    expensesFonaviShared: number;
     ebitda: number;
     ebitdaMargin: number;          // %
     bankStart: number;
@@ -215,19 +219,19 @@ export async function getReportData(
   const incomeGross = incomes.reduce((s, x) => s + x.amount, 0);
   const fonaviReimbursements = incomes.filter((x) => x.isReimbursement).reduce((s, x) => s + x.amount, 0);
   const incomeAdjusted = incomeGross - fonaviReimbursements;
-  const expensesGross = expenses.reduce((s, x) => s + x.amount, 0);
   // Flujo BANCARIO (regla canónica del saldo): solo lo que entra/sale del
   // banco. Ingresos por transferencia/yape/plin (excluye efectivo); egresos
   // por método distinto de efectivo (pendiente_atelier ya excluido en query).
   const bankIncome = incomes.filter((x) => x.method !== "efectivo").reduce((s, x) => s + x.amount, 0);
   const bankExpense = expenses.filter((x) => x.method !== "efectivo").reduce((s, x) => s + x.amount, 0);
-  let expensesOperative = 0;
-  let expensesFinancial = 0;
-  for (const x of expenses) {
-    const atelier = x.isShared ? x.atelierAmount : x.amount;
-    if (excludedSet.has(x.category)) expensesFinancial += atelier;
-    else expensesOperative += atelier;
-  }
+  // Desglose de egresos vía la función pura canónica (única fuente de verdad,
+  // compartida con el comparativo). `excludedSet` es business-scoped → cada
+  // egreso financiero se cuenta una sola vez.
+  const expSplit = splitExpenses(expenses, (c) => excludedSet.has(c));
+  const expensesGross = expSplit.gross;
+  const expensesOperative = expSplit.operative;
+  const expensesFinancial = expSplit.financial;
+  const expensesFonaviShared = expSplit.fonaviShared;
   const ebitda = incomeAdjusted - expensesOperative;
   const ebitdaMargin = incomeAdjusted > 0 ? (ebitda / incomeAdjusted) * 100 : 0;
 
@@ -378,27 +382,30 @@ export async function getReportData(
         AND (${businessId}::int IS NULL OR business_id = ${businessId})
         AND is_special_loan = false AND is_internal_transfer = false AND archived = false
     `) as { gross: number; adjusted: number }[];
+    // Egresos del mes anterior: se traen las MISMAS filas (mismos filtros que
+    // el reporte directo) y se pasan por la MISMA función pura `splitExpenses`
+    // con el MISMO excludedSet business-scoped. Así el comparativo y el reporte
+    // directo no pueden divergir (antes el comparativo usaba un JOIN sin scope
+    // que multiplicaba los financieros ×N negocios). is_shared se castea a
+    // boolean explícito para el tipado.
     const prevExpRows = (await sql`
-      SELECT
-        COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0)::float as atelier,
-        COUNT(*)::int as n
+      SELECT amount::float as amount, is_shared,
+             atelier_amount::float as atelier_amount, category
       FROM expenses WHERE date >= ${prevStart} AND date <= ${prevEnd}
         AND (${businessId}::int IS NULL OR business_id = ${businessId})
         AND is_special_loan = false AND is_internal_transfer = false AND archived = false
         AND payment_method <> 'pendiente_atelier'
-    `) as { atelier: number; n: number }[];
-    const prevExpFinRows = (await sql`
-      SELECT COALESCE(SUM(CASE WHEN e.is_shared THEN COALESCE(e.atelier_amount, e.amount) ELSE e.amount END), 0)::float as fin
-      FROM expenses e
-      JOIN expense_categories ec ON ec.name = e.category
-      WHERE e.date >= ${prevStart} AND e.date <= ${prevEnd} AND ec.exclude_from_ebitda = true
-        AND (${businessId}::int IS NULL OR e.business_id = ${businessId})
-        AND e.is_special_loan = false AND e.is_internal_transfer = false AND e.archived = false
-        AND e.payment_method <> 'pendiente_atelier'
-    `) as { fin: number }[];
+    `) as Record<string, unknown>[];
+    const prevExpenses: ExpenseLike[] = prevExpRows.map((r) => ({
+      amount: parseNum(r.amount),
+      isShared: !!r.is_shared,
+      atelierAmount: r.atelier_amount !== null ? parseNum(r.atelier_amount) : parseNum(r.amount),
+      category: normalizeCategory(r.category),
+    }));
+    const prevSplit = splitExpenses(prevExpenses, (c) => excludedSet.has(c));
 
     const prevIncomeAdj = prevIncRows[0].adjusted;
-    const prevExpOp = prevExpRows[0].atelier - prevExpFinRows[0].fin;
+    const prevExpOp = prevSplit.operative;
     const prevEbitda = prevIncomeAdj - prevExpOp;
     const prevMargin = prevIncomeAdj > 0 ? (prevEbitda / prevIncomeAdj) * 100 : 0;
 
@@ -417,7 +424,7 @@ export async function getReportData(
         mk("Egresos operativos", expensesOperative, prevExpOp),
         mk("EBITDA", ebitda, prevEbitda),
         mk("Margen EBITDA %", ebitdaMargin, prevMargin),
-        mk("# transacciones egreso", expenses.length, prevExpRows[0].n),
+        mk("# transacciones egreso", expenses.length, prevSplit.count),
       ],
     };
   }
@@ -440,6 +447,7 @@ export async function getReportData(
       expensesGross,
       expensesOperative,
       expensesFinancial,
+      expensesFonaviShared,
       ebitda,
       ebitdaMargin,
       bankStart,
