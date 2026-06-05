@@ -6,6 +6,14 @@ const CREAM = "FFF9F6EB";
 const CURRENCY = "\"S/ \"#,##0.00";
 const PCT = "0.0%";
 
+/**
+ * Redondeo a 2 decimales SOLO para visualización (mata el residuo de punto
+ * flotante, ej. -2.27e-13 → 0). El "+ 0" normaliza el -0 a 0. No altera
+ * ningún cálculo: se aplica únicamente al valor que se muestra. Un gap real
+ * (ej. -4767.84) se conserva intacto.
+ */
+const round2 = (n: number): number => Math.round(n * 100) / 100 + 0;
+
 export async function generateExcel(data: ReportData, filename: string): Promise<void> {
   const ExcelJS = (await import("exceljs")).default;
   const wb = new ExcelJS.Workbook();
@@ -53,7 +61,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
     ["(-) Egresos del banco", data.summary.bankExpense, CURRENCY],
     ["= Saldo final teórico (según flujo)", data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense, CURRENCY],
     ["Saldo banco final (BCP real)", data.summary.bankEnd, CURRENCY],
-    ["Diferencia a conciliar (real − teórico)", data.summary.bankEnd - (data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense), CURRENCY],
+    ["Diferencia a conciliar (real − teórico)", round2(data.summary.bankEnd - (data.summary.bankStart + data.summary.bankIncome - data.summary.bankExpense)), CURRENCY],
     ["Variación de caja (real)", data.summary.bankDelta, CURRENCY],
     // ── Posición de deudas y por cobrar (saldos de balance al cierre; NO
     //    afectan el EBITDA ni el flujo del período) ──
@@ -71,7 +79,9 @@ export async function generateExcel(data: ReportData, filename: string): Promise
     }
     styleAlt(row, i % 2 === 0);
   });
-  ws1.getColumn(1).width = 38;
+  // Ancho suficiente para las etiquetas largas (ej. "Cuentas por cobrar B2B
+  // (créditos Byte: Byte total − cobros)" ~58 chars) sin que se corten.
+  ws1.getColumn(1).width = 60;
   ws1.getColumn(2).width = 20;
 
   // ─────────── Pestaña 2: Ingresos ───────────
