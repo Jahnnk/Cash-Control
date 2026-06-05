@@ -135,10 +135,11 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
       ["Ingresos brutos", fmtMoney(data.summary.incomeGross)],
       ["(-) Reembolsos Fonavi", fmtMoney(-data.summary.fonaviReimbursements)],
       [{ content: "= Ingresos ajustados", styles: { fontStyle: "bold" } }, { content: fmtMoney(data.summary.incomeAdjusted), styles: { fontStyle: "bold" } }],
-      ["(-) Egresos operativos", fmtMoney(-data.summary.expensesOperative)],
+      ["Egresos brutos", fmtMoney(data.summary.expensesGross)],
+      ["  · de los cuales: financieros (excluidos del EBITDA)", fmtMoney(data.summary.expensesFinancial)],
+      ["(-) Egresos operativos (brutos − financieros)", fmtMoney(-data.summary.expensesOperative)],
       [{ content: "= EBITDA ajustado", styles: { fontStyle: "bold", textColor: data.summary.ebitda >= 0 ? PRIMARY : "#DC2626" } }, { content: fmtMoney(data.summary.ebitda), styles: { fontStyle: "bold", textColor: data.summary.ebitda >= 0 ? PRIMARY : "#DC2626" } }],
       ["Margen EBITDA", fmtPct(data.summary.ebitdaMargin)],
-      ["(Para info) Egresos financieros excluidos", fmtMoney(data.summary.expensesFinancial)],
     ],
     headStyles: { fillColor: PRIMARY, textColor: "#FFFFFF" },
     alternateRowStyles: { fillColor: CREAM },
@@ -224,7 +225,7 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
 
   autoTable(doc, {
     startY: y,
-    head: [["Categoría", "Monto Atelier", "% del total"]],
+    head: [["Categoría", `Monto ${data.scopeLabel}`, "% del total"]],
     body: data.byCategory.map((c) => [c.category, fmtMoney(c.totalAtelier), fmtPct(c.pct)]),
     headStyles: { fillColor: PRIMARY, textColor: "#FFFFFF" },
     alternateRowStyles: { fillColor: CREAM },

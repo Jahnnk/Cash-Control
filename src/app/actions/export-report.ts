@@ -69,6 +69,22 @@ function parseNum(v: unknown): number {
   return 0;
 }
 
+/**
+ * Normaliza el nombre de categoría para que variantes por mayúsculas/
+ * minúsculas ("ALQUILER" vs "Alquiler") se consoliden en una sola línea.
+ * Title-case por palabra. Se aplica de forma consistente a egresos,
+ * presupuestos y categorías excluidas para que los joins por nombre y los
+ * agrupados no se fragmenten.
+ */
+function normalizeCategory(c: unknown): string {
+  const t = String(c ?? "").trim();
+  if (!t) return t;
+  return t
+    .split(/\s+/)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(" ");
+}
+
 function startOfMonth(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
 }
@@ -103,7 +119,7 @@ export async function getReportData(
 
   // Categorías excluidas del EBITDA
   const excluded = (await sql`SELECT name FROM expense_categories WHERE exclude_from_ebitda = true AND (${businessId}::int IS NULL OR business_id = ${businessId})`) as { name: string }[];
-  const excludedSet = new Set(excluded.map((r) => r.name));
+  const excludedSet = new Set(excluded.map((r) => normalizeCategory(r.name)));
   console.log(`[export] excluded categories: ${[...excludedSet].join(", ") || "(none)"}`);
 
   // Saldo inicial del período: último bank_balance_real con date < start (o 0)
@@ -111,6 +127,7 @@ export async function getReportData(
     SELECT bank_balance_real::float as bal FROM daily_records
     WHERE bank_balance_real IS NOT NULL AND date < ${start}
       AND (${businessId}::int IS NULL OR business_id = ${businessId})
+      AND archived = false
     ORDER BY date DESC LIMIT 1
   `) as { bal: number }[];
   const bankStart = bankStartRow[0]?.bal ?? 0;
@@ -120,6 +137,7 @@ export async function getReportData(
     SELECT bank_balance_real::float as bal FROM daily_records
     WHERE bank_balance_real IS NOT NULL AND date <= ${end}
       AND (${businessId}::int IS NULL OR business_id = ${businessId})
+      AND archived = false
     ORDER BY date DESC LIMIT 1
   `) as { bal: number }[];
   const bankEnd = bankEndRow[0]?.bal ?? 0;
@@ -128,11 +146,13 @@ export async function getReportData(
   const incomesRows = (await sql`
     SELECT bi.date::text as date, bi.amount::float as amount, bi.note,
            bi.is_fonavi_reimbursement as is_reimbursement,
+           bi.payment_method as method,
            c.name as client_name
     FROM bank_income_items bi
     LEFT JOIN clients c ON c.id = bi.client_id
     WHERE bi.date >= ${start} AND bi.date <= ${end}
       AND (${businessId}::int IS NULL OR bi.business_id = ${businessId})
+      AND bi.is_special_loan = false AND bi.is_internal_transfer = false AND bi.archived = false
     ORDER BY bi.date DESC
   `) as Record<string, unknown>[];
 
@@ -145,6 +165,8 @@ export async function getReportData(
     FROM expenses
     WHERE date >= ${start} AND date <= ${end}
       AND (${businessId}::int IS NULL OR business_id = ${businessId})
+      AND is_special_loan = false AND is_internal_transfer = false AND archived = false
+      AND payment_method <> 'pendiente_atelier'
     ORDER BY date DESC
   `) as Record<string, unknown>[];
 
@@ -156,7 +178,7 @@ export async function getReportData(
     client: (r.client_name as string) || "—",
     concept: (r.note as string) || "Ingreso",
     amount: parseNum(r.amount),
-    method: "transferencia",
+    method: (r.method as string) || "transferencia",
     isReimbursement: !!r.is_reimbursement,
     notes: "",
   }));
@@ -164,7 +186,7 @@ export async function getReportData(
   // Mapear egresos
   const expenses = expensesRows.map((r) => ({
     date: r.date as string,
-    category: r.category as string,
+    category: normalizeCategory(r.category),
     concept: r.concept as string,
     method: r.method as string,
     amount: parseNum(r.amount),
@@ -215,6 +237,7 @@ export async function getReportData(
       COALESCE(SUM(bank_income), 0)::float as total_collected
     FROM daily_records WHERE date <= ${end}
       AND (${businessId}::int IS NULL OR business_id = ${businessId})
+      AND archived = false
   `) as { total_byte: number; total_collected: number }[];
   const b2bReceivablesAtEnd = Math.max(0, b2bAtEndRows[0].total_byte - b2bAtEndRows[0].total_collected);
 
@@ -249,7 +272,7 @@ export async function getReportData(
       AND (${businessId}::int IS NULL OR business_id = ${businessId})
   `) as { category_name: string; pct: number; t_green: number; t_yellow: number }[];
   console.log(`[export] active budgets: ${budgetsRows.length}`);
-  const budgetMap = new Map(budgetsRows.map((b) => [b.category_name, b]));
+  const budgetMap = new Map(budgetsRows.map((b) => [normalizeCategory(b.category_name), b]));
   const allCats = new Set([...catMap.keys(), ...budgetMap.keys()]);
   const budgetVsReal = Array.from(allCats).map((category) => {
     const b = budgetMap.get(category) ?? null;
@@ -276,10 +299,10 @@ export async function getReportData(
     SELECT
       d.date::text as date,
       COALESCE(dr.bank_balance_real::float, NULL) as bank_balance,
-      COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = d.date AND (${businessId}::int IS NULL OR business_id = ${businessId})), 0)::float as income,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (${businessId}::int IS NULL OR business_id = ${businessId})), 0)::float as expense
+      COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = d.date AND (${businessId}::int IS NULL OR business_id = ${businessId}) AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)::float as income,
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (${businessId}::int IS NULL OR business_id = ${businessId}) AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)::float as expense
     FROM dates d
-    LEFT JOIN daily_records dr ON dr.date = d.date AND (${businessId}::int IS NULL OR dr.business_id = ${businessId})
+    LEFT JOIN daily_records dr ON dr.date = d.date AND (${businessId}::int IS NULL OR dr.business_id = ${businessId}) AND dr.archived = false
     ORDER BY d.date ASC
   `) as Record<string, unknown>[];
   let runningBalance = bankStart;
@@ -318,6 +341,7 @@ export async function getReportData(
         COALESCE(SUM(amount) FILTER (WHERE is_fonavi_reimbursement = false), 0)::float as adjusted
       FROM bank_income_items WHERE date >= ${prevStart} AND date <= ${prevEnd}
         AND (${businessId}::int IS NULL OR business_id = ${businessId})
+        AND is_special_loan = false AND is_internal_transfer = false AND archived = false
     `) as { gross: number; adjusted: number }[];
     const prevExpRows = (await sql`
       SELECT
@@ -325,6 +349,8 @@ export async function getReportData(
         COUNT(*)::int as n
       FROM expenses WHERE date >= ${prevStart} AND date <= ${prevEnd}
         AND (${businessId}::int IS NULL OR business_id = ${businessId})
+        AND is_special_loan = false AND is_internal_transfer = false AND archived = false
+        AND payment_method <> 'pendiente_atelier'
     `) as { atelier: number; n: number }[];
     const prevExpFinRows = (await sql`
       SELECT COALESCE(SUM(CASE WHEN e.is_shared THEN COALESCE(e.atelier_amount, e.amount) ELSE e.amount END), 0)::float as fin
@@ -332,6 +358,8 @@ export async function getReportData(
       JOIN expense_categories ec ON ec.name = e.category
       WHERE e.date >= ${prevStart} AND e.date <= ${prevEnd} AND ec.exclude_from_ebitda = true
         AND (${businessId}::int IS NULL OR e.business_id = ${businessId})
+        AND e.is_special_loan = false AND e.is_internal_transfer = false AND e.archived = false
+        AND e.payment_method <> 'pendiente_atelier'
     `) as { fin: number }[];
 
     const prevIncomeAdj = prevIncRows[0].adjusted;
