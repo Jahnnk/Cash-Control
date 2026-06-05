@@ -8,11 +8,23 @@ import {
   listExcelSheets,
   previewExcelImport,
   executeExcelImport,
+  getMonthsLoadStatus,
+  executeMultiMonthImport,
   type ImportPreview,
   type ImportResult,
+  type MonthLoadDetection,
+  type MultiMonthResult,
 } from "@/app/actions/excel-import";
+import { pairSheetsByMonth, type MonthPair } from "@/lib/excel-month-pairing";
 
-type Step = "select" | "sheets" | "preview" | "confirm" | "result";
+type Step = "select" | "months" | "sheets" | "preview" | "confirm" | "result" | "multiresult";
+
+const MONTH_NAMES_SHORT = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Set", "Oct", "Nov", "Dic"];
+function monthKeyLabel(monthKey: string): string {
+  const [y, m] = monthKey.split("-");
+  const idx = parseInt(m, 10) - 1;
+  return `${MONTH_NAMES_SHORT[idx] ?? m} ${y}`;
+}
 
 export function ExcelImportModal({
   negocio,
@@ -41,6 +53,15 @@ export function ExcelImportModal({
   const [archivarManualesExistentes, setArchivarManualesExistentes] = useState(true);
   const [crearCategoriasNuevas, setCrearCategoriasNuevas] = useState(true);
 
+  // Multi-mes
+  const [monthPairs, setMonthPairs] = useState<MonthPair[]>([]);
+  const [selectedMonths, setSelectedMonths] = useState<Set<string>>(new Set());
+  const [loadStatus, setLoadStatus] = useState<Record<string, MonthLoadDetection>>({});
+  // Para meses YA cargados: "import" = reemplazar, "skip" = no tocar.
+  // Default seguro: meses cargados → "skip" (no se pisan sin elección explícita).
+  const [monthActions, setMonthActions] = useState<Record<string, "import" | "skip">>({});
+  const [multiResult, setMultiResult] = useState<MultiMonthResult | null>(null);
+
   const negocioLabel = negocio.charAt(0).toUpperCase() + negocio.slice(1);
 
   function reset() {
@@ -54,6 +75,11 @@ export function ExcelImportModal({
     setPreview(null);
     setError(null);
     setResult(null);
+    setMonthPairs([]);
+    setSelectedMonths(new Set());
+    setLoadStatus({});
+    setMonthActions({});
+    setMultiResult(null);
   }
 
   function handleClose() {
@@ -83,15 +109,66 @@ export function ExcelImportModal({
         setIngGtosCandidates(r.candidatesIngGtos);
         setControlVtasCandidates(r.candidatesControlVtas);
 
-        // Defaults: la pestaña más reciente de cada tipo (última del array)
-        const defaultIngGtos = r.candidatesIngGtos[r.candidatesIngGtos.length - 1] ?? null;
-        const defaultControlVtas = r.candidatesControlVtas[r.candidatesControlVtas.length - 1] ?? null;
-        setSelectedIngGtos(defaultIngGtos);
-        setSelectedControlVtas(defaultControlVtas);
-        setStep("sheets");
+        // Emparejar por mes (tolerante a capitalización). Cada mes arrastra
+        // su par Ing&Gtos + Control de VTAS.
+        const { months } = pairSheetsByMonth(r.candidatesIngGtos, r.candidatesControlVtas);
+        setMonthPairs(months);
+        // Selección inicial: los meses completos (con ambas pestañas).
+        const completeKeys = months.filter((m) => m.status === "complete").map((m) => m.monthKey);
+        const initial = new Set(completeKeys.length ? completeKeys : months.map((m) => m.monthKey));
+        setSelectedMonths(initial);
+
+        // Detección READ-ONLY de meses ya cargados (conteos) — para todos los
+        // meses, así toggles no requieren refetch.
+        const det = await getMonthsLoadStatus(months.map((m) => m.monthKey));
+        const map: Record<string, MonthLoadDetection> = {};
+        const acts: Record<string, "import" | "skip"> = {};
+        for (const d of det) {
+          map[d.monthKey] = d;
+          acts[d.monthKey] = d.loaded ? "skip" : "import"; // cargado → skip por defecto (seguro)
+        }
+        setLoadStatus(map);
+        setMonthActions(acts);
+        setStep("months");
       } catch (e) {
         setError(e instanceof Error ? e.message : "Error al leer archivo");
       }
+    });
+  }
+
+  function buildPlan() {
+    return monthPairs
+      .filter((m) => selectedMonths.has(m.monthKey))
+      .map((m) => {
+        const loaded = loadStatus[m.monthKey]?.loaded ?? false;
+        const action: "import" | "skip" = loaded ? (monthActions[m.monthKey] ?? "skip") : "import";
+        return {
+          monthKey: m.monthKey,
+          ingGtosSheet: m.ingGtosSheet,
+          controlVtasSheet: m.controlVtasSheet,
+          action,
+        };
+      });
+  }
+
+  function handleExecuteMulti() {
+    if (!fileBase64) return;
+    const plan = buildPlan();
+    const toImport = plan.filter((p) => p.action === "import");
+    if (toImport.length === 0) {
+      setError("No hay meses para importar. Marca al menos un mes (y elige Reemplazar en los ya cargados).");
+      return;
+    }
+    setError(null);
+    startTransition(async () => {
+      const r = await executeMultiMonthImport(fileBase64, fileName, plan, {
+        aplicarSaldoInicial,
+        archivarManualesExistentes,
+        crearCategoriasNuevas,
+      });
+      setMultiResult(r);
+      setStep("multiresult");
+      router.refresh();
     });
   }
 
@@ -176,6 +253,27 @@ export function ExcelImportModal({
             <SelectStep onFile={handleFile} pending={pending} />
           )}
 
+          {step === "months" && (
+            <MonthsStep
+              negocioLabel={negocioLabel}
+              monthPairs={monthPairs}
+              selectedMonths={selectedMonths}
+              setSelectedMonths={setSelectedMonths}
+              loadStatus={loadStatus}
+              monthActions={monthActions}
+              setMonthActions={setMonthActions}
+              aplicarSaldoInicial={aplicarSaldoInicial}
+              setAplicarSaldoInicial={setAplicarSaldoInicial}
+              archivarManualesExistentes={archivarManualesExistentes}
+              setArchivarManualesExistentes={setArchivarManualesExistentes}
+              crearCategoriasNuevas={crearCategoriasNuevas}
+              setCrearCategoriasNuevas={setCrearCategoriasNuevas}
+              onBack={() => setStep("select")}
+              onExecute={handleExecuteMulti}
+              pending={pending}
+            />
+          )}
+
           {step === "sheets" && (
             <SheetsStep
               ingGtosCandidates={ingGtosCandidates}
@@ -220,6 +318,10 @@ export function ExcelImportModal({
 
           {step === "result" && result && (
             <ResultStep result={result} onClose={handleClose} />
+          )}
+
+          {step === "multiresult" && multiResult && (
+            <MultiResultStep result={multiResult} onClose={handleClose} />
           )}
         </div>
       </div>
@@ -898,4 +1000,202 @@ function columnLabel(c: ParseWarningRow["column"]): string {
     case "mixed": return "mixta";
     case "none": return "—";
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════
+// Paso MULTI-MES: selección de meses + idempotencia (Reemplazar/Saltar)
+// ═══════════════════════════════════════════════════════════════════
+
+function MonthsStep({
+  negocioLabel,
+  monthPairs,
+  selectedMonths,
+  setSelectedMonths,
+  loadStatus,
+  monthActions,
+  setMonthActions,
+  aplicarSaldoInicial,
+  setAplicarSaldoInicial,
+  archivarManualesExistentes,
+  setArchivarManualesExistentes,
+  crearCategoriasNuevas,
+  setCrearCategoriasNuevas,
+  onBack,
+  onExecute,
+  pending,
+}: {
+  negocioLabel: string;
+  monthPairs: MonthPair[];
+  selectedMonths: Set<string>;
+  setSelectedMonths: (s: Set<string>) => void;
+  loadStatus: Record<string, MonthLoadDetection>;
+  monthActions: Record<string, "import" | "skip">;
+  setMonthActions: (r: Record<string, "import" | "skip">) => void;
+  aplicarSaldoInicial: boolean;
+  setAplicarSaldoInicial: (b: boolean) => void;
+  archivarManualesExistentes: boolean;
+  setArchivarManualesExistentes: (b: boolean) => void;
+  crearCategoriasNuevas: boolean;
+  setCrearCategoriasNuevas: (b: boolean) => void;
+  onBack: () => void;
+  onExecute: () => void;
+  pending: boolean;
+}) {
+  function toggleMonth(key: string) {
+    const next = new Set(selectedMonths);
+    if (next.has(key)) next.delete(key);
+    else next.add(key);
+    setSelectedMonths(next);
+  }
+  function setAction(key: string, action: "import" | "skip") {
+    setMonthActions({ ...monthActions, [key]: action });
+  }
+
+  const incomplete = monthPairs.filter((m) => m.status !== "complete" && selectedMonths.has(m.monthKey));
+  // Cuántos meses realmente se importarán (incluidos + nuevos, o cargados con Reemplazar)
+  const willImport = monthPairs.filter((m) => {
+    if (!selectedMonths.has(m.monthKey)) return false;
+    const loaded = loadStatus[m.monthKey]?.loaded ?? false;
+    return loaded ? (monthActions[m.monthKey] ?? "skip") === "import" : true;
+  }).length;
+
+  return (
+    <div className="space-y-4">
+      <div>
+        <h4 className="text-sm font-semibold text-gray-900">Elige los meses a importar · {negocioLabel}</h4>
+        <p className="text-xs text-gray-500 mt-1">
+          Cada mes incluye su par <strong>Ing&amp;Gtos</strong> + <strong>Control de VTAS</strong>. Los meses ya cargados
+          se marcan abajo: elige <strong>Reemplazar</strong> o <strong>Saltar</strong> antes de continuar.
+        </p>
+      </div>
+
+      {incomplete.length > 0 && (
+        <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+          <span>
+            {incomplete.length} mes(es) seleccionado(s) tienen solo una pestaña (falta Ing&amp;Gtos o Control de VTAS).
+            Se importará solo el lado disponible.
+          </span>
+        </div>
+      )}
+
+      <div className="space-y-2">
+        {monthPairs.map((m) => {
+          const sel = selectedMonths.has(m.monthKey);
+          const det = loadStatus[m.monthKey];
+          const loaded = det?.loaded ?? false;
+          const action = monthActions[m.monthKey] ?? "skip";
+          return (
+            <div key={m.monthKey} className={`border rounded-lg p-3 ${sel ? "border-emerald-200 bg-emerald-50/40" : "border-gray-200"}`}>
+              <div className="flex items-start gap-3">
+                <input type="checkbox" checked={sel} onChange={() => toggleMonth(m.monthKey)} className="mt-1" />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="text-sm font-semibold text-gray-900">{monthKeyLabel(m.monthKey)}</span>
+                    {m.status === "complete" ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-700">par completo</span>
+                    ) : m.status === "only-inggtos" ? (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">solo Ing&amp;Gtos</span>
+                    ) : (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-100 text-amber-700">solo Control de VTAS</span>
+                    )}
+                    {loaded && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 text-blue-700">
+                        ya cargado: {det.total} registros
+                      </span>
+                    )}
+                    {!loaded && det && (
+                      <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 text-gray-600">nuevo</span>
+                    )}
+                  </div>
+                  <div className="text-[11px] text-gray-500 mt-0.5 truncate">
+                    {m.ingGtosSheet ?? "—"} · {m.controlVtasSheet ?? "—"}
+                  </div>
+                  {loaded && (
+                    <div className="text-[11px] text-gray-500 mt-0.5">
+                      {det.ingresos} ingresos · {det.egresos} egresos · {det.byteSales} días Byte
+                    </div>
+                  )}
+
+                  {sel && loaded && (
+                    <div className="flex items-center gap-3 mt-2">
+                      <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                        <input type="radio" name={`act-${m.monthKey}`} checked={action === "import"} onChange={() => setAction(m.monthKey, "import")} />
+                        <span className="text-red-700 font-medium">Reemplazar</span>
+                      </label>
+                      <label className="flex items-center gap-1.5 text-xs cursor-pointer">
+                        <input type="radio" name={`act-${m.monthKey}`} checked={action === "skip"} onChange={() => setAction(m.monthKey, "skip")} />
+                        <span className="text-gray-700">Saltar</span>
+                      </label>
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        {monthPairs.length === 0 && (
+          <p className="text-sm text-gray-500">No se detectaron meses en el archivo.</p>
+        )}
+      </div>
+
+      {/* Opciones */}
+      <div className="border-t border-gray-100 pt-3 space-y-2">
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input type="checkbox" checked={archivarManualesExistentes} onChange={(e) => setArchivarManualesExistentes(e.target.checked)} />
+          <span>Archivar movimientos manuales del mismo mes (recuperables)</span>
+        </label>
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input type="checkbox" checked={crearCategoriasNuevas} onChange={(e) => setCrearCategoriasNuevas(e.target.checked)} />
+          <span>Crear categorías de egreso nuevas</span>
+        </label>
+        <label className="flex items-center gap-2 text-xs cursor-pointer">
+          <input type="checkbox" checked={aplicarSaldoInicial} onChange={(e) => setAplicarSaldoInicial(e.target.checked)} />
+          <span>Aplicar saldo inicial del Excel (si lo trae)</span>
+        </label>
+      </div>
+
+      <div className="flex items-center justify-between gap-2 pt-2">
+        <button onClick={onBack} disabled={pending} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-100 rounded-lg disabled:opacity-50">
+          Atrás
+        </button>
+        <button onClick={onExecute} disabled={pending || willImport === 0}
+          className="px-4 py-2 text-sm bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 inline-flex items-center gap-2 disabled:opacity-50">
+          {pending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
+          Importar {willImport} mes{willImport === 1 ? "" : "es"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function MultiResultStep({ result, onClose }: { result: MultiMonthResult; onClose: () => void }) {
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center gap-2">
+        <CheckCircle2 className="w-5 h-5 text-emerald-600" />
+        <h4 className="text-sm font-semibold text-gray-900">
+          Importación terminada — {result.importedMonths} importado(s), {result.skippedMonths} saltado(s)
+          {result.errorMonths > 0 ? `, ${result.errorMonths} con error` : ""}
+        </h4>
+      </div>
+      <div className="space-y-1.5">
+        {result.perMonth.map((p) => (
+          <div key={p.monthKey} className="flex items-center justify-between text-xs border border-gray-100 rounded-lg px-3 py-2">
+            <span className="font-medium text-gray-800">{monthKeyLabel(p.monthKey)}</span>
+            {p.status === "imported" && (
+              <span className="text-emerald-700">✓ {p.movementsCount ?? 0} movimientos · {p.byteSalesDays ?? 0} días Byte</span>
+            )}
+            {p.status === "skipped" && <span className="text-gray-500">Saltado</span>}
+            {p.status === "error" && <span className="text-red-600">Error: {p.error}</span>}
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-end pt-2">
+        <button onClick={onClose} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-light">
+          Cerrar
+        </button>
+      </div>
+    </div>
+  );
 }
