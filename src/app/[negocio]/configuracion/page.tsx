@@ -35,7 +35,8 @@ export default async function ConfiguracionPage({
   return (
     <div className="space-y-6">
       <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
-      <ExcelImportButton negocio={negocio} />
+      {/* Importación del Excel de Kelly: solo Fonavi/Centro (Atelier usa Byte POS). */}
+      {!isAtelier && <ExcelImportButton negocio={negocio} />}
       {!isAtelier && initialConfig && (
         <InitialConfigSection initial={initialConfig} />
       )}

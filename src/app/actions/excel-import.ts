@@ -29,6 +29,14 @@ import { recalcBankBalance } from "./daily-records";
 
 const VALID_BIDS = [1, 2, 3];
 
+// La importación del Excel de Kelly es solo para las cafeterías que usan ese
+// ledger: Fonavi (2) y Centro (3). Atelier (1) usa el flujo Byte POS y queda
+// fuera. VALID_BIDS se mantiene [1,2,3] porque el cross-contamination check
+// compara los saldos de los 3 negocios.
+const IMPORT_ALLOWED_BIDS = [2, 3];
+const IMPORT_NOT_ALLOWED_MSG =
+  "La importación desde Excel solo está disponible para Fonavi y Centro.";
+
 export type ImportPreview = {
   parseResult: ParseResult | null;
   controlVtasResult: ControlVtasParseResult | null;
@@ -157,6 +165,9 @@ export async function previewExcelImport(
   if (!VALID_BIDS.includes(bId)) {
     return { error: "Negocio activo inválido" };
   }
+  if (!IMPORT_ALLOWED_BIDS.includes(bId)) {
+    return { error: IMPORT_NOT_ALLOWED_MSG };
+  }
   const buf = Buffer.from(fileBase64, "base64");
 
   const parseResult = ingGtosSheet ? parseExcelFile(buf, ingGtosSheet) : null;
@@ -245,6 +256,9 @@ export async function executeExcelImport(
   const bId = await activeBusinessId();
   if (!VALID_BIDS.includes(bId)) {
     return { success: false, error: "Negocio activo inválido" };
+  }
+  if (!IMPORT_ALLOWED_BIDS.includes(bId)) {
+    return { success: false, error: IMPORT_NOT_ALLOWED_MSG };
   }
   if (!ingGtosSheet && !controlVtasSheet) {
     return { success: false, error: "Debes seleccionar al menos una pestaña a importar" };
