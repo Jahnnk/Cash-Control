@@ -65,6 +65,17 @@ export type ReportData = {
   b2bAtEnd: Array<{
     client: string; date: string; total: number; collected: number; pending: number; aging: number;
   }>;
+  /**
+   * Posición de deudas y por cobrar — SALDOS DE BALANCE al cierre del período
+   * (no son flujo del período; NO afectan EBITDA). Mismas fuentes que el
+   * dashboard, acotadas por fecha de corte = fin del período.
+   */
+  debtPosition: {
+    asOfDate: string;          // fecha de corte (= fin del período)
+    partnerLoan: number;       // deuda con socio (préstamos personales pendientes) — Atelier
+    fonaviReceivable: number;  // por cobrar gastos compartidos pendientes — Atelier
+    b2bReceivable: number;     // cuentas por cobrar B2B (créditos Byte: Byte total − cobros)
+  };
 };
 
 function parseNum(v: unknown): number {
@@ -250,6 +261,21 @@ export async function getReportData(
   `) as { total_byte: number; total_collected: number }[];
   const b2bReceivablesAtEnd = Math.max(0, b2bAtEndRows[0].total_byte - b2bAtEndRows[0].total_collected);
 
+  // Deuda con socio al cierre del período (préstamos del socio pendientes).
+  // Misma lógica que el dashboard (loaned − refunded sobre is_special_loan),
+  // pero acotada por date <= end para que sea el saldo al cierre del mes del
+  // reporte. Solo Atelier tiene préstamos-socio; en otros negocios da 0.
+  const partnerLoanRows = (await sql`
+    SELECT
+      COALESCE((SELECT SUM(amount) FROM bank_income_items
+        WHERE (${businessId}::int IS NULL OR business_id = ${businessId})
+          AND is_special_loan = true AND date <= ${end}), 0)::float AS loaned,
+      COALESCE((SELECT SUM(amount) FROM expenses
+        WHERE (${businessId}::int IS NULL OR business_id = ${businessId})
+          AND is_special_loan = true AND date <= ${end}), 0)::float AS refunded
+  `) as { loaned: number; refunded: number }[];
+  const partnerLoanAtEnd = Math.max(0, Math.round((partnerLoanRows[0].loaned - partnerLoanRows[0].refunded) * 100) / 100);
+
   // Por categoría
   const catMap = new Map<string, { gross: number; atelier: number; count: number; exclude: boolean }>();
   for (const x of expenses) {
@@ -433,5 +459,11 @@ export async function getReportData(
     comparePrev,
     fonaviAtEnd,
     b2bAtEnd,
+    debtPosition: {
+      asOfDate: end,
+      partnerLoan: partnerLoanAtEnd,
+      fonaviReceivable: fonaviReceivablesAtEnd,
+      b2bReceivable: b2bReceivablesAtEnd,
+    },
   };
 }
