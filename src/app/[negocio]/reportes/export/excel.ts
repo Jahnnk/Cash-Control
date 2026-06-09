@@ -50,6 +50,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
   const kpis: [string, number | string, string][] = [
     ["Ingresos brutos", data.summary.incomeGross, CURRENCY],
     ["(-) Reembolsos Fonavi", data.summary.fonaviReimbursements, CURRENCY],
+    ["(-) Ingresos no operativos (excluidos del EBITDA)", data.summary.incomeNonOperative, CURRENCY],
     ["= Ingresos ajustados", data.summary.incomeAdjusted, CURRENCY],
     ["(-) Egresos operativos (base EBITDA)", data.summary.expensesOperative, CURRENCY],
     ["= EBITDA ajustado", data.summary.ebitda, CURRENCY],
@@ -89,21 +90,21 @@ export async function generateExcel(data: ReportData, filename: string): Promise
 
   // ─────────── Pestaña 2: Ingresos ───────────
   const ws2 = wb.addWorksheet("Ingresos detallados", { views: [{ state: "frozen", ySplit: 1 }] });
-  const r2h = ws2.addRow(["Fecha", "Cliente", "Concepto", "Monto", "Método", "Es reembolso?", "Notas"]);
+  const r2h = ws2.addRow(["Fecha", "Cliente", "Concepto", "Monto", "Método", "Es reembolso?", "Tipo", "Notas"]);
   r2h.eachCell((c) => styleHeader(c));
   data.incomes.forEach((x, i) => {
-    const r = ws2.addRow([x.date, x.client, x.concept, x.amount, x.method, x.isReimbursement ? "Sí" : "No", x.notes]);
+    const r = ws2.addRow([x.date, x.client, x.concept, x.amount, x.method, x.isReimbursement ? "Sí" : "No", x.nonOperativeCategory ? `No operativo · ${x.nonOperativeCategory}` : "Operativo", x.notes]);
     r.getCell(4).numFmt = CURRENCY;
     styleAlt(r, i % 2 === 0);
   });
   if (data.incomes.length > 0) {
     const total = data.incomes.reduce((s, x) => s + x.amount, 0);
-    const rt = ws2.addRow(["", "", "TOTAL", total, "", "", ""]);
+    const rt = ws2.addRow(["", "", "TOTAL", total, "", "", "", ""]);
     rt.getCell(3).font = { bold: true };
     rt.getCell(4).font = { bold: true };
     rt.getCell(4).numFmt = CURRENCY;
   }
-  [12, 22, 32, 14, 14, 12, 24].forEach((w, i) => { ws2.getColumn(i + 1).width = w; });
+  [12, 22, 32, 14, 14, 12, 30, 24].forEach((w, i) => { ws2.getColumn(i + 1).width = w; });
 
   // ─────────── Pestaña 3: Egresos ───────────
   const ws3 = wb.addWorksheet("Egresos detallados", { views: [{ state: "frozen", ySplit: 1 }] });

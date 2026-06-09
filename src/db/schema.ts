@@ -260,6 +260,11 @@ export const bankIncomeItems = pgTable(
     archived: boolean("archived").default(false).notNull(),
     // Devolución (gasto registrado como ingreso por compensación).
     isRefund: boolean("is_refund").default(false).notNull(),
+    // Ingreso NO operativo (venta de activos, préstamos recibidos, aportes
+    // de socios…). NULL = operativo. Los no-operativos SÍ afectan saldos
+    // (banco/caja según payment_method) pero NO cuentan en ventas/EBITDA
+    // — espejo de expense_categories.exclude_from_ebitda para egresos.
+    nonOperativeCategory: text("non_operative_category"),
     // Trazabilidad de importación masiva desde Excel.
     importedFromExcel: boolean("imported_from_excel").default(false).notNull(),
     importBatchId: uuid("import_batch_id"),
