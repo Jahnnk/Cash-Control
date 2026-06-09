@@ -1,4 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
+import { verifyAuthToken } from "@/lib/auth-token";
 
 const VALID_SCOPES = ["atelier", "fonavi", "centro", "grupo"] as const;
 type Scope = typeof VALID_SCOPES[number];
@@ -7,8 +8,15 @@ type Role = "admin" | "kelly";
 const BUSINESS_COOKIE = "yayis_business";
 const BUSINESS_HEADER = "x-active-business";
 const ROLE_COOKIE = "yayis_role";
+const AUTH_COOKIE = "yayis_auth";
 
-/** Rutas públicas que NO requieren rol seleccionado. */
+/**
+ * Rutas que NO requieren sesión (contraseña). Solo el login: todo lo
+ * demás —incluido el selector de rol— queda detrás de la contraseña.
+ */
+const AUTH_PUBLIC_PATHS = ["/login"];
+
+/** Rutas públicas que NO requieren rol seleccionado (pero sí sesión). */
 const PUBLIC_PATHS = ["/", "/select-business", "/acceso-denegado"];
 
 /**
@@ -26,9 +34,13 @@ function allowedScopesForRole(role: Role): Scope[] {
 }
 
 /**
- * Middleware multi-tenant + protección por rol.
+ * Middleware: autenticación por contraseña + multi-tenant + rol.
  *
  * Orden de checks:
+ *   0. Sesión (cookie firmada `yayis_auth`, ver lib/auth-token.ts).
+ *      Sin sesión válida → redirect a /login. Cubre páginas Y los POST
+ *      de server actions (van a las mismas rutas). Excepciones: /login
+ *      y las APIs públicas con autenticación propia.
  *   1. Si la ruta es pública (/ , /select-business, /acceso-denegado) → pasar.
  *   2. Si NO hay cookie de rol → redirect a /  (selector de rol).
  *   3. Si la URL es /[scope]/... y el rol NO permite ese scope →
@@ -37,15 +49,30 @@ function allowedScopesForRole(role: Role): Scope[] {
  *      (visible para server components/actions en esta misma request)
  *      + setear cookie business para persistencia.
  */
-export function middleware(request: NextRequest) {
+export async function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  // 1. Rutas públicas
-  if (PUBLIC_PATHS.includes(pathname)) {
+  // 0b. APIs públicas (autenticación propia en cada handler, ej. keep-alive)
+  if (PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
     return NextResponse.next();
   }
-  // 1b. APIs públicas (autenticación propia en cada handler)
-  if (PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+
+  // 0. Autenticación por contraseña compartida (fail-closed si falta
+  //    APP_PASSWORD). El rol Jahnn/Kelly sigue siendo prevención de
+  //    errores; ESTA es la barrera de seguridad real.
+  if (!AUTH_PUBLIC_PATHS.includes(pathname)) {
+    const authToken = request.cookies.get(AUTH_COOKIE)?.value;
+    const now = Math.floor(Date.now() / 1000);
+    const valid = await verifyAuthToken(authToken, process.env.APP_PASSWORD, now);
+    if (!valid) {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+  } else {
+    return NextResponse.next();
+  }
+
+  // 1. Rutas públicas (dentro de la sesión)
+  if (PUBLIC_PATHS.includes(pathname)) {
     return NextResponse.next();
   }
 
