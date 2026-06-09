@@ -3,6 +3,12 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { recalcBankBalance } from "./daily-records";
+import {
+  isReimbursementMethod,
+  reimbursementMirrorMethod,
+  type ReimbursementMethod,
+} from "@/lib/reimbursement-method";
 
 const sql = neon(process.env.DATABASE_URL!);
 const ATELIER_ID = 1;
@@ -74,14 +80,21 @@ export async function getFonaviReceivablesPendingTotal(): Promise<number> {
 // 'collected', activa el gasto-espejo en Fonavi (cambia método de
 // 'pendiente_atelier' a 'transferencia') y recalcula saldo BCP de Fonavi.
 export async function registerFonaviReimbursement(data: {
-  date: string;            // fecha del reembolso (entró al banco de Atelier)
+  date: string;            // fecha del reembolso (entró a Atelier)
   totalAmount: number;     // monto total recibido
   note: string | null;
   allocations: { receivableId: string; amount: number }[];
+  // Método con el que Fonavi pagó. Default 'transferencia' (compat con
+  // llamadas previas). 'efectivo' NO suma al banco (va a caja efectivo).
+  paymentMethod?: ReimbursementMethod;
 }): Promise<{ success: true } | { success: false; error: string }> {
   await requireAtelier();
   if (!Number.isFinite(data.totalAmount) || data.totalAmount <= 0) {
     return { success: false, error: "Monto inválido" };
+  }
+  const method: ReimbursementMethod = data.paymentMethod ?? "transferencia";
+  if (!isReimbursementMethod(method)) {
+    return { success: false, error: "Método de cobro inválido" };
   }
   const sumAllocations = data.allocations.reduce((s, a) => s + a.amount, 0);
   if (Math.round(sumAllocations * 100) !== Math.round(data.totalAmount * 100)) {
@@ -105,10 +118,13 @@ export async function registerFonaviReimbursement(data: {
     }
   }
 
-  // 1. Insertar income_item en ATELIER (business_id=1, donde realmente entra el dinero)
+  // 1. Insertar income_item en ATELIER (business_id=1, donde realmente entra el dinero).
+  //    payment_method define si suma al banco (transferencia/yape) o a la caja
+  //    efectivo (efectivo) — regla canónica. Antes caía siempre al default
+  //    'transferencia', lo que impedía registrar cobros en efectivo.
   const inserted = (await sql`
-    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, is_fonavi_reimbursement)
-    VALUES (1, ${data.date}, ${data.totalAmount}, NULL, ${data.note || "Reembolso Fonavi"}, true)
+    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, is_fonavi_reimbursement, payment_method)
+    VALUES (1, ${data.date}, ${data.totalAmount}, NULL, ${data.note || "Reembolso Fonavi"}, true, ${method})
     RETURNING id::text
   `) as { id: string }[];
   const incomeItemId = inserted[0].id;
@@ -139,39 +155,11 @@ export async function registerFonaviReimbursement(data: {
       WHERE id = ${alloc.receivableId}
     `);
   }
-  // Recalcular cache + saldo de ATELIER (business_id=1)
-  txQueries.push(sql`
-    UPDATE daily_records SET
-      bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = 1 AND date = ${data.date}), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = 1 AND date = ${data.date} AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
-    WHERE business_id = 1 AND date = ${data.date}
-  `);
-  txQueries.push(sql`
-    WITH RECURSIVE chain AS (
-      SELECT
-        (${data.date}::date - INTERVAL '1 day')::date AS date,
-        COALESCE((
-          SELECT bank_balance_real::numeric FROM daily_records
-          WHERE business_id = 1 AND date < ${data.date} AND bank_balance_real IS NOT NULL
-          ORDER BY date DESC LIMIT 1
-        ), 0) AS calc_balance
-      UNION ALL
-      SELECT
-        dr.date,
-        ROUND((
-          c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = 1 AND date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = 1 AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
-        )::numeric, 2)
-      FROM daily_records dr
-      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.business_id = 1 AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = 1)
-    )
-    UPDATE daily_records dr
-    SET bank_balance_real = chain.calc_balance
-    FROM chain
-    WHERE dr.business_id = 1 AND dr.date = chain.date AND dr.date >= ${data.date}
-  `);
+  // NOTA: el recálculo de saldo de Atelier ya NO se hace inline aquí. Se
+  // delega a la función canónica `recalcBankBalance` (más abajo, tras el
+  // commit), que excluye correctamente efectivo / is_special_loan /
+  // is_internal_transfer / archived del saldo BCP. Así un cobro en EFECTIVO
+  // suma a la caja efectivo (getCashBalance) y NO infla el banco.
 
   try {
     await sql.transaction(txQueries);
@@ -179,10 +167,18 @@ export async function registerFonaviReimbursement(data: {
     return { success: false, error: e instanceof Error ? e.message : "Error al guardar" };
   }
 
+  // Recalcular saldo BCP de ATELIER con la fórmula canónica (requireAtelier
+  // ⇒ negocio activo = Atelier). Idempotente; corre fuera de la transacción.
+  await recalcBankBalance(data.date);
+
   // 4. CAMBIO 7.5: activar gastos-espejo en Fonavi para receivables totalmente cobradas.
-  //    Cambia payment_method de 'pendiente_atelier' a 'transferencia' (default).
+  //    Cambia payment_method de 'pendiente_atelier' al método con que Fonavi pagó:
+  //    transferencia/yape → gasto bancario de Fonavi; efectivo → gasto en efectivo
+  //    (no toca el banco de Fonavi). El recálculo de saldo de Fonavi más abajo ya
+  //    excluye 'efectivo' del BCP, así que en efectivo el banco de Fonavi no cambia.
   //    Si la receivable solo se cobró parcialmente, NO se activa todavía
   //    (el gasto-espejo permanece pendiente hasta cobro total).
+  const mirrorMethod = reimbursementMirrorMethod(method);
   const collectedReceivables = (await sql`
     SELECT id::text FROM fonavi_receivables
     WHERE id = ANY(${data.allocations.map((a) => a.receivableId)}::uuid[])
@@ -200,10 +196,10 @@ export async function registerFonaviReimbursement(data: {
         AND linked_receivable_id = ANY(${ids}::uuid[])
     `) as { date: string }[];
 
-    // UPDATE: el espejo "se activa" como gasto BCP de Fonavi
+    // UPDATE: el espejo "se activa" con el método correspondiente
     await sql`
       UPDATE expenses
-      SET payment_method = 'transferencia'
+      SET payment_method = ${mirrorMethod}
       WHERE business_id = 2
         AND payment_method = 'pendiente_atelier'
         AND linked_receivable_id = ANY(${ids}::uuid[])

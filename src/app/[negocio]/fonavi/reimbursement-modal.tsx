@@ -4,6 +4,7 @@ import { useState } from "react";
 import { X, Loader2 } from "lucide-react";
 import { formatCurrency, formatDateShort, getToday } from "@/lib/utils";
 import { registerFonaviReimbursement, type ReceivableRow } from "@/app/actions/fonavi-receivables";
+import type { ReimbursementMethod } from "@/lib/reimbursement-method";
 
 export function ReimbursementModal({
   pendingReceivables,
@@ -25,6 +26,7 @@ export function ReimbursementModal({
     return "";
   });
   const [note, setNote] = useState("");
+  const [method, setMethod] = useState<ReimbursementMethod>("transferencia");
   const [allocations, setAllocations] = useState<Record<string, string>>(() => {
     if (preselectedReceivableId) {
       const r = pendingReceivables.find((x) => x.id === preselectedReceivableId);
@@ -73,6 +75,7 @@ export function ReimbursementModal({
       totalAmount: totalNum,
       note: note.trim() || null,
       allocations: allocList,
+      paymentMethod: method,
     });
     setSaving(false);
     if (!result.success) { setError(result.error); return; }
@@ -91,7 +94,7 @@ export function ReimbursementModal({
 
         <div className="p-6 space-y-4">
           {/* Datos del reembolso */}
-          <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Fecha</label>
               <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
@@ -105,12 +108,27 @@ export function ReimbursementModal({
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
             </div>
             <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">¿Cómo pagó Fonavi?</label>
+              <select value={method} onChange={(e) => setMethod(e.target.value as ReimbursementMethod)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                <option value="transferencia">Transferencia (al banco)</option>
+                <option value="efectivo">Efectivo (a caja)</option>
+                <option value="yape_plin">Yape / Plin (al banco)</option>
+              </select>
+            </div>
+            <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Nota (opcional)</label>
               <input type="text" value={note} onChange={(e) => setNote(e.target.value)}
                 placeholder="Ej. transferencia BCP"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
             </div>
           </div>
+
+          {method === "efectivo" && (
+            <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded-lg px-3 py-2">
+              El cobro en efectivo suma a la <strong>caja en efectivo de Atelier</strong>, no al saldo del banco (BCP).
+            </div>
+          )}
 
           {/* Asignación */}
           <div>
