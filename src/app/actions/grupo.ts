@@ -64,10 +64,10 @@ export async function getGroupDashboard(monthInput?: string) {
       bankBalance = Math.round((anchor + parseFloat(incRes.rows[0].t as string) - parseFloat(expRes.rows[0].t as string)) * 100) / 100;
     }
 
-    // Ingresos del mes (operativos: excluye reembolsos Fonavi y préstamos socio)
+    // Ingresos del mes (operativos: excluye reembolsos Fonavi, préstamos socio e ingresos no operativos)
     const incomeRes = await db.execute(sql`
       SELECT COALESCE(SUM(amount), 0) AS t FROM bank_income_items
-      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false AND archived = false
+      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false AND archived = false AND non_operative_category IS NULL
     `);
     const monthlyIncome = parseFloat(incomeRes.rows[0].t as string);
 

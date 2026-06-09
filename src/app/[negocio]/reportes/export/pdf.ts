@@ -134,6 +134,7 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
     body: [
       ["Ingresos brutos", fmtMoney(data.summary.incomeGross)],
       ["(-) Reembolsos Fonavi", fmtMoney(-data.summary.fonaviReimbursements)],
+      ["(-) Ingresos no operativos (excluidos del EBITDA)", fmtMoney(-data.summary.incomeNonOperative)],
       [{ content: "= Ingresos ajustados", styles: { fontStyle: "bold" } }, { content: fmtMoney(data.summary.incomeAdjusted), styles: { fontStyle: "bold" } }],
       ["(-) Egresos operativos (base EBITDA)", fmtMoney(-data.summary.expensesOperative)],
       [{ content: "= EBITDA ajustado", styles: { fontStyle: "bold", textColor: data.summary.ebitda >= 0 ? PRIMARY : "#DC2626" } }, { content: fmtMoney(data.summary.ebitda), styles: { fontStyle: "bold", textColor: data.summary.ebitda >= 0 ? PRIMARY : "#DC2626" } }],

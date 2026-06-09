@@ -5,6 +5,7 @@ import { useParams } from "next/navigation";
 import { X, Loader2 } from "lucide-react";
 import { createBankIncomeItem } from "@/app/actions/bank-income";
 import { createExpense } from "@/app/actions/expenses";
+import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
 import { formatDateShort } from "@/lib/utils";
 
 type ClientOption = { id: string; name: string };
@@ -71,6 +72,8 @@ export function CreateRecordModal({
   const [clientId, setClientId] = useState<string>("");
   const [note, setNote] = useState("");
   const [incomePaymentMethod, setIncomePaymentMethod] = useState<string>("transferencia");
+  // "" = operativo (ventas); texto = categoría no operativa (fuera del EBITDA)
+  const [nonOpCategory, setNonOpCategory] = useState<string>("");
 
   // Egreso
   const [category, setCategory] = useState<string>(categories[0] ?? "");
@@ -118,6 +121,7 @@ export function CreateRecordModal({
           clientId: clientId || null,
           note: note.trim(),
           paymentMethod: incomePaymentMethod,
+          nonOperativeCategory: nonOpCategory || null,
         });
         if (!result.success) {
           setError(result.error);
@@ -276,6 +280,28 @@ export function CreateRecordModal({
                     </button>
                   ))}
                 </div>
+              </div>
+
+              {/* Tipo de ingreso: operativo vs no operativo (fuera del EBITDA) */}
+              <div>
+                <label className="block text-xs font-medium text-gray-700 mb-1">
+                  Tipo de ingreso
+                </label>
+                <select
+                  value={nonOpCategory}
+                  onChange={(e) => setNonOpCategory(e.target.value)}
+                  className={`w-full border rounded-lg px-3 py-2 text-sm bg-white ${nonOpCategory ? "border-amber-300 bg-amber-50 text-amber-900" : "border-gray-300"}`}
+                >
+                  <option value="">Operativo (ventas)</option>
+                  {NON_OPERATIVE_CATEGORIES.map((c) => (
+                    <option key={c} value={c}>No operativo · {c}</option>
+                  ))}
+                </select>
+                {nonOpCategory && (
+                  <div className="text-[11px] text-amber-700 mt-1">
+                    Entra al saldo (banco o caja según el método) pero <strong>no cuenta como venta ni en el EBITDA</strong>.
+                  </div>
+                )}
               </div>
             </>
           ) : (

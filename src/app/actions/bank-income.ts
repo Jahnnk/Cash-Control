@@ -5,6 +5,19 @@ import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { recalcBankBalance } from "./daily-records";
+import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
+
+// Normaliza/valida la categoría no-operativa de un ingreso.
+// null/"" → fila operativa normal (non_operative_category = NULL).
+function normalizeNonOperative(
+  v: string | null | undefined,
+): { ok: true; value: string | null } | { ok: false } {
+  if (v == null || v === "") return { ok: true, value: null };
+  if ((NON_OPERATIVE_CATEGORIES as readonly string[]).includes(v)) {
+    return { ok: true, value: v };
+  }
+  return { ok: false };
+}
 
 /**
  * Crea un único ingreso a Ctas. y Efectivo (sin tocar el resto del día).
@@ -32,6 +45,10 @@ export async function createBankIncomeItem(data: {
   clientId?: string | null;
   note?: string;
   paymentMethod?: string;
+  // Categoría no-operativa (Venta de activos, Préstamos recibidos…).
+  // null/omitido = ingreso operativo normal. Los no-operativos SÍ
+  // afectan saldos pero NO cuentan en ventas/EBITDA.
+  nonOperativeCategory?: string | null;
 }): Promise<{ success: true } | { success: false; error: string }> {
   const bId = await activeBusinessId();
 
@@ -48,6 +65,10 @@ export async function createBankIncomeItem(data: {
   }
 
   const method = data.paymentMethod ?? "transferencia";
+  const nonOp = normalizeNonOperative(data.nonOperativeCategory);
+  if (!nonOp.ok) {
+    return { success: false, error: "Categoría de ingreso no operativo inválida" };
+  }
 
   // Asegura que exista daily_records para que recalcBankBalance no sea no-op.
   await db.execute(sql`
@@ -57,8 +78,8 @@ export async function createBankIncomeItem(data: {
   `);
 
   await db.execute(sql`
-    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method)
-    VALUES (${bId}, ${data.date}, ${data.amount}, ${data.clientId ?? null}, ${data.note?.trim() || null}, ${method})
+    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method, non_operative_category)
+    VALUES (${bId}, ${data.date}, ${data.amount}, ${data.clientId ?? null}, ${data.note?.trim() || null}, ${method}, ${nonOp.value})
   `);
 
   await recalcBankBalance(data.date);
@@ -68,7 +89,10 @@ export async function createBankIncomeItem(data: {
 
 export async function saveBankIncomeItems(
   date: string,
-  items: { amount: number; clientId: string | null; note: string; paymentMethod?: string }[]
+  // nonOperativeCategory debe hacer round-trip desde getBankIncomeItems:
+  // este flujo borra y re-inserta los ítems del día, así que si el form
+  // no devuelve la marca, se perdería al guardar.
+  items: { amount: number; clientId: string | null; note: string; paymentMethod?: string; nonOperativeCategory?: string | null }[]
 ) {
   const bId = await activeBusinessId();
   // Delete y re-insert SOLO de items operativos. Los préstamos del socio
@@ -86,9 +110,10 @@ export async function saveBankIncomeItems(
 
   for (const item of items) {
     const method = item.paymentMethod ?? "transferencia";
+    const nonOp = normalizeNonOperative(item.nonOperativeCategory);
     await db.execute(sql`
-      INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method)
-      VALUES (${bId}, ${date}, ${item.amount}, ${item.clientId}, ${item.note || null}, ${method})
+      INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method, non_operative_category)
+      VALUES (${bId}, ${date}, ${item.amount}, ${item.clientId}, ${item.note || null}, ${method}, ${nonOp.ok ? nonOp.value : null})
     `);
   }
 

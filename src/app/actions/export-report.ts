@@ -2,6 +2,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { splitExpenses, type ExpenseLike } from "@/lib/expense-split";
+import { splitIncomes, type IncomeLike } from "@/lib/income-base";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -16,8 +17,11 @@ export type ReportData = {
   // Resumen
   summary: {
     incomeGross: number;
-    incomeAdjusted: number;       // sin reembolsos Fonavi
+    incomeAdjusted: number;       // sin reembolsos Fonavi ni no-operativos (base EBITDA)
     fonaviReimbursements: number;
+    /** Ingresos no operativos (venta de activos, préstamos recibidos…).
+     *  SÍ están en el flujo de caja y saldos; NO cuentan en ventas/EBITDA. */
+    incomeNonOperative: number;
     expensesGross: number;         // desembolso total (montos completos)
     expensesOperative: number;     // sin financieras + atelier_amount en compartidos (base EBITDA)
     expensesFinancial: number;     // las excluidas del EBITDA
@@ -39,7 +43,7 @@ export type ReportData = {
   // Detalles
   incomes: Array<{
     date: string; client: string; concept: string; amount: number; method: string;
-    isReimbursement: boolean; notes: string;
+    isReimbursement: boolean; nonOperativeCategory: string | null; notes: string;
   }>;
   expenses: Array<{
     date: string; category: string; concept: string; method: string;
@@ -165,6 +169,7 @@ export async function getReportData(
   const incomesRows = (await sql`
     SELECT bi.date::text as date, bi.amount::float as amount, bi.note,
            bi.is_fonavi_reimbursement as is_reimbursement,
+           bi.non_operative_category,
            bi.payment_method as method,
            c.name as client_name
     FROM bank_income_items bi
@@ -199,6 +204,7 @@ export async function getReportData(
     amount: parseNum(r.amount),
     method: (r.method as string) || "transferencia",
     isReimbursement: !!r.is_reimbursement,
+    nonOperativeCategory: (r.non_operative_category as string) || null,
     notes: "",
   }));
 
@@ -215,10 +221,15 @@ export async function getReportData(
     notes: (r.notes as string) || "",
   }));
 
-  // Resumen
-  const incomeGross = incomes.reduce((s, x) => s + x.amount, 0);
-  const fonaviReimbursements = incomes.filter((x) => x.isReimbursement).reduce((s, x) => s + x.amount, 0);
-  const incomeAdjusted = incomeGross - fonaviReimbursements;
+  // Resumen — base de ingresos vía la función pura canónica (única fuente de
+  // verdad, compartida con el comparativo): adjusted = gross − reembolsos
+  // Fonavi − ingresos no operativos. Los no-operativos siguen en `incomes`
+  // (flujo de caja y saldos los ven), solo salen de la base EBITDA.
+  const incSplit = splitIncomes(incomes);
+  const incomeGross = incSplit.gross;
+  const fonaviReimbursements = incSplit.fonaviReimbursements;
+  const incomeNonOperative = incSplit.nonOperative;
+  const incomeAdjusted = incSplit.adjusted;
   // Flujo BANCARIO (regla canónica del saldo): solo lo que entra/sale del
   // banco. Ingresos por transferencia/yape/plin (excluye efectivo); egresos
   // por método distinto de efectivo (pendiente_atelier ya excluido en query).
@@ -374,14 +385,21 @@ export async function getReportData(
     const prevStart = startOfMonth(prevMonth);
     const prevEnd = endOfMonth(prevMonth);
 
+    // Ingresos del mes anterior: MISMAS filas (mismos filtros que el reporte
+    // directo) pasadas por la MISMA función pura `splitIncomes`. Nada de
+    // agregados SQL paralelos (mismo principio que splitExpenses abajo).
     const prevIncRows = (await sql`
-      SELECT
-        COALESCE(SUM(amount), 0)::float as gross,
-        COALESCE(SUM(amount) FILTER (WHERE is_fonavi_reimbursement = false), 0)::float as adjusted
+      SELECT amount::float as amount, is_fonavi_reimbursement, non_operative_category
       FROM bank_income_items WHERE date >= ${prevStart} AND date <= ${prevEnd}
         AND (${businessId}::int IS NULL OR business_id = ${businessId})
         AND is_special_loan = false AND is_internal_transfer = false AND archived = false
-    `) as { gross: number; adjusted: number }[];
+    `) as Record<string, unknown>[];
+    const prevIncomes: IncomeLike[] = prevIncRows.map((r) => ({
+      amount: parseNum(r.amount),
+      isReimbursement: !!r.is_fonavi_reimbursement,
+      nonOperativeCategory: (r.non_operative_category as string) || null,
+    }));
+    const prevIncSplit = splitIncomes(prevIncomes);
     // Egresos del mes anterior: se traen las MISMAS filas (mismos filtros que
     // el reporte directo) y se pasan por la MISMA función pura `splitExpenses`
     // con el MISMO excludedSet business-scoped. Así el comparativo y el reporte
@@ -404,7 +422,7 @@ export async function getReportData(
     }));
     const prevSplit = splitExpenses(prevExpenses, (c) => excludedSet.has(c));
 
-    const prevIncomeAdj = prevIncRows[0].adjusted;
+    const prevIncomeAdj = prevIncSplit.adjusted;
     const prevExpOp = prevSplit.operative;
     const prevEbitda = prevIncomeAdj - prevExpOp;
     const prevMargin = prevIncomeAdj > 0 ? (prevEbitda / prevIncomeAdj) * 100 : 0;
@@ -444,6 +462,7 @@ export async function getReportData(
       incomeGross,
       incomeAdjusted,
       fonaviReimbursements,
+      incomeNonOperative,
       expensesGross,
       expensesOperative,
       expensesFinancial,

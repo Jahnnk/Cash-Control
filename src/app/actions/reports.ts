@@ -76,6 +76,7 @@ export async function getMonthlyReport(month: string) {
         WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
           AND is_fonavi_reimbursement = false AND is_special_loan = false
           AND is_internal_transfer = false AND archived = false
+          AND non_operative_category IS NULL
       ), 0) as total_income,
       COALESCE((SELECT SUM(bank_expense) FROM daily_records
         WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND archived = false), 0) as total_bank_expense,
@@ -290,8 +291,9 @@ export async function getDailyBreakdown(
     // Drilldown del card "Ingresos Ctas. y Efectivo": muestra TODAS las
     // filas (cobros Byte + devoluciones + sobrantes), porque el card
     // ahora suma el TOTAL del mes — no solo no-ventas. Se excluyen
-    // transferencias internas, préstamos especiales y reembolsos
-    // Fonavi (no son flujo operativo). is_byte_sale ya NO se filtra.
+    // transferencias internas, préstamos especiales, reembolsos Fonavi
+    // e ingresos no operativos (no son flujo operativo; igual que el
+    // card total_income). is_byte_sale ya NO se filtra.
     // Atelier: 0 filas con is_byte_sale=true así que el cambio solo
     // afecta a Centro/Fonavi visualmente.
     const result = await db.execute(sql`
@@ -303,6 +305,7 @@ export async function getDailyBreakdown(
       WHERE bi.business_id = ${bId} AND bi.date >= ${startDate} AND bi.date <= ${endDate}
         AND bi.is_special_loan = false AND bi.is_internal_transfer = false
         AND bi.is_fonavi_reimbursement = false AND bi.archived = false
+        AND bi.non_operative_category IS NULL
       ORDER BY bi.date DESC, bi.sort_order ASC
     `);
     return { format: "income", rows: result.rows };
@@ -346,7 +349,7 @@ export async function getDailyBreakdown(
         WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
           AND is_byte_sale = false AND is_special_loan = false
           AND is_internal_transfer = false AND is_fonavi_reimbursement = false
-          AND archived = false
+          AND archived = false AND non_operative_category IS NULL
         GROUP BY date
       )
       SELECT d.date::text AS date,

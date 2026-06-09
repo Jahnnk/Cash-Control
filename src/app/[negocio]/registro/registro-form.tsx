@@ -4,6 +4,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance, updateCurrentBankBalance } from "@/app/actions/daily-records";
 import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
 import { computeSharedSplit } from "@/lib/shared-split";
+import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
@@ -29,6 +30,9 @@ type IncomeItem = {
   clientName: string;
   note: string;
   paymentMethod: string; // efectivo | transferencia | yape (default transferencia)
+  // null = operativo (ventas); texto = categoría no operativa (Venta de
+  // activos…). DEBE hacer round-trip al guardar (save borra y re-inserta).
+  nonOperativeCategory: string | null;
 };
 
 type ExpenseItem = {
@@ -141,6 +145,8 @@ export function RegistroForm({
   const [txIncomeMethod, setTxIncomeMethod] = useState(
     initialTxType === "ingreso" && initialTxMethod ? initialTxMethod : "transferencia",
   );
+  // "" = ingreso operativo (ventas); texto = categoría no operativa
+  const [txNonOpCategory, setTxNonOpCategory] = useState("");
   const [txNote, setTxNote] = useState("");
   const amountRef = useRef<HTMLInputElement>(null);
 
@@ -297,9 +303,10 @@ export function RegistroForm({
           clientName: (item.client_name as string) || "",
           note: (item.note as string) || "",
           paymentMethod: (item.payment_method as string) || "transferencia",
+          nonOperativeCategory: (item.non_operative_category as string) || null,
         })));
       } else if (record && Number(record.bank_income) > 0) {
-        setIncomeItems([{ id: crypto.randomUUID(), dbId: null, amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado", paymentMethod: "transferencia" }]);
+        setIncomeItems([{ id: crypto.randomUUID(), dbId: null, amount: Number(record.bank_income), clientId: null, clientName: "", note: "Guardado", paymentMethod: "transferencia", nonOperativeCategory: null }]);
       } else {
         setIncomeItems([]);
       }
@@ -336,7 +343,9 @@ export function RegistroForm({
         clientName: client?.name || "",
         note: txNote,
         paymentMethod: txIncomeMethod,
+        nonOperativeCategory: txNonOpCategory || null,
       }]);
+      setTxNonOpCategory("");
     } else {
       const amountNum = parseFloat(txAmount);
       let shared: ExpenseItem["shared"] = undefined;
@@ -550,7 +559,7 @@ export function RegistroForm({
         bankExpense: totalExpense,
         bankBalanceReal: bankBalanceReal ? parseFloat(bankBalanceReal) : null,
       });
-      await saveBankIncomeItems(date, latestIncome.map((i: IncomeItem) => ({ amount: i.amount, clientId: i.clientId, note: i.note, paymentMethod: i.paymentMethod })));
+      await saveBankIncomeItems(date, latestIncome.map((i: IncomeItem) => ({ amount: i.amount, clientId: i.clientId, note: i.note, paymentMethod: i.paymentMethod, nonOperativeCategory: i.nonOperativeCategory })));
       for (const exp of latestExpenses.filter((e: ExpenseItem) => e.isNew)) {
         await createExpense({
           date,
@@ -825,6 +834,17 @@ export function RegistroForm({
           {/* MOVIMIENTOS TAB — Board style */}
           {activeTab === "movimientos" && (
             <div className="space-y-4">
+              {/* Transferencia interna: mover dinero Efectivo ↔ BCP sin tocar totales */}
+              <div className="flex justify-end">
+                <button
+                  onClick={() => { setEditingTransfer(null); setTransferModalOpen(true); }}
+                  className="inline-flex items-center gap-2 text-sm font-medium text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-lg px-3 py-1.5"
+                  title="Mover dinero entre la caja efectivo y la cuenta BCP (ej. depositar efectivo al banco)"
+                >
+                  <ArrowRightLeft className="w-4 h-4" />
+                  Transferencia interna
+                </button>
+              </div>
               {/* Filter toggle: Todos / Banco / Efectivo */}
               <div className="flex gap-1 bg-gray-100 rounded-lg p-1">
                 {(["todos", "banco", "efectivo"] as const).map((f) => (
@@ -927,33 +947,54 @@ export function RegistroForm({
 
                     {/* Fila 2: campos críticos (siempre visibles) */}
                     {txType === "ingreso" ? (
-                      <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                        <select
-                          value={txClient}
-                          onChange={(e) => setTxClient(e.target.value)}
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                        >
-                          <option value="">Ingreso del día</option>
-                          {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
-                        </select>
-                        <select
-                          value={txIncomeMethod}
-                          onChange={(e) => setTxIncomeMethod(e.target.value)}
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                        >
-                          <option value="transferencia">Transferencia</option>
-                          <option value="efectivo">Efectivo</option>
-                          <option value="yape">Yape</option>
-                        </select>
-                        <input
-                          type="text"
-                          value={txNote}
-                          onChange={(e) => setTxNote(e.target.value)}
-                          placeholder="Nota (opcional)"
-                          onKeyDown={(e) => e.key === "Enter" && canAdd && addTransaction()}
-                          className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
-                        />
-                      </div>
+                      <>
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                          <select
+                            value={txClient}
+                            onChange={(e) => setTxClient(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          >
+                            <option value="">Ingreso del día</option>
+                            {clients.map((c) => (<option key={c.id} value={c.id}>Pago de {c.name}</option>))}
+                          </select>
+                          <select
+                            value={txIncomeMethod}
+                            onChange={(e) => setTxIncomeMethod(e.target.value)}
+                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          >
+                            <option value="transferencia">Transferencia</option>
+                            <option value="efectivo">Efectivo</option>
+                            <option value="yape">Yape</option>
+                          </select>
+                          <input
+                            type="text"
+                            value={txNote}
+                            onChange={(e) => setTxNote(e.target.value)}
+                            placeholder="Nota (opcional)"
+                            onKeyDown={(e) => e.key === "Enter" && canAdd && addTransaction()}
+                            className="border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                          />
+                        </div>
+                        {/* Tipo de ingreso: operativo (ventas) vs no operativo (fuera del EBITDA) */}
+                        <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 items-center">
+                          <select
+                            value={txNonOpCategory}
+                            onChange={(e) => setTxNonOpCategory(e.target.value)}
+                            className={`border rounded-lg px-3 py-2 text-sm ${txNonOpCategory ? "border-amber-300 bg-amber-50 text-amber-900" : "border-gray-200 text-gray-600"}`}
+                            title="Los ingresos no operativos entran al saldo pero no cuentan como ventas ni en el EBITDA"
+                          >
+                            <option value="">Ingreso operativo (ventas)</option>
+                            {NON_OPERATIVE_CATEGORIES.map((c) => (
+                              <option key={c} value={c}>No operativo · {c}</option>
+                            ))}
+                          </select>
+                          {txNonOpCategory && (
+                            <div className="sm:col-span-2 text-xs text-amber-700">
+                              Entra al saldo (banco o caja según el método) pero <strong>no cuenta como venta ni en el EBITDA</strong>.
+                            </div>
+                          )}
+                        </div>
+                      </>
                     ) : (
                       <>
                         <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
@@ -1099,7 +1140,15 @@ export function RegistroForm({
                             {item.clientId ? <User className="w-4 h-4 text-blue-600" /> : <ArrowDownLeft className="w-4 h-4 text-primary-light" />}
                           </div>
                           <div className="ml-3 flex-1 min-w-0">
-                            <div className="text-sm font-medium text-gray-900">{item.clientId ? `Pago de ${item.clientName}` : "Ingreso del día"}</div>
+                            <div className="text-sm font-medium text-gray-900 flex items-center gap-1.5 flex-wrap">
+                              {item.clientId ? `Pago de ${item.clientName}` : "Ingreso del día"}
+                              {item.nonOperativeCategory && (
+                                <span className="text-[10px] font-medium bg-amber-100 text-amber-800 border border-amber-200 rounded px-1.5 py-0.5"
+                                  title="No cuenta como venta ni en el EBITDA; sí afecta el saldo">
+                                  No operativo · {item.nonOperativeCategory}
+                                </span>
+                              )}
+                            </div>
                             {item.note && <div className="text-xs text-gray-500 truncate">{item.note}</div>}
                           </div>
                           <div className="text-sm font-bold text-primary-light ml-3">+{formatCurrency(item.amount)}</div>
