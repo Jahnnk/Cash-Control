@@ -22,13 +22,17 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
 
   const [categoryId, setCategoryId] = useState("");
   const [concept, setConcept] = useState("");
+  const [splitMode, setSplitMode] = useState<"percentage" | "fixed">("percentage");
   const [atelierPct, setAtelierPct] = useState("");
   const [fonaviPct, setFonaviPct] = useState("");
+  const [atelierFixed, setAtelierFixed] = useState("");
+  const [fonaviFixed, setFonaviFixed] = useState("");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function resetForm() {
     setCategoryId(""); setConcept(""); setAtelierPct(""); setFonaviPct("");
+    setSplitMode("percentage"); setAtelierFixed(""); setFonaviFixed("");
     setError(null);
     setEditingId(null);
     setUsageCount(0);
@@ -53,8 +57,11 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
     setEditingId(rule.id);
     setCategoryId(rule.category_id);
     setConcept(rule.concept);
+    setSplitMode(rule.split_mode === "fixed" ? "fixed" : "percentage");
     setAtelierPct(String(rule.atelier_percentage));
     setFonaviPct(String(rule.fonavi_percentage));
+    setAtelierFixed(rule.atelier_fixed != null ? String(rule.atelier_fixed) : "");
+    setFonaviFixed(rule.fonavi_fixed != null ? String(rule.fonavi_fixed) : "");
     setShowForm(true);
     setError(null);
     // Cargar conteo de egresos vinculados
@@ -66,13 +73,30 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
     setError(null);
     if (!categoryId) { setError("Selecciona una categoría"); return; }
     if (!concept.trim()) { setError("Escribe un concepto"); return; }
+
     const a = parseFloat(atelierPct), f = parseFloat(fonaviPct);
-    if (!Number.isFinite(a) || !Number.isFinite(f)) { setError("Porcentajes inválidos"); return; }
+    const af = parseFloat(atelierFixed), ff = parseFloat(fonaviFixed);
+    if (splitMode === "percentage" && (!Number.isFinite(a) || !Number.isFinite(f))) {
+      setError("Porcentajes inválidos"); return;
+    }
+    if (splitMode === "fixed" && (!Number.isFinite(af) || !Number.isFinite(ff))) {
+      setError("Ingresa los montos fijos de Atelier y Fonavi"); return;
+    }
+
+    const input = {
+      categoryId,
+      concept: concept.trim(),
+      splitMode,
+      atelierPercentage: a,
+      fonaviPercentage: f,
+      atelierFixed: splitMode === "fixed" ? af : null,
+      fonaviFixed: splitMode === "fixed" ? ff : null,
+    };
 
     setSaving(true);
     const result = editingId
-      ? await updateSharedRule(editingId, { categoryId, concept: concept.trim(), atelierPercentage: a, fonaviPercentage: f })
-      : await createSharedRule({ categoryId, concept: concept.trim(), atelierPercentage: a, fonaviPercentage: f });
+      ? await updateSharedRule(editingId, input)
+      : await createSharedRule(input);
     setSaving(false);
     if (!result.success) { setError(result.error ?? "Error"); return; }
 
@@ -85,6 +109,15 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
     if (rule.active) await deactivateSharedRule(rule.id);
     else await reactivateSharedRule(rule.id);
     router.refresh();
+  }
+
+  function splitLabel(r: SharedRule): string {
+    if (r.split_mode === "fixed") {
+      const a = r.atelier_fixed ?? 0;
+      const f = r.fonavi_fixed ?? 0;
+      return `Atelier S/${a.toFixed(2)} · Fonavi S/${f.toFixed(2)} (fijo)`;
+    }
+    return `${r.atelier_percentage}% / ${r.fonavi_percentage}%`;
   }
 
   // Agrupar reglas activas por categoría
@@ -151,19 +184,57 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   placeholder="ej. Pago de luz" />
               </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">% Atelier</label>
-                <input type="number" step="0.01" min="0" max="100" value={atelierPct}
-                  onChange={(e) => handleAtelier(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 66.67" />
-              </div>
-              <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">% Fonavi</label>
-                <input type="number" step="0.01" min="0" max="100" value={fonaviPct}
-                  onChange={(e) => handleFonavi(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 33.33" />
+            </div>
+
+            {/* Modo de reparto */}
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Modo de reparto</label>
+              <div className="flex gap-2">
+                <button type="button" onClick={() => setSplitMode("percentage")}
+                  className={`flex-1 px-3 py-2 text-sm rounded-lg border ${splitMode === "percentage" ? "border-violet-400 bg-violet-100 text-violet-900 font-medium" : "border-gray-300 bg-white text-gray-600"}`}>
+                  Por porcentaje
+                </button>
+                <button type="button" onClick={() => setSplitMode("fixed")}
+                  className={`flex-1 px-3 py-2 text-sm rounded-lg border ${splitMode === "fixed" ? "border-violet-400 bg-violet-100 text-violet-900 font-medium" : "border-gray-300 bg-white text-gray-600"}`}>
+                  Por monto fijo
+                </button>
               </div>
             </div>
+
+            {splitMode === "percentage" ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">% Atelier</label>
+                  <input type="number" step="0.01" min="0" max="100" value={atelierPct}
+                    onChange={(e) => handleAtelier(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 66.67" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">% Fonavi</label>
+                  <input type="number" step="0.01" min="0" max="100" value={fonaviPct}
+                    onChange={(e) => handleFonavi(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 33.33" />
+                </div>
+              </div>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Monto fijo Atelier (S/)</label>
+                  <input type="number" step="0.01" min="0" value={atelierFixed}
+                    onChange={(e) => setAtelierFixed(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 1800.00" />
+                </div>
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Monto fijo Fonavi (S/)</label>
+                  <input type="number" step="0.01" min="0" value={fonaviFixed}
+                    onChange={(e) => setFonaviFixed(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 900.00" />
+                </div>
+                <div className="sm:col-span-2 text-xs text-violet-700">
+                  La parte de Atelier es fija; Fonavi se lleva el resto del monto registrado. Al registrar el gasto podrás ajustar los montos si ese mes varía.
+                </div>
+              </div>
+            )}
             {error && <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{error}</div>}
             <div className="flex justify-end gap-2">
               {editingId && (
@@ -200,7 +271,7 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
                       <div className="text-sm">
                         <span className="text-gray-900">{r.concept}</span>
                         <span className="text-gray-500 ml-2 text-xs">
-                          ({r.atelier_percentage}% / {r.fonavi_percentage}%)
+                          ({splitLabel(r)})
                         </span>
                       </div>
                       <div className="flex items-center gap-3">
@@ -233,7 +304,7 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
                 <div key={r.id} className="flex items-center justify-between border border-gray-100 rounded-lg p-2.5 opacity-60">
                   <div>
                     <div className="text-sm">{r.category_name} · {r.concept}</div>
-                    <div className="text-xs text-gray-500">Atelier {r.atelier_percentage}% · Fonavi {r.fonavi_percentage}%</div>
+                    <div className="text-xs text-gray-500">{splitLabel(r)}</div>
                   </div>
                   <button onClick={() => handleToggle(r)} className="text-xs text-primary-light hover:underline">
                     Reactivar

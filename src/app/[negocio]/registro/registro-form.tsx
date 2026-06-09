@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance, updateCurrentBankBalance } from "@/app/actions/daily-records";
 import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
+import { computeSharedSplit } from "@/lib/shared-split";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
@@ -209,6 +210,8 @@ export function RegistroForm({
   const [sharedRules, setSharedRules] = useState<SharedRule[]>([]);
   const [shareThisExpense, setShareThisExpense] = useState(true);
   const [selectedRuleId, setSelectedRuleId] = useState<string>(""); // cuando hay varias, el usuario elige
+  // "Por cobrar a Fonavi" editable: default según la regla y el monto, ajustable a mano
+  const [fonaviShareInput, setFonaviShareInput] = useState<string>("");
   useEffect(() => {
     getSharedRules().then((rules) => setSharedRules(rules.filter((r) => r.active)));
   }, []);
@@ -229,6 +232,27 @@ export function RegistroForm({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [txCategory, sharedRules.length]);
   const activeRuleForCategory = rulesForCategory.find((r) => r.id === selectedRuleId) ?? null;
+
+  // Default de "Por cobrar a Fonavi" según la regla (porcentaje o monto fijo) y el
+  // monto ingresado. Se recalcula al cambiar monto/regla; el usuario puede
+  // sobrescribirlo a mano para ese gasto puntual.
+  useEffect(() => {
+    const amt = parseFloat(txAmount);
+    if (activeRuleForCategory && shareThisExpense && Number.isFinite(amt) && amt > 0) {
+      const split = computeSharedSplit(
+        {
+          splitMode: activeRuleForCategory.split_mode === "fixed" ? "fixed" : "percentage",
+          atelierPercentage: activeRuleForCategory.atelier_percentage,
+          atelierFixed: activeRuleForCategory.atelier_fixed,
+        },
+        amt,
+      );
+      setFonaviShareInput(split.fonavi.toFixed(2));
+    } else {
+      setFonaviShareInput("");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [txAmount, selectedRuleId, shareThisExpense]);
 
   // Count items to regularize
   const pendingRegularize = expensesList.filter((e) => isToRegularize(e)).length;
@@ -317,14 +341,30 @@ export function RegistroForm({
       const amountNum = parseFloat(txAmount);
       let shared: ExpenseItem["shared"] = undefined;
       if (activeRuleForCategory && shareThisExpense) {
-        const atelier = Math.round(amountNum * activeRuleForCategory.atelier_percentage) / 100;
-        const fonavi = Math.round((amountNum - atelier) * 100) / 100;
+        // Default según la regla (porcentaje o monto fijo)…
+        const split = computeSharedSplit(
+          {
+            splitMode: activeRuleForCategory.split_mode === "fixed" ? "fixed" : "percentage",
+            atelierPercentage: activeRuleForCategory.atelier_percentage,
+            atelierFixed: activeRuleForCategory.atelier_fixed,
+          },
+          amountNum,
+        );
+        // …pero respetando el ajuste manual de "Por cobrar a Fonavi" si lo hubo.
+        let fonavi = split.fonavi;
+        const overridden = parseFloat(fonaviShareInput);
+        if (Number.isFinite(overridden) && overridden >= 0 && overridden <= amountNum) {
+          fonavi = Math.round(overridden * 100) / 100;
+        }
+        const atelier = Math.round((amountNum - fonavi) * 100) / 100;
+        // Porcentajes efectivos (para mostrar), derivados del reparto real
+        const atelierPct = amountNum > 0 ? Math.round((atelier / amountNum) * 10000) / 100 : 0;
         shared = {
           ruleId: activeRuleForCategory.id,
           atelierAmount: atelier,
           fonaviAmount: fonavi,
-          atelierPercentage: activeRuleForCategory.atelier_percentage,
-          fonaviPercentage: activeRuleForCategory.fonavi_percentage,
+          atelierPercentage: atelierPct,
+          fonaviPercentage: Math.round((100 - atelierPct) * 100) / 100,
         };
       }
       setExpensesList([...expensesList, {
@@ -970,8 +1010,22 @@ export function RegistroForm({
                               )}
 
                               {activeRuleForCategory && shareThisExpense && txAmount && parseFloat(txAmount) > 0 && (
-                                <div className="text-violet-700">
-                                  Tu parte: S/ {(parseFloat(txAmount) * activeRuleForCategory.atelier_percentage / 100).toFixed(2)} · Por cobrar a Fonavi: S/ {(parseFloat(txAmount) * activeRuleForCategory.fonavi_percentage / 100).toFixed(2)}
+                                <div className="space-y-1">
+                                  <div className="flex items-center gap-2 flex-wrap">
+                                    <span className="text-violet-700 whitespace-nowrap">Por cobrar a Fonavi: S/</span>
+                                    <input
+                                      type="number" step="0.01" min="0" max={txAmount}
+                                      value={fonaviShareInput}
+                                      onChange={(e) => setFonaviShareInput(e.target.value)}
+                                      className="w-24 border border-violet-200 rounded-md px-2 py-1 text-xs text-right bg-white"
+                                    />
+                                    {activeRuleForCategory.split_mode === "fixed" && (
+                                      <span className="text-violet-500 text-[11px]">regla por monto fijo (ajustable)</span>
+                                    )}
+                                  </div>
+                                  <div className="text-violet-700">
+                                    Tu parte (Atelier): S/ {(Math.round((parseFloat(txAmount) - (parseFloat(fonaviShareInput) || 0)) * 100) / 100).toFixed(2)}
+                                  </div>
                                 </div>
                               )}
 
