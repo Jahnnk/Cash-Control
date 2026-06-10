@@ -196,31 +196,36 @@ export async function registerFonaviReimbursement(data: {
         AND linked_receivable_id = ANY(${ids}::uuid[])
     `) as { date: string }[];
 
-    // UPDATE: el espejo "se activa" con el método correspondiente
-    await sql`
-      UPDATE expenses
-      SET payment_method = ${mirrorMethod}
-      WHERE business_id = 2
-        AND payment_method = 'pendiente_atelier'
-        AND linked_receivable_id = ANY(${ids}::uuid[])
-    `;
+    // ATÓMICO: activación del espejo + recálculo de saldo de Fonavi en UNA
+    // transacción. Antes corrían como queries sueltas: un fallo a medias
+    // podía dejar el espejo activado con el saldo de Fonavi sin recalcular.
+    const cascadeQueries = [
+      // El espejo "se activa" con el método correspondiente
+      sql`
+        UPDATE expenses
+        SET payment_method = ${mirrorMethod}
+        WHERE business_id = 2
+          AND payment_method = 'pendiente_atelier'
+          AND linked_receivable_id = ANY(${ids}::uuid[])
+      `,
+    ];
 
     // Recalcular saldo BCP de Fonavi por cada fecha afectada (puede haber varias)
     const uniqueDates = Array.from(new Set(mirrorRows.map((r) => r.date)));
     for (const fonaviDate of uniqueDates) {
       // Cache por día
-      await sql`
+      cascadeQueries.push(sql`
         UPDATE daily_records SET
           bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = 2 AND date = ${fonaviDate} AND payment_method NOT IN ('efectivo','pendiente_atelier')), 0)
         WHERE business_id = 2 AND date = ${fonaviDate}
-      `;
+      `);
       // Asegurar daily_record en Fonavi
-      await sql`
+      cascadeQueries.push(sql`
         INSERT INTO daily_records (business_id, date) VALUES (2, ${fonaviDate})
         ON CONFLICT (business_id, date) DO NOTHING
-      `;
+      `);
       // Cascade saldo
-      await sql`
+      cascadeQueries.push(sql`
         WITH RECURSIVE chain AS (
           SELECT
             (${fonaviDate}::date - INTERVAL '1 day')::date AS date,
@@ -245,7 +250,24 @@ export async function registerFonaviReimbursement(data: {
         SET bank_balance_real = chain.calc_balance
         FROM chain
         WHERE dr.business_id = 2 AND dr.date = chain.date AND dr.date >= ${fonaviDate}
-      `;
+      `);
+    }
+
+    try {
+      await sql.transaction(cascadeQueries);
+    } catch (e) {
+      // El cobro YA quedó registrado (transacción anterior, committeada) y
+      // gracias al rollback el espejo sigue 'pendiente_atelier' con el saldo
+      // de Fonavi intacto — estado consistente. Avisar claro y SIN sugerir
+      // reintentar el cobro (se duplicaría).
+      return {
+        success: false,
+        error:
+          "El cobro quedó registrado correctamente, pero falló la activación del gasto espejo en Fonavi " +
+          "(problema de conexión). NO registres el cobro de nuevo — la cuenta ya figura como cobrada. " +
+          "Anota la fecha y pide que se revise el gasto espejo de Fonavi. " +
+          (e instanceof Error ? `(Detalle técnico: ${e.message})` : ""),
+      };
     }
   }
 

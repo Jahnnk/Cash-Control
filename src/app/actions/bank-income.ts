@@ -2,10 +2,16 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { recalcBankBalance } from "./daily-records";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
+
+// Cliente raw de neon para transacciones no-interactivas (sql.transaction).
+// El driver http de drizzle no soporta transacciones; este patrón es el
+// mismo que usan record-edits, internal-transfers y el import de Excel.
+const txSql = neon(process.env.DATABASE_URL!);
 
 // Normaliza/valida la categoría no-operativa de un ingreso.
 // null/"" → fila operativa normal (non_operative_category = NULL).
@@ -101,17 +107,23 @@ export async function saveBankIncomeItems(
   // Registro Diario.
   // No tocar préstamos del socio, patas de transferencias internas, ni
   // ventas Byte: cada una tiene su propio módulo de gestión.
-  await db.execute(sql`
-    DELETE FROM bank_income_items
-    WHERE business_id = ${bId} AND date = ${date}
-      AND is_special_loan = false AND is_internal_transfer = false
-      AND is_byte_sale = false AND archived = false
-  `);
+  //
+  // ATÓMICO: el DELETE + INSERTs + cache van en UNA transacción. Si Neon
+  // falla a media operación, rollback completo — antes el DELETE podía
+  // aplicarse y los INSERTs no, borrando los ingresos del día.
+  const queries = [
+    txSql`
+      DELETE FROM bank_income_items
+      WHERE business_id = ${bId} AND date = ${date}
+        AND is_special_loan = false AND is_internal_transfer = false
+        AND is_byte_sale = false AND archived = false
+    `,
+  ];
 
   for (const item of items) {
     const method = item.paymentMethod ?? "transferencia";
     const nonOp = normalizeNonOperative(item.nonOperativeCategory);
-    await db.execute(sql`
+    queries.push(txSql`
       INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method, non_operative_category)
       VALUES (${bId}, ${date}, ${item.amount}, ${item.clientId}, ${item.note || null}, ${method}, ${nonOp.ok ? nonOp.value : null})
     `);
@@ -120,11 +132,15 @@ export async function saveBankIncomeItems(
   // Cache total en daily_records (banco + efectivo, ingresos brutos del día).
   // La distinción banco/efectivo se aplica solo en el cálculo de saldo BCP.
   const total = items.reduce((s, i) => s + i.amount, 0);
-  await db.execute(sql`
+  queries.push(txSql`
     UPDATE daily_records SET bank_income = ${total}
     WHERE business_id = ${bId} AND date = ${date}
   `);
 
+  await txSql.transaction(queries);
+
+  // Recálculo del saldo fuera de la transacción: es idempotente y
+  // re-ejecutable; si fallara, los datos del día ya quedaron consistentes.
   await recalcBankBalance(date);
   revalidatePath("/", "layout");
 }
