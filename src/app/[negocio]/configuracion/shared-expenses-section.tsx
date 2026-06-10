@@ -88,10 +88,17 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
     };
 
     setSaving(true);
-    const result = editingId
-      ? await updateSharedRule(editingId, input)
-      : await createSharedRule(input);
-    setSaving(false);
+    let result: { success: boolean; error?: string };
+    try {
+      result = editingId
+        ? await updateSharedRule(editingId, input)
+        : await createSharedRule(input);
+    } catch (e) {
+      // Si la action lanza (ej. constraint de BD), no dejar el botón colgado
+      result = { success: false, error: e instanceof Error ? e.message : "No se pudo guardar la regla. Intenta de nuevo." };
+    } finally {
+      setSaving(false);
+    }
     if (!result.success) { setError(result.error ?? "Error"); return; }
 
     resetForm();
