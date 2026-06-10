@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { revalidatePath, updateTag, unstable_cache } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { isValidCostGroup } from "@/lib/cost-group";
 
 // Cache: las categorías cambian muy rara vez (ediciones manuales en
 // /configuracion). TTL 10 min. Tag global "categories" se invalida en
@@ -82,7 +83,7 @@ export async function createCategory(name: string) {
   revalidatePath("/", "layout");
 }
 
-export async function updateCategory(id: string, data: { name?: string; isActive?: boolean; excludeFromEbitda?: boolean }) {
+export async function updateCategory(id: string, data: { name?: string; isActive?: boolean; excludeFromEbitda?: boolean; costGroup?: "fijo" | "variable" | null }) {
   const bId = await activeBusinessId();
   if (data.name !== undefined) {
     await db.execute(sql`UPDATE expense_categories SET name = ${data.name.trim()} WHERE id = ${id} AND business_id = ${bId}`);
@@ -92,6 +93,13 @@ export async function updateCategory(id: string, data: { name?: string; isActive
   }
   if (data.excludeFromEbitda !== undefined) {
     await db.execute(sql`UPDATE expense_categories SET exclude_from_ebitda = ${data.excludeFromEbitda} WHERE id = ${id} AND business_id = ${bId}`);
+  }
+  if (data.costGroup !== undefined) {
+    // Grupo de costo (análisis Fijo/Variable). null = volver a "sin clasificar".
+    if (data.costGroup !== null && !isValidCostGroup(data.costGroup)) {
+      throw new Error("Grupo de costo inválido: debe ser Fijo, Variable o Sin clasificar");
+    }
+    await db.execute(sql`UPDATE expense_categories SET cost_group = ${data.costGroup} WHERE id = ${id} AND business_id = ${bId}`);
   }
   updateTag("categories");
   revalidatePath("/", "layout");

@@ -3,7 +3,8 @@
 import { useState } from "react";
 import { createCategory, updateCategory, deleteCategory } from "@/app/actions/categories";
 import { useRouter } from "next/navigation";
-import { Plus, Pencil, Check, X, ToggleLeft, ToggleRight } from "lucide-react";
+import { Plus, Pencil, Check, X, ToggleLeft, ToggleRight, AlertTriangle } from "lucide-react";
+import { effectiveCostGroup, type CostGroup } from "@/lib/cost-group";
 
 type Category = Record<string, unknown>;
 
@@ -42,6 +43,20 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
     router.refresh();
   }
 
+  async function handleCostGroup(id: string, value: string) {
+    await updateCategory(id, { costGroup: value === "" ? null : (value as CostGroup) });
+    router.refresh();
+  }
+
+  // Señalador: activas, operativas (no excluidas del EBITDA) y sin grupo
+  const unclassified = categories.filter((c) =>
+    (c.is_active as boolean) &&
+    effectiveCostGroup({
+      excludeFromEbitda: !!c.exclude_from_ebitda,
+      costGroup: (c.cost_group as string) || null,
+    }) === "sin_clasificar",
+  );
+
   async function handleDelete(id: string) {
     await deleteCategory(id);
     router.refresh();
@@ -54,6 +69,18 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
         <h2 className="text-lg font-semibold text-gray-900">Categorías de egresos</h2>
         <p className="text-sm text-gray-500 mt-1">Administra las categorías disponibles en el registro de egresos</p>
       </div>
+
+      {/* Señalador de categorías sin clasificar (análisis Fijo/Variable) */}
+      {unclassified.length > 0 && (
+        <div className="mx-6 mt-4 px-3 py-2.5 bg-amber-50 border border-amber-200 rounded-lg text-xs text-amber-900 flex items-start gap-2">
+          <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
+          <div>
+            <strong>{unclassified.length} {unclassified.length === 1 ? "categoría sin clasificar" : "categorías sin clasificar"}</strong> para
+            el análisis Fijo/Variable (no cuentan en ese reporte hasta asignarles grupo):{" "}
+            <span className="font-medium">{unclassified.map((c) => c.name as string).join(", ")}</span>
+          </div>
+        </div>
+      )}
 
       {/* Add new */}
       <div className="px-6 py-4 border-b border-gray-100 bg-gray-50">
@@ -125,6 +152,28 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
+                    {(cat.exclude_from_ebitda as boolean) ? (
+                      <span className="text-[11px] text-gray-400 px-1.5" title="Las categorías excluidas del EBITDA son No-operativas: quedan fuera del análisis Fijo/Variable">
+                        No operativo
+                      </span>
+                    ) : (
+                      <select
+                        value={(cat.cost_group as string) || ""}
+                        onChange={(e) => handleCostGroup(id, e.target.value)}
+                        className={`text-[11px] border rounded-md px-1.5 py-1 bg-white ${
+                          (cat.cost_group as string) === "fijo"
+                            ? "border-sky-200 text-sky-700"
+                            : (cat.cost_group as string) === "variable"
+                              ? "border-emerald-200 text-emerald-700"
+                              : "border-amber-300 text-amber-700 bg-amber-50"
+                        }`}
+                        title="Grupo de costo para el análisis Fijo/Variable"
+                      >
+                        <option value="">Sin clasificar</option>
+                        <option value="fijo">Fijo</option>
+                        <option value="variable">Variable</option>
+                      </select>
+                    )}
                     <label className="text-[11px] text-gray-500 flex items-center gap-1 cursor-pointer" title="Si está marcada, no se considera operativa para el EBITDA">
                       <input type="checkbox"
                         checked={!!cat.exclude_from_ebitda}
