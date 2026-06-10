@@ -62,7 +62,7 @@ export async function getDashboardData(monthInput?: string) {
   if (bId === 1) {
     const fonaviResult = await db.execute(sql`
       SELECT COALESCE(SUM(amount_due - amount_collected), 0) as total
-      FROM fonavi_receivables WHERE status != 'collected'
+      FROM fonavi_receivables WHERE status != 'collected' AND debtor_business_id = 2
     `);
     fonaviReceivables = parseFloat(fonaviResult.rows[0].total as string);
 

@@ -223,8 +223,10 @@ export async function deleteExpense(id: string): Promise<{ success: true } | { s
     // huérfano (inflaba el total del dashboard) y el espejo, eterno.
     await db.execute(sql`
       WITH mirror_del AS (
+        -- Sin filtro de negocio: los espejos pueden vivir en Fonavi O Centro
+        -- (linked_atelier_expense_id solo existe en espejos)
         DELETE FROM expenses
-        WHERE business_id = ${FONAVI_ID} AND linked_atelier_expense_id = ${id}::uuid
+        WHERE linked_atelier_expense_id = ${id}::uuid
       ),
       receivable_del AS (
         DELETE FROM fonavi_receivables WHERE expense_id = ${id}::uuid

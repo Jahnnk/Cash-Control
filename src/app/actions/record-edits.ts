@@ -310,9 +310,10 @@ export async function updateExpense(
     if (wasShared && !willBeShared) {
       // CASO compartido → normal: eliminar espejo y por cobrar (el espejo
       // primero, referencia al receivable). Sin huérfanos.
+      // Sin filtro de negocio: el espejo puede vivir en Fonavi o Centro
       txQueries.push(sql`
         DELETE FROM expenses
-        WHERE business_id = 2 AND linked_atelier_expense_id = ${id}::uuid
+        WHERE linked_atelier_expense_id = ${id}::uuid
       `);
       txQueries.push(sql`
         DELETE FROM fonavi_receivables WHERE expense_id = ${id}::uuid
@@ -404,7 +405,7 @@ export async function deleteExpense(id: string): Promise<Result> {
   // huérfanos — el por cobrar fantasma inflaba el total del dashboard).
   const cleanupQueries = original.is_shared
     ? [
-        sql`DELETE FROM expenses WHERE business_id = 2 AND linked_atelier_expense_id = ${id}::uuid`,
+        sql`DELETE FROM expenses WHERE linked_atelier_expense_id = ${id}::uuid`, // espejo en Fonavi O Centro
         sql`DELETE FROM fonavi_receivables WHERE expense_id = ${id}::uuid`,
       ]
     : [];

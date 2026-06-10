@@ -11,11 +11,13 @@ export function ReimbursementModal({
   preselectedReceivableId,
   onClose,
   onSaved,
+  debtorName = "Fonavi",
 }: {
   pendingReceivables: ReceivableRow[];
   preselectedReceivableId?: string;
   onClose: () => void;
   onSaved: () => void;
+  debtorName?: string;
 }) {
   const [date, setDate] = useState(getToday());
   const [totalAmount, setTotalAmount] = useState(() => {
@@ -86,7 +88,7 @@ export function ReimbursementModal({
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
-          <h2 className="text-base font-semibold text-gray-900">Registrar reembolso de Fonavi</h2>
+          <h2 className="text-base font-semibold text-gray-900">Registrar reembolso de {debtorName}</h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100">
             <X className="w-4 h-4" />
           </button>
@@ -108,7 +110,7 @@ export function ReimbursementModal({
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
             </div>
             <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">¿Cómo pagó Fonavi?</label>
+              <label className="block text-xs font-medium text-gray-700 mb-1">¿Cómo pagó {debtorName}?</label>
               <select value={method} onChange={(e) => setMethod(e.target.value as ReimbursementMethod)}
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
                 <option value="transferencia">Transferencia (al banco)</option>

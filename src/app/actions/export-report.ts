@@ -268,7 +268,7 @@ export async function getReportData(
            (${end}::date - e.date::date) as aging
     FROM fonavi_receivables fr
     JOIN expenses e ON e.id = fr.expense_id
-    WHERE e.date <= ${end} AND fr.status != 'collected'
+    WHERE e.date <= ${end} AND fr.status != 'collected' AND fr.debtor_business_id = 2
       AND (${businessId}::int IS NULL OR e.business_id = ${businessId})
     ORDER BY e.date ASC
   `) as Record<string, unknown>[];

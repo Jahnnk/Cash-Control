@@ -27,7 +27,9 @@ function agingClass(days: number, status: string) {
   return "text-red-600";
 }
 
-export function FonaviClient({ initialReceivables }: { initialReceivables: ReceivableRow[] }) {
+export type DebtorInfo = { id: 2 | 3; name: string };
+
+export function FonaviClient({ initialReceivables, debtor }: { initialReceivables: ReceivableRow[]; debtor: DebtorInfo }) {
   const router = useRouter();
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "pending">("pending");
@@ -76,16 +78,18 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Cuentas por cobrar a Fonavi</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Cuentas por cobrar a {debtor.name}</h1>
         <div className="flex items-center gap-2">
-          <button
-            onClick={() => setPartnerReportOpen(true)}
-            className="border border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
-            title="PDF del mes con gastos compartidos, reembolsos y constancias adjuntas"
-          >
-            <FileDown className="w-4 h-4" />
-            Reporte para socia
-          </button>
+          {debtor.id === 2 && (
+            <button
+              onClick={() => setPartnerReportOpen(true)}
+              className="border border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+              title="PDF del mes con gastos compartidos, reembolsos y constancias adjuntas"
+            >
+              <FileDown className="w-4 h-4" />
+              Reporte para socia
+            </button>
+          )}
           <button
             onClick={() => setRegisterGeneric(true)}
             className="bg-violet-600 text-white px-4 py-2 rounded-lg hover:bg-violet-700 flex items-center gap-2 text-sm font-medium"
@@ -222,6 +226,7 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
 
       {(registerGeneric || registerFor) && (
         <ReimbursementModal
+          debtorName={debtor.name}
           pendingReceivables={initialReceivables.filter((r) => r.status !== "collected")}
           preselectedReceivableId={registerFor?.id}
           onClose={() => { setRegisterFor(null); setRegisterGeneric(false); }}
@@ -230,7 +235,7 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
       )}
 
       {partnerReportOpen && (
-        <PartnerReportModal onClose={() => setPartnerReportOpen(false)} />
+        debtor.id === 2 && <PartnerReportModal onClose={() => setPartnerReportOpen(false)} />
       )}
       {historyFor && (
         <ReimbursementHistoryModal
