@@ -45,6 +45,46 @@ export type PartnerReportData = {
   };
 };
 
+/**
+ * Filtro por estado del reporte:
+ *  - todos:      mes completo (compartidos + reembolsos), como siempre
+ *  - pendientes: solo lo que Fonavi todavía debe (por cobrar no saldados,
+ *                incluye cobros parciales por el resto); sin reembolsos
+ *  - pagados:    solo lo saldado (compartidos cobrados) + los reembolsos
+ *                del mes, con sus constancias
+ */
+export type PartnerReportFilter = "todos" | "pendientes" | "pagados";
+
+export const PARTNER_FILTER_LABELS: Record<PartnerReportFilter, string> = {
+  todos: "Mes completo",
+  pendientes: "Pendientes de pago",
+  pagados: "Pagados / reembolsados",
+};
+
+export function applyPartnerFilter(
+  data: PartnerReportData,
+  filter: PartnerReportFilter,
+): PartnerReportData {
+  if (filter === "todos") return data;
+  if (filter === "pendientes") {
+    const shared = data.sharedExpenses.filter((e) => e.receivableStatus !== "collected");
+    return {
+      ...data,
+      sharedExpenses: shared,
+      reimbursements: [],
+      totals: computePartnerTotals(shared, [], data.totals.pendingNow),
+    };
+  }
+  // pagados
+  const shared = data.sharedExpenses.filter((e) => e.receivableStatus === "collected");
+  return {
+    ...data,
+    sharedExpenses: shared,
+    reimbursements: data.reimbursements,
+    totals: computePartnerTotals(shared, data.reimbursements, data.totals.pendingNow),
+  };
+}
+
 const MONTHS_ES = [
   "Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio",
   "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre",

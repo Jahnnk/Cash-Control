@@ -3,7 +3,13 @@
 import { useState } from "react";
 import { X, Loader2, FileDown } from "lucide-react";
 import { getFonaviPartnerReport } from "@/app/actions/partner-report";
-import type { PartnerReportData, ReportAttachment } from "@/lib/partner-report";
+import {
+  applyPartnerFilter,
+  PARTNER_FILTER_LABELS,
+  type PartnerReportData,
+  type PartnerReportFilter,
+  type ReportAttachment,
+} from "@/lib/partner-report";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/components/toast-provider";
 import { isImageType } from "@/lib/attachment-validation";
@@ -50,7 +56,7 @@ const STATUS_ES: Record<string, string> = {
   "sin registro": "—",
 };
 
-async function buildPdf(data: PartnerReportData, filename: string) {
+async function buildPdf(data: PartnerReportData, filter: PartnerReportFilter, filename: string) {
   const { default: jsPDFCtor } = await import("jspdf");
   const autoTable = (await import("jspdf-autotable")).default;
   const doc = new jsPDFCtor({ unit: "mm", format: "a4" });
@@ -68,7 +74,10 @@ async function buildPdf(data: PartnerReportData, filename: string) {
   doc.setFont("helvetica", "bold").setFontSize(16).setTextColor(PRIMARY);
   doc.text("Yayi's — Reporte Fonavi", margin, y); y += 7;
   doc.setFont("helvetica", "normal").setFontSize(11).setTextColor("#111827");
-  doc.text(`Gastos compartidos y reembolsos · ${data.monthLabel}`, margin, y); y += 5;
+  const subtitle = filter === "todos"
+    ? `Gastos compartidos y reembolsos · ${data.monthLabel}`
+    : `${data.monthLabel} — ${PARTNER_FILTER_LABELS[filter]}`;
+  doc.text(subtitle, margin, y); y += 5;
   doc.setFontSize(9).setTextColor(MUTED);
   doc.text(`Generado el ${data.generatedAt} · Constancias adjuntas incluidas`, margin, y); y += 8;
 
@@ -77,8 +86,15 @@ async function buildPdf(data: PartnerReportData, filename: string) {
     startY: y,
     head: [["Resumen del mes", "Monto"]],
     body: [
-      ["Parte de Fonavi en gastos compartidos del mes", formatCurrency(data.totals.fonaviPartMonth)],
-      ["Reembolsos de Fonavi recibidos en el mes", formatCurrency(data.totals.reimbursedMonth)],
+      [filter === "pendientes"
+        ? "Parte de Fonavi en compartidos PENDIENTES del mes"
+        : filter === "pagados"
+          ? "Parte de Fonavi en compartidos COBRADOS del mes"
+          : "Parte de Fonavi en gastos compartidos del mes",
+       formatCurrency(data.totals.fonaviPartMonth)],
+      ...(filter !== "pendientes"
+        ? [["Reembolsos de Fonavi recibidos en el mes", formatCurrency(data.totals.reimbursedMonth)]]
+        : []),
       [{ content: "Saldo total por cobrar a Fonavi (a hoy)", styles: { fontStyle: "bold" as const } },
        { content: formatCurrency(data.totals.pendingNow), styles: { fontStyle: "bold" as const } }],
     ],
@@ -91,7 +107,12 @@ async function buildPdf(data: PartnerReportData, filename: string) {
   // ── Gastos compartidos ──
   doc.setFont("helvetica", "bold").setFontSize(12).setTextColor(PRIMARY);
   ensureSpace(10);
-  doc.text(`Gastos compartidos de ${data.monthLabel}`, margin, y); y += 4;
+  const sharedTitle = filter === "pendientes"
+    ? `Compartidos pendientes de pago · ${data.monthLabel}`
+    : filter === "pagados"
+      ? `Compartidos ya cobrados · ${data.monthLabel}`
+      : `Gastos compartidos de ${data.monthLabel}`;
+  doc.text(sharedTitle, margin, y); y += 4;
   if (data.sharedExpenses.length === 0) {
     doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(MUTED);
     y += 4; doc.text("Sin gastos compartidos este mes.", margin, y); y += 8;
@@ -111,7 +132,8 @@ async function buildPdf(data: PartnerReportData, filename: string) {
     y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   }
 
-  // ── Reembolsos ──
+  // ── Reembolsos (no aplica en "pendientes": son pagos ya hechos) ──
+  if (filter !== "pendientes") {
   ensureSpace(14);
   doc.setFont("helvetica", "bold").setFontSize(12).setTextColor(PRIMARY);
   doc.text(`Reembolsos recibidos de Fonavi · ${data.monthLabel}`, margin, y); y += 4;
@@ -134,9 +156,11 @@ async function buildPdf(data: PartnerReportData, filename: string) {
     y = (doc as unknown as { lastAutoTable: { finalY: number } }).lastAutoTable.finalY + 8;
   }
 
-  // ── Constancias por transacción ──
+  }
+
+  // ── Constancias por transacción (en "pendientes" no hay pagos → sin constancias) ──
   type WithAtt = { title: string; attachments: ReportAttachment[] };
-  const blocks: WithAtt[] = [
+  const blocks: WithAtt[] = filter === "pendientes" ? [] : [
     ...data.sharedExpenses.filter((e) => e.attachments.length > 0)
       .map((e) => ({ title: `${e.date} · ${e.concept} · ${formatCurrency(e.amountTotal)}`, attachments: e.attachments })),
     ...data.reimbursements.filter((r) => r.attachments.length > 0)
@@ -187,6 +211,7 @@ export function PartnerReportModal({ onClose }: { onClose: () => void }) {
   const { showToast } = useToast();
   const months = lastMonths(12);
   const [month, setMonth] = useState(months[0].value);
+  const [filter, setFilter] = useState<PartnerReportFilter>("todos");
   const [working, setWorking] = useState(false);
   const [status, setStatus] = useState<string | null>(null);
 
@@ -194,16 +219,25 @@ export function PartnerReportModal({ onClose }: { onClose: () => void }) {
     setWorking(true);
     try {
       setStatus("Recopilando movimientos y constancias…");
-      const data = await getFonaviPartnerReport(month);
+      const fullData = await getFonaviPartnerReport(month);
+      const data = applyPartnerFilter(fullData, filter);
+      // Pre-chequeo: filtro vacío → aviso claro, nunca un PDF en blanco
       if (data.sharedExpenses.length === 0 && data.reimbursements.length === 0) {
-        showToast(`No hay gastos compartidos ni reembolsos en ${data.monthLabel}`, "error");
+        const emptyMsg =
+          filter === "pendientes"
+            ? `No hay pagos pendientes de Fonavi en ${data.monthLabel}. ¡Todo al día!`
+            : filter === "pagados"
+              ? `No hay pagos ni reembolsos saldados en ${data.monthLabel}.`
+              : `No hay gastos compartidos ni reembolsos en ${data.monthLabel}.`;
+        showToast(emptyMsg, "error");
         setStatus(null);
         return;
       }
-      const nImgs = [...data.sharedExpenses, ...data.reimbursements]
+      const nImgs = filter === "pendientes" ? 0 : [...data.sharedExpenses, ...data.reimbursements]
         .reduce((s, x) => s + x.attachments.length, 0);
       setStatus(nImgs > 0 ? `Generando PDF (incrustando ${nImgs} constancias)…` : "Generando PDF…");
-      await buildPdf(data, `Yayis-Fonavi-Reporte-Socia-${month}.pdf`);
+      const suffix = filter === "todos" ? "" : filter === "pendientes" ? "-Pendientes" : "-Pagados";
+      await buildPdf(data, filter, `Yayis-Fonavi-Reporte-Socia-${month}${suffix}.pdf`);
       showToast("Reporte descargado");
       onClose();
     } catch (e) {
@@ -227,13 +261,31 @@ export function PartnerReportModal({ onClose }: { onClose: () => void }) {
           <p className="text-xs text-gray-500">
             Gastos compartidos del mes, reembolsos recibidos y las <strong>constancias de pago adjuntas</strong> incluidas como imagen.
           </p>
-          <div>
-            <label className="block text-xs font-medium text-gray-700 mb-1">Mes</label>
-            <select value={month} onChange={(e) => setMonth(e.target.value)}
-              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-              {months.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}
-            </select>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Mes</label>
+              <select value={month} onChange={(e) => setMonth(e.target.value)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                {months.map((m) => (<option key={m.value} value={m.value}>{m.label}</option>))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-xs font-medium text-gray-700 mb-1">Estado</label>
+              <select value={filter} onChange={(e) => setFilter(e.target.value as PartnerReportFilter)}
+                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                <option value="todos">Todos</option>
+                <option value="pendientes">Pendientes</option>
+                <option value="pagados">Pagados</option>
+              </select>
+            </div>
           </div>
+          <p className="text-[11px] text-gray-400">
+            {filter === "pendientes"
+              ? "Solo lo que Fonavi todavía debe pagar o reembolsar."
+              : filter === "pagados"
+                ? "Solo lo ya saldado, con sus constancias adjuntas."
+                : "El mes completo: compartidos, reembolsos y constancias."}
+          </p>
           {status && (
             <div className="text-xs text-violet-700 bg-violet-50 border border-violet-100 rounded-lg px-3 py-2 flex items-center gap-2">
               <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" /> {status}
