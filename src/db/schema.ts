@@ -292,6 +292,10 @@ export const expenseCategories = pgTable(
     isActive: boolean("is_active").default(true).notNull(),
     sortOrder: integer("sort_order").default(0).notNull(),
     excludeFromEbitda: boolean("exclude_from_ebitda").default(false).notNull(),
+    // Grupo de costo para análisis de gestión: 'fijo' | 'variable' | NULL =
+    // sin clasificar. El grupo No-operativo NO vive aquí: lo define
+    // exclude_from_ebitda (exclusión canónica del EBITDA).
+    costGroup: text("cost_group"),
     // True solo para "Préstamos del socio" en Atelier. Se filtra de
     // reportes operativos (ingresos/EBITDA/categorías/presupuesto/grupo).
     isSpecialLoan: boolean("is_special_loan").default(false).notNull(),
