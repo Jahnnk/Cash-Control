@@ -10,6 +10,8 @@ import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
 import { markReceivableAsCollected } from "@/app/actions/fonavi-receivables";
 import { ReimbursementModal } from "./reimbursement-modal";
 import { ReimbursementHistoryModal } from "./reimbursement-history-modal";
+import { PartnerReportModal } from "./partner-report-modal";
+import { FileDown } from "lucide-react";
 
 function statusBadge(status: ReceivableRow["status"]) {
   if (status === "collected") return <span className="px-2 py-0.5 rounded-full text-[11px] bg-green-100 text-green-700">Cobrado</span>;
@@ -30,6 +32,7 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
   const searchParams = useSearchParams();
   const [filter, setFilter] = useState<"all" | "pending">("pending");
   const [registerFor, setRegisterFor] = useState<ReceivableRow | null>(null);
+  const [partnerReportOpen, setPartnerReportOpen] = useState(false);
   const [registerGeneric, setRegisterGeneric] = useState(false);
   const [historyFor, setHistoryFor] = useState<ReceivableRow | null>(null);
   const [markCollectedFor, setMarkCollectedFor] = useState<ReceivableRow | null>(null);
@@ -74,13 +77,23 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Cuentas por cobrar a Fonavi</h1>
-        <button
-          onClick={() => setRegisterGeneric(true)}
-          className="bg-violet-600 text-white px-4 py-2 rounded-lg hover:bg-violet-700 flex items-center gap-2 text-sm font-medium"
-        >
-          <Plus className="w-4 h-4" />
-          Registrar reembolso
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setPartnerReportOpen(true)}
+            className="border border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+            title="PDF del mes con gastos compartidos, reembolsos y constancias adjuntas"
+          >
+            <FileDown className="w-4 h-4" />
+            Reporte para socia
+          </button>
+          <button
+            onClick={() => setRegisterGeneric(true)}
+            className="bg-violet-600 text-white px-4 py-2 rounded-lg hover:bg-violet-700 flex items-center gap-2 text-sm font-medium"
+          >
+            <Plus className="w-4 h-4" />
+            Registrar reembolso
+          </button>
+        </div>
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
@@ -216,6 +229,9 @@ export function FonaviClient({ initialReceivables }: { initialReceivables: Recei
         />
       )}
 
+      {partnerReportOpen && (
+        <PartnerReportModal onClose={() => setPartnerReportOpen(false)} />
+      )}
       {historyFor && (
         <ReimbursementHistoryModal
           receivable={historyFor}
