@@ -13,9 +13,10 @@ import {
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
-import { Pencil, Trash2, Plus, CheckCircle2, AlertCircle } from "lucide-react";
+import { Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
 import { EditRecordModal, type EditTarget } from "./edit-record-modal";
 import { DeleteRecordModal, type DeleteTarget } from "./delete-record-modal";
+import { useToast } from "@/components/toast-provider";
 import {
   CreateRecordModal,
   CreateTypeSelector,
@@ -136,14 +137,8 @@ export function DailyMovementsReport() {
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
-  const [toast, setToast] = useState<{ msg: string; tone: "success" | "error" } | null>(null);
+  const { showToast } = useToast();
 
-  // Auto-cierra toast a los 2.5s
-  useEffect(() => {
-    if (!toast) return;
-    const t = setTimeout(() => setToast(null), 2500);
-    return () => clearTimeout(t);
-  }, [toast]);
 
   useEffect(() => {
     getAvailableMonthRange().then(setMonthRange);
@@ -244,7 +239,7 @@ export function DailyMovementsReport() {
         // Rollback
         setIncomes(prevIncomes);
         setExpenses(prevExpenses);
-        setToast({ msg: result.error || "Error al actualizar", tone: "error" });
+        showToast(result.error || "Error al actualizar", "error");
         return;
       }
 
@@ -487,7 +482,7 @@ export function DailyMovementsReport() {
           onSaved={async () => {
             await Promise.all([loadData(), bank.refresh()]);
             setEditTarget(null);
-            setToast({ msg: "Cambios guardados", tone: "success" });
+            showToast("Cambios guardados", "success");
           }}
         />
       )}
@@ -498,7 +493,7 @@ export function DailyMovementsReport() {
           onDeleted={async () => {
             await Promise.all([loadData(), bank.refresh()]);
             setDeleteTarget(null);
-            setToast({ msg: "Movimiento eliminado", tone: "success" });
+            showToast("Movimiento eliminado", "success");
           }}
         />
       )}
@@ -530,32 +525,11 @@ export function DailyMovementsReport() {
             const wasIncome = createTarget.type === "income";
             setCreateTarget(null);
             await Promise.all([loadData(), bank.refresh()]);
-            setToast({
-              msg: wasIncome ? "Ingreso registrado" : "Egreso registrado",
-              tone: "success",
-            });
+            showToast(wasIncome ? "Ingreso registrado" : "Egreso registrado", "success");
           }}
         />
       )}
 
-      {/* Toast (éxito o error) */}
-      {toast && (
-        <div
-          className={`fixed bottom-6 right-6 z-50 px-4 py-3 rounded-lg shadow-lg flex items-center gap-2 text-sm font-medium animate-in fade-in slide-in-from-bottom-2 ${
-            toast.tone === "error"
-              ? "bg-red-600 text-white"
-              : "bg-emerald-600 text-white"
-          }`}
-          role={toast.tone === "error" ? "alert" : "status"}
-        >
-          {toast.tone === "error" ? (
-            <AlertCircle className="w-4 h-4" />
-          ) : (
-            <CheckCircle2 className="w-4 h-4" />
-          )}
-          {toast.msg}
-        </div>
-      )}
     </div>
   );
 }

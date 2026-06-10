@@ -117,6 +117,33 @@ function endOfMonth(d: Date): string {
 }
 
 /**
+ * Pre-chequeo liviano: ¿hay movimientos en el período? Un solo COUNT con
+ * los MISMOS filtros que usa el reporte (hasData = incomes o expenses > 0),
+ * para avisar al instante en vez de esperar la generación completa.
+ */
+export async function periodHasData(
+  period: ExportPeriod,
+  businessId: number | null = null,
+): Promise<boolean> {
+  const { start, end } = period;
+  const rows = (await sql`
+    SELECT
+      (SELECT COUNT(*) FROM bank_income_items
+        WHERE date >= ${start} AND date <= ${end}
+          AND (${businessId}::int IS NULL OR business_id = ${businessId})
+          AND is_special_loan = false AND is_internal_transfer = false AND archived = false)
+      +
+      (SELECT COUNT(*) FROM expenses
+        WHERE date >= ${start} AND date <= ${end}
+          AND (${businessId}::int IS NULL OR business_id = ${businessId})
+          AND is_special_loan = false AND is_internal_transfer = false AND archived = false
+          AND payment_method <> 'pendiente_atelier')
+      AS n
+  `) as { n: number }[];
+  return Number(rows[0]?.n ?? 0) > 0;
+}
+
+/**
  * Genera la data del reporte. `businessId`:
  *   - null (default) → Grupo: agrega los 3 negocios (comportamiento histórico).
  *   - número         → solo ese negocio (Atelier=1, Fonavi=2, Centro=3).

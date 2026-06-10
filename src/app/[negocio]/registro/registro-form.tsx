@@ -6,6 +6,7 @@ import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-ru
 import { computeSharedSplit } from "@/lib/shared-split";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
 import { createSingleFlight } from "@/lib/single-flight";
+import { useToast } from "@/components/toast-provider";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
@@ -96,7 +97,7 @@ export function RegistroForm({
     }
   }, [activeTab]);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
+  const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [date, setDate] = useState(initialDate || getToday());
   const [editingSaldo, setEditingSaldo] = useState(false);
@@ -122,6 +123,25 @@ export function RegistroForm({
   // Transactions (Board-style)
   const [incomeItems, setIncomeItems] = useState<IncomeItem[]>([]);
   const [expensesList, setExpensesList] = useState<ExpenseItem[]>([]);
+
+  // Trabajo sin guardar: movimientos agregados con "Agregar" que solo viven
+  // en memoria hasta "Guardar todo". (El ítem legacy "Guardado" de días
+  // antiguos sin detalle no cuenta — no es trabajo del usuario.)
+  const unsavedCount =
+    incomeItems.filter((i) => i.dbId === null && i.note !== "Guardado").length +
+    expensesList.filter((e) => e.isNew).length;
+
+  // Aviso del navegador al cerrar/recargar la pestaña con cambios en memoria.
+  // (La navegación interna no dispara beforeunload; para eso está el banner.)
+  useEffect(() => {
+    if (unsavedCount === 0) return;
+    const warn = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+      e.returnValue = ""; // requerido por los navegadores para mostrar el aviso
+    };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [unsavedCount]);
 
   // Refs to always have latest state in async functions
   const incomeItemsRef = useRef(incomeItems);
@@ -484,7 +504,7 @@ export function RegistroForm({
     if (item.dbId) {
       const result = await deleteExpense(item.dbId);
       if (!result.success) {
-        alert(result.error);
+        showToast(result.error, "error");
         return;
       }
     }
@@ -585,8 +605,7 @@ export function RegistroForm({
         setBankBalanceReal(String(newBalance));
       }
 
-      setSaved(true);
-      setTimeout(() => setSaved(false), 3000);
+      showToast("Guardado correctamente");
       // Reload expenses from DB to show saved items with dbId
       const freshExpenses = await getExpensesByDate(date);
       setExpensesList(freshExpenses.map((exp) => ({
@@ -607,7 +626,7 @@ export function RegistroForm({
       console.error("Error saving:", error);
       // Mostrar el mensaje real si es una validación en español (monto
       // inválido, fecha futura…); genérico solo como último recurso.
-      alert(error instanceof Error && error.message ? error.message : "Error al guardar. Intenta de nuevo.");
+      showToast(error instanceof Error && error.message ? error.message : "Error al guardar. Intenta de nuevo.", "error");
     } finally {
       setSaving(false);
     }
@@ -842,6 +861,21 @@ export function RegistroForm({
           {/* MOVIMIENTOS TAB — Board style */}
           {activeTab === "movimientos" && (
             <div className="space-y-4">
+              {/* Trabajo sin guardar: visible hasta "Guardar todo" */}
+              {unsavedCount > 0 && (
+                <div className="flex items-center justify-between gap-3 bg-amber-50 border border-amber-200 rounded-lg px-4 py-2.5 text-sm text-amber-900">
+                  <span>
+                    Tienes <strong>{unsavedCount}</strong> {unsavedCount === 1 ? "movimiento sin guardar" : "movimientos sin guardar"} — se {unsavedCount === 1 ? "pierde" : "pierden"} si sales sin guardar.
+                  </span>
+                  <button
+                    onClick={handleSaveAll}
+                    disabled={saving}
+                    className="shrink-0 text-xs font-medium bg-amber-600 text-white rounded-lg px-3 py-1.5 hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    Guardar todo
+                  </button>
+                </div>
+              )}
               {/* Transferencia interna: mover dinero Efectivo ↔ BCP sin tocar totales */}
               <div className="flex justify-end">
                 <button
@@ -1362,7 +1396,7 @@ export function RegistroForm({
                         setConfirmDeleteTransfer(null);
                         router.refresh();
                       } else {
-                        alert(r.error);
+                        showToast(r.error, "error");
                       }
                     }}
                     className="px-4 py-2 text-sm font-medium text-white bg-red-600 hover:bg-red-700 rounded-lg"
@@ -1385,21 +1419,18 @@ export function RegistroForm({
         </button>
       </div>
 
-      {saved && (
-        <div className="fixed bottom-6 right-6 bg-primary-light text-white px-6 py-3 rounded-lg shadow-lg text-sm font-medium">
-          Guardado correctamente
-        </div>
-      )}
-
-      {/* Confirmación destructiva (solo Atelier, según preferencia local) */}
-      {isAtelier && pendingDelete && pendingDeleteKind && (
+      {/* Confirmación destructiva — SIEMPRE, en los 3 negocios.
+          FIX: este render seguía gateado a isAtelier; tras quitar el gate del
+          handler (PR 1), en Fonavi/Centro el borrado quedaba mudo (seteaba
+          pendingDelete pero el modal nunca aparecía). */}
+      {pendingDelete && pendingDeleteKind && scope && scope !== "grupo" && (
         <ConfirmModal
           open
-          scope="atelier"
+          scope={scope}
           title={pendingDeleteKind === "expense" ? "Eliminar gasto" : "Eliminar ingreso"}
           description={
             <>
-              <span className="block">Vas a eliminar un {pendingDeleteKind === "expense" ? "gasto" : "ingreso"} de <strong>Yayi&apos;s Atelier</strong>.</span>
+              <span className="block">Vas a eliminar un {pendingDeleteKind === "expense" ? "gasto" : "ingreso"} de este negocio.</span>
               <span className="block mt-1 text-gray-700">
                 Monto: <strong>{formatCurrency((pendingDelete as { amount: number }).amount)}</strong>
                 {" · "}Fecha: <strong>{formatDate(date)}</strong>

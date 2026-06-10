@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X, Loader2, FileSpreadsheet, FileText, Download } from "lucide-react";
-import { getReportData, type ExportPeriod } from "@/app/actions/export-report";
+import { getReportData, periodHasData, type ExportPeriod } from "@/app/actions/export-report";
 
 const MONTH_NAMES = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
 
@@ -73,6 +73,24 @@ export function ExportModal({ onClose }: { onClose: () => void }) {
     if (mode === "range" && rangeEnd < rangeStart) { setError("La fecha hasta debe ser mayor o igual a desde"); return; }
 
     setWorking(true);
+
+    // Pre-chequeo instantáneo: si el período está vacío, avisar SIN generar
+    // (antes había que esperar toda la generación para enterarse).
+    setStatus("Verificando el período...");
+    const scopePre = SCOPE_OPTIONS.find((s) => s.key === scopeKey) ?? SCOPE_OPTIONS[0];
+    try {
+      const hasData = await periodHasData(period, scopePre.businessId);
+      if (!hasData) {
+        setError(`No hay movimientos en ${period.label}. Elige otro período.`);
+        setStatus(null);
+        setWorking(false);
+        return;
+      }
+    } catch {
+      // Si el pre-chequeo falla (red), seguimos con el flujo normal:
+      // la generación tiene su propio manejo de errores.
+    }
+
     setStatus("Recopilando datos...");
 
     // Timeout de seguridad de 60s contra cuelgue del servidor
