@@ -179,9 +179,8 @@ export function InternalTransferModal({ open, onClose, editing }: InternalTransf
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Monto (S/)</label>
             <input
-              type="number"
+              type="number" inputMode="decimal" min="0.01"
               step="0.01"
-              min="0"
               value={amount}
               onChange={(e) => { setAmount(e.target.value); setOverrideWarning(false); }}
               placeholder="0.00"

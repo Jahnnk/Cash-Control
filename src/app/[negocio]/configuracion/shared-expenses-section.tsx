@@ -205,13 +205,13 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">% Atelier</label>
-                  <input type="number" step="0.01" min="0" max="100" value={atelierPct}
+                  <input type="number" step="0.01" min="0" max="100" inputMode="decimal" value={atelierPct}
                     onChange={(e) => handleAtelier(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 66.67" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">% Fonavi</label>
-                  <input type="number" step="0.01" min="0" max="100" value={fonaviPct}
+                  <input type="number" step="0.01" min="0" max="100" inputMode="decimal" value={fonaviPct}
                     onChange={(e) => handleFonavi(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 33.33" />
                 </div>
@@ -220,13 +220,13 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Monto fijo Atelier (S/)</label>
-                  <input type="number" step="0.01" min="0" value={atelierFixed}
+                  <input type="number" step="0.01" min="0" inputMode="decimal" value={atelierFixed}
                     onChange={(e) => setAtelierFixed(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 1800.00" />
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Monto fijo Fonavi (S/)</label>
-                  <input type="number" step="0.01" min="0" value={fonaviFixed}
+                  <input type="number" step="0.01" min="0" inputMode="decimal" value={fonaviFixed}
                     onChange={(e) => setFonaviFixed(e.target.value)}
                     className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 900.00" />
                 </div>

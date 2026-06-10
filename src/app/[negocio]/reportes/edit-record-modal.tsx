@@ -135,7 +135,7 @@ export function EditRecordModal({
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1">Monto (S/)</label>
             <input
-              type="number"
+              type="number" inputMode="decimal" min="0.01"
               step="0.01"
               value={amount}
               onChange={(e) => setAmount(e.target.value)}

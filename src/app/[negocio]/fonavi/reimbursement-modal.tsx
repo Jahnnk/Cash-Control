@@ -102,7 +102,7 @@ export function ReimbursementModal({
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-700 mb-1">Monto recibido (S/)</label>
-              <input type="number" step="0.01" value={totalAmount}
+              <input type="number" step="0.01" min="0.01" inputMode="decimal" value={totalAmount}
                 onChange={(e) => setTotalAmount(e.target.value)}
                 placeholder="0.00"
                 className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
@@ -152,7 +152,7 @@ export function ReimbursementModal({
                       </div>
                     </div>
                     <input
-                      type="number" step="0.01" min="0" max={r.amount_pending}
+                      type="number" step="0.01" min="0" max={r.amount_pending} inputMode="decimal"
                       value={allocations[r.id] ?? ""}
                       onChange={(e) => setAllocations({ ...allocations, [r.id]: e.target.value })}
                       placeholder="0.00"

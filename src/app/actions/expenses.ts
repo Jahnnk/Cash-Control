@@ -6,6 +6,7 @@ import { and, eq, sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { recalcBankBalance } from "./daily-records";
+import { validateAmount, validateMovementDate } from "@/lib/money-validation";
 
 const ATELIER_ID = 1;
 const FONAVI_ID = 2;
@@ -25,6 +26,13 @@ export async function createExpense(data: {
   };
 }) {
   const bId = await activeBusinessId();
+
+  // Validación server-side (no confiar en el cliente): monto y fecha.
+  // Mismo criterio que loans/internal-transfers/bank-income.
+  const amountError = validateAmount(data.amount);
+  if (amountError) throw new Error(amountError);
+  const dateError = validateMovementDate(data.date);
+  if (dateError) throw new Error(dateError);
 
   // Cross-tenant guard: solo Atelier puede registrar gastos compartidos
   if (data.shared && bId !== ATELIER_ID) {
@@ -137,6 +145,13 @@ export async function updateExpense(id: string, data: {
   paymentMethod?: string;
 }) {
   const bId = await activeBusinessId();
+
+  // Validación server-side del monto editado (fecha no se edita aquí).
+  if (data.amount !== undefined) {
+    const amountError = validateAmount(data.amount);
+    if (amountError) throw new Error(amountError);
+  }
+
   const before = (await db.execute(sql`
     SELECT date::text as date, payment_method, is_internal_transfer FROM expenses
     WHERE id = ${id} AND business_id = ${bId}
