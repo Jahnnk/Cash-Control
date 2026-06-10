@@ -793,7 +793,7 @@ export function RegistroForm({
               {(byteExpectedBank > 0 || incomeByte > 0) && (
                 <div className={`rounded-lg p-4 border ${Math.abs(bankDiff) < 1 ? "bg-green-50 border-green-200" : "bg-amber-50 border-amber-200"}`}>
                   <div className="text-sm font-semibold text-gray-900 mb-2">Verificación</div>
-                  <div className="grid grid-cols-3 gap-4 text-sm">
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-4 text-sm">
                     <div>
                       <div className="text-xs text-gray-500">Byte esperado</div>
                       <div className="font-bold">{formatCurrency(byteExpectedBank)}</div>
@@ -876,17 +876,17 @@ export function RegistroForm({
                 const filteredIncome = filteredIncomeItems.reduce((s, i) => s + i.amount, 0);
                 const filteredEgreso = filteredExpenses.reduce((s, e) => s + e.amount, 0);
                 return (
-                  <div className="grid grid-cols-3 gap-3">
-                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                      <div className="text-xs text-gray-500 mb-1">Ingresos{viewFilter !== "todos" ? ` (${viewFilter})` : ""}</div>
+                  <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 sm:gap-3">
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center max-sm:flex max-sm:items-center max-sm:justify-between max-sm:py-2.5 max-sm:text-left">
+                      <div className="text-xs text-gray-500 mb-1 max-sm:mb-0">Ingresos{viewFilter !== "todos" ? ` (${viewFilter})` : ""}</div>
                       <div className="text-xl font-bold text-primary-light">{formatCurrency(filteredIncome)}</div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                      <div className="text-xs text-gray-500 mb-1">Egresos{viewFilter !== "todos" ? ` (${viewFilter})` : ""}</div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center max-sm:flex max-sm:items-center max-sm:justify-between max-sm:py-2.5 max-sm:text-left">
+                      <div className="text-xs text-gray-500 mb-1 max-sm:mb-0">Egresos{viewFilter !== "todos" ? ` (${viewFilter})` : ""}</div>
                       <div className="text-xl font-bold text-red-600">{formatCurrency(filteredEgreso)}</div>
                     </div>
-                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center">
-                      <div className="text-xs text-gray-500 mb-1">Neto</div>
+                    <div className="bg-white rounded-xl border border-gray-200 p-4 text-center max-sm:flex max-sm:items-center max-sm:justify-between max-sm:py-2.5 max-sm:text-left">
+                      <div className="text-xs text-gray-500 mb-1 max-sm:mb-0">Neto</div>
                       <div className={`text-xl font-bold ${filteredIncome - filteredEgreso >= 0 ? "text-primary-light" : "text-red-600"}`}>
                         {formatCurrency(filteredIncome - filteredEgreso)}
                       </div>
@@ -1160,11 +1160,11 @@ export function RegistroForm({
                             {item.note && <div className="text-xs text-gray-500 truncate">{item.note}</div>}
                           </div>
                           <div className="text-sm font-bold text-primary-light ml-3">+{formatCurrency(item.amount)}</div>
-                          <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
                             <button onClick={() => startEditIncome(item)}
-                              className="text-gray-400 hover:text-primary-light p-0.5"><Pencil className="w-3.5 h-3.5" /></button>
+                              className="text-gray-400 hover:text-primary-light p-0.5 pointer-coarse:p-2"><Pencil className="w-3.5 h-3.5" /></button>
                             <button onClick={() => handleDeleteIncome(item)}
-                              className="text-red-400 hover:text-red-600 p-0.5 ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                              className="text-red-400 hover:text-red-600 p-0.5 ml-1 pointer-coarse:p-2"><Trash2 className="w-3.5 h-3.5" /></button>
                           </div>
                         </div>
                       )
@@ -1235,7 +1235,7 @@ export function RegistroForm({
                             </div>
                           </div>
                           <div className="text-sm font-bold text-red-600 ml-3">-{formatCurrency(item.amount)}</div>
-                          <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                          <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
                             {item.paymentMethod === "pendiente_atelier" ? (
                               <span
                                 className="text-[10px] text-gray-400 italic px-1"
@@ -1246,9 +1246,9 @@ export function RegistroForm({
                             ) : (
                               <>
                                 <button onClick={() => startEditExpense(item)}
-                                  className="text-gray-400 hover:text-primary-light p-0.5"><Pencil className="w-3.5 h-3.5" /></button>
+                                  className="text-gray-400 hover:text-primary-light p-0.5 pointer-coarse:p-2"><Pencil className="w-3.5 h-3.5" /></button>
                                 <button onClick={() => handleDeleteExpense(item)}
-                                  className="text-red-400 hover:text-red-600 p-0.5 ml-1"><Trash2 className="w-3.5 h-3.5" /></button>
+                                  className="text-red-400 hover:text-red-600 p-0.5 ml-1 pointer-coarse:p-2"><Trash2 className="w-3.5 h-3.5" /></button>
                               </>
                             )}
                           </div>
@@ -1264,7 +1264,7 @@ export function RegistroForm({
                           <ArrowRightLeft className="w-4 h-4 text-blue-600" />
                         </div>
                         <div className="ml-3 flex-1 min-w-0">
-                          <div className="text-sm font-medium text-gray-700">
+                          <div className="text-sm font-medium text-gray-700 truncate">
                             Transferencia interna · {t.direction === "efectivo_to_banco" ? "Depósito a BCP" : "Retiro de BCP"}
                           </div>
                           <div className="text-xs text-gray-500 flex items-center gap-2">
@@ -1275,17 +1275,17 @@ export function RegistroForm({
                           </div>
                         </div>
                         <div className="text-sm font-medium text-blue-700 ml-3">{formatCurrency(t.amount)}</div>
-                        <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
                           <button
                             onClick={() => { setEditingTransfer(t); setTransferModalOpen(true); }}
-                            className="text-gray-400 hover:text-blue-600 p-0.5"
+                            className="text-gray-400 hover:text-blue-600 p-0.5 pointer-coarse:p-2"
                             aria-label="Editar transferencia"
                           >
                             <Pencil className="w-3.5 h-3.5" />
                           </button>
                           <button
                             onClick={() => setConfirmDeleteTransfer(t)}
-                            className="text-red-400 hover:text-red-600 p-0.5 ml-1"
+                            className="text-red-400 hover:text-red-600 p-0.5 ml-1 pointer-coarse:p-2"
                             aria-label="Eliminar transferencia"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
