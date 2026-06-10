@@ -6,6 +6,7 @@ import { ArrowDownCircle, ArrowUpCircle, HandCoins, Plus, X, Trash2, Pencil, Ale
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { KPICard } from "@/components/ui/KPICard";
 import { formatCurrency, formatDate, getToday } from "@/lib/utils";
+import { useToast } from "@/components/toast-provider";
 import {
   createLoan,
   createRefund,
@@ -18,6 +19,7 @@ import {
 type Mode = null | "loan" | "refund";
 
 export function LoansClient({ summary }: { summary: LoansSummary }) {
+  const { showToast } = useToast();
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
   const [editing, setEditing] = useState<LoanMovement | null>(null);
@@ -138,7 +140,7 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
         router.refresh();
       } else {
         // Mantener modal abierto y mostrar error inline
-        alert(r.error);
+        showToast(r.error, "error");
       }
     });
   }

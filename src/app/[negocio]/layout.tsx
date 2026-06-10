@@ -1,6 +1,7 @@
 import { notFound } from "next/navigation";
 import { Sidebar } from "@/components/sidebar";
 import { BusinessBanner } from "@/components/business-banner";
+import { ToastProvider } from "@/components/toast-provider";
 import { isValidBusinessCode, getBusinessByCode } from "@/lib/businesses";
 
 /**
@@ -28,7 +29,7 @@ export default async function NegocioLayout({
   // cookies desde server components fuera de server actions / route handlers).
 
   return (
-    <>
+    <ToastProvider>
       <Sidebar />
       <main className="lg:ml-64 min-h-screen">
         <BusinessBanner scope={negocio} />
@@ -36,6 +37,6 @@ export default async function NegocioLayout({
           {children}
         </div>
       </main>
-    </>
+    </ToastProvider>
   );
 }
