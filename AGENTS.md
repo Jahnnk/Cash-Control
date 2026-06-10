@@ -71,6 +71,24 @@ Para aislar la BD de staging en el futuro: crear una rama Neon
 dedicada para staging y override de `DATABASE_URL` en Vercel Project
 Settings → Environment Variables (scope: Preview deployments).
 
+# Autenticación por contraseña compartida
+
+La app entera (páginas + server actions) está detrás de una contraseña
+única verificada en `src/middleware.ts` con cookie firmada
+(`yayis_auth`, HMAC-SHA256, 30 días — ver `src/lib/auth-token.ts`).
+El selector de rol Jahnn/Kelly sigue existiendo DETRÁS del login y es
+prevención de errores, no seguridad.
+
+## Variable de entorno
+
+`APP_PASSWORD` — la contraseña compartida. Debe estar configurada en
+Vercel para **Production y Preview** (y en `.env.local` para dev).
+**Fail-closed:** si falta, nadie puede entrar (la pantalla de login
+lo avisa). Cambiar la contraseña invalida todas las sesiones activas
+(la cookie se firma con la propia contraseña).
+
+Excepciones sin login: `/login` y `/api/keep-alive` (token propio).
+
 # Keep-Alive Cron (mantener Neon despierta)
 
 El endpoint `GET /api/keep-alive` hace un `SELECT 1` a Neon para
