@@ -3,6 +3,7 @@
 import { neon } from "@neondatabase/serverless";
 import { splitExpenses, type ExpenseLike } from "@/lib/expense-split";
 import { splitIncomes, type IncomeLike } from "@/lib/income-base";
+import { normalizeCategory } from "@/lib/category-normalize";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -92,21 +93,6 @@ function parseNum(v: unknown): number {
   return 0;
 }
 
-/**
- * Normaliza el nombre de categoría para que variantes por mayúsculas/
- * minúsculas ("ALQUILER" vs "Alquiler") se consoliden en una sola línea.
- * Title-case por palabra. Se aplica de forma consistente a egresos,
- * presupuestos y categorías excluidas para que los joins por nombre y los
- * agrupados no se fragmenten.
- */
-function normalizeCategory(c: unknown): string {
-  const t = String(c ?? "").trim();
-  if (!t) return t;
-  return t
-    .split(/\s+/)
-    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
-    .join(" ");
-}
 
 function startOfMonth(d: Date): string {
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-01`;
