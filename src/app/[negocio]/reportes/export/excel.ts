@@ -57,7 +57,7 @@ export async function generateExcel(data: ReportData, filename: string): Promise
     ["Margen EBITDA", data.summary.ebitdaMargin / 100, PCT],
     // Reconciliación de egresos: bruto − porción Fonavi − financieros = operativo.
     ["Egresos brutos (desembolso total)", data.summary.expensesGross, CURRENCY],
-    ["(-) Porción Fonavi de gastos compartidos", data.summary.expensesFonaviShared, CURRENCY],
+    ["(-) Porción Fonavi/Centro de gastos compartidos", data.summary.expensesFonaviShared, CURRENCY],
     ["(-) Egresos financieros (excl. EBITDA)", data.summary.expensesFinancial, CURRENCY],
     ["= Egresos operativos", data.summary.expensesOperative, CURRENCY],
     ["Saldo banco inicial", data.summary.bankStart, CURRENCY],

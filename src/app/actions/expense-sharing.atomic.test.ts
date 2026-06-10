@@ -8,7 +8,7 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-type FakeQuery = { text: string; awaited: boolean };
+type FakeQuery = { text: string; awaited: boolean; values?: unknown[] };
 
 const fake = vi.hoisted(() => {
   const state = {
@@ -25,8 +25,8 @@ const fake = vi.hoisted(() => {
     return [];
   };
   const makeTag = () => {
-    const tag = (strings: TemplateStringsArray, ..._values: unknown[]) => {
-      const q: FakeQuery = { text: strings.join(" $ "), awaited: false };
+    const tag = (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const q: FakeQuery = { text: strings.join(" $ "), awaited: false, values };
       state.queries.push(q);
       return {
         q,
@@ -69,7 +69,7 @@ const NORMAL_ROW = {
 };
 const SHARED_ROW = {
   ...NORMAL_ROW, is_shared: true, shared_rule_id: "rule-1",
-  atelier_amount: "700.00", fonavi_amount: "300.00",
+  atelier_amount: "700.00", fonavi_amount: "300.00", centro_amount: null,
 };
 
 beforeEach(() => {
@@ -121,7 +121,7 @@ describe("updateExpense — condición de compartido (3 casos)", () => {
     expect(looseWrites()).toHaveLength(0);
   });
 
-  it("CASO 3 compartido → compartido (ajuste): sincroniza por cobrar y espejo", async () => {
+  it("CASO 3 compartido → compartido (ajuste): limpia y recrea por cobrar + espejo en la transacción", async () => {
     fake.state.originalRow = SHARED_ROW;
     const r = await updateExpense("e1", {
       ...BASE, amount: 1200, shared: { ruleId: "rule-1", fonaviAmount: 360 },
@@ -129,9 +129,48 @@ describe("updateExpense — condición de compartido (3 casos)", () => {
     expect(r.success).toBe(true);
 
     const tx = fake.state.txCalls[0];
-    expect(tx.some((q) => q.text.includes("UPDATE fonavi_receivables"))).toBe(true);
-    expect(tx.some((q) => q.text.includes("linked_atelier_expense_id") && q.text.includes("UPDATE expenses"))).toBe(true);
+    // limpia lo viejo…
+    expect(tx.some((q) => q.text.includes("DELETE FROM expenses") && q.text.includes("linked_atelier_expense_id"))).toBe(true);
+    expect(tx.some((q) => q.text.includes("DELETE FROM fonavi_receivables"))).toBe(true);
+    // …y recrea según la parte vigente (CTE receivable+espejo)
+    expect(tx.some((q) => q.text.includes("INSERT INTO fonavi_receivables") && q.text.includes("pendiente_atelier"))).toBe(true);
     expect(looseWrites()).toHaveLength(0);
+  });
+
+  it("REPARTO A 3: agregar Centro al editar crea DOS por-cobrar/espejos (deudores 2 y 3) en la transacción", async () => {
+    fake.state.originalRow = SHARED_ROW;
+    const r = await updateExpense("e1", {
+      ...BASE, amount: 1500, shared: { ruleId: "rule-1", fonaviAmount: 500, centroAmount: 500 },
+    });
+    expect(r.success).toBe(true);
+
+    const tx = fake.state.txCalls[0];
+    const recreates = tx.filter((q) => q.text.includes("INSERT INTO fonavi_receivables"));
+    expect(recreates).toHaveLength(2);
+    const debtors = recreates.map((q) => (q.values ?? []).find((v) => v === 2 || v === 3));
+    expect(debtors).toContain(2);
+    expect(debtors).toContain(3);
+    expect(looseWrites()).toHaveLength(0);
+  });
+
+  it("REPARTO A 3: quitar Fonavi (solo Centro) recrea UN solo por-cobrar con deudor 3", async () => {
+    fake.state.originalRow = SHARED_ROW;
+    const r = await updateExpense("e1", {
+      ...BASE, shared: { ruleId: "rule-1", fonaviAmount: 0, centroAmount: 300 },
+    });
+    expect(r.success).toBe(true);
+    const tx = fake.state.txCalls[0];
+    const recreates = tx.filter((q) => q.text.includes("INSERT INTO fonavi_receivables"));
+    expect(recreates).toHaveLength(1);
+    expect(recreates[0].values).toContain(3);
+    expect(recreates[0].values).not.toContain(2);
+  });
+
+  it("GUARD 3 vías: ninguna cafetería con parte > 0 → error", async () => {
+    const r = await updateExpense("e1", { ...BASE, shared: { ruleId: "rule-1", fonaviAmount: 0, centroAmount: 0 } });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error).toContain("Al menos una cafetería");
+    expect(fake.state.txCalls).toHaveLength(0);
   });
 
   it("GUARD: con reembolsos registrados no se puede tocar la condición ni el monto", async () => {
@@ -143,12 +182,15 @@ describe("updateExpense — condición de compartido (3 casos)", () => {
     expect(fake.state.txCalls).toHaveLength(0); // nada se escribió
   });
 
-  it("GUARD: la parte de Fonavi debe ser > 0 y menor al monto", async () => {
-    const tooBig = await updateExpense("e1", { ...BASE, shared: { ruleId: "rule-1", fonaviAmount: 1000 } });
+  it("GUARD: las partes no pueden exceder el monto (atelier 0 SÍ es válido, ej. regla 0/100)", async () => {
+    const tooBig = await updateExpense("e1", { ...BASE, shared: { ruleId: "rule-1", fonaviAmount: 1100 } });
     expect(tooBig.success).toBe(false);
     const zero = await updateExpense("e1", { ...BASE, shared: { ruleId: "rule-1", fonaviAmount: 0 } });
-    expect(zero.success).toBe(false);
+    expect(zero.success).toBe(false); // ninguna cafetería participa
     expect(fake.state.txCalls).toHaveLength(0);
+    // atelier = 0 (cafeterías cubren todo) es válido:
+    const atelierZero = await updateExpense("e1", { ...BASE, shared: { ruleId: "rule-1", fonaviAmount: 600, centroAmount: 400 } });
+    expect(atelierZero.success).toBe(true);
   });
 
   it("GUARD: el espejo de Fonavi no se edita directamente", async () => {

@@ -5,7 +5,7 @@ import { useParams } from "next/navigation";
 import { X, Loader2 } from "lucide-react";
 import { updateIncomeItem, updateExpense } from "@/app/actions/record-edits";
 import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
-import { computeSharedSplit } from "@/lib/shared-split";
+import { computeThreeWaySplit } from "@/lib/shared-split";
 import { formatDateShort } from "@/lib/utils";
 
 type ClientOption = { id: string; name: string };
@@ -46,6 +46,7 @@ export type EditTarget =
       isShared?: boolean;
       sharedRuleId?: string | null;
       fonaviAmount?: number | null;
+      centroAmount?: number | null;
       /** Espejo auto-generado en Fonavi (no editable; se gestiona desde Atelier). */
       isMirror?: boolean;
     };
@@ -94,6 +95,9 @@ export function EditRecordModal({
   const [fonaviPart, setFonaviPart] = useState<string>(
     !isIncome && target.fonaviAmount != null ? target.fonaviAmount.toFixed(2) : "",
   );
+  const [centroPart, setCentroPart] = useState<string>(
+    !isIncome && target.centroAmount != null ? target.centroAmount.toFixed(2) : "",
+  );
   useEffect(() => {
     if (canShare) getSharedRules().then((rules) => setSharedRules(rules.filter((r) => r.active)));
   }, [canShare]);
@@ -105,15 +109,20 @@ export function EditRecordModal({
     const rule = sharedRules.find((r) => r.id === ruleId);
     const amt = parseFloat(amountStr);
     if (!rule || !Number.isFinite(amt) || amt <= 0) return;
-    const split = computeSharedSplit(
+    const split = computeThreeWaySplit(
       {
         splitMode: rule.split_mode === "fixed" ? "fixed" : "percentage",
         atelierPercentage: rule.atelier_percentage,
+        fonaviPercentage: rule.fonavi_percentage,
+        centroPercentage: rule.centro_percentage ?? 0,
         atelierFixed: rule.atelier_fixed,
+        fonaviFixed: rule.fonavi_fixed,
+        centroFixed: rule.centro_fixed,
       },
       amt,
     );
-    setFonaviPart(split.fonavi.toFixed(2));
+    setFonaviPart(split.fonavi > 0 ? split.fonavi.toFixed(2) : "0");
+    setCentroPart(split.centro > 0 ? split.centro.toFixed(2) : "0");
   }
 
   const categoryNotListed = !isIncome && category && !categories.includes(category);
@@ -127,9 +136,10 @@ export function EditRecordModal({
     }
     if (canShare && isShared) {
       if (!sharedRuleId) { setError("Selecciona la regla de gasto compartido"); return; }
-      const f = parseFloat(fonaviPart);
-      if (!Number.isFinite(f) || f <= 0) { setError("Ingresa la parte de Fonavi (mayor a 0)"); return; }
-      if (f >= amountNum) { setError("La parte de Fonavi debe ser menor al monto total"); return; }
+      const f = Math.max(0, parseFloat(fonaviPart) || 0);
+      const c = Math.max(0, parseFloat(centroPart) || 0);
+      if (f + c <= 0) { setError("Al menos una cafetería (Fonavi o Centro) debe tener una parte mayor a 0"); return; }
+      if (f + c > amountNum + 0.005) { setError("Las partes de Fonavi y Centro no pueden exceder el monto total"); return; }
     }
 
     setSaving(true);
@@ -148,7 +158,7 @@ export function EditRecordModal({
           notes: notes.trim() || null,
           // Solo Atelier gestiona la condición; en Fonavi/Centro no se toca.
           ...(canShare
-            ? { shared: isShared ? { ruleId: sharedRuleId, fonaviAmount: parseFloat(fonaviPart) } : null }
+            ? { shared: isShared ? { ruleId: sharedRuleId, fonaviAmount: Math.max(0, parseFloat(fonaviPart) || 0), centroAmount: Math.max(0, parseFloat(centroPart) || 0) } : null }
             : {}),
         });
     setSaving(false);
@@ -393,23 +403,32 @@ export function EditRecordModal({
                       )}
 
                       <div className="flex items-center gap-2 flex-wrap text-xs text-violet-800">
-                        <span className="whitespace-nowrap">Por cobrar a Fonavi: S/</span>
+                        <span className="whitespace-nowrap">Fonavi: S/</span>
                         <input
-                          type="number" step="0.01" min="0.01" inputMode="decimal"
+                          type="number" step="0.01" min="0" inputMode="decimal"
                           value={fonaviPart}
                           onChange={(e) => setFonaviPart(e.target.value)}
                           className="w-24 border border-violet-200 rounded-md px-2 py-1 text-xs text-right bg-white"
+                          title="Parte de Fonavi (0 = no participa)"
+                        />
+                        <span className="whitespace-nowrap">Centro: S/</span>
+                        <input
+                          type="number" step="0.01" min="0" inputMode="decimal"
+                          value={centroPart}
+                          onChange={(e) => setCentroPart(e.target.value)}
+                          className="w-24 border border-violet-200 rounded-md px-2 py-1 text-xs text-right bg-white"
+                          title="Parte de Centro (0 = no participa)"
                         />
                         {selectedRule && (
                           <span className="text-violet-500">
-                            Tu parte: S/ {(Math.round((parseFloat(amount || "0") - (parseFloat(fonaviPart) || 0)) * 100) / 100).toFixed(2)}
+                            Tu parte: S/ {(Math.round((parseFloat(amount || "0") - (parseFloat(fonaviPart) || 0) - (parseFloat(centroPart) || 0)) * 100) / 100).toFixed(2)}
                           </span>
                         )}
                       </div>
 
                       {!target.isShared && (
                         <div className="text-[11px] text-violet-600">
-                          Al guardar se creará el por cobrar a Fonavi y su gasto espejo.
+                          Al guardar se crearán los por cobrar y gastos espejo de los locales con parte mayor a 0.
                         </div>
                       )}
                     </>
@@ -417,7 +436,7 @@ export function EditRecordModal({
 
                   {!isShared && target.isShared && (
                     <div className="text-[11px] text-amber-700">
-                      Al guardar se eliminarán el por cobrar a Fonavi y el gasto espejo de este gasto.
+                      Al guardar se eliminarán los por cobrar y gastos espejo de este gasto.
                     </div>
                   )}
                 </div>

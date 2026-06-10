@@ -423,6 +423,7 @@ export async function getDailyBreakdown(
              bcp_verified_at::text AS bcp_verified_at,
              is_shared, shared_rule_id::text AS shared_rule_id,
              fonavi_amount::float AS fonavi_amount,
+             centro_amount::float AS centro_amount,
              linked_atelier_expense_id::text AS linked_atelier_expense_id
       FROM expenses
       WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false

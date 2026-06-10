@@ -52,6 +52,70 @@ export function computeSharedSplit(
  * atelier_percentage/fonavi_percentage (NOT NULL) cuando el modo es "fixed" y así
  * mantener compatibilidad con cualquier lectura legacy. Si el total es 0, cae a 50/50.
  */
+// ───────────────────────── Reparto a 3 locales ─────────────────────────
+
+export type ThreeWayRule = {
+  splitMode: SharedSplitMode;
+  atelierPercentage: number;
+  fonaviPercentage: number;
+  /** 0 = Centro no participa (reglas históricas quedan idénticas). */
+  centroPercentage: number;
+  atelierFixed: number | null;
+  fonaviFixed: number | null;
+  /** null = Centro no participa en modo fijo. */
+  centroFixed: number | null;
+};
+
+export type ThreeWaySplit = { atelier: number; fonavi: number; centro: number };
+
+/**
+ * Reparto entre Atelier/Fonavi/Centro (cualquier combinación).
+ *
+ * Garantía: atelier + fonavi + centro === monto, al céntimo. El ÚLTIMO
+ * participante (Centro si participa; si no, Fonavi) absorbe el residuo
+ * de redondeo — con Centro sin participar el resultado es IDÉNTICO al
+ * reparto a 2 vías histórico (computeSharedSplit).
+ *
+ * - percentage: Atelier y Fonavi por su %, el absorbedor toma el resto.
+ * - fixed: Atelier fijo; Fonavi fijo (si Centro participa); el absorbedor
+ *   toma el resto del monto registrado.
+ */
+export function computeThreeWaySplit(rule: ThreeWayRule, amount: number): ThreeWaySplit {
+  if (!Number.isFinite(amount) || amount <= 0) return { atelier: 0, fonavi: 0, centro: 0 };
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const clamp = (n: number, max: number) => Math.min(Math.max(n, 0), max);
+
+  const centroParticipates =
+    rule.splitMode === "fixed" ? rule.centroFixed != null : rule.centroPercentage > 0;
+  const fonaviParticipates =
+    rule.splitMode === "fixed" ? rule.fonaviFixed != null : rule.fonaviPercentage > 0;
+
+  // Parte de Atelier (misma fórmula histórica en ambos modos)
+  let atelier: number;
+  if (rule.splitMode === "fixed" && rule.atelierFixed != null) {
+    atelier = clamp(r2(rule.atelierFixed), r2(amount));
+  } else {
+    atelier = Math.round(amount * rule.atelierPercentage) / 100;
+  }
+
+  let fonavi = 0;
+  let centro = 0;
+  if (centroParticipates && fonaviParticipates) {
+    fonavi = rule.splitMode === "fixed"
+      ? clamp(r2(rule.fonaviFixed ?? 0), r2(amount - atelier))
+      : Math.round(amount * rule.fonaviPercentage) / 100;
+    centro = r2(amount - atelier - fonavi); // Centro absorbe el residuo
+  } else if (centroParticipates) {
+    centro = r2(amount - atelier);          // solo Centro: absorbe todo el resto
+  } else {
+    fonavi = r2(amount - atelier);          // histórico: Fonavi absorbe (2 vías)
+  }
+  if (centro < 0) centro = 0;
+  if (fonavi < 0) fonavi = 0;
+
+  return { atelier, fonavi, centro };
+}
+
 export function impliedPercentagesFromFixed(
   atelierFixed: number,
   fonaviFixed: number,
