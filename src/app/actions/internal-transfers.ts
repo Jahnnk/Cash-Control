@@ -15,6 +15,7 @@ import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { recalcBankBalance } from "./daily-records";
+import { validateAmount } from "@/lib/money-validation";
 
 export type TransferDirection = "efectivo_to_banco" | "banco_to_efectivo";
 
@@ -51,9 +52,8 @@ export async function createInternalTransfer(data: {
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "Fecha inválida" };
   }
-  if (!Number.isFinite(data.amount) || data.amount <= 0) {
-    return { success: false, error: "El monto debe ser mayor a cero" };
-  }
+  const amountError = validateAmount(data.amount);
+  if (amountError) return { success: false, error: amountError };
   if (data.direction !== "efectivo_to_banco" && data.direction !== "banco_to_efectivo") {
     return { success: false, error: "Dirección inválida" };
   }
@@ -178,9 +178,8 @@ export async function updateInternalTransfer(
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "Fecha inválida" };
   }
-  if (!Number.isFinite(data.amount) || data.amount <= 0) {
-    return { success: false, error: "El monto debe ser mayor a cero" };
-  }
+  const amountError = validateAmount(data.amount);
+  if (amountError) return { success: false, error: amountError };
 
   // Capturar fechas antes (la vieja puede ser distinta de la nueva)
   const before = (await db.execute(sql`

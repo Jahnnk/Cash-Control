@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { recalcBankBalance } from "./daily-records";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
+import { validateAmount, validateMovementDate } from "@/lib/money-validation";
 
 // Cliente raw de neon para transacciones no-interactivas (sql.transaction).
 // El driver http de drizzle no soporta transacciones; este patrón es el
@@ -58,17 +59,12 @@ export async function createBankIncomeItem(data: {
 }): Promise<{ success: true } | { success: false; error: string }> {
   const bId = await activeBusinessId();
 
-  // Validaciones (consistentes con registro-form y EditRecordModal)
-  if (!Number.isFinite(data.amount) || data.amount <= 0) {
-    return { success: false, error: "El monto debe ser mayor a 0" };
-  }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(data.date)) {
-    return { success: false, error: "Fecha inválida" };
-  }
-  const today = new Date().toISOString().slice(0, 10);
-  if (data.date > today) {
-    return { success: false, error: "No se pueden registrar movimientos con fecha futura" };
-  }
+  // Validaciones server-side compartidas (monto con tope + fecha no futura
+  // en hora de Perú — antes comparaba contra UTC).
+  const amountError = validateAmount(data.amount);
+  if (amountError) return { success: false, error: amountError };
+  const dateError = validateMovementDate(data.date);
+  if (dateError) return { success: false, error: dateError };
 
   const method = data.paymentMethod ?? "transferencia";
   const nonOp = normalizeNonOperative(data.nonOperativeCategory);
@@ -101,6 +97,14 @@ export async function saveBankIncomeItems(
   items: { amount: number; clientId: string | null; note: string; paymentMethod?: string; nonOperativeCategory?: string | null }[]
 ) {
   const bId = await activeBusinessId();
+
+  // Validación server-side de cada monto ANTES de tocar la BD: si uno es
+  // inválido se rechaza el guardado completo (el día no se modifica).
+  for (const item of items) {
+    const amountError = validateAmount(item.amount);
+    if (amountError) throw new Error(amountError);
+  }
+
   // Delete y re-insert SOLO de items operativos. Los préstamos del socio
   // (is_special_loan=true) viven en esta misma tabla pero se gestionan
   // desde /atelier/prestamos-socio — NO deben tocarse desde el feed de
@@ -177,6 +181,10 @@ export async function updateBankIncomeItem(id: string, data: { amount?: number; 
 
   if (data.paymentMethod !== undefined && !ALLOWED_INCOME_METHODS.includes(data.paymentMethod)) {
     throw new Error("Método de pago no válido");
+  }
+  if (data.amount !== undefined) {
+    const amountError = validateAmount(data.amount);
+    if (amountError) throw new Error(amountError);
   }
 
   if (data.amount !== undefined) await db.execute(sql`UPDATE bank_income_items SET amount = ${data.amount} WHERE id = ${id} AND business_id = ${bId}`);

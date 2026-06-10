@@ -5,6 +5,7 @@ import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalanc
 import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
 import { computeSharedSplit } from "@/lib/shared-split";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
+import { createSingleFlight } from "@/lib/single-flight";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
@@ -16,7 +17,6 @@ import { ResumenByteB2C } from "./resumen-byte-b2c";
 import { formatCurrency, getToday, formatDate } from "@/lib/utils";
 import { useRouter, usePathname } from "next/navigation";
 import { ConfirmModal } from "@/components/confirm-modal";
-import { getAtelierConfirmEnabled } from "@/lib/atelier-confirm-pref";
 import {
   Trash2, Plus, Save, Loader2, RefreshCw, Pencil, Check, X, GripVertical,
   ArrowDownLeft, ArrowUpRight, DollarSign, User,
@@ -447,15 +447,12 @@ export function RegistroForm({
     setEditingId(null);
   }
 
-  // Helper: si estamos en Atelier y la preferencia está activada, primero
-  // pedir confirmación. Si no, ejecutar directo.
+  // Borrar SIEMPRE pide confirmación (en los 3 negocios): un clic
+  // accidental no debe eliminar un movimiento de dinero real sin aviso.
+  // (Antes solo Atelier confirmaba, vía una preferencia local.)
   function maybeConfirmDelete(item: ExpenseItem | IncomeItem, kind: "expense" | "income") {
-    if (isAtelier && getAtelierConfirmEnabled()) {
-      setPendingDelete(item);
-      setPendingDeleteKind(kind);
-    } else {
-      void doDelete(item, kind);
-    }
+    setPendingDelete(item);
+    setPendingDeleteKind(kind);
   }
 
   async function doDelete(item: ExpenseItem | IncomeItem, kind: "expense" | "income") {
@@ -526,7 +523,16 @@ export function RegistroForm({
     if (saved.length > 0) await reorderExpenses(saved);
   }
 
+  // Anti doble-submit: bandera síncrona (el estado `saving` de React se
+  // actualiza asíncrono y un doble clic rápido podía colarse y duplicar
+  // el guardado del día).
+  const saveAllOnce = useRef(createSingleFlight()).current;
+
   async function handleSaveAll() {
+    await saveAllOnce(doSaveAll);
+  }
+
+  async function doSaveAll() {
     // Step 1: If there's a pending amount in the quick-add input, add it first
     if (txAmount && parseFloat(txAmount) > 0) {
       addTransaction();
@@ -599,7 +605,9 @@ export function RegistroForm({
       await refreshBankBalance();
     } catch (error) {
       console.error("Error saving:", error);
-      alert("Error al guardar. Intenta de nuevo.");
+      // Mostrar el mensaje real si es una validación en español (monto
+      // inválido, fecha futura…); genérico solo como último recurso.
+      alert(error instanceof Error && error.message ? error.message : "Error al guardar. Intenta de nuevo.");
     } finally {
       setSaving(false);
     }
@@ -617,7 +625,7 @@ export function RegistroForm({
         <h1 className="text-2xl font-bold text-gray-900">Registro Diario</h1>
         <div className="flex items-center gap-3">
           <label className="text-sm text-gray-600">Fecha:</label>
-          <input type="date" value={date} onChange={(e) => setDate(e.target.value)}
+          <input type="date" value={date} max={getToday()} onChange={(e) => setDate(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
         </div>
       </div>
@@ -637,7 +645,7 @@ export function RegistroForm({
               <div className="flex items-center gap-2">
                 <input
                   ref={saldoInputRef}
-                  type="number"
+                  type="number" inputMode="decimal"
                   step="0.01"
                   value={currentBalanceInput}
                   onChange={(e) => setCurrentBalanceInput(e.target.value)}
@@ -754,7 +762,7 @@ export function RegistroForm({
                   <div className="flex items-center gap-3">
                     <div className="flex-1">
                       <label className="block text-sm font-medium text-gray-700 mb-1">Venta al contado</label>
-                      <input type="number" step="0.01" value={byteCashSale}
+                      <input type="number" step="0.01" min="0" inputMode="decimal" value={byteCashSale}
                         onChange={(e) => setByteCashSale(e.target.value)} placeholder="0.00"
                         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
                     </div>
@@ -907,7 +915,7 @@ export function RegistroForm({
 
                       <input
                         ref={amountRef}
-                        type="number"
+                        type="number" inputMode="decimal" min="0.01"
                         step="0.01"
                         value={txAmount}
                         onChange={(e) => setTxAmount(e.target.value)}
@@ -1055,7 +1063,7 @@ export function RegistroForm({
                                   <div className="flex items-center gap-2 flex-wrap">
                                     <span className="text-violet-700 whitespace-nowrap">Por cobrar a Fonavi: S/</span>
                                     <input
-                                      type="number" step="0.01" min="0" max={txAmount}
+                                      type="number" step="0.01" min="0" max={txAmount} inputMode="decimal"
                                       value={fonaviShareInput}
                                       onChange={(e) => setFonaviShareInput(e.target.value)}
                                       className="w-24 border border-violet-200 rounded-md px-2 py-1 text-xs text-right bg-white"
@@ -1101,7 +1109,7 @@ export function RegistroForm({
                       editingId === item.id ? (
                         <div key={item.id} className="px-4 py-3 bg-green-50 space-y-2">
                           <div className="flex items-center gap-2">
-                            <input type="number" step="0.01" value={editAmount} onChange={(e) => setEditAmount(e.target.value)}
+                            <input type="number" step="0.01" min="0.01" inputMode="decimal" value={editAmount} onChange={(e) => setEditAmount(e.target.value)}
                               className="w-28 border border-gray-300 rounded px-2 py-1 text-sm" autoFocus />
                             <select value={editClient} onChange={(e) => setEditClient(e.target.value)}
                               className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm">
@@ -1167,7 +1175,7 @@ export function RegistroForm({
                       editingId === item.id ? (
                         <div key={item.id} className="px-4 py-3 bg-red-50 space-y-2">
                           <div className="flex items-center gap-2">
-                            <input type="number" step="0.01" value={editAmount} onChange={(e) => setEditAmount(e.target.value)}
+                            <input type="number" step="0.01" min="0.01" inputMode="decimal" value={editAmount} onChange={(e) => setEditAmount(e.target.value)}
                               className="w-24 border border-gray-300 rounded px-2 py-1 text-sm" autoFocus />
                             <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)}
                               className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm">
@@ -1415,7 +1423,7 @@ function Field({ label, value, onChange, placeholder }: {
   return (
     <div>
       <label className="block text-sm font-medium text-gray-700 mb-1">{label}</label>
-      <input type="number" step="0.01" value={value} onChange={(e) => onChange(e.target.value)}
+      <input type="number" step="0.01" min="0" inputMode="decimal" value={value} onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder || "0.00"}
         className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
     </div>

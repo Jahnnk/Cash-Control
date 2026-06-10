@@ -5,7 +5,6 @@ import { getBusinessInitialConfig } from "@/app/actions/business-config";
 import { CategoriesManager } from "./categories-manager";
 import { BudgetConfig } from "./budget-config";
 import { SharedExpensesSection } from "./shared-expenses-section";
-import { AtelierConfirmToggle } from "./atelier-confirm-toggle";
 import { InitialConfigSection } from "./initial-config-section";
 import { ExcelImportButton } from "./excel-import-button";
 
@@ -40,7 +39,6 @@ export default async function ConfiguracionPage({
       {!isAtelier && initialConfig && (
         <InitialConfigSection initial={initialConfig} />
       )}
-      {isAtelier && <AtelierConfirmToggle />}
       {isAtelier && (
         <SharedExpensesSection rules={sharedRules} categories={activeCategories} />
       )}

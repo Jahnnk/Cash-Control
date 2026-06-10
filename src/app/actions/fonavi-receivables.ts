@@ -9,6 +9,7 @@ import {
   reimbursementMirrorMethod,
   type ReimbursementMethod,
 } from "@/lib/reimbursement-method";
+import { validateAmount } from "@/lib/money-validation";
 
 const sql = neon(process.env.DATABASE_URL!);
 const ATELIER_ID = 1;
@@ -89,8 +90,9 @@ export async function registerFonaviReimbursement(data: {
   paymentMethod?: ReimbursementMethod;
 }): Promise<{ success: true } | { success: false; error: string }> {
   await requireAtelier();
-  if (!Number.isFinite(data.totalAmount) || data.totalAmount <= 0) {
-    return { success: false, error: "Monto inválido" };
+  {
+    const amountError = validateAmount(data.totalAmount);
+    if (amountError) return { success: false, error: amountError };
   }
   const method: ReimbursementMethod = data.paymentMethod ?? "transferencia";
   if (!isReimbursementMethod(method)) {
