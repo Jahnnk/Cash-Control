@@ -13,10 +13,12 @@ import {
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
-import { Pencil, Trash2, Plus, CheckCircle2 } from "lucide-react";
+import { Pencil, Trash2, Plus, CheckCircle2, Paperclip } from "lucide-react";
 import { EditRecordModal, type EditTarget } from "./edit-record-modal";
 import { DeleteRecordModal, type DeleteTarget } from "./delete-record-modal";
 import { useToast } from "@/components/toast-provider";
+import { AttachmentsModal } from "@/components/attachments/attachments-modal";
+import { getAttachmentCounts, type AttachmentRecordType } from "@/app/actions/attachments";
 import {
   CreateRecordModal,
   CreateTypeSelector,
@@ -139,6 +141,9 @@ export function DailyMovementsReport() {
   const [categories, setCategories] = useState<string[]>([]);
   const [clients, setClients] = useState<{ id: string; name: string }[]>([]);
   const [editTarget, setEditTarget] = useState<EditTarget | null>(null);
+  // Adjuntos: target del modal + conteos por movimiento (clave "tipo:id")
+  const [attachTarget, setAttachTarget] = useState<{ recordType: AttachmentRecordType; recordId: string; title: string } | null>(null);
+  const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [createTarget, setCreateTarget] = useState<CreateTarget | null>(null);
   const [showTypeSelector, setShowTypeSelector] = useState(false);
@@ -200,6 +205,18 @@ export function DailyMovementsReport() {
       setExpenses([]);
     }
     setLoading(false);
+
+    // Conteos de adjuntos en lote (una query por tipo) para el clip del feed
+    const incIds = inc.format === "income" ? inc.rows.map((r) => r.id as string) : [];
+    const expIds = exp.format === "expense" ? exp.rows.map((r) => r.id as string) : [];
+    const [incCounts, expCounts] = await Promise.all([
+      getAttachmentCounts("income", incIds),
+      getAttachmentCounts("expense", expIds),
+    ]);
+    const merged: Record<string, number> = {};
+    for (const [id, n] of Object.entries(incCounts)) merged[`income:${id}`] = n;
+    for (const [id, n] of Object.entries(expCounts)) merged[`expense:${id}`] = n;
+    setAttachCounts(merged);
   }, [month]);
 
   useEffect(() => {
@@ -467,6 +484,8 @@ export function DailyMovementsReport() {
           ) : (
             visibleDays.map((d) => (
               <DayCard
+                onAttach={(recordType, recordId, title) => setAttachTarget({ recordType, recordId, title })}
+                attachCounts={attachCounts}
                 key={d.date}
                 day={d}
                 hideVerified={hideVerified}
@@ -482,6 +501,17 @@ export function DailyMovementsReport() {
         </>
       )}
 
+      {attachTarget && (
+        <AttachmentsModal
+          recordType={attachTarget.recordType}
+          recordId={attachTarget.recordId}
+          title={attachTarget.title}
+          onClose={() => setAttachTarget(null)}
+          onCountChange={(n) =>
+            setAttachCounts((prev) => ({ ...prev, [`${attachTarget.recordType}:${attachTarget.recordId}`]: n }))
+          }
+        />
+      )}
       {editTarget && (
         <EditRecordModal
           target={editTarget}
@@ -550,6 +580,8 @@ function DayCard({
   onDelete,
   onCreate,
   onToggleVerify,
+  onAttach,
+  attachCounts,
 }: {
   day: DayBlock;
   hideVerified: boolean;
@@ -557,6 +589,8 @@ function DayCard({
   onDelete: (t: DeleteTarget) => void;
   onCreate: (type: "income" | "expense") => void;
   onToggleVerify: (type: "income" | "expense", id: string) => void;
+  onAttach: (recordType: "income" | "expense", recordId: string, title: string) => void;
+  attachCounts: Record<string, number>;
 }) {
   const netCls =
     day.net > 0
@@ -681,7 +715,20 @@ function DayCard({
                       >
                         +{formatCurrency(i.amount)}
                       </span>
-                      <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 transition-opacity">
+                      <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+                        <button
+                          onClick={() => onAttach("income", i.id, i.client_name ? `Pago de ${i.client_name}` : (i.note || "Ingreso"))}
+                          className={`p-1 rounded relative ${attachCounts[`income:${i.id}`] ? "text-violet-600 hover:bg-violet-50" : "text-gray-400 hover:bg-violet-50 hover:text-violet-600"}`}
+                          aria-label="Constancias adjuntas"
+                          title="Constancias (imagen del pago / PDF)"
+                        >
+                          <Paperclip className="w-3 h-3" />
+                          {(attachCounts[`income:${i.id}`] ?? 0) > 0 && (
+                            <span className="absolute -top-1 -right-1 text-[8px] bg-violet-600 text-white rounded-full w-3 h-3 flex items-center justify-center leading-none">
+                              {attachCounts[`income:${i.id}`]}
+                            </span>
+                          )}
+                        </button>
                         <button
                           onClick={() =>
                             onEdit({
@@ -813,7 +860,20 @@ function DayCard({
                         >
                           −{formatCurrency(e.amount)}
                         </span>
-                        <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 transition-opacity">
+                        <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+                          <button
+                            onClick={() => onAttach("expense", e.id, e.concept || e.category)}
+                            className={`p-1 rounded relative ${attachCounts[`expense:${e.id}`] ? "text-violet-600 hover:bg-violet-50" : "text-gray-400 hover:bg-violet-50 hover:text-violet-600"}`}
+                            aria-label="Constancias adjuntas"
+                            title="Constancias (imagen del pago / PDF)"
+                          >
+                            <Paperclip className="w-3 h-3" />
+                            {(attachCounts[`expense:${e.id}`] ?? 0) > 0 && (
+                              <span className="absolute -top-1 -right-1 text-[8px] bg-violet-600 text-white rounded-full w-3 h-3 flex items-center justify-center leading-none">
+                                {attachCounts[`expense:${e.id}`]}
+                              </span>
+                            )}
+                          </button>
                           <button
                             onClick={() =>
                               onEdit({
