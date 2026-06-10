@@ -173,7 +173,22 @@ export async function deleteIncomeItem(id: string): Promise<Result> {
 
 export async function updateExpense(
   id: string,
-  changes: { amount: number; category: string; concept: string; paymentMethod: string; notes: string | null }
+  changes: {
+    amount: number;
+    category: string;
+    concept: string;
+    paymentMethod: string;
+    notes: string | null;
+    /**
+     * Condición de compartido (solo Atelier):
+     *  - undefined → no tocar la condición (compatibilidad con llamadas previas)
+     *  - null      → volverlo gasto normal (elimina por cobrar + espejo)
+     *  - objeto    → marcarlo/ajustarlo compartido (crea o ajusta por cobrar
+     *                + espejo). atelierAmount = amount − fonaviAmount.
+     * Solo permitido si el por cobrar NO tiene reembolsos registrados.
+     */
+    shared?: null | { ruleId: string; fonaviAmount: number };
+  }
 ): Promise<Result> {
   const bId = await activeBusinessId();
   const amountErr = validateAmount(changes.amount);
@@ -190,6 +205,61 @@ export async function updateExpense(
   if (!before[0]) return { success: false, error: "El registro ya no existe" };
   const original = before[0];
   const date = original.date as string;
+  const wasShared = !!original.is_shared;
+  if (original.is_internal_transfer) {
+    return { success: false, error: "No se puede editar una transferencia interna desde aquí. Usa el módulo de Transferencia Interna." };
+  }
+  if (original.linked_atelier_expense_id) {
+    return { success: false, error: "Este gasto es el espejo automático de un gasto compartido de Atelier. Edítalo desde Atelier (el espejo se ajusta solo)." };
+  }
+
+  // ───── Validaciones de la condición de compartido ─────
+  const touchesSharing = changes.shared !== undefined;
+  const willBeShared = changes.shared != null;
+  if (touchesSharing && bId !== 1) {
+    return { success: false, error: "Los gastos compartidos con Fonavi solo se gestionan desde Atelier" };
+  }
+  if (touchesSharing && willBeShared) {
+    const f = changes.shared!.fonaviAmount;
+    if (!Number.isFinite(f) || f <= 0) {
+      return { success: false, error: "La parte de Fonavi debe ser mayor a 0" };
+    }
+    if (f >= changes.amount) {
+      return { success: false, error: "La parte de Fonavi debe ser menor al monto total del gasto" };
+    }
+    if (!changes.shared!.ruleId) {
+      return { success: false, error: "Selecciona la regla de gasto compartido" };
+    }
+  }
+  // Cualquier cambio sobre un compartido existente (quitarlo, ajustarlo o
+  // editar su monto) exige que el por cobrar esté SIN reembolsos: si ya hubo
+  // cobros, ajustar a medias dejaría montos inconsistentes.
+  if (wasShared && (touchesSharing || Number(original.amount) !== changes.amount)) {
+    const allocs = (await sql`
+      SELECT COUNT(*)::int as n
+      FROM fonavi_reimbursement_allocations a
+      JOIN fonavi_receivables r ON r.id = a.receivable_id
+      WHERE r.expense_id = ${id}
+    `) as { n: number }[];
+    if (allocs[0].n > 0) {
+      return {
+        success: false,
+        error: "Este gasto compartido ya tiene reembolsos registrados: no se puede cambiar su monto ni su condición. Primero gestiona los reembolsos en 'Cuentas por cobrar Fonavi'.",
+      };
+    }
+  }
+
+  // Vía legacy (sin parámetro shared): no permitir cambiar el monto de un
+  // compartido — desincronizaría el por cobrar y el espejo silenciosamente.
+  if (!touchesSharing && wasShared && Number(original.amount) !== changes.amount) {
+    return {
+      success: false,
+      error: "Este gasto es compartido con Fonavi: edítalo con la opción de gasto compartido para ajustar también el por cobrar.",
+    };
+  }
+
+  const fonaviAmt = touchesSharing && willBeShared ? changes.shared!.fonaviAmount : null;
+  const atelierAmt = fonaviAmt !== null ? Math.round((changes.amount - fonaviAmt) * 100) / 100 : null;
 
   const after = {
     ...original,
@@ -198,26 +268,108 @@ export async function updateExpense(
     concept: changes.concept,
     payment_method: changes.paymentMethod,
     notes: changes.notes,
+    ...(touchesSharing
+      ? {
+          is_shared: willBeShared,
+          shared_rule_id: willBeShared ? changes.shared!.ruleId : null,
+          atelier_amount: atelierAmt !== null ? String(atelierAmt) : null,
+          fonavi_amount: fonaviAmt !== null ? String(fonaviAmt) : null,
+        }
+      : {}),
   };
 
+  // ───── Transacción según el caso (todo o nada: sin huérfanos) ─────
+  const txQueries = [];
+
+  if (!touchesSharing) {
+    // Llamada legacy: no tocar la condición de compartido.
+    txQueries.push(sql`
+      UPDATE expenses SET
+        amount = ${changes.amount},
+        category = ${changes.category},
+        concept = ${changes.concept},
+        payment_method = ${changes.paymentMethod},
+        notes = ${changes.notes}
+      WHERE id = ${id} AND business_id = ${bId}
+    `);
+  } else {
+    txQueries.push(sql`
+      UPDATE expenses SET
+        amount = ${changes.amount},
+        category = ${changes.category},
+        concept = ${changes.concept},
+        payment_method = ${changes.paymentMethod},
+        notes = ${changes.notes},
+        is_shared = ${willBeShared},
+        shared_rule_id = ${willBeShared ? changes.shared!.ruleId : null},
+        atelier_amount = ${atelierAmt !== null ? atelierAmt.toFixed(2) : null},
+        fonavi_amount = ${fonaviAmt !== null ? fonaviAmt.toFixed(2) : null}
+      WHERE id = ${id} AND business_id = ${bId}
+    `);
+
+    if (wasShared && !willBeShared) {
+      // CASO compartido → normal: eliminar espejo y por cobrar (el espejo
+      // primero, referencia al receivable). Sin huérfanos.
+      txQueries.push(sql`
+        DELETE FROM expenses
+        WHERE business_id = 2 AND linked_atelier_expense_id = ${id}::uuid
+      `);
+      txQueries.push(sql`
+        DELETE FROM fonavi_receivables WHERE expense_id = ${id}::uuid
+      `);
+    } else if (!wasShared && willBeShared) {
+      // CASO normal → compartido: por cobrar + espejo en UNA statement
+      // (CTE atómica — mismo patrón que la creación en createExpense).
+      txQueries.push(sql`
+        WITH receivable_ins AS (
+          INSERT INTO fonavi_receivables (expense_id, amount_due, status)
+          VALUES (${id}::uuid, ${fonaviAmt!.toFixed(2)}, 'pending')
+          RETURNING id
+        ),
+        fonavi_category_lookup AS (
+          SELECT COALESCE(
+            (SELECT name FROM expense_categories
+              WHERE business_id = 2 AND name = ${changes.category} AND is_active = true),
+            'Desconocido'
+          ) AS cat
+        )
+        INSERT INTO expenses (
+          business_id, date, category, concept, amount, payment_method,
+          notes, is_shared, linked_atelier_expense_id, linked_receivable_id
+        )
+        SELECT
+          2, ${date}, fcl.cat,
+          ${"[Compartido con Atelier] " + changes.concept},
+          ${fonaviAmt!.toFixed(2)}, 'pendiente_atelier',
+          'Auto-generado por gasto compartido en Atelier', false,
+          ${id}::uuid, r.id
+        FROM receivable_ins r, fonavi_category_lookup fcl
+      `);
+    } else if (wasShared && willBeShared) {
+      // CASO compartido → compartido (ajuste): sincronizar por cobrar y espejo.
+      txQueries.push(sql`
+        UPDATE fonavi_receivables
+        SET amount_due = ${fonaviAmt!.toFixed(2)}
+        WHERE expense_id = ${id}::uuid
+      `);
+      txQueries.push(sql`
+        UPDATE expenses
+        SET amount = ${fonaviAmt!.toFixed(2)},
+            concept = ${"[Compartido con Atelier] " + changes.concept}
+        WHERE business_id = 2 AND linked_atelier_expense_id = ${id}::uuid
+      `);
+    }
+  }
+
+  txQueries.push(sql`
+    INSERT INTO audit_log (business_id, action, record_id, record_type, before_data, after_data, date_affected)
+    VALUES (${bId}, 'edit', ${id}, 'expense', ${JSON.stringify(original)}::jsonb, ${JSON.stringify(after)}::jsonb, ${date})
+  `);
+  txQueries.push(recalcDailyTotalsQuery(bId, date));
+  txQueries.push(recalcBankBalanceQuery(bId, date));
+
   try {
-    await sql.transaction([
-      sql`
-        UPDATE expenses SET
-          amount = ${changes.amount},
-          category = ${changes.category},
-          concept = ${changes.concept},
-          payment_method = ${changes.paymentMethod},
-          notes = ${changes.notes}
-        WHERE id = ${id} AND business_id = ${bId}
-      `,
-      sql`
-        INSERT INTO audit_log (business_id, action, record_id, record_type, before_data, after_data, date_affected)
-        VALUES (${bId}, 'edit', ${id}, 'expense', ${JSON.stringify(original)}::jsonb, ${JSON.stringify(after)}::jsonb, ${date})
-      `,
-      recalcDailyTotalsQuery(bId, date),
-      recalcBankBalanceQuery(bId, date),
-    ]);
+    await sql.transaction(txQueries);
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "Error al guardar" };
   }
@@ -233,6 +385,9 @@ export async function deleteExpense(id: string): Promise<Result> {
   const original = before[0];
   const date = original.date as string;
 
+  if (original.linked_atelier_expense_id) {
+    return { success: false, error: "Este gasto es el espejo automático de un gasto compartido de Atelier. Se elimina desde Atelier (borrando o des-compartiendo el gasto original)." };
+  }
   if (original.is_shared) {
     const allocs = (await sql`
       SELECT COUNT(*)::int as n
@@ -245,8 +400,18 @@ export async function deleteExpense(id: string): Promise<Result> {
     }
   }
 
+  // Si era compartido: borrar también espejo y por cobrar (antes quedaban
+  // huérfanos — el por cobrar fantasma inflaba el total del dashboard).
+  const cleanupQueries = original.is_shared
+    ? [
+        sql`DELETE FROM expenses WHERE business_id = 2 AND linked_atelier_expense_id = ${id}::uuid`,
+        sql`DELETE FROM fonavi_receivables WHERE expense_id = ${id}::uuid`,
+      ]
+    : [];
+
   try {
     await sql.transaction([
+      ...cleanupQueries,
       sql`DELETE FROM expenses WHERE id = ${id} AND business_id = ${bId}`,
       sql`
         INSERT INTO audit_log (business_id, action, record_id, record_type, before_data, date_affected)

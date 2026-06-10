@@ -1,9 +1,11 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import { X, Loader2 } from "lucide-react";
 import { updateIncomeItem, updateExpense } from "@/app/actions/record-edits";
+import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
+import { computeSharedSplit } from "@/lib/shared-split";
 import { formatDateShort } from "@/lib/utils";
 
 type ClientOption = { id: string; name: string };
@@ -40,6 +42,12 @@ export type EditTarget =
       concept: string;
       paymentMethod: string;
       notes: string | null;
+      // Condición de compartido (solo relevante en Atelier)
+      isShared?: boolean;
+      sharedRuleId?: string | null;
+      fonaviAmount?: number | null;
+      /** Espejo auto-generado en Fonavi (no editable; se gestiona desde Atelier). */
+      isMirror?: boolean;
     };
 
 export function EditRecordModal({
@@ -74,6 +82,40 @@ export function EditRecordModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // ───── Gasto compartido con Fonavi (solo egresos de Atelier) ─────
+  // Permite marcar/quitar/ajustar la condición al editar: el server action
+  // crea/elimina/sincroniza el por cobrar y el gasto-espejo en transacción.
+  const canShare = !isIncome && negocio === "atelier" && !target.isMirror;
+  const [sharedRules, setSharedRules] = useState<SharedRule[]>([]);
+  const [isShared, setIsShared] = useState(!isIncome && !!target.isShared);
+  const [sharedRuleId, setSharedRuleId] = useState<string>(
+    (!isIncome && target.sharedRuleId) || "",
+  );
+  const [fonaviPart, setFonaviPart] = useState<string>(
+    !isIncome && target.fonaviAmount != null ? target.fonaviAmount.toFixed(2) : "",
+  );
+  useEffect(() => {
+    if (canShare) getSharedRules().then((rules) => setSharedRules(rules.filter((r) => r.active)));
+  }, [canShare]);
+  const rulesForCategory = sharedRules.filter((r) => r.category_name === category);
+  const selectedRule = rulesForCategory.find((r) => r.id === sharedRuleId) ?? null;
+
+  // Default de la parte de Fonavi según la regla y el monto (editable a mano).
+  function recomputeFonaviDefault(ruleId: string, amountStr: string) {
+    const rule = sharedRules.find((r) => r.id === ruleId);
+    const amt = parseFloat(amountStr);
+    if (!rule || !Number.isFinite(amt) || amt <= 0) return;
+    const split = computeSharedSplit(
+      {
+        splitMode: rule.split_mode === "fixed" ? "fixed" : "percentage",
+        atelierPercentage: rule.atelier_percentage,
+        atelierFixed: rule.atelier_fixed,
+      },
+      amt,
+    );
+    setFonaviPart(split.fonavi.toFixed(2));
+  }
+
   const categoryNotListed = !isIncome && category && !categories.includes(category);
 
   async function handleSave() {
@@ -82,6 +124,12 @@ export function EditRecordModal({
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setError("El monto debe ser mayor a 0");
       return;
+    }
+    if (canShare && isShared) {
+      if (!sharedRuleId) { setError("Selecciona la regla de gasto compartido"); return; }
+      const f = parseFloat(fonaviPart);
+      if (!Number.isFinite(f) || f <= 0) { setError("Ingresa la parte de Fonavi (mayor a 0)"); return; }
+      if (f >= amountNum) { setError("La parte de Fonavi debe ser menor al monto total"); return; }
     }
 
     setSaving(true);
@@ -98,6 +146,10 @@ export function EditRecordModal({
           concept: concept.trim(),
           paymentMethod,
           notes: notes.trim() || null,
+          // Solo Atelier gestiona la condición; en Fonavi/Centro no se toca.
+          ...(canShare
+            ? { shared: isShared ? { ruleId: sharedRuleId, fonaviAmount: parseFloat(fonaviPart) } : null }
+            : {}),
         });
     setSaving(false);
 
@@ -138,7 +190,10 @@ export function EditRecordModal({
               type="number" inputMode="decimal" min="0.01"
               step="0.01"
               value={amount}
-              onChange={(e) => setAmount(e.target.value)}
+              onChange={(e) => {
+                setAmount(e.target.value);
+                if (canShare && isShared && sharedRuleId) recomputeFonaviDefault(sharedRuleId, e.target.value);
+              }}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-light/30"
               autoFocus
             />
@@ -287,6 +342,86 @@ export function EditRecordModal({
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
+
+              {/* Gasto compartido con Fonavi (solo Atelier) */}
+              {canShare && (
+                <div className="bg-violet-50 border border-violet-100 rounded-lg p-3 space-y-2">
+                  <label className="flex items-center gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isShared}
+                      onChange={(e) => {
+                        const next = e.target.checked;
+                        setIsShared(next);
+                        if (next) {
+                          // Auto-elegir regla si hay una sola para la categoría
+                          const rid = sharedRuleId || (rulesForCategory.length === 1 ? rulesForCategory[0].id : "");
+                          if (rid !== sharedRuleId) setSharedRuleId(rid);
+                          if (rid && !fonaviPart) recomputeFonaviDefault(rid, amount);
+                        }
+                      }}
+                      className="rounded text-violet-600"
+                    />
+                    <span className="text-sm font-medium text-violet-900">Compartido con Fonavi</span>
+                  </label>
+
+                  {isShared && (
+                    <>
+                      {rulesForCategory.length === 0 ? (
+                        <div className="text-xs text-amber-700 bg-amber-50 border border-amber-100 rounded px-2 py-1.5">
+                          La categoría &quot;{category}&quot; no tiene reglas de gasto compartido. Créala en Configuración → Gastos compartidos.
+                        </div>
+                      ) : (
+                        <select
+                          value={sharedRuleId}
+                          onChange={(e) => {
+                            setSharedRuleId(e.target.value);
+                            if (e.target.value) recomputeFonaviDefault(e.target.value, amount);
+                          }}
+                          className="w-full border border-violet-200 rounded-md px-2 py-1.5 text-xs bg-white"
+                        >
+                          <option value="">— Elegir regla —</option>
+                          {rulesForCategory.map((r) => (
+                            <option key={r.id} value={r.id}>
+                              {r.concept}{" "}
+                              {r.split_mode === "fixed"
+                                ? `(Atelier S/${(r.atelier_fixed ?? 0).toFixed(2)} fijo)`
+                                : `(${r.atelier_percentage}% / ${r.fonavi_percentage}%)`}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+
+                      <div className="flex items-center gap-2 flex-wrap text-xs text-violet-800">
+                        <span className="whitespace-nowrap">Por cobrar a Fonavi: S/</span>
+                        <input
+                          type="number" step="0.01" min="0.01" inputMode="decimal"
+                          value={fonaviPart}
+                          onChange={(e) => setFonaviPart(e.target.value)}
+                          className="w-24 border border-violet-200 rounded-md px-2 py-1 text-xs text-right bg-white"
+                        />
+                        {selectedRule && (
+                          <span className="text-violet-500">
+                            Tu parte: S/ {(Math.round((parseFloat(amount || "0") - (parseFloat(fonaviPart) || 0)) * 100) / 100).toFixed(2)}
+                          </span>
+                        )}
+                      </div>
+
+                      {!target.isShared && (
+                        <div className="text-[11px] text-violet-600">
+                          Al guardar se creará el por cobrar a Fonavi y su gasto espejo.
+                        </div>
+                      )}
+                    </>
+                  )}
+
+                  {!isShared && target.isShared && (
+                    <div className="text-[11px] text-amber-700">
+                      Al guardar se eliminarán el por cobrar a Fonavi y el gasto espejo de este gasto.
+                    </div>
+                  )}
+                </div>
+              )}
             </>
           )}
 

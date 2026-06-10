@@ -153,14 +153,28 @@ export async function updateExpense(id: string, data: {
   }
 
   const before = (await db.execute(sql`
-    SELECT date::text as date, payment_method, is_internal_transfer FROM expenses
+    SELECT date::text as date, amount::float as amount, payment_method, is_internal_transfer,
+           is_shared, linked_atelier_expense_id
+    FROM expenses
     WHERE id = ${id} AND business_id = ${bId}
-  `)).rows[0] as { date: string; payment_method: string; is_internal_transfer: boolean } | undefined;
+  `)).rows[0] as { date: string; amount: number; payment_method: string; is_internal_transfer: boolean; is_shared: boolean; linked_atelier_expense_id: string | null } | undefined;
 
   if (!before) return; // No-op si no es del negocio activo
   if (before.is_internal_transfer) {
     throw new Error(
       "No se puede editar una transferencia interna desde el feed de gastos. Usa el módulo de Transferencia Interna."
+    );
+  }
+  if (before.linked_atelier_expense_id) {
+    throw new Error(
+      "Este gasto es el espejo automático de un gasto compartido de Atelier. Edítalo desde Atelier (el espejo se ajusta solo)."
+    );
+  }
+  // El monto de un compartido se ajusta desde el editor de Movimientos
+  // diarios (con la opción de compartido), que sincroniza por cobrar y espejo.
+  if (before.is_shared && data.amount !== undefined && data.amount !== before.amount) {
+    throw new Error(
+      "Este gasto es compartido con Fonavi: edita su monto desde Reportes → Movimientos diarios para ajustar también el por cobrar."
     );
   }
 
@@ -178,13 +192,17 @@ export async function updateExpense(id: string, data: {
 export async function deleteExpense(id: string): Promise<{ success: true } | { success: false; error: string }> {
   const bId = await activeBusinessId();
   const before = (await db.execute(sql`
-    SELECT date::text as date, payment_method, is_shared, is_internal_transfer FROM expenses
+    SELECT date::text as date, payment_method, is_shared, is_internal_transfer, linked_atelier_expense_id
+    FROM expenses
     WHERE id = ${id} AND business_id = ${bId}
-  `)).rows[0] as { date: string; payment_method: string; is_shared: boolean; is_internal_transfer: boolean } | undefined;
+  `)).rows[0] as { date: string; payment_method: string; is_shared: boolean; is_internal_transfer: boolean; linked_atelier_expense_id: string | null } | undefined;
 
   if (!before) return { success: false, error: "El registro no existe en este negocio" };
   if (before.is_internal_transfer) {
     return { success: false, error: "No se puede borrar una transferencia interna desde el feed de gastos. Usa el módulo de Transferencia Interna." };
+  }
+  if (before.linked_atelier_expense_id) {
+    return { success: false, error: "Este gasto es el espejo automático de un gasto compartido de Atelier. Se elimina desde Atelier (borrando o des-compartiendo el gasto original)." };
   }
 
   if (before.is_shared) {
@@ -199,7 +217,23 @@ export async function deleteExpense(id: string): Promise<{ success: true } | { s
     }
   }
 
-  await db.delete(expenses).where(and(eq(expenses.id, id), eq(expenses.businessId, bId)));
+  if (before.is_shared) {
+    // Borrar gasto + espejo + por cobrar en UNA statement (CTE atómica).
+    // Antes solo se borraba el gasto de Atelier: el por cobrar quedaba
+    // huérfano (inflaba el total del dashboard) y el espejo, eterno.
+    await db.execute(sql`
+      WITH mirror_del AS (
+        DELETE FROM expenses
+        WHERE business_id = ${FONAVI_ID} AND linked_atelier_expense_id = ${id}::uuid
+      ),
+      receivable_del AS (
+        DELETE FROM fonavi_receivables WHERE expense_id = ${id}::uuid
+      )
+      DELETE FROM expenses WHERE id = ${id} AND business_id = ${bId}
+    `);
+  } else {
+    await db.delete(expenses).where(and(eq(expenses.id, id), eq(expenses.businessId, bId)));
+  }
   if (before.payment_method !== "efectivo") {
     await recalcBankBalance(before.date);
   }
