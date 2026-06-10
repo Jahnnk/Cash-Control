@@ -9,7 +9,8 @@ import { createSingleFlight } from "@/lib/single-flight";
 import { useToast } from "@/components/toast-provider";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
-import { createExpense, deleteExpense, updateExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
+import { createExpense, deleteExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
+import { updateExpense as updateExpenseFull } from "@/app/actions/record-edits";
 import { getInternalTransfersByDate, deleteInternalTransfer, type InternalTransfer } from "@/app/actions/internal-transfers";
 import { InternalTransferModal } from "@/components/banking/InternalTransferModal";
 import { ByteDayActionsBar } from "@/components/banking/ByteDayActionsBar";
@@ -49,9 +50,13 @@ type ExpenseItem = {
     ruleId: string;
     atelierAmount: number;
     fonaviAmount: number;
-    atelierPercentage: number;
-    fonaviPercentage: number;
+    atelierPercentage?: number;
+    fonaviPercentage?: number;
   };
+  // Notas existentes (no editables inline; se preservan al guardar)
+  notes?: string | null;
+  // Espejo auto-generado de un compartido de Atelier (solo en Fonavi)
+  isMirror?: boolean;
 };
 
 type ClientOption = { id: string; name: string };
@@ -203,6 +208,10 @@ export function RegistroForm({
   const [editConcept, setEditConcept] = useState("");
   const [editCategory, setEditCategory] = useState("");
   const [editMethod, setEditMethod] = useState("");
+  // Condición de compartido en la edición inline (solo Atelier)
+  const [editSharedOn, setEditSharedOn] = useState(false);
+  const [editSharedRuleId, setEditSharedRuleId] = useState("");
+  const [editFonaviPart, setEditFonaviPart] = useState("");
   const [editClient, setEditClient] = useState("");
   const [editNote, setEditNote] = useState("");
 
@@ -341,6 +350,15 @@ export function RegistroForm({
           amount: Number(exp.amount),
           paymentMethod: (exp.payment_method as string) || "transferencia",
           isNew: false,
+          notes: (exp.notes as string) || null,
+          isMirror: !!exp.linked_atelier_expense_id,
+          shared: exp.is_shared
+            ? {
+                ruleId: (exp.shared_rule_id as string) || "",
+                atelierAmount: exp.atelier_amount != null ? Number(exp.atelier_amount) : Number(exp.amount),
+                fonaviAmount: exp.fonavi_amount != null ? Number(exp.fonavi_amount) : 0,
+              }
+            : undefined,
         })));
       } else {
         setExpensesList([]);
@@ -429,6 +447,26 @@ export function RegistroForm({
     setEditConcept(item.concept);
     setEditCategory(item.category);
     setEditMethod(item.paymentMethod);
+    setEditSharedOn(!!item.shared);
+    setEditSharedRuleId(item.shared?.ruleId || "");
+    setEditFonaviPart(item.shared ? item.shared.fonaviAmount.toFixed(2) : "");
+  }
+
+  // Default de la parte de Fonavi en la edición inline, según la regla
+  // elegida y el monto (mismo cálculo que al crear; editable a mano).
+  function recomputeEditFonaviDefault(ruleId: string, amountStr: string) {
+    const rule = sharedRules.find((r) => r.id === ruleId);
+    const amt = parseFloat(amountStr);
+    if (!rule || !Number.isFinite(amt) || amt <= 0) return;
+    const split = computeSharedSplit(
+      {
+        splitMode: rule.split_mode === "fixed" ? "fixed" : "percentage",
+        atelierPercentage: rule.atelier_percentage,
+        atelierFixed: rule.atelier_fixed,
+      },
+      amt,
+    );
+    setEditFonaviPart(split.fonavi.toFixed(2));
   }
 
   async function saveEditIncome(item: IncomeItem) {
@@ -453,17 +491,51 @@ export function RegistroForm({
 
   async function saveEditExpense(item: ExpenseItem) {
     const newAmount = parseFloat(editAmount) || item.amount;
-    // Update local state
-    setExpensesList(expensesList.map((e) =>
-      e.id === item.id
-        ? { ...e, amount: newAmount, concept: editConcept, category: editCategory, paymentMethod: editMethod }
-        : e
-    ));
-    // Update in DB if saved
+    const canEditShared = isAtelier && !item.isMirror;
+
+    // Validar la condición de compartido antes de tocar nada
+    let nextShared: ExpenseItem["shared"] = undefined;
+    if (canEditShared && editSharedOn) {
+      const f = parseFloat(editFonaviPart);
+      if (!editSharedRuleId) { showToast("Selecciona la regla de gasto compartido", "error"); return; }
+      if (!Number.isFinite(f) || f <= 0) { showToast("Ingresa la parte de Fonavi (mayor a 0)", "error"); return; }
+      if (f >= newAmount) { showToast("La parte de Fonavi debe ser menor al monto total", "error"); return; }
+      nextShared = {
+        ruleId: editSharedRuleId,
+        fonaviAmount: Math.round(f * 100) / 100,
+        atelierAmount: Math.round((newAmount - f) * 100) / 100,
+      };
+    }
+
+    // Update in DB if saved (action canónica: maneja crear/ajustar/quitar
+    // el por cobrar y el gasto-espejo en transacción)
     if (item.dbId) {
-      await updateExpense(item.dbId, { amount: newAmount, concept: editConcept, category: editCategory, paymentMethod: editMethod });
+      const result = await updateExpenseFull(item.dbId, {
+        amount: newAmount,
+        concept: editConcept,
+        category: editCategory,
+        paymentMethod: editMethod,
+        notes: item.notes ?? null,
+        ...(canEditShared
+          ? { shared: editSharedOn ? { ruleId: editSharedRuleId, fonaviAmount: nextShared!.fonaviAmount } : null }
+          : {}),
+      });
+      if (!result.success) { showToast(result.error, "error"); return; }
       await refreshBankBalance();
     }
+    // Update local state (refleja también la condición de compartido)
+    setExpensesList(expensesList.map((e) =>
+      e.id === item.id
+        ? {
+            ...e,
+            amount: newAmount,
+            concept: editConcept,
+            category: editCategory,
+            paymentMethod: editMethod,
+            ...(canEditShared ? { shared: nextShared } : {}),
+          }
+        : e
+    ));
     setEditingId(null);
   }
 
@@ -616,6 +688,15 @@ export function RegistroForm({
         amount: Number(exp.amount),
         paymentMethod: (exp.payment_method as string) || "transferencia",
         isNew: false,
+        notes: (exp.notes as string) || null,
+        isMirror: !!exp.linked_atelier_expense_id,
+        shared: exp.is_shared
+          ? {
+              ruleId: (exp.shared_rule_id as string) || "",
+              atelierAmount: exp.atelier_amount != null ? Number(exp.atelier_amount) : Number(exp.amount),
+              fonaviAmount: exp.fonavi_amount != null ? Number(exp.fonavi_amount) : 0,
+            }
+          : undefined,
       })));
       router.refresh();
       // router.refresh solo invalida Server Components; el hook
@@ -1209,7 +1290,11 @@ export function RegistroForm({
                       editingId === item.id ? (
                         <div key={item.id} className="px-4 py-3 bg-red-50 space-y-2">
                           <div className="flex items-center gap-2">
-                            <input type="number" step="0.01" min="0.01" inputMode="decimal" value={editAmount} onChange={(e) => setEditAmount(e.target.value)}
+                            <input type="number" step="0.01" min="0.01" inputMode="decimal" value={editAmount}
+                              onChange={(e) => {
+                                setEditAmount(e.target.value);
+                                if (editSharedOn && editSharedRuleId) recomputeEditFonaviDefault(editSharedRuleId, e.target.value);
+                              }}
                               className="w-24 border border-gray-300 rounded px-2 py-1 text-sm" autoFocus />
                             <select value={editCategory} onChange={(e) => setEditCategory(e.target.value)}
                               className="flex-1 border border-gray-300 rounded px-2 py-1 text-sm">
@@ -1228,6 +1313,51 @@ export function RegistroForm({
                             <button onClick={() => saveEditExpense(item)} className="text-primary-light p-1"><Check className="w-4 h-4" /></button>
                             <button onClick={() => setEditingId(null)} className="text-gray-400 p-1"><X className="w-4 h-4" /></button>
                           </div>
+                          {/* Condición de compartido con Fonavi (solo Atelier; espejos no) */}
+                          {isAtelier && !item.isMirror && (
+                            <div className="bg-violet-50 border border-violet-100 rounded px-2 py-1.5 space-y-1.5">
+                              <label className="flex items-center gap-1.5 cursor-pointer text-xs text-violet-900">
+                                <input type="checkbox" checked={editSharedOn}
+                                  onChange={(e) => {
+                                    const next = e.target.checked;
+                                    setEditSharedOn(next);
+                                    if (next && !editSharedRuleId) {
+                                      const rules = sharedRules.filter((r) => r.category_name === editCategory);
+                                      if (rules.length === 1) {
+                                        setEditSharedRuleId(rules[0].id);
+                                        recomputeEditFonaviDefault(rules[0].id, editAmount);
+                                      }
+                                    }
+                                  }}
+                                  className="rounded text-violet-600" />
+                                <span className="font-medium">Compartido con Fonavi</span>
+                              </label>
+                              {editSharedOn && (
+                                <div className="flex items-center gap-2 flex-wrap">
+                                  <select value={editSharedRuleId}
+                                    onChange={(e) => { setEditSharedRuleId(e.target.value); if (e.target.value) recomputeEditFonaviDefault(e.target.value, editAmount); }}
+                                    className="border border-violet-200 rounded px-2 py-1 text-xs bg-white max-w-[180px]">
+                                    <option value="">— Regla —</option>
+                                    {sharedRules.filter((r) => r.category_name === editCategory).map((r) => (
+                                      <option key={r.id} value={r.id}>
+                                        {r.concept} {r.split_mode === "fixed" ? `(S/${(r.atelier_fixed ?? 0).toFixed(0)} fijo)` : `(${r.atelier_percentage}%/${r.fonavi_percentage}%)`}
+                                      </option>
+                                    ))}
+                                  </select>
+                                  <span className="text-xs text-violet-800 whitespace-nowrap">Fonavi: S/</span>
+                                  <input type="number" step="0.01" min="0.01" inputMode="decimal" value={editFonaviPart}
+                                    onChange={(e) => setEditFonaviPart(e.target.value)}
+                                    className="w-20 border border-violet-200 rounded px-2 py-1 text-xs text-right bg-white" />
+                                </div>
+                              )}
+                              {!editSharedOn && item.shared && (
+                                <div className="text-[11px] text-amber-700">Al guardar se eliminarán el por cobrar y el gasto espejo.</div>
+                              )}
+                              {editSharedOn && !item.shared && (
+                                <div className="text-[11px] text-violet-600">Al guardar se crearán el por cobrar a Fonavi y su gasto espejo.</div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       ) : (
                         <div key={item.id}
@@ -1247,6 +1377,12 @@ export function RegistroForm({
                               {item.concept}
                               {isToRegularize(item) && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-yellow-200 text-yellow-800 font-medium animate-pulse">Regularizar</span>
+                              )}
+                              {item.shared && (
+                                <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-medium"
+                                  title={`Gasto compartido: tu parte S/ ${item.shared.atelierAmount.toFixed(2)} · por cobrar a Fonavi S/ ${item.shared.fonaviAmount.toFixed(2)}`}>
+                                  Compartido · Fonavi {formatCurrency(item.shared.fonaviAmount)}
+                                </span>
                               )}
                             </div>
                             <div className="text-xs text-gray-500 flex items-center gap-2">

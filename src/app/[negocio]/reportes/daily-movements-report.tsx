@@ -72,6 +72,11 @@ type ExpenseRow = {
   notes: string | null;
   payment_method: string | null;
   bcpVerifiedAt: string | null;
+  // Condición de compartido (para editar desde el modal; solo Atelier)
+  is_shared?: boolean;
+  shared_rule_id?: string | null;
+  fonavi_amount?: number | null;
+  linked_atelier_expense_id?: string | null;
 };
 
 type DayBlock = {
@@ -185,6 +190,10 @@ export function DailyMovementsReport() {
           notes: (r.notes as string) || null,
           payment_method: (r.payment_method as string) || null,
           bcpVerifiedAt: (r.bcp_verified_at as string) || null,
+          is_shared: !!r.is_shared,
+          shared_rule_id: (r.shared_rule_id as string) || null,
+          fonavi_amount: r.fonavi_amount != null ? Number(r.fonavi_amount) : null,
+          linked_atelier_expense_id: (r.linked_atelier_expense_id as string) || null,
         })),
       );
     } else {
@@ -817,6 +826,10 @@ function DayCard({
                                 paymentMethod:
                                   e.payment_method || "transferencia",
                                 notes: e.notes,
+                                isShared: !!e.is_shared,
+                                sharedRuleId: e.shared_rule_id ?? null,
+                                fonaviAmount: e.fonavi_amount ?? null,
+                                isMirror: !!e.linked_atelier_expense_id,
                               })
                             }
                             className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-400"
