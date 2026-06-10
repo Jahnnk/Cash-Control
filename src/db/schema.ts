@@ -330,6 +330,31 @@ export const budgets = pgTable(
 );
 
 /**
+ * Adjuntos (constancias de pago) por movimiento — multi-tenant.
+ * `url` guarda el PATHNAME del archivo en el Blob PRIVADO de Vercel
+ * (yayis-adjuntos): no hay URLs públicas permanentes; la lectura usa
+ * URLs firmadas temporales (ver src/lib/blob-storage.ts).
+ */
+export const attachments = pgTable(
+  "attachments",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
+    recordType: text("record_type").notNull(), // 'expense' | 'income'
+    recordId: uuid("record_id").notNull(),
+    url: text("url").notNull(), // pathname en el Blob privado
+    filename: text("filename").notNull(),
+    contentType: text("content_type").notNull(),
+    sizeBytes: integer("size_bytes").notNull(),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    recordIdx: index("idx_attachments_record").on(t.recordType, t.recordId),
+    businessIdx: index("idx_attachments_business").on(t.businessId),
+  })
+);
+
+/**
  * Auditoría de ediciones/eliminaciones (multi-tenant).
  */
 export const auditLog = pgTable(

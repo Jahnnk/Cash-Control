@@ -7,6 +7,8 @@ import { computeSharedSplit } from "@/lib/shared-split";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
 import { createSingleFlight } from "@/lib/single-flight";
 import { useToast } from "@/components/toast-provider";
+import { AttachmentsModal } from "@/components/attachments/attachments-modal";
+import { getAttachmentCounts, type AttachmentRecordType } from "@/app/actions/attachments";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { saveBankIncomeItems, getBankIncomeItems, updateBankIncomeItem, deleteBankIncomeItem, reorderBankIncomeItems } from "@/app/actions/bank-income";
 import { createExpense, deleteExpense, getExpensesByDate, reorderExpenses } from "@/app/actions/expenses";
@@ -14,7 +16,7 @@ import { updateExpense as updateExpenseFull } from "@/app/actions/record-edits";
 import { getInternalTransfersByDate, deleteInternalTransfer, type InternalTransfer } from "@/app/actions/internal-transfers";
 import { InternalTransferModal } from "@/components/banking/InternalTransferModal";
 import { ByteDayActionsBar } from "@/components/banking/ByteDayActionsBar";
-import { ArrowRightLeft, AlertTriangle } from "lucide-react";
+import { ArrowRightLeft, AlertTriangle, Paperclip } from "lucide-react";
 import { ResumenByteB2C } from "./resumen-byte-b2c";
 import { formatCurrency, getToday, formatDate } from "@/lib/utils";
 import { useRouter, usePathname } from "next/navigation";
@@ -210,6 +212,9 @@ export function RegistroForm({
   const [editMethod, setEditMethod] = useState("");
   // Condición de compartido en la edición inline (solo Atelier)
   const [editSharedOn, setEditSharedOn] = useState(false);
+  // Adjuntos (constancias): modal + conteos por movimiento guardado ("tipo:dbId")
+  const [attachTarget, setAttachTarget] = useState<{ recordType: AttachmentRecordType; recordId: string; title: string } | null>(null);
+  const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
   const [editSharedRuleId, setEditSharedRuleId] = useState("");
   const [editFonaviPart, setEditFonaviPart] = useState("");
   const [editClient, setEditClient] = useState("");
@@ -365,6 +370,19 @@ export function RegistroForm({
       }
 
       setLoading(false);
+
+      // Conteos de adjuntos (clip 📎) en lote, solo para items guardados
+      const incIds = items.map((i) => i.id as string);
+      const expIds = existingExpenses.map((e) => e.id as string);
+      void Promise.all([
+        getAttachmentCounts("income", incIds),
+        getAttachmentCounts("expense", expIds),
+      ]).then(([incCounts, expCounts]) => {
+        const merged: Record<string, number> = {};
+        for (const [id, n] of Object.entries(incCounts)) merged[`income:${id}`] = n;
+        for (const [id, n] of Object.entries(expCounts)) merged[`expense:${id}`] = n;
+        setAttachCounts(merged);
+      });
     });
   }, [date]);
 
@@ -1276,6 +1294,16 @@ export function RegistroForm({
                           </div>
                           <div className="text-sm font-bold text-primary-light ml-3">+{formatCurrency(item.amount)}</div>
                           <div className="flex items-center ml-2 opacity-0 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+                            {item.dbId && (
+                              <button onClick={() => setAttachTarget({ recordType: "income", recordId: item.dbId!, title: item.clientId ? `Pago de ${item.clientName}` : (item.note || "Ingreso") })}
+                                className={`p-0.5 pointer-coarse:p-2 relative ${attachCounts[`income:${item.dbId}`] ? "text-violet-600" : "text-gray-400 hover:text-violet-600"}`}
+                                title="Constancias (imagen del pago / PDF)">
+                                <Paperclip className="w-3.5 h-3.5" />
+                                {(attachCounts[`income:${item.dbId}`] ?? 0) > 0 && (
+                                  <span className="absolute -top-0.5 -right-0.5 text-[8px] bg-violet-600 text-white rounded-full w-3 h-3 flex items-center justify-center leading-none">{attachCounts[`income:${item.dbId}`]}</span>
+                                )}
+                              </button>
+                            )}
                             <button onClick={() => startEditIncome(item)}
                               className="text-gray-400 hover:text-primary-light p-0.5 pointer-coarse:p-2"><Pencil className="w-3.5 h-3.5" /></button>
                             <button onClick={() => handleDeleteIncome(item)}
@@ -1415,6 +1443,16 @@ export function RegistroForm({
                               </span>
                             ) : (
                               <>
+                                {item.dbId && (
+                                  <button onClick={() => setAttachTarget({ recordType: "expense", recordId: item.dbId!, title: item.concept })}
+                                    className={`p-0.5 pointer-coarse:p-2 relative ${attachCounts[`expense:${item.dbId}`] ? "text-violet-600" : "text-gray-400 hover:text-violet-600"}`}
+                                    title="Constancias (imagen del pago / PDF)">
+                                    <Paperclip className="w-3.5 h-3.5" />
+                                    {(attachCounts[`expense:${item.dbId}`] ?? 0) > 0 && (
+                                      <span className="absolute -top-0.5 -right-0.5 text-[8px] bg-violet-600 text-white rounded-full w-3 h-3 flex items-center justify-center leading-none">{attachCounts[`expense:${item.dbId}`]}</span>
+                                    )}
+                                  </button>
+                                )}
                                 <button onClick={() => startEditExpense(item)}
                                   className="text-gray-400 hover:text-primary-light p-0.5 pointer-coarse:p-2"><Pencil className="w-3.5 h-3.5" /></button>
                                 <button onClick={() => handleDeleteExpense(item)}
@@ -1554,6 +1592,19 @@ export function RegistroForm({
           {saving ? "Guardando..." : "Guardar todo"}
         </button>
       </div>
+
+      {/* Modal de constancias (adjuntos) */}
+      {attachTarget && (
+        <AttachmentsModal
+          recordType={attachTarget.recordType}
+          recordId={attachTarget.recordId}
+          title={attachTarget.title}
+          onClose={() => setAttachTarget(null)}
+          onCountChange={(n) =>
+            setAttachCounts((prev) => ({ ...prev, [`${attachTarget.recordType}:${attachTarget.recordId}`]: n }))
+          }
+        />
+      )}
 
       {/* Confirmación destructiva — SIEMPRE, en los 3 negocios.
           FIX: este render seguía gateado a isAtelier; tras quitar el gate del
