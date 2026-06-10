@@ -36,7 +36,7 @@ export async function getFonaviPartnerReport(month: string): Promise<PartnerRepo
            COALESCE(fr.status, 'sin registro') AS receivable_status,
            COALESCE(fr.amount_collected, 0)::float AS collected
     FROM expenses e
-    LEFT JOIN fonavi_receivables fr ON fr.expense_id = e.id
+    LEFT JOIN fonavi_receivables fr ON fr.expense_id = e.id AND fr.debtor_business_id = 2
     WHERE e.business_id = ${ATELIER_ID} AND e.is_shared = true AND e.archived = false
       AND e.date >= ${start} AND e.date <= ${end}
     ORDER BY e.date ASC
@@ -85,7 +85,7 @@ export async function getFonaviPartnerReport(month: string): Promise<PartnerRepo
   // 4. Saldo por cobrar total al momento de generar
   const pendingRows = (await sql`
     SELECT COALESCE(SUM(amount_due - amount_collected), 0)::float AS total
-    FROM fonavi_receivables WHERE status != 'collected'
+    FROM fonavi_receivables WHERE status != 'collected' AND debtor_business_id = 2
   `) as { total: number }[];
 
   const sharedExpenses = expRows.map((r) => ({

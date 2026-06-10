@@ -38,6 +38,7 @@ const NAV: NavItem[] = [
   { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro"] },
   { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },
   { segment: "fonavi",        label: "Fonavi",          icon: Handshake,       scopes: ["atelier"] },
+  { segment: "centro-cxc",    label: "Centro",          icon: Handshake,       scopes: ["atelier"] },
   { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote,      scopes: ["atelier"] },
   { segment: "propinas",      label: "Propinas",        icon: HandCoins,       scopes: ["atelier", "fonavi", "centro"] },
   { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },

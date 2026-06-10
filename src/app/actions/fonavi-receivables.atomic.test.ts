@@ -9,18 +9,22 @@
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
 
-type FakeQuery = { text: string; awaited: boolean };
+type FakeQuery = { text: string; awaited: boolean; values?: unknown[] };
 
 const fake = vi.hoisted(() => {
   const state = {
     queries: [] as FakeQuery[],
     txCalls: [] as FakeQuery[][],
     failOnTxCall: 0 as number, // 0 = nunca; 1 = primera transacción; 2 = segunda…
+    // deudor que devuelven las receivables en la pre-validación
+    debtors: [2] as number[],
   };
-  // Respuestas de las LECTURAS (awaited directo), por contenido de la query.
+  let debtorCursor = 0;
   const respond = (text: string): unknown[] => {
     if (text.includes("amount_due::float as due")) {
-      return [{ due: 100, col: 0, status: "pending" }]; // pre-validación
+      const debtor = state.debtors[Math.min(debtorCursor, state.debtors.length - 1)];
+      debtorCursor++;
+      return [{ due: 100, col: 0, status: "pending", debtor }]; // pre-validación
     }
     if (text.includes("RETURNING id")) {
       return [{ id: "11111111-1111-1111-1111-111111111111" }]; // income insert
@@ -28,14 +32,16 @@ const fake = vi.hoisted(() => {
     if (text.includes("status = 'collected'")) {
       return [{ id: "22222222-2222-2222-2222-222222222222" }]; // cobradas
     }
-    if (text.includes("date::text AS date FROM expenses")) {
-      return [{ date: "2026-06-01" }]; // fechas de espejos
+    if (text.includes("business_id::int AS business_id FROM expenses")) {
+      // fechas + local de los espejos (el local = deudor configurado)
+      return [{ date: "2026-06-01", business_id: state.debtors[0] }];
     }
     return [];
   };
+  const resetCursor = () => { debtorCursor = 0; };
   const makeTag = () => {
-    const tag = (strings: TemplateStringsArray, ..._values: unknown[]) => {
-      const q: FakeQuery = { text: strings.join(" $ "), awaited: false };
+    const tag = (strings: TemplateStringsArray, ...values: unknown[]) => {
+      const q: FakeQuery = { text: strings.join(" $ "), awaited: false, values };
       state.queries.push(q);
       return {
         q,
@@ -54,7 +60,7 @@ const fake = vi.hoisted(() => {
     };
     return tag;
   };
-  return { state, makeTag };
+  return { state, makeTag, resetCursor };
 });
 
 vi.mock("@neondatabase/serverless", () => ({ neon: () => fake.makeTag() }));
@@ -77,6 +83,8 @@ beforeEach(() => {
   fake.state.queries.length = 0;
   fake.state.txCalls.length = 0;
   fake.state.failOnTxCall = 0;
+  fake.state.debtors = [2];
+  fake.resetCursor();
   vi.mocked(recalcBankBalance).mockClear();
 });
 
@@ -128,6 +136,35 @@ describe("registerFonaviReimbursement — atomicidad de la cascada", () => {
     // El recálculo de ATELIER (post-cobro, pre-cascada) sí corrió — el cobro
     // quedó registrado y consistente; solo la cascada de Fonavi se revirtió.
     expect(recalcBankBalance).toHaveBeenCalledWith("2026-06-09");
+  });
+
+  it("CENTRO como deudor: el espejo y la cascada van al negocio 3 (generalizado)", async () => {
+    fake.state.debtors = [3];
+    const r = await registerFonaviReimbursement(DATA);
+    expect(r.success).toBe(true);
+    const cascade = fake.state.txCalls[1];
+    // la cascada del deudor va parametrizada con business_id = 3
+    const paramQueries = cascade.filter((q) => q.text.includes("INSERT INTO daily_records") || q.text.includes("WITH RECURSIVE chain"));
+    expect(paramQueries.length).toBeGreaterThan(0);
+    for (const q of paramQueries) {
+      expect(q.values).toContain(3);
+      expect(q.values).not.toContain(2);
+    }
+  });
+
+  it("cuentas de locales DISTINTOS en un mismo reembolso → error claro, nada se escribe", async () => {
+    fake.state.debtors = [2, 3];
+    const r = await registerFonaviReimbursement({
+      ...DATA,
+      totalAmount: 200,
+      allocations: [
+        { receivableId: "22222222-2222-2222-2222-222222222222", amount: 100 },
+        { receivableId: "33333333-3333-3333-3333-333333333333", amount: 100 },
+      ],
+    });
+    expect(r.success).toBe(false);
+    if (!r.success) expect(r.error).toContain("locales distintos");
+    expect(fake.state.txCalls).toHaveLength(0);
   });
 
   it("fallo en la PRIMERA transacción (cobro) → error limpio y nada aplicado", async () => {

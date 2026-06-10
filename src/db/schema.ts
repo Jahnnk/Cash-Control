@@ -107,6 +107,8 @@ export const expenses = pgTable(
     sharedRuleId: uuid("shared_rule_id"),
     atelierAmount: numeric("atelier_amount", { precision: 10, scale: 2 }),
     fonaviAmount: numeric("fonavi_amount", { precision: 10, scale: 2 }),
+    // Parte de Centro en compartidos a 3 locales (NULL = no participa)
+    centroAmount: numeric("centro_amount", { precision: 10, scale: 2 }),
     // Auto-mirror Atelier→Fonavi (CAMBIO 7.5):
     // En el gasto-espejo de Fonavi, estas FKs apuntan al padre Atelier
     // y a la receivable. NULL en gastos normales o en el lado Atelier.
@@ -411,6 +413,13 @@ export const sharedExpenseRules = pgTable("shared_expense_rules", {
   concept: text("concept").notNull(),
   atelierPercentage: numeric("atelier_percentage", { precision: 5, scale: 2 }).notNull(),
   fonaviPercentage: numeric("fonavi_percentage", { precision: 5, scale: 2 }).notNull(),
+  // Reparto a 3 locales (0/NULL = Centro no participa)
+  centroPercentage: numeric("centro_percentage", { precision: 5, scale: 2 }).default("0").notNull(),
+  centroFixed: numeric("centro_fixed", { precision: 10, scale: 2 }),
+  // Modo de reparto (migración previa): 'percentage' | 'fixed'
+  splitMode: text("split_mode").default("percentage").notNull(),
+  atelierFixed: numeric("atelier_fixed", { precision: 10, scale: 2 }),
+  fonaviFixed: numeric("fonavi_fixed", { precision: 10, scale: 2 }),
   active: boolean("active").default(true).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
@@ -423,6 +432,9 @@ export const fonaviReceivables = pgTable("fonavi_receivables", {
   amountDue: numeric("amount_due", { precision: 10, scale: 2 }).notNull(),
   amountCollected: numeric("amount_collected", { precision: 10, scale: 2 }).default("0").notNull(),
   status: text("status").default("pending").notNull(),
+  // Local deudor: 2 = Fonavi (histórico/default), 3 = Centro. El nombre de
+  // la tabla quedó legacy: hoy guarda los por-cobrar de AMBAS cafeterías.
+  debtorBusinessId: integer("debtor_business_id").default(2).notNull(),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   collectedAt: timestamp("collected_at"),
 });

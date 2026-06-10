@@ -1,22 +1,26 @@
 import { Suspense } from "react";
 import { notFound } from "next/navigation";
 import { getFonaviReceivables } from "@/app/actions/fonavi-receivables";
-import { FonaviClient } from "./fonavi-client";
+import { FonaviClient } from "../fonavi/fonavi-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function FonaviPage({
+/**
+ * Cuentas por cobrar a CENTRO — exclusiva de Atelier, sección separada de
+ * Fonavi (decisión de Jahnn). Reusa el cliente generalizado del patrón
+ * Fonavi con deudor = Centro (id 3).
+ */
+export default async function CentroCxcPage({
   params,
 }: {
   params: Promise<{ negocio: string }>;
 }) {
   const { negocio } = await params;
-  // Cuentas por cobrar a Fonavi son exclusivas de Atelier.
   if (negocio !== "atelier") notFound();
-  const receivables = await getFonaviReceivables(true, 2);
+  const receivables = await getFonaviReceivables(true, 3);
   return (
     <Suspense fallback={<div className="p-8 text-center text-gray-500 text-sm">Cargando...</div>}>
-      <FonaviClient initialReceivables={receivables} debtor={{ id: 2, name: "Fonavi" }} />
+      <FonaviClient initialReceivables={receivables} debtor={{ id: 3, name: "Centro" }} />
     </Suspense>
   );
 }
