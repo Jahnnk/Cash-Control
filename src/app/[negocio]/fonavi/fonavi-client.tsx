@@ -80,16 +80,14 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Cuentas por cobrar a {debtor.name}</h1>
         <div className="flex items-center gap-2">
-          {debtor.id === 2 && (
-            <button
-              onClick={() => setPartnerReportOpen(true)}
-              className="border border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
-              title="PDF del mes con gastos compartidos, reembolsos y constancias adjuntas"
-            >
-              <FileDown className="w-4 h-4" />
-              Reporte para socia
-            </button>
-          )}
+          <button
+            onClick={() => setPartnerReportOpen(true)}
+            className="border border-violet-200 text-violet-700 bg-violet-50 hover:bg-violet-100 px-4 py-2 rounded-lg flex items-center gap-2 text-sm font-medium"
+            title="PDF del mes con gastos compartidos, reembolsos y constancias adjuntas"
+          >
+            <FileDown className="w-4 h-4" />
+            Reporte para socia
+          </button>
           <button
             onClick={() => setRegisterGeneric(true)}
             className="bg-violet-600 text-white px-4 py-2 rounded-lg hover:bg-violet-700 flex items-center gap-2 text-sm font-medium"
@@ -235,7 +233,7 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
       )}
 
       {partnerReportOpen && (
-        debtor.id === 2 && <PartnerReportModal onClose={() => setPartnerReportOpen(false)} />
+        <PartnerReportModal debtor={debtor} onClose={() => setPartnerReportOpen(false)} />
       )}
       {historyFor && (
         <ReimbursementHistoryModal

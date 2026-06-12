@@ -78,6 +78,7 @@ type ExpenseRow = {
   is_shared?: boolean;
   shared_rule_id?: string | null;
   fonavi_amount?: number | null;
+  centro_amount?: number | null;
   linked_atelier_expense_id?: string | null;
 };
 
@@ -198,6 +199,7 @@ export function DailyMovementsReport() {
           is_shared: !!r.is_shared,
           shared_rule_id: (r.shared_rule_id as string) || null,
           fonavi_amount: r.fonavi_amount != null ? Number(r.fonavi_amount) : null,
+          centro_amount: r.centro_amount != null ? Number(r.centro_amount) : null,
           linked_atelier_expense_id: (r.linked_atelier_expense_id as string) || null,
         })),
       );
@@ -889,6 +891,7 @@ function DayCard({
                                 isShared: !!e.is_shared,
                                 sharedRuleId: e.shared_rule_id ?? null,
                                 fonaviAmount: e.fonavi_amount ?? null,
+                                centroAmount: e.centro_amount ?? null,
                                 isMirror: !!e.linked_atelier_expense_id,
                               })
                             }

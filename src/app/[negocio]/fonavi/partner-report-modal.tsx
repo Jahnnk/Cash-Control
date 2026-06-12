@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { X, Loader2, FileDown } from "lucide-react";
-import { getFonaviPartnerReport } from "@/app/actions/partner-report";
+import { getPartnerReport } from "@/app/actions/partner-report";
 import {
   applyPartnerFilter,
   PARTNER_FILTER_LABELS,
@@ -72,7 +72,7 @@ async function buildPdf(data: PartnerReportData, filter: PartnerReportFilter, fi
 
   // ── Encabezado ──
   doc.setFont("helvetica", "bold").setFontSize(16).setTextColor(PRIMARY);
-  doc.text("Yayi's — Reporte Fonavi", margin, y); y += 7;
+  doc.text(`Yayi's — Reporte ${data.debtorName}`, margin, y); y += 7;
   doc.setFont("helvetica", "normal").setFontSize(11).setTextColor("#111827");
   const subtitle = filter === "todos"
     ? `Gastos compartidos y reembolsos · ${data.monthLabel}`
@@ -87,15 +87,15 @@ async function buildPdf(data: PartnerReportData, filter: PartnerReportFilter, fi
     head: [["Resumen del mes", "Monto"]],
     body: [
       [filter === "pendientes"
-        ? "Parte de Fonavi en compartidos PENDIENTES del mes"
+        ? `Parte de ${data.debtorName} en compartidos PENDIENTES del mes`
         : filter === "pagados"
-          ? "Parte de Fonavi en compartidos COBRADOS del mes"
-          : "Parte de Fonavi en gastos compartidos del mes",
+          ? `Parte de ${data.debtorName} en compartidos COBRADOS del mes`
+          : `Parte de ${data.debtorName} en gastos compartidos del mes`,
        formatCurrency(data.totals.fonaviPartMonth)],
       ...(filter !== "pendientes"
-        ? [["Reembolsos de Fonavi recibidos en el mes", formatCurrency(data.totals.reimbursedMonth)]]
+        ? [[`Reembolsos de ${data.debtorName} recibidos en el mes`, formatCurrency(data.totals.reimbursedMonth)]]
         : []),
-      [{ content: "Saldo total por cobrar a Fonavi (a hoy)", styles: { fontStyle: "bold" as const } },
+      [{ content: `Saldo total por cobrar a ${data.debtorName} (a hoy)`, styles: { fontStyle: "bold" as const } },
        { content: formatCurrency(data.totals.pendingNow), styles: { fontStyle: "bold" as const } }],
     ],
     margin: { left: margin, right: margin },
@@ -119,7 +119,7 @@ async function buildPdf(data: PartnerReportData, filter: PartnerReportFilter, fi
   } else {
     autoTable(doc, {
       startY: y + 2,
-      head: [["Fecha", "Concepto", "Total", "Parte Atelier", "Parte Fonavi", "Estado"]],
+      head: [["Fecha", "Concepto", "Total", "Parte Atelier", `Parte ${data.debtorName}`, "Estado"]],
       body: data.sharedExpenses.map((e) => [
         e.date, e.concept, formatCurrency(e.amountTotal),
         formatCurrency(e.atelierPart), formatCurrency(e.fonaviPart),
@@ -136,7 +136,7 @@ async function buildPdf(data: PartnerReportData, filter: PartnerReportFilter, fi
   if (filter !== "pendientes") {
   ensureSpace(14);
   doc.setFont("helvetica", "bold").setFontSize(12).setTextColor(PRIMARY);
-  doc.text(`Reembolsos recibidos de Fonavi · ${data.monthLabel}`, margin, y); y += 4;
+  doc.text(`Reembolsos recibidos de ${data.debtorName} · ${data.monthLabel}`, margin, y); y += 4;
   if (data.reimbursements.length === 0) {
     doc.setFont("helvetica", "normal").setFontSize(9).setTextColor(MUTED);
     y += 4; doc.text("Sin reembolsos este mes.", margin, y); y += 8;
@@ -207,7 +207,7 @@ async function buildPdf(data: PartnerReportData, filter: PartnerReportFilter, fi
   doc.save(filename);
 }
 
-export function PartnerReportModal({ onClose }: { onClose: () => void }) {
+export function PartnerReportModal({ debtor, onClose }: { debtor: { id: 2 | 3; name: string }; onClose: () => void }) {
   const { showToast } = useToast();
   const months = lastMonths(12);
   const [month, setMonth] = useState(months[0].value);
@@ -219,13 +219,13 @@ export function PartnerReportModal({ onClose }: { onClose: () => void }) {
     setWorking(true);
     try {
       setStatus("Recopilando movimientos y constancias…");
-      const fullData = await getFonaviPartnerReport(month);
+      const fullData = await getPartnerReport(month, debtor.id);
       const data = applyPartnerFilter(fullData, filter);
       // Pre-chequeo: filtro vacío → aviso claro, nunca un PDF en blanco
       if (data.sharedExpenses.length === 0 && data.reimbursements.length === 0) {
         const emptyMsg =
           filter === "pendientes"
-            ? `No hay pagos pendientes de Fonavi en ${data.monthLabel}. ¡Todo al día!`
+            ? `No hay pagos pendientes de ${debtor.name} en ${data.monthLabel}. ¡Todo al día!`
             : filter === "pagados"
               ? `No hay pagos ni reembolsos saldados en ${data.monthLabel}.`
               : `No hay gastos compartidos ni reembolsos en ${data.monthLabel}.`;
@@ -237,7 +237,7 @@ export function PartnerReportModal({ onClose }: { onClose: () => void }) {
         .reduce((s, x) => s + x.attachments.length, 0);
       setStatus(nImgs > 0 ? `Generando PDF (incrustando ${nImgs} constancias)…` : "Generando PDF…");
       const suffix = filter === "todos" ? "" : filter === "pendientes" ? "-Pendientes" : "-Pagados";
-      await buildPdf(data, filter, `Yayis-Fonavi-Reporte-Socia-${month}${suffix}.pdf`);
+      await buildPdf(data, filter, `Yayis-${debtor.name}-Reporte-Socia-${month}${suffix}.pdf`);
       showToast("Reporte descargado");
       onClose();
     } catch (e) {

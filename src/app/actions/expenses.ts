@@ -10,6 +10,7 @@ import { validateAmount, validateMovementDate } from "@/lib/money-validation";
 
 const ATELIER_ID = 1;
 const FONAVI_ID = 2;
+const CENTRO_ID = 3;
 
 export async function createExpense(data: {
   date: string;
@@ -19,10 +20,12 @@ export async function createExpense(data: {
   paymentMethod?: string;
   notes?: string;
   // Gastos compartidos solo aplican a Atelier (regla de negocio).
+  // centroAmount opcional: 0/omitido = Centro no participa (2 vías histórico).
   shared?: {
     ruleId: string;
     atelierAmount: number;
     fonaviAmount: number;
+    centroAmount?: number;
   };
 }) {
   const bId = await activeBusinessId();
@@ -36,12 +39,19 @@ export async function createExpense(data: {
 
   // Cross-tenant guard: solo Atelier puede registrar gastos compartidos
   if (data.shared && bId !== ATELIER_ID) {
-    throw new Error("Los gastos compartidos con Fonavi solo se registran desde Atelier");
+    throw new Error("Los gastos compartidos solo se registran desde Atelier");
   }
   if (data.shared) {
-    const totalSplit = Math.round((data.shared.atelierAmount + data.shared.fonaviAmount) * 100);
+    const centroAmt = data.shared.centroAmount ?? 0;
+    if (centroAmt < 0 || data.shared.fonaviAmount < 0 || data.shared.atelierAmount < 0) {
+      throw new Error("Las partes del reparto no pueden ser negativas");
+    }
+    if (data.shared.fonaviAmount <= 0 && centroAmt <= 0) {
+      throw new Error("Al menos una cafetería (Fonavi o Centro) debe tener una parte mayor a 0");
+    }
+    const totalSplit = Math.round((data.shared.atelierAmount + data.shared.fonaviAmount + centroAmt) * 100);
     if (totalSplit !== Math.round(data.amount * 100)) {
-      throw new Error("La suma de las partes (Atelier + Fonavi) debe igualar el monto total");
+      throw new Error("La suma de las partes (Atelier + Fonavi + Centro) debe igualar el monto total");
     }
   }
 
@@ -61,6 +71,7 @@ export async function createExpense(data: {
       sharedRuleId: null,
       atelierAmount: null,
       fonaviAmount: null,
+      centroAmount: null,
     });
     if (paymentMethod !== "efectivo") {
       await recalcBankBalance(data.date);
@@ -69,69 +80,94 @@ export async function createExpense(data: {
     return;
   }
 
-  // ───── CASO 2: gasto compartido — auto-mirror Atelier→Fonavi (atómico) ─────
-  // Una sola statement con CTE: si falla cualquier parte, ROLLBACK implícito.
+  // ───── CASO 2: gasto compartido — espejos en Fonavi y/o Centro (atómico) ─────
+  // Una sola statement con CTEs condicionales (INSERT … SELECT … WHERE parte > 0):
+  // si falla cualquier parte, ROLLBACK implícito. Hasta 2 por-cobrar + 2 espejos.
   const fonaviAmt = data.shared.fonaviAmount;
+  const centroAmt = data.shared.centroAmount ?? 0;
   const atelierAmt = data.shared.atelierAmount;
+  const hasFonavi = fonaviAmt > 0;
+  const hasCentro = centroAmt > 0;
   const result = await db.execute(sql`
     WITH atelier_ins AS (
       INSERT INTO expenses (
         business_id, date, category, concept, amount, payment_method,
-        notes, is_shared, shared_rule_id, atelier_amount, fonavi_amount
+        notes, is_shared, shared_rule_id, atelier_amount, fonavi_amount, centro_amount
       ) VALUES (
         ${ATELIER_ID}, ${data.date}, ${data.category}, ${data.concept}, ${data.amount.toFixed(2)},
         ${paymentMethod}, ${data.notes || null}, true, ${data.shared.ruleId},
-        ${atelierAmt.toFixed(2)}, ${fonaviAmt.toFixed(2)}
+        ${atelierAmt.toFixed(2)}, ${hasFonavi ? fonaviAmt.toFixed(2) : null}, ${hasCentro ? centroAmt.toFixed(2) : null}
       )
       RETURNING id
     ),
-    receivable_ins AS (
-      INSERT INTO fonavi_receivables (expense_id, amount_due, status)
-      SELECT id, ${fonaviAmt.toFixed(2)}, 'pending' FROM atelier_ins
+    receivable_f AS (
+      INSERT INTO fonavi_receivables (expense_id, amount_due, status, debtor_business_id)
+      SELECT id, ${fonaviAmt.toFixed(2)}, 'pending', ${FONAVI_ID} FROM atelier_ins WHERE ${hasFonavi}
       RETURNING id, expense_id
     ),
-    fonavi_category_lookup AS (
-      -- Si la categoría existe activa en Fonavi, úsala. Si no, fallback a 'Desconocido'.
+    receivable_c AS (
+      INSERT INTO fonavi_receivables (expense_id, amount_due, status, debtor_business_id)
+      SELECT id, ${centroAmt.toFixed(2)}, 'pending', ${CENTRO_ID} FROM atelier_ins WHERE ${hasCentro}
+      RETURNING id, expense_id
+    ),
+    cat_f AS (
       SELECT COALESCE(
         (SELECT name FROM expense_categories
           WHERE business_id = ${FONAVI_ID} AND name = ${data.category} AND is_active = true),
         'Desconocido'
       ) AS cat
     ),
-    mirror_ins AS (
+    cat_c AS (
+      SELECT COALESCE(
+        (SELECT name FROM expense_categories
+          WHERE business_id = ${CENTRO_ID} AND name = ${data.category} AND is_active = true),
+        'Desconocido'
+      ) AS cat
+    ),
+    mirror_f AS (
       INSERT INTO expenses (
         business_id, date, category, concept, amount, payment_method,
         notes, is_shared, linked_atelier_expense_id, linked_receivable_id
       )
       SELECT
-        ${FONAVI_ID},
-        ${data.date},
-        fcl.cat,
+        ${FONAVI_ID}, ${data.date}, cf.cat,
         ${"[Compartido con Atelier] " + data.concept},
-        ${fonaviAmt.toFixed(2)},
-        'pendiente_atelier',
-        'Auto-generado por gasto compartido en Atelier',
-        false,
-        a.id,
-        r.id
-      FROM atelier_ins a, receivable_ins r, fonavi_category_lookup fcl
+        ${fonaviAmt.toFixed(2)}, 'pendiente_atelier',
+        'Auto-generado por gasto compartido en Atelier', false,
+        a.id, r.id
+      FROM atelier_ins a, receivable_f r, cat_f cf
+      RETURNING id
+    ),
+    mirror_c AS (
+      INSERT INTO expenses (
+        business_id, date, category, concept, amount, payment_method,
+        notes, is_shared, linked_atelier_expense_id, linked_receivable_id
+      )
+      SELECT
+        ${CENTRO_ID}, ${data.date}, cc.cat,
+        ${"[Compartido con Atelier] " + data.concept},
+        ${centroAmt.toFixed(2)}, 'pendiente_atelier',
+        'Auto-generado por gasto compartido en Atelier', false,
+        a.id, r.id
+      FROM atelier_ins a, receivable_c r, cat_c cc
       RETURNING id
     )
     SELECT
       (SELECT id FROM atelier_ins) AS atelier_expense_id,
-      (SELECT id FROM receivable_ins) AS receivable_id,
-      (SELECT id FROM mirror_ins) AS fonavi_expense_id,
-      (SELECT cat FROM fonavi_category_lookup) AS fonavi_category_used
+      (SELECT COUNT(*) FROM receivable_f) + (SELECT COUNT(*) FROM receivable_c) AS receivables_creadas,
+      (SELECT cat FROM cat_f) AS fonavi_category_used,
+      (SELECT cat FROM cat_c) AS centro_category_used
   `);
 
-  const row = result.rows[0] as { fonavi_category_used: string };
-  if (row.fonavi_category_used === "Desconocido" && data.category !== "Desconocido") {
-    console.warn(
-      `[gasto compartido] Categoría '${data.category}' no existe activa en Fonavi → usado fallback 'Desconocido'.`
-    );
+  const row = result.rows[0] as { fonavi_category_used: string; centro_category_used: string };
+  if (hasFonavi && row.fonavi_category_used === "Desconocido" && data.category !== "Desconocido") {
+    console.warn(`[gasto compartido] Categoría '${data.category}' no existe activa en Fonavi → fallback 'Desconocido'.`);
+  }
+  if (hasCentro && row.centro_category_used === "Desconocido" && data.category !== "Desconocido") {
+    console.warn(`[gasto compartido] Categoría '${data.category}' no existe activa en Centro → fallback 'Desconocido'.`);
   }
 
-  // Recalcular saldo de Atelier (el de Fonavi NO cambia: el gasto-espejo es 'pendiente_atelier')
+  // Recalcular saldo de Atelier (los espejos no afectan el banco del deudor: son 'pendiente_atelier')
   if (paymentMethod !== "efectivo") {
     await recalcBankBalance(data.date);
   }

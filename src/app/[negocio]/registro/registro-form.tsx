@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance, updateCurrentBankBalance } from "@/app/actions/daily-records";
 import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
-import { computeSharedSplit } from "@/lib/shared-split";
+import { computeThreeWaySplit } from "@/lib/shared-split";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
 import { createSingleFlight } from "@/lib/single-flight";
 import { useToast } from "@/components/toast-provider";
@@ -52,6 +52,7 @@ type ExpenseItem = {
     ruleId: string;
     atelierAmount: number;
     fonaviAmount: number;
+    centroAmount?: number;
     atelierPercentage?: number;
     fonaviPercentage?: number;
   };
@@ -212,6 +213,7 @@ export function RegistroForm({
   const [editMethod, setEditMethod] = useState("");
   // Condición de compartido en la edición inline (solo Atelier)
   const [editSharedOn, setEditSharedOn] = useState(false);
+  const [editCentroPart, setEditCentroPart] = useState("");
   // Adjuntos (constancias): modal + conteos por movimiento guardado ("tipo:dbId")
   const [attachTarget, setAttachTarget] = useState<{ recordType: AttachmentRecordType; recordId: string; title: string } | null>(null);
   const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
@@ -250,8 +252,9 @@ export function RegistroForm({
   const [sharedRules, setSharedRules] = useState<SharedRule[]>([]);
   const [shareThisExpense, setShareThisExpense] = useState(true);
   const [selectedRuleId, setSelectedRuleId] = useState<string>(""); // cuando hay varias, el usuario elige
-  // "Por cobrar a Fonavi" editable: default según la regla y el monto, ajustable a mano
+  // Partes de Fonavi/Centro editables: default según la regla y el monto
   const [fonaviShareInput, setFonaviShareInput] = useState<string>("");
+  const [centroShareInput, setCentroShareInput] = useState<string>("");
   useEffect(() => {
     getSharedRules().then((rules) => setSharedRules(rules.filter((r) => r.active)));
   }, []);
@@ -279,17 +282,23 @@ export function RegistroForm({
   useEffect(() => {
     const amt = parseFloat(txAmount);
     if (activeRuleForCategory && shareThisExpense && Number.isFinite(amt) && amt > 0) {
-      const split = computeSharedSplit(
+      const split = computeThreeWaySplit(
         {
           splitMode: activeRuleForCategory.split_mode === "fixed" ? "fixed" : "percentage",
           atelierPercentage: activeRuleForCategory.atelier_percentage,
+          fonaviPercentage: activeRuleForCategory.fonavi_percentage,
+          centroPercentage: activeRuleForCategory.centro_percentage ?? 0,
           atelierFixed: activeRuleForCategory.atelier_fixed,
+          fonaviFixed: activeRuleForCategory.fonavi_fixed,
+          centroFixed: activeRuleForCategory.centro_fixed,
         },
         amt,
       );
-      setFonaviShareInput(split.fonavi.toFixed(2));
+      setFonaviShareInput(split.fonavi > 0 ? split.fonavi.toFixed(2) : "0");
+      setCentroShareInput(split.centro > 0 ? split.centro.toFixed(2) : "0");
     } else {
       setFonaviShareInput("");
+      setCentroShareInput("");
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [txAmount, selectedRuleId, shareThisExpense]);
@@ -362,6 +371,7 @@ export function RegistroForm({
                 ruleId: (exp.shared_rule_id as string) || "",
                 atelierAmount: exp.atelier_amount != null ? Number(exp.atelier_amount) : Number(exp.amount),
                 fonaviAmount: exp.fonavi_amount != null ? Number(exp.fonavi_amount) : 0,
+                centroAmount: exp.centro_amount != null ? Number(exp.centro_amount) : 0,
               }
             : undefined,
         })));
@@ -406,30 +416,23 @@ export function RegistroForm({
       const amountNum = parseFloat(txAmount);
       let shared: ExpenseItem["shared"] = undefined;
       if (activeRuleForCategory && shareThisExpense) {
-        // Default según la regla (porcentaje o monto fijo)…
-        const split = computeSharedSplit(
-          {
-            splitMode: activeRuleForCategory.split_mode === "fixed" ? "fixed" : "percentage",
-            atelierPercentage: activeRuleForCategory.atelier_percentage,
-            atelierFixed: activeRuleForCategory.atelier_fixed,
-          },
-          amountNum,
-        );
-        // …pero respetando el ajuste manual de "Por cobrar a Fonavi" si lo hubo.
-        let fonavi = split.fonavi;
-        const overridden = parseFloat(fonaviShareInput);
-        if (Number.isFinite(overridden) && overridden >= 0 && overridden <= amountNum) {
-          fonavi = Math.round(overridden * 100) / 100;
+        // Partes editables (defaults ya calculados por la regla en el useEffect)
+        const fonavi = Math.max(0, Math.round((parseFloat(fonaviShareInput) || 0) * 100) / 100);
+        const centro = Math.max(0, Math.round((parseFloat(centroShareInput) || 0) * 100) / 100);
+        if (fonavi + centro <= 0) {
+          showToast("Al menos una cafetería (Fonavi o Centro) debe tener una parte mayor a 0", "error");
+          return;
         }
-        const atelier = Math.round((amountNum - fonavi) * 100) / 100;
-        // Porcentajes efectivos (para mostrar), derivados del reparto real
-        const atelierPct = amountNum > 0 ? Math.round((atelier / amountNum) * 10000) / 100 : 0;
+        if (fonavi + centro > amountNum + 0.005) {
+          showToast("Las partes de Fonavi y Centro no pueden exceder el monto total", "error");
+          return;
+        }
+        const atelier = Math.round((amountNum - fonavi - centro) * 100) / 100;
         shared = {
           ruleId: activeRuleForCategory.id,
           atelierAmount: atelier,
           fonaviAmount: fonavi,
-          atelierPercentage: atelierPct,
-          fonaviPercentage: Math.round((100 - atelierPct) * 100) / 100,
+          centroAmount: centro,
         };
       }
       setExpensesList([...expensesList, {
@@ -468,6 +471,7 @@ export function RegistroForm({
     setEditSharedOn(!!item.shared);
     setEditSharedRuleId(item.shared?.ruleId || "");
     setEditFonaviPart(item.shared ? item.shared.fonaviAmount.toFixed(2) : "");
+    setEditCentroPart(item.shared ? (item.shared.centroAmount ?? 0).toFixed(2) : "");
   }
 
   // Default de la parte de Fonavi en la edición inline, según la regla
@@ -476,15 +480,20 @@ export function RegistroForm({
     const rule = sharedRules.find((r) => r.id === ruleId);
     const amt = parseFloat(amountStr);
     if (!rule || !Number.isFinite(amt) || amt <= 0) return;
-    const split = computeSharedSplit(
+    const split = computeThreeWaySplit(
       {
         splitMode: rule.split_mode === "fixed" ? "fixed" : "percentage",
         atelierPercentage: rule.atelier_percentage,
+        fonaviPercentage: rule.fonavi_percentage,
+        centroPercentage: rule.centro_percentage ?? 0,
         atelierFixed: rule.atelier_fixed,
+        fonaviFixed: rule.fonavi_fixed,
+        centroFixed: rule.centro_fixed,
       },
       amt,
     );
-    setEditFonaviPart(split.fonavi.toFixed(2));
+    setEditFonaviPart(split.fonavi > 0 ? split.fonavi.toFixed(2) : "0");
+    setEditCentroPart(split.centro > 0 ? split.centro.toFixed(2) : "0");
   }
 
   async function saveEditIncome(item: IncomeItem) {
@@ -514,14 +523,16 @@ export function RegistroForm({
     // Validar la condición de compartido antes de tocar nada
     let nextShared: ExpenseItem["shared"] = undefined;
     if (canEditShared && editSharedOn) {
-      const f = parseFloat(editFonaviPart);
+      const f = Math.max(0, parseFloat(editFonaviPart) || 0);
+      const c = Math.max(0, parseFloat(editCentroPart) || 0);
       if (!editSharedRuleId) { showToast("Selecciona la regla de gasto compartido", "error"); return; }
-      if (!Number.isFinite(f) || f <= 0) { showToast("Ingresa la parte de Fonavi (mayor a 0)", "error"); return; }
-      if (f >= newAmount) { showToast("La parte de Fonavi debe ser menor al monto total", "error"); return; }
+      if (f + c <= 0) { showToast("Al menos una cafetería (Fonavi o Centro) debe tener una parte mayor a 0", "error"); return; }
+      if (f + c > newAmount + 0.005) { showToast("Las partes de Fonavi y Centro no pueden exceder el monto total", "error"); return; }
       nextShared = {
         ruleId: editSharedRuleId,
         fonaviAmount: Math.round(f * 100) / 100,
-        atelierAmount: Math.round((newAmount - f) * 100) / 100,
+        centroAmount: Math.round(c * 100) / 100,
+        atelierAmount: Math.round((newAmount - f - c) * 100) / 100,
       };
     }
 
@@ -535,7 +546,7 @@ export function RegistroForm({
         paymentMethod: editMethod,
         notes: item.notes ?? null,
         ...(canEditShared
-          ? { shared: editSharedOn ? { ruleId: editSharedRuleId, fonaviAmount: nextShared!.fonaviAmount } : null }
+          ? { shared: editSharedOn ? { ruleId: editSharedRuleId, fonaviAmount: nextShared!.fonaviAmount, centroAmount: nextShared!.centroAmount ?? 0 } : null }
           : {}),
       });
       if (!result.success) { showToast(result.error, "error"); return; }
@@ -684,7 +695,7 @@ export function RegistroForm({
           amount: exp.amount,
           paymentMethod: exp.paymentMethod,
           shared: exp.shared
-            ? { ruleId: exp.shared.ruleId, atelierAmount: exp.shared.atelierAmount, fonaviAmount: exp.shared.fonaviAmount }
+            ? { ruleId: exp.shared.ruleId, atelierAmount: exp.shared.atelierAmount, fonaviAmount: exp.shared.fonaviAmount, centroAmount: exp.shared.centroAmount ?? 0 }
             : undefined,
         });
       }
@@ -713,6 +724,7 @@ export function RegistroForm({
               ruleId: (exp.shared_rule_id as string) || "",
               atelierAmount: exp.atelier_amount != null ? Number(exp.atelier_amount) : Number(exp.amount),
               fonaviAmount: exp.fonavi_amount != null ? Number(exp.fonavi_amount) : 0,
+              centroAmount: exp.centro_amount != null ? Number(exp.centro_amount) : 0,
             }
           : undefined,
       })));
@@ -1194,19 +1206,28 @@ export function RegistroForm({
                               {activeRuleForCategory && shareThisExpense && txAmount && parseFloat(txAmount) > 0 && (
                                 <div className="space-y-1">
                                   <div className="flex items-center gap-2 flex-wrap">
-                                    <span className="text-violet-700 whitespace-nowrap">Por cobrar a Fonavi: S/</span>
+                                    <span className="text-violet-700 whitespace-nowrap">Fonavi: S/</span>
                                     <input
                                       type="number" step="0.01" min="0" max={txAmount} inputMode="decimal"
                                       value={fonaviShareInput}
                                       onChange={(e) => setFonaviShareInput(e.target.value)}
                                       className="w-24 border border-violet-200 rounded-md px-2 py-1 text-xs text-right bg-white"
+                                      title="Parte de Fonavi (0 = no participa)"
+                                    />
+                                    <span className="text-violet-700 whitespace-nowrap">Centro: S/</span>
+                                    <input
+                                      type="number" step="0.01" min="0" max={txAmount} inputMode="decimal"
+                                      value={centroShareInput}
+                                      onChange={(e) => setCentroShareInput(e.target.value)}
+                                      className="w-24 border border-violet-200 rounded-md px-2 py-1 text-xs text-right bg-white"
+                                      title="Parte de Centro (0 = no participa)"
                                     />
                                     {activeRuleForCategory.split_mode === "fixed" && (
                                       <span className="text-violet-500 text-[11px]">regla por monto fijo (ajustable)</span>
                                     )}
                                   </div>
                                   <div className="text-violet-700">
-                                    Tu parte (Atelier): S/ {(Math.round((parseFloat(txAmount) - (parseFloat(fonaviShareInput) || 0)) * 100) / 100).toFixed(2)}
+                                    Tu parte (Atelier): S/ {(Math.round((parseFloat(txAmount) - (parseFloat(fonaviShareInput) || 0) - (parseFloat(centroShareInput) || 0)) * 100) / 100).toFixed(2)}
                                   </div>
                                 </div>
                               )}
@@ -1373,9 +1394,15 @@ export function RegistroForm({
                                     ))}
                                   </select>
                                   <span className="text-xs text-violet-800 whitespace-nowrap">Fonavi: S/</span>
-                                  <input type="number" step="0.01" min="0.01" inputMode="decimal" value={editFonaviPart}
+                                  <input type="number" step="0.01" min="0" inputMode="decimal" value={editFonaviPart}
                                     onChange={(e) => setEditFonaviPart(e.target.value)}
-                                    className="w-20 border border-violet-200 rounded px-2 py-1 text-xs text-right bg-white" />
+                                    className="w-20 border border-violet-200 rounded px-2 py-1 text-xs text-right bg-white"
+                                    title="Parte de Fonavi (0 = no participa)" />
+                                  <span className="text-xs text-violet-800 whitespace-nowrap">Centro: S/</span>
+                                  <input type="number" step="0.01" min="0" inputMode="decimal" value={editCentroPart}
+                                    onChange={(e) => setEditCentroPart(e.target.value)}
+                                    className="w-20 border border-violet-200 rounded px-2 py-1 text-xs text-right bg-white"
+                                    title="Parte de Centro (0 = no participa)" />
                                 </div>
                               )}
                               {!editSharedOn && item.shared && (
@@ -1408,8 +1435,8 @@ export function RegistroForm({
                               )}
                               {item.shared && (
                                 <span className="text-[10px] px-1.5 py-0.5 rounded bg-violet-100 text-violet-700 font-medium"
-                                  title={`Gasto compartido: tu parte S/ ${item.shared.atelierAmount.toFixed(2)} · por cobrar a Fonavi S/ ${item.shared.fonaviAmount.toFixed(2)}`}>
-                                  Compartido · Fonavi {formatCurrency(item.shared.fonaviAmount)}
+                                  title={`Gasto compartido: tu parte S/ ${item.shared.atelierAmount.toFixed(2)}${item.shared.fonaviAmount > 0 ? ` · Fonavi S/ ${item.shared.fonaviAmount.toFixed(2)}` : ""}${(item.shared.centroAmount ?? 0) > 0 ? ` · Centro S/ ${(item.shared.centroAmount ?? 0).toFixed(2)}` : ""}`}>
+                                  Compartido{item.shared.fonaviAmount > 0 ? ` · Fonavi ${formatCurrency(item.shared.fonaviAmount)}` : ""}{(item.shared.centroAmount ?? 0) > 0 ? ` · Centro ${formatCurrency(item.shared.centroAmount ?? 0)}` : ""}
                                 </span>
                               )}
                             </div>

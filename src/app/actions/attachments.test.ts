@@ -52,15 +52,16 @@ beforeEach(() => {
 });
 
 describe("listAttachments", () => {
-  it("devuelve URL FIRMADA temporal por adjunto (nunca el pathname crudo como URL)", async () => {
+  it("devuelve la URL del proxy same-origin por adjunto (nunca el pathname crudo)", async () => {
     fake.state.rows = [{
       id: "a1", pathname: "adjuntos/2/expense/e1/uuid-pago.jpg",
       filename: "pago.jpg", content_type: "image/jpeg", size_bytes: 120000, created_at: "2026-06-10",
     }];
     const items = await listAttachments("expense", "e1");
     expect(items).toHaveLength(1);
-    expect(items[0].signedUrl).toContain("firma=");
-    expect(items[0].signedUrl).toContain("adjuntos/2/expense/e1");
+    // Proxy same-origin (sesión + negocio verificados en el route handler);
+    // nunca el pathname crudo del blob privado.
+    expect(items[0].signedUrl).toBe("/api/attachments/a1");
     // scope por negocio en la query
     expect(fake.state.executed.some((q) => q.includes("business_id ="))).toBe(true);
   });

@@ -36,6 +36,8 @@ export type PartnerReimbursement = {
 export type PartnerReportData = {
   monthLabel: string;
   generatedAt: string;
+  /** Local del reporte: "Fonavi" | "Centro". */
+  debtorName: string;
   sharedExpenses: PartnerSharedExpense[];
   reimbursements: PartnerReimbursement[];
   totals: {

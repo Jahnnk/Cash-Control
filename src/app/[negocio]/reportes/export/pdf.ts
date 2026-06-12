@@ -141,7 +141,7 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
       ["Margen EBITDA", fmtPct(data.summary.ebitdaMargin)],
       [{ content: "Cómo se obtiene 'Egresos operativos':", styles: { fontStyle: "italic", textColor: MUTED } }, { content: "" }],
       ["Egresos brutos (desembolso total)", fmtMoney(data.summary.expensesGross)],
-      ["(-) Porción Fonavi de gastos compartidos (la reembolsa Fonavi)", fmtMoney(-data.summary.expensesFonaviShared)],
+      ["(-) Porción Fonavi/Centro de gastos compartidos (la reembolsan)", fmtMoney(-data.summary.expensesFonaviShared)],
       ["(-) Egresos financieros (excluidos del EBITDA)", fmtMoney(-data.summary.expensesFinancial)],
       [{ content: "= Egresos operativos", styles: { fontStyle: "bold" } }, { content: fmtMoney(data.summary.expensesOperative), styles: { fontStyle: "bold" } }],
     ],

@@ -48,6 +48,7 @@ import { applyPartnerFilter, type PartnerReportData } from "./partner-report";
 const BASE: PartnerReportData = {
   monthLabel: "Junio 2026",
   generatedAt: "10/06/2026",
+  debtorName: "Fonavi",
   sharedExpenses: [
     { date: "2026-06-06", category: "Local", concept: "Alquiler junio", amountTotal: 2700, atelierPart: 1800.09, fonaviPart: 899.91, receivableStatus: "collected", collected: 899.91, attachments: [{ filename: "pago.jpg", contentType: "image/jpeg", signedUrl: "https://x/1" }] },
     { date: "2026-06-08", category: "Servicios", concept: "Gas", amountTotal: 644.2, atelierPart: 450.94, fonaviPart: 193.26, receivableStatus: "pending", collected: 0, attachments: [] },

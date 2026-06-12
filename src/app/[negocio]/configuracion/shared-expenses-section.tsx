@@ -25,33 +25,23 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
   const [splitMode, setSplitMode] = useState<"percentage" | "fixed">("percentage");
   const [atelierPct, setAtelierPct] = useState("");
   const [fonaviPct, setFonaviPct] = useState("");
+  const [centroPct, setCentroPct] = useState("0");
   const [atelierFixed, setAtelierFixed] = useState("");
   const [fonaviFixed, setFonaviFixed] = useState("");
+  const [centroFixed, setCentroFixed] = useState(""); // vacío = Centro no participa
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   function resetForm() {
-    setCategoryId(""); setConcept(""); setAtelierPct(""); setFonaviPct("");
-    setSplitMode("percentage"); setAtelierFixed(""); setFonaviFixed("");
+    setCategoryId(""); setConcept(""); setAtelierPct(""); setFonaviPct(""); setCentroPct("0");
+    setSplitMode("percentage"); setAtelierFixed(""); setFonaviFixed(""); setCentroFixed("");
     setError(null);
     setEditingId(null);
     setUsageCount(0);
   }
 
-  function handleAtelier(v: string) {
-    setAtelierPct(v);
-    const n = parseFloat(v);
-    if (Number.isFinite(n) && n >= 0 && n <= 100) {
-      setFonaviPct((100 - n).toFixed(2).replace(/\.?0+$/, ""));
-    }
-  }
-  function handleFonavi(v: string) {
-    setFonaviPct(v);
-    const n = parseFloat(v);
-    if (Number.isFinite(n) && n >= 0 && n <= 100) {
-      setAtelierPct((100 - n).toFixed(2).replace(/\.?0+$/, ""));
-    }
-  }
+  // Suma en vivo de los 3 porcentajes (el server re-valida que sea 100)
+  const pctSum = (parseFloat(atelierPct) || 0) + (parseFloat(fonaviPct) || 0) + (parseFloat(centroPct) || 0);
 
   async function startEdit(rule: SharedRule) {
     setEditingId(rule.id);
@@ -60,8 +50,10 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
     setSplitMode(rule.split_mode === "fixed" ? "fixed" : "percentage");
     setAtelierPct(String(rule.atelier_percentage));
     setFonaviPct(String(rule.fonavi_percentage));
+    setCentroPct(String(rule.centro_percentage ?? 0));
     setAtelierFixed(rule.atelier_fixed != null ? String(rule.atelier_fixed) : "");
     setFonaviFixed(rule.fonavi_fixed != null ? String(rule.fonavi_fixed) : "");
+    setCentroFixed(rule.centro_fixed != null ? String(rule.centro_fixed) : "");
     setShowForm(true);
     setError(null);
     // Cargar conteo de egresos vinculados
@@ -74,13 +66,13 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
     if (!categoryId) { setError("Selecciona una categoría"); return; }
     if (!concept.trim()) { setError("Escribe un concepto"); return; }
 
-    const a = parseFloat(atelierPct), f = parseFloat(fonaviPct);
-    const af = parseFloat(atelierFixed), ff = parseFloat(fonaviFixed);
+    const a = parseFloat(atelierPct), f = parseFloat(fonaviPct), c = parseFloat(centroPct) || 0;
+    const af = parseFloat(atelierFixed), ff = parseFloat(fonaviFixed), cf = parseFloat(centroFixed);
     if (splitMode === "percentage" && (!Number.isFinite(a) || !Number.isFinite(f))) {
       setError("Porcentajes inválidos"); return;
     }
-    if (splitMode === "fixed" && (!Number.isFinite(af) || !Number.isFinite(ff))) {
-      setError("Ingresa los montos fijos de Atelier y Fonavi"); return;
+    if (splitMode === "fixed" && !Number.isFinite(af)) {
+      setError("Ingresa el monto fijo de Atelier"); return;
     }
 
     const input = {
@@ -89,15 +81,24 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
       splitMode,
       atelierPercentage: a,
       fonaviPercentage: f,
+      centroPercentage: c,
       atelierFixed: splitMode === "fixed" ? af : null,
-      fonaviFixed: splitMode === "fixed" ? ff : null,
+      fonaviFixed: splitMode === "fixed" && Number.isFinite(ff) ? ff : null,
+      centroFixed: splitMode === "fixed" && Number.isFinite(cf) ? cf : null,
     };
 
     setSaving(true);
-    const result = editingId
-      ? await updateSharedRule(editingId, input)
-      : await createSharedRule(input);
-    setSaving(false);
+    let result: { success: boolean; error?: string };
+    try {
+      result = editingId
+        ? await updateSharedRule(editingId, input)
+        : await createSharedRule(input);
+    } catch (e) {
+      // Si la action lanza (ej. constraint de BD), no dejar el botón colgado
+      result = { success: false, error: e instanceof Error ? e.message : "No se pudo guardar la regla. Intenta de nuevo." };
+    } finally {
+      setSaving(false);
+    }
     if (!result.success) { setError(result.error ?? "Error"); return; }
 
     resetForm();
@@ -113,11 +114,14 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
 
   function splitLabel(r: SharedRule): string {
     if (r.split_mode === "fixed") {
-      const a = r.atelier_fixed ?? 0;
-      const f = r.fonavi_fixed ?? 0;
-      return `Atelier S/${a.toFixed(2)} · Fonavi S/${f.toFixed(2)} (fijo)`;
+      const parts = [`Atelier S/${(r.atelier_fixed ?? 0).toFixed(2)}`];
+      if (r.fonavi_fixed != null) parts.push(`Fonavi S/${r.fonavi_fixed.toFixed(2)}`);
+      if (r.centro_fixed != null) parts.push(`Centro S/${r.centro_fixed.toFixed(2)}`);
+      return `${parts.join(" · ")} (fijo)`;
     }
-    return `${r.atelier_percentage}% / ${r.fonavi_percentage}%`;
+    const parts = [`${r.atelier_percentage}%`, `${r.fonavi_percentage}%`];
+    if ((r.centro_percentage ?? 0) > 0) parts.push(`${r.centro_percentage}% Centro`);
+    return parts.join(" / ");
   }
 
   // Agrupar reglas activas por categoría
@@ -134,7 +138,7 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
       <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
         <div className="flex items-center gap-2">
           <Handshake className="w-5 h-5 text-violet-600" />
-          <h2 className="text-base font-semibold text-gray-900">Gastos compartidos con Fonavi</h2>
+          <h2 className="text-base font-semibold text-gray-900">Gastos compartidos (Fonavi / Centro)</h2>
         </div>
         <button
           onClick={() => { if (showForm) { resetForm(); setShowForm(false); } else { setShowForm(true); } }}
@@ -147,7 +151,7 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
 
       <div className="p-6 space-y-4">
         <p className="text-xs text-gray-500">
-          Define qué gastos se comparten y en qué porcentaje. Una categoría puede tener varias reglas (un concepto distinto cada una).
+          Define qué gastos se comparten con Fonavi y/o Centro, y en qué proporción. Una categoría puede tener varias reglas (un concepto distinto cada una).
         </p>
 
         {showForm && (
@@ -202,22 +206,33 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
             </div>
 
             {splitMode === "percentage" ? (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">% Atelier</label>
-                  <input type="number" step="0.01" min="0" max="100" inputMode="decimal" value={atelierPct}
-                    onChange={(e) => handleAtelier(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 66.67" />
+              <div className="space-y-2">
+                <div className="grid grid-cols-3 gap-3">
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">% Atelier</label>
+                    <input type="number" step="0.01" min="0" max="100" inputMode="decimal" value={atelierPct}
+                      onChange={(e) => setAtelierPct(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 33.33" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">% Fonavi</label>
+                    <input type="number" step="0.01" min="0" max="100" inputMode="decimal" value={fonaviPct}
+                      onChange={(e) => setFonaviPct(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 33.33" />
+                  </div>
+                  <div>
+                    <label className="block text-xs font-medium text-gray-700 mb-1">% Centro</label>
+                    <input type="number" step="0.01" min="0" max="100" inputMode="decimal" value={centroPct}
+                      onChange={(e) => setCentroPct(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="0 = no participa" />
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">% Fonavi</label>
-                  <input type="number" step="0.01" min="0" max="100" inputMode="decimal" value={fonaviPct}
-                    onChange={(e) => handleFonavi(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 33.33" />
+                <div className={`text-xs font-medium ${Math.abs(pctSum - 100) < 0.005 ? "text-green-600" : "text-red-600"}`}>
+                  {Math.abs(pctSum - 100) < 0.005 ? "✓ Suma 100%" : `Suma ${pctSum.toFixed(2)}% — debe ser 100%`}
                 </div>
               </div>
             ) : (
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Monto fijo Atelier (S/)</label>
                   <input type="number" step="0.01" min="0" inputMode="decimal" value={atelierFixed}
@@ -228,10 +243,16 @@ export function SharedExpensesSection({ rules, categories }: { rules: SharedRule
                   <label className="block text-xs font-medium text-gray-700 mb-1">Monto fijo Fonavi (S/)</label>
                   <input type="number" step="0.01" min="0" inputMode="decimal" value={fonaviFixed}
                     onChange={(e) => setFonaviFixed(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="ej. 900.00" />
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="vacío = no participa" />
                 </div>
-                <div className="sm:col-span-2 text-xs text-violet-700">
-                  La parte de Atelier es fija; Fonavi se lleva el resto del monto registrado. Al registrar el gasto podrás ajustar los montos si ese mes varía.
+                <div>
+                  <label className="block text-xs font-medium text-gray-700 mb-1">Monto fijo Centro (S/)</label>
+                  <input type="number" step="0.01" min="0" inputMode="decimal" value={centroFixed}
+                    onChange={(e) => setCentroFixed(e.target.value)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" placeholder="vacío = no participa" />
+                </div>
+                <div className="sm:col-span-3 text-xs text-violet-700">
+                  La parte de Atelier es fija; el último local participante absorbe el resto del monto registrado (Centro si participa; si no, Fonavi). Al registrar el gasto podrás ajustar los montos.
                 </div>
               </div>
             )}
