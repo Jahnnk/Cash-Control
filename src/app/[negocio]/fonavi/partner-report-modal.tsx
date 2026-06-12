@@ -30,10 +30,16 @@ function lastMonths(n: number): { value: string; label: string }[] {
 }
 
 /** Descarga la constancia y la convierte a JPEG (canvas) para jsPDF. */
-async function fetchAsJpeg(att: ReportAttachment): Promise<{ dataUrl: string; w: number; h: number } | null> {
+type JpegResult = { ok: true; dataUrl: string; w: number; h: number } | { ok: false; reason: string };
+async function fetchAsJpeg(att: ReportAttachment): Promise<JpegResult> {
+  let res: Response;
   try {
-    const res = await fetch(att.signedUrl);
-    if (!res.ok) return null;
+    res = await fetch(att.signedUrl, { cache: "no-store" });
+  } catch {
+    return { ok: false, reason: "sin conexión al servidor" };
+  }
+  if (!res.ok) return { ok: false, reason: `el servidor respondió ${res.status}` };
+  try {
     const bmp = await createImageBitmap(await res.blob());
     const scale = Math.min(1, 1400 / Math.max(bmp.width, bmp.height));
     const canvas = document.createElement("canvas");
@@ -43,9 +49,9 @@ async function fetchAsJpeg(att: ReportAttachment): Promise<{ dataUrl: string; w:
     ctx.fillStyle = "#ffffff"; // fondo blanco para PNG/WebP con transparencia
     ctx.fillRect(0, 0, canvas.width, canvas.height);
     ctx.drawImage(bmp, 0, 0, canvas.width, canvas.height);
-    return { dataUrl: canvas.toDataURL("image/jpeg", 0.82), w: canvas.width, h: canvas.height };
+    return { ok: true, dataUrl: canvas.toDataURL("image/jpeg", 0.82), w: canvas.width, h: canvas.height };
   } catch {
-    return null;
+    return { ok: false, reason: "formato de imagen no soportado por el navegador" };
   }
 }
 
@@ -158,9 +164,11 @@ async function buildPdf(data: PartnerReportData, filter: PartnerReportFilter, fi
 
   }
 
-  // ── Constancias por transacción (en "pendientes" no hay pagos → sin constancias) ──
+  // ── Constancias por transacción (en TODOS los filtros: la constancia es
+  //    el comprobante del pago hecho por Atelier — en "Pendientes" es justo
+  //    lo que la socia necesita ver para reembolsar) ──
   type WithAtt = { title: string; attachments: ReportAttachment[] };
-  const blocks: WithAtt[] = filter === "pendientes" ? [] : [
+  const blocks: WithAtt[] = [
     ...data.sharedExpenses.filter((e) => e.attachments.length > 0)
       .map((e) => ({ title: `${e.date} · ${e.concept} · ${formatCurrency(e.amountTotal)}`, attachments: e.attachments })),
     ...data.reimbursements.filter((r) => r.attachments.length > 0)
@@ -180,9 +188,9 @@ async function buildPdf(data: PartnerReportData, filter: PartnerReportFilter, fi
       for (const att of block.attachments) {
         if (isImageType(att.contentType)) {
           const img = await fetchAsJpeg(att);
-          if (!img) {
+          if (!img.ok) {
             doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(MUTED);
-            ensureSpace(6); doc.text(`(No se pudo cargar: ${att.filename})`, margin, y); y += 5;
+            ensureSpace(6); doc.text(`(No se pudo cargar ${att.filename}: ${img.reason})`, margin, y); y += 5;
             continue;
           }
           // Escalar a ancho de página, alto máx. 110mm, respetando proporción
@@ -233,7 +241,7 @@ export function PartnerReportModal({ debtor, onClose }: { debtor: { id: 2 | 3; n
         setStatus(null);
         return;
       }
-      const nImgs = filter === "pendientes" ? 0 : [...data.sharedExpenses, ...data.reimbursements]
+      const nImgs = [...data.sharedExpenses, ...data.reimbursements]
         .reduce((s, x) => s + x.attachments.length, 0);
       setStatus(nImgs > 0 ? `Generando PDF (incrustando ${nImgs} constancias)…` : "Generando PDF…");
       const suffix = filter === "todos" ? "" : filter === "pendientes" ? "-Pendientes" : "-Pagados";
