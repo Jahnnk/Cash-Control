@@ -6,6 +6,7 @@ import { X, Loader2 } from "lucide-react";
 import { createBankIncomeItem } from "@/app/actions/bank-income";
 import { createExpense } from "@/app/actions/expenses";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
+import { LOAN_NON_OPERATIVE_CATEGORY } from "@/lib/loans";
 import { formatDateShort } from "@/lib/utils";
 
 type ClientOption = { id: string; name: string };
@@ -74,6 +75,11 @@ export function CreateRecordModal({
   const [incomePaymentMethod, setIncomePaymentMethod] = useState<string>("transferencia");
   // "" = operativo (ventas); texto = categoría no operativa (fuera del EBITDA)
   const [nonOpCategory, setNonOpCategory] = useState<string>("");
+  // Préstamo del socio (solo Atelier + categoría de préstamos): el ingreso
+  // queda registrado también en "Préstamos del socio" como deuda con Jahnn.
+  const [isPartnerLoan, setIsPartnerLoan] = useState(false);
+  const partnerLoanAvailable =
+    negocio === "atelier" && nonOpCategory === LOAN_NON_OPERATIVE_CATEGORY;
 
   // Egreso
   const [category, setCategory] = useState<string>(categories[0] ?? "");
@@ -118,10 +124,12 @@ export function CreateRecordModal({
         const result = await createBankIncomeItem({
           date,
           amount: amountNum,
-          clientId: clientId || null,
+          // Un préstamo del socio nunca lleva cliente (el server lo re-valida).
+          clientId: partnerLoanAvailable && isPartnerLoan ? null : clientId || null,
           note: note.trim(),
           paymentMethod: incomePaymentMethod,
           nonOperativeCategory: nonOpCategory || null,
+          isPartnerLoan: partnerLoanAvailable && isPartnerLoan,
         });
         if (!result.success) {
           setError(result.error);
@@ -229,7 +237,8 @@ export function CreateRecordModal({
                 <select
                   value={clientId}
                   onChange={(e) => setClientId(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white"
+                  disabled={partnerLoanAvailable && isPartnerLoan}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white disabled:bg-gray-50 disabled:text-gray-400"
                 >
                   <option value="">{emptyClientLabel(negocio)}</option>
                   {clients.map((c) => (
@@ -302,6 +311,30 @@ export function CreateRecordModal({
                   </div>
                 )}
               </div>
+
+              {/* Préstamo del socio (solo Atelier + categoría de préstamos) */}
+              {partnerLoanAvailable && (
+                <div className="border border-emerald-200 bg-emerald-50/60 rounded-lg px-3 py-2.5">
+                  <label className="flex items-start gap-2 cursor-pointer">
+                    <input
+                      type="checkbox"
+                      checked={isPartnerLoan}
+                      onChange={(e) => {
+                        setIsPartnerLoan(e.target.checked);
+                        if (e.target.checked) setClientId("");
+                      }}
+                      className="mt-0.5 accent-emerald-600"
+                    />
+                    <span className="text-xs text-emerald-900">
+                      <strong>Es préstamo del socio (Jahnn → Atelier)</strong>
+                      <span className="block text-emerald-700 mt-0.5">
+                        Quedará registrado en &quot;Préstamos del socio&quot; como deuda
+                        pendiente con Jahnn, y se gestiona desde esa pantalla.
+                      </span>
+                    </span>
+                  </label>
+                </div>
+              )}
             </>
           ) : (
             <>

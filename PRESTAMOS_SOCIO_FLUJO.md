@@ -33,12 +33,31 @@ presupuesto, conciliación bancaria, vista Grupo, y saldo BCP calculado.
 3. Llena:
    - **Fecha:** día en que Jahnn prestó el dinero
    - **Monto:** cuánto prestó (S/)
-   - **Método:** efectivo / transferencia / yape (según cómo entregó el dinero)
+   - **¿Cómo entró el dinero?** — esto decide qué saldo se mueve:
+     - **Directo (Jahnn pagó el gasto):** Jahnn pagó a un tercero con su
+       dinero. No toca el banco ni la caja; solo queda la deuda. (El caso
+       más común históricamente.)
+     - **A la cuenta BCP:** Jahnn depositó/transfirió al banco de Atelier.
+       El saldo BCP calculado **sí sube** — igual que el banco real.
+     - **A caja (efectivo):** Jahnn puso efectivo en la caja física. El
+       saldo de caja **sí sube**.
    - **Concepto:** descripción corta (ej: "Adelanto alquiler abril")
    - **Notas:** opcional (ej: para qué se usó)
 4. Click en **"Guardar"**
 
 El **"Saldo pendiente"** sube por ese monto.
+
+## También se puede registrar desde "Movimientos diarios"
+
+Si Jahnn deposita un préstamo al BCP mientras concilia los movimientos
+del día: en **Reportes → Movimientos diarios → Nuevo ingreso**, elige
+tipo de ingreso **"No operativo · Préstamos / financiamiento recibido"**
+y marca el check **"Es préstamo del socio (Jahnn → Atelier)"**.
+
+El ingreso suma al banco (el dinero entró de verdad) y a la vez queda
+registrado en esta pantalla como deuda pendiente con Jahnn — es el MISMO
+registro, no hay doble conteo. Desde ese momento se gestiona (editar /
+eliminar) solo desde Préstamos del socio.
 
 ## ¿Cómo registrar una devolución?
 
@@ -65,8 +84,18 @@ confirmación y borra ese movimiento. Los saldos se recalculan al instante.
 
 ## ¿Qué pasa con el saldo del banco?
 
-Los préstamos NO mueven el saldo BCP calculado por la app. Si Jahnn deposita
-por transferencia un préstamo a la cuenta de Atelier, el banco real sí
-sube — pero el saldo calculado por la app no incluye ese ingreso (porque
-no es un ingreso operativo). Cuando actualices el saldo BCP manualmente
-desde la app del banco, la app detectará la diferencia y ajustará el ancla.
+Depende de **cómo se movió el dinero** (junio 2026 — antes ningún
+préstamo tocaba el saldo BCP calculado, lo que descuadraba el banco
+cuando un préstamo SÍ pasaba por la cuenta):
+
+| Movimiento | Saldo BCP | Caja física |
+|---|---|---|
+| Préstamo **directo** (Jahnn pagó el gasto) | no cambia | no cambia |
+| Préstamo **a la cuenta BCP** | **sube** | no cambia |
+| Préstamo **a caja (efectivo)** | no cambia | **sube** |
+| Devolución por **transferencia/yape** | **baja** | no cambia |
+| Devolución en **efectivo** | no cambia | **baja** |
+
+En todos los casos el préstamo queda **fuera** de ingresos del mes,
+EBITDA, reportes por categoría y presupuesto: prestar/devolver no es
+venta ni gasto operativo.

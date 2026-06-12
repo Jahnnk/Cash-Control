@@ -117,6 +117,9 @@ export const expenses = pgTable(
     // Préstamos del socio (Jahnn → Atelier). Filtra estos egresos fuera
     // de reportes operativos para que no contaminen ingresos/EBITDA.
     isSpecialLoan: boolean("is_special_loan").default(false).notNull(),
+    // Devolución de préstamo que SÍ salió por la cuenta BCP: sigue fuera
+    // de reportes operativos, pero la cadena del saldo bancario la resta.
+    loanViaBank: boolean("loan_via_bank").default(false).notNull(),
     // Transferencia interna entre cuentas del mismo negocio (Efectivo↔BCP).
     // Igual que isSpecialLoan, se excluye de reportes operativos pero
     // SÍ afecta saldos reales (cada pata mueve su cuenta).
@@ -245,9 +248,12 @@ export const bankIncomeItems = pgTable(
     sortOrder: integer("sort_order").default(0).notNull(),
     isFonaviReimbursement: boolean("is_fonavi_reimbursement").default(false).notNull(),
     receivableId: uuid("receivable_id"),
-    // Devoluciones de préstamos del socio (Atelier → Jahnn). Igual que
-    // los egresos isSpecialLoan, se excluyen de ingresos del mes/EBITDA.
+    // Préstamos del socio (Jahnn → Atelier). Igual que los egresos
+    // isSpecialLoan, se excluyen de ingresos del mes/EBITDA.
     isSpecialLoan: boolean("is_special_loan").default(false).notNull(),
+    // Préstamo que SÍ entró a la cuenta BCP (Jahnn depositó al banco):
+    // sigue fuera de ventas/EBITDA, pero la cadena del saldo lo suma.
+    loanViaBank: boolean("loan_via_bank").default(false).notNull(),
     // Método con el que se recibió el ingreso. Si es 'efectivo' NO afecta
     // el saldo BCP (mismo patrón que expenses.payment_method).
     paymentMethod: text("payment_method").default("transferencia").notNull(),

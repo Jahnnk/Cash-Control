@@ -16,8 +16,15 @@
  * ingresos, inflando el saldo en S/1,686.83.
  *
  * ─── Reglas canónicas de la CADENA bank_balance_real (el saldo que se muestra) ───
- *   Ingreso cuenta para el banco si:  !archived && !is_special_loan && payment_method != 'efectivo'
- *   Egreso  cuenta para el banco si:  !archived && !is_special_loan && payment_method NOT IN ('efectivo','pendiente_atelier')
+ *   Ingreso cuenta para el banco si:  !archived && (!is_special_loan || loan_via_bank) && payment_method != 'efectivo'
+ *   Egreso  cuenta para el banco si:  !archived && (!is_special_loan || loan_via_bank) && payment_method NOT IN ('efectivo','pendiente_atelier')
+ *
+ * ⚠️ loan_via_bank (junio 2026): un préstamo del socio que SÍ pasó por la
+ *    cuenta BCP (Jahnn depositó al banco, o Atelier le devolvió por
+ *    transferencia) debe contar en la cadena — el dinero se movió de
+ *    verdad. Los préstamos históricos (Jahnn pagando gastos directo con
+ *    su dinero) tienen loan_via_bank=false y siguen excluidos. En SQL el
+ *    predicado es: (is_special_loan = false OR loan_via_bank = true).
  *
  * ⚠️ La cadena NO excluye is_internal_transfer: cada pata de una
  *    transferencia interna mueve su propia cuenta (la pata BCP suma/resta
@@ -34,6 +41,8 @@ export type BankMovement = {
   amount: number;
   paymentMethod: string;
   isSpecialLoan?: boolean;
+  /** Préstamo/devolución del socio que SÍ pasó por la cuenta BCP. */
+  loanViaBank?: boolean;
   isInternalTransfer?: boolean;
   archived?: boolean;
 };
@@ -45,14 +54,18 @@ export function round2(n: number): number {
 
 /** ¿Este ingreso suma al saldo del BANCO? (regla canónica de la cadena) */
 export function isBankIncomeEligible(m: BankMovement): boolean {
-  return !m.archived && !m.isSpecialLoan && m.paymentMethod !== "efectivo";
+  return (
+    !m.archived &&
+    (!m.isSpecialLoan || m.loanViaBank === true) &&
+    m.paymentMethod !== "efectivo"
+  );
 }
 
 /** ¿Este egreso resta del saldo del BANCO? (regla canónica de la cadena) */
 export function isBankExpenseEligible(m: BankMovement): boolean {
   return (
     !m.archived &&
-    !m.isSpecialLoan &&
+    (!m.isSpecialLoan || m.loanViaBank === true) &&
     m.paymentMethod !== "efectivo" &&
     m.paymentMethod !== "pendiente_atelier"
   );

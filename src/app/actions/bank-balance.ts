@@ -93,13 +93,13 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
   const incRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
     WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
-      AND is_special_loan = false AND payment_method <> 'efectivo' AND archived = false
+      AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false
   `);
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
     WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
       AND payment_method NOT IN ('efectivo','pendiente_atelier')
-      AND is_special_loan = false AND archived = false
+      AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
   `);
 
   const incomePost = parseFloat(incRes.rows[0].total as string);
@@ -129,13 +129,13 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     daily_inflow AS (
       SELECT date, COALESCE(SUM(amount), 0) AS inflow
       FROM bank_income_items
-      WHERE business_id = ${bId} AND is_special_loan = false AND payment_method <> 'efectivo' AND archived = false
+      WHERE business_id = ${bId} AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false
       GROUP BY date
     ),
     daily_outflow AS (
       SELECT date, COALESCE(SUM(amount), 0) AS outflow
       FROM expenses
-      WHERE business_id = ${bId} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false AND archived = false
+      WHERE business_id = ${bId} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
       GROUP BY date
     )
     SELECT

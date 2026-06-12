@@ -8,8 +8,18 @@
  * presupuesto, vista Grupo) sin perder trazabilidad.
  */
 
+import type { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
+
 /** Nombre canónico de la categoría especial. NUNCA cambiarlo sin migrar datos. */
 export const LOAN_CATEGORY = "Préstamos del socio";
+
+/**
+ * Categoría de ingreso NO operativo bajo la cual se puede marcar un
+ * ingreso del Registro Diario como préstamo del socio (Jahnn → Atelier).
+ * Tipada contra la lista canónica para que un rename rompa el compile.
+ */
+export const LOAN_NON_OPERATIVE_CATEGORY: (typeof NON_OPERATIVE_CATEGORIES)[number] =
+  "Préstamos / financiamiento recibido";
 
 /** Solo Atelier (business_id=1) tiene préstamos del socio. */
 export const ATELIER_BUSINESS_ID = 1;

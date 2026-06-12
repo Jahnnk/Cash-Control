@@ -3,12 +3,23 @@
 /**
  * Server actions para "Préstamos del socio" (Jahnn → Atelier).
  *
- * Modelo:
+ * Modelo (única fuente de verdad — el flag is_special_loan):
  *   - Préstamo (Jahnn → Atelier)  → bank_income_items con is_special_loan = true
  *   - Devolución (Atelier → Jahnn) → expenses con is_special_loan = true
  *                                    y category = LOAN_CATEGORY
  *
  * Saldo pendiente = SUM(préstamos) − SUM(devoluciones).
+ *
+ * loan_via_bank distingue CÓMO se movió el dinero (la deuda es la misma):
+ *   - entry "directo": Jahnn pagó el gasto con su dinero — no pasó por
+ *     cuentas de Atelier. payment_method queda 'transferencia' (fantasma,
+ *     como los préstamos históricos) y loan_via_bank=false → no toca
+ *     banco ni caja.
+ *   - entry "banco": el dinero entró/salió por la cuenta BCP de Atelier.
+ *     loan_via_bank=true → la cadena del saldo bancario lo cuenta.
+ *   - entry "caja": efectivo físico en la caja. payment_method='efectivo'
+ *     → el saldo de caja lo cuenta (getCashBalance no excluye préstamos,
+ *     por diseño), el banco no.
  *
  * Solo Atelier (business_id = 1) puede operar préstamos del socio.
  */
@@ -47,12 +58,19 @@ function assertValidLoanDate(date: string) {
 // Resumen + lista de movimientos
 // ─────────────────────────────────────────────────────────────────
 
+/** Cómo se movió el dinero de un préstamo (ver doc del módulo arriba). */
+export type LoanEntry = "directo" | "banco" | "caja";
+
 export type LoanMovement = {
   id: string;
   kind: "loan" | "refund";
   date: string;          // YYYY-MM-DD
   amount: number;        // siempre positivo
   paymentMethod: string; // efectivo / transferencia / yape / pendiente_atelier
+  /** Solo préstamos (kind=loan): por dónde entró el dinero. */
+  entry: LoanEntry | null;
+  /** El movimiento pasó por la cuenta BCP (cuenta en el saldo del banco). */
+  viaBank: boolean;
   concept: string;
   notes: string | null;
   createdAt: string;
@@ -77,7 +95,8 @@ export async function getLoansSummary(): Promise<LoansSummary> {
       'loan'::text AS kind,
       date::text AS date,
       amount::float AS amount,
-      'efectivo'::text AS payment_method,
+      payment_method,
+      loan_via_bank,
       COALESCE(note, 'Préstamo del socio') AS concept,
       NULL::text AS notes,
       created_at::text AS created_at
@@ -92,6 +111,7 @@ export async function getLoansSummary(): Promise<LoansSummary> {
       date::text AS date,
       amount::float AS amount,
       payment_method,
+      loan_via_bank,
       concept,
       notes,
       created_at::text AS created_at
@@ -106,6 +126,12 @@ export async function getLoansSummary(): Promise<LoansSummary> {
       date: r.date as string,
       amount: Number(r.amount),
       paymentMethod: r.payment_method as string,
+      entry: (r.loan_via_bank
+        ? "banco"
+        : r.payment_method === "efectivo"
+          ? "caja"
+          : "directo") as LoanEntry,
+      viaBank: Boolean(r.loan_via_bank),
       concept: r.concept as string,
       notes: (r.notes as string | null) ?? null,
       createdAt: r.created_at as string,
@@ -116,6 +142,8 @@ export async function getLoansSummary(): Promise<LoansSummary> {
       date: r.date as string,
       amount: Number(r.amount),
       paymentMethod: r.payment_method as string,
+      entry: null,
+      viaBank: Boolean(r.loan_via_bank),
       concept: r.concept as string,
       notes: (r.notes as string | null) ?? null,
       createdAt: r.created_at as string,
@@ -144,10 +172,26 @@ export async function getLoansSummary(): Promise<LoansSummary> {
 // Crear préstamo (Jahnn → Atelier)
 // ─────────────────────────────────────────────────────────────────
 
+/** payment_method y loan_via_bank que corresponden a cada forma de entrada. */
+function loanColumnsForEntry(entry: LoanEntry): { method: string; viaBank: boolean } {
+  switch (entry) {
+    case "banco":
+      return { method: "transferencia", viaBank: true };
+    case "caja":
+      return { method: "efectivo", viaBank: false };
+    case "directo":
+      // Método fantasma (igual que los préstamos históricos): no es
+      // 'efectivo' para que la caja no lo cuente, y viaBank=false para
+      // que el banco tampoco. Solo existe como deuda con el socio.
+      return { method: "transferencia", viaBank: false };
+  }
+}
+
 export async function createLoan(data: {
   date: string;
   amount: number;
-  paymentMethod: "efectivo" | "transferencia" | "yape";
+  /** Por dónde entró el dinero (ver doc del módulo). */
+  entry: LoanEntry;
   concept: string;
   notes?: string;
 }) {
@@ -168,26 +212,14 @@ export async function createLoan(data: {
     ? `${data.concept} — ${data.notes}`
     : data.concept;
 
-  if (data.paymentMethod === "efectivo") {
-    // Préstamo en efectivo: NO toca el banco. Lo guardamos como income
-    // del día con flag, pero excluido de bank_balance porque payment_method
-    // se infiere por convención (efectivo no afecta el banco). Para
-    // mantenerlo simple, lo guardamos en bank_income_items con marcador
-    // y agregamos un campo virtual en notes.
-    await db.execute(sql`
-      INSERT INTO bank_income_items (business_id, date, amount, client_id, note, is_special_loan)
-      VALUES (${bId}, ${data.date}, ${data.amount.toFixed(2)}, NULL, ${note}, true)
-    `);
-    // No se recalcula saldo: el bank_income suma normalmente, pero el
-    // balance bancario lo excluiremos vía filtro is_special_loan en la
-    // cadena de saldos.
-  } else {
-    await db.execute(sql`
-      INSERT INTO bank_income_items (business_id, date, amount, client_id, note, is_special_loan)
-      VALUES (${bId}, ${data.date}, ${data.amount.toFixed(2)}, NULL, ${note}, true)
-    `);
-    await recalcBankBalance(data.date);
-  }
+  const { method, viaBank } = loanColumnsForEntry(data.entry);
+  await db.execute(sql`
+    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method, is_special_loan, loan_via_bank)
+    VALUES (${bId}, ${data.date}, ${data.amount.toFixed(2)}, NULL, ${note}, ${method}, true, ${viaBank})
+  `);
+  // Solo el préstamo que entró al BCP mueve la cadena del saldo bancario.
+  // "caja" se refleja en getCashBalance (sin cadena) y "directo" no toca nada.
+  if (viaBank) await recalcBankBalance(data.date);
 
   revalidatePath("/", "layout");
 }
@@ -215,18 +247,22 @@ export async function createRefund(data: {
     ON CONFLICT (business_id, date) DO NOTHING
   `);
 
+  // Una devolución por transferencia/yape sale de la cuenta BCP de
+  // Atelier → loan_via_bank=true para que la cadena del saldo la reste.
+  // (Antes quedaba excluida y el banco no bajaba — descuadre silencioso.)
+  const viaBank = data.paymentMethod !== "efectivo";
   await db.execute(sql`
     INSERT INTO expenses (
       business_id, date, category, concept, amount, payment_method, notes,
-      is_special_loan
+      is_special_loan, loan_via_bank
     ) VALUES (
       ${bId}, ${data.date}, ${LOAN_CATEGORY}, ${data.concept},
       ${data.amount.toFixed(2)}, ${data.paymentMethod}, ${data.notes || null},
-      true
+      true, ${viaBank}
     )
   `);
 
-  if (data.paymentMethod !== "efectivo") {
+  if (viaBank) {
     await recalcBankBalance(data.date);
   }
   revalidatePath("/", "layout");
@@ -268,7 +304,10 @@ export async function updateLoanMovement(
   data: {
     date: string;
     amount: number;
-    paymentMethod: "efectivo" | "transferencia" | "yape";
+    /** Solo devoluciones (kind=refund). */
+    paymentMethod?: "efectivo" | "transferencia" | "yape";
+    /** Solo préstamos (kind=loan): por dónde entró el dinero. */
+    entry?: LoanEntry;
     concept: string;
     notes?: string;
   }
@@ -304,12 +343,17 @@ export async function updateLoanMovement(
       };
     }
 
+    if (!data.entry) {
+      return { success: false, error: "Indica cómo entró el dinero del préstamo" };
+    }
     const note = data.notes
       ? `${data.concept.trim()} — ${data.notes.trim()}`
       : data.concept.trim();
+    const { method, viaBank } = loanColumnsForEntry(data.entry);
     await db.execute(sql`
       UPDATE bank_income_items
-      SET date = ${data.date}, amount = ${data.amount.toFixed(2)}, note = ${note}
+      SET date = ${data.date}, amount = ${data.amount.toFixed(2)}, note = ${note},
+          payment_method = ${method}, loan_via_bank = ${viaBank}
       WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
     `);
     // Asegurar daily_record para la fecha nueva
@@ -317,7 +361,8 @@ export async function updateLoanMovement(
       INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${data.date})
       ON CONFLICT (business_id, date) DO NOTHING
     `);
-    // Recalcular ambas fechas (vieja y nueva) por si cambiaron
+    // Recalcular ambas fechas (vieja y nueva): cubre cambios de monto,
+    // de fecha y de entrada (banco ↔ directo/caja).
     await recalcBankBalance(before.date);
     if (before.date !== data.date) await recalcBankBalance(data.date);
   } else {
@@ -327,6 +372,9 @@ export async function updateLoanMovement(
       WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
     `)).rows[0] as { date: string; payment_method: string; amount: number } | undefined;
     if (!before) return { success: false, error: "Devolución no encontrada" };
+    if (!data.paymentMethod) {
+      return { success: false, error: "Indica el método de la devolución" };
+    }
 
     const totals = await getTotalsExcluding(bId, "refund", id);
     const newPending =
@@ -343,6 +391,7 @@ export async function updateLoanMovement(
       SET date = ${data.date},
           amount = ${data.amount.toFixed(2)},
           payment_method = ${data.paymentMethod},
+          loan_via_bank = ${data.paymentMethod !== "efectivo"},
           concept = ${data.concept.trim()},
           notes = ${data.notes?.trim() || null}
       WHERE id = ${id} AND business_id = ${bId} AND is_special_loan = true
