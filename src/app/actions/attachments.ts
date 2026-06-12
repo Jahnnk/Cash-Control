@@ -3,7 +3,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { getSignedReadUrl, deletePrivateBlob } from "@/lib/blob-storage";
+import { deletePrivateBlob } from "@/lib/blob-storage";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -15,7 +15,7 @@ export type AttachmentItem = {
   contentType: string;
   sizeBytes: number;
   createdAt: string;
-  /** URL firmada temporal (~10 min). NO persistir: pedir de nuevo al expirar. */
+  /** URL del proxy same-origin (/api/attachments/[id]); requiere sesión. */
   signedUrl: string;
 };
 
@@ -44,16 +44,17 @@ export async function listAttachments(
     ORDER BY created_at ASC
   `) as { id: string; pathname: string; filename: string; content_type: string; size_bytes: number; created_at: string }[];
 
-  return Promise.all(
-    rows.map(async (r) => ({
-      id: r.id,
-      filename: r.filename,
-      contentType: r.content_type,
-      sizeBytes: r.size_bytes,
-      createdAt: r.created_at,
-      signedUrl: await getSignedReadUrl(r.pathname),
-    })),
-  );
+  // URL del proxy same-origin (/api/attachments/[id]): no caduca como las
+  // URLs firmadas (~10 min) y permite leer el archivo con fetch para
+  // incrustarlo en PDFs (el host del Blob no permite CORS).
+  return rows.map((r) => ({
+    id: r.id,
+    filename: r.filename,
+    contentType: r.content_type,
+    sizeBytes: r.size_bytes,
+    createdAt: r.created_at,
+    signedUrl: `/api/attachments/${r.id}`,
+  }));
 }
 
 /** Conteos en lote para pintar el clip 📎 del feed con UNA sola query. */

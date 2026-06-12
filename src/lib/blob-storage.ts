@@ -1,4 +1,4 @@
-import { put, del, issueSignedToken, presignUrl } from "@vercel/blob";
+import { put, del, get, issueSignedToken, presignUrl } from "@vercel/blob";
 
 /**
  * Acceso al Blob Store PRIVADO de Vercel (yayis-adjuntos).
@@ -49,4 +49,19 @@ export async function getSignedReadUrl(pathname: string): Promise<string> {
 /** Borra el archivo. del() es idempotente: no falla si ya no existe. */
 export async function deletePrivateBlob(pathname: string): Promise<void> {
   await del(pathname);
+}
+
+/**
+ * Stream del archivo privado, leído server-side vía OIDC (sin CORS).
+ * Lo usa el proxy /api/attachments/[id] para servir constancias al
+ * navegador desde el MISMO origen — necesario para incrustarlas en PDFs
+ * (fetch+canvas requiere CORS; el host del Blob no lo permite, aunque
+ * <img> con URL firmada sí funcione para solo mostrarlas).
+ */
+export async function getPrivateBlobStream(
+  pathname: string,
+): Promise<ReadableStream | null> {
+  const result = await get(pathname, { access: "private" });
+  if (!result || result.statusCode !== 200) return null;
+  return result.stream;
 }
