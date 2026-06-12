@@ -62,11 +62,11 @@ function debtorCascadeQueries(bId: number, date: string) {
             + COALESCE((SELECT SUM(amount) FROM bank_income_items
                 WHERE business_id = ${bId} AND date = dr.date
                   AND payment_method <> 'efectivo'
-                  AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)
+                  AND (is_special_loan = false OR loan_via_bank = true) AND is_internal_transfer = false AND archived = false), 0)
             - COALESCE((SELECT SUM(amount) FROM expenses
                 WHERE business_id = ${bId} AND date = dr.date
                   AND payment_method NOT IN ('efectivo','pendiente_atelier')
-                  AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)
+                  AND (is_special_loan = false OR loan_via_bank = true) AND is_internal_transfer = false AND archived = false), 0)
           )::numeric, 2)
         FROM daily_records dr
         JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date

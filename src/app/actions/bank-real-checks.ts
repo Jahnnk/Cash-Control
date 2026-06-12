@@ -72,13 +72,13 @@ async function getSystemBalanceAtDate(
   const incRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0)::float AS s FROM bank_income_items
     WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${checkDate}
-      AND is_special_loan = false AND payment_method <> 'efectivo' AND archived = false
+      AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false
   `);
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0)::float AS s FROM expenses
     WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${checkDate}
       AND payment_method NOT IN ('efectivo','pendiente_atelier')
-      AND is_special_loan = false AND archived = false
+      AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
   `);
   const inc = Number((incRes.rows[0] as { s: number }).s);
   const exp = Number((expRes.rows[0] as { s: number }).s);

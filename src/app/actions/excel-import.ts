@@ -136,13 +136,13 @@ async function getSaldosTodosNegocios(): Promise<
       const inc = (await db.execute(sql`
         SELECT COALESCE(SUM(amount),0)::float AS t FROM bank_income_items
         WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
-          AND is_special_loan=false AND payment_method <> 'efectivo' AND archived = false
+          AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false
       `)).rows[0] as { t: number };
       const exp = (await db.execute(sql`
         SELECT COALESCE(SUM(amount),0)::float AS t FROM expenses
         WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
           AND payment_method NOT IN ('efectivo','pendiente_atelier')
-          AND is_special_loan = false AND archived = false
+          AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
       `)).rows[0] as { t: number };
       bcp = Math.round((anchorBalance + inc.t - exp.t) * 100) / 100;
     }

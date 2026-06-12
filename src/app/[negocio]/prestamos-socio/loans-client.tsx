@@ -12,11 +12,24 @@ import {
   createRefund,
   updateLoanMovement,
   deleteLoanMovement,
+  type LoanEntry,
   type LoanMovement,
   type LoansSummary,
 } from "@/app/actions/loans";
 
 type Mode = null | "loan" | "refund";
+
+/** Etiquetas de "¿cómo entró el dinero?" (préstamos). */
+const ENTRY_LABELS: Record<LoanEntry, string> = {
+  directo: "Directo (Jahnn pagó el gasto)",
+  banco: "A la cuenta BCP",
+  caja: "A caja (efectivo)",
+};
+const ENTRY_HINTS: Record<LoanEntry, string> = {
+  directo: "Jahnn pagó con su dinero a un tercero. No toca el banco ni la caja de Atelier; solo queda la deuda.",
+  banco: "Jahnn depositó/transfirió a la cuenta BCP de Atelier. El saldo del banco SÍ sube.",
+  caja: "Jahnn puso efectivo en la caja física. El saldo de caja SÍ sube.",
+};
 
 export function LoansClient({ summary }: { summary: LoansSummary }) {
   const { showToast } = useToast();
@@ -29,6 +42,9 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
   const [date, setDate] = useState(getToday());
   const [amount, setAmount] = useState("");
   const [paymentMethod, setPaymentMethod] = useState<"efectivo" | "transferencia" | "yape">("efectivo");
+  // Solo préstamos: por dónde entró el dinero. "directo" es el caso
+  // histórico más común (Jahnn paga el gasto con su dinero).
+  const [entry, setEntry] = useState<LoanEntry>("directo");
   const [concept, setConcept] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -37,6 +53,7 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
     setDate(getToday());
     setAmount("");
     setPaymentMethod("efectivo");
+    setEntry("directo");
     setConcept("");
     setNotes("");
     setError(null);
@@ -57,6 +74,7 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
     setPaymentMethod(
       pm === "transferencia" || pm === "yape" || pm === "efectivo" ? pm : "efectivo"
     );
+    setEntry(m.entry ?? "directo");
     // El concept de un préstamo viene del campo `note` con formato
     // "concepto — notas". Lo separamos cuando es posible para pre-llenar
     // ambos campos. En devoluciones, concept y notes son columnas distintas.
@@ -104,23 +122,26 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
 
     startTransition(async () => {
       try {
-        const payload = {
+        const base = {
           date,
           amount: amountNum,
-          paymentMethod,
           concept: concept.trim(),
           notes: notes.trim() || undefined,
         };
         if (editing) {
-          const r = await updateLoanMovement(editing.id, editing.kind, payload);
+          const r = await updateLoanMovement(
+            editing.id,
+            editing.kind,
+            editing.kind === "loan" ? { ...base, entry } : { ...base, paymentMethod }
+          );
           if (!r.success) {
             setError(r.error);
             return;
           }
         } else if (mode === "loan") {
-          await createLoan(payload);
+          await createLoan({ ...base, entry });
         } else if (mode === "refund") {
-          await createRefund(payload);
+          await createRefund({ ...base, paymentMethod });
         }
         closeModal();
         router.refresh();
@@ -182,8 +203,23 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
     {
       key: "paymentMethod",
       header: "Método",
-      width: "w-28",
-      render: (r) => <span className="text-xs text-gray-600 capitalize">{r.paymentMethod}</span>,
+      width: "w-36",
+      render: (r) =>
+        r.kind === "loan" ? (
+          <span className="text-xs text-gray-600">
+            {ENTRY_LABELS[r.entry ?? "directo"]}
+            {r.viaBank && (
+              <span className="block text-[10px] text-emerald-600">cuenta en saldo BCP</span>
+            )}
+          </span>
+        ) : (
+          <span className="text-xs text-gray-600 capitalize">
+            {r.paymentMethod}
+            {r.viaBank && (
+              <span className="block text-[10px] text-emerald-600">resta del saldo BCP</span>
+            )}
+          </span>
+        ),
     },
     {
       key: "amount",
@@ -339,18 +375,41 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
                   autoFocus
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Método</label>
-                <select
-                  value={paymentMethod}
-                  onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                >
-                  <option value="efectivo">Efectivo</option>
-                  <option value="transferencia">Transferencia</option>
-                  <option value="yape">Yape</option>
-                </select>
-              </div>
+              {mode === "loan" ? (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">
+                    ¿Cómo entró el dinero?
+                  </label>
+                  <select
+                    value={entry}
+                    onChange={(e) => setEntry(e.target.value as LoanEntry)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    {(Object.keys(ENTRY_LABELS) as LoanEntry[]).map((k) => (
+                      <option key={k} value={k}>{ENTRY_LABELS[k]}</option>
+                    ))}
+                  </select>
+                  <p className="text-[11px] text-gray-500 mt-1">{ENTRY_HINTS[entry]}</p>
+                </div>
+              ) : (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Método</label>
+                  <select
+                    value={paymentMethod}
+                    onChange={(e) => setPaymentMethod(e.target.value as typeof paymentMethod)}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  >
+                    <option value="efectivo">Efectivo</option>
+                    <option value="transferencia">Transferencia</option>
+                    <option value="yape">Yape</option>
+                  </select>
+                  <p className="text-[11px] text-gray-500 mt-1">
+                    {paymentMethod === "efectivo"
+                      ? "Sale de la caja física (no toca el banco)."
+                      : "Sale de la cuenta BCP: el saldo del banco baja."}
+                  </p>
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
                 <input

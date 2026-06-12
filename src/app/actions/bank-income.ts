@@ -7,6 +7,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { recalcBankBalance } from "./daily-records";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
+import { ATELIER_BUSINESS_ID, LOAN_NON_OPERATIVE_CATEGORY } from "@/lib/loans";
 import { validateAmount, validateMovementDate } from "@/lib/money-validation";
 
 // Cliente raw de neon para transacciones no-interactivas (sql.transaction).
@@ -56,6 +57,12 @@ export async function createBankIncomeItem(data: {
   // null/omitido = ingreso operativo normal. Los no-operativos SÍ
   // afectan saldos pero NO cuentan en ventas/EBITDA.
   nonOperativeCategory?: string | null;
+  // Solo Atelier + categoría "Préstamos / financiamiento recibido":
+  // marca el ingreso como préstamo del socio (is_special_loan=true).
+  // Aparece en /atelier/prestamos-socio y suma al saldo pendiente;
+  // loan_via_bank=true (si no es efectivo) mantiene el ingreso contando
+  // en el saldo BCP — el dinero entró de verdad al banco.
+  isPartnerLoan?: boolean;
 }): Promise<{ success: true } | { success: false; error: string }> {
   const bId = await activeBusinessId();
 
@@ -72,6 +79,27 @@ export async function createBankIncomeItem(data: {
     return { success: false, error: "Categoría de ingreso no operativo inválida" };
   }
 
+  // Préstamo del socio desde el Registro Diario: misma fuente de verdad
+  // que /atelier/prestamos-socio (is_special_loan). Validaciones duras
+  // para que el flag no pueda colarse en filas que no correspondan.
+  const isPartnerLoan = data.isPartnerLoan === true;
+  if (isPartnerLoan) {
+    if (bId !== ATELIER_BUSINESS_ID) {
+      return { success: false, error: "Los préstamos del socio solo aplican a Atelier" };
+    }
+    if (nonOp.value !== LOAN_NON_OPERATIVE_CATEGORY) {
+      return {
+        success: false,
+        error: `Para marcar préstamo del socio, el tipo de ingreso debe ser "${LOAN_NON_OPERATIVE_CATEGORY}"`,
+      };
+    }
+    if (data.clientId) {
+      return { success: false, error: "Un préstamo del socio no lleva cliente" };
+    }
+  }
+  // Entró al banco salvo que haya sido efectivo (que va a la caja física).
+  const loanViaBank = isPartnerLoan && method !== "efectivo";
+
   // Asegura que exista daily_records para que recalcBankBalance no sea no-op.
   await db.execute(sql`
     INSERT INTO daily_records (business_id, date)
@@ -80,8 +108,8 @@ export async function createBankIncomeItem(data: {
   `);
 
   await db.execute(sql`
-    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method, non_operative_category)
-    VALUES (${bId}, ${data.date}, ${data.amount}, ${data.clientId ?? null}, ${data.note?.trim() || null}, ${method}, ${nonOp.value})
+    INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method, non_operative_category, is_special_loan, loan_via_bank)
+    VALUES (${bId}, ${data.date}, ${data.amount}, ${data.clientId ?? null}, ${data.note?.trim() || null}, ${method}, ${nonOp.value}, ${isPartnerLoan}, ${loanViaBank})
   `);
 
   await recalcBankBalance(data.date);
