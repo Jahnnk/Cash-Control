@@ -12,11 +12,15 @@ import {
 } from "@/app/actions/bcp-verification";
 import { moveBankIncomeItem } from "@/app/actions/bank-income";
 import { moveExpenseItem } from "@/app/actions/expenses";
+import {
+  getReconciledThrough,
+  setReconciledThrough as saveReconciledThrough,
+} from "@/app/actions/reconciliation-checkpoint";
 import { reorderColumn } from "@/lib/dnd-reorder";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
-import { Pencil, Trash2, Plus, CheckCircle2, Paperclip, GripVertical, X as XIcon } from "lucide-react";
+import { Pencil, Trash2, Plus, CheckCircle2, Paperclip, GripVertical, X as XIcon, ShieldCheck, ChevronDown, ChevronRight } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -179,6 +183,29 @@ export function DailyMovementsReport() {
   const [showTypeSelector, setShowTypeSelector] = useState(false);
   const { showToast } = useToast();
 
+  // "Cuadrado hasta [fecha]" (checkpoint de conciliación, por local).
+  const [reconciledThrough, setReconciledThroughState] = useState<string | null>(null);
+  const [showCheckpointModal, setShowCheckpointModal] = useState(false);
+  const [showReconciledDays, setShowReconciledDays] = useState(false);
+  const refreshCheckpoint = useCallback(async () => {
+    setReconciledThroughState(await getReconciledThrough());
+  }, []);
+  const applyCheckpoint = useCallback(
+    async (date: string | null) => {
+      const r = await saveReconciledThrough(date);
+      if (!r.ok) {
+        showToast(r.error, "error");
+        return;
+      }
+      setReconciledThroughState(date);
+      setShowCheckpointModal(false);
+      showToast(
+        date ? "Marcado como cuadrado hasta esa fecha" : "Marcador quitado",
+        "success",
+      );
+    },
+    [showToast],
+  );
 
   useEffect(() => {
     getAvailableMonthRange().then(setMonthRange);
@@ -190,6 +217,7 @@ export function DailyMovementsReport() {
         rows.map((r) => ({ id: r.id as string, name: r.name as string })),
       ),
     );
+    getReconciledThrough().then(setReconciledThroughState);
   }, []);
 
   const loadData = useCallback(async () => {
@@ -423,10 +451,14 @@ export function DailyMovementsReport() {
         showToast(result.error, "error");
         return;
       }
-      // Mover entre días re-fecha el movimiento → refrescar el saldo del banco.
-      if (dateChanged) await bank.refresh();
+      // Mover entre días re-fecha el movimiento → refrescar el saldo del banco
+      // y el marcador (mover algo de un día ya cuadrado lo hace retroceder).
+      if (dateChanged) {
+        await bank.refresh();
+        await refreshCheckpoint();
+      }
     },
-    [incomes, expenses, bank, showToast],
+    [incomes, expenses, bank, showToast, refreshCheckpoint],
   );
 
   // Combina ingresos y egresos en bloques por día (desc por fecha).
@@ -484,6 +516,31 @@ export function DailyMovementsReport() {
         d.expenses.some((e) => !e.bcpVerifiedAt),
     );
   }, [days, hideVerified]);
+
+  // Partición por el marcador "Cuadrado hasta": los días <= fecha quedan
+  // colapsados (ya cuadrados); arriba se muestran solo los posteriores.
+  const pendingDays = useMemo(
+    () => (reconciledThrough ? visibleDays.filter((d) => d.date > reconciledThrough) : visibleDays),
+    [visibleDays, reconciledThrough],
+  );
+  const reconciledDays = useMemo(
+    () => (reconciledThrough ? visibleDays.filter((d) => d.date <= reconciledThrough) : []),
+    [visibleDays, reconciledThrough],
+  );
+
+  // Día sugerido para el marcador: el más reciente con TODO verificado
+  // (banco contra BCP). Si no hay, hoy.
+  const suggestedCheckpoint = useMemo(() => {
+    const fully = days.filter(
+      (d) =>
+        d.incomes.length + d.expenses.length > 0 &&
+        d.incomes.every((i) => i.bcpVerifiedAt) &&
+        d.expenses.every((e) => e.bcpVerifiedAt),
+    );
+    return fully.length > 0
+      ? fully.map((d) => d.date).sort().at(-1)!
+      : new Date().toISOString().slice(0, 10);
+  }, [days]);
 
   const monthIncomeTotal = days.reduce((s, d) => s + d.incomeTotal, 0);
   const monthExpenseTotal = days.reduce((s, d) => s + d.expenseTotal, 0);
@@ -608,6 +665,16 @@ export function DailyMovementsReport() {
                 <CheckCircle2 className="w-3.5 h-3.5" />
                 {hideVerified ? "Mostrar todos" : "Ocultar verificados"}
               </button>
+              {!reconciledThrough && (
+                <button
+                  onClick={() => setShowCheckpointModal(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors"
+                  title="Marcar hasta qué fecha ya cuadró todo (banco = sistema)"
+                >
+                  <ShieldCheck className="w-3.5 h-3.5" />
+                  Cuadrado hasta…
+                </button>
+              )}
               <button
                 onClick={() => setShowTypeSelector(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 bg-white border border-gray-300 rounded-lg hover:bg-gray-50 hover:border-gray-400 transition-colors"
@@ -618,6 +685,34 @@ export function DailyMovementsReport() {
               </button>
             </div>
           </div>
+
+          {/* Cinta "Cuadrado hasta [fecha]" */}
+          {reconciledThrough && (
+            <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3 flex items-center justify-between gap-3">
+              <div className="flex items-center gap-2 min-w-0 text-sm text-emerald-900">
+                <ShieldCheck className="w-5 h-5 text-emerald-600 shrink-0" />
+                <span className="truncate">
+                  Cuadrado hasta el <strong>{formatDateShort(reconciledThrough)}</strong>.
+                  Solo buscas diferencias en lo posterior.
+                </span>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={() => setShowCheckpointModal(true)}
+                  className="text-xs font-medium text-emerald-900 bg-white border border-emerald-300 hover:bg-emerald-100 rounded-md px-3 py-1.5"
+                >
+                  Cambiar
+                </button>
+                <button
+                  onClick={() => applyCheckpoint(null)}
+                  className="text-xs font-medium text-gray-600 hover:bg-gray-100 rounded-md px-3 py-1.5"
+                  title="Quitar el marcador y volver a ver todo el mes"
+                >
+                  Quitar
+                </button>
+              </div>
+            </div>
+          )}
 
           {visibleDays.length === 0 ? (
             <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500 text-sm">
@@ -630,24 +725,64 @@ export function DailyMovementsReport() {
               onDragEnd={handleDragEnd}
             >
               <div className="space-y-6">
-                {visibleDays.map((d) => (
-                  <DayCard
-                    onAttach={(recordType, recordId, title) => setAttachTarget({ recordType, recordId, title })}
-                    attachCounts={attachCounts}
-                    key={d.date}
-                    day={d}
-                    hideVerified={hideVerified}
-                    onEdit={setEditTarget}
-                    onDelete={setDeleteTarget}
-                    onCreate={(type) =>
-                      setCreateTarget({ type, date: d.date, dateLocked: true })
-                    }
-                    onToggleVerify={toggleVerify}
-                    selectedIncome={selectedIncome}
-                    selectedExpense={selectedExpense}
-                    onToggleSelect={toggleSelect}
-                  />
-                ))}
+                {pendingDays.length === 0 ? (
+                  <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-gray-500 text-sm">
+                    No hay días pendientes después del {formatDateShort(reconciledThrough!)}. 🎉
+                  </div>
+                ) : (
+                  pendingDays.map((d) => (
+                    <DayCard
+                      onAttach={(recordType, recordId, title) => setAttachTarget({ recordType, recordId, title })}
+                      attachCounts={attachCounts}
+                      key={d.date}
+                      day={d}
+                      hideVerified={hideVerified}
+                      onEdit={setEditTarget}
+                      onDelete={setDeleteTarget}
+                      onCreate={(type) =>
+                        setCreateTarget({ type, date: d.date, dateLocked: true })
+                      }
+                      onToggleVerify={toggleVerify}
+                      selectedIncome={selectedIncome}
+                      selectedExpense={selectedExpense}
+                      onToggleSelect={toggleSelect}
+                    />
+                  ))
+                )}
+
+                {reconciledDays.length > 0 && (
+                  <div className="space-y-3">
+                    <button
+                      onClick={() => setShowReconciledDays((v) => !v)}
+                      className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-500 hover:text-gray-700"
+                    >
+                      {showReconciledDays ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
+                      Días ya cuadrados ({reconciledDays.length})
+                    </button>
+                    {showReconciledDays && (
+                      <div className="space-y-6 opacity-80">
+                        {reconciledDays.map((d) => (
+                          <DayCard
+                            onAttach={(recordType, recordId, title) => setAttachTarget({ recordType, recordId, title })}
+                            attachCounts={attachCounts}
+                            key={d.date}
+                            day={d}
+                            hideVerified={hideVerified}
+                            onEdit={setEditTarget}
+                            onDelete={setDeleteTarget}
+                            onCreate={(type) =>
+                              setCreateTarget({ type, date: d.date, dateLocked: true })
+                            }
+                            onToggleVerify={toggleVerify}
+                            selectedIncome={selectedIncome}
+                            selectedExpense={selectedExpense}
+                            onToggleSelect={toggleSelect}
+                          />
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </DndContext>
           )}
@@ -714,7 +849,7 @@ export function DailyMovementsReport() {
           clients={clients}
           onClose={() => setEditTarget(null)}
           onSaved={async () => {
-            await Promise.all([loadData(), bank.refresh()]);
+            await Promise.all([loadData(), bank.refresh(), refreshCheckpoint()]);
             setEditTarget(null);
             showToast("Cambios guardados", "success");
           }}
@@ -725,7 +860,7 @@ export function DailyMovementsReport() {
           target={deleteTarget}
           onClose={() => setDeleteTarget(null)}
           onDeleted={async () => {
-            await Promise.all([loadData(), bank.refresh()]);
+            await Promise.all([loadData(), bank.refresh(), refreshCheckpoint()]);
             setDeleteTarget(null);
             showToast("Movimiento eliminado", "success");
           }}
@@ -758,12 +893,82 @@ export function DailyMovementsReport() {
           onCreated={async () => {
             const wasIncome = createTarget.type === "income";
             setCreateTarget(null);
-            await Promise.all([loadData(), bank.refresh()]);
+            await Promise.all([loadData(), bank.refresh(), refreshCheckpoint()]);
             showToast(wasIncome ? "Ingreso registrado" : "Egreso registrado", "success");
           }}
         />
       )}
 
+      {/* Modal "Cuadrado hasta [fecha]" */}
+      {showCheckpointModal && (
+        <CheckpointModal
+          initialDate={reconciledThrough ?? suggestedCheckpoint}
+          maxDate={new Date().toISOString().slice(0, 10)}
+          onClose={() => setShowCheckpointModal(false)}
+          onSave={(date) => applyCheckpoint(date)}
+        />
+      )}
+
+    </div>
+  );
+}
+
+/**
+ * Modal para fijar el marcador "Cuadrado hasta [fecha]". Elige el día hasta
+ * el que banco = sistema; a partir de ahí la búsqueda de diferencias y el
+ * feed se enfocan en lo posterior.
+ */
+function CheckpointModal({
+  initialDate,
+  maxDate,
+  onClose,
+  onSave,
+}: {
+  initialDate: string;
+  maxDate: string;
+  onClose: () => void;
+  onSave: (date: string) => void;
+}) {
+  const [date, setDate] = useState(initialDate);
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <ShieldCheck className="w-5 h-5 text-emerald-600" />
+            Marcar cuadrado hasta…
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Cerrar">
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          Confirma hasta qué día el banco real coincide con el sistema. Los días
+          hasta esa fecha se ocultan, y solo buscarás diferencias en lo posterior.
+          Si después editas algo de un día ya cuadrado, el marcador retrocede solo.
+        </p>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Cuadrado hasta el</label>
+        <input
+          type="date"
+          value={date}
+          max={maxDate}
+          onChange={(e) => setDate(e.target.value)}
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          autoFocus
+        />
+        <div className="flex gap-2 justify-end pt-5">
+          <button onClick={onClose} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg">
+            Cancelar
+          </button>
+          <button
+            onClick={() => onSave(date)}
+            disabled={!date}
+            className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50"
+          >
+            Guardar
+          </button>
+        </div>
+      </div>
     </div>
   );
 }

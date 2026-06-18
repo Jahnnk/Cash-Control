@@ -39,6 +39,10 @@ export const businesses = pgTable("businesses", {
   initialBcpBalance: numeric("initial_bcp_balance", { precision: 12, scale: 2 }).default("0").notNull(),
   initialCashBalance: numeric("initial_cash_balance", { precision: 12, scale: 2 }).default("0").notNull(),
   initialBalanceDate: date("initial_balance_date"),
+  // "Cuadrado hasta": hasta qué fecha Jahnn confirmó que banco = sistema.
+  // La búsqueda de diferencias y el feed de Movimientos diarios se enfocan
+  // en lo posterior a esta fecha. NULL = nunca cuadrado (no cambia saldos).
+  reconciledThroughDate: date("reconciled_through_date"),
   createdAt: timestamp("created_at").defaultNow().notNull(),
   updatedAt: timestamp("updated_at").defaultNow().notNull(),
 });

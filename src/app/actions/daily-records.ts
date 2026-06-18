@@ -148,6 +148,20 @@ export async function recalcBankBalance(date: string) {
     WHERE dr.business_id = ${bId} AND dr.date = chain.date AND dr.date >= ${date}
   `);
 
+  // Retroceso del marcador "Cuadrado hasta": si se modificó el saldo de un
+  // día YA dado por cuadrado (date <= reconciled_through_date), el marcador
+  // retrocede al día anterior para no afirmar un cuadre sobre algo que cambió.
+  // recalcBankBalance es el chokepoint de todo cambio que afecta el banco
+  // (crear/editar/borrar/mover ingresos y egresos), así que cubre todos los
+  // caminos. Entrar el saldo real del día (updateBankBalance) NO pasa por aquí.
+  await db.execute(sql`
+    UPDATE businesses
+    SET reconciled_through_date = (${date}::date - INTERVAL '1 day')::date
+    WHERE id = ${bId}
+      AND reconciled_through_date IS NOT NULL
+      AND reconciled_through_date >= ${date}
+  `);
+
   const result = await db.execute(sql`
     SELECT bank_balance_real::float as balance FROM daily_records
     WHERE business_id = ${bId} AND date = ${date}
