@@ -427,7 +427,7 @@ export async function getDailyBreakdown(
              linked_atelier_expense_id::text AS linked_atelier_expense_id
       FROM expenses
       WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
-      ORDER BY date DESC, amount DESC
+      ORDER BY date DESC, sort_order ASC, amount DESC
     `);
     return { format: "expense", rows: result.rows };
   }

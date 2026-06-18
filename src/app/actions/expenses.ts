@@ -301,6 +301,74 @@ export async function reorderExpenses(items: { id: string; sortOrder: number }[]
   revalidatePath("/", "layout");
 }
 
+/**
+ * Mueve un egreso por drag & drop en "Movimientos diarios":
+ *  - Reordena dentro del mismo día (sort_order), O
+ *  - Lo mueve a otro día (cambia la fecha) — re-fecha el egreso y recalcula
+ *    el saldo del banco del día origen y del destino.
+ *
+ * Restricciones: solo egresos operativos normales. Los compartidos
+ * (is_shared) y sus espejos (linked_atelier_expense_id) NO se pueden mover
+ * a otro día desde aquí — su fecha está ligada a la receivable y al espejo
+ * del otro local; para re-fecharlos se usa el editor (lápiz). Reordenar
+ * dentro del mismo día sí se permite para todos.
+ */
+export async function moveExpenseItem(data: {
+  id: string;
+  toDate: string;
+  orderedIds: string[];
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const bId = await activeBusinessId();
+
+  const row = (await db.execute(sql`
+    SELECT date::text AS date, is_special_loan, is_internal_transfer, archived,
+           is_shared, linked_atelier_expense_id::text AS linked_atelier_expense_id
+    FROM expenses WHERE id = ${data.id} AND business_id = ${bId}
+  `)).rows[0] as
+    | { date: string; is_special_loan: boolean; is_internal_transfer: boolean; archived: boolean; is_shared: boolean; linked_atelier_expense_id: string | null }
+    | undefined;
+  if (!row) return { ok: false, error: "Egreso no encontrado" };
+  if (row.is_special_loan || row.is_internal_transfer || row.archived) {
+    return { ok: false, error: "Este movimiento se gestiona en su propio módulo y no se puede mover desde aquí." };
+  }
+
+  const dateChanged = row.date !== data.toDate;
+  if (dateChanged && (row.is_shared || row.linked_atelier_expense_id)) {
+    return {
+      ok: false,
+      error: "Este gasto es compartido. Para cambiarle la fecha, edítalo con el lápiz.",
+    };
+  }
+  if (dateChanged) {
+    const dateErr = validateMovementDate(data.toDate);
+    if (dateErr) return { ok: false, error: dateErr };
+    await db.execute(sql`
+      INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${data.toDate})
+      ON CONFLICT (business_id, date) DO NOTHING
+    `);
+    await db.execute(sql`
+      UPDATE expenses SET date = ${data.toDate}
+      WHERE id = ${data.id} AND business_id = ${bId}
+    `);
+  }
+
+  let order = 0;
+  for (const itemId of data.orderedIds) {
+    await db.execute(sql`
+      UPDATE expenses SET sort_order = ${order}
+      WHERE id = ${itemId} AND business_id = ${bId}
+    `);
+    order++;
+  }
+
+  if (dateChanged) {
+    await recalcBankBalance(row.date);
+    await recalcBankBalance(data.toDate);
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
+
 export async function getExpensesByDateRange(startDate: string, endDate: string) {
   const bId = await activeBusinessId();
   const result = await db.execute(sql`

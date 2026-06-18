@@ -14,6 +14,9 @@
     "db:setup": "tsx scripts/migrate.ts && tsx scripts/seed.ts"
   },
   "dependencies": {
+    "@dnd-kit/core": "^6.3.1",
+    "@dnd-kit/sortable": "^10.0.0",
+    "@dnd-kit/utilities": "^3.2.2",
     "@neondatabase/serverless": "^1.0.2",
     "@vercel/blob": "^2.4.0",
     "chart.js": "^4.5.1",
@@ -26,6 +29,7 @@
     "next": "16.2.3",
     "react": "19.2.4",
     "react-dom": "19.2.4",
+    "react-is": "^19.2.7",
     "recharts": "^3.8.1",
     "xlsx": "^0.18.5"
   },

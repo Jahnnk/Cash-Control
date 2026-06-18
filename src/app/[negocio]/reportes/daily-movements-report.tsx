@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useMemo } from "react";
+import { useState, useEffect, useCallback, useMemo, type ReactNode, type CSSProperties } from "react";
 import { useSearchParams } from "next/navigation";
 import { getDailyBreakdown } from "@/app/actions/reports";
 import { getCategories } from "@/app/actions/categories";
@@ -10,10 +10,39 @@ import {
   toggleBcpVerifiedIncome,
   toggleBcpVerifiedExpense,
 } from "@/app/actions/bcp-verification";
+import { moveBankIncomeItem } from "@/app/actions/bank-income";
+import { moveExpenseItem } from "@/app/actions/expenses";
+import { reorderColumn } from "@/lib/dnd-reorder";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
-import { Pencil, Trash2, Plus, CheckCircle2, Paperclip } from "lucide-react";
+import { Pencil, Trash2, Plus, CheckCircle2, Paperclip, GripVertical, X as XIcon } from "lucide-react";
+import {
+  DndContext,
+  PointerSensor,
+  TouchSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  useDroppable,
+  type DragEndEvent,
+} from "@dnd-kit/core";
+import {
+  SortableContext,
+  useSortable,
+  verticalListSortingStrategy,
+} from "@dnd-kit/sortable";
+import { CSS } from "@dnd-kit/utilities";
+
+/** id de columna-día para el DnD: `inc__<fecha>` / `exp__<fecha>`. */
+function colId(type: "income" | "expense", date: string): string {
+  return `${type === "income" ? "inc" : "exp"}__${date}`;
+}
+function parseColId(id: string): { type: "income" | "expense"; date: string } | null {
+  const m = /^(inc|exp)__(\d{4}-\d{2}-\d{2})$/.exec(id);
+  if (!m) return null;
+  return { type: m[1] === "inc" ? "income" : "expense", date: m[2] };
+}
 import { EditRecordModal, type EditTarget } from "./edit-record-modal";
 import { DeleteRecordModal, type DeleteTarget } from "./delete-record-modal";
 import { useToast } from "@/components/toast-provider";
@@ -289,6 +318,117 @@ export function DailyMovementsReport() {
     [incomes, expenses],
   );
 
+  // ── Selección para sumar (independiente por tipo, cruza días) ──
+  const [selectedIncome, setSelectedIncome] = useState<Set<string>>(new Set());
+  const [selectedExpense, setSelectedExpense] = useState<Set<string>>(new Set());
+  const toggleSelect = useCallback((type: "income" | "expense", id: string) => {
+    const setter = type === "income" ? setSelectedIncome : setSelectedExpense;
+    setter((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+  // Filas seleccionadas que AÚN existen (tras recargar, los ids viejos
+  // simplemente no cuentan — sin efecto de limpieza ni cascada de renders).
+  const selectedIncomeRows = useMemo(
+    () => incomes.filter((i) => selectedIncome.has(i.id)),
+    [incomes, selectedIncome],
+  );
+  const selectedExpenseRows = useMemo(
+    () => expenses.filter((e) => selectedExpense.has(e.id)),
+    [expenses, selectedExpense],
+  );
+  const selectedIncomeSum = selectedIncomeRows.reduce((s, i) => s + i.amount, 0);
+  const selectedExpenseSum = selectedExpenseRows.reduce((s, e) => s + e.amount, 0);
+
+  // ── Drag & drop: reordenar dentro del día y mover entre días ──
+  // Sensores: en escritorio arranca tras 6px de arrastre (no estorba clicks);
+  // en táctil, tras mantener presionado 200ms (no choca con el scroll).
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 6 } }),
+    useSensor(TouchSensor, { activationConstraint: { delay: 200, tolerance: 8 } }),
+  );
+
+  const handleDragEnd = useCallback(
+    async (event: DragEndEvent) => {
+      const { active, over } = event;
+      if (!over) return;
+      const activeId = String(active.id);
+      const overRaw = String(over.id);
+      if (overRaw === activeId) return;
+
+      // Tipo + fecha de origen del item arrastrado.
+      const inc = incomes.find((i) => i.id === activeId);
+      const exp = expenses.find((e) => e.id === activeId);
+      const type: "income" | "expense" | null = inc ? "income" : exp ? "expense" : null;
+      if (!type) return;
+      const fromDate = (inc ?? exp)!.date;
+
+      // Destino: el 'over' puede ser otra fila (item) o una columna vacía.
+      let targetType: "income" | "expense";
+      let targetDate: string;
+      let overItemId: string | null;
+      const parsedCol = parseColId(overRaw);
+      if (parsedCol) {
+        targetType = parsedCol.type;
+        targetDate = parsedCol.date;
+        overItemId = null;
+      } else {
+        const oInc = incomes.find((i) => i.id === overRaw);
+        const oExp = expenses.find((e) => e.id === overRaw);
+        if (oInc) { targetType = "income"; targetDate = oInc.date; }
+        else if (oExp) { targetType = "expense"; targetDate = oExp.date; }
+        else return;
+        overItemId = overRaw;
+      }
+
+      // No se puede convertir un ingreso en egreso (ni viceversa).
+      if (targetType !== type) {
+        showToast("No puedes mover un ingreso a egresos ni al revés.", "error");
+        return;
+      }
+      if (targetDate === fromDate && (overItemId === activeId || overItemId === null)) return;
+
+      const rows = type === "income" ? incomes : expenses;
+      const fullIds = rows.filter((r) => r.date === targetDate).map((r) => r.id);
+      const newOrder = reorderColumn(fullIds, activeId, overItemId);
+      const dateChanged = targetDate !== fromDate;
+
+      // Update optimista (snapshot para revertir si el server falla).
+      const prevIncomes = incomes;
+      const prevExpenses = expenses;
+      const reorderArr = <T extends { id: string; date: string }>(curr: T[]): T[] => {
+        const updated = curr.map((r) =>
+          r.id === activeId ? { ...r, date: targetDate } : r,
+        );
+        const target = newOrder
+          .map((id) => updated.find((r) => r.id === id))
+          .filter(Boolean) as T[];
+        const others = updated.filter((r) => r.date !== targetDate);
+        return [...others, ...target];
+      };
+      if (type === "income") setIncomes(reorderArr);
+      else setExpenses(reorderArr);
+
+      const result =
+        type === "income"
+          ? await moveBankIncomeItem({ id: activeId, toDate: targetDate, orderedIds: newOrder })
+          : await moveExpenseItem({ id: activeId, toDate: targetDate, orderedIds: newOrder });
+
+      if (!result.ok) {
+        setIncomes(prevIncomes);
+        setExpenses(prevExpenses);
+        showToast(result.error, "error");
+        return;
+      }
+      // Mover entre días re-fecha el movimiento → refrescar el saldo del banco.
+      if (dateChanged) await bank.refresh();
+    },
+    [incomes, expenses, bank, showToast],
+  );
+
   // Combina ingresos y egresos en bloques por día (desc por fecha).
   const days: DayBlock[] = useMemo(() => {
     const map = new Map<string, DayBlock>();
@@ -484,23 +624,76 @@ export function DailyMovementsReport() {
               Todos los movimientos del mes están verificados.
             </div>
           ) : (
-            visibleDays.map((d) => (
-              <DayCard
-                onAttach={(recordType, recordId, title) => setAttachTarget({ recordType, recordId, title })}
-                attachCounts={attachCounts}
-                key={d.date}
-                day={d}
-                hideVerified={hideVerified}
-                onEdit={setEditTarget}
-                onDelete={setDeleteTarget}
-                onCreate={(type) =>
-                  setCreateTarget({ type, date: d.date, dateLocked: true })
-                }
-                onToggleVerify={toggleVerify}
-              />
-            ))
+            <DndContext
+              sensors={sensors}
+              collisionDetection={closestCenter}
+              onDragEnd={handleDragEnd}
+            >
+              <div className="space-y-6">
+                {visibleDays.map((d) => (
+                  <DayCard
+                    onAttach={(recordType, recordId, title) => setAttachTarget({ recordType, recordId, title })}
+                    attachCounts={attachCounts}
+                    key={d.date}
+                    day={d}
+                    hideVerified={hideVerified}
+                    onEdit={setEditTarget}
+                    onDelete={setDeleteTarget}
+                    onCreate={(type) =>
+                      setCreateTarget({ type, date: d.date, dateLocked: true })
+                    }
+                    onToggleVerify={toggleVerify}
+                    selectedIncome={selectedIncome}
+                    selectedExpense={selectedExpense}
+                    onToggleSelect={toggleSelect}
+                  />
+                ))}
+              </div>
+            </DndContext>
           )}
         </>
+      )}
+
+      {/* Barras de suma de selección (aparecen solo si hay algo marcado) */}
+      {(selectedIncomeRows.length > 0 || selectedExpenseRows.length > 0) && (
+        <div className="sticky bottom-3 z-30 flex flex-col items-center gap-2 pointer-events-none">
+          {selectedIncomeRows.length > 0 && (
+            <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-emerald-200 bg-white/95 backdrop-blur px-4 py-2 shadow-lg">
+              <span className="text-xs text-gray-500">
+                {selectedIncomeRows.length} ingreso{selectedIncomeRows.length === 1 ? "" : "s"} ·
+              </span>
+              <span className="text-sm font-bold text-emerald-600">
+                Suma: {formatCurrency(selectedIncomeSum)}
+              </span>
+              <button
+                onClick={() => setSelectedIncome(new Set())}
+                className="text-gray-400 hover:text-gray-700 p-0.5 rounded hover:bg-gray-100"
+                aria-label="Limpiar selección de ingresos"
+                title="Limpiar selección"
+              >
+                <XIcon className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+          {selectedExpenseRows.length > 0 && (
+            <div className="pointer-events-auto flex items-center gap-3 rounded-full border border-red-200 bg-white/95 backdrop-blur px-4 py-2 shadow-lg">
+              <span className="text-xs text-gray-500">
+                {selectedExpenseRows.length} egreso{selectedExpenseRows.length === 1 ? "" : "s"} ·
+              </span>
+              <span className="text-sm font-bold text-red-600">
+                Suma: {formatCurrency(selectedExpenseSum)}
+              </span>
+              <button
+                onClick={() => setSelectedExpense(new Set())}
+                className="text-gray-400 hover:text-gray-700 p-0.5 rounded hover:bg-gray-100"
+                aria-label="Limpiar selección de egresos"
+                title="Limpiar selección"
+              >
+                <XIcon className="w-3.5 h-3.5" />
+              </button>
+            </div>
+          )}
+        </div>
       )}
 
       {attachTarget && (
@@ -575,6 +768,81 @@ export function DailyMovementsReport() {
   );
 }
 
+/** Columna-día que acepta soltar (incluso vacía). */
+function DroppableColumn({ id, children }: { id: string; children: ReactNode }) {
+  const { setNodeRef, isOver } = useDroppable({ id });
+  return (
+    <div
+      ref={setNodeRef}
+      className={`divide-y divide-gray-50 min-h-[2.75rem] transition-colors ${isOver ? "bg-primary/5" : ""}`}
+    >
+      {children}
+    </div>
+  );
+}
+
+/**
+ * Fila arrastrable. El "asa" (⠿) lleva los listeners de arrastre; el resto
+ * de la fila sigue clickeable (casillas, lápiz, papelera). El asa se entrega
+ * vía render-prop para colocarla dentro del contenido de la fila.
+ */
+function SortableRow({
+  id,
+  children,
+}: {
+  id: string;
+  children: (handleProps: Record<string, unknown>) => ReactNode;
+}) {
+  const { attributes, listeners, setNodeRef, transform, transition, isDragging } =
+    useSortable({ id });
+  const style: CSSProperties = {
+    transform: CSS.Transform.toString(transform),
+    transition,
+    opacity: isDragging ? 0.4 : undefined,
+    zIndex: isDragging ? 10 : undefined,
+    position: isDragging ? "relative" : undefined,
+  };
+  return (
+    <div ref={setNodeRef} style={style}>
+      {children({ ...attributes, ...listeners })}
+    </div>
+  );
+}
+
+/** Asa de arrastre reutilizable (mismo look en ingresos y egresos). */
+function DragHandle({ handleProps }: { handleProps: Record<string, unknown> }) {
+  return (
+    <button
+      {...handleProps}
+      className="self-stretch flex items-center px-1.5 text-gray-300 hover:text-gray-500 cursor-grab active:cursor-grabbing touch-none shrink-0"
+      aria-label="Arrastrar para reordenar o mover a otro día"
+      title="Arrastrar para reordenar o mover a otro día"
+    >
+      <GripVertical className="w-3.5 h-3.5" />
+    </button>
+  );
+}
+
+/** Casilla para sumar (al costado del monto). Distinta de la de verificado. */
+function SumCheckbox({
+  checked,
+  onChange,
+}: {
+  checked: boolean;
+  onChange: () => void;
+}) {
+  return (
+    <input
+      type="checkbox"
+      checked={checked}
+      onChange={onChange}
+      className="shrink-0 w-4 h-4 rounded border-gray-300 text-primary focus:ring-primary focus:ring-offset-0 cursor-pointer"
+      aria-label="Seleccionar para sumar"
+      title="Seleccionar este monto para sumarlo abajo"
+    />
+  );
+}
+
 function DayCard({
   day,
   hideVerified,
@@ -584,6 +852,9 @@ function DayCard({
   onToggleVerify,
   onAttach,
   attachCounts,
+  selectedIncome,
+  selectedExpense,
+  onToggleSelect,
 }: {
   day: DayBlock;
   hideVerified: boolean;
@@ -593,6 +864,9 @@ function DayCard({
   onToggleVerify: (type: "income" | "expense", id: string) => void;
   onAttach: (recordType: "income" | "expense", recordId: string, title: string) => void;
   attachCounts: Record<string, number>;
+  selectedIncome: Set<string>;
+  selectedExpense: Set<string>;
+  onToggleSelect: (type: "income" | "expense", id: string) => void;
 }) {
   const netCls =
     day.net > 0
@@ -665,7 +939,8 @@ function DayCard({
               {formatCurrency(day.incomeTotal)}
             </span>
           </div>
-          <div className="divide-y divide-gray-50">
+          <SortableContext items={visibleIncomes.map((i) => i.id)} strategy={verticalListSortingStrategy}>
+            <DroppableColumn id={colId("income", day.date)}>
             {visibleIncomes.length === 0 ? (
               <div className="px-4 py-6 text-xs text-gray-400 italic text-center">
                 {day.incomes.length === 0
@@ -675,11 +950,15 @@ function DayCard({
             ) : (
               visibleIncomes.map((i) => {
                 const isVerified = !!i.bcpVerifiedAt;
+                const isSel = selectedIncome.has(i.id);
                 return (
+                  <SortableRow key={i.id} id={i.id}>
+                    {(handleProps) => (
                   <div
-                    key={i.id}
-                    className="group flex items-center justify-between px-4 py-2 hover:bg-gray-50 transition-opacity duration-150"
+                    className={`group flex items-center justify-between pr-4 py-2 transition-opacity duration-150 ${isSel ? "bg-primary/5" : "hover:bg-gray-50"}`}
                   >
+                    <div className="flex items-center gap-1 flex-1 min-w-0">
+                    <DragHandle handleProps={handleProps} />
                     <label
                       className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
                       title={
@@ -707,7 +986,9 @@ function DayCard({
                           : i.note || "Ingreso"}
                       </span>
                     </label>
+                    </div>
                     <div className="flex items-center gap-2 shrink-0">
+                      <SumCheckbox checked={isSel} onChange={() => onToggleSelect("income", i.id)} />
                       <span
                         className={`text-xs font-medium transition-opacity duration-150 ${
                           isVerified
@@ -768,10 +1049,13 @@ function DayCard({
                       </div>
                     </div>
                   </div>
+                    )}
+                  </SortableRow>
                 );
               })
             )}
-          </div>
+            </DroppableColumn>
+          </SortableContext>
         </div>
 
         {/* Egresos */}
@@ -803,7 +1087,8 @@ function DayCard({
               {formatCurrency(day.expenseTotal)}
             </span>
           </div>
-          <div className="divide-y divide-gray-50">
+          <SortableContext items={visibleExpenses.map((e) => e.id)} strategy={verticalListSortingStrategy}>
+            <DroppableColumn id={colId("expense", day.date)}>
             {visibleExpenses.length === 0 ? (
               <div className="px-4 py-6 text-xs text-gray-400 italic text-center">
                 {day.expenses.length === 0
@@ -813,12 +1098,16 @@ function DayCard({
             ) : (
               visibleExpenses.map((e) => {
                 const isVerified = !!e.bcpVerifiedAt;
+                const isSel = selectedExpense.has(e.id);
                 return (
+                  <SortableRow key={e.id} id={e.id}>
+                    {(handleProps) => (
                   <div
-                    key={e.id}
-                    className="group px-4 py-2 hover:bg-gray-50 transition-opacity duration-150"
+                    className={`group pr-4 py-2 transition-opacity duration-150 ${isSel ? "bg-primary/5" : "hover:bg-gray-50"}`}
                   >
                     <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1 flex-1 min-w-0">
+                      <DragHandle handleProps={handleProps} />
                       <label
                         className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
                         title={
@@ -852,7 +1141,9 @@ function DayCard({
                           <span>{e.concept}</span>
                         </span>
                       </label>
+                      </div>
                       <div className="flex items-center gap-2 shrink-0">
+                        <SumCheckbox checked={isSel} onChange={() => onToggleSelect("expense", e.id)} />
                         <span
                           className={`text-xs font-medium transition-opacity duration-150 ${
                             isVerified
@@ -924,7 +1215,7 @@ function DayCard({
                     </div>
                     {e.notes && (
                       <div
-                        className={`text-[11px] pl-6 mt-0.5 transition-opacity duration-150 ${
+                        className={`text-[11px] pl-8 mt-0.5 transition-opacity duration-150 ${
                           isVerified
                             ? "line-through opacity-50 text-gray-400"
                             : "text-gray-400"
@@ -934,10 +1225,13 @@ function DayCard({
                       </div>
                     )}
                   </div>
+                    )}
+                  </SortableRow>
                 );
               })
             )}
-          </div>
+            </DroppableColumn>
+          </SortableContext>
         </div>
       </div>
     </div>
