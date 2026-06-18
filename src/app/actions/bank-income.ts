@@ -277,3 +277,63 @@ export async function reorderBankIncomeItems(items: { id: string; sortOrder: num
     `);
   }
 }
+
+/**
+ * Mueve un ingreso por drag & drop en "Movimientos diarios":
+ *  - Reordena dentro del mismo día (cambia sort_order), O
+ *  - Lo mueve a otro día (cambia la fecha) — equivalente a re-fecharlo,
+ *    así que recalcula el saldo del banco del día origen y del destino.
+ *
+ * `orderedIds` = orden COMPLETO de la columna destino tras soltar (incluye
+ * el item movido). Solo se permiten ingresos operativos normales; los
+ * especiales (préstamo socio, transferencia interna, venta Byte, reembolso
+ * Fonavi) se gestionan en sus propios módulos y se rechazan aquí.
+ */
+export async function moveBankIncomeItem(data: {
+  id: string;
+  toDate: string;
+  orderedIds: string[];
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const bId = await activeBusinessId();
+
+  const row = (await db.execute(sql`
+    SELECT date::text AS date, is_special_loan, is_internal_transfer, is_byte_sale, is_fonavi_reimbursement, archived
+    FROM bank_income_items WHERE id = ${data.id} AND business_id = ${bId}
+  `)).rows[0] as
+    | { date: string; is_special_loan: boolean; is_internal_transfer: boolean; is_byte_sale: boolean; is_fonavi_reimbursement: boolean; archived: boolean }
+    | undefined;
+  if (!row) return { ok: false, error: "Ingreso no encontrado" };
+  if (row.is_special_loan || row.is_internal_transfer || row.is_byte_sale || row.is_fonavi_reimbursement || row.archived) {
+    return { ok: false, error: "Este movimiento se gestiona en su propio módulo y no se puede mover desde aquí." };
+  }
+
+  const dateChanged = row.date !== data.toDate;
+  if (dateChanged) {
+    const dateErr = validateMovementDate(data.toDate);
+    if (dateErr) return { ok: false, error: dateErr };
+    await db.execute(sql`
+      INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${data.toDate})
+      ON CONFLICT (business_id, date) DO NOTHING
+    `);
+    await db.execute(sql`
+      UPDATE bank_income_items SET date = ${data.toDate}
+      WHERE id = ${data.id} AND business_id = ${bId}
+    `);
+  }
+
+  let order = 0;
+  for (const itemId of data.orderedIds) {
+    await db.execute(sql`
+      UPDATE bank_income_items SET sort_order = ${order}
+      WHERE id = ${itemId} AND business_id = ${bId}
+    `);
+    order++;
+  }
+
+  if (dateChanged) {
+    await recalcBankBalance(row.date);
+    await recalcBankBalance(data.toDate);
+  }
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
