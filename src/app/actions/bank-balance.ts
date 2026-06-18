@@ -48,13 +48,17 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
   // system_start_date — comportamiento legacy intacto.
   const cfgRes = await db.execute(sql`
     SELECT system_start_date::text AS start, initial_bcp_balance::float AS init_bcp,
-           initial_balance_date::text AS init_date
+           initial_balance_date::text AS init_date,
+           reconciled_through_date::text AS reconciled_through
     FROM businesses WHERE id = ${bId}
   `);
   const cfg = cfgRes.rows[0] as
-    | { start: string | null; init_bcp: number; init_date: string | null }
+    | { start: string | null; init_bcp: number; init_date: string | null; reconciled_through: string | null }
     | undefined;
   const hasReset = !!(cfg?.start);
+  // "Cuadrado hasta": no buscar diferencias en días ya dados por cuadrados.
+  // '0001-01-01' (sin marcador) deja pasar todos los días.
+  const reconciledThrough = cfg?.reconciled_through ?? "0001-01-01";
 
   // ── 1. Anchor: último saldo guardado ≤ hoy en filas NO archivadas
   const anchorRes = await db.execute(sql`
@@ -149,6 +153,7 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     LEFT JOIN daily_inflow i ON i.date = c.date
     LEFT JOIN daily_outflow o ON o.date = c.date
     WHERE c.prev_balance IS NOT NULL
+      AND c.date > ${reconciledThrough}
       AND ABS(c.balance - (c.prev_balance + COALESCE(i.inflow, 0) - COALESCE(o.outflow, 0))) >= ${DISCREPANCY_TOLERANCE}
     ORDER BY c.date ASC
     LIMIT 1
