@@ -5,9 +5,9 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { DataTable } from "@/components/ui/DataTable";
-import { Plus, History, Wallet, CheckCircle2, AlertTriangle, X } from "lucide-react";
+import { Plus, History, Wallet, CheckCircle2, AlertTriangle, X, Pencil } from "lucide-react";
 import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
-import { markReceivableAsCollected } from "@/app/actions/fonavi-receivables";
+import { markReceivableAsCollected, updateReceivableAmount } from "@/app/actions/fonavi-receivables";
 import { ReimbursementModal } from "./reimbursement-modal";
 import { ReimbursementHistoryModal } from "./reimbursement-history-modal";
 import { PartnerReportModal } from "./partner-report-modal";
@@ -38,6 +38,9 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
   const [registerGeneric, setRegisterGeneric] = useState(false);
   const [historyFor, setHistoryFor] = useState<ReceivableRow | null>(null);
   const [markCollectedFor, setMarkCollectedFor] = useState<ReceivableRow | null>(null);
+  const [editAmountFor, setEditAmountFor] = useState<ReceivableRow | null>(null);
+  const [editValue, setEditValue] = useState("");
+  const [editError, setEditError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [markError, setMarkError] = useState<string | null>(null);
 
@@ -55,6 +58,39 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
       }
     });
   }
+
+  function openEditAmount(r: ReceivableRow) {
+    setEditError(null);
+    setEditValue(String(r.amount_due));
+    setEditAmountFor(r);
+  }
+
+  function handleEditAmount() {
+    if (!editAmountFor) return;
+    setEditError(null);
+    const amount = parseFloat(editValue);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setEditError("Ingresa un monto válido mayor a cero");
+      return;
+    }
+    const id = editAmountFor.id;
+    startTransition(async () => {
+      const r = await updateReceivableAmount(id, amount);
+      if (r.ok) {
+        setEditAmountFor(null);
+        router.refresh();
+      } else {
+        setEditError(r.error);
+      }
+    });
+  }
+
+  // Tope editable = parte de Atelier + parte actual del deudor (lo que pagó
+  // Atelier menos la parte fija del otro local). La parte de Atelier absorbe
+  // la diferencia, así que el total que pagó Atelier nunca cambia.
+  const editMax = editAmountFor
+    ? Math.round((editAmountFor.atelier_amount + editAmountFor.amount_due) * 100) / 100
+    : 0;
 
   // Si llega ?accion=registrar-reembolso, abrir el modal una vez
   const autoOpenedRef = useRef(false);
@@ -198,6 +234,15 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
                     >
                       <Wallet className="w-3 h-3" /> Registrar
                     </button>
+                    {r.amount_collected === 0 && (
+                      <button
+                        onClick={() => openEditAmount(r)}
+                        className="text-xs text-blue-700 hover:underline inline-flex items-center gap-1"
+                        title="Editar cuánto debe este local por este gasto (no mueve los saldos del banco)"
+                      >
+                        <Pencil className="w-3 h-3" /> Editar
+                      </button>
+                    )}
                     <button
                       onClick={() => { setMarkError(null); setMarkCollectedFor(r); }}
                       className="text-xs text-emerald-700 hover:underline inline-flex items-center gap-1"
@@ -241,6 +286,87 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
           onClose={() => setHistoryFor(null)}
           onChanged={() => router.refresh()}
         />
+      )}
+
+      {editAmountFor && (
+        <div
+          className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4"
+          onClick={() => !pending && setEditAmountFor(null)}
+        >
+          <div
+            className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start gap-3 min-w-0">
+                <div className="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center shrink-0">
+                  <Pencil className="w-5 h-5 text-blue-600" />
+                </div>
+                <div className="min-w-0">
+                  <h3 className="text-lg font-semibold text-gray-900">
+                    Editar cuánto debe {debtor.name}
+                  </h3>
+                  <p className="text-sm text-gray-600 mt-1">
+                    Cambia solo lo que {debtor.name} te debe por este gasto.
+                    <strong> No mueve el saldo del banco</strong> (ni el tuyo ni el de {debtor.name}).
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => !pending && setEditAmountFor(null)}
+                className="text-gray-400 hover:text-gray-600 shrink-0"
+                aria-label="Cerrar"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1 mb-4">
+              <div><span className="text-gray-500">Concepto: </span><span className="text-gray-900">{editAmountFor.concept}</span></div>
+              <div><span className="text-gray-500">Total que pagó Atelier: </span><span className="font-medium text-gray-900">{formatCurrency(editAmountFor.amount_total)}</span></div>
+              <div><span className="text-gray-500">Debe ahora: </span><span className="text-gray-900">{formatCurrency(editAmountFor.amount_due)}</span></div>
+            </div>
+
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Nuevo monto que debe {debtor.name} (S/)
+            </label>
+            <input
+              type="number" inputMode="decimal" min="0.01" max={editMax} step="0.01"
+              value={editValue}
+              autoFocus
+              onChange={(e) => setEditValue(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+              placeholder="0.00"
+            />
+            <p className="text-[11px] text-gray-500 mt-1">
+              Máximo S/{editMax.toFixed(2)} (lo que pagó Atelier menos la parte del otro local).
+              La diferencia la absorbe Atelier.
+            </p>
+
+            {editError && (
+              <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2 mt-4">
+                {editError}
+              </div>
+            )}
+
+            <div className="flex gap-2 justify-end pt-5">
+              <button
+                onClick={() => setEditAmountFor(null)}
+                disabled={pending}
+                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleEditAmount}
+                disabled={pending}
+                className="px-4 py-2 text-sm font-medium text-white bg-blue-600 hover:bg-blue-700 rounded-lg disabled:opacity-50"
+              >
+                {pending ? "Guardando..." : "Guardar monto"}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       {markCollectedFor && (

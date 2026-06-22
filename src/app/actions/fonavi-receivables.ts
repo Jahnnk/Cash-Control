@@ -597,3 +597,87 @@ export async function markReceivableAsCollected(
   revalidatePath("/", "layout");
   return { success: true };
 }
+
+/**
+ * Edita CUÁNTO debe el local deudor (Fonavi/Centro) por un gasto compartido,
+ * sin mover ningún saldo de banco:
+ *   - El TOTAL que pagó Atelier NO cambia → el banco de Atelier queda igual.
+ *   - El espejo del deudor es 'pendiente_atelier' (no cuenta en su banco)
+ *     mientras la cuenta esté pendiente → el banco del deudor queda igual.
+ *
+ * Ajusta de forma atómica y consistente las 3 piezas: la parte del deudor en
+ * el gasto de Atelier (fonavi_amount/centro_amount + atelier_amount), el monto
+ * de la cuenta por cobrar, y el monto del espejo. Solo se permite en cuentas
+ * SIN cobros (amount_collected = 0); si ya hubo un cobro, primero hay que
+ * anularlo. El nuevo monto no puede superar lo que pagó Atelier menos la parte
+ * del otro local (la parte de Atelier no puede quedar negativa).
+ */
+export async function updateReceivableAmount(
+  receivableId: string,
+  newAmount: number,
+): Promise<{ ok: true } | { ok: false; error: string }> {
+  await requireAtelier();
+
+  if (!Number.isFinite(newAmount) || newAmount <= 0) {
+    return { ok: false, error: "El monto debe ser mayor a cero" };
+  }
+  const amtErr = validateAmount(newAmount);
+  if (amtErr) return { ok: false, error: amtErr };
+
+  const r = (await sql`
+    SELECT fr.amount_collected::float AS col, fr.status,
+           fr.debtor_business_id::int AS debtor, fr.expense_id::text AS expense_id,
+           e.amount::float AS total, e.fonavi_amount::float AS fonavi, e.centro_amount::float AS centro
+    FROM fonavi_receivables fr JOIN expenses e ON e.id = fr.expense_id
+    WHERE fr.id = ${receivableId}
+  `) as { col: number; status: string; debtor: number; expense_id: string; total: number; fonavi: number | null; centro: number | null }[];
+  if (!r[0]) return { ok: false, error: "Cuenta por cobrar no encontrada" };
+  const row = r[0];
+  if (row.status === "collected" || row.col > 0) {
+    return { ok: false, error: "No se puede editar el monto de una cuenta que ya tiene cobros. Primero anula el cobro." };
+  }
+  if (!isDebtorId(row.debtor)) {
+    return { ok: false, error: "Local deudor inválido" };
+  }
+
+  // Tope: lo que pagó Atelier menos la parte del OTRO local (la parte de
+  // Atelier no puede quedar negativa).
+  const otherPart = row.debtor === 2 ? (row.centro ?? 0) : (row.fonavi ?? 0);
+  const maxForDebtor = Math.round((row.total - otherPart) * 100) / 100;
+  if (Math.round(newAmount * 100) > Math.round(maxForDebtor * 100)) {
+    return {
+      ok: false,
+      error: `El monto no puede superar S/${maxForDebtor.toFixed(2)} (lo que pagó Atelier menos la parte del otro local).`,
+    };
+  }
+
+  // (fecha, local) del espejo para recalcular su saldo — no-op mientras el
+  // espejo sea 'pendiente_atelier', pero correcto si alguna vez no lo fuera.
+  const mir = (await sql`
+    SELECT date::text AS date, business_id::int AS business_id FROM expenses
+    WHERE linked_receivable_id = ${receivableId} AND payment_method = 'pendiente_atelier'
+  `) as { date: string; business_id: number }[];
+
+  const queries = [
+    // 1. Parte del deudor en el gasto de Atelier (TOTAL intacto → banco Atelier igual)
+    row.debtor === 2
+      ? sql`UPDATE expenses SET fonavi_amount = ${newAmount}, atelier_amount = amount - ${newAmount} - COALESCE(centro_amount, 0) WHERE id = ${row.expense_id}`
+      : sql`UPDATE expenses SET centro_amount = ${newAmount}, atelier_amount = amount - COALESCE(fonavi_amount, 0) - ${newAmount} WHERE id = ${row.expense_id}`,
+    // 2. Monto de la cuenta por cobrar
+    sql`UPDATE fonavi_receivables SET amount_due = ${newAmount} WHERE id = ${receivableId}`,
+    // 3. Monto del espejo (pendiente_atelier → no toca el banco del deudor)
+    sql`UPDATE expenses SET amount = ${newAmount} WHERE linked_receivable_id = ${receivableId} AND payment_method = 'pendiente_atelier'`,
+  ];
+  for (const m of mir) {
+    queries.push(...debtorCascadeQueries(m.business_id, m.date));
+  }
+
+  try {
+    await sql.transaction(queries);
+  } catch (e) {
+    return { ok: false, error: e instanceof Error ? e.message : "Error al actualizar el monto" };
+  }
+
+  revalidatePath("/", "layout");
+  return { ok: true };
+}
