@@ -1,7 +1,7 @@
 "use client";
 
-import { useEffect, useState } from "react";
-import { X, Loader2, Trash2, AlertTriangle } from "lucide-react";
+import { useCallback, useEffect, useState } from "react";
+import { X, Loader2, Trash2, AlertTriangle, Paperclip } from "lucide-react";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import {
   getReimbursementsForReceivable,
@@ -9,6 +9,8 @@ import {
   type ReimbursementHistoryItem,
   type ReceivableRow,
 } from "@/app/actions/fonavi-receivables";
+import { AttachmentsModal } from "@/components/attachments/attachments-modal";
+import { getAttachmentCounts } from "@/app/actions/attachments";
 
 const CONFIRM_WORD = "ELIMINAR";
 
@@ -26,9 +28,25 @@ export function ReimbursementHistoryModal({
   const [confirmText, setConfirmText] = useState("");
   const [working, setWorking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Constancias por pago (clave = income_item_id)
+  const [attachFor, setAttachFor] = useState<{ incomeItemId: string; title: string } | null>(null);
+  const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
+
+  const reload = useCallback(async () => {
+    const rows = await getReimbursementsForReceivable(receivable.id);
+    setItems(rows);
+    const ids = [...new Set(rows.map((r) => r.income_item_id))];
+    setAttachCounts(await getAttachmentCounts("income", ids));
+  }, [receivable.id]);
 
   useEffect(() => {
-    getReimbursementsForReceivable(receivable.id).then(setItems);
+    // Patrón .then (setState en callback) para no disparar la regla
+    // set-state-in-effect; `reload` se usa tras borrar un reembolso.
+    getReimbursementsForReceivable(receivable.id).then((rows) => {
+      setItems(rows);
+      const ids = [...new Set(rows.map((r) => r.income_item_id))];
+      getAttachmentCounts("income", ids).then(setAttachCounts);
+    });
   }, [receivable.id]);
 
   async function handleDelete() {
@@ -42,8 +60,7 @@ export function ReimbursementHistoryModal({
     setDeletingId(null);
     setConfirmText("");
     // Refrescar lista local + avisar al padre
-    const refreshed = await getReimbursementsForReceivable(receivable.id);
-    setItems(refreshed);
+    await reload();
     onChanged();
   }
 
@@ -51,6 +68,7 @@ export function ReimbursementHistoryModal({
   const target = items?.find((i) => i.allocation_id === deletingId) ?? null;
 
   return (
+    <>
     <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
       <div className="bg-white rounded-xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
@@ -92,12 +110,22 @@ export function ReimbursementHistoryModal({
                         )}
                       </td>
                       <td className="px-4 py-2.5 text-right">
-                        <button
-                          onClick={() => { setDeletingId(it.allocation_id); setConfirmText(""); setError(null); }}
-                          className="text-xs text-red-600 hover:underline inline-flex items-center gap-1"
-                        >
-                          <Trash2 className="w-3 h-3" /> Eliminar
-                        </button>
+                        <div className="inline-flex items-center gap-3">
+                          <button
+                            onClick={() => setAttachFor({ incomeItemId: it.income_item_id, title: `Reembolso ${formatDateShort(it.date)} · ${formatCurrency(it.amount)}` })}
+                            className={`text-xs hover:underline inline-flex items-center gap-1 ${attachCounts[it.income_item_id] ? "text-violet-700 font-medium" : "text-gray-500"}`}
+                            title="Adjuntar la constancia de este pago (imagen o PDF). Aparece en el reporte para socia."
+                          >
+                            <Paperclip className="w-3 h-3" />
+                            Constancia{attachCounts[it.income_item_id] ? ` (${attachCounts[it.income_item_id]})` : ""}
+                          </button>
+                          <button
+                            onClick={() => { setDeletingId(it.allocation_id); setConfirmText(""); setError(null); }}
+                            className="text-xs text-red-600 hover:underline inline-flex items-center gap-1"
+                          >
+                            <Trash2 className="w-3 h-3" /> Eliminar
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))}
@@ -166,5 +194,16 @@ export function ReimbursementHistoryModal({
         </div>
       </div>
     </div>
+
+    {attachFor && (
+      <AttachmentsModal
+        recordType="income"
+        recordId={attachFor.incomeItemId}
+        title={attachFor.title}
+        onClose={() => setAttachFor(null)}
+        onCountChange={(n) => setAttachCounts((p) => ({ ...p, [attachFor.incomeItemId]: n }))}
+      />
+    )}
+    </>
   );
 }

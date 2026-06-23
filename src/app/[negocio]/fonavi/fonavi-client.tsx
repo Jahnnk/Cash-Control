@@ -5,9 +5,11 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { DataTable } from "@/components/ui/DataTable";
-import { Plus, History, Wallet, CheckCircle2, AlertTriangle, X, Pencil } from "lucide-react";
+import { Plus, History, Wallet, CheckCircle2, AlertTriangle, X, Pencil, Paperclip } from "lucide-react";
 import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
 import { markReceivableAsCollected, updateReceivableAmount } from "@/app/actions/fonavi-receivables";
+import { AttachmentsModal } from "@/components/attachments/attachments-modal";
+import { getAttachmentCounts } from "@/app/actions/attachments";
 import { ReimbursementModal } from "./reimbursement-modal";
 import { ReimbursementHistoryModal } from "./reimbursement-history-modal";
 import { PartnerReportModal } from "./partner-report-modal";
@@ -43,6 +45,14 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
   const [editError, setEditError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const [markError, setMarkError] = useState<string | null>(null);
+  // Constancia del gasto por fila (clave = expense_id). Aparece en el reporte.
+  const [attachFor, setAttachFor] = useState<{ expenseId: string; title: string } | null>(null);
+  const [attachCounts, setAttachCounts] = useState<Record<string, number>>({});
+
+  useEffect(() => {
+    const ids = [...new Set(initialReceivables.map((r) => r.expense_id))];
+    if (ids.length) getAttachmentCounts("expense", ids).then(setAttachCounts);
+  }, [initialReceivables]);
 
   function handleMarkAsCollected() {
     if (!markCollectedFor) return;
@@ -225,6 +235,14 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
             align: "right",
             render: (r) => (
               <div className="inline-flex items-center gap-2">
+                <button
+                  onClick={() => setAttachFor({ expenseId: r.expense_id, title: `${r.category} · ${r.concept}` })}
+                  className={`text-xs hover:underline inline-flex items-center gap-1 ${attachCounts[r.expense_id] ? "text-violet-700 font-medium" : "text-gray-500"}`}
+                  title="Adjuntar constancia de este gasto (imagen o PDF). Aparece en el reporte para socia."
+                >
+                  <Paperclip className="w-3 h-3" />
+                  Constancia{attachCounts[r.expense_id] ? ` (${attachCounts[r.expense_id]})` : ""}
+                </button>
                 {r.status !== "collected" && (
                   <>
                     <button
@@ -274,6 +292,16 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
           preselectedReceivableId={registerFor?.id}
           onClose={() => { setRegisterFor(null); setRegisterGeneric(false); }}
           onSaved={() => { setRegisterFor(null); setRegisterGeneric(false); router.refresh(); }}
+        />
+      )}
+
+      {attachFor && (
+        <AttachmentsModal
+          recordType="expense"
+          recordId={attachFor.expenseId}
+          title={attachFor.title}
+          onClose={() => setAttachFor(null)}
+          onCountChange={(n) => setAttachCounts((p) => ({ ...p, [attachFor.expenseId]: n }))}
         />
       )}
 

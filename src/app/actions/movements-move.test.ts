@@ -36,8 +36,10 @@ import { moveBankIncomeItem } from "./bank-income";
 import { moveExpenseItem } from "./expenses";
 import { recalcBankBalance } from "./daily-records";
 
-const TODAY = new Date().toISOString().slice(0, 10);
-const YESTERDAY = new Date(Date.now() - 86400000).toISOString().slice(0, 10);
+// "Hoy"/"ayer" en hora de Lima (igual que validateMovementDate): usar UTC
+// hacía fallar estos tests de noche en Lima (UTC ya rodó al día siguiente).
+const TODAY = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+const YESTERDAY = new Date(Date.now() - 86400000).toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 
 beforeEach(() => {
   fake.state.executed = [];

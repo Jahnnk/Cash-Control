@@ -60,7 +60,9 @@ beforeEach(() => {
   vi.mocked(recalcBankBalance).mockClear();
 });
 
-const TODAY = new Date().toISOString().slice(0, 10);
+// "Hoy" en hora de Lima (igual que validateMovementDate/assertValidLoanDate):
+// usar UTC aquí hacía fallar los tests de noche en Lima (UTC ya es mañana).
+const TODAY = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 
 describe("createLoan — payment_method y loan_via_bank por entrada", () => {
   it("entry 'banco': transferencia + loan_via_bank=true + recalcula el banco", async () => {
