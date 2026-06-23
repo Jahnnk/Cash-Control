@@ -5,7 +5,7 @@ import { useRouter, useSearchParams } from "next/navigation";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { KPICard } from "@/components/ui/KPICard";
 import { DataTable } from "@/components/ui/DataTable";
-import { Plus, History, Wallet, CheckCircle2, AlertTriangle, X, Pencil, Paperclip } from "lucide-react";
+import { Plus, History, Wallet, AlertTriangle, X, Pencil, Paperclip } from "lucide-react";
 import type { ReceivableRow } from "@/app/actions/fonavi-receivables";
 import { markReceivableAsCollected, updateReceivableAmount } from "@/app/actions/fonavi-receivables";
 import { AttachmentsModal } from "@/components/attachments/attachments-modal";
@@ -245,12 +245,13 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
                 </button>
                 {r.status !== "collected" && (
                   <>
+                    {/* Acción PRINCIPAL: cuando te pagan, suma al banco */}
                     <button
                       onClick={() => setRegisterFor(r)}
-                      className="text-xs text-violet-700 hover:underline inline-flex items-center gap-1"
-                      title="Registrar reembolso para esta cuenta"
+                      className="text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 rounded-md px-2.5 py-1 inline-flex items-center gap-1 shadow-sm"
+                      title="Te pagaron esta cuenta: registra el pago. Suma al banco y cierra la deuda."
                     >
-                      <Wallet className="w-3 h-3" /> Registrar
+                      <Wallet className="w-3 h-3" /> Registrar pago
                     </button>
                     {r.amount_collected === 0 && (
                       <button
@@ -261,12 +262,13 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
                         <Pencil className="w-3 h-3" /> Editar
                       </button>
                     )}
+                    {/* Acción AVANZADA (apagada): cierra la deuda SIN sumar al banco */}
                     <button
                       onClick={() => { setMarkError(null); setMarkCollectedFor(r); }}
-                      className="text-xs text-emerald-700 hover:underline inline-flex items-center gap-1"
-                      title="Marcar como cobrado sin generar ingreso (si el pago ya fue registrado antes)"
+                      className="text-[11px] text-gray-400 hover:text-gray-600 hover:underline"
+                      title="Avanzado: cierra la deuda SIN sumar al banco. Solo si ya registraste el ingreso por otro lado."
                     >
-                      <CheckCircle2 className="w-3 h-3" /> Marcar cobrado
+                      Saldar sin ingreso
                     </button>
                   </>
                 )}
@@ -413,12 +415,8 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
                 </div>
                 <div className="min-w-0">
                   <h3 className="text-lg font-semibold text-gray-900">
-                    Marcar como cobrado
+                    Saldar sin ingreso <span className="text-xs font-normal text-gray-400">(avanzado)</span>
                   </h3>
-                  <p className="text-sm text-gray-600 mt-1">
-                    Esta opción marca la CxC como cobrada <strong>sin generar un ingreso nuevo</strong>.
-                    Úsala cuando el pago ya fue registrado previamente como ingreso normal.
-                  </p>
                 </div>
               </div>
               <button
@@ -430,22 +428,26 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
               </button>
             </div>
 
+            {/* Advertencia fuerte: la trampa que confunde con cobrar de verdad */}
+            <div className="bg-amber-50 border border-amber-300 rounded-lg p-3 mb-4">
+              <div className="text-sm text-amber-900 font-semibold">
+                ⚠️ Esto cierra la deuda pero NO suma dinero a tu banco.
+              </div>
+              <div className="text-sm text-amber-800 mt-1">
+                ¿{debtor.name} te acaba de pagar? Entonces esto está mal — usa{" "}
+                <strong>&quot;Registrar pago&quot;</strong> (ese sí suma al banco).
+                Solo usa esta opción si <strong>ya registraste el ingreso por otro lado</strong>.
+              </div>
+            </div>
+
             <div className="bg-gray-50 border border-gray-200 rounded-lg p-3 text-sm space-y-1 mb-5">
               <div>
-                <span className="text-gray-500">Categoría: </span>
-                <span className="font-medium text-gray-900">{markCollectedFor.category}</span>
-              </div>
-              <div>
                 <span className="text-gray-500">Concepto: </span>
-                <span className="text-gray-900">{markCollectedFor.concept}</span>
+                <span className="text-gray-900">{markCollectedFor.category} · {markCollectedFor.concept}</span>
               </div>
               <div>
                 <span className="text-gray-500">Monto a cerrar: </span>
                 <span className="font-medium text-gray-900">{formatCurrency(markCollectedFor.amount_pending)}</span>
-              </div>
-              <div>
-                <span className="text-gray-500">Fecha del gasto: </span>
-                <span className="text-gray-900">{formatDateShort(markCollectedFor.expense_date)}</span>
               </div>
             </div>
 
@@ -455,21 +457,32 @@ export function FonaviClient({ initialReceivables, debtor }: { initialReceivable
               </div>
             )}
 
-            <div className="flex gap-2 justify-end">
+            <div className="flex items-center justify-between gap-2">
               <button
                 onClick={() => setMarkCollectedFor(null)}
                 disabled={pending}
-                className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50"
+                className="px-3 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50"
               >
                 Cancelar
               </button>
-              <button
-                onClick={handleMarkAsCollected}
-                disabled={pending}
-                className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50"
-              >
-                {pending ? "Marcando..." : "Sí, marcar como cobrado"}
-              </button>
+              <div className="flex items-center gap-2">
+                {/* Escape a la acción correcta */}
+                <button
+                  onClick={() => { const r = markCollectedFor; setMarkCollectedFor(null); setRegisterFor(r); }}
+                  disabled={pending}
+                  className="px-4 py-2 text-sm font-semibold text-white bg-violet-600 hover:bg-violet-700 rounded-lg disabled:opacity-50 inline-flex items-center gap-1.5 shadow-sm"
+                >
+                  <Wallet className="w-4 h-4" /> Mejor registrar el pago →
+                </button>
+                {/* Confirmación apagada de la acción avanzada */}
+                <button
+                  onClick={handleMarkAsCollected}
+                  disabled={pending}
+                  className="px-3 py-2 text-[13px] text-gray-500 hover:text-gray-800 hover:bg-gray-100 rounded-lg disabled:opacity-50"
+                >
+                  {pending ? "Saldando..." : "Sí, saldar sin ingreso"}
+                </button>
+              </div>
             </div>
           </div>
         </div>
