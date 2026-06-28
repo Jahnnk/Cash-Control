@@ -7,7 +7,6 @@ import { createBankIncomeItem } from "@/app/actions/bank-income";
 import { createExpense } from "@/app/actions/expenses";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
 import { LOAN_NON_OPERATIVE_CATEGORY } from "@/lib/loans";
-import { formatDateShort } from "@/lib/utils";
 
 type ClientOption = { id: string; name: string };
 
@@ -169,12 +168,6 @@ export function CreateRecordModal({
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900">
             Nuevo {isIncome ? "ingreso" : "egreso"}
-            {target.dateLocked && (
-              <span className="text-gray-500 font-normal text-sm">
-                {" "}
-                · {formatDateShort(target.date)}
-              </span>
-            )}
           </h2>
           <button
             onClick={onClose}
@@ -192,24 +185,23 @@ export function CreateRecordModal({
 
         {/* Form */}
         <div className="p-6 space-y-4">
-          {/* Fecha (solo si NO está bloqueada) */}
-          {!target.dateLocked && (
-            <div>
-              <label className="block text-xs font-medium text-gray-700 mb-1">
-                Fecha
-              </label>
-              <input
-                type="date"
-                value={date}
-                max={TODAY}
-                onChange={(e) => setDate(e.target.value)}
-                className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-light/30"
-              />
-              <div className="text-[11px] text-gray-500 mt-1">
-                No se permiten fechas futuras.
-              </div>
+          {/* Fecha — siempre editable. Por defecto el día del bloque (o hoy),
+              pero puedes cambiarlo a un día anterior. */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">
+              Fecha
+            </label>
+            <input
+              type="date"
+              value={date}
+              max={TODAY}
+              onChange={(e) => setDate(e.target.value)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-light/30"
+            />
+            <div className="text-[11px] text-gray-500 mt-1">
+              Por defecto {target.dateLocked ? "el día seleccionado" : "hoy"}; puedes elegir un día anterior. No se permiten fechas futuras.
             </div>
-          )}
+          </div>
 
           {/* Monto */}
           <div>
