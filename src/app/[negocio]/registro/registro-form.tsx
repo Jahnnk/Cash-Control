@@ -16,8 +16,9 @@ import { updateExpense as updateExpenseFull } from "@/app/actions/record-edits";
 import { getInternalTransfersByDate, deleteInternalTransfer, type InternalTransfer } from "@/app/actions/internal-transfers";
 import { InternalTransferModal } from "@/components/banking/InternalTransferModal";
 import { ByteDayActionsBar } from "@/components/banking/ByteDayActionsBar";
-import { ArrowRightLeft, AlertTriangle, Paperclip } from "lucide-react";
+import { ArrowRightLeft, AlertTriangle, Paperclip, FileSpreadsheet } from "lucide-react";
 import { ResumenByteB2C } from "./resumen-byte-b2c";
+import { CajaChicaImportModal } from "./caja-chica-import-modal";
 import { formatCurrency, getToday, formatDate } from "@/lib/utils";
 import { useRouter, usePathname } from "next/navigation";
 import { ConfirmModal } from "@/components/confirm-modal";
@@ -105,6 +106,7 @@ export function RegistroForm({
     }
   }, [activeTab]);
   const [saving, setSaving] = useState(false);
+  const [showCajaChica, setShowCajaChica] = useState(false);
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [date, setDate] = useState(initialDate || getToday());
@@ -754,11 +756,28 @@ export function RegistroForm({
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Registro Diario</h1>
         <div className="flex items-center gap-3">
+          {isAtelier && (
+            <button
+              onClick={() => setShowCajaChica(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-emerald-700 bg-white border border-emerald-300 rounded-lg hover:bg-emerald-50 transition-colors"
+              title="Subir el Excel de reposición de caja chica y registrar los gastos automáticamente"
+            >
+              <FileSpreadsheet className="w-4 h-4" />
+              Subir reposición (Excel)
+            </button>
+          )}
           <label className="text-sm text-gray-600">Fecha:</label>
           <input type="date" value={date} max={getToday()} onChange={(e) => setDate(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-sm" />
         </div>
       </div>
+
+      {showCajaChica && (
+        <CajaChicaImportModal
+          onClose={() => setShowCajaChica(false)}
+          onImported={() => { router.refresh(); }}
+        />
+      )}
 
       {/* Saldo BCP */}
       <div className="bg-primary text-white rounded-xl p-5">
