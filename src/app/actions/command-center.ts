@@ -68,8 +68,10 @@ async function salesInRange(bId: number, start: string, end: string): Promise<nu
   return Number(r.t);
 }
 
-/** Gasto OPERATIVO (porción negocio, sin categorías excluidas del EBITDA). */
-async function opExpensesInRange(bId: number, start: string, end: string): Promise<number> {
+/** Gasto OPERATIVO (porción negocio, sin categorías excluidas del EBITDA).
+ *  Exportada: el Panel de Liquidez usa EXACTAMENTE el mismo cálculo para
+ *  el gasto diario promedio (una sola definición de "gasto operativo"). */
+export async function opExpensesInRange(bId: number, start: string, end: string): Promise<number> {
   const r = (await db.execute(sql`
     SELECT COALESCE(SUM(CASE WHEN e.is_shared THEN COALESCE(e.atelier_amount, e.amount) ELSE e.amount END), 0)::float AS t
     FROM expenses e
