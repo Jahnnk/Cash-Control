@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { formatCurrency } from "@/lib/utils";
 import type { LiquidityPanelData } from "@/app/actions/liquidity-panel";
 import {
@@ -8,6 +9,11 @@ import {
   runwayVerdict,
   reconciliationVerdict,
   receivablesVerdict,
+  liquidityStreak,
+  monthEndProjection,
+  simulateCollect,
+  simulateCutSpending,
+  simulateFreeze,
   type Verdict,
 } from "@/lib/liquidity";
 import {
@@ -22,6 +28,10 @@ import {
   TrendingDown,
   ArrowRight,
   Plus,
+  HelpCircle,
+  FlaskConical,
+  ChevronDown,
+  ChevronRight,
 } from "lucide-react";
 
 /**
@@ -90,6 +100,29 @@ function VerdictLine({ v }: { v: Verdict }) {
 export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; negocio: string }) {
   const lvl = LEVEL_UI[data.runway.level];
   const trendPositive = (data.deltaWeek ?? data.deltaDay ?? 0) >= 0;
+  const [showWhy, setShowWhy] = useState(false);
+  const [showSim, setShowSim] = useState(false);
+
+  // Copiloto: racha, proyección de cierre y simulaciones.
+  const streak = liquidityStreak(data.series);
+  const projection = data.projection
+    ? monthEndProjection({
+        liquid: data.liquid,
+        netDaily8w: data.projection.netDaily8w,
+        daysRemaining: data.projection.daysRemaining,
+        minSoles: data.runway.minSoles,
+      })
+    : null;
+  const simCollect = data.receivables && data.receivables.total > 0
+    ? simulateCollect({ liquid: data.liquid, receivablesTotal: data.receivables.total, dailyExpense: data.runway.dailyExpense })
+    : null;
+  const simCut = projection && data.projection
+    ? simulateCutSpending({ dailyExpense: data.runway.dailyExpense, daysRemaining: data.projection.daysRemaining, pct: 0.15, projectedClose: projection.value })
+    : null;
+  const simFreeze = data.runway.dailyExpense > 0
+    ? simulateFreeze({ dailyExpense: data.runway.dailyExpense, days: 3, liquid: data.liquid })
+    : null;
+  const whyNet = Math.round((data.why.totalIn - data.why.totalOut) * 100) / 100;
 
   // Veredictos: el sistema interpreta; el gerente no descifra números.
   const vLiquidity = liquidityVerdict({
@@ -145,6 +178,71 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
             <Delta value={data.deltaMonth} label="en el mes" />
           </div>
           <VerdictLine v={vLiquidity} />
+          {streak.text && (
+            <p className={`text-xs leading-snug mt-1 ${streak.direction === "baja" ? "text-red-700" : "text-emerald-700"}`}>
+              {streak.text}
+            </p>
+          )}
+          {projection && <VerdictLine v={projection.verdict} />}
+
+          {/* ¿Por qué cambió? — desglose de los últimos 7 días */}
+          <div className="mt-3 pt-2 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-1">
+            <button
+              onClick={() => setShowWhy((v) => !v)}
+              className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
+            >
+              <HelpCircle className="w-3.5 h-3.5" /> ¿Por qué cambió?
+              {showWhy ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            </button>
+            <button
+              onClick={() => setShowSim((v) => !v)}
+              className="inline-flex items-center gap-1 text-xs font-medium text-gray-500 hover:text-gray-700"
+            >
+              <FlaskConical className="w-3.5 h-3.5" /> ¿Y si…?
+              {showSim ? <ChevronDown className="w-3 h-3" /> : <ChevronRight className="w-3 h-3" />}
+            </button>
+          </div>
+          {showWhy && (
+            <div className="mt-2 bg-gray-50 border border-gray-100 rounded-lg p-3 text-xs text-gray-700 space-y-1">
+              <div>
+                Últimos 7 días: entró <strong className="text-emerald-700">{formatCurrency(data.why.totalIn)}</strong>,
+                salió <strong className="text-red-700">{formatCurrency(data.why.totalOut)}</strong> →
+                neto <strong className={whyNet >= 0 ? "text-emerald-700" : "text-red-700"}>{whyNet >= 0 ? "+" : "−"}{formatCurrency(Math.abs(whyNet))}</strong>.
+              </div>
+              {data.why.topOut.length > 0 && (
+                <div>
+                  Las salidas que más pesaron:{" "}
+                  {data.why.topOut.map((t, i) => (
+                    <span key={i}>
+                      {i > 0 && " · "}
+                      &quot;{t.concept}&quot; {formatCurrency(t.amount)}
+                    </span>
+                  ))}
+                  .
+                </div>
+              )}
+              <Link href={`/${negocio}/reportes?tab=movimientos`} className="inline-flex items-center gap-1 text-primary font-medium hover:underline">
+                Ver todos los movimientos <ArrowRight className="w-3 h-3" />
+              </Link>
+            </div>
+          )}
+          {showSim && (
+            <div className="mt-2 bg-blue-50/60 border border-blue-100 rounded-lg p-3 text-xs text-gray-700 space-y-1.5">
+              {simCollect && (
+                <div className="flex items-start gap-1.5">
+                  <span>💰</span>
+                  <span>{simCollect.text}{" "}
+                    <Link href={`/${negocio}/fonavi`} className="text-primary font-medium hover:underline">Cobrar →</Link>
+                  </span>
+                </div>
+              )}
+              {simCut && <div className="flex items-start gap-1.5"><span>✂️</span><span>{simCut.text}</span></div>}
+              {simFreeze && <div className="flex items-start gap-1.5"><span>🧊</span><span>{simFreeze.text}</span></div>}
+              <div className="text-[10px] text-gray-400 pt-1">
+                Simulaciones simples sobre tu ritmo real de 8 semanas — para dimensionar decisiones, no promesas.
+              </div>
+            </div>
+          )}
         </div>
 
         {/* ── 2. DÍAS DE COBERTURA ──

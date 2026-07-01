@@ -196,6 +196,112 @@ export function reconciliationVerdict(input: {
   return { tone: "riesgo", label: "Revisar", text: `Diferencia de ${fmt(lastCheckDiff)} con el banco. Revísala antes de decidir con estas cifras.${verif}` };
 }
 
+// ─────────────────────────────────────────────────────────────────
+// Copiloto: proyección de cierre, rachas y simulaciones "¿Y si...?"
+// Reglas simples y auditables — nada de cajas negras.
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * RACHA de la serie de liquidez: cuántos días consecutivos viene subiendo
+ * o bajando (cambios de menos de S/1 se consideran estables y cortan la
+ * racha). Detecta el patrón que una comparación puntual no ve.
+ */
+export function liquidityStreak(series: DayPoint[]): {
+  direction: "sube" | "baja" | "estable";
+  days: number;
+  text: string | null; // solo si la racha es significativa (>= 3 días)
+} {
+  let days = 0;
+  let direction: "sube" | "baja" | "estable" = "estable";
+  for (let i = series.length - 1; i > 0; i--) {
+    const diff = series[i].value - series[i - 1].value;
+    const dir = diff > 1 ? "sube" : diff < -1 ? "baja" : "estable";
+    if (dir === "estable") break;
+    if (days === 0) direction = dir;
+    else if (dir !== direction) break;
+    days++;
+  }
+  if (days < 3 || direction === "estable") return { direction, days, text: null };
+  return {
+    direction,
+    days,
+    text: direction === "baja"
+      ? `La liquidez viene deteriorándose hace ${days} días consecutivos.`
+      : `La liquidez viene recuperándose hace ${days} días consecutivos.`,
+  };
+}
+
+/**
+ * PROYECCIÓN de cierre de mes: si el ritmo real de las últimas 8 semanas
+ * continúa (variación neta diaria de la liquidez), ¿con cuánto cierras?
+ */
+export function monthEndProjection(input: {
+  liquid: number;
+  netDaily8w: number;    // (liquidez hoy − liquidez hace 56 días) / 56
+  daysRemaining: number; // días que faltan del mes (sin contar hoy)
+  minSoles: number;      // objetivo mínimo de liquidez
+}): { value: number; belowTarget: boolean; verdict: Verdict } {
+  const value = Math.round((input.liquid + input.netDaily8w * input.daysRemaining) * 100) / 100;
+  const belowTarget = input.minSoles > 0 && value < input.minSoles;
+  const base = `Si el ritmo de tus últimas 8 semanas continúa, cerrarías el mes con ~${fmt(value)}.`;
+  let verdict: Verdict;
+  if (value < 0) {
+    verdict = { tone: "riesgo", text: `${base} Es decir: te quedarías sin caja antes del cierre. Actúa esta semana.` };
+  } else if (belowTarget) {
+    verdict = { tone: "atencion", text: `${base} Quedarías por debajo del objetivo (${fmt(input.minSoles)}).` };
+  } else {
+    verdict = { tone: "bien", text: `${base} Dentro del objetivo de liquidez.` };
+  }
+  return { value, belowTarget, verdict };
+}
+
+/** SIMULACIÓN: ¿y si cobro hoy todo lo pendiente? */
+export function simulateCollect(input: {
+  liquid: number;
+  receivablesTotal: number;
+  dailyExpense: number;
+}): { newLiquid: number; extraDays: number; text: string } {
+  const newLiquid = Math.round((input.liquid + input.receivablesTotal) * 100) / 100;
+  const extraDays = input.dailyExpense > 0
+    ? Math.round((input.receivablesTotal / input.dailyExpense) * 10) / 10
+    : 0;
+  return {
+    newLiquid,
+    extraDays,
+    text: `Cobrar los ${fmt(input.receivablesTotal)} pendientes hoy sube tu liquidez a ${fmt(newLiquid)} (+${extraDays} día(s) de cobertura).`,
+  };
+}
+
+/** SIMULACIÓN: ¿y si recorto el gasto operativo X% el resto del mes? */
+export function simulateCutSpending(input: {
+  dailyExpense: number;
+  daysRemaining: number;
+  pct: number; // 0.15 = 15%
+  projectedClose: number;
+}): { savings: number; newClose: number; text: string } {
+  const savings = Math.round(input.dailyExpense * input.daysRemaining * input.pct * 100) / 100;
+  const newClose = Math.round((input.projectedClose + savings) * 100) / 100;
+  return {
+    savings,
+    newClose,
+    text: `Reducir el gasto ${Math.round(input.pct * 100)}% el resto del mes ahorra ~${fmt(savings)}: cerrarías con ~${fmt(newClose)}.`,
+  };
+}
+
+/** SIMULACIÓN: ¿y si congelo compras N días? (no suma plata: evita que salga) */
+export function simulateFreeze(input: {
+  dailyExpense: number;
+  days: number;
+  liquid: number;
+}): { savings: number; text: string } {
+  const savings = Math.round(input.dailyExpense * input.days * 100) / 100;
+  const without = Math.round((input.liquid - savings) * 100) / 100;
+  return {
+    savings,
+    text: `Congelar compras ${input.days} días evita ~${fmt(savings)} de salida: en ${input.days} días tendrías ~${fmt(input.liquid)} en vez de ~${fmt(without)}.`,
+  };
+}
+
 /**
  * Veredicto de POR COBRAR, orientado a la acción: cuánta caja ganas al
  * cobrar y qué tan añejo está lo pendiente.

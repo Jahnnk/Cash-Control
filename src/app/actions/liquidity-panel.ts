@@ -77,6 +77,17 @@ export type LiquidityPanelData = {
     oldestDays: number;
     byDebtor: { name: string; pending: number; oldestDays: number }[];
   } | null; // null en Fonavi/Centro (no tienen CxC a locales)
+  /** Copiloto: proyección de cierre y simulaciones. */
+  projection: {
+    netDaily8w: number;     // (liquidez hoy − hace 56 días) / 56
+    daysRemaining: number;  // días que faltan del mes (sin contar hoy)
+  } | null;                 // null si no hay historial de 8 semanas
+  /** ¿Por qué cambió la liquidez? Desglose de los últimos 7 días. */
+  why: {
+    totalIn: number;        // todo lo que entró (banco + caja)
+    totalOut: number;       // todo lo que salió
+    topOut: { concept: string; amount: number; date: string }[]; // top 3 salidas
+  };
 };
 
 export async function getLiquidityPanel(): Promise<LiquidityPanelData> {
@@ -230,6 +241,56 @@ export async function getLiquidityPanel(): Promise<LiquidityPanelData> {
     };
   }
 
+  // ── Copiloto: ritmo neto de 8 semanas (para proyectar el cierre) ──
+  // Liquidez hace 56 días = último banco conocido a esa fecha + caja
+  // acumulada a esa fecha. Si no hay historial tan atrás → sin proyección
+  // (honesto: no se inventa un ritmo).
+  const ago56 = shiftDays(today, -56);
+  let projection: LiquidityPanelData["projection"] = null;
+  const bank56 = (await db.execute(sql`
+    SELECT bank_balance_real::float AS b FROM daily_records
+    WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL AND archived = false AND date <= ${ago56}
+    ORDER BY date DESC LIMIT 1
+  `)).rows[0] as { b: number } | undefined;
+  if (bank56) {
+    const cash56 = (await db.execute(sql`
+      SELECT (
+        COALESCE((SELECT initial_cash_balance FROM businesses WHERE id = ${bId}), 0)
+        + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND payment_method = 'efectivo' AND archived = false AND date <= ${ago56}), 0)
+        - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND payment_method = 'efectivo' AND archived = false AND date <= ${ago56}), 0)
+      )::float AS c
+    `)).rows[0] as { c: number };
+    const liquid56 = Number(bank56.b) + Number(cash56.c);
+    const [yy, mm, dd] = today.split("-").map(Number);
+    projection = {
+      netDaily8w: Math.round(((liquid - liquid56) / 56) * 100) / 100,
+      daysRemaining: new Date(yy, mm, 0).getDate() - dd,
+    };
+  }
+
+  // ── ¿Por qué cambió? Entradas/salidas reales de los últimos 7 días
+  //    (banco + caja; excluye transferencias internas —netean a cero— y
+  //    préstamos "fantasma" que no mueven cuentas). ──
+  const whyStart = shiftDays(today, -6);
+  const whyRow = (await db.execute(sql`
+    SELECT
+      COALESCE((SELECT SUM(amount) FROM bank_income_items
+        WHERE business_id = ${bId} AND date >= ${whyStart} AND date <= ${today}
+          AND is_internal_transfer = false AND archived = false
+          AND (is_special_loan = false OR loan_via_bank = true OR payment_method = 'efectivo')), 0)::float AS total_in,
+      COALESCE((SELECT SUM(amount) FROM expenses
+        WHERE business_id = ${bId} AND date >= ${whyStart} AND date <= ${today}
+          AND is_internal_transfer = false AND archived = false AND payment_method <> 'pendiente_atelier'
+          AND (is_special_loan = false OR loan_via_bank = true OR payment_method = 'efectivo')), 0)::float AS total_out
+  `)).rows[0] as { total_in: number; total_out: number };
+  const topOut = (await db.execute(sql`
+    SELECT concept, amount::float AS amount, date::text AS date FROM expenses
+    WHERE business_id = ${bId} AND date >= ${whyStart} AND date <= ${today}
+      AND is_internal_transfer = false AND archived = false AND payment_method <> 'pendiente_atelier'
+      AND (is_special_loan = false OR loan_via_bank = true OR payment_method = 'efectivo')
+    ORDER BY amount DESC LIMIT 3
+  `)).rows as { concept: string; amount: number; date: string }[];
+
   return {
     today,
     bank: bankSnap.current,
@@ -257,5 +318,11 @@ export async function getLiquidityPanel(): Promise<LiquidityPanelData> {
       totalCount: verifiedRow.total,
     },
     receivables,
+    projection,
+    why: {
+      totalIn: Math.round(Number(whyRow.total_in) * 100) / 100,
+      totalOut: Math.round(Number(whyRow.total_out) * 100) / 100,
+      topOut: topOut.map((t) => ({ concept: t.concept, amount: Number(t.amount), date: t.date })),
+    },
   };
 }

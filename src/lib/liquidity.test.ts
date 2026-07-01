@@ -10,6 +10,11 @@ import {
   runwayVerdict,
   reconciliationVerdict,
   receivablesVerdict,
+  liquidityStreak,
+  monthEndProjection,
+  simulateCollect,
+  simulateCutSpending,
+  simulateFreeze,
 } from "./liquidity";
 
 describe("dateRange", () => {
@@ -140,6 +145,68 @@ describe("reconciliationVerdict — ¿puedo confiar en los números?", () => {
   it("sin cuadre registrado → pide registrarlo", () => {
     const v = reconciliationVerdict({ lastCheckDiff: null, hasDiscrepancy: false, verifiedPct: null });
     expect(v.label).toBe("Sin cuadre");
+  });
+});
+
+describe("liquidityStreak — detecta patrones, no fotos", () => {
+  const mk = (vals: number[]) => vals.map((v, i) => ({ date: `d${i}`, value: v }));
+  it("deterioro de 9 días consecutivos → texto de racha", () => {
+    const s = mk([100, 10000, 9500, 9000, 8500, 8000, 7000, 6000, 5000, 4000]);
+    const r = liquidityStreak(s);
+    expect(r.direction).toBe("baja");
+    expect(r.days).toBe(8);
+    expect(r.text).toContain("deteriorándose hace 8 días");
+  });
+  it("recuperación de 4 días → texto positivo", () => {
+    const r = liquidityStreak(mk([50, 40, 100, 200, 300, 400]));
+    expect(r.direction).toBe("sube");
+    expect(r.text).toContain("recuperándose hace 4");
+  });
+  it("racha corta (<3) o cambios de céntimos → sin texto (no es patrón)", () => {
+    expect(liquidityStreak(mk([100, 90, 80])).text).toBeNull(); // 2 días
+    expect(liquidityStreak(mk([100, 100.5, 100.2, 100.4])).text).toBeNull(); // estable
+  });
+});
+
+describe("monthEndProjection — predicción simple y auditable", () => {
+  it("ritmo negativo que cruza cero → riesgo ('te quedarías sin caja')", () => {
+    const p = monthEndProjection({ liquid: 1600, netDaily8w: -200, daysRemaining: 20, minSoles: 19000 });
+    expect(p.value).toBe(1600 - 4000);
+    expect(p.verdict.tone).toBe("riesgo");
+    expect(p.verdict.text).toContain("sin caja");
+  });
+  it("cierra positivo pero bajo el objetivo → atención", () => {
+    const p = monthEndProjection({ liquid: 10000, netDaily8w: -100, daysRemaining: 20, minSoles: 19000 });
+    expect(p.value).toBe(8000);
+    expect(p.belowTarget).toBe(true);
+    expect(p.verdict.tone).toBe("atencion");
+  });
+  it("dentro del objetivo → bien, con la cifra proyectada", () => {
+    const p = monthEndProjection({ liquid: 25000, netDaily8w: 50, daysRemaining: 10, minSoles: 19000 });
+    expect(p.verdict.tone).toBe("bien");
+    expect(p.verdict.text).toContain("25,500");
+  });
+});
+
+describe("simulaciones ¿Y si...? — impacto económico explícito", () => {
+  it("cobrar pendientes: nueva liquidez + días extra de cobertura", () => {
+    const s = simulateCollect({ liquid: 1607.30, receivablesTotal: 209.99, dailyExpense: 1270.86 });
+    expect(s.newLiquid).toBeCloseTo(1817.29, 2);
+    expect(s.extraDays).toBeCloseTo(0.2, 5);
+    expect(s.text).toContain("209.99");
+    expect(s.text).toContain("0.2");
+  });
+  it("recortar gasto 15%: ahorro y nuevo cierre proyectado", () => {
+    const s = simulateCutSpending({ dailyExpense: 1000, daysRemaining: 12, pct: 0.15, projectedClose: 5000 });
+    expect(s.savings).toBe(1800);
+    expect(s.newClose).toBe(6800);
+    expect(s.text).toContain("15%");
+  });
+  it("congelar compras 3 días: evita la salida, no inventa ingresos", () => {
+    const s = simulateFreeze({ dailyExpense: 1000, days: 3, liquid: 5000 });
+    expect(s.savings).toBe(3000);
+    expect(s.text).toContain("2,000"); // 5000-3000: con cuánto quedarías sin congelar
+    expect(s.text).toContain("5,000");
   });
 });
 
