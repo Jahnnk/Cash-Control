@@ -10,6 +10,8 @@ import { BankBalanceCard } from "@/components/banking/BankBalanceCard";
 import { CashBalanceCard } from "@/components/banking/CashBalanceCard";
 import { InternalTransferModal } from "@/components/banking/InternalTransferModal";
 import { useBankBalance } from "@/hooks/useBankBalance";
+import { CommandCenter } from "./command-center";
+import type { CommandCenterData } from "@/app/actions/command-center";
 import {
   Receipt,
   TrendingDown,
@@ -42,10 +44,12 @@ type DashboardData = {
 
 export function DashboardClient({
   data,
+  command,
   negocio,
   isAtelier,
 }: {
   data: DashboardData;
+  command: CommandCenterData | null;
   negocio: string;
   isAtelier: boolean;
 }) {
@@ -86,8 +90,12 @@ export function DashboardClient({
       </div>
       <InternalTransferModal open={transferOpen} onClose={() => setTransferOpen(false)} />
 
-      {/* Alerta proactiva de discrepancia en la cadena de saldos bancarios */}
-      {bank.hasDiscrepancy && bank.discrepancyDate && (
+      {/* ── Centro de Comando: Executive Brief + Health Score + alertas ── */}
+      {command && <CommandCenter data={command} negocio={negocio} />}
+
+      {/* Alerta de discrepancia (fallback si el Centro de Comando no cargó;
+          cuando sí carga, el descuadre ya aparece como tema crítico arriba) */}
+      {!command && bank.hasDiscrepancy && bank.discrepancyDate && (
         <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 flex items-start justify-between gap-3">
           <div className="flex items-start gap-3 min-w-0">
             <AlertTriangle className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
