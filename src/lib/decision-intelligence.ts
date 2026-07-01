@@ -103,11 +103,18 @@ export type Insight = {
   action: { label: string; href: string } | null;
 };
 
+export type Recommendation = {
+  label: string;
+  href: string | null; // null = consejo de conducta (ej. "evita gastos extraordinarios")
+};
+
 export type ExecutiveBrief = {
   headline: string;      // una frase: el estado del negocio
   summary: string;       // 2-3 oraciones de contexto con números
   topIssues: Insight[];  // los 3 temas del día (criticos/avisos)
   opportunities: Insight[]; // hasta 2
+  /** "Hoy te recomiendo": hasta 3 acciones concretas derivadas de los insights. */
+  recommendations: Recommendation[];
 };
 
 export type CommandCenterIntel = {
@@ -498,11 +505,31 @@ export function buildExecutiveBrief(
     parts.push(`Lo más importante hoy: ${issues[0].title.toLowerCase()}.`);
   }
 
+  // "Hoy te recomiendo": hasta 3 acciones únicas, en orden de prioridad.
+  // 1) Las acciones de los temas críticos/avisos. 2) Si la liquidez está
+  // corta, un consejo de conducta. 3) Si sobra espacio, cobrar pendientes.
+  const recommendations: Recommendation[] = [];
+  const seenLabels = new Set<string>();
+  const push = (rec: Recommendation) => {
+    if (recommendations.length >= 3 || seenLabels.has(rec.label)) return;
+    seenLabels.add(rec.label);
+    recommendations.push(rec);
+  };
+  for (const i of issues) {
+    if (i.action) push({ label: i.action.label, href: i.action.href });
+  }
+  if (issues.some((i) => i.id === "cobertura-corta" || i.id === "ebitda-negativo")) {
+    push({ label: "Evita gastos extraordinarios hasta recuperar liquidez", href: null });
+  }
+  const cobrable = insights.find((i) => i.id === "cxc-cobrable");
+  if (cobrable?.action) push({ label: cobrable.action.label, href: cobrable.action.href });
+
   return {
     headline,
     summary: parts.join(" "),
     topIssues: issues.slice(0, 3),
     opportunities,
+    recommendations,
   };
 }
 

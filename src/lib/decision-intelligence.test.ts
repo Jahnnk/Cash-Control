@@ -209,6 +209,28 @@ describe("computeIntel / Executive Brief", () => {
     expect(intel.brief.summary).toContain("Lo más importante hoy");
   });
 
+  it("'Hoy te recomiendo': hasta 3 acciones únicas, con consejo de conducta si la liquidez está corta", () => {
+    const intel = computeIntel(
+      healthyFacts({
+        bank: { balance: 1500, hasDiscrepancy: true, discrepancyAmount: 118.2 },
+        cash: 100,
+        receivables: { totalPending: 209.99, overdueAmount: 0, overdueCount: 0, oldestDays: 4, byDebtor: [{ name: "Fonavi", pending: 209.99 }] },
+      }),
+    );
+    const recs = intel.brief.recommendations;
+    expect(recs.length).toBeGreaterThanOrEqual(2);
+    expect(recs.length).toBeLessThanOrEqual(3);
+    // sin duplicados
+    expect(new Set(recs.map((r) => r.label)).size).toBe(recs.length);
+    // liquidez corta → aparece el consejo de conducta (href null)
+    expect(recs.some((r) => r.href === null && /gastos extraordinarios/.test(r.label))).toBe(true);
+  });
+
+  it("negocio sano: recomendaciones vacías o solo cobrables (nada urgente)", () => {
+    const intel = computeIntel(healthyFacts());
+    expect(intel.brief.recommendations.every((r) => !/investigar|revisar/i.test(r.label))).toBe(true);
+  });
+
   it("oportunidades limitadas a 2", () => {
     const intel = computeIntel(
       healthyFacts({

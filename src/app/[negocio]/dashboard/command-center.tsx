@@ -123,6 +123,29 @@ export function CommandCenter({ data, negocio }: { data: CommandCenterData; nego
             <div className="mt-2 h-1.5 bg-white/70 rounded-full overflow-hidden">
               <div className={`h-full ${style.bar}`} style={{ width: `${health.total}%` }} />
             </div>
+
+            {/* Hoy te recomiendo: las acciones del día, en orden de prioridad */}
+            {brief.recommendations.length > 0 && (
+              <div className="mt-3 bg-white/70 border border-white rounded-lg px-3 py-2.5">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+                  Hoy te recomiendo
+                </div>
+                <ul className="space-y-1">
+                  {brief.recommendations.map((r, i) => (
+                    <li key={i} className="flex items-start gap-1.5 text-sm text-gray-800">
+                      <span className="text-gray-400 mt-0.5">{i + 1}.</span>
+                      {r.href ? (
+                        <Link href={`/${negocio}/${r.href}`} className="text-primary font-medium hover:underline inline-flex items-center gap-1">
+                          {r.label} <ArrowRight className="w-3 h-3" />
+                        </Link>
+                      ) : (
+                        <span>{r.label}</span>
+                      )}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         </div>
 

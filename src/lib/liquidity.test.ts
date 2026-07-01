@@ -6,6 +6,10 @@ import {
   runwayDays,
   seriesDeltas,
   liquidityLevel,
+  liquidityVerdict,
+  runwayVerdict,
+  reconciliationVerdict,
+  receivablesVerdict,
 } from "./liquidity";
 
 describe("dateRange", () => {
@@ -67,5 +71,91 @@ describe("liquidityLevel", () => {
     expect(liquidityLevel(10)).toBe("ambar");
     expect(liquidityLevel(3)).toBe("rojo");
     expect(liquidityLevel(null)).toBe("sin-datos");
+  });
+});
+
+describe("liquidityVerdict — interpreta, no obliga a interpretar", () => {
+  it("caída doble (día y semana) muy por debajo del objetivo → riesgo, con las cifras", () => {
+    const v = liquidityVerdict({ liquid: 1607, deltaDay: -69, deltaWeek: -4977, minSoles: 19063 });
+    expect(v.tone).toBe("riesgo");
+    expect(v.text).toContain("cayó");
+    expect(v.text).toContain("69");
+    expect(v.text).toContain("4,977");
+    expect(v.text).toContain("muy por debajo del objetivo");
+  });
+
+  it("señales mixtas (subió hoy, cayó en la semana) las narra sin contradecirse", () => {
+    const v = liquidityVerdict({ liquid: 30000, deltaDay: 500, deltaWeek: -2000, minSoles: 19000 });
+    expect(v.text).toContain("subió");
+    expect(v.text).toContain("aunque");
+  });
+
+  it("estable y dentro del objetivo → bien", () => {
+    const v = liquidityVerdict({ liquid: 30000, deltaDay: 0, deltaWeek: 0.5, minSoles: 19000 });
+    expect(v.tone).toBe("bien");
+    expect(v.text).toContain("estable");
+    expect(v.text).toContain("dentro del objetivo");
+  });
+
+  it("por debajo (pero no crítico) → atención", () => {
+    const v = liquidityVerdict({ liquid: 12000, deltaDay: -100, deltaWeek: -300, minSoles: 19000 });
+    expect(v.tone).toBe("atencion");
+  });
+});
+
+describe("runwayVerdict — tranquilidad o urgencia en una frase", () => {
+  it("crítico (<3), corto (<7), ajustado (<objetivo), tranquilo (≥objetivo)", () => {
+    expect(runwayVerdict(1, 15).tone).toBe("riesgo");
+    expect(runwayVerdict(1, 15).text).toContain("crítica");
+    expect(runwayVerdict(5, 15).tone).toBe("riesgo");
+    expect(runwayVerdict(10, 15).tone).toBe("atencion");
+    expect(runwayVerdict(20, 15).tone).toBe("bien");
+    expect(runwayVerdict(20, 15).text).toContain("Tranquilo");
+    expect(runwayVerdict(null, 15).tone).toBe("neutro");
+  });
+});
+
+describe("reconciliationVerdict — ¿puedo confiar en los números?", () => {
+  it("cuadrado (|dif| < S/1) → Confiable", () => {
+    const v = reconciliationVerdict({ lastCheckDiff: 0, hasDiscrepancy: false, verifiedPct: 80 });
+    expect(v.label).toBe("Confiable");
+    expect(v.tone).toBe("bien");
+    expect(v.text).toContain("80%");
+  });
+  it("diferencia ≤ S/50 → Diferencia menor (atención)", () => {
+    const v = reconciliationVerdict({ lastCheckDiff: 42, hasDiscrepancy: false, verifiedPct: null });
+    expect(v.label).toBe("Diferencia menor");
+    expect(v.tone).toBe("atencion");
+  });
+  it("diferencia > S/50 → Revisar (riesgo)", () => {
+    const v = reconciliationVerdict({ lastCheckDiff: 118.2, hasDiscrepancy: false, verifiedPct: 0 });
+    expect(v.label).toBe("Revisar");
+    expect(v.tone).toBe("riesgo");
+    expect(v.text).toContain("118");
+  });
+  it("inconsistencia interna manda sobre todo → No confiable", () => {
+    const v = reconciliationVerdict({ lastCheckDiff: 0, hasDiscrepancy: true, verifiedPct: 100 });
+    expect(v.label).toBe("No confiable");
+  });
+  it("sin cuadre registrado → pide registrarlo", () => {
+    const v = reconciliationVerdict({ lastCheckDiff: null, hasDiscrepancy: false, verifiedPct: null });
+    expect(v.label).toBe("Sin cuadre");
+  });
+});
+
+describe("receivablesVerdict — orientada a la acción", () => {
+  it("dice cuántos días de cobertura ganas al cobrar", () => {
+    const v = receivablesVerdict({ total: 2541.72, overdue: 0, oldestDays: 5, dailyExpense: 1270.86 });
+    expect(v.text).toContain("~2 día(s) más de cobertura");
+    expect(v.tone).toBe("neutro");
+  });
+  it("con vencidos: monto + antigüedad", () => {
+    const v = receivablesVerdict({ total: 900, overdue: 861.65, oldestDays: 23, dailyExpense: 1000 });
+    expect(v.tone).toBe("atencion");
+    expect(v.text).toContain("vencidos");
+    expect(v.text).toContain("23 días");
+  });
+  it("sin pendientes → bien", () => {
+    expect(receivablesVerdict({ total: 0, overdue: 0, oldestDays: 0, dailyExpense: 1000 }).tone).toBe("bien");
   });
 });

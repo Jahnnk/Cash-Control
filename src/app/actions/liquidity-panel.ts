@@ -74,7 +74,8 @@ export type LiquidityPanelData = {
   receivables: {
     total: number;
     overdue: number;
-    byDebtor: { name: string; pending: number }[];
+    oldestDays: number;
+    byDebtor: { name: string; pending: number; oldestDays: number }[];
   } | null; // null en Fonavi/Centro (no tienen CxC a locales)
 };
 
@@ -203,21 +204,28 @@ export async function getLiquidityPanel(): Promise<LiquidityPanelData> {
       FROM fonavi_receivables fr JOIN expenses e ON e.id = fr.expense_id
       WHERE fr.status <> 'collected'
     `)).rows as { debtor: number; pending: number; days_old: number }[];
-    const byDebtor = new Map<string, number>();
+    const byDebtor = new Map<string, { pending: number; oldestDays: number }>();
     let total = 0;
     let overdue = 0;
+    let oldestDays = 0;
     for (const r of rc) {
       const name = r.debtor === 3 ? "Centro" : "Fonavi";
-      byDebtor.set(name, (byDebtor.get(name) ?? 0) + Number(r.pending));
+      const acc = byDebtor.get(name) ?? { pending: 0, oldestDays: 0 };
+      acc.pending += Number(r.pending);
+      acc.oldestDays = Math.max(acc.oldestDays, r.days_old);
+      byDebtor.set(name, acc);
       total += Number(r.pending);
+      oldestDays = Math.max(oldestDays, r.days_old);
       if (r.days_old > OVERDUE_DAYS) overdue += Number(r.pending);
     }
     receivables = {
       total: Math.round(total * 100) / 100,
       overdue: Math.round(overdue * 100) / 100,
-      byDebtor: [...byDebtor.entries()].map(([name, pending]) => ({
+      oldestDays,
+      byDebtor: [...byDebtor.entries()].map(([name, v]) => ({
         name,
-        pending: Math.round(pending * 100) / 100,
+        pending: Math.round(v.pending * 100) / 100,
+        oldestDays: v.oldestDays,
       })),
     };
   }

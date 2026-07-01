@@ -4,6 +4,13 @@ import Link from "next/link";
 import { formatCurrency } from "@/lib/utils";
 import type { LiquidityPanelData } from "@/app/actions/liquidity-panel";
 import {
+  liquidityVerdict,
+  runwayVerdict,
+  reconciliationVerdict,
+  receivablesVerdict,
+  type Verdict,
+} from "@/lib/liquidity";
+import {
   Wallet,
   Landmark,
   Coins,
@@ -68,22 +75,37 @@ const LEVEL_UI = {
   "sin-datos": { dot: "bg-gray-300", text: "text-gray-500", bar: "bg-gray-300", label: "Sin historial" },
 } as const;
 
+const TONE_TEXT: Record<Verdict["tone"], string> = {
+  bien: "text-emerald-700",
+  neutro: "text-gray-600",
+  atencion: "text-amber-700",
+  riesgo: "text-red-700",
+};
+
+/** El veredicto en lenguaje natural de cada tarjeta ("te habla tu CFO"). */
+function VerdictLine({ v }: { v: Verdict }) {
+  return <p className={`text-xs leading-snug mt-2 ${TONE_TEXT[v.tone]}`}>{v.text}</p>;
+}
+
 export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; negocio: string }) {
   const lvl = LEVEL_UI[data.runway.level];
   const trendPositive = (data.deltaWeek ?? data.deltaDay ?? 0) >= 0;
 
-  // Confianza: verde = último check cuadrado y sin inconsistencias internas.
-  const checkOk = data.trust.lastCheckDiff !== null && Math.abs(data.trust.lastCheckDiff) < 0.01;
-  const trustState: "verde" | "ambar" | "rojo" = data.trust.hasDiscrepancy
-    ? "rojo"
-    : data.trust.lastCheckDiff === null
-      ? "ambar"
-      : checkOk
-        ? "verde"
-        : Math.abs(data.trust.lastCheckDiff) <= 50
-          ? "ambar"
-          : "rojo";
-  const trustUI = LEVEL_UI[trustState === "verde" ? "verde" : trustState === "ambar" ? "ambar" : "rojo"];
+  // Veredictos: el sistema interpreta; el gerente no descifra números.
+  const vLiquidity = liquidityVerdict({
+    liquid: data.liquid,
+    deltaDay: data.deltaDay,
+    deltaWeek: data.deltaWeek,
+    minSoles: data.runway.minSoles,
+  });
+  const vRunway = runwayVerdict(data.runway.days, data.runway.minDays);
+  const vTrust = reconciliationVerdict({
+    lastCheckDiff: data.trust.lastCheckDiff,
+    hasDiscrepancy: data.trust.hasDiscrepancy,
+    verifiedPct: data.trust.verifiedPct,
+  });
+  const trustUI =
+    vTrust.tone === "bien" ? LEVEL_UI.verde : vTrust.tone === "atencion" ? LEVEL_UI.ambar : LEVEL_UI.rojo;
 
   return (
     <section className="space-y-2">
@@ -122,6 +144,7 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
             <Delta value={data.deltaWeek} label="vs hace 7 días" />
             <Delta value={data.deltaMonth} label="en el mes" />
           </div>
+          <VerdictLine v={vLiquidity} />
         </div>
 
         {/* ── 2. DÍAS DE COBERTURA ──
@@ -135,89 +158,99 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
               {data.runway.days ?? "—"}
             </span>
             <span className="text-sm text-gray-500">días sin vender</span>
-            <span className={`w-2 h-2 rounded-full ${lvl.dot}`} aria-hidden="true" />
+            {/* Estado en palabra: legible en <1 segundo */}
+            <span className={`ml-auto inline-flex items-center gap-1.5 text-xs font-semibold ${lvl.text}`}>
+              <span className={`w-2 h-2 rounded-full ${lvl.dot}`} aria-hidden="true" />
+              {lvl.label}
+            </span>
           </div>
-          {/* Barra hacia el objetivo mínimo */}
-          <div className="mt-2 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+          {/* Barra hacia el objetivo mínimo, con la marca del objetivo */}
+          <div className="relative mt-2 h-2 bg-gray-100 rounded-full overflow-hidden">
             <div
               className={`h-full ${lvl.bar}`}
               style={{ width: `${Math.min(100, ((data.runway.days ?? 0) / (data.runway.minDays * 2)) * 100)}%` }}
             />
+            <div className="absolute top-0 bottom-0 w-0.5 bg-gray-400/70" style={{ left: "50%" }} title={`Objetivo: ${data.runway.minDays} días`} />
           </div>
-          <div className="text-[11px] text-gray-500 mt-2 leading-snug">
-            Gastas ~{formatCurrency(data.runway.dailyExpense)}/día (real, 8 semanas).
-            Objetivo: ≥{data.runway.minDays} días ({formatCurrency(data.runway.minSoles)}).
+          <div className="text-[11px] text-gray-500 mt-1.5 leading-snug">
+            Gastas ~{formatCurrency(data.runway.dailyExpense)}/día (real, 8 semanas). La marca es el objetivo (≥{data.runway.minDays} días = {formatCurrency(data.runway.minSoles)}).
           </div>
+          <VerdictLine v={vRunway} />
         </div>
 
-        {/* ── 3. CONFIANZA EN LOS NÚMEROS ──
-               Pregunta: ¿puedo confiar en estos saldos? */}
+        {/* ── 3. CONCILIACIÓN BANCARIA ──
+               Pregunta: ¿puedo confiar en estos saldos? El sistema interpreta
+               el nivel de riesgo (tolerancia: <S/1 cuadrado, ≤S/50 menor). */}
         <div className="bg-white rounded-xl border border-gray-200 p-5">
           <div className="flex items-center gap-2 text-sm text-gray-500">
-            {trustState === "verde"
+            {vTrust.tone === "bien"
               ? <ShieldCheck className="w-4 h-4 text-emerald-600" />
               : <ShieldAlert className={`w-4 h-4 ${trustUI.text}`} />}
-            Confianza en los números
+            Conciliación bancaria
           </div>
-          <div className={`text-lg font-bold mt-1 ${trustUI.text}`}>
-            {data.trust.hasDiscrepancy
-              ? "Inconsistencia interna"
-              : data.trust.lastCheckDiff === null
-                ? "Sin cuadre registrado"
-                : checkOk
-                  ? "Cuadrado con BCP"
-                  : `Diferencia ${formatCurrency(Math.abs(data.trust.lastCheckDiff))}`}
-          </div>
-          <div className="text-[11px] text-gray-500 mt-1 leading-snug">
-            {data.trust.lastCheckDate
-              ? <>Último cuadre: {data.trust.lastCheckDate}.</>
-              : <>Registra el saldo real del BCP para cuadrar.</>}
-            {data.trust.verifiedPct !== null && (
-              <> Movimientos del mes verificados: <strong>{data.trust.verifiedPct}%</strong> ({data.trust.verifiedCount}/{data.trust.totalCount}).</>
+          <div className="flex items-baseline gap-2 mt-1">
+            <span className={`text-lg font-bold ${trustUI.text}`}>{vTrust.label}</span>
+            {data.trust.lastCheckDate && (
+              <span className="text-[11px] text-gray-400">último cuadre: {data.trust.lastCheckDate}</span>
             )}
           </div>
+          <VerdictLine v={vTrust} />
           <Link
             href={`/${negocio}/reportes?tab=conciliacion`}
             className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline mt-2"
           >
-            {trustState === "verde" ? "Ver conciliación" : "Investigar"} <ArrowRight className="w-3 h-3" />
+            {vTrust.tone === "bien" ? "Ver conciliación" : "Investigar ahora"} <ArrowRight className="w-3 h-3" />
           </Link>
         </div>
 
         {/* ── 4. POR COBRAR (liquidez futura, solo Atelier) ──
                Pregunta: ¿cuánta plata mía está en manos de otros y qué tan cobrable es? */}
         {data.receivables && (
-          <div className="md:col-span-2 xl:col-span-4 bg-white rounded-xl border border-gray-200 p-4 flex flex-wrap items-center justify-between gap-3">
-            <div className="flex items-center gap-3 min-w-0">
-              <Handshake className="w-5 h-5 text-violet-600 shrink-0" />
-              <div className="min-w-0">
-                <span className="text-sm text-gray-600">Liquidez futura (por cobrar): </span>
-                <span className="text-base font-bold text-violet-700">{formatCurrency(data.receivables.total)}</span>
-                {data.receivables.byDebtor.length > 0 && (
-                  <span className="text-xs text-gray-500">
-                    {" "}· {data.receivables.byDebtor.map((d) => `${d.name} ${formatCurrency(d.pending)}`).join(" · ")}
-                  </span>
-                )}
-                {data.receivables.overdue > 0 && (
-                  <span className="ml-2 inline-flex items-center text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
-                    {formatCurrency(data.receivables.overdue)} vencido
-                  </span>
-                )}
+          <div className="md:col-span-2 xl:col-span-4 bg-white rounded-xl border border-gray-200 p-4">
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <Handshake className="w-5 h-5 text-violet-600 shrink-0" />
+                <div className="min-w-0">
+                  <span className="text-sm text-gray-600">Liquidez futura (por cobrar): </span>
+                  <span className="text-base font-bold text-violet-700">{formatCurrency(data.receivables.total)}</span>
+                  {data.receivables.byDebtor.length > 0 && (
+                    <span className="text-xs text-gray-500">
+                      {" "}· {data.receivables.byDebtor
+                        .map((d) => `${d.name} ${formatCurrency(d.pending)} (${d.oldestDays} d)`)
+                        .join(" · ")}
+                    </span>
+                  )}
+                  {data.receivables.overdue > 0 && (
+                    <span className="ml-2 inline-flex items-center text-[11px] font-medium text-red-700 bg-red-50 border border-red-200 rounded-full px-2 py-0.5">
+                      {formatCurrency(data.receivables.overdue)} vencido
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <Link
+                  href={`/${negocio}/fonavi?accion=registrar-reembolso`}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 rounded-md px-3 py-1.5"
+                >
+                  <Plus className="w-3.5 h-3.5" /> Registrar cobro
+                </Link>
+                <Link
+                  href={`/${negocio}/fonavi`}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 hover:underline"
+                >
+                  Ver detalle <ArrowRight className="w-3 h-3" />
+                </Link>
               </div>
             </div>
-            <div className="flex items-center gap-2 shrink-0">
-              <Link
-                href={`/${negocio}/fonavi?accion=registrar-reembolso`}
-                className="inline-flex items-center gap-1 text-xs font-medium text-white bg-violet-600 hover:bg-violet-700 rounded-md px-3 py-1.5"
-              >
-                <Plus className="w-3.5 h-3.5" /> Registrar cobro
-              </Link>
-              <Link
-                href={`/${negocio}/fonavi`}
-                className="inline-flex items-center gap-1 text-xs font-medium text-violet-700 hover:underline"
-              >
-                Ver detalle <ArrowRight className="w-3 h-3" />
-              </Link>
+            <div className="pl-8">
+              <VerdictLine
+                v={receivablesVerdict({
+                  total: data.receivables.total,
+                  overdue: data.receivables.overdue,
+                  oldestDays: data.receivables.oldestDays,
+                  dailyExpense: data.runway.dailyExpense,
+                })}
+              />
             </div>
           </div>
         )}
