@@ -1,5 +1,6 @@
 import { getDashboardData } from "@/app/actions/dashboard";
 import { getCommandCenter, type CommandCenterData } from "@/app/actions/command-center";
+import { getLiquidityPanel, type LiquidityPanelData } from "@/app/actions/liquidity-panel";
 import { DashboardClient } from "./dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -16,12 +17,19 @@ export default async function DashboardPage({
 
   // El Centro de Comando siempre analiza el HOY (no el mes navegado). Si su
   // cálculo fallara por cualquier motivo, el dashboard clásico sigue vivo.
-  const [data, command] = await Promise.all([
+  const [data, command, liquidity] = await Promise.all([
     getDashboardData(mesParam),
     getCommandCenter().catch((): CommandCenterData | null => null),
+    getLiquidityPanel().catch((): LiquidityPanelData | null => null),
   ]);
   const isAtelier = negocio === "atelier";
   return (
-    <DashboardClient data={data} command={command} negocio={negocio} isAtelier={isAtelier} />
+    <DashboardClient
+      data={data}
+      command={command}
+      liquidity={liquidity}
+      negocio={negocio}
+      isAtelier={isAtelier}
+    />
   );
 }

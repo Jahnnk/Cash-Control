@@ -12,6 +12,8 @@ import { InternalTransferModal } from "@/components/banking/InternalTransferModa
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { CommandCenter } from "./command-center";
 import type { CommandCenterData } from "@/app/actions/command-center";
+import { LiquidityPanel } from "./liquidity-panel";
+import type { LiquidityPanelData } from "@/app/actions/liquidity-panel";
 import {
   Receipt,
   TrendingDown,
@@ -45,11 +47,13 @@ type DashboardData = {
 export function DashboardClient({
   data,
   command,
+  liquidity,
   negocio,
   isAtelier,
 }: {
   data: DashboardData;
   command: CommandCenterData | null;
+  liquidity: LiquidityPanelData | null;
   negocio: string;
   isAtelier: boolean;
 }) {
@@ -158,19 +162,25 @@ export function DashboardClient({
           acciones que antes — solo cambia la organización visual y, en el
           bloque de deudas, el color para que no se lean todas como alerta. */}
 
-      {/* Bloque 1 — Saldos */}
-      <section className="space-y-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-          Saldos
-        </h2>
-        <div
-          className="grid gap-4"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
-        >
-          <BankBalanceCard href={`/${negocio}/registro`} />
-          <CashBalanceCard href={`/${negocio}/registro`} />
-        </div>
-      </section>
+      {/* Bloque 1 — Panel Ejecutivo de Liquidez (Saldos repensados: cada
+          tarjeta responde una pregunta de negocio). Fallback a las cards
+          clásicas si el panel no pudo calcularse. */}
+      {liquidity ? (
+        <LiquidityPanel data={liquidity} negocio={negocio} />
+      ) : (
+        <section className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Saldos
+          </h2>
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+          >
+            <BankBalanceCard href={`/${negocio}/registro`} />
+            <CashBalanceCard href={`/${negocio}/registro`} />
+          </div>
+        </section>
+      )}
 
       {/* Bloque 2 — Flujo del mes */}
       <section className="space-y-2">
@@ -224,53 +234,55 @@ export function DashboardClient({
         </div>
       </section>
 
-      {/* Bloque 3 — Por cobrar y deudas.
-          Solo "Cuentas por cobrar" conserva el ámbar (alerta accionable de
-          conciliación). "Por cobrar Fonavi" usa violeta y "Deuda con socio"
-          usa azul tenue (info) para que no se lean como idénticas. */}
-      <section className="space-y-2">
-        <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-          Por cobrar y deudas
-        </h2>
-        <div
-          className="grid gap-4"
-          style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
-        >
-          <KPICard
-            icon={<Receipt className="w-5 h-5 text-amber-600" />}
-            title="Cuentas por cobrar"
-            value={formatCurrency(data.accountsReceivable)}
-            subtitle="Byte total - Cobros BCP"
-            variant="warning"
-            href={reportesHref("tab=conciliacion")}
-          />
-          {isAtelier && (
+      {/* Bloque 3 — Por cobrar y deudas: SOLO como fallback. Cuando el
+          panel de liquidez está activo, "Por cobrar" vive dentro del panel
+          (tarjeta de liquidez futura) y "Deuda con socio" la vigila el
+          Centro de Comando como señal — sin tarjetas redundantes. */}
+      {!liquidity && (
+        <section className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
+            Por cobrar y deudas
+          </h2>
+          <div
+            className="grid gap-4"
+            style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}
+          >
             <KPICard
-              icon={<Handshake className="w-5 h-5 text-violet-600" />}
-              title="Por cobrar Fonavi"
-              value={formatCurrency(data.fonaviReceivables)}
-              subtitle="Gastos compartidos pendientes"
-              variant="violet"
-              href={`/${negocio}/fonavi`}
-              secondaryAction={{
-                href: `/${negocio}/fonavi?accion=registrar-reembolso`,
-                label: "Registrar reembolso",
-                icon: <Plus className="w-4 h-4" />,
-              }}
+              icon={<Receipt className="w-5 h-5 text-amber-600" />}
+              title="Cuentas por cobrar"
+              value={formatCurrency(data.accountsReceivable)}
+              subtitle="Byte total - Cobros BCP"
+              variant="warning"
+              href={reportesHref("tab=conciliacion")}
             />
-          )}
-          {isAtelier && data.partnerLoanBalance > 0 && (
-            <KPICard
-              icon={<HandCoins className="w-5 h-5 text-blue-600" />}
-              title="Deuda con socio"
-              value={formatCurrency(data.partnerLoanBalance)}
-              subtitle="Préstamos personales pendientes"
-              variant="info"
-              href={`/${negocio}/prestamos-socio`}
-            />
-          )}
-        </div>
-      </section>
+            {isAtelier && (
+              <KPICard
+                icon={<Handshake className="w-5 h-5 text-violet-600" />}
+                title="Por cobrar Fonavi"
+                value={formatCurrency(data.fonaviReceivables)}
+                subtitle="Gastos compartidos pendientes"
+                variant="violet"
+                href={`/${negocio}/fonavi`}
+                secondaryAction={{
+                  href: `/${negocio}/fonavi?accion=registrar-reembolso`,
+                  label: "Registrar reembolso",
+                  icon: <Plus className="w-4 h-4" />,
+                }}
+              />
+            )}
+            {isAtelier && data.partnerLoanBalance > 0 && (
+              <KPICard
+                icon={<HandCoins className="w-5 h-5 text-blue-600" />}
+                title="Deuda con socio"
+                value={formatCurrency(data.partnerLoanBalance)}
+                subtitle="Préstamos personales pendientes"
+                variant="info"
+                href={`/${negocio}/prestamos-socio`}
+              />
+            )}
+          </div>
+        </section>
+      )}
 
       {/* Enlaces a reportes detallados */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
