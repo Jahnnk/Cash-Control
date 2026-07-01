@@ -41,6 +41,7 @@ export function CajaChicaImportModal({
   const [force, setForce] = useState(false);
   const [saving, setSaving] = useState(false);
   const [saveError, setSaveError] = useState<string | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   const grouped = useMemo(() => {
     if (!parsed) return [];
@@ -127,14 +128,36 @@ export function CajaChicaImportModal({
             className="hidden"
             onChange={(e) => { const f = e.target.files?.[0]; if (f) void handleFile(f); }}
           />
-          <button
-            onClick={() => fileRef.current?.click()}
-            disabled={reading}
-            className="w-full border border-dashed border-gray-300 rounded-lg px-4 py-4 text-sm text-gray-600 hover:border-emerald-400 hover:text-emerald-700 flex items-center justify-center gap-2 disabled:opacity-50"
+          <div
+            role="button"
+            tabIndex={0}
+            onClick={() => { if (!reading) fileRef.current?.click(); }}
+            onKeyDown={(e) => { if ((e.key === "Enter" || e.key === " ") && !reading) fileRef.current?.click(); }}
+            onDragEnter={(e) => { e.preventDefault(); if (!reading) setDragActive(true); }}
+            onDragOver={(e) => { e.preventDefault(); if (!reading) setDragActive(true); }}
+            onDragLeave={(e) => { e.preventDefault(); setDragActive(false); }}
+            onDrop={(e) => {
+              e.preventDefault();
+              setDragActive(false);
+              if (reading) return;
+              const f = e.dataTransfer.files?.[0];
+              if (f) void handleFile(f);
+            }}
+            className={`w-full cursor-pointer border-2 border-dashed rounded-lg px-4 py-6 text-sm flex flex-col items-center justify-center gap-2 transition-colors ${
+              dragActive
+                ? "border-emerald-500 bg-emerald-50 text-emerald-700"
+                : "border-gray-300 text-gray-600 hover:border-emerald-400 hover:text-emerald-700"
+            } ${reading ? "opacity-50 pointer-events-none" : ""}`}
           >
-            {reading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-            {reading ? "Leyendo…" : fileName ? `Cambiar archivo (${fileName})` : "Elegir archivo Excel de reposición"}
-          </button>
+            {reading ? <Loader2 className="w-5 h-5 animate-spin" /> : <Upload className="w-5 h-5" />}
+            <span className="text-center">
+              {reading
+                ? "Leyendo…"
+                : fileName
+                  ? <>Archivo: <strong>{fileName}</strong> · arrastra o haz click para cambiarlo</>
+                  : <>Arrastra el Excel aquí, o haz <strong>click</strong> para elegirlo</>}
+            </span>
+          </div>
 
           {parseError && (
             <div className="text-sm text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{parseError}</div>
