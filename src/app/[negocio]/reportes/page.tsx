@@ -1,8 +1,9 @@
 "use client";
 
 import { Suspense, useState } from "react";
-import { useSearchParams } from "next/navigation";
-import { Download } from "lucide-react";
+import { useSearchParams, useParams } from "next/navigation";
+import { Download, Sparkles } from "lucide-react";
+import { GenerateReportModal } from "./generate-report-modal";
 import { WeeklyReport } from "./weekly-report";
 import { MonthlyReport } from "./monthly-report";
 import { DailyMovementsReport } from "./daily-movements-report";
@@ -25,6 +26,10 @@ function ReportesContent() {
       : (VALID_TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "movimientos");
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [showExport, setShowExport] = useState(false);
+  const [showEirs, setShowEirs] = useState(false);
+  const params = useParams<{ negocio?: string }>();
+  const negocio = params?.negocio ?? "atelier";
+  const activeUnitId = negocio === "fonavi" ? 2 : negocio === "centro" ? 3 : 1;
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "semanal", label: "Semanal" },
@@ -39,14 +44,31 @@ function ReportesContent() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <h1 className="text-2xl font-bold text-gray-900">Reportes</h1>
-        <button
-          onClick={() => setShowExport(true)}
-          className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-light flex items-center gap-2 text-sm font-medium"
-        >
-          <Download className="w-4 h-4" /> Exportar reporte
-        </button>
+        <div className="flex items-center gap-2">
+          <button
+            onClick={() => setShowEirs(true)}
+            className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-light flex items-center gap-2 text-sm font-medium"
+            title="Reporte Ejecutivo mensual: análisis, riesgos, oportunidades y plan de acción"
+          >
+            <Sparkles className="w-4 h-4" /> Generar Reporte
+          </button>
+          <button
+            onClick={() => setShowExport(true)}
+            className="bg-white text-gray-700 border border-gray-300 px-4 py-2 rounded-lg hover:bg-gray-50 flex items-center gap-2 text-sm font-medium"
+            title="Exportación clásica de datos (movimientos del mes)"
+          >
+            <Download className="w-4 h-4" /> Exportar datos
+          </button>
+        </div>
       </div>
       {showExport && <ExportModal onClose={() => setShowExport(false)} />}
+      {showEirs && (
+        <GenerateReportModal
+          isAtelier={activeUnitId === 1}
+          activeUnitId={activeUnitId}
+          onClose={() => setShowEirs(false)}
+        />
+      )}
 
       <div className="flex gap-1 bg-gray-100 rounded-lg p-1 overflow-x-auto">
         {tabs.map((tab) => (

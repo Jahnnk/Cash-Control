@@ -106,8 +106,9 @@ function riskParagraph(r: Risk): Paragraph {
 }
 
 function opportunityParagraph(o: Opportunity): Paragraph {
+  // Voz de asesor: recomendación clara y accionable, no descripción.
   return {
-    text: `${o.metric} — impacto esperado ${fmt(o.impact)} · prioridad ${o.priority} · ${o.ease} · ${o.timeframe}.`,
+    text: `Recomendamos (prioridad ${o.priority}): ${o.metric} — impacto esperado ${fmt(o.impact)}, dificultad ${o.ease}, plazo ${o.timeframe}.`,
     tone: "positivo",
     derivedFrom: [o.id],
   };
@@ -161,13 +162,14 @@ export function buildNarrative(
   if (catProblems.length > 0) {
     const list = catProblems.map((p) => `${p.metric.replace(" vs promedio 3m", "")} (+${fmt(p.impact)} sobre su promedio)`).join(", ");
     analysis.push({
-      text: `El mayor empuje del gasto vino de: ${list}. Estas desviaciones explican la mayor parte de la variación del mes.`,
+      text: `El mayor empuje del gasto vino de: ${list}. Recomendamos devolver estas categorías a su nivel normal el próximo mes — es la palanca de margen más directa disponible.`,
       tone: "atencion",
       derivedFrom: catProblems.map((p) => p.id),
     });
   }
   for (const s of intel.surprises.slice(0, 2)) {
-    analysis.push(findingParagraph(s, "Sorpresa del mes:", "atencion"));
+    const p = findingParagraph(s, "Sorpresa del mes:", "atencion");
+    analysis.push({ ...p, text: `${p.text} Recomendamos confirmar si es un gasto único o el inicio de uno recurrente.` });
   }
   for (const w of intel.watchlist.slice(0, 2)) {
     analysis.push(findingParagraph(w, "A vigilar:", "neutro"));
@@ -236,6 +238,14 @@ export function buildNarrative(
     tone: byScen["esperado"].liquidityEndNextMonth < 0 ? "riesgo" : "neutro",
     derivedFrom: ["liquidez"],
   });
+  // Voz de asesor: cómo usar la proyección según su confianza.
+  if (ps.confidence !== "alta") {
+    projP.push({
+      text: `Con confianza ${ps.confidence}, recomendamos planificar los compromisos del próximo mes con el escenario CONSERVADOR (${fmt(byScen["conservador"].liquidityEndNextMonth)}) y tratar los otros dos como techo, no como base.`,
+      tone: "neutro",
+      derivedFrom: ["liquidez"],
+    });
+  }
 
   return {
     cover: {
