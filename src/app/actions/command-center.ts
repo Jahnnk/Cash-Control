@@ -42,8 +42,9 @@ function todayLima(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
-/** Suma de ventas del negocio en [start, end] (byte_sales_daily o legacy). */
-async function salesInRange(bId: number, start: string, end: string): Promise<number> {
+/** Suma de ventas del negocio en [start, end] (byte_sales_daily o legacy).
+ *  Exportada: el EIRS usa EXACTAMENTE la misma definición de "ventas". */
+export async function salesInRange(bId: number, start: string, end: string): Promise<number> {
   const hasDaily = (await db.execute(sql`
     SELECT COUNT(*)::int AS n FROM byte_sales_daily
     WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
