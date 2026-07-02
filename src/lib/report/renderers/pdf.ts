@@ -75,6 +75,96 @@ function coverPage(doc: Doc, story: ReportStory, intel: UnitIntelligence): void 
   doc.text("CONFIDENCIAL", w / 2, h - 15, { align: "center" });
 }
 
+/**
+ * CEO DASHBOARD — el mes en UNA página: score, KPIs núcleo como tarjetas,
+ * tendencia, riesgo y oportunidad #1, y las 3 decisiones. El directorio
+ * que solo lea esta página ya puede discutir.
+ */
+function ceoDashboardPage(doc: Doc, story: ReportStory, intel: UnitIntelligence): void {
+  const n = story.narrative;
+  const w = doc.internal.pageSize.getWidth();
+  doc.addPage();
+  let y = pageHeader(doc, story, "El mes en una página");
+  y = sectionTitle(doc, y, "CEO Dashboard");
+
+  // Score + estado (izquierda) — grande, legible en 2 segundos
+  doc.setFont("helvetica", "bold").setFontSize(34).setTextColor(
+    intel.healthScore.total >= 60 ? BRAND.traffic.verde : intel.healthScore.total >= 40 ? BRAND.traffic.ambar : BRAND.traffic.rojo,
+  );
+  doc.text(String(intel.healthScore.total), PDF.margin, y + 12);
+  doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(BRAND.gray);
+  doc.text("Salud del negocio /100", PDF.margin, y + 18);
+  doc.setFont("helvetica", "bold").setFontSize(10).setTextColor(BRAND.ink);
+  const statusLines = doc.splitTextToSize(n.cover.statusLine, w - PDF.margin * 2 - 40) as string[];
+  doc.text(statusLines, PDF.margin + 38, y + 8);
+  y += 26;
+
+  // Tarjetas KPI (los 5 núcleo), con acento de semáforo
+  const core = ["ingresos", "ebitda", "margen", "flujo", "liquidez"]
+    .map((id) => intel.kpis.find((k) => k.id === id))
+    .filter((k): k is NonNullable<typeof k> => Boolean(k));
+  const gap = 4;
+  const cardW = (w - PDF.margin * 2 - gap * (core.length - 1)) / core.length;
+  const cardH = 24;
+  core.forEach((k, i) => {
+    const x = PDF.margin + i * (cardW + gap);
+    doc.setFillColor("#FFFFFF");
+    doc.setDrawColor(BRAND.grayLight);
+    doc.roundedRect(x, y, cardW, cardH, 1.5, 1.5, "FD");
+    doc.setFillColor(BRAND.traffic[k.traffic]);
+    doc.rect(x, y, 1.6, cardH, "F");
+    doc.setFont("helvetica", "normal").setFontSize(6.8).setTextColor(BRAND.gray);
+    doc.text(k.label.toUpperCase(), x + 4, y + 5.5);
+    doc.setFont("helvetica", "bold").setFontSize(10.5).setTextColor(BRAND.ink);
+    const valTxt = k.unitSuffix === "S/" ? fmtSoles(k.value) : `${k.value.toLocaleString("es-PE")} ${k.unitSuffix}`;
+    doc.text(valTxt, x + 4, y + 13);
+    if (k.deltaPct !== null) {
+      doc.setFont("helvetica", "normal").setFontSize(7).setTextColor(k.deltaPct >= 0 ? BRAND.traffic.verde : BRAND.traffic.rojo);
+      doc.text(`${k.deltaPct >= 0 ? "+" : ""}${k.deltaPct.toFixed(1)}${k.unitSuffix === "%" ? " pts" : "%"}`, x + 4, y + 19.5);
+    }
+  });
+  y += cardH + 8;
+
+  // Tendencia (ventas/EBITDA 4 meses)
+  const img = lineChart(intel.series.months, [
+    { name: "Ventas", values: intel.series.sales, color: BRAND.primaryLight },
+    { name: "EBITDA", values: intel.series.ebitda, color: BRAND.primary },
+  ], 900, 300);
+  if (img) {
+    doc.addImage(img, "PNG", PDF.margin, y, w - PDF.margin * 2, 52);
+    y += 58;
+  }
+
+  // Riesgo #1 y Oportunidad #1 (una línea cada uno)
+  const topRisk = intel.risks[0];
+  const topOpp = intel.opportunities[0];
+  doc.setFontSize(PDF.body);
+  if (topRisk) {
+    doc.setFont("helvetica", "bold").setTextColor(BRAND.traffic.rojo);
+    doc.text("RIESGO #1", PDF.margin, y);
+    doc.setFont("helvetica", "normal").setTextColor(BRAND.ink);
+    doc.text(doc.splitTextToSize(`${topRisk.metric} (impacto ${fmtSoles(topRisk.impact)})`, w - PDF.margin * 2 - 30) as string[], PDF.margin + 28, y);
+    y += 7;
+  }
+  if (topOpp) {
+    doc.setFont("helvetica", "bold").setTextColor(BRAND.traffic.verde);
+    doc.text("OPORT. #1", PDF.margin, y);
+    doc.setFont("helvetica", "normal").setTextColor(BRAND.ink);
+    doc.text(doc.splitTextToSize(`${topOpp.metric} (impacto ${fmtSoles(topOpp.impact)})`, w - PDF.margin * 2 - 30) as string[], PDF.margin + 28, y);
+    y += 9;
+  }
+
+  // Las 3 decisiones (compactas)
+  doc.setFont("helvetica", "bold").setFontSize(PDF.body).setTextColor(BRAND.primary);
+  doc.text("LAS 3 DECISIONES DEL PRÓXIMO MES", PDF.margin, y);
+  y += 5.5;
+  doc.setFont("helvetica", "normal").setTextColor(BRAND.ink);
+  intel.decisions.slice(0, 3).forEach((d, i) => {
+    doc.text(doc.splitTextToSize(`${i + 1}. ${d.action} — ${fmtSoles(d.impact)} · ${d.owner} · ${d.timeframe}`, w - PDF.margin * 2) as string[], PDF.margin, y);
+    y += 6;
+  });
+}
+
 function labeledBlock(doc: Doc, story: ReportStory, section: string, y: number, label: string, p: Paragraph | null): number {
   if (!p) return y;
   const h = doc.internal.pageSize.getHeight();
@@ -97,9 +187,12 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
   // ── Portada ──
   coverPage(doc, story, intel);
 
-  // ── 1 · Executive Summary ──
+  // ── CEO Dashboard: el mes en UNA página ──
+  ceoDashboardPage(doc, story, intel);
+
+  // ── 1 · Executive Summary (¿Qué pasó?) ──
   doc.addPage();
-  let y = pageHeader(doc, story, "Executive Summary");
+  let y = pageHeader(doc, story, "1 · ¿Qué pasó?");
   y = sectionTitle(doc, y, "Executive Summary");
   y = writeParagraphs(doc, story, "Executive Summary", y, [n.executiveSummary.closing], " ") + 3;
   y = labeledBlock(doc, story, "Executive Summary", y, "Mayor logro", n.executiveSummary.achievement);
@@ -115,7 +208,7 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
 
   // ── 2 · Scorecard ──
   doc.addPage();
-  y = pageHeader(doc, story, "Scorecard Ejecutivo");
+  y = pageHeader(doc, story, "1 · ¿Qué pasó?");
   y = sectionTitle(doc, y, "Scorecard Ejecutivo");
   autoTable(doc, {
     startY: y,
@@ -139,23 +232,23 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
     },
   });
 
-  // ── 3 · Análisis del mes ──
+  // ── 3 · Análisis del mes (¿Por qué pasó?) — incluye "lo que funcionó"
+  //      para no repetir una página entera de fortalezas ──
   doc.addPage();
-  y = pageHeader(doc, story, "Análisis del Mes");
+  y = pageHeader(doc, story, "2 · ¿Por qué pasó?");
   y = sectionTitle(doc, y, "Análisis del Mes");
-  y = writeParagraphs(doc, story, "Análisis del Mes", y, n.sections["month-analysis"]);
+  y = writeParagraphs(doc, story, "2 · ¿Por qué pasó?", y, n.sections["month-analysis"]);
+  if (n.sections.strengths.length > 0) {
+    y += 3;
+    doc.setFont("helvetica", "bold").setFontSize(PDF.body).setTextColor(BRAND.traffic.verde);
+    doc.text("LO QUE FUNCIONÓ", PDF.margin, y);
+    y += 5;
+    y = writeParagraphs(doc, story, "2 · ¿Por qué pasó?", y, n.sections.strengths);
+  }
 
-  // ── 4 · Fortalezas ──
+  // ── 5 · Riesgos (¿Qué significa?) ──
   doc.addPage();
-  y = pageHeader(doc, story, "Fortalezas");
-  y = sectionTitle(doc, y, "Fortalezas del Mes");
-  y = n.sections.strengths.length > 0
-    ? writeParagraphs(doc, story, "Fortalezas", y, n.sections.strengths)
-    : writeParagraphs(doc, story, "Fortalezas", y, [{ text: "Sin logros destacables frente al mes anterior.", tone: "neutro", derivedFrom: [] }]);
-
-  // ── 5 · Riesgos (con mitigación) ──
-  doc.addPage();
-  y = pageHeader(doc, story, "Riesgos");
+  y = pageHeader(doc, story, "3 · ¿Qué significa?");
   y = sectionTitle(doc, y, "Riesgos (ordenados por gravedad e impacto)");
   if (intel.risks.length === 0) {
     y = writeParagraphs(doc, story, "Riesgos", y, [{ text: "Sin riesgos relevantes detectados este mes.", tone: "positivo", derivedFrom: [] }]);
@@ -172,7 +265,7 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
 
   // ── 6 · Rentabilidad (con gráfico de tendencia) ──
   doc.addPage();
-  y = pageHeader(doc, story, "Rentabilidad");
+  y = pageHeader(doc, story, "3 · ¿Qué significa?");
   y = sectionTitle(doc, y, "Análisis de Rentabilidad");
   const trendImg = lineChart(intel.series.months, [
     { name: "Ventas", values: intel.series.sales, color: BRAND.primaryLight },
@@ -201,7 +294,7 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
   // ── 7 · Presupuesto ──
   const unitWithBudget = story.facts.units.find((u) => u.budget.length > 0);
   doc.addPage();
-  y = pageHeader(doc, story, "Presupuesto");
+  y = pageHeader(doc, story, "3 · ¿Qué significa?");
   y = sectionTitle(doc, y, "Ejecución Presupuestal");
   y = n.sections.budget.length > 0
     ? writeParagraphs(doc, story, "Presupuesto", y, n.sections.budget)
@@ -222,7 +315,7 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
 
   // ── 8 · Oportunidades ──
   doc.addPage();
-  y = pageHeader(doc, story, "Oportunidades");
+  y = pageHeader(doc, story, "4 · ¿Qué haremos?");
   y = sectionTitle(doc, y, "Top Oportunidades");
   if (intel.opportunities.length === 0) {
     y = writeParagraphs(doc, story, "Oportunidades", y, [{ text: "Sin oportunidades detectadas con los datos del mes.", tone: "neutro", derivedFrom: [] }]);
@@ -241,7 +334,7 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
 
   // ── 9 · Proyecciones ──
   doc.addPage();
-  y = pageHeader(doc, story, "Proyecciones");
+  y = pageHeader(doc, story, "5 · ¿Qué esperamos?");
   y = sectionTitle(doc, y, "Proyecciones del Próximo Mes");
   const projImg = barChart(
     intel.projections.scenarios.map((s) => ({
@@ -266,7 +359,7 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
 
   // ── 10 · Plan de acción ──
   doc.addPage();
-  y = pageHeader(doc, story, "Plan de Acción");
+  y = pageHeader(doc, story, "4 · ¿Qué haremos?");
   y = sectionTitle(doc, y, "Plan de Acción (máx. 5, por impacto)");
   autoTable(doc, {
     startY: y,
@@ -279,7 +372,32 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
   y = lastY(doc) + 8;
   y = writeParagraphs(doc, story, "Plan de Acción", y, n.sections["action-plan"]);
 
-  // ── 11+ · Anexos ──
+  // ── 11 · CIERRE: Para decisión del directorio ──
+  doc.addPage();
+  y = pageHeader(doc, story, "Cierre · Para decisión");
+  y = sectionTitle(doc, y, "Para Decisión del Directorio");
+  autoTable(doc, {
+    startY: y,
+    head: [["Las 3 decisiones", "Impacto", "Responsable", "Plazo"]],
+    body: intel.decisions.slice(0, 3).map((d) => [d.action, fmtSoles(d.impact), d.owner, d.timeframe]),
+    margin: { left: PDF.margin, right: PDF.margin },
+    headStyles: { fillColor: BRAND.primary },
+    styles: { fontSize: 9 },
+  });
+  y = lastY(doc) + 8;
+  doc.setFont("helvetica", "bold").setFontSize(PDF.body).setTextColor(BRAND.primary);
+  doc.text("LAS 3 PREGUNTAS QUE ESTA REUNIÓN DEBE RESOLVER", PDF.margin, y);
+  y += 5.5;
+  y = n.boardClose.questions.length > 0
+    ? writeParagraphs(doc, story, "Cierre · Para decisión", y, n.boardClose.questions, " ")
+    : writeParagraphs(doc, story, "Cierre · Para decisión", y, [{ text: "Sin preguntas abiertas que requieran acuerdo de socios este mes.", tone: "positivo", derivedFrom: [] }], " ");
+  y += 3;
+  doc.setFont("helvetica", "bold").setFontSize(PDF.body).setTextColor(BRAND.primary);
+  doc.text("QUÉ ESPERAMOS SI ACTUAMOS", PDF.margin, y);
+  y += 5.5;
+  y = writeParagraphs(doc, story, "Cierre · Para decisión", y, [n.boardClose.expectedOutcome], " ");
+
+  // ── 12+ · Anexos ──
   for (const u of story.facts.units) {
     doc.addPage();
     y = pageHeader(doc, story, `Anexo · ${u.unit.name}`);

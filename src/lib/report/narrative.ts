@@ -247,6 +247,26 @@ export function buildNarrative(
     });
   }
 
+  // ── Cierre para el directorio: qué esperamos si ejecutamos el plan ──
+  const totalDecisionImpact = intel.decisions.reduce((s, d) => s + d.impact, 0);
+  const esperado = intel.projections.scenarios.find((s) => s.scenario === "esperado");
+  const expectedOutcome: Paragraph = intel.decisions.length > 0
+    ? {
+        text: `Si ejecutamos el plan de acción, el impacto combinado estimado es ~${fmt(totalDecisionImpact)} (los impactos no son perfectamente aditivos — algunos se traslapan)${esperado ? `; sin actuar, el cierre esperado del próximo mes es ${fmt(esperado.liquidityEndNextMonth)}` : ""}. La diferencia entre actuar y no actuar es la decisión de esta reunión.`,
+        tone: "neutro",
+        derivedFrom: intel.decisions.map((d) => d.sourceFindingId),
+      }
+    : {
+        text: "Sin acciones urgentes este mes: el plan es sostener el rumbo y vigilar las señales de la lista de vigilancia.",
+        tone: "positivo",
+        derivedFrom: [],
+      };
+  const questionParagraphs: Paragraph[] = intel.boardQuestions.map((q, i) => ({
+    text: `${i + 1}. ${q.question} — Contexto: ${q.context}`,
+    tone: "neutro",
+    derivedFrom: [q.sourceFindingId],
+  }));
+
   return {
     cover: {
       statusLine: `${intel.healthScore.level} · ${intel.healthScore.total}/100${topRisk ? ` · riesgo principal: ${topRisk.metric.toLowerCase()}` : " · sin riesgos relevantes"}`,
@@ -269,6 +289,10 @@ export function buildNarrative(
       opportunities: intel.opportunities.map(opportunityParagraph),
       projections: projP,
       "action-plan": intel.decisions.map(decisionParagraph),
+    },
+    boardClose: {
+      expectedOutcome,
+      questions: questionParagraphs,
     },
     kpiComments: Object.fromEntries(intel.kpis.map((k) => [k.id, kpiComment(k)])),
     mitigations: Object.fromEntries(

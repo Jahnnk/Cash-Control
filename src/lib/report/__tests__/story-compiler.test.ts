@@ -178,6 +178,38 @@ describe("narrativa — prosa ejecutiva desde la inteligencia", () => {
   });
 });
 
+describe("preguntas del directorio + cierre 'si actuamos'", () => {
+  const intel = compileUnitIntelligence(mkUnit());
+
+  it("máximo 3 preguntas, formuladas para RESOLVERSE, con contexto y trazables", () => {
+    expect(intel.boardQuestions.length).toBeLessThanOrEqual(3);
+    expect(intel.boardQuestions.length).toBeGreaterThan(0);
+    for (const q of intel.boardQuestions) {
+      expect(q.question).toMatch(/^¿.*\?$/);      // pregunta cerrada, decidible
+      expect(q.context.length).toBeGreaterThan(10);
+      expect(q.sourceFindingId.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("la deuda al socio sin calendario genera pregunta de directorio", () => {
+    expect(intel.boardQuestions.some((q) => q.id === "q-deuda-socio" || q.id === "q-regimen-gasto")).toBe(true);
+  });
+
+  it("presupuesto ESTRUCTURAL genera la pregunta re-presupuestar vs reducir", () => {
+    const f = mkUnit();
+    f.categories[0] = { ...f.categories[0], avg3m: 14800 }; // rojo ≈ promedio → estructural
+    const i2 = compileUnitIntelligence(f);
+    expect(i2.boardQuestions.some((q) => q.id === "q-presupuesto-estructural")).toBe(true);
+  });
+
+  it("el cierre narra qué esperamos si actuamos (impacto combinado + honestidad)", () => {
+    const n = buildNarrative(intel, { monthLabel: "Junio 2026", title: "Yayi's Atelier" });
+    expect(n.boardClose.expectedOutcome.text).toContain("impacto combinado");
+    expect(n.boardClose.expectedOutcome.text).toContain("no son perfectamente aditivos");
+    expect(n.boardClose.questions.length).toBe(intel.boardQuestions.length);
+  });
+});
+
 describe("GUARDIA DE SEPARACIÓN — la narrativa no puede ver los hechos", () => {
   it("narrative.ts no importa hechos, detectores ni BD (solo tipos de inteligencia)", () => {
     const src = readFileSync(resolve(process.cwd(), "src/lib/report/narrative.ts"), "utf8");
