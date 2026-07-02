@@ -178,6 +178,14 @@ export type Decision = {
   sourceFindingId: string;     // trazabilidad al hallazgo que la origina
 };
 
+/** Pregunta que el directorio debe RESOLVER en la reunión (no informarse). */
+export type BoardQuestion = {
+  id: string;
+  question: string;            // formulada para votarse/decidirse
+  context: string;             // el dato que la origina (una línea)
+  sourceFindingId: string;
+};
+
 export type UnitIntelligence = {
   unit: BusinessUnitRef;
   healthScore: { total: number; level: string; components: { label: string; score: number; weight: number; formula: string }[] };
@@ -208,6 +216,8 @@ export type UnitIntelligence = {
   watchlist: Finding[];
   projections: ProjectionSet;
   decisions: Decision[];       // ≤5, ordenadas por impacto
+  /** Las 3 preguntas que el directorio debe resolver este mes. */
+  boardQuestions: BoardQuestion[];
 };
 
 export type ReportIntelligence = {
@@ -256,6 +266,11 @@ export type ReportNarrative = {
     keyDecisions: Paragraph[];   // ≤3
   };
   sections: Record<NarrativeSectionId, Paragraph[]>;
+  /** Cierre para el directorio: qué esperar si actuamos + las 3 preguntas. */
+  boardClose: {
+    expectedOutcome: Paragraph;  // qué esperamos que ocurra si ejecutamos el plan
+    questions: Paragraph[];      // las 3 preguntas a resolver
+  };
   /** Comentario de una línea por KPI del scorecard (id → texto). */
   kpiComments: Record<string, string>;
   /** Mitigación por riesgo (mitigationId → texto). */

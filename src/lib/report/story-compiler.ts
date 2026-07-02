@@ -33,6 +33,7 @@ import { detectRisks } from "./intelligence/risks";
 import { detectOpportunities } from "./intelligence/opportunities";
 import { buildProjections } from "./intelligence/projections";
 import { buildDecisions } from "./intelligence/decisions";
+import { buildBoardQuestions } from "./intelligence/board-questions";
 import { buildNarrative } from "./narrative";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -79,6 +80,7 @@ export function compileUnitIntelligence(f: UnitFacts): UnitIntelligence {
   const health = computeHealthScore(toHealthFacts(f));
   const risks = detectRisks(f);
   const opportunities = detectOpportunities(f);
+  const projections = buildProjections(f);
 
   const months = [...f.history.map((h) => h.month), f.month];
   const basics = [...f.history, f.current];
@@ -131,8 +133,9 @@ export function compileUnitIntelligence(f: UnitFacts): UnitIntelligence {
     opportunities,
     surprises: detectSurprises(f),
     watchlist: detectWatchlist(f),
-    projections: buildProjections(f),
+    projections,
     decisions: buildDecisions(risks, opportunities),
+    boardQuestions: buildBoardQuestions(f, { risks, opportunities, projections, budgetSummary }),
   };
 }
 
