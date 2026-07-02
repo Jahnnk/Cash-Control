@@ -1,16 +1,24 @@
 "use client";
 
 import { useState } from "react";
-import { X, Loader2, FileText, Presentation, Table2, Sparkles } from "lucide-react";
+import { X, Loader2, FileText, Presentation, Table2, Sparkles, Package } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { getReportStory } from "@/app/actions/report-story";
 
 /**
  * EIRS · Modal "Generar Reporte" — el Board Meeting Package con un clic.
- * PR 2: PDF Ejecutivo. PPT y Excel llegan en el PR 3 (mismo Story).
+ * Un solo cerebro (Story) → renderers tontos: PDF, PowerPoint, Excel o Todos.
  */
 
 type ScopeChoice = "atelier" | "fonavi" | "centro" | "grupo";
+type FormatChoice = "pdf" | "pptx" | "xlsx" | "todos";
+
+const FORMATS: { key: FormatChoice; label: string; hint: string; Icon: typeof FileText }[] = [
+  { key: "pdf", label: "PDF Ejecutivo", hint: "para leer: el Board Report completo", Icon: FileText },
+  { key: "pptx", label: "PowerPoint", hint: "para presentar: ≤10 slides, una pregunta por slide", Icon: Presentation },
+  { key: "xlsx", label: "Excel Gerencial", hint: "para analizar: todo el detalle en pestañas", Icon: Table2 },
+  { key: "todos", label: "Paquete completo", hint: "los 3 archivos desde el mismo análisis", Icon: Package },
+];
 
 const SCOPES: { key: ScopeChoice; label: string; unitId?: number }[] = [
   { key: "atelier", label: "Atelier", unitId: 1 },
@@ -47,30 +55,50 @@ export function GenerateReportModal({
     isAtelier ? "atelier" : activeUnitId === 2 ? "fonavi" : "centro",
   );
   const [month, setMonth] = useState(months[0].value);
+  const [format, setFormat] = useState<FormatChoice>("pdf");
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  function download(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
 
   async function handleGenerate() {
     setGenerating(true);
     setError(null);
     try {
       const chosen = SCOPES.find((s) => s.key === scope)!;
-      // 1) Un solo cerebro: el Story se compila UNA vez en el servidor.
+      // 1) Un solo cerebro: el Story se compila UNA vez en el servidor,
+      //    aunque se pidan los 3 formatos — coherencia garantizada.
       const story = await getReportStory({
         scope: scope === "grupo" ? "group" : "unit",
         unitId: chosen.unitId,
         month,
       });
-      // 2) Renderers tontos en el cliente (import dinámico: jsPDF solo aquí).
-      const { renderPdf } = await import("@/lib/report/renderers/pdf");
-      const { blob, filename } = renderPdf(story);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Reporte Ejecutivo generado", "success");
+      // 2) Renderers tontos en el cliente (imports dinámicos: las librerías
+      //    pesadas solo se cargan si se usan).
+      const wants = (f: FormatChoice) => format === f || format === "todos";
+      if (wants("pdf")) {
+        const { renderPdf } = await import("@/lib/report/renderers/pdf");
+        const { blob, filename } = renderPdf(story);
+        download(blob, filename);
+      }
+      if (wants("pptx")) {
+        const { renderPptx } = await import("@/lib/report/renderers/pptx");
+        const { blob, filename } = await renderPptx(story);
+        download(blob, filename);
+      }
+      if (wants("xlsx")) {
+        const { renderXlsx } = await import("@/lib/report/renderers/xlsx");
+        const { blob, filename } = await renderXlsx(story);
+        download(blob, filename);
+      }
+      showToast(format === "todos" ? "Paquete completo generado (3 archivos)" : "Reporte generado", "success");
       onClose();
     } catch (e) {
       setError(e instanceof Error ? e.message : "No se pudo generar el reporte");
@@ -136,15 +164,21 @@ export function GenerateReportModal({
           <div>
             <label className="block text-xs font-medium text-gray-700 mb-1.5">Formato</label>
             <div className="space-y-1.5">
-              <div className="flex items-center gap-2 text-sm text-gray-800 border border-primary/30 bg-primary/5 rounded-lg px-3 py-2">
-                <FileText className="w-4 h-4 text-primary" /> PDF Ejecutivo (Board Report)
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg px-3 py-2">
-                <Presentation className="w-4 h-4" /> PowerPoint — próxima entrega
-              </div>
-              <div className="flex items-center gap-2 text-sm text-gray-400 border border-dashed border-gray-200 rounded-lg px-3 py-2">
-                <Table2 className="w-4 h-4" /> Excel Gerencial — próxima entrega
-              </div>
+              {FORMATS.map(({ key, label, hint, Icon }) => (
+                <button
+                  key={key}
+                  onClick={() => setFormat(key)}
+                  className={`w-full flex items-center gap-2 text-sm rounded-lg px-3 py-2 border text-left transition-colors ${
+                    format === key
+                      ? "text-gray-900 border-primary/40 bg-primary/5"
+                      : "text-gray-600 border-gray-200 bg-white hover:border-gray-300"
+                  }`}
+                >
+                  <Icon className={`w-4 h-4 shrink-0 ${format === key ? "text-primary" : "text-gray-400"}`} />
+                  <span className="font-medium">{label}</span>
+                  <span className="text-xs text-gray-400 truncate">{hint}</span>
+                </button>
+              ))}
             </div>
           </div>
 
