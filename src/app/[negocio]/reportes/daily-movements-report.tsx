@@ -17,10 +17,20 @@ import {
   setReconciledThrough as saveReconciledThrough,
 } from "@/app/actions/reconciliation-checkpoint";
 import { reorderColumn } from "@/lib/dnd-reorder";
+import {
+  createExpenseGroup,
+  ungroupExpenseGroup,
+  toggleBcpVerifiedGroup,
+} from "@/app/actions/expense-groups";
+import {
+  foldExpenseGroups,
+  canGroupSelection,
+  type ExpenseGroupView,
+} from "@/lib/expense-group-view";
 import { useBankBalance } from "@/hooks/useBankBalance";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
-import { Pencil, Trash2, Plus, CheckCircle2, Paperclip, GripVertical, X as XIcon, ShieldCheck, ChevronDown, ChevronRight } from "lucide-react";
+import { Pencil, Trash2, Plus, CheckCircle2, Paperclip, GripVertical, X as XIcon, ShieldCheck, ChevronDown, ChevronRight, Layers, Ungroup } from "lucide-react";
 import {
   DndContext,
   PointerSensor,
@@ -107,6 +117,9 @@ type ExpenseRow = {
   notes: string | null;
   payment_method: string | null;
   bcpVerifiedAt: string | null;
+  // Grupo visual (varios gastos = un solo cargo en el banco)
+  group_id?: string | null;
+  group_label?: string | null;
   // Condición de compartido (para editar desde el modal; solo Atelier)
   is_shared?: boolean;
   shared_rule_id?: string | null;
@@ -253,6 +266,8 @@ export function DailyMovementsReport() {
           notes: (r.notes as string) || null,
           payment_method: (r.payment_method as string) || null,
           bcpVerifiedAt: (r.bcp_verified_at as string) || null,
+          group_id: (r.group_id as string) || null,
+          group_label: (r.group_label as string) || null,
           is_shared: !!r.is_shared,
           shared_rule_id: (r.shared_rule_id as string) || null,
           fonavi_amount: r.fonavi_amount != null ? Number(r.fonavi_amount) : null,
@@ -370,6 +385,65 @@ export function DailyMovementsReport() {
   );
   const selectedIncomeSum = selectedIncomeRows.reduce((s, i) => s + i.amount, 0);
   const selectedExpenseSum = selectedExpenseRows.reduce((s, e) => s + e.amount, 0);
+
+  // ── Grupos visuales de egresos (varios gastos = un cargo en el banco) ──
+  const groupable = canGroupSelection(selectedExpenseRows);
+  const [showGroupModal, setShowGroupModal] = useState(false);
+  const [savingGroup, setSavingGroup] = useState(false);
+
+  async function handleCreateGroup(label: string) {
+    setSavingGroup(true);
+    const result = await createExpenseGroup({
+      expenseIds: selectedExpenseRows.map((e) => e.id),
+      label,
+    });
+    setSavingGroup(false);
+    if (!result.ok) {
+      showToast(result.error, "error");
+      return;
+    }
+    setShowGroupModal(false);
+    setSelectedExpense(new Set());
+    await loadData();
+    showToast("Egresos agrupados (los saldos no cambian)", "success");
+  }
+
+  const handleUngroup = useCallback(
+    async (groupId: string) => {
+      const result = await ungroupExpenseGroup(groupId);
+      if (!result.ok) {
+        showToast(result.error, "error");
+        return;
+      }
+      await loadData();
+      showToast("Grupo deshecho", "success");
+    },
+    [loadData, showToast],
+  );
+
+  const handleToggleVerifyGroup = useCallback(
+    async (groupId: string) => {
+      // Optimista: si algún miembro está sin verificar → todos verificados;
+      // si ya estaban todos → todos desmarcados (igual que la server action).
+      const prev = expenses;
+      const members = expenses.filter((e) => e.group_id === groupId);
+      const willVerify = members.some((e) => !e.bcpVerifiedAt);
+      const optimisticNow = new Date().toISOString();
+      setExpenses((curr) =>
+        curr.map((e) =>
+          e.group_id === groupId
+            ? { ...e, bcpVerifiedAt: willVerify ? optimisticNow : null }
+            : e,
+        ),
+      );
+      const result = await toggleBcpVerifiedGroup(groupId);
+      if (!result.ok) {
+        setExpenses(prev);
+        showToast(result.error, "error");
+      }
+    },
+    [expenses, showToast],
+  );
 
   // ── Drag & drop: reordenar dentro del día y mover entre días ──
   // Sensores: en escritorio arranca tras 6px de arrastre (no estorba clicks);
@@ -746,6 +820,8 @@ export function DailyMovementsReport() {
                       selectedIncome={selectedIncome}
                       selectedExpense={selectedExpense}
                       onToggleSelect={toggleSelect}
+                      onUngroup={handleUngroup}
+                      onToggleVerifyGroup={handleToggleVerifyGroup}
                     />
                   ))
                 )}
@@ -777,6 +853,8 @@ export function DailyMovementsReport() {
                             selectedIncome={selectedIncome}
                             selectedExpense={selectedExpense}
                             onToggleSelect={toggleSelect}
+                            onUngroup={handleUngroup}
+                            onToggleVerifyGroup={handleToggleVerifyGroup}
                           />
                         ))}
                       </div>
@@ -818,6 +896,16 @@ export function DailyMovementsReport() {
               <span className="text-sm font-bold text-red-600">
                 Suma: {formatCurrency(selectedExpenseSum)}
               </span>
+              {groupable.ok && (
+                <button
+                  onClick={() => setShowGroupModal(true)}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-full"
+                  title="Unir estos egresos en una sola fila (como el cargo único del banco). Cada uno conserva su categoría y el saldo no cambia."
+                >
+                  <Layers className="w-3 h-3" />
+                  Agrupar
+                </button>
+              )}
               <button
                 onClick={() => setSelectedExpense(new Set())}
                 className="text-gray-400 hover:text-gray-700 p-0.5 rounded hover:bg-gray-100"
@@ -896,6 +984,17 @@ export function DailyMovementsReport() {
             await Promise.all([loadData(), bank.refresh(), refreshCheckpoint()]);
             showToast(wasIncome ? "Ingreso registrado" : "Egreso registrado", "success");
           }}
+        />
+      )}
+
+      {/* Modal para nombrar el grupo de egresos */}
+      {showGroupModal && (
+        <GroupNameModal
+          count={selectedExpenseRows.length}
+          total={selectedExpenseSum}
+          saving={savingGroup}
+          onClose={() => setShowGroupModal(false)}
+          onSave={handleCreateGroup}
         />
       )}
 
@@ -1060,6 +1159,8 @@ function DayCard({
   selectedIncome,
   selectedExpense,
   onToggleSelect,
+  onUngroup,
+  onToggleVerifyGroup,
 }: {
   day: DayBlock;
   hideVerified: boolean;
@@ -1072,6 +1173,8 @@ function DayCard({
   selectedIncome: Set<string>;
   selectedExpense: Set<string>;
   onToggleSelect: (type: "income" | "expense", id: string) => void;
+  onUngroup: (groupId: string) => void;
+  onToggleVerifyGroup: (groupId: string) => void;
 }) {
   const netCls =
     day.net > 0
@@ -1089,9 +1192,20 @@ function DayCard({
   const visibleIncomes = hideVerified
     ? day.incomes.filter((i) => !i.bcpVerifiedAt)
     : day.incomes;
-  const visibleExpenses = hideVerified
-    ? day.expenses.filter((e) => !e.bcpVerifiedAt)
-    : day.expenses;
+  // Egresos plegados en filas: sueltos + grupos visuales. Con "ocultar
+  // verificados": los sueltos verificados se ocultan; un grupo se oculta
+  // solo cuando TODOS sus miembros están verificados (así su total
+  // siempre coincide con el cargo único del banco).
+  const expenseFeedRows = foldExpenseGroups(day.expenses).filter((r) =>
+    !hideVerified
+      ? true
+      : r.kind === "single"
+        ? !r.expense.bcpVerifiedAt
+        : !r.group.allVerified,
+  );
+  const sortableExpenseIds = expenseFeedRows.flatMap((r) =>
+    r.kind === "single" ? [r.expense.id] : [],
+  );
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
@@ -1292,151 +1406,399 @@ function DayCard({
               {formatCurrency(day.expenseTotal)}
             </span>
           </div>
-          <SortableContext items={visibleExpenses.map((e) => e.id)} strategy={verticalListSortingStrategy}>
+          <SortableContext items={sortableExpenseIds} strategy={verticalListSortingStrategy}>
             <DroppableColumn id={colId("expense", day.date)}>
-            {visibleExpenses.length === 0 ? (
+            {expenseFeedRows.length === 0 ? (
               <div className="px-4 py-6 text-xs text-gray-400 italic text-center">
                 {day.expenses.length === 0
                   ? "(sin egresos este día)"
                   : "(todos verificados)"}
               </div>
             ) : (
-              visibleExpenses.map((e) => {
-                const isVerified = !!e.bcpVerifiedAt;
-                const isSel = selectedExpense.has(e.id);
-                return (
-                  <SortableRow key={e.id} id={e.id}>
+              expenseFeedRows.map((row) =>
+                row.kind === "single" ? (
+                  <SortableRow key={row.expense.id} id={row.expense.id}>
                     {(handleProps) => (
-                  <div
-                    className={`group pr-4 py-2 transition-opacity duration-150 ${isSel ? "bg-primary/5" : "hover:bg-gray-50"}`}
-                  >
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1 flex-1 min-w-0">
-                      <DragHandle handleProps={handleProps} />
-                      <label
-                        className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
-                        title={
-                          isVerified
-                            ? "Verificado contra BCP — click para desmarcar"
-                            : "Click para marcar como verificado contra BCP"
-                        }
-                      >
-                        <input
-                          type="checkbox"
-                          checked={isVerified}
-                          onChange={() => onToggleVerify("expense", e.id)}
-                          className="shrink-0 w-3.5 h-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
-                          aria-label="Marcar como verificado contra BCP"
-                        />
-                        <span
-                          className={`text-xs truncate pr-3 transition-opacity duration-150 ${
-                            isVerified
-                              ? "line-through opacity-50 text-gray-500"
-                              : "text-gray-700"
-                          }`}
-                        >
-                          <span
-                            className={
-                              isVerified ? "" : "font-medium text-gray-900"
-                            }
-                          >
-                            {e.category}
-                          </span>
-                          <span className="text-gray-400"> · </span>
-                          <span>{e.concept}</span>
-                        </span>
-                      </label>
-                      </div>
-                      <div className="flex items-center gap-2 shrink-0">
-                        <SumCheckbox checked={isSel} onChange={() => onToggleSelect("expense", e.id)} />
-                        <span
-                          className={`text-xs font-medium transition-opacity duration-150 ${
-                            isVerified
-                              ? "line-through opacity-50 text-gray-500"
-                              : "text-red-600"
-                          }`}
-                        >
-                          −{formatCurrency(e.amount)}
-                        </span>
-                        <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
-                          <button
-                            onClick={() => onAttach("expense", e.id, e.concept || e.category)}
-                            className={`p-1 rounded relative ${attachCounts[`expense:${e.id}`] ? "text-violet-600 hover:bg-violet-50" : "text-gray-400 hover:bg-violet-50 hover:text-violet-600"}`}
-                            aria-label="Constancias adjuntas"
-                            title="Constancias (imagen del pago / PDF)"
-                          >
-                            <Paperclip className="w-3 h-3" />
-                            {(attachCounts[`expense:${e.id}`] ?? 0) > 0 && (
-                              <span className="absolute -top-1 -right-1 text-[8px] bg-violet-600 text-white rounded-full w-3 h-3 flex items-center justify-center leading-none">
-                                {attachCounts[`expense:${e.id}`]}
-                              </span>
-                            )}
-                          </button>
-                          <button
-                            onClick={() =>
-                              onEdit({
-                                type: "expense",
-                                id: e.id,
-                                date: e.date,
-                                amount: e.amount,
-                                category: e.category,
-                                concept: e.concept,
-                                paymentMethod:
-                                  e.payment_method || "transferencia",
-                                notes: e.notes,
-                                isShared: !!e.is_shared,
-                                sharedRuleId: e.shared_rule_id ?? null,
-                                fonaviAmount: e.fonavi_amount ?? null,
-                                centroAmount: e.centro_amount ?? null,
-                                isMirror: !!e.linked_atelier_expense_id,
-                              })
-                            }
-                            className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-400"
-                            aria-label="Editar"
-                          >
-                            <Pencil className="w-3 h-3" />
-                          </button>
-                          <button
-                            onClick={() =>
-                              onDelete({
-                                type: "expense",
-                                id: e.id,
-                                date: e.date,
-                                amount: e.amount,
-                                category: e.category,
-                                concept: e.concept,
-                                paymentMethod:
-                                  e.payment_method || "transferencia",
-                                notes: e.notes,
-                              })
-                            }
-                            className="p-1 hover:bg-red-50 hover:text-red-600 rounded text-gray-400"
-                            aria-label="Eliminar"
-                          >
-                            <Trash2 className="w-3 h-3" />
-                          </button>
-                        </div>
-                      </div>
-                    </div>
-                    {e.notes && (
-                      <div
-                        className={`text-[11px] pl-8 mt-0.5 transition-opacity duration-150 ${
-                          isVerified
-                            ? "line-through opacity-50 text-gray-400"
-                            : "text-gray-400"
-                        }`}
-                      >
-                        {e.notes}
-                      </div>
-                    )}
-                  </div>
+                      <ExpenseItemRow
+                        e={row.expense}
+                        isSel={selectedExpense.has(row.expense.id)}
+                        handleProps={handleProps}
+                        attachCounts={attachCounts}
+                        onToggleVerify={onToggleVerify}
+                        onToggleSelect={onToggleSelect}
+                        onAttach={onAttach}
+                        onEdit={onEdit}
+                        onDelete={onDelete}
+                      />
                     )}
                   </SortableRow>
-                );
-              })
+                ) : (
+                  <GroupRow
+                    key={row.group.groupId}
+                    group={row.group}
+                    selectedExpense={selectedExpense}
+                    attachCounts={attachCounts}
+                    onToggleVerify={onToggleVerify}
+                    onToggleSelect={onToggleSelect}
+                    onAttach={onAttach}
+                    onEdit={onEdit}
+                    onDelete={onDelete}
+                    onUngroup={onUngroup}
+                    onToggleVerifyGroup={onToggleVerifyGroup}
+                  />
+                ),
+              )
             )}
             </DroppableColumn>
           </SortableContext>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/**
+ * Fila de un egreso (suelta o dentro de un grupo). Extraída para
+ * reutilizarla en ambos contextos: si `handleProps` es null no hay asa
+ * de arrastre (los miembros de un grupo no se arrastran) y se muestra
+ * con sangría bajo la fila del grupo.
+ */
+function ExpenseItemRow({
+  e,
+  isSel,
+  handleProps,
+  inGroup,
+  attachCounts,
+  onToggleVerify,
+  onToggleSelect,
+  onAttach,
+  onEdit,
+  onDelete,
+}: {
+  e: ExpenseRow;
+  isSel: boolean;
+  handleProps: Record<string, unknown> | null;
+  inGroup?: boolean;
+  attachCounts: Record<string, number>;
+  onToggleVerify: (type: "income" | "expense", id: string) => void;
+  onToggleSelect: (type: "income" | "expense", id: string) => void;
+  onAttach: (recordType: "income" | "expense", recordId: string, title: string) => void;
+  onEdit: (t: EditTarget) => void;
+  onDelete: (t: DeleteTarget) => void;
+}) {
+  const isVerified = !!e.bcpVerifiedAt;
+  return (
+    <div
+      className={`group pr-4 py-2 transition-opacity duration-150 ${isSel ? "bg-primary/5" : "hover:bg-gray-50"} ${
+        inGroup ? "pl-6 border-l-2 border-gray-200 ml-4 bg-gray-50/40" : ""
+      }`}
+    >
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-1 flex-1 min-w-0">
+          {handleProps ? (
+            <DragHandle handleProps={handleProps} />
+          ) : (
+            <span className="w-2 shrink-0" aria-hidden="true" />
+          )}
+          <label
+            className="flex items-center gap-2 flex-1 min-w-0 cursor-pointer"
+            title={
+              isVerified
+                ? "Verificado contra BCP — click para desmarcar"
+                : "Click para marcar como verificado contra BCP"
+            }
+          >
+            <input
+              type="checkbox"
+              checked={isVerified}
+              onChange={() => onToggleVerify("expense", e.id)}
+              className="shrink-0 w-3.5 h-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
+              aria-label="Marcar como verificado contra BCP"
+            />
+            <span
+              className={`text-xs truncate pr-3 transition-opacity duration-150 ${
+                isVerified
+                  ? "line-through opacity-50 text-gray-500"
+                  : "text-gray-700"
+              }`}
+            >
+              <span className={isVerified ? "" : "font-medium text-gray-900"}>
+                {e.category}
+              </span>
+              <span className="text-gray-400"> · </span>
+              <span>{e.concept}</span>
+            </span>
+          </label>
+        </div>
+        <div className="flex items-center gap-2 shrink-0">
+          <SumCheckbox checked={isSel} onChange={() => onToggleSelect("expense", e.id)} />
+          <span
+            className={`text-xs font-medium transition-opacity duration-150 ${
+              isVerified
+                ? "line-through opacity-50 text-gray-500"
+                : "text-red-600"
+            }`}
+          >
+            −{formatCurrency(e.amount)}
+          </span>
+          <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+            <button
+              onClick={() => onAttach("expense", e.id, e.concept || e.category)}
+              className={`p-1 rounded relative ${attachCounts[`expense:${e.id}`] ? "text-violet-600 hover:bg-violet-50" : "text-gray-400 hover:bg-violet-50 hover:text-violet-600"}`}
+              aria-label="Constancias adjuntas"
+              title="Constancias (imagen del pago / PDF)"
+            >
+              <Paperclip className="w-3 h-3" />
+              {(attachCounts[`expense:${e.id}`] ?? 0) > 0 && (
+                <span className="absolute -top-1 -right-1 text-[8px] bg-violet-600 text-white rounded-full w-3 h-3 flex items-center justify-center leading-none">
+                  {attachCounts[`expense:${e.id}`]}
+                </span>
+              )}
+            </button>
+            <button
+              onClick={() =>
+                onEdit({
+                  type: "expense",
+                  id: e.id,
+                  date: e.date,
+                  amount: e.amount,
+                  category: e.category,
+                  concept: e.concept,
+                  paymentMethod: e.payment_method || "transferencia",
+                  notes: e.notes,
+                  isShared: !!e.is_shared,
+                  sharedRuleId: e.shared_rule_id ?? null,
+                  fonaviAmount: e.fonavi_amount ?? null,
+                  centroAmount: e.centro_amount ?? null,
+                  isMirror: !!e.linked_atelier_expense_id,
+                })
+              }
+              className="p-1 hover:bg-blue-50 hover:text-blue-600 rounded text-gray-400"
+              aria-label="Editar"
+            >
+              <Pencil className="w-3 h-3" />
+            </button>
+            <button
+              onClick={() =>
+                onDelete({
+                  type: "expense",
+                  id: e.id,
+                  date: e.date,
+                  amount: e.amount,
+                  category: e.category,
+                  concept: e.concept,
+                  paymentMethod: e.payment_method || "transferencia",
+                  notes: e.notes,
+                })
+              }
+              className="p-1 hover:bg-red-50 hover:text-red-600 rounded text-gray-400"
+              aria-label="Eliminar"
+            >
+              <Trash2 className="w-3 h-3" />
+            </button>
+          </div>
+        </div>
+      </div>
+      {e.notes && (
+        <div
+          className={`text-[11px] pl-8 mt-0.5 transition-opacity duration-150 ${
+            isVerified
+              ? "line-through opacity-50 text-gray-400"
+              : "text-gray-400"
+          }`}
+        >
+          {e.notes}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Fila de un grupo visual de egresos: una sola línea con el total (igual
+ * al cargo único del banco), expandible para ver cada gasto con su
+ * categoría. El checkbox de cuadre marca/desmarca TODOS los miembros.
+ */
+function GroupRow({
+  group,
+  selectedExpense,
+  attachCounts,
+  onToggleVerify,
+  onToggleSelect,
+  onAttach,
+  onEdit,
+  onDelete,
+  onUngroup,
+  onToggleVerifyGroup,
+}: {
+  group: ExpenseGroupView<ExpenseRow>;
+  selectedExpense: Set<string>;
+  attachCounts: Record<string, number>;
+  onToggleVerify: (type: "income" | "expense", id: string) => void;
+  onToggleSelect: (type: "income" | "expense", id: string) => void;
+  onAttach: (recordType: "income" | "expense", recordId: string, title: string) => void;
+  onEdit: (t: EditTarget) => void;
+  onDelete: (t: DeleteTarget) => void;
+  onUngroup: (groupId: string) => void;
+  onToggleVerifyGroup: (groupId: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const allSelected = group.members.every((m) => selectedExpense.has(m.id));
+  const toggleSelectAll = () => {
+    // Selecciona/deselecciona todos los miembros para la barra de suma.
+    for (const m of group.members) {
+      if (allSelected ? selectedExpense.has(m.id) : !selectedExpense.has(m.id)) {
+        onToggleSelect("expense", m.id);
+      }
+    }
+  };
+  return (
+    <div>
+      <div className={`group pr-4 py-2 transition-colors ${allSelected ? "bg-primary/5" : "hover:bg-gray-50"}`}>
+        <div className="flex items-center justify-between">
+          <div className="flex items-center gap-1 flex-1 min-w-0">
+            <span className="w-2 shrink-0" aria-hidden="true" />
+            <input
+              type="checkbox"
+              checked={group.allVerified}
+              onChange={() => onToggleVerifyGroup(group.groupId)}
+              className="shrink-0 w-3.5 h-3.5 rounded border-gray-300 text-emerald-600 focus:ring-emerald-500 focus:ring-offset-0 cursor-pointer"
+              aria-label="Marcar todo el grupo como verificado contra BCP"
+              title={
+                group.allVerified
+                  ? "Todo el grupo verificado — click para desmarcar los " + group.members.length
+                  : "Cuadrar el grupo completo contra el cargo único del banco"
+              }
+            />
+            <button
+              onClick={() => setExpanded((v) => !v)}
+              className="flex items-center gap-1.5 flex-1 min-w-0 text-left cursor-pointer"
+              title={expanded ? "Plegar el grupo" : `Ver los ${group.members.length} gastos con sus categorías`}
+            >
+              {expanded ? (
+                <ChevronDown className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              ) : (
+                <ChevronRight className="w-3.5 h-3.5 text-gray-400 shrink-0" />
+              )}
+              <Layers className="w-3.5 h-3.5 text-primary shrink-0" />
+              <span
+                className={`text-xs truncate pr-2 ${
+                  group.allVerified
+                    ? "line-through opacity-50 text-gray-500"
+                    : "font-medium text-gray-900"
+                }`}
+              >
+                {group.label}
+              </span>
+              <span className="text-[10px] text-gray-400 shrink-0">
+                {group.members.length} gastos
+              </span>
+            </button>
+          </div>
+          <div className="flex items-center gap-2 shrink-0">
+            <SumCheckbox checked={allSelected} onChange={toggleSelectAll} />
+            <span
+              className={`text-xs font-semibold ${
+                group.allVerified
+                  ? "line-through opacity-50 text-gray-500"
+                  : "text-red-600"
+              }`}
+            >
+              −{formatCurrency(group.total)}
+            </span>
+            <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 pointer-coarse:opacity-100 transition-opacity">
+              <button
+                onClick={() => onUngroup(group.groupId)}
+                className="p-1 hover:bg-amber-50 hover:text-amber-600 rounded text-gray-400"
+                aria-label="Desagrupar"
+                title="Desagrupar: los gastos vuelven a verse sueltos (nada más cambia)"
+              >
+                <Ungroup className="w-3 h-3" />
+              </button>
+            </div>
+          </div>
+        </div>
+      </div>
+      {expanded &&
+        group.members.map((m) => (
+          <ExpenseItemRow
+            key={m.id}
+            e={m}
+            isSel={selectedExpense.has(m.id)}
+            handleProps={null}
+            inGroup
+            attachCounts={attachCounts}
+            onToggleVerify={onToggleVerify}
+            onToggleSelect={onToggleSelect}
+            onAttach={onAttach}
+            onEdit={onEdit}
+            onDelete={onDelete}
+          />
+        ))}
+    </div>
+  );
+}
+
+/**
+ * Modal para nombrar un grupo nuevo de egresos. Explica la garantía
+ * clave: agrupar es solo visual, los saldos no cambian.
+ */
+function GroupNameModal({
+  count,
+  total,
+  saving,
+  onClose,
+  onSave,
+}: {
+  count: number;
+  total: number;
+  saving: boolean;
+  onClose: () => void;
+  onSave: (label: string) => void;
+}) {
+  const [label, setLabel] = useState("");
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-lg font-semibold text-gray-900 flex items-center gap-2">
+            <Layers className="w-5 h-5 text-primary" />
+            Agrupar egresos
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Cerrar">
+            <XIcon className="w-5 h-5" />
+          </button>
+        </div>
+        <p className="text-xs text-gray-500 mb-4">
+          Los <strong>{count} egresos</strong> seleccionados se mostrarán como una
+          sola fila de <strong>{formatCurrency(total)}</strong> — igual que el cargo
+          único del banco. Cada gasto conserva su categoría y monto:{" "}
+          <strong>ningún saldo ni reporte cambia</strong>. Puedes desagrupar cuando quieras.
+        </p>
+        <label className="block text-sm font-medium text-gray-700 mb-1">Nombre del grupo</label>
+        <input
+          type="text"
+          value={label}
+          onChange={(e) => setLabel(e.target.value)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" && label.trim() && !saving) onSave(label);
+          }}
+          placeholder="Ej. Reposición caja chica 01/07"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+          autoFocus
+          maxLength={80}
+        />
+        <div className="flex gap-2 justify-end pt-5">
+          <button onClick={onClose} disabled={saving} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50">
+            Cancelar
+          </button>
+          <button
+            onClick={() => onSave(label)}
+            disabled={!label.trim() || saving}
+            className="px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50"
+          >
+            {saving ? "Agrupando…" : "Agrupar"}
+          </button>
         </div>
       </div>
     </div>
