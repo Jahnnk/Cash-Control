@@ -103,14 +103,19 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
   const [showWhy, setShowWhy] = useState(false);
   const [showSim, setShowSim] = useState(false);
 
-  // Copiloto: racha, proyección de cierre y simulaciones.
+  // Copiloto: racha, proyección de cierre (con confianza) y simulaciones.
   const streak = liquidityStreak(data.series);
+  const netDaily14 =
+    data.series.length >= 2
+      ? Math.round(((data.series[data.series.length - 1].value - data.series[0].value) / (data.series.length - 1)) * 100) / 100
+      : null;
   const projection = data.projection
     ? monthEndProjection({
         liquid: data.liquid,
         netDaily8w: data.projection.netDaily8w,
         daysRemaining: data.projection.daysRemaining,
         minSoles: data.runway.minSoles,
+        netDaily14,
       })
     : null;
   const simCollect = data.receivables && data.receivables.total > 0
@@ -183,7 +188,23 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
               {streak.text}
             </p>
           )}
-          {projection && <VerdictLine v={projection.verdict} />}
+          {projection && (
+            <div>
+              <VerdictLine v={projection.verdict} />
+              <span
+                className={`inline-flex items-center gap-1 mt-1 text-[10px] font-medium rounded-full border px-2 py-0.5 ${
+                  projection.confidence.level === "alta"
+                    ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                    : projection.confidence.level === "media"
+                      ? "text-amber-700 bg-amber-50 border-amber-200"
+                      : "text-red-700 bg-red-50 border-red-200"
+                }`}
+                title={projection.confidence.reason}
+              >
+                confianza {projection.confidence.level} · {projection.confidence.reason}
+              </span>
+            </div>
+          )}
 
           {/* ¿Por qué cambió? — desglose de los últimos 7 días */}
           <div className="mt-3 pt-2 border-t border-gray-100 flex flex-wrap gap-x-4 gap-y-1">

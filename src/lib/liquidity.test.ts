@@ -12,6 +12,7 @@ import {
   receivablesVerdict,
   liquidityStreak,
   monthEndProjection,
+  projectionConfidence,
   simulateCollect,
   simulateCutSpending,
   simulateFreeze,
@@ -185,6 +186,30 @@ describe("monthEndProjection — predicción simple y auditable", () => {
     const p = monthEndProjection({ liquid: 25000, netDaily8w: 50, daysRemaining: 10, minSoles: 19000 });
     expect(p.verdict.tone).toBe("bien");
     expect(p.verdict.text).toContain("25,500");
+  });
+});
+
+describe("projectionConfidence — nivel de confianza auditable", () => {
+  it("ritmos en dirección contraria (ambos significativos) → baja", () => {
+    const c = projectionConfidence({ netDaily8w: -30, netDaily14: 120, daysRemaining: 10 });
+    expect(c.level).toBe("baja");
+    expect(c.reason).toContain("dirección contraria");
+  });
+  it("ritmos consistentes y pocos días restantes → alta", () => {
+    const c = projectionConfidence({ netDaily8w: -30, netDaily14: -25, daysRemaining: 10 });
+    expect(c.level).toBe("alta");
+  });
+  it("consistente pero con mucho mes por delante → media", () => {
+    const c = projectionConfidence({ netDaily8w: -30, netDaily14: -25, daysRemaining: 28 });
+    expect(c.level).toBe("media");
+  });
+  it("magnitudes muy distintas → media; sin serie → media", () => {
+    expect(projectionConfidence({ netDaily8w: -30, netDaily14: -300, daysRemaining: 10 }).level).toBe("media");
+    expect(projectionConfidence({ netDaily8w: -30, netDaily14: null, daysRemaining: 10 }).level).toBe("media");
+  });
+  it("monthEndProjection incluye la confianza", () => {
+    const p = monthEndProjection({ liquid: 1600, netDaily8w: -30, daysRemaining: 10, minSoles: 19000, netDaily14: -28 });
+    expect(p.confidence.level).toBe("alta");
   });
 });
 

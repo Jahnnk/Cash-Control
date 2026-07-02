@@ -231,6 +231,51 @@ export function liquidityStreak(series: DayPoint[]): {
   };
 }
 
+export type ProjectionConfidence = {
+  level: "alta" | "media" | "baja";
+  reason: string;
+};
+
+/**
+ * CONFIANZA de la proyección: compara el ritmo reciente (14 días) con el
+ * ritmo histórico (8 semanas). Regla auditable:
+ *  - direcciones OPUESTAS y ambas significativas → baja
+ *  - misma dirección y magnitud similar (±50%) → alta
+ *  - resto → media
+ * Muchos días restantes también degradan alta → media (más futuro = más
+ * incertidumbre).
+ */
+export function projectionConfidence(input: {
+  netDaily8w: number;
+  netDaily14: number | null; // (último − primero de la serie 14d) / (n−1)
+  daysRemaining: number;
+}): ProjectionConfidence {
+  const { netDaily8w, netDaily14, daysRemaining } = input;
+  if (netDaily14 === null) {
+    return { level: "media", reason: "Sin serie reciente completa para contrastar el ritmo." };
+  }
+  const bothMeaningful = Math.abs(netDaily8w) >= 5 && Math.abs(netDaily14) >= 5;
+  if (bothMeaningful && Math.sign(netDaily14) !== Math.sign(netDaily8w)) {
+    return {
+      level: "baja",
+      reason: `Tu ritmo reciente (${fmt(netDaily14)}/día en 14 días) va en dirección contraria al histórico (${fmt(netDaily8w)}/día en 8 semanas).`,
+    };
+  }
+  const similar = Math.abs(netDaily14 - netDaily8w) <= Math.max(Math.abs(netDaily8w) * 0.5, 20);
+  if (similar && daysRemaining <= 20) {
+    return {
+      level: "alta",
+      reason: "El ritmo reciente (14 días) coincide con el histórico (8 semanas).",
+    };
+  }
+  return {
+    level: "media",
+    reason: similar
+      ? "El ritmo es consistente, pero falta mucho mes por delante."
+      : "El ritmo reciente difiere del histórico en magnitud.",
+  };
+}
+
 /**
  * PROYECCIÓN de cierre de mes: si el ritmo real de las últimas 8 semanas
  * continúa (variación neta diaria de la liquidez), ¿con cuánto cierras?
@@ -240,9 +285,15 @@ export function monthEndProjection(input: {
   netDaily8w: number;    // (liquidez hoy − liquidez hace 56 días) / 56
   daysRemaining: number; // días que faltan del mes (sin contar hoy)
   minSoles: number;      // objetivo mínimo de liquidez
-}): { value: number; belowTarget: boolean; verdict: Verdict } {
+  netDaily14?: number | null; // ritmo reciente, para el nivel de confianza
+}): { value: number; belowTarget: boolean; verdict: Verdict; confidence: ProjectionConfidence } {
   const value = Math.round((input.liquid + input.netDaily8w * input.daysRemaining) * 100) / 100;
   const belowTarget = input.minSoles > 0 && value < input.minSoles;
+  const confidence = projectionConfidence({
+    netDaily8w: input.netDaily8w,
+    netDaily14: input.netDaily14 ?? null,
+    daysRemaining: input.daysRemaining,
+  });
   const base = `Si el ritmo de tus últimas 8 semanas continúa, cerrarías el mes con ~${fmt(value)}.`;
   let verdict: Verdict;
   if (value < 0) {
@@ -252,7 +303,7 @@ export function monthEndProjection(input: {
   } else {
     verdict = { tone: "bien", text: `${base} Dentro del objetivo de liquidez.` };
   }
-  return { value, belowTarget, verdict };
+  return { value, belowTarget, verdict, confidence };
 }
 
 /** SIMULACIÓN: ¿y si cobro hoy todo lo pendiente? */
