@@ -206,7 +206,55 @@ describe("computeIntel / Executive Brief", () => {
     );
     expect(intel.brief.topIssues.length).toBeLessThanOrEqual(3);
     expect(intel.brief.topIssues[0].id).toBe("descuadre-banco");
-    expect(intel.brief.summary).toContain("Lo más importante hoy");
+    // Pase CEO: el resumen NO repite el tema #1 (eso vive en "La acción de hoy")
+    expect(intel.brief.summary).not.toContain("Lo más importante");
+    expect(intel.brief.summary).toContain("margen");
+  });
+
+  it("'Hoy te recomiendo': hasta 3 acciones únicas, con consejo de conducta si la liquidez está corta", () => {
+    const intel = computeIntel(
+      healthyFacts({
+        bank: { balance: 1500, hasDiscrepancy: true, discrepancyAmount: 118.2 },
+        cash: 100,
+        receivables: { totalPending: 209.99, overdueAmount: 0, overdueCount: 0, oldestDays: 4, byDebtor: [{ name: "Fonavi", pending: 209.99 }] },
+      }),
+    );
+    const recs = intel.brief.recommendations;
+    expect(recs.length).toBeGreaterThanOrEqual(2);
+    expect(recs.length).toBeLessThanOrEqual(3);
+    // sin duplicados
+    expect(new Set(recs.map((r) => r.label)).size).toBe(recs.length);
+    // liquidez corta → aparece el consejo de conducta (href null)
+    expect(recs.some((r) => r.href === null && /gastos extraordinarios/.test(r.label))).toBe(true);
+  });
+
+  it("la acción #1 trae beneficio cuantificado, costo de no actuar y su porqué", () => {
+    const intel = computeIntel(
+      healthyFacts({
+        bank: { balance: 20000, hasDiscrepancy: true, discrepancyAmount: 118.2 },
+      }),
+    );
+    const top = intel.brief.recommendations[0];
+    expect(top.label).toContain("cuadre");
+    expect(top.benefit).toContain("118");            // beneficio cuantificado
+    expect(top.inactionCost).toContain("inconsistente"); // costo de no actuar
+    expect(intel.brief.topActionReason).toContain("#1");  // por qué es la primera
+    expect(intel.brief.topActionReason).toContain("118"); // con el impacto en soles
+  });
+
+  it("el desglose del Health Score es auditable: toda componente tiene fórmula con sus datos", () => {
+    const h = computeIntel(healthyFacts()).health;
+    for (const c of h.components) {
+      expect(c.formula.length).toBeGreaterThan(10);
+    }
+    const liq = h.components.find((c) => c.key === "liquidez")!;
+    expect(liq.formula).toContain("÷");     // la operación
+    expect(liq.formula).toContain("escala"); // y la escala de puntaje
+  });
+
+  it("negocio sano: recomendaciones vacías o solo cobrables (nada urgente)", () => {
+    const intel = computeIntel(healthyFacts());
+    expect(intel.brief.recommendations.every((r) => !/investigar|revisar/i.test(r.label))).toBe(true);
   });
 
   it("oportunidades limitadas a 2", () => {

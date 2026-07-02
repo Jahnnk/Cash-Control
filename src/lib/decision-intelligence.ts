@@ -76,6 +76,8 @@ export type HealthComponent = {
   score: number;      // 0–100
   weight: number;     // fracción del total
   detail: string;     // explicación corta del puntaje
+  /** Fórmula auditable: el dato de entrada y la escala que produjo el puntaje. */
+  formula: string;
 };
 
 export type HealthScore = {
@@ -101,6 +103,19 @@ export type Insight = {
   consequence: string | null;
   /** Acción concreta recomendada. */
   action: { label: string; href: string } | null;
+  /** Beneficio esperado de actuar (cuantificado cuando se puede). */
+  benefit: string | null;
+  /** Costo de NO actuar. */
+  inactionCost: string | null;
+};
+
+export type Recommendation = {
+  label: string;
+  href: string | null; // null = consejo de conducta (ej. "evita gastos extraordinarios")
+  /** Beneficio esperado de ejecutarla (cuantificado cuando se puede). */
+  benefit: string | null;
+  /** Costo de no actuar. */
+  inactionCost: string | null;
 };
 
 export type ExecutiveBrief = {
@@ -108,6 +123,10 @@ export type ExecutiveBrief = {
   summary: string;       // 2-3 oraciones de contexto con números
   topIssues: Insight[];  // los 3 temas del día (criticos/avisos)
   opportunities: Insight[]; // hasta 2
+  /** "Hoy te recomiendo": hasta 3 acciones concretas derivadas de los insights. */
+  recommendations: Recommendation[];
+  /** Por qué la primera recomendación es la #1 (criterio de priorización, auditable). */
+  topActionReason: string | null;
 };
 
 export type CommandCenterIntel = {
@@ -162,6 +181,9 @@ export function computeHealthScore(f: BusinessFacts): HealthScore {
     detail: f.avgDailyExpense8w > 0
       ? `Cubres ~${Math.floor(coverageDays)} días de gasto operativo con lo que tienes (banco + caja).`
       : "Sin gasto histórico suficiente para medir cobertura.",
+    formula: f.avgDailyExpense8w > 0
+      ? `(${fmtS(f.bank.balance)} banco + ${fmtS(Math.max(0, f.cash))} caja) ÷ ${fmtS(f.avgDailyExpense8w)}/día = ${coverageDays.toFixed(1)} días → escala: 3d=10 · 7d=35 · 15d=60 · 30d=85 · 45d=100`
+      : "Sin gasto histórico: puntaje por defecto.",
   });
 
   // Rentabilidad (25%): margen EBITDA aproximado del mes al corte.
@@ -175,6 +197,9 @@ export function computeHealthScore(f: BusinessFacts): HealthScore {
     detail: f.sales.monthToDate > 0
       ? `Margen operativo del mes al corte: ${margin.toFixed(1)}% (${fmtS(ebitda)}).`
       : "Aún sin ventas registradas este mes.",
+    formula: f.sales.monthToDate > 0
+      ? `(${fmtS(f.sales.monthToDate)} ventas − ${fmtS(f.opExpenses.monthToDate)} gastos op.) ÷ ventas = ${margin.toFixed(1)}% → escala: −15%=0 · 0%=40 · 10%=75 · 20%=100`
+      : "Sin ventas del mes: puntaje según signo del resultado.",
   });
 
   // Crecimiento (15%): ventas vs mes anterior al MISMO día (comparación justa).
@@ -196,6 +221,11 @@ export function computeHealthScore(f: BusinessFacts): HealthScore {
       : f.sales.prevMonthSameCut > 0
         ? `Ventas ${growthPct >= 0 ? "+" : ""}${growthPct.toFixed(1)}% vs el mes pasado al mismo día ${f.daysElapsed}.`
         : "Sin mes anterior comparable.",
+    formula: tooEarly
+      ? "Día 1–2 del mes: puntaje neutral (60) para no alarmar en falso."
+      : f.sales.prevMonthSameCut > 0
+        ? `(${fmtS(f.sales.monthToDate)} − ${fmtS(f.sales.prevMonthSameCut)}) ÷ ${fmtS(f.sales.prevMonthSameCut)} = ${growthPct.toFixed(1)}% → escala: −25%=0 · −10%=30 · 0%=60 · +15%=100`
+        : "Sin base de comparación: puntaje neutral.",
   });
 
   // Cobranza (15%): proporción vencida y antigüedad.
@@ -213,6 +243,9 @@ export function computeHealthScore(f: BusinessFacts): HealthScore {
   components.push({
     key: "cobranza", label: "Cobranza", weight: 0.15, score: Math.round(cobranzaScore),
     detail: cobranzaDetail,
+    formula: f.receivables.totalPending > 0
+      ? `mín(puntaje %vencido [${((f.receivables.overdueAmount / f.receivables.totalPending) * 100).toFixed(0)}% → 0%=100 · 25%=75 · 50%=45], puntaje antigüedad [${f.receivables.oldestDays}d → ${OVERDUE_DAYS}d=100 · 30d=60 · 60d=20])`
+      : "Sin cuentas por cobrar → 100.",
   });
 
   // Ejecución presupuestal (20%): semáforos del presupuesto.
@@ -230,6 +263,9 @@ export function computeHealthScore(f: BusinessFacts): HealthScore {
   components.push({
     key: "presupuesto", label: "Presupuesto", weight: 0.2, score: Math.round(presupuestoScore),
     detail: presupuestoDetail,
+    formula: f.budgets.length > 0
+      ? `100 − rojas×30 − amarillas×10 = 100 − ${f.budgets.filter((b) => b.color === "red").length}×30 − ${f.budgets.filter((b) => b.color === "yellow").length}×10`
+      : "Sin presupuesto configurado: puntaje neutral (70).",
   });
 
   const total = Math.round(components.reduce((s, c) => s + c.score * c.weight, 0));
@@ -270,6 +306,8 @@ export function buildInsights(f: BusinessFacts): Insight[] {
         : "Suele ser un ingreso que falta registrar o un egreso duplicado.",
       consequence: "Mientras no cuadre, las demás cifras del tablero heredan este error.",
       action: { label: "Investigar el cuadre", href: "reportes?tab=conciliacion" },
+      benefit: `Recuperas confianza total en tus cifras (hoy hay ${fmtS(Math.abs(d))} sin explicar).`,
+      inactionCost: "Cierras el mes con información financiera inconsistente y cada decisión hereda el error.",
     });
   }
 
@@ -284,6 +322,8 @@ export function buildInsights(f: BusinessFacts): Insight[] {
       why: "Casi siempre: se registró un egreso en efectivo sin su ingreso, o se borró un ingreso que financiaba gastos.",
       consequence: "El saldo de efectivo del tablero no es confiable hasta corregirlo.",
       action: { label: "Revisar movimientos en efectivo", href: "registro" },
+      benefit: "La caja vuelve a reflejar la realidad y el resto del tablero deja de arrastrar el error.",
+      inactionCost: `Sigues decidiendo con una caja irreal (${fmtS(f.cash)} es físicamente imposible).`,
     });
   }
 
@@ -300,6 +340,8 @@ export function buildInsights(f: BusinessFacts): Insight[] {
         ? `Si el ritmo sigue igual, el mes cerraría en ~${fmtS((ebitda / f.daysElapsed) * f.daysInMonth)}.`
         : null,
       action: { label: "Ver estado de resultados", href: "reportes" },
+      benefit: "Identificar hoy qué gasto recortar puede voltear el resultado antes del cierre.",
+      inactionCost: `El mes cierra en pérdida (~${fmtS((ebitda / Math.max(1, f.daysElapsed)) * f.daysInMonth)} al ritmo actual).`,
     });
   }
 
@@ -319,6 +361,10 @@ export function buildInsights(f: BusinessFacts): Insight[] {
         action: f.receivables.totalPending > 0
           ? { label: `Cobrar ${fmtS(f.receivables.totalPending)} pendientes`, href: "fonavi" }
           : { label: "Revisar gastos del mes", href: "reportes" },
+        benefit: f.receivables.totalPending > 0 && f.avgDailyExpense8w > 0
+          ? `Cobrar los pendientes suma ${fmtS(f.receivables.totalPending)} (~${(f.receivables.totalPending / f.avgDailyExpense8w).toFixed(1)} días más de cobertura).`
+          : "Cada gasto evitado hoy extiende directamente tu cobertura.",
+        inactionCost: `Al ritmo actual (${fmtS(f.avgDailyExpense8w)}/día) la caja se agota en ~${Math.floor(days)} días si no entran ventas.`,
       });
     }
   }
@@ -335,6 +381,10 @@ export function buildInsights(f: BusinessFacts): Insight[] {
       why: worst ? `El mayor deudor es ${worst.name} (${fmtS(worst.pending)} pendientes en total).` : null,
       consequence: "Es plata tuya financiando a otro local sin fecha de retorno.",
       action: { label: "Ir a Por cobrar", href: "fonavi" },
+      benefit: f.avgDailyExpense8w > 0
+        ? `Cobrarlas hoy sube tu liquidez ${fmtS(f.receivables.overdueAmount)} (~${(f.receivables.overdueAmount / f.avgDailyExpense8w).toFixed(1)} días de cobertura).`
+        : `Cobrarlas hoy sube tu liquidez ${fmtS(f.receivables.overdueAmount)}.`,
+      inactionCost: "La deuda envejece y cada semana es más difícil de cobrar y de conciliar.",
     });
   }
 
@@ -352,6 +402,10 @@ export function buildInsights(f: BusinessFacts): Insight[] {
       why: null,
       consequence: "Cada sol extra aquí sale directo del margen del mes.",
       action: { label: "Ver presupuesto", href: "presupuesto" },
+      benefit: "Frenar esta categoría el resto del mes evita seguir comiéndote el margen.",
+      inactionCost: over > 0
+        ? `Ya vas ${fmtS(over)} sobre el presupuesto; si sigue, el exceso crece cada día.`
+        : "La categoría está al límite: cualquier gasto extra la pone en exceso.",
     });
   }
 
@@ -378,6 +432,8 @@ export function buildInsights(f: BusinessFacts): Insight[] {
           ? `Si la tendencia continúa, el sobrecosto del mes sería ~${fmtS(projExtra)} — unos ${marginPts.toFixed(1)} puntos de margen.`
           : `Si continúa, el mes cerraría ~${fmtS(projExtra)} por encima de lo normal en esta categoría.`,
         action: { label: `Ver movimientos de ${t.category}`, href: "reportes?tab=movimientos" },
+        benefit: `Volver al ritmo normal desde hoy recupera ~${fmtS(projExtra - delta)} de aquí al cierre.`,
+        inactionCost: `El mes cierra ~${fmtS(projExtra)} más caro en ${t.category}.`,
       });
     }
     // — Oportunidad: categoría gastando bastante menos que su promedio
@@ -392,6 +448,8 @@ export function buildInsights(f: BusinessFacts): Insight[] {
         why: null,
         consequence: "Si es un ahorro real (y no gasto sin registrar), sostenlo: va directo al margen.",
         action: null,
+        benefit: `Sostener este ritmo suma ~${fmtS(ahorro)} al margen del mes.`,
+        inactionCost: null,
       });
     }
   }
@@ -412,6 +470,8 @@ export function buildInsights(f: BusinessFacts): Insight[] {
         why: null,
         consequence: `Si el ritmo no cambia, el mes cerraría ~${fmtS((diff / f.daysElapsed) * f.daysInMonth)} por debajo del anterior.`,
         action: { label: "Ver ventas por día", href: "reportes" },
+        benefit: "Detectar hoy qué producto/cliente/día cayó permite reaccionar dentro del mismo mes.",
+        inactionCost: `El mes cierra ~${fmtS(Math.abs((diff / f.daysElapsed) * f.daysInMonth))} por debajo del anterior.`,
       });
     } else if (pct >= 10) {
       out.push({
@@ -423,6 +483,8 @@ export function buildInsights(f: BusinessFacts): Insight[] {
         why: null,
         consequence: "Identifica qué lo está impulsando (producto, cliente, día) para repetirlo.",
         action: { label: "Ver ventas por día", href: "reportes" },
+        benefit: `Entender qué impulsa el +${pct.toFixed(1)}% permite repetirlo (vale ~${fmtS(diff)} al corte).`,
+        inactionCost: null,
       });
     }
   }
@@ -438,6 +500,10 @@ export function buildInsights(f: BusinessFacts): Insight[] {
       why: null,
       consequence: "Cobrarlas mejora tu caja sin costo alguno.",
       action: { label: "Ir a Por cobrar", href: "fonavi" },
+      benefit: f.avgDailyExpense8w > 0
+        ? `+${fmtS(f.receivables.totalPending)} de liquidez inmediata (~${(f.receivables.totalPending / f.avgDailyExpense8w).toFixed(1)} días de cobertura).`
+        : `+${fmtS(f.receivables.totalPending)} de liquidez inmediata.`,
+      inactionCost: null,
     });
   }
 
@@ -452,6 +518,8 @@ export function buildInsights(f: BusinessFacts): Insight[] {
       why: null,
       consequence: null,
       action: { label: "Ver préstamos del socio", href: "prestamos-socio" },
+      benefit: null,
+      inactionCost: null,
     });
   }
 
@@ -483,19 +551,67 @@ export function buildExecutiveBrief(
           ? `${f.businessName} requiere atención (${health.total}/100): ${issues.length} tema(s) abiertos.`
           : `${f.businessName} está en estado crítico (${health.total}/100) — actúa hoy.`;
 
+  // Una sola frase con lo que NO está en otra parte de la pantalla: el
+  // P&L del mes al corte. (La liquidez vive en su tarjeta; el tema #1
+  // vive en "La acción de hoy" — no se repite aquí.)
   const parts: string[] = [];
   if (f.sales.monthToDate > 0) {
     parts.push(
-      `Al día ${f.daysElapsed} llevas ${fmtS(f.sales.monthToDate)} en ventas y ${fmtS(f.opExpenses.monthToDate)} en gastos operativos: margen ${margin.toFixed(1)}% (${fmtS(ebitda)}).`,
+      `Día ${f.daysElapsed}: ventas ${fmtS(f.sales.monthToDate)}, gastos ${fmtS(f.opExpenses.monthToDate)} → margen ${margin.toFixed(1)}% (${fmtS(ebitda)}).`,
     );
   } else {
-    parts.push(`Aún no hay ventas registradas este mes; gastos operativos al corte: ${fmtS(f.opExpenses.monthToDate)}.`);
+    parts.push(`Sin ventas registradas aún este mes; gastos al corte: ${fmtS(f.opExpenses.monthToDate)}.`);
   }
-  parts.push(`Liquidez total ${fmtS(f.bank.balance + Math.max(0, f.cash))} (banco + caja).`);
   if (issues.length === 0) {
-    parts.push("No hay temas urgentes hoy.");
-  } else {
-    parts.push(`Lo más importante hoy: ${issues[0].title.toLowerCase()}.`);
+    parts.push("Sin temas urgentes hoy.");
+  }
+
+  // "Hoy te recomiendo": hasta 3 acciones únicas, en orden de prioridad.
+  // 1) Las acciones de los temas críticos/avisos. 2) Si la liquidez está
+  // corta, un consejo de conducta. 3) Si sobra espacio, cobrar pendientes.
+  const recommendations: Recommendation[] = [];
+  const seenLabels = new Set<string>();
+  const push = (rec: Recommendation) => {
+    if (recommendations.length >= 3 || seenLabels.has(rec.label)) return;
+    seenLabels.add(rec.label);
+    recommendations.push(rec);
+  };
+  for (const i of issues) {
+    if (i.action) {
+      push({
+        label: i.action.label,
+        href: i.action.href,
+        benefit: i.benefit,
+        inactionCost: i.inactionCost,
+      });
+    }
+  }
+  if (issues.some((i) => i.id === "cobertura-corta" || i.id === "ebitda-negativo")) {
+    push({
+      label: "Evita gastos extraordinarios hoy",
+      href: null,
+      benefit: "Cada gasto evitado = días de operación.",
+      inactionCost: null,
+    });
+  }
+  const cobrable = insights.find((i) => i.id === "cxc-cobrable");
+  if (cobrable?.action) {
+    push({
+      label: cobrable.action.label,
+      href: cobrable.action.href,
+      benefit: cobrable.benefit,
+      inactionCost: cobrable.inactionCost,
+    });
+  }
+
+  // ¿Por qué la #1 es la #1? Criterio explícito y auditable: es la acción
+  // del tema más grave del día con el mayor impacto en soles.
+  let topActionReason: string | null = null;
+  if (recommendations.length > 0) {
+    const top = issues.find((i) => i.action?.label === recommendations[0].label);
+    topActionReason = top
+      ? `#1 por impacto: ${fmtS(top.impact)} en juego.`
+      : "#1: lo único accionable hoy.";
   }
 
   return {
@@ -503,6 +619,8 @@ export function buildExecutiveBrief(
     summary: parts.join(" "),
     topIssues: issues.slice(0, 3),
     opportunities,
+    recommendations,
+    topActionReason,
   };
 }
 

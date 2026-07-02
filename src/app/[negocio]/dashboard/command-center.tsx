@@ -47,23 +47,22 @@ function InsightCard({ insight, negocio }: { insight: Insight; negocio: string }
   const s = SEV_STYLE[insight.severity];
   return (
     <div className={`border rounded-lg p-3 ${s.box}`}>
+      {/* Cerrada: SOLO el título (la decisión). El detalle, al expandir. */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-start justify-between gap-2 text-left"
+        className="w-full flex items-center justify-between gap-2 text-left"
       >
-        <div className="flex items-start gap-2 min-w-0">
-          <span className="mt-0.5 shrink-0">{s.icon}</span>
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-gray-900">{insight.title}</div>
-            <div className="text-xs text-gray-600 mt-0.5">{insight.what}</div>
-          </div>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="shrink-0">{s.icon}</span>
+          <div className="text-sm font-medium text-gray-900 truncate">{insight.title}</div>
         </div>
-        <span className="shrink-0 text-gray-400 mt-0.5">
+        <span className="shrink-0 text-gray-400">
           {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </span>
       </button>
       {open && (
         <div className="mt-2 pl-6 space-y-1.5 text-xs text-gray-700">
+          <div>{insight.what}</div>
           {insight.why && (
             <div><span className="font-semibold text-gray-800">¿Por qué?</span> {insight.why}</div>
           )}
@@ -72,7 +71,7 @@ function InsightCard({ insight, negocio }: { insight: Insight; negocio: string }
           )}
         </div>
       )}
-      {insight.action && (
+      {open && insight.action && (
         <div className="mt-2 pl-6">
           <Link
             href={`/${negocio}/${insight.action.href}`}
@@ -123,21 +122,87 @@ export function CommandCenter({ data, negocio }: { data: CommandCenterData; nego
             <div className="mt-2 h-1.5 bg-white/70 rounded-full overflow-hidden">
               <div className={`h-full ${style.bar}`} style={{ width: `${health.total}%` }} />
             </div>
+
+            {/* LA ACCIÓN DE HOY: la #1 destacada (beneficio + por qué es la
+                primera + costo de no actuar), el resto compacto debajo. */}
+            {brief.recommendations.length > 0 && (
+              <div className="mt-3 bg-white/80 border border-white rounded-lg px-3.5 py-3">
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-500">
+                  La acción de hoy
+                </div>
+                <div className="mt-1">
+                  {brief.recommendations[0].href ? (
+                    <Link
+                      href={`/${negocio}/${brief.recommendations[0].href}`}
+                      className="text-base font-bold text-primary hover:underline inline-flex items-center gap-1.5"
+                    >
+                      {brief.recommendations[0].label} <ArrowRight className="w-4 h-4" />
+                    </Link>
+                  ) : (
+                    <span className="text-base font-bold text-gray-900">{brief.recommendations[0].label}</span>
+                  )}
+                  <div className="mt-1 space-y-0.5 text-xs">
+                    {brief.recommendations[0].benefit && (
+                      <div className="text-emerald-700">✓ Beneficio: {brief.recommendations[0].benefit}</div>
+                    )}
+                    {brief.recommendations[0].inactionCost && (
+                      <div className="text-red-700">✗ Si no actúas: {brief.recommendations[0].inactionCost}</div>
+                    )}
+                    {brief.topActionReason && (
+                      <div className="text-gray-500">{brief.topActionReason}</div>
+                    )}
+                  </div>
+                </div>
+                {brief.recommendations.length > 1 && (
+                  <div className="mt-2.5 pt-2 border-t border-gray-100">
+                    <div className="text-[11px] font-medium text-gray-400 mb-1">Después:</div>
+                    <ul className="space-y-1">
+                      {brief.recommendations.slice(1).map((r, i) => (
+                        <li key={i} className="text-sm text-gray-700">
+                          <span className="text-gray-400 mr-1">{i + 2}.</span>
+                          {r.href ? (
+                            <Link href={`/${negocio}/${r.href}`} className="text-primary font-medium hover:underline">
+                              {r.label}
+                            </Link>
+                          ) : (
+                            <span>{r.label}</span>
+                          )}
+                          {r.benefit && <span className="text-xs text-gray-500"> — {r.benefit}</span>}
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+              </div>
+            )}
           </div>
         </div>
 
-        {/* Desglose de los 5 componentes */}
+        {/* Desglose 100% auditable: dato de entrada, escala, peso y aporte */}
         {showBreakdown && (
-          <div className="mt-4 grid grid-cols-1 sm:grid-cols-5 gap-2">
-            {health.components.map((c) => (
-              <div key={c.key} className="bg-white/80 border border-gray-200 rounded-lg p-2.5" title={c.detail}>
-                <div className="flex items-baseline justify-between">
-                  <span className="text-[11px] font-medium text-gray-600">{c.label}</span>
-                  <span className={`text-sm font-bold ${scoreColor(c.score)}`}>{c.score}</span>
+          <div className="mt-4 space-y-2">
+            <div className="grid grid-cols-1 sm:grid-cols-5 gap-2">
+              {health.components.map((c) => (
+                <div key={c.key} className="bg-white/80 border border-gray-200 rounded-lg p-2.5">
+                  <div className="flex items-baseline justify-between">
+                    <span className="text-[11px] font-medium text-gray-600">{c.label}</span>
+                    <span className={`text-sm font-bold ${scoreColor(c.score)}`}>{c.score}</span>
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-1 leading-snug">{c.detail}</div>
+                  <div className="text-[10px] text-gray-400 mt-1.5 pt-1.5 border-t border-gray-100 leading-snug font-mono">
+                    {c.formula}
+                  </div>
+                  <div className="text-[10px] text-gray-500 mt-1">
+                    Aporte: {c.score} × {Math.round(c.weight * 100)}% = <strong>{Math.round(c.score * c.weight)}</strong> pts
+                  </div>
                 </div>
-                <div className="text-[10px] text-gray-500 mt-1 leading-snug">{c.detail}</div>
-              </div>
-            ))}
+              ))}
+            </div>
+            <div className="text-[11px] text-gray-500 text-right pr-1">
+              Total = {health.components.map((c) => Math.round(c.score * c.weight)).join(" + ")} ={" "}
+              <strong className={scoreColor(health.total)}>{health.total}/100</strong>
+              <span className="text-gray-400"> (suma redondeada)</span>
+            </div>
           </div>
         )}
       </div>
