@@ -80,26 +80,28 @@ describe("liquidityLevel", () => {
   });
 });
 
-describe("liquidityVerdict — interpreta, no obliga a interpretar", () => {
-  it("caída doble (día y semana) muy por debajo del objetivo → riesgo, con las cifras", () => {
+describe("liquidityVerdict — una sola frase: movimiento + juicio", () => {
+  it("caída semanal muy por debajo del objetivo → riesgo, compacto y con cifras", () => {
     const v = liquidityVerdict({ liquid: 1607, deltaDay: -69, deltaWeek: -4977, minSoles: 19063 });
     expect(v.tone).toBe("riesgo");
-    expect(v.text).toContain("cayó");
-    expect(v.text).toContain("69");
+    expect(v.text).toContain("Cayó");
     expect(v.text).toContain("4,977");
     expect(v.text).toContain("muy por debajo del objetivo");
+    // Pase CEO: compacto — una sola frase corta, sin narrar dos veces los chips
+    expect(v.text.length).toBeLessThan(90);
   });
 
-  it("señales mixtas (subió hoy, cayó en la semana) las narra sin contradecirse", () => {
+  it("señales mixtas (subió hoy, cayó en la semana) sin contradecirse", () => {
     const v = liquidityVerdict({ liquid: 30000, deltaDay: 500, deltaWeek: -2000, minSoles: 19000 });
-    expect(v.text).toContain("subió");
-    expect(v.text).toContain("aunque");
+    expect(v.text).toContain("Subió");
+    expect(v.text).toContain("pero");
+    expect(v.text).toContain("2,000");
   });
 
   it("estable y dentro del objetivo → bien", () => {
     const v = liquidityVerdict({ liquid: 30000, deltaDay: 0, deltaWeek: 0.5, minSoles: 19000 });
     expect(v.tone).toBe("bien");
-    expect(v.text).toContain("estable");
+    expect(v.text).toContain("Estable");
     expect(v.text).toContain("dentro del objetivo");
   });
 

@@ -551,19 +551,19 @@ export function buildExecutiveBrief(
           ? `${f.businessName} requiere atención (${health.total}/100): ${issues.length} tema(s) abiertos.`
           : `${f.businessName} está en estado crítico (${health.total}/100) — actúa hoy.`;
 
+  // Una sola frase con lo que NO está en otra parte de la pantalla: el
+  // P&L del mes al corte. (La liquidez vive en su tarjeta; el tema #1
+  // vive en "La acción de hoy" — no se repite aquí.)
   const parts: string[] = [];
   if (f.sales.monthToDate > 0) {
     parts.push(
-      `Al día ${f.daysElapsed} llevas ${fmtS(f.sales.monthToDate)} en ventas y ${fmtS(f.opExpenses.monthToDate)} en gastos operativos: margen ${margin.toFixed(1)}% (${fmtS(ebitda)}).`,
+      `Día ${f.daysElapsed}: ventas ${fmtS(f.sales.monthToDate)}, gastos ${fmtS(f.opExpenses.monthToDate)} → margen ${margin.toFixed(1)}% (${fmtS(ebitda)}).`,
     );
   } else {
-    parts.push(`Aún no hay ventas registradas este mes; gastos operativos al corte: ${fmtS(f.opExpenses.monthToDate)}.`);
+    parts.push(`Sin ventas registradas aún este mes; gastos al corte: ${fmtS(f.opExpenses.monthToDate)}.`);
   }
-  parts.push(`Liquidez total ${fmtS(f.bank.balance + Math.max(0, f.cash))} (banco + caja).`);
   if (issues.length === 0) {
-    parts.push("No hay temas urgentes hoy.");
-  } else {
-    parts.push(`Lo más importante hoy: ${issues[0].title.toLowerCase()}.`);
+    parts.push("Sin temas urgentes hoy.");
   }
 
   // "Hoy te recomiendo": hasta 3 acciones únicas, en orden de prioridad.
@@ -588,9 +588,9 @@ export function buildExecutiveBrief(
   }
   if (issues.some((i) => i.id === "cobertura-corta" || i.id === "ebitda-negativo")) {
     push({
-      label: "Evita gastos extraordinarios hasta recuperar liquidez",
+      label: "Evita gastos extraordinarios hoy",
       href: null,
-      benefit: "Protege la caja mientras la cobertura está corta: cada gasto evitado son días de operación.",
+      benefit: "Cada gasto evitado = días de operación.",
       inactionCost: null,
     });
   }
@@ -609,12 +609,9 @@ export function buildExecutiveBrief(
   let topActionReason: string | null = null;
   if (recommendations.length > 0) {
     const top = issues.find((i) => i.action?.label === recommendations[0].label);
-    if (top) {
-      const sev = top.severity === "critico" ? "el tema más grave de hoy" : "el aviso de mayor impacto de hoy";
-      topActionReason = `Es la #1 porque ataca ${sev} (${fmtS(top.impact)} en juego); el resto puede esperar a que esto esté resuelto.`;
-    } else {
-      topActionReason = "Es la #1 porque es lo único accionable de hoy: mejora tu caja sin costo.";
-    }
+    topActionReason = top
+      ? `#1 por impacto: ${fmtS(top.impact)} en juego.`
+      : "#1: lo único accionable hoy.";
   }
 
   return {

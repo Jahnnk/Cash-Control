@@ -206,7 +206,9 @@ describe("computeIntel / Executive Brief", () => {
     );
     expect(intel.brief.topIssues.length).toBeLessThanOrEqual(3);
     expect(intel.brief.topIssues[0].id).toBe("descuadre-banco");
-    expect(intel.brief.summary).toContain("Lo más importante hoy");
+    // Pase CEO: el resumen NO repite el tema #1 (eso vive en "La acción de hoy")
+    expect(intel.brief.summary).not.toContain("Lo más importante");
+    expect(intel.brief.summary).toContain("margen");
   });
 
   it("'Hoy te recomiendo': hasta 3 acciones únicas, con consejo de conducta si la liquidez está corta", () => {

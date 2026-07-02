@@ -201,7 +201,7 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
                 }`}
                 title={projection.confidence.reason}
               >
-                confianza {projection.confidence.level} · {projection.confidence.reason}
+                confianza {projection.confidence.level}
               </span>
             </div>
           )}
@@ -260,7 +260,7 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
               {simCut && <div className="flex items-start gap-1.5"><span>✂️</span><span>{simCut.text}</span></div>}
               {simFreeze && <div className="flex items-start gap-1.5"><span>🧊</span><span>{simFreeze.text}</span></div>}
               <div className="text-[10px] text-gray-400 pt-1">
-                Simulaciones simples sobre tu ritmo real de 8 semanas — para dimensionar decisiones, no promesas.
+                Estimaciones sobre tu ritmo real — no promesas.
               </div>
             </div>
           )}
@@ -292,7 +292,7 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
             <div className="absolute top-0 bottom-0 w-0.5 bg-gray-400/70" style={{ left: "50%" }} title={`Objetivo: ${data.runway.minDays} días`} />
           </div>
           <div className="text-[11px] text-gray-500 mt-1.5 leading-snug">
-            Gastas ~{formatCurrency(data.runway.dailyExpense)}/día (real, 8 semanas). La marca es el objetivo (≥{data.runway.minDays} días = {formatCurrency(data.runway.minSoles)}).
+            ~{formatCurrency(data.runway.dailyExpense)}/día real · la marca = objetivo ≥{data.runway.minDays} días
           </div>
           <VerdictLine v={vRunway} />
         </div>

@@ -47,23 +47,22 @@ function InsightCard({ insight, negocio }: { insight: Insight; negocio: string }
   const s = SEV_STYLE[insight.severity];
   return (
     <div className={`border rounded-lg p-3 ${s.box}`}>
+      {/* Cerrada: SOLO el título (la decisión). El detalle, al expandir. */}
       <button
         onClick={() => setOpen((v) => !v)}
-        className="w-full flex items-start justify-between gap-2 text-left"
+        className="w-full flex items-center justify-between gap-2 text-left"
       >
-        <div className="flex items-start gap-2 min-w-0">
-          <span className="mt-0.5 shrink-0">{s.icon}</span>
-          <div className="min-w-0">
-            <div className="text-sm font-medium text-gray-900">{insight.title}</div>
-            <div className="text-xs text-gray-600 mt-0.5">{insight.what}</div>
-          </div>
+        <div className="flex items-center gap-2 min-w-0">
+          <span className="shrink-0">{s.icon}</span>
+          <div className="text-sm font-medium text-gray-900 truncate">{insight.title}</div>
         </div>
-        <span className="shrink-0 text-gray-400 mt-0.5">
+        <span className="shrink-0 text-gray-400">
           {open ? <ChevronDown className="w-4 h-4" /> : <ChevronRight className="w-4 h-4" />}
         </span>
       </button>
       {open && (
         <div className="mt-2 pl-6 space-y-1.5 text-xs text-gray-700">
+          <div>{insight.what}</div>
           {insight.why && (
             <div><span className="font-semibold text-gray-800">¿Por qué?</span> {insight.why}</div>
           )}
@@ -72,7 +71,7 @@ function InsightCard({ insight, negocio }: { insight: Insight; negocio: string }
           )}
         </div>
       )}
-      {insight.action && (
+      {open && insight.action && (
         <div className="mt-2 pl-6">
           <Link
             href={`/${negocio}/${insight.action.href}`}
