@@ -106,15 +106,23 @@ export async function importCajaChica(data: {
     }
   }
 
-  // Inserción ATÓMICA (todos los gastos + asegurar daily_record)
+  // Inserción ATÓMICA (todos los gastos + asegurar daily_record).
+  // Auto-grupo visual: la reposición completa es UN solo cargo en el
+  // banco, así que los gastos nacen agrupados (id generado aquí para
+  // referenciarlo dentro de la misma transacción). Cada gasto conserva
+  // su categoría y monto; el grupo es solo presentación.
   const tag = data.generado ? ` ${repTag(data.generado)}` : "";
+  const groupId = crypto.randomUUID();
+  const [, mm, dd] = data.reposicionDate.split("-");
+  const groupLabel = `Reposición caja chica ${dd}/${mm}`;
   const queries = [
     txSql`INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${data.reposicionDate}) ON CONFLICT (business_id, date) DO NOTHING`,
+    txSql`INSERT INTO expense_groups (id, business_id, date, label) VALUES (${groupId}, ${bId}, ${data.reposicionDate}, ${groupLabel})`,
     ...data.items.map((it) => {
       const note = `Reposición caja chica${it.itemDate ? ` · gasto del ${it.itemDate}` : ""}${tag}`;
       return txSql`
-        INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes)
-        VALUES (${bId}, ${data.reposicionDate}, ${it.category}, ${it.concept.trim()}, ${it.amount.toFixed(2)}, 'transferencia', ${note})
+        INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, group_id)
+        VALUES (${bId}, ${data.reposicionDate}, ${it.category}, ${it.concept.trim()}, ${it.amount.toFixed(2)}, 'transferencia', ${note}, ${groupId})
       `;
     }),
   ];
@@ -122,7 +130,28 @@ export async function importCajaChica(data: {
   try {
     await txSql.transaction(queries);
   } catch (e) {
-    return { ok: false, error: e instanceof Error ? e.message : "Error al registrar los gastos" };
+    // Si falló porque la migración de expense_groups aún no corre en la
+    // BD, reintenta SIN grupo (el import no puede fallar por algo visual).
+    const msg = e instanceof Error ? e.message : "";
+    if (/expense_groups|group_id/.test(msg)) {
+      const legacyQueries = [
+        txSql`INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${data.reposicionDate}) ON CONFLICT (business_id, date) DO NOTHING`,
+        ...data.items.map((it) => {
+          const note = `Reposición caja chica${it.itemDate ? ` · gasto del ${it.itemDate}` : ""}${tag}`;
+          return txSql`
+            INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes)
+            VALUES (${bId}, ${data.reposicionDate}, ${it.category}, ${it.concept.trim()}, ${it.amount.toFixed(2)}, 'transferencia', ${note})
+          `;
+        }),
+      ];
+      try {
+        await txSql.transaction(legacyQueries);
+      } catch (e2) {
+        return { ok: false, error: e2 instanceof Error ? e2.message : "Error al registrar los gastos" };
+      }
+    } else {
+      return { ok: false, error: e instanceof Error ? e.message : "Error al registrar los gastos" };
+    }
   }
 
   await recalcBankBalance(data.reposicionDate);

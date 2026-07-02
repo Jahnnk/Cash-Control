@@ -418,17 +418,37 @@ export async function getDailyBreakdown(
     `);
     return { format: "credit_sales", rows: result.rows };
   } else {
-    const result = await db.execute(sql`
-      SELECT id, date, amount, category, concept, notes, payment_method,
-             bcp_verified_at::text AS bcp_verified_at,
-             is_shared, shared_rule_id::text AS shared_rule_id,
-             fonavi_amount::float AS fonavi_amount,
-             centro_amount::float AS centro_amount,
-             linked_atelier_expense_id::text AS linked_atelier_expense_id
-      FROM expenses
-      WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
-      ORDER BY date DESC, sort_order ASC, amount DESC
-    `);
-    return { format: "expense", rows: result.rows };
+    try {
+      const result = await db.execute(sql`
+        SELECT e.id, e.date, e.amount, e.category, e.concept, e.notes, e.payment_method,
+               e.bcp_verified_at::text AS bcp_verified_at,
+               e.is_shared, e.shared_rule_id::text AS shared_rule_id,
+               e.fonavi_amount::float AS fonavi_amount,
+               e.centro_amount::float AS centro_amount,
+               e.linked_atelier_expense_id::text AS linked_atelier_expense_id,
+               e.group_id::text AS group_id,
+               g.label AS group_label
+        FROM expenses e
+        LEFT JOIN expense_groups g ON g.id = e.group_id
+        WHERE e.business_id = ${bId} AND e.date >= ${startDate} AND e.date <= ${endDate} AND e.is_special_loan = false AND e.is_internal_transfer = false AND e.archived = false
+        ORDER BY e.date DESC, e.sort_order ASC, e.amount DESC
+      `);
+      return { format: "expense", rows: result.rows };
+    } catch {
+      // Migración de expense_groups aún no aplicada en la BD: el feed
+      // sigue funcionando sin grupos (misma query de siempre).
+      const result = await db.execute(sql`
+        SELECT id, date, amount, category, concept, notes, payment_method,
+               bcp_verified_at::text AS bcp_verified_at,
+               is_shared, shared_rule_id::text AS shared_rule_id,
+               fonavi_amount::float AS fonavi_amount,
+               centro_amount::float AS centro_amount,
+               linked_atelier_expense_id::text AS linked_atelier_expense_id
+        FROM expenses
+        WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
+        ORDER BY date DESC, sort_order ASC, amount DESC
+      `);
+      return { format: "expense", rows: result.rows };
+    }
   }
 }

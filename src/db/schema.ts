@@ -138,11 +138,28 @@ export const expenses = pgTable(
     // NULL = pendiente de cuadrar; timestamp = cuadrado en esa fecha.
     // Solo metadata visual: NO afecta saldos ni reportes financieros.
     bcpVerifiedAt: timestamp("bcp_verified_at"),
+    // Grupo VISUAL de egresos (ej. reposición de caja chica pagada con una
+    // sola transferencia). Solo presentación: cada gasto conserva su
+    // categoría/monto/fecha y todos los saldos y reportes lo suman igual.
+    groupId: uuid("group_id"),
   },
   (t) => ({
     businessIdx: index("idx_expenses_business_id").on(t.businessId),
   })
 );
+
+/**
+ * Grupos visuales de egresos. Un grupo une varios egresos del mismo día
+ * que en el banco aparecen como UN solo cargo (ej. reposición de caja
+ * chica). NO afecta saldos ni reportes: es solo cómo se muestra el feed.
+ */
+export const expenseGroups = pgTable("expense_groups", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: integer("business_id").notNull().references(() => businesses.id),
+  date: date("date").notNull(),
+  label: text("label").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
 
 /**
  * Ventas Byte por día (Control de VTAS de Kelly).

@@ -77,11 +77,13 @@ describe("importCajaChica", () => {
     expect(r.total).toBe(390);
     expect(fake.state.txCalls).toHaveLength(1);
     const tx = fake.state.txCalls[0];
-    // 1 daily_record + 2 inserts
-    expect(tx).toHaveLength(3);
+    // 1 daily_record + 1 grupo visual (la reposición = un cargo en el banco) + 2 inserts
+    expect(tx).toHaveLength(4);
     expect(tx[0].text).toContain("INSERT INTO daily_records");
-    expect(tx[1].text).toContain("INSERT INTO expenses");
-    expect(tx[1].text).toContain("'transferencia'");
+    expect(tx[1].text).toContain("INSERT INTO expense_groups");
+    expect(tx[2].text).toContain("INSERT INTO expenses");
+    expect(tx[2].text).toContain("'transferencia'");
+    expect(tx[2].text).toContain("group_id");
     expect(recalcBankBalance).toHaveBeenCalledWith(TODAY);
   });
 
