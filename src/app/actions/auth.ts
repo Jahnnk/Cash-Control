@@ -2,7 +2,7 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { createAuthToken } from "@/lib/auth-token";
+import { createAuthToken, createScopedToken } from "@/lib/auth-token";
 
 const AUTH_COOKIE = "yayis_auth";
 const SESSION_DAYS = 30;
@@ -36,21 +36,41 @@ export async function loginWithPassword(
   }
 
   const input = String(formData.get("password") ?? "");
-  if (!input || !passwordMatches(input, expected)) {
+  if (!input) {
     return { error: "Contraseña incorrecta. Intenta de nuevo." };
   }
 
   const exp = Math.floor(Date.now() / 1000) + SESSION_DAYS * 24 * 60 * 60;
-  const token = await createAuthToken(expected, exp);
-
-  const c = await cookies();
-  c.set(AUTH_COOKIE, token, {
+  const cookieOpts = {
     path: "/",
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
-    sameSite: "lax",
+    sameSite: "lax" as const,
     maxAge: SESSION_DAYS * 24 * 60 * 60,
-  });
+  };
 
-  redirect("/");
+  // 1) Contraseña completa (Jahnn/Kelly): acceso total, flujo actual.
+  if (passwordMatches(input, expected)) {
+    const token = await createAuthToken(expected, exp);
+    const c = await cookies();
+    c.set(AUTH_COOKIE, token, cookieOpts);
+    redirect("/");
+  }
+
+  // 2) Contraseñas de ADMINISTRADOR DE SEDE: sesión con alcance que
+  //    solo abre /[su-sede]/incentivos (el middleware bloquea el resto).
+  const adminScopes: { scope: string; sede: string; secret: string | undefined }[] = [
+    { scope: "admin-fonavi", sede: "fonavi", secret: process.env.ADMIN_PASSWORD_FONAVI },
+    { scope: "admin-centro", sede: "centro", secret: process.env.ADMIN_PASSWORD_CENTRO },
+  ];
+  for (const a of adminScopes) {
+    if (a.secret && passwordMatches(input, a.secret)) {
+      const token = await createScopedToken(a.secret, a.scope, exp);
+      const c = await cookies();
+      c.set(AUTH_COOKIE, token, cookieOpts);
+      redirect(`/${a.sede}/incentivos`);
+    }
+  }
+
+  return { error: "Contraseña incorrecta. Intenta de nuevo." };
 }

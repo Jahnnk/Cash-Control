@@ -61,3 +61,46 @@ export async function verifyAuthToken(
   const expected = await hmacHex(`${VERSION}.${parts[1]}`, secret);
   return timingSafeEqual(parts[2], expected);
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Tokens CON ALCANCE (v2) — sesiones de administrador de sede.
+// Formato: `v2.<exp>.<scope>.<firma>`, firmado con la contraseña de
+// ESE alcance (ej. ADMIN_PASSWORD_FONAVI). Cambiar la contraseña de un
+// admin invalida solo sus sesiones. El scope viaja en el payload y la
+// firma lo protege contra manipulación. Fail-closed: scope sin
+// contraseña configurada nunca valida.
+// ─────────────────────────────────────────────────────────────────
+
+const V2 = "v2";
+
+export async function createScopedToken(
+  secret: string,
+  scope: string,
+  expEpochSeconds: number,
+): Promise<string> {
+  const payload = `${V2}.${expEpochSeconds}.${scope}`;
+  const sig = await hmacHex(payload, secret);
+  return `${payload}.${sig}`;
+}
+
+/**
+ * Verifica un token v2 y devuelve su scope, o null si no es válido.
+ * `secretForScope` entrega la contraseña correspondiente al scope
+ * declarado en el payload.
+ */
+export async function verifyScopedToken(
+  token: string | undefined | null,
+  secretForScope: (scope: string) => string | undefined,
+  nowEpochSeconds: number,
+): Promise<string | null> {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 4 || parts[0] !== V2) return null;
+  const exp = Number(parts[1]);
+  if (!Number.isFinite(exp) || exp <= nowEpochSeconds) return null;
+  const scope = parts[2];
+  const secret = secretForScope(scope);
+  if (!secret) return null;
+  const expected = await hmacHex(`${V2}.${parts[1]}.${scope}`, secret);
+  return timingSafeEqual(parts[3], expected) ? scope : null;
+}
