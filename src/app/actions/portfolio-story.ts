@@ -11,7 +11,15 @@
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
 import { compilePortfolioStory } from "@/lib/portfolio/story-compiler";
+import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
 import { normalizeProductName } from "@/lib/product-matching";
+import {
+  projectNextMonth,
+  computeMovers,
+  type MonthSummary,
+  type PortfolioProjection,
+  type ProductMover,
+} from "@/lib/portfolio/history";
 import type { PortfolioFacts, PortfolioStory, ProductFacts } from "@/lib/portfolio/types";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -28,15 +36,8 @@ function monthLabel(m: string): string {
   return s.charAt(0).toUpperCase() + s.slice(1);
 }
 
-export async function getPortfolioStory(month: string): Promise<
-  | { ok: true; story: PortfolioStory }
-  | { ok: false; error: string }
-> {
-  const bId = await activeBusinessId();
-  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
-    return { ok: false, error: "Mes inválido." };
-  }
-  try {
+/** Colector interno reutilizable (getPortfolioStory y la vista histórica). */
+async function collectFacts(bId: number, month: string): Promise<PortfolioFacts | null> {
     // Costo: snapshot más reciente ≤ mes; si el mes es ANTERIOR al primer
     // snapshot (historia pre-jul-2026), cae al snapshot más antiguo
     // disponible y se marca como APROXIMADO (no existe historial de
@@ -67,9 +68,7 @@ export async function getPortfolioStory(month: string): Promise<
       ORDER BY s.revenue DESC
     `) as Record<string, unknown>[];
 
-    if (rows.length === 0) {
-      return { ok: false, error: "No hay ventas por producto cargadas para ese mes. Importa el reporte de Byte primero." };
-    }
+    if (rows.length === 0) return null;
 
     // Historia por producto (todos los meses ≤ mes del reporte). La clave
     // une por producto del catálogo o por nombre normalizado (los alias
@@ -126,7 +125,7 @@ export async function getPortfolioStory(month: string): Promise<
       };
     });
 
-    const facts: PortfolioFacts = {
+    return {
       scope: { businessId: bId, businessName: BUSINESS_NAMES[bId] ?? `Unidad ${bId}` },
       month,
       monthLabel: monthLabel(month),
@@ -134,10 +133,79 @@ export async function getPortfolioStory(month: string): Promise<
       products,
       historyMonths: monthsSet.map((h) => h.month),
     };
+}
 
+export async function getPortfolioStory(month: string): Promise<
+  | { ok: true; story: PortfolioStory }
+  | { ok: false; error: string }
+> {
+  const bId = await activeBusinessId();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return { ok: false, error: "Mes inválido." };
+  }
+  try {
+    const facts = await collectFacts(bId, month);
+    if (!facts) {
+      return { ok: false, error: "No hay ventas por producto cargadas para ese mes. Importa el reporte de Byte primero." };
+    }
     return { ok: true, story: compilePortfolioStory(facts) };
   } catch (err) {
     console.error("[getPortfolioStory] failed:", err);
     return { ok: false, error: err instanceof Error ? err.message : "Error al compilar el análisis" };
+  }
+}
+
+export type PortfolioHistoryResult =
+  | {
+      ok: true;
+      months: MonthSummary[];
+      projection: PortfolioProjection | null;
+      risers: ProductMover[];
+      fallers: ProductMover[];
+    }
+  | { ok: false; error: string };
+
+/**
+ * Vista histórica: compila la inteligencia de CADA mes cargado (mismo
+ * cerebro, sin lógica duplicada) y arma serie, movers y proyección.
+ */
+export async function getPortfolioHistory(): Promise<PortfolioHistoryResult> {
+  const bId = await activeBusinessId();
+  try {
+    const monthsRows = (await sql`
+      SELECT DISTINCT month FROM product_month_sales
+      WHERE business_id = ${bId} AND source = 'byte'
+      ORDER BY month
+    `) as { month: string }[];
+    if (monthsRows.length === 0) {
+      return { ok: false, error: "Aún no hay meses cargados." };
+    }
+
+    const summaries: MonthSummary[] = [];
+    const series = new Map<string, { name: string; points: { month: string; revenue: number }[] }>();
+    for (const { month } of monthsRows) {
+      const facts = await collectFacts(bId, month);
+      if (!facts) continue;
+      const intel = compilePortfolioIntelligence(facts);
+      summaries.push({
+        month,
+        monthLabel: monthLabel(month),
+        revenue: Math.round(facts.products.reduce((s, p) => s + p.revenue, 0) * 100) / 100,
+        contribution: Math.round(intel.products.reduce((s, p) => s + (p.contribution ?? 0), 0) * 100) / 100,
+        costCoveragePct: intel.health.costCoveragePct,
+        health: intel.health.total,
+        products: facts.products.length,
+      });
+      for (const p of facts.products) {
+        if (!series.has(p.key)) series.set(p.key, { name: p.name, points: [] });
+        series.get(p.key)!.points.push({ month, revenue: p.revenue });
+      }
+    }
+
+    const { risers, fallers } = computeMovers(series);
+    return { ok: true, months: summaries, projection: projectNextMonth(summaries), risers, fallers };
+  } catch (err) {
+    console.error("[getPortfolioHistory] failed:", err);
+    return { ok: false, error: err instanceof Error ? err.message : "Error al armar el histórico" };
   }
 }
