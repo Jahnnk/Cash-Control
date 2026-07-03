@@ -214,6 +214,20 @@ export const productCostSnapshots = pgTable("product_cost_snapshots", {
 });
 
 /**
+ * Alias de nombres de venta → producto del catálogo. Resuelve los
+ * renombres entre fuentes ("P- CIABATTA" de Byte = "Pan Ciabatta" del
+ * pricing-engine) UNA vez: los imports siguientes matchean solos.
+ * alias_normalized se guarda ya normalizado (normalizeProductName).
+ */
+export const productAliases = pgTable("product_aliases", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  businessId: integer("business_id").notNull().references(() => businesses.id),
+  aliasNormalized: text("alias_normalized").notNull(),
+  productId: uuid("product_id").notNull().references(() => products.id),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+/**
  * Ventas por producto y mes — el corazón del PIC. product_id es NULLABLE
  * a propósito: una venta sin match de catálogo NO se pierde (queda con
  * product_name_raw y sale en el reporte de calidad de datos).

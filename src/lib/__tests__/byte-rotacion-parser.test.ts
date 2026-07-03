@@ -5,7 +5,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { parseByteRotacion } from "../byte-rotacion-parser";
-import { normalizeProductName, matchSalesToCatalog } from "../product-matching";
+import { normalizeProductName, matchSalesToCatalog, suggestMatches } from "../product-matching";
 
 const REAL_SHAPE: unknown[][] = [
   ["Platos con mayor rotacion del 2026-06-01 al 2026-06-30", null, null, null, null, null],
@@ -108,5 +108,31 @@ describe("normalizeProductName + matching", () => {
     );
     expect(r.matched).toHaveLength(0);
     expect(r.ambiguous).toContain("BERLINES");
+  });
+
+  it("los ALIAS del dueño tienen prioridad y resuelven hasta lo ambiguo", () => {
+    const aliases = new Map([[normalizeProductName("P- CIABATTA"), "cat-9"], [normalizeProductName("BERLINES"), "a"]]);
+    const r = matchSalesToCatalog(
+      [{ name: "P- CIABATTA" }, { name: "BERLINES" }],
+      [{ id: "a", name: "Y-Berlines" }, { id: "b", name: "P-BERLINES" }, { id: "cat-9", name: "Pan Ciabatta" }],
+      aliases,
+    );
+    expect(r.matched.map((m) => [m.name, m.productId])).toEqual([
+      ["P- CIABATTA", "cat-9"],
+      ["BERLINES", "a"],
+    ]);
+  });
+
+  it("suggestMatches propone los parecidos reales (casos de junio)", () => {
+    const catalog = [
+      { id: "1", name: "Pan Ciabatta" },
+      { id: "2", name: "Pan IMG Molde 750g" },
+      { id: "3", name: "Empanada de Lomito" },
+      { id: "4", name: "Café Americano" },
+    ];
+    expect(suggestMatches("P- CIABATTA", catalog)[0]?.id).toBe("1");
+    expect(suggestMatches("Y-PAN IMG 750G", catalog)[0]?.id).toBe("2");
+    // nada parecido → sin sugerencias (no fuerza vínculos malos)
+    expect(suggestMatches("POLLO CON PIÑA GRILL", catalog)).toHaveLength(0);
   });
 });
