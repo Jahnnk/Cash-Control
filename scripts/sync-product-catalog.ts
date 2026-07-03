@@ -19,10 +19,14 @@ config({ path: ".env.local" });
 import { neon } from "@neondatabase/serverless";
 import {
   buildCatalogSyncPlan,
+  buildAtelierSyncPlan,
   type PricingCafeteriaProduct,
+  type PricingAtelierProduct,
+  type CanonicalProduct,
 } from "../src/lib/product-catalog-sync";
 
 const CAFETERIA_TO_BUSINESS: Record<number, number> = { 1: 2, 2: 3 };
+const ATELIER_BUSINESS_ID = 1;
 
 async function main() {
   const apply = process.argv.includes("--apply");
@@ -63,18 +67,49 @@ async function main() {
     margenCafeteriaPct: r.margen_cafeteria_pct as string | null,
   }));
 
+  // 1b) Catálogo de Atelier (B2B): costo unitario = cv tanda ÷ rendimiento.
+  const rowsAtelier = (await pricing`
+    SELECT pa.id, pa.sku, pa.nombre, c.nombre AS categoria, pa.activo,
+           pa.cv_insumos, pa.rendimiento_cantidad, pa.unidad_venta,
+           pa.precio_override, pa.precio_atelier_facturado, pa.precio_atelier_neto
+    FROM productos_atelier pa
+    JOIN categorias c ON c.id = pa.categoria_id
+    WHERE pa.es_sub_receta = false
+  `) as Record<string, unknown>[];
+  const rawAtelier: PricingAtelierProduct[] = rowsAtelier.map((r) => ({
+    id: Number(r.id),
+    sku: (r.sku as string) ?? null,
+    nombre: r.nombre as string,
+    categoria: r.categoria as string,
+    activo: !!r.activo,
+    cvInsumos: r.cv_insumos as string | null,
+    rendimientoCantidad: r.rendimiento_cantidad as string | null,
+    unidadVenta: (r.unidad_venta as string) ?? "und",
+    precioOverride: r.precio_override as string | null,
+    precioAtelierFacturado: r.precio_atelier_facturado as string | null,
+    precioAtelierNeto: r.precio_atelier_neto as string | null,
+  }));
+
   // 2) Normalizar (lógica pura, testeada).
-  const plan = buildCatalogSyncPlan(raw, CAFETERIA_TO_BUSINESS);
+  const planCaf = buildCatalogSyncPlan(raw, CAFETERIA_TO_BUSINESS);
+  const planAte = buildAtelierSyncPlan(rawAtelier, ATELIER_BUSINESS_ID);
+  const products: CanonicalProduct[] = [...planCaf.products, ...planAte.products];
+  const skipped = [...planCaf.skipped, ...planAte.skipped];
+  const suspects = planAte.suspects ?? [];
 
   const byBusiness = new Map<number, number>();
-  for (const p of plan.products) byBusiness.set(p.businessId, (byBusiness.get(p.businessId) ?? 0) + 1);
+  for (const p of products) byBusiness.set(p.businessId, (byBusiness.get(p.businessId) ?? 0) + 1);
 
   console.log(`── Plan de sync · snapshot del mes ${month} ──`);
-  console.log(`Productos a sincronizar: ${plan.products.length}`);
+  console.log(`Productos a sincronizar: ${products.length}`);
   for (const [bId, n] of byBusiness) console.log(`  · business ${bId}: ${n} productos`);
-  console.log(`Omitidos (calidad de datos): ${plan.skipped.length}`);
-  for (const s of plan.skipped.slice(0, 15)) console.log(`  ✗ ${s.name} — ${s.reason}`);
-  if (plan.skipped.length > 15) console.log(`  … y ${plan.skipped.length - 15} más`);
+  console.log(`Omitidos (calidad de datos): ${skipped.length}`);
+  for (const s of skipped.slice(0, 15)) console.log(`  ✗ ${s.name} — ${s.reason}`);
+  if (skipped.length > 15) console.log(`  … y ${skipped.length - 15} más`);
+  if (suspects.length > 0) {
+    console.log(`Sospechosos (se sincronizan igual, revisar receta): ${suspects.length}`);
+    for (const s of suspects.slice(0, 10)) console.log(`  ⚠ ${s.name} — ${s.reason}`);
+  }
 
   if (!apply) {
     console.log("\nDRY-RUN: no se escribió nada. Corre con --apply para aplicar.");
@@ -83,7 +118,7 @@ async function main() {
 
   // 3) Upsert atómico: productos + snapshots del mes, todo o nada.
   let upserts = 0;
-  for (const p of plan.products) {
+  for (const p of products) {
     // Un producto por vez pero dentro de transacción por producto
     // (producto + su snapshot nunca quedan a medias).
     const inserted = (await cash`
