@@ -263,7 +263,7 @@ export async function saveDailyEntry(input: {
         SET personas = EXCLUDED.personas, revenue = EXCLUDED.revenue,
             items = EXCLUDED.items, source = 'manual', updated_at = NOW()
     `;
-    revalidatePath("/[negocio]/incentivos", "page");
+    revalidatePath("/[negocio]/panel", "page");
     return { ok: true };
   } catch (err) {
     console.error("[saveDailyEntry] failed:", err);
@@ -297,7 +297,7 @@ export async function importControlReport(input: {
           INSERT INTO worker_period_sales (business_id, period_start, period_end, dni, nombre, mesas, total, import_batch_id)
           VALUES (${bId}, ${ps}, ${pe}, ${w.dni}, ${w.nombre}, ${w.mesas}, ${w.total}, ${batchId})`),
       ]);
-      revalidatePath("/[negocio]/incentivos", "page");
+      revalidatePath("/[negocio]/panel", "page");
       return { ok: true, imported: input.workers.length };
     }
 
@@ -315,7 +315,7 @@ export async function importControlReport(input: {
         INSERT INTO upselling_events (business_id, kind, event_at, usuario, producto, amount, motivo, source, import_batch_id)
         VALUES (${bId}, ${kindDb}, ${e.eventAt}, ${e.usuario}, ${e.producto}, ${e.amount}, ${e.motivo}, 'byte', ${batchId})`),
     ]);
-    revalidatePath("/[negocio]/incentivos", "page");
+    revalidatePath("/[negocio]/panel", "page");
     return { ok: true, imported: input.events.length };
   } catch (err) {
     console.error("[importControlReport] failed:", err);

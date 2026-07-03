@@ -106,10 +106,11 @@ export default function IncentivosPage() {
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Trophy className="w-5 h-5 text-primary" />
-            Incentivos por Upselling
+            Panel de Sede
           </h1>
           <p className="text-xs text-gray-500 mt-1">
-            Meta: subir el ticket promedio por persona. El bono se paga solo con la venta nueva — nunca con la utilidad de hoy.
+            Registro diario, KPIs, incentivos por upselling y controles — todo en un solo lugar.
+            El bono se paga solo con la venta nueva, nunca con la utilidad de hoy.
           </p>
         </div>
         <div className="flex items-center gap-2">

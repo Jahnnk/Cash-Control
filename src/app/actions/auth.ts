@@ -58,7 +58,7 @@ export async function loginWithPassword(
   }
 
   // 2) Contraseñas de ADMINISTRADOR DE SEDE: sesión con alcance que
-  //    solo abre /[su-sede]/incentivos (el middleware bloquea el resto).
+  //    solo abre /[su-sede]/panel (el middleware bloquea el resto).
   const adminScopes: { scope: string; sede: string; secret: string | undefined }[] = [
     { scope: "admin-fonavi", sede: "fonavi", secret: process.env.ADMIN_PASSWORD_FONAVI },
     { scope: "admin-centro", sede: "centro", secret: process.env.ADMIN_PASSWORD_CENTRO },
@@ -68,7 +68,7 @@ export async function loginWithPassword(
       const token = await createScopedToken(a.secret, a.scope, exp);
       const c = await cookies();
       c.set(AUTH_COOKIE, token, cookieOpts);
-      redirect(`/${a.sede}/incentivos`);
+      redirect(`/${a.sede}/panel`);
     }
   }
 

@@ -289,7 +289,7 @@ export async function saveKpiTargets(input: {
             nps_min = EXCLUDED.nps_min, mermas_max_pct = EXCLUDED.mermas_max_pct,
             tiempo_max_min = EXCLUDED.tiempo_max_min
     `;
-    revalidatePath("/[negocio]/incentivos", "page");
+    revalidatePath("/[negocio]/panel", "page");
     return { ok: true };
   } catch (err) {
     console.error("[saveKpiTargets] failed:", err);
@@ -319,7 +319,7 @@ export async function saveDailyKpis(input: {
         SET nps = EXCLUDED.nps, mermas_soles = EXCLUDED.mermas_soles,
             tiempo_atencion_min = EXCLUDED.tiempo_atencion_min, updated_at = NOW()
     `;
-    revalidatePath("/[negocio]/incentivos", "page");
+    revalidatePath("/[negocio]/panel", "page");
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
