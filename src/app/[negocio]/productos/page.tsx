@@ -4,7 +4,9 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Package, Upload, Database, ChevronDown, ChevronRight, Shield, TrendingUp,
   Tag, FlaskConical, SearchCheck, Eye, AlertTriangle, CircleHelp, Star,
+  FileDown, Loader2, Calculator,
 } from "lucide-react";
+import { simulatePriceChange } from "@/lib/portfolio/simulator";
 import { formatCurrency } from "@/lib/utils";
 import {
   getProductDataStatus,
@@ -55,6 +57,34 @@ export default function ProductosPage() {
   const [showImport, setShowImport] = useState(false);
   const [showLink, setShowLink] = useState(false);
   const [showFoundation, setShowFoundation] = useState(false);
+  const [generating, setGenerating] = useState(false);
+
+  // Board Package comercial: el MISMO Story ya compilado → 3 archivos.
+  async function handleGeneratePackage() {
+    if (!story) return;
+    setGenerating(true);
+    try {
+      const download = (blob: Blob, filename: string) => {
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement("a");
+        a.href = url;
+        a.download = filename;
+        a.click();
+        URL.revokeObjectURL(url);
+      };
+      const { renderPortfolioPdf } = await import("@/lib/portfolio/renderers/pdf");
+      const pdf = renderPortfolioPdf(story);
+      download(pdf.blob, pdf.filename);
+      const { renderPortfolioPptx } = await import("@/lib/portfolio/renderers/pptx");
+      const pptx = await renderPortfolioPptx(story);
+      download(pptx.blob, pptx.filename);
+      const { renderPortfolioXlsx } = await import("@/lib/portfolio/renderers/xlsx");
+      const xlsx = await renderPortfolioXlsx(story);
+      download(xlsx.blob, xlsx.filename);
+    } finally {
+      setGenerating(false);
+    }
+  }
 
   const load = useCallback(async (pickMonth?: string | null) => {
     setLoading(true);
@@ -109,6 +139,17 @@ export default function ProductosPage() {
                 <option key={m.month} value={m.month}>{monthLabel(m.month)}</option>
               ))}
             </select>
+          )}
+          {story && (
+            <button
+              onClick={handleGeneratePackage}
+              disabled={generating}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-primary border border-primary/30 bg-primary/5 hover:bg-primary hover:text-white rounded-lg transition-colors disabled:opacity-50"
+              title="Descarga PDF + PowerPoint + Excel desde este mismo análisis"
+            >
+              {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
+              Board Package
+            </button>
           )}
           <button
             onClick={() => setShowImport(true)}
@@ -276,6 +317,9 @@ export default function ProductosPage() {
             </div>
           )}
 
+          {/* 5b · Simulador de precio */}
+          <PriceSimulatorCard products={intel.products.filter((p) => p.hasCost && p.units > 0)} />
+
           {/* 6 · Calidad de datos */}
           {intel.dataQuality.costCoveragePct < 95 && (
             <div className="bg-white rounded-xl border border-gray-200 p-5">
@@ -380,6 +424,86 @@ export default function ProductosPage() {
       )}
       {showLink && (
         <LinkProductsModal onClose={() => setShowLink(false)} onLinked={() => load(month)} />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Simulador de precio: elige un producto, prueba un precio nuevo y ve
+ * los 3 escenarios de volumen + el punto de equilibrio. Honesto por
+ * diseño: escenarios, no promesas (no conocemos la elasticidad).
+ */
+function PriceSimulatorCard({ products }: { products: ProductIntel[] }) {
+  const [key, setKey] = useState<string>("");
+  const [priceStr, setPriceStr] = useState<string>("");
+  const selected = products.find((p) => p.key === key) ?? null;
+  const newPrice = Number(priceStr);
+  const sim = selected && priceStr && Number.isFinite(newPrice)
+    ? simulatePriceChange(selected, newPrice)
+    : null;
+
+  if (products.length === 0) return null;
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-5">
+      <div className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+        <Calculator className="w-4 h-4 text-primary" />
+        Simulador de precio
+      </div>
+      <div className="flex flex-wrap items-end gap-3 mb-3">
+        <div className="flex-1 min-w-[220px]">
+          <label className="block text-[11px] text-gray-500 mb-1">Producto (con costo conocido)</label>
+          <select
+            value={key}
+            onChange={(e) => { setKey(e.target.value); setPriceStr(""); }}
+            className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
+          >
+            <option value="">Elegir producto…</option>
+            {products.map((p) => (
+              <option key={p.key} value={p.key}>
+                {p.name} — {formatCurrency(p.avgPrice)} · {p.units} und/mes
+              </option>
+            ))}
+          </select>
+        </div>
+        {selected && (
+          <div className="w-36">
+            <label className="block text-[11px] text-gray-500 mb-1">
+              Precio nuevo (hoy {formatCurrency(selected.avgPrice)})
+            </label>
+            <input
+              type="number"
+              step="0.10"
+              min="0"
+              value={priceStr}
+              onChange={(e) => setPriceStr(e.target.value)}
+              placeholder={String(selected.avgPrice)}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-xs"
+            />
+          </div>
+        )}
+      </div>
+
+      {sim && !sim.ok && (
+        <div className="text-xs text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{sim.error}</div>
+      )}
+      {sim && sim.ok && (
+        <div className="space-y-2">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+            {sim.scenarios.map((s) => (
+              <div key={s.label} className="rounded-lg border border-gray-100 px-3 py-2">
+                <div className="text-[11px] text-gray-500">{s.label}</div>
+                <div className={`text-sm font-bold ${s.contributionDelta > 0 ? "text-emerald-600" : s.contributionDelta < 0 ? "text-red-600" : "text-gray-700"}`}>
+                  {s.contributionDelta >= 0 ? "+" : ""}{formatCurrency(s.contributionDelta)}/mes
+                </div>
+                <div className="text-[11px] text-gray-400">
+                  {s.units} und · utilidad {formatCurrency(s.contribution)} · margen {s.marginPct}%
+                </div>
+              </div>
+            ))}
+          </div>
+          <div className="text-[11px] text-gray-500 italic">{sim.note}</div>
+        </div>
       )}
     </div>
   );
