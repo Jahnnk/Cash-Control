@@ -1,5 +1,5 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verifyAuthToken } from "@/lib/auth-token";
+import { verifyAuthToken, verifyScopedToken } from "@/lib/auth-token";
 
 const VALID_SCOPES = ["atelier", "fonavi", "centro", "grupo"] as const;
 type Scope = typeof VALID_SCOPES[number];
@@ -65,7 +65,40 @@ export async function middleware(request: NextRequest) {
     const now = Math.floor(Date.now() / 1000);
     const valid = await verifyAuthToken(authToken, process.env.APP_PASSWORD, now);
     if (!valid) {
-      return NextResponse.redirect(new URL("/login", request.url));
+      // 0c. Sesión de ADMINISTRADOR DE SEDE (token v2 con alcance).
+      // Solo puede ver /[su-sede]/incentivos — todo lo demás (saldos,
+      // reportes, movimientos, otras sedes) queda bloqueado AQUÍ, a
+      // nivel de servidor, incluidos los POST de server actions.
+      const adminScope = await verifyScopedToken(
+        authToken,
+        (scope) =>
+          scope === "admin-fonavi"
+            ? process.env.ADMIN_PASSWORD_FONAVI
+            : scope === "admin-centro"
+              ? process.env.ADMIN_PASSWORD_CENTRO
+              : undefined,
+        now,
+      );
+      if (!adminScope) {
+        return NextResponse.redirect(new URL("/login", request.url));
+      }
+      const sede = adminScope === "admin-fonavi" ? "fonavi" : "centro";
+      const allowedPrefix = `/${sede}/incentivos`;
+      if (pathname !== allowedPrefix && !pathname.startsWith(allowedPrefix + "/")) {
+        return NextResponse.redirect(new URL(allowedPrefix, request.url));
+      }
+      // Inyectar la sede activa (activeBusinessId) y marcar la sesión
+      // como admin de incentivos (las actions lo re-verifican).
+      const requestHeaders = new Headers(request.headers);
+      requestHeaders.set(BUSINESS_HEADER, sede);
+      requestHeaders.set("x-incentives-admin", sede);
+      const response = NextResponse.next({ request: { headers: requestHeaders } });
+      response.cookies.set(BUSINESS_COOKIE, sede, {
+        path: "/",
+        maxAge: 60 * 60 * 24 * 365,
+        sameSite: "lax",
+      });
+      return response;
     }
   } else {
     return NextResponse.next();
