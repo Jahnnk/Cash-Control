@@ -8,9 +8,13 @@
  */
 
 /** Normalización fuerte: mayúsculas, sin tildes, sin prefijos de línea
- *  ("Y-", "P-"), espacios colapsados y sin signos. */
+ *  ("Y-", "P-"), sin etiquetas de estado de Byte ("[ELIMINADO …]"), sin
+ *  sufijo de sede entre paréntesis ("(Fonavi)"), espacios colapsados y
+ *  sin signos. Casos observados en los exports reales de jun-2026. */
 export function normalizeProductName(name: string): string {
   return name
+    .replace(/^\s*\[[^\]]*\]\s*/, "")      // "[ELIMINADO 2026-06-24 …] X" → "X"
+    .replace(/\s*\([^)]*\)\s*$/, "")       // "Café Americano (Fonavi)" → "Café Americano"
     .normalize("NFD")
     .replace(/[̀-ͯ]/g, "") // tildes fuera
     .toUpperCase()

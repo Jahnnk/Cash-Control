@@ -86,6 +86,11 @@ describe("normalizeProductName + matching", () => {
     expect(normalizeProductName("  Empanada   mixta ")).toBe("EMPANADA MIXTA");
   });
 
+  it("quita el sufijo de sede del pricing-engine y la etiqueta [ELIMINADO] de Byte (casos reales)", () => {
+    expect(normalizeProductName("Café Americano (Fonavi)")).toBe("CAFE AMERICANO");
+    expect(normalizeProductName("[ELIMINADO 2026-06-24 19:18:31] EMPANADA DE LOMITO")).toBe("EMPANADA DE LOMITO");
+  });
+
   it("matchea Byte vs catálogo por nombre normalizado; lo demás queda sin match", () => {
     const r = matchSalesToCatalog(
       [{ name: "Y-EMPANADA MIXTA" }, { name: "PAVO POR KILO" }],

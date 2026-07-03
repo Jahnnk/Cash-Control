@@ -68,6 +68,57 @@ describe("buildCatalogSyncPlan", () => {
   });
 });
 
+import { buildAtelierSyncPlan, type PricingAtelierProduct } from "../product-catalog-sync";
+
+const mkAte = (over: Partial<PricingAtelierProduct>): PricingAtelierProduct => ({
+  id: 7,
+  sku: "PA-007",
+  nombre: "Brownie Triple Chocolate",
+  categoria: "Brownies / Blondies / Bars",
+  activo: true,
+  cvInsumos: "22.7281",       // costo de la TANDA (con merma), dato real
+  rendimientoCantidad: "12",  // la tanda rinde 12 unidades
+  unidadVenta: "und",
+  precioOverride: null,
+  precioAtelierFacturado: "5.40",
+  precioAtelierNeto: "4.89",
+  ...over,
+});
+
+describe("buildAtelierSyncPlan — costo unitario = tanda ÷ rendimiento", () => {
+  it("divide el CV de la tanda entre el rendimiento (caso real del Brownie)", () => {
+    const plan = buildAtelierSyncPlan([mkAte({})], 1);
+    expect(plan.products).toHaveLength(1);
+    const p = plan.products[0];
+    expect(p.businessId).toBe(1);
+    expect(p.unitCogs).toBeCloseTo(22.7281 / 12, 4); // ≈ S/1.89 la unidad
+    expect(p.listPrice).toBe(5.4); // facturado (sin override)
+    expect(p.targetMarginPct).toBeNull(); // honesto: no existe para Atelier
+    expect(p.sourceRef).toBe("atelier-7");
+  });
+
+  it("unidadVenta='kg': el rendimiento está en gramos → costo por kilo", () => {
+    const plan = buildAtelierSyncPlan(
+      [mkAte({ nombre: "Pavo por kilo", unidadVenta: "kg", cvInsumos: "30", rendimientoCantidad: "2000" })],
+      1,
+    );
+    expect(plan.products[0].unitCogs).toBeCloseTo(15, 4); // 30 ÷ 2kg
+  });
+
+  it("rendimiento inválido (≤0) → skip con motivo, nunca costo infinito", () => {
+    const plan = buildAtelierSyncPlan([mkAte({ rendimientoCantidad: "0" })], 1);
+    expect(plan.products).toHaveLength(0);
+    expect(plan.skipped[0].reason).toMatch(/rendimiento/);
+  });
+
+  it("costo ≥ precio → se sincroniza IGUAL pero queda como sospechoso", () => {
+    const plan = buildAtelierSyncPlan([mkAte({ rendimientoCantidad: "1" })], 1); // 22.73 ≥ 5.40
+    expect(plan.products).toHaveLength(1);
+    expect(plan.suspects).toHaveLength(1);
+    expect(plan.suspects![0].reason).toMatch(/rendimiento mal cargado/);
+  });
+});
+
 describe("effectiveListPrice — precedencia del pricing-engine", () => {
   it("override manual gana a todo", () => {
     expect(effectiveListPrice(mk({ precioOverride: "9.50" }))).toBe(9.5);
