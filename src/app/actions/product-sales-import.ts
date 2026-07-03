@@ -58,11 +58,23 @@ export async function importProductSales(input: {
   }
 
   try {
-    // 1) Matching contra el catálogo canónico del negocio activo.
+    // 1) Matching contra el catálogo canónico + alias manuales del dueño.
     const catalog = (await sql`
       SELECT id::text, name FROM products WHERE business_id = ${bId}
     `) as { id: string; name: string }[];
-    const match = matchSalesToCatalog(input.items, catalog);
+    let aliasRows: { alias_normalized: string; product_id: string }[] = [];
+    try {
+      aliasRows = (await sql`
+        SELECT alias_normalized, product_id::text FROM product_aliases WHERE business_id = ${bId}
+      `) as typeof aliasRows;
+    } catch {
+      // migración de alias pendiente: se matchea solo por nombre
+    }
+    const match = matchSalesToCatalog(
+      input.items,
+      catalog,
+      new Map(aliasRows.map((a) => [a.alias_normalized, a.product_id])),
+    );
 
     // 2) Escritura atómica e idempotente + lote de procedencia.
     const batchId = crypto.randomUUID();

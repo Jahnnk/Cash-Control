@@ -33,10 +33,15 @@ export type MatchResult<T extends { name: string }> = {
   ambiguous: string[];
 };
 
-/** Empareja items de venta contra el catálogo por nombre normalizado. */
+/**
+ * Empareja items de venta contra el catálogo por nombre normalizado.
+ * Los ALIAS (vínculos manuales del dueño) tienen prioridad sobre el
+ * match automático y resuelven incluso los nombres ambiguos.
+ */
 export function matchSalesToCatalog<T extends { name: string }>(
   items: T[],
   catalog: CatalogEntry[],
+  aliases?: Map<string, string>, // alias_normalized → productId
 ): MatchResult<T> {
   const byNorm = new Map<string, string | "AMBIGUO">();
   const ambiguous: string[] = [];
@@ -54,9 +59,40 @@ export function matchSalesToCatalog<T extends { name: string }>(
   const matched: (T & { productId: string })[] = [];
   const unmatched: T[] = [];
   for (const it of items) {
-    const hit = byNorm.get(normalizeProductName(it.name));
+    const norm = normalizeProductName(it.name);
+    const viaAlias = aliases?.get(norm);
+    if (viaAlias) {
+      matched.push({ ...it, productId: viaAlias });
+      continue;
+    }
+    const hit = byNorm.get(norm);
     if (hit && hit !== "AMBIGUO") matched.push({ ...it, productId: hit });
     else unmatched.push(it);
   }
   return { matched, unmatched, ambiguous };
+}
+
+/**
+ * Sugerencias para vincular un nombre sin match: similitud por tokens
+ * (Jaccard) sobre los nombres normalizados. Devuelve el top ordenado.
+ * Puro y determinista — la decisión final siempre es del dueño.
+ */
+export function suggestMatches(
+  rawName: string,
+  catalog: CatalogEntry[],
+  top = 3,
+): { id: string; name: string; score: number }[] {
+  const tokens = new Set(normalizeProductName(rawName).split(" ").filter(Boolean));
+  if (tokens.size === 0) return [];
+  return catalog
+    .map((c) => {
+      const cTokens = new Set(normalizeProductName(c.name).split(" ").filter(Boolean));
+      let inter = 0;
+      for (const t of tokens) if (cTokens.has(t)) inter++;
+      const union = tokens.size + cTokens.size - inter;
+      return { id: c.id, name: c.name, score: union > 0 ? inter / union : 0 };
+    })
+    .filter((s) => s.score >= 0.3)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, top);
 }

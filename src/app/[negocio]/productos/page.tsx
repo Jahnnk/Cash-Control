@@ -13,6 +13,7 @@ import {
 import { getPortfolioStory } from "@/app/actions/portfolio-story";
 import type { PortfolioStory, ProductIntel, Verdict } from "@/lib/portfolio/types";
 import { ImportSalesModal } from "./import-sales-modal";
+import { LinkProductsModal } from "./link-products-modal";
 
 /**
  * PIC · Inteligencia Comercial — el Director Comercial digital.
@@ -52,6 +53,7 @@ export default function ProductosPage() {
   const [month, setMonth] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  const [showLink, setShowLink] = useState(false);
   const [showFoundation, setShowFoundation] = useState(false);
 
   const load = useCallback(async (pickMonth?: string | null) => {
@@ -277,10 +279,20 @@ export default function ProductosPage() {
           {/* 6 · Calidad de datos */}
           {intel.dataQuality.costCoveragePct < 95 && (
             <div className="bg-white rounded-xl border border-gray-200 p-5">
-              <div className="text-sm font-semibold text-gray-900 mb-2">Calidad de datos — la tarea que más rinde</div>
+              <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                <div className="text-sm font-semibold text-gray-900">Calidad de datos — la tarea que más rinde</div>
+                <button
+                  onClick={() => setShowLink(true)}
+                  className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary border border-primary/30 bg-primary/5 hover:bg-primary hover:text-white rounded-lg transition-colors"
+                >
+                  Vincular con el catálogo
+                </button>
+              </div>
               <div className="text-xs text-gray-600 mb-2">
                 {formatCurrency(intel.dataQuality.uncostedRevenue)}/mes de venta sin costo conocido
-                ({intel.dataQuality.productsTotal - intel.dataQuality.productsWithCost} productos). Costear estos primero:
+                ({intel.dataQuality.productsTotal - intel.dataQuality.productsWithCost} productos).
+                Si el producto existe con otro nombre → <strong>vincúlalo</strong> (un clic);
+                si no existe → costearlo en el pricing-engine:
               </div>
               <div className="flex flex-wrap gap-1.5">
                 {intel.dataQuality.topUncosted.map((u) => (
@@ -365,6 +377,9 @@ export default function ProductosPage() {
 
       {showImport && (
         <ImportSalesModal onClose={() => setShowImport(false)} onImported={() => load(month)} />
+      )}
+      {showLink && (
+        <LinkProductsModal onClose={() => setShowLink(false)} onLinked={() => load(month)} />
       )}
     </div>
   );
