@@ -4,14 +4,16 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   Package, Upload, Database, ChevronDown, ChevronRight, Shield, TrendingUp,
   Tag, FlaskConical, SearchCheck, Eye, AlertTriangle, CircleHelp, Star,
-  FileDown, Loader2, Calculator,
+  FileDown, Loader2, Calculator, Trash2,
 } from "lucide-react";
 import { simulatePriceChange } from "@/lib/portfolio/simulator";
 import { formatCurrency } from "@/lib/utils";
 import {
   getProductDataStatus,
+  deleteProductSalesMonth,
   type ProductDataStatus,
 } from "@/app/actions/product-sales-import";
+import { useToast } from "@/components/toast-provider";
 import { getPortfolioStory } from "@/app/actions/portfolio-story";
 import type { PortfolioStory, ProductIntel, Verdict } from "@/lib/portfolio/types";
 import { ImportSalesModal } from "./import-sales-modal";
@@ -61,6 +63,22 @@ export default function ProductosPage() {
   const [showFoundation, setShowFoundation] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [view, setView] = useState<"mes" | "historico">("mes");
+  const { showToast } = useToast();
+  const [confirmDelete, setConfirmDelete] = useState<string | null>(null);
+  const [deleting, setDeleting] = useState(false);
+
+  async function handleDeleteMonth(m: string) {
+    setDeleting(true);
+    const r = await deleteProductSalesMonth(m);
+    setDeleting(false);
+    setConfirmDelete(null);
+    if (!r.ok) {
+      showToast(r.error, "error");
+      return;
+    }
+    showToast(`${monthLabel(m)} eliminado (${r.deleted} productos). Re-subir el archivo lo recupera.`, "success");
+    await load(null);
+  }
 
   // Board Package comercial: el MISMO Story ya compilado → 3 archivos.
   async function handleGeneratePackage() {
@@ -106,9 +124,9 @@ export default function ProductosPage() {
   }, []);
 
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
+     
     load();
-    /* eslint-enable react-hooks/set-state-in-effect */
+     
   }, [load]);
 
   const intel = story?.intelligence ?? null;
@@ -432,6 +450,7 @@ export default function ProductosPage() {
                       <th className="text-right px-4 py-2 font-medium">Productos</th>
                       <th className="text-right px-4 py-2 font-medium">Match catálogo</th>
                       <th className="text-right px-4 py-2 font-medium">Ventas</th>
+                      <th className="w-24"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -445,6 +464,35 @@ export default function ProductosPage() {
                             {m.matched}/{m.products} ({pct}%)
                           </td>
                           <td className="px-4 py-2 text-right font-semibold text-gray-900">{formatCurrency(m.totalRevenue)}</td>
+                          <td className="px-4 py-2 text-right">
+                            {confirmDelete === m.month ? (
+                              <span className="inline-flex items-center gap-1 text-[11px]">
+                                <button
+                                  onClick={() => handleDeleteMonth(m.month)}
+                                  disabled={deleting}
+                                  className="px-2 py-1 font-medium text-white bg-red-600 hover:bg-red-700 rounded disabled:opacity-50"
+                                >
+                                  {deleting ? "…" : "Eliminar"}
+                                </button>
+                                <button
+                                  onClick={() => setConfirmDelete(null)}
+                                  disabled={deleting}
+                                  className="px-2 py-1 text-gray-600 hover:bg-gray-100 rounded"
+                                >
+                                  No
+                                </button>
+                              </span>
+                            ) : (
+                              <button
+                                onClick={() => setConfirmDelete(m.month)}
+                                className="p-1 text-gray-300 hover:text-red-600 hover:bg-red-50 rounded"
+                                aria-label={`Eliminar ${monthLabel(m.month)}`}
+                                title="Eliminar este mes (reversible: re-subir el archivo lo recupera)"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                              </button>
+                            )}
+                          </td>
                         </tr>
                       );
                     })}
