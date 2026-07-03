@@ -94,9 +94,12 @@ export function ImportControlModal({
 
         <div className="p-6 space-y-4">
           <p className="text-xs text-gray-500">
-            Arrastra aquí los 4 reportes de Byte del mes en curso (puedes soltar varios a la vez):{" "}
+            Exporta de Byte los 4 reportes con el rango <strong>desde el día 1 del mes hasta hoy</strong> y
+            suéltalos aquí (varios a la vez):{" "}
             <strong>Pedidos Anulados · Cortesías · Cambios de Precio · Ventas por Trabajador</strong>.
-            El sistema reconoce cada uno solo. Re-subir un rango lo reemplaza — no duplica.
+            Hazlo con la frecuencia que necesites — semanal o incluso diaria: cada subida{" "}
+            <strong>reemplaza</strong> el rango anterior y actualiza banderas y ranking al instante.
+            El sistema reconoce cada archivo solo.
           </p>
 
           <div
