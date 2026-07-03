@@ -12,8 +12,10 @@ import {
   type IncentiveDashboard,
   type UpsellCandidate,
 } from "@/app/actions/incentives";
+import { saveDailyKpis } from "@/app/actions/kpis";
 import { useToast } from "@/components/toast-provider";
 import { ImportControlModal } from "./import-control-modal";
+import { KpisWeekSection } from "./kpis-week";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -37,12 +39,16 @@ export default function IncentivosPage() {
   const [showImport, setShowImport] = useState(false);
   const [focus, setFocus] = useState<{ month: string; candidates: UpsellCandidate[] } | null>(null);
 
-  // Registro diario
+  // Registro diario (incentivos + KPIs — un solo ritual)
   const [fecha, setFecha] = useState(todayLima());
   const [personas, setPersonas] = useState("");
   const [venta, setVenta] = useState("");
   const [items, setItems] = useState("");
+  const [nps, setNps] = useState("");
+  const [mermas, setMermas] = useState("");
+  const [tiempo, setTiempo] = useState("");
   const [saving, setSaving] = useState(false);
+  const [weekRefresh, setWeekRefresh] = useState(0);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -73,10 +79,21 @@ export default function IncentivosPage() {
       revenue: Number(venta),
       items: items.trim() === "" ? null : Number(items),
     });
+    if (!r.ok) { setSaving(false); showToast(r.error, "error"); return; }
+    // KPIs del mismo día (NPS, mermas, tiempo) — si se llenó alguno.
+    if (nps.trim() !== "" || mermas.trim() !== "" || tiempo.trim() !== "") {
+      const rk = await saveDailyKpis({
+        date: fecha,
+        nps: nps.trim() === "" ? null : Number(nps),
+        mermasSoles: mermas.trim() === "" ? null : Number(mermas),
+        tiempoMin: tiempo.trim() === "" ? null : Number(tiempo),
+      });
+      if (!rk.ok) { setSaving(false); showToast(rk.error, "error"); return; }
+    }
     setSaving(false);
-    if (!r.ok) { showToast(r.error, "error"); return; }
     showToast("Día registrado", "success");
-    setPersonas(""); setVenta(""); setItems("");
+    setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo("");
+    setWeekRefresh((v) => v + 1);
     await load(month);
   }
 
@@ -250,6 +267,21 @@ export default function IncentivosPage() {
                   <input type="number" min="0" value={items} onChange={(e) => setItems(e.target.value)}
                     placeholder="ej. 140" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">NPS del día (0-10)</label>
+                  <input type="number" min="0" max="10" step="0.1" value={nps} onChange={(e) => setNps(e.target.value)}
+                    placeholder="ej. 9.5" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">Mermas del día S/</label>
+                  <input type="number" min="0" step="0.01" value={mermas} onChange={(e) => setMermas(e.target.value)}
+                    placeholder="ej. 27.00" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">Tiempo de atención (min)</label>
+                  <input type="number" min="0" step="0.5" value={tiempo} onChange={(e) => setTiempo(e.target.value)}
+                    placeholder="ej. 8" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
               </div>
               <button
                 onClick={handleSaveDay}
@@ -315,6 +347,9 @@ export default function IncentivosPage() {
               )}
             </div>
           </div>
+
+          {/* 4b · KPIs de la semana (reemplaza el cuadro de Notion) */}
+          <KpisWeekSection key={weekRefresh} fullSession={!data.isAdminSession} />
 
           {/* 5 · Ranking de vendedores */}
           {data.workers.length > 0 && (
