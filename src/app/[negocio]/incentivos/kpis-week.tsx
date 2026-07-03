@@ -230,7 +230,7 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   const [tiempoMax, setTiempoMax] = useState("");
 
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
+     
     (async () => {
       const r = await getKpiTargetsForEdit();
       if (r.ok) {
@@ -244,7 +244,7 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
       }
       setLoading(false);
     })();
-    /* eslint-enable react-hooks/set-state-in-effect */
+     
   }, []);
 
   async function handleSave() {
