@@ -11,6 +11,7 @@
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
 import { compilePortfolioStory } from "@/lib/portfolio/story-compiler";
+import { normalizeProductName } from "@/lib/product-matching";
 import type { PortfolioFacts, PortfolioStory, ProductFacts } from "@/lib/portfolio/types";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -36,6 +37,10 @@ export async function getPortfolioStory(month: string): Promise<
     return { ok: false, error: "Mes inválido." };
   }
   try {
+    // Costo: snapshot más reciente ≤ mes; si el mes es ANTERIOR al primer
+    // snapshot (historia pre-jul-2026), cae al snapshot más antiguo
+    // disponible y se marca como APROXIMADO (no existe historial de
+    // costos — se dice, no se esconde).
     const rows = (await sql`
       SELECT s.product_id::text AS product_id,
              s.product_name_raw,
@@ -45,14 +50,17 @@ export async function getPortfolioStory(month: string): Promise<
              p.category,
              c.unit_cogs::float AS unit_cogs,
              c.list_price::float AS list_price,
-             c.target_margin_pct::float AS target_margin_pct
+             c.target_margin_pct::float AS target_margin_pct,
+             c.month AS cost_month
       FROM product_month_sales s
       LEFT JOIN products p ON p.id = s.product_id
       LEFT JOIN LATERAL (
-        SELECT unit_cogs, list_price, target_margin_pct
+        SELECT unit_cogs, list_price, target_margin_pct, month
         FROM product_cost_snapshots cs
-        WHERE cs.product_id = s.product_id AND cs.month <= s.month
-        ORDER BY cs.month DESC
+        WHERE cs.product_id = s.product_id
+        ORDER BY (cs.month <= s.month) DESC,
+                 (CASE WHEN cs.month <= s.month THEN cs.month END) DESC NULLS LAST,
+                 cs.month ASC
         LIMIT 1
       ) c ON true
       WHERE s.business_id = ${bId} AND s.month = ${month} AND s.source = 'byte'
@@ -63,18 +71,48 @@ export async function getPortfolioStory(month: string): Promise<
       return { ok: false, error: "No hay ventas por producto cargadas para ese mes. Importa el reporte de Byte primero." };
     }
 
-    const history = (await sql`
+    // Historia por producto (todos los meses ≤ mes del reporte). La clave
+    // une por producto del catálogo o por nombre normalizado (los alias
+    // retroactivos van uniendo la historia sola).
+    const histRows = (await sql`
+      SELECT product_id::text AS product_id, product_name_raw, month,
+             SUM(units)::float AS units, SUM(revenue)::float AS revenue
+      FROM product_month_sales
+      WHERE business_id = ${bId} AND source = 'byte' AND month <= ${month}
+      GROUP BY product_id, product_name_raw, month
+      ORDER BY month
+    `) as Record<string, unknown>[];
+    const keyOf = (pid: string | null, raw: string) =>
+      pid || `raw:${normalizeProductName(raw)}`;
+    const historyByKey = new Map<string, { month: string; units: number; revenue: number }[]>();
+    for (const h of histRows) {
+      const k = keyOf((h.product_id as string) || null, h.product_name_raw as string);
+      if (!historyByKey.has(k)) historyByKey.set(k, []);
+      const arr = historyByKey.get(k)!;
+      const m = h.month as string;
+      const last = arr[arr.length - 1];
+      if (last && last.month === m) {
+        last.units += Number(h.units) || 0;
+        last.revenue = Math.round((last.revenue + (Number(h.revenue) || 0)) * 100) / 100;
+      } else {
+        arr.push({ month: m, units: Number(h.units) || 0, revenue: Number(h.revenue) || 0 });
+      }
+    }
+
+    const monthsSet = (await sql`
       SELECT DISTINCT month FROM product_month_sales
-      WHERE business_id = ${bId} AND source = 'byte'
+      WHERE business_id = ${bId} AND source = 'byte' AND month <= ${month}
       ORDER BY month
     `) as { month: string }[];
 
     const products: ProductFacts[] = rows.map((r) => {
       const units = Number(r.units) || 0;
       const revenue = Number(r.revenue) || 0;
+      const key = keyOf((r.product_id as string) || null, r.product_name_raw as string);
+      const costMonth = (r.cost_month as string) || null;
       return {
         productId: (r.product_id as string) || null,
-        key: (r.product_id as string) || `raw:${r.product_name_raw as string}`,
+        key,
         name: (r.catalog_name as string) || (r.product_name_raw as string),
         category: (r.category as string) || null,
         units,
@@ -83,6 +121,8 @@ export async function getPortfolioStory(month: string): Promise<
         unitCogs: r.unit_cogs != null ? Number(r.unit_cogs) : null,
         listPrice: r.list_price != null ? Number(r.list_price) : null,
         targetMarginPct: r.target_margin_pct != null ? Number(r.target_margin_pct) : null,
+        costApproximated: costMonth !== null && costMonth > month,
+        history: historyByKey.get(key) ?? [{ month, units, revenue }],
       };
     });
 
@@ -92,7 +132,7 @@ export async function getPortfolioStory(month: string): Promise<
       monthLabel: monthLabel(month),
       generatedAt: new Date().toISOString(),
       products,
-      historyMonths: history.map((h) => h.month),
+      historyMonths: monthsSet.map((h) => h.month),
     };
 
     return { ok: true, story: compilePortfolioStory(facts) };
