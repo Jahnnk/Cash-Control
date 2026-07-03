@@ -16,6 +16,8 @@ import { getPortfolioStory } from "@/app/actions/portfolio-story";
 import type { PortfolioStory, ProductIntel, Verdict } from "@/lib/portfolio/types";
 import { ImportSalesModal } from "./import-sales-modal";
 import { LinkProductsModal } from "./link-products-modal";
+import { HistoryView } from "./history-view";
+import { ParetoChart } from "./pareto-chart";
 
 /**
  * PIC · Inteligencia Comercial — el Director Comercial digital.
@@ -58,6 +60,7 @@ export default function ProductosPage() {
   const [showLink, setShowLink] = useState(false);
   const [showFoundation, setShowFoundation] = useState(false);
   const [generating, setGenerating] = useState(false);
+  const [view, setView] = useState<"mes" | "historico">("mes");
 
   // Board Package comercial: el MISMO Story ya compilado → 3 archivos.
   async function handleGeneratePackage() {
@@ -129,7 +132,24 @@ export default function ProductosPage() {
           {story && <p className="text-xs text-gray-500 mt-1">{story.narrative.headline}</p>}
         </div>
         <div className="flex items-center gap-2">
-          {status && status.months.length > 0 && (
+          {status && status.months.length > 1 && (
+            <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs font-medium">
+              <button
+                onClick={() => setView("mes")}
+                className={`px-3 py-2 ${view === "mes" ? "bg-primary text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+              >
+                Mes
+              </button>
+              <button
+                onClick={() => setView("historico")}
+                className={`px-3 py-2 ${view === "historico" ? "bg-primary text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+                title="Todos los meses: evolución, tendencias del periodo y proyección"
+              >
+                Histórico
+              </button>
+            </div>
+          )}
+          {status && status.months.length > 0 && view === "mes" && (
             <select
               value={month ?? ""}
               onChange={(e) => load(e.target.value)}
@@ -161,7 +181,9 @@ export default function ProductosPage() {
         </div>
       </div>
 
-      {loading ? (
+      {view === "historico" ? (
+        <HistoryView />
+      ) : loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Analizando…</div>
       ) : !story ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center space-y-3">
@@ -329,7 +351,10 @@ export default function ProductosPage() {
             </div>
           )}
 
-          {/* 5b · Simulador de precio */}
+          {/* 5b · Pareto 80/20 de la utilidad */}
+          <ParetoChart products={intel.products} />
+
+          {/* 5c · Simulador de precio */}
           <PriceSimulatorCard products={intel.products.filter((p) => p.hasCost && p.units > 0)} />
 
           {/* 6 · Calidad de datos */}
