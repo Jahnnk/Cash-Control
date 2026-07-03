@@ -161,6 +161,83 @@ export const expenseGroups = pgTable("expense_groups", {
   createdAt: timestamp("created_at").defaultNow().notNull(),
 });
 
+// ─────────────────────────────────────────────────────────────────
+// Product Intelligence Center · tablas canónicas del Business
+// Knowledge Engine (ver docs/PIC-ARQUITECTURA.md).
+// Convención BKE: toda fila de hechos lleva procedencia (source /
+// import_batch_id / imported_at) y los motores de inteligencia SOLO
+// leen estas tablas — nunca archivos ni otras apps.
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Catálogo espejo de productos por unidad de negocio. La fuente de
+ * verdad de costos/recetas/márgenes es el pricing-engine (Neon aparte);
+ * aquí vive el snapshot normalizado que consume la inteligencia.
+ */
+export const products = pgTable(
+  "products",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
+    sku: text("sku"),
+    name: text("name").notNull(),
+    category: text("category"),
+    // Canal de venta (mostrador, delivery, e-commerce…). NULL hasta que
+    // alguna fuente lo traiga — capacidad detectada por datos.
+    channel: text("channel"),
+    active: boolean("active").default(true).notNull(),
+    // Procedencia BKE: de qué fuente nació y su id allá.
+    source: text("source").default("pricing-engine").notNull(),
+    sourceRef: text("source_ref"),
+    createdAt: timestamp("created_at").defaultNow().notNull(),
+    updatedAt: timestamp("updated_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    businessIdx: index("idx_products_business_id").on(t.businessId),
+  })
+);
+
+/**
+ * Costo unitario, precio de lista y margen objetivo CONGELADOS por mes
+ * (YYYY-MM). El pasado nunca se reescribe: si la receta cambia en
+ * agosto, el análisis de junio sigue contando la historia de junio.
+ */
+export const productCostSnapshots = pgTable("product_cost_snapshots", {
+  id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+  productId: uuid("product_id").notNull().references(() => products.id),
+  month: text("month").notNull(), // YYYY-MM
+  unitCogs: numeric("unit_cogs", { precision: 10, scale: 4 }).notNull(),
+  listPrice: numeric("list_price", { precision: 10, scale: 2 }),
+  targetMarginPct: numeric("target_margin_pct", { precision: 5, scale: 4 }),
+  source: text("source").default("pricing-engine").notNull(),
+  importedAt: timestamp("imported_at").defaultNow().notNull(),
+});
+
+/**
+ * Ventas por producto y mes — el corazón del PIC. product_id es NULLABLE
+ * a propósito: una venta sin match de catálogo NO se pierde (queda con
+ * product_name_raw y sale en el reporte de calidad de datos).
+ */
+export const productMonthSales = pgTable(
+  "product_month_sales",
+  {
+    id: uuid("id").primaryKey().default(sql`gen_random_uuid()`),
+    businessId: integer("business_id").notNull().references(() => businesses.id),
+    productId: uuid("product_id").references(() => products.id),
+    productNameRaw: text("product_name_raw").notNull(),
+    month: text("month").notNull(), // YYYY-MM
+    units: numeric("units", { precision: 12, scale: 2 }).notNull(),
+    revenue: numeric("revenue", { precision: 12, scale: 2 }).notNull(),
+    channel: text("channel"),
+    source: text("source").default("byte").notNull(),
+    importBatchId: uuid("import_batch_id"),
+    importedAt: timestamp("imported_at").defaultNow().notNull(),
+  },
+  (t) => ({
+    businessMonthIdx: index("idx_pms_business_month").on(t.businessId, t.month),
+  })
+);
+
 /**
  * Ventas Byte por día (Control de VTAS de Kelly).
  * Una fila por business_id + date. Total es columna generada.
