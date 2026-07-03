@@ -34,6 +34,10 @@ export type ByteRotacionResult =
       periodEnd: string | null;
       /** Total S/ declarado por Byte en la fila TOTAL (si existe). */
       declaredTotal: number | null;
+      /** Formato detectado: rotación (canónico, cuadra ~99%) o
+       *  rentabilidad (aceptado para HISTORIA: cubre solo productos con
+       *  receta en Byte — 87-94% en cafeterías, medido jun-2026). */
+      format: "rotacion" | "rentabilidad";
       warnings: string[];
     };
 
@@ -50,20 +54,25 @@ export function parseByteRotacion(rows: unknown[][]): ByteRotacionResult {
   const warnings: string[] = [];
 
   // 1) Header dinámico: la fila que contiene "Plato" y "Vendido".
+  //    Distingue el formato: "Rentabilidad por Plato" trae además la
+  //    columna "Utilidad Total" (y "Precio Venta" en vez de unitario).
   let headerIdx = -1;
   let colPlato = -1, colPrecio = -1, colVendido = -1, colTotal = -1;
+  let format: "rotacion" | "rentabilidad" = "rotacion";
   for (let i = 0; i < Math.min(rows.length, 8); i++) {
     const row = rows[i] ?? [];
-    let plato = -1, precio = -1, vendido = -1, total = -1;
+    let plato = -1, precio = -1, vendido = -1, total = -1, utilidad = -1;
     for (let c = 0; c < row.length; c++) {
       const cell = typeof row[c] === "string" ? (row[c] as string) : "";
       if (/^\s*plato\s*$/i.test(cell)) plato = c;
-      else if (/precio\s+unitario/i.test(cell)) precio = c;
+      else if (/precio\s+(unitario|venta)/i.test(cell)) precio = c;
       else if (/^\s*vendido s?\s*$/i.test(cell) || /^\s*vendidos?\s*$/i.test(cell)) vendido = c;
       else if (/total\s+vendido/i.test(cell)) total = c;
+      else if (/utilidad\s+total/i.test(cell)) utilidad = c;
     }
     if (plato !== -1 && vendido !== -1 && total !== -1) {
       headerIdx = i; colPlato = plato; colPrecio = precio; colVendido = vendido; colTotal = total;
+      format = utilidad !== -1 ? "rentabilidad" : "rotacion";
       break;
     }
   }
@@ -137,6 +146,9 @@ export function parseByteRotacion(rows: unknown[][]): ByteRotacionResult {
       warnings.push(`"${name}": valores negativos — fila omitida.`);
       continue;
     }
+    // El formato rentabilidad lista TODO el catálogo (incluye filas con
+    // venta 0): no aportan y se omiten en silencio (no es un error).
+    if (units === 0 && revenue === 0) continue;
     const unitPrice = colPrecio !== -1 ? num(row[colPrecio]) : null;
     const prev = byName.get(name);
     if (prev) {
@@ -163,6 +175,11 @@ export function parseByteRotacion(rows: unknown[][]): ByteRotacionResult {
       `La suma de las filas (S/${sum.toFixed(2)}) no coincide con el TOTAL del reporte (S/${declaredTotal.toFixed(2)}).`,
     );
   }
+  if (format === "rentabilidad") {
+    warnings.push(
+      "Reporte de Rentabilidad: cubre solo productos con receta en Byte (87-94% de la venta en cafeterías). Útil para historia y tendencias; para el mes corriente prefiere el de Rotación.",
+    );
+  }
 
-  return { ok: true, items, month, periodStart, periodEnd, declaredTotal, warnings };
+  return { ok: true, items, month, periodStart, periodEnd, declaredTotal, format, warnings };
 }

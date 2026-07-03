@@ -26,6 +26,7 @@ import type {
   Recommendation,
   MenuEngQuadrant,
   AbcClass,
+  BcgQuadrant,
   Verdict,
   DataQuality,
 } from "./types";
@@ -41,17 +42,35 @@ const fmt = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
 
 type BaseMetrics = Omit<
   ProductIntel,
-  "abcClass" | "menuEng" | "menuEngReason" | "verdict" | "verdictReason" | "drivers"
+  "abcClass" | "menuEng" | "menuEngReason" | "verdict" | "verdictReason" | "drivers" | "bcg" | "bcgReason"
 >;
 
 export function computeBaseMetrics(f: PortfolioFacts): BaseMetrics[] {
   const totalRevenue = f.products.reduce((s, p) => s + p.revenue, 0) || 1;
+  const firstMonth = f.historyMonths[0] ?? f.month;
   return f.products
     .map((p) => {
       const hasCost = p.unitCogs !== null && p.unitCogs > 0;
       const unitContribution = hasCost ? r2(p.avgPrice - p.unitCogs!) : null;
       const contribution = hasCost ? r2((p.avgPrice - p.unitCogs!) * p.units) : null;
       const marginPct = hasCost && p.revenue > 0 ? r1(((p.avgPrice - p.unitCogs!) / p.avgPrice) * 100) : null;
+
+      // Crecimiento: mes actual vs PROMEDIO de hasta 3 meses previos con
+      // venta. Requiere ≥1 mes previo; null si el producto es nuevo.
+      const prev = p.history.filter((h) => h.month < f.month).slice(-3);
+      let growthPct: number | null = null;
+      if (prev.length >= 1) {
+        const avgPrev = prev.reduce((s, h) => s + h.revenue, 0) / prev.length;
+        if (avgPrev > 0) growthPct = r1(((p.revenue - avgPrev) / avgPrev) * 100);
+      }
+      const trend: "sube" | "baja" | "estable" | null =
+        growthPct === null ? null : growthPct >= 10 ? "sube" : growthPct <= -10 ? "baja" : "estable";
+
+      // Nuevo = apareció DESPUÉS del primer mes cargado (los del primer
+      // mes tienen edad desconocida → no se cuentan como nuevos, honesto).
+      const firstSeen = p.history[0]?.month ?? f.month;
+      const isNew = firstSeen > firstMonth;
+
       return {
         key: p.key,
         productId: p.productId,
@@ -67,9 +86,41 @@ export function computeBaseMetrics(f: PortfolioFacts): BaseMetrics[] {
         contribution,
         marginPct,
         targetMarginPct: p.targetMarginPct,
+        growthPct,
+        trend,
+        isNew,
       };
     })
     .sort((a, b) => b.revenue - a.revenue);
+}
+
+// ═════════════════════════════════════════════════════════════════
+// METODOLOGÍA · BCG INTERNA (requiere ≥3 meses de historia)
+// Ejes: crecimiento de la demanda (≥+10% = alto) × peso en el
+// portafolio (clase A del Pareto = alto). NO es la BCG de mercado:
+// no tenemos cuota de mercado y no la inventamos.
+// ═════════════════════════════════════════════════════════════════
+
+export function classifyBcg(
+  metrics: BaseMetrics[],
+  abc: Map<string, AbcClass>,
+  historyMonths: string[],
+): Map<string, { q: BcgQuadrant; reason: string }> {
+  const out = new Map<string, { q: BcgQuadrant; reason: string }>();
+  if (historyMonths.length < 3) return out;
+  for (const m of metrics) {
+    if (m.growthPct === null) continue; // sin historia propia (ej. nuevo)
+    const heavy = abc.get(m.key) === "A";
+    const growing = m.growthPct >= 10;
+    const q: BcgQuadrant = heavy
+      ? growing ? "estrella" : "vaca"
+      : growing ? "interrogante" : "perro";
+    out.set(m.key, {
+      q,
+      reason: `demanda ${m.growthPct >= 0 ? "+" : ""}${m.growthPct}% vs promedio 3m · ${heavy ? "clase A (peso alto)" : "peso bajo en la venta"}`,
+    });
+  }
+  return out;
 }
 
 // ═════════════════════════════════════════════════════════════════
@@ -237,6 +288,46 @@ export function emitSignals(
       });
     }
 
+    // — Tendencias (requieren historia): subidas y caídas relevantes —
+    if (m.growthPct !== null && m.trend === "sube") {
+      const prevAvg = m.revenue / (1 + m.growthPct / 100);
+      const delta = r2(m.revenue - prevAvg);
+      if (delta >= 100 && m.growthPct >= 15) {
+        signals.push({
+          id: `sig-crece-${m.key}`,
+          methodology: "metricas",
+          productKey: m.key,
+          kind: "tendencia",
+          impact: delta,
+          metric: `${m.name}: demanda creciendo`,
+          valueNow: m.revenue,
+          valueRef: r2(prevAvg),
+          valueUnit: "S/",
+          source: `metricas: venta del mes vs promedio 3m (${m.growthPct >= 0 ? "+" : ""}${m.growthPct}%)`,
+          confidence: "media",
+        });
+      }
+    }
+    if (m.growthPct !== null && m.trend === "baja") {
+      const prevAvg = m.revenue / (1 + m.growthPct / 100);
+      const delta = r2(prevAvg - m.revenue);
+      if (delta >= 100 && m.growthPct <= -15) {
+        signals.push({
+          id: `sig-cae-${m.key}`,
+          methodology: "metricas",
+          productKey: m.key,
+          kind: "riesgo",
+          impact: delta,
+          metric: `${m.name}: demanda cayendo`,
+          valueNow: m.revenue,
+          valueRef: r2(prevAvg),
+          valueUnit: "S/",
+          source: `metricas: venta del mes vs promedio 3m (${m.growthPct}%)`,
+          confidence: "media",
+        });
+      }
+    }
+
     // — Calidad de datos: venta grande sin costo —
     if (!m.hasCost && m.revenueShare >= 2) {
       signals.push({
@@ -266,6 +357,7 @@ export function synthesizeVerdicts(
   metrics: BaseMetrics[],
   abc: Map<string, AbcClass>,
   me: Map<string, { q: MenuEngQuadrant; reason: string }>,
+  bcg: Map<string, { q: BcgQuadrant; reason: string }>,
   signals: Signal[],
 ): ProductIntel[] {
   return metrics.map((m) => {
@@ -293,6 +385,11 @@ export function synthesizeVerdicts(
     } else if (quad === "dog" && cls !== "C") {
       verdict = "experimentar";
       reason = `Aporta venta (clase ${cls}) pero con mala contribución relativa — reposicionar antes que retirar.`;
+    } else if (quad === "dog" && m.trend === "sube") {
+      // Refinamiento con historia: un dog cuya demanda CRECE merece
+      // experimento antes que revisión (el mercado está diciendo algo).
+      verdict = "experimentar";
+      reason = `Baja rotación y contribución, PERO su demanda crece (${m.growthPct! >= 0 ? "+" : ""}${m.growthPct}% vs 3m) — darle una oportunidad dirigida antes de revisarlo.`;
     } else if (quad === "dog") {
       verdict = "revisar";
       reason = `Baja rotación y baja contribución (clase C). Candidato a revisión estratégica — puede quedarse por imagen, experiencia o cross-selling: lo decides tú.`;
@@ -306,6 +403,8 @@ export function synthesizeVerdicts(
       abcClass: cls,
       menuEng: quad,
       menuEngReason: me.get(m.key)?.reason ?? null,
+      bcg: bcg.get(m.key)?.q ?? null,
+      bcgReason: bcg.get(m.key)?.reason ?? null,
       verdict,
       verdictReason: reason,
       drivers: mySignals,
@@ -388,18 +487,45 @@ export function computeHealth(products: ProductIntel[], historyMonths: string[])
     unavailableReason: null,
   });
 
-  // 5) Crecimiento (15) y 6) Vitalidad (10): requieren historia — Fase 2.
-  const needHistory = historyMonths.length >= 3 ? null : `se activa con 3 meses de historia (hay ${historyMonths.length})`;
-  components.push({
-    id: "crecimiento", label: "Crecimiento", weight: 15, score: null,
-    formula: "% de la utilidad en productos con demanda creciente (3m)",
-    unavailableReason: needHistory ?? "pendiente Fase 2",
-  });
-  components.push({
-    id: "vitalidad", label: "Vitalidad", weight: 10, score: null,
-    formula: "% de la utilidad de productos introducidos en ≤6 meses",
-    unavailableReason: needHistory ?? "pendiente Fase 2",
-  });
+  // 5) Crecimiento (15): % de la utilidad en productos con demanda que
+  //    crece o al menos se sostiene (no cae) — requiere 3 meses.
+  const hasHistory = historyMonths.length >= 3;
+  if (hasHistory && totalContribution > 0) {
+    const notFalling = products
+      .filter((p) => p.trend === "sube" || p.trend === "estable")
+      .reduce((s, p) => s + (p.contribution ?? 0), 0);
+    const growingShare = (notFalling / totalContribution) * 100;
+    components.push({
+      id: "crecimiento", label: "Crecimiento", weight: 15,
+      score: clamp(((growingShare - 40) / 45) * 100),
+      formula: `${r1(growingShare)}% de la utilidad viene de productos con demanda creciente o estable (vs promedio 3m); 85% = 100 pts, 40% = 0 pts`,
+      unavailableReason: null,
+    });
+  } else {
+    components.push({
+      id: "crecimiento", label: "Crecimiento", weight: 15, score: null,
+      formula: "% de la utilidad en productos con demanda creciente/estable (3m)",
+      unavailableReason: hasHistory ? "sin utilidad costeada" : `se activa con 3 meses de historia (hay ${historyMonths.length})`,
+    });
+  }
+
+  // 6) Vitalidad (10): % de la utilidad de productos NUEVOS (aparecieron
+  //    después del primer mes cargado — la edad anterior es desconocida).
+  if (hasHistory && totalContribution > 0) {
+    const newShare = (products.filter((p) => p.isNew).reduce((s, p) => s + (p.contribution ?? 0), 0) / totalContribution) * 100;
+    components.push({
+      id: "vitalidad", label: "Vitalidad", weight: 10,
+      score: clamp((newShare / 10) * 100),
+      formula: `${r1(newShare)}% de la utilidad viene de productos introducidos después del primer mes cargado; 10% = 100 pts`,
+      unavailableReason: null,
+    });
+  } else {
+    components.push({
+      id: "vitalidad", label: "Vitalidad", weight: 10, score: null,
+      formula: "% de la utilidad de productos nuevos",
+      unavailableReason: hasHistory ? "sin utilidad costeada" : `se activa con 3 meses de historia (hay ${historyMonths.length})`,
+    });
+  }
 
   // Re-ponderación sobre lo medible.
   const measurable = components.filter((c) => c.score !== null);
@@ -506,8 +632,9 @@ export function compilePortfolioIntelligence(f: PortfolioFacts): PortfolioIntell
   const metrics = computeBaseMetrics(f);
   const abc = classifyAbc(metrics);
   const { quadrants: me } = classifyMenuEng(metrics);
+  const bcg = classifyBcg(metrics, abc, f.historyMonths);
   const signals = emitSignals(metrics, abc, me);
-  const products = synthesizeVerdicts(metrics, abc, me, signals);
+  const products = synthesizeVerdicts(metrics, abc, me, bcg, signals);
   const health = computeHealth(products, f.historyMonths);
   const recommendations = buildRecommendations(products, signals);
 
@@ -540,6 +667,7 @@ export function compilePortfolioIntelligence(f: PortfolioFacts): PortfolioIntell
     productsTotal: products.length,
     topUncosted: uncostedProducts.slice(0, 8).map((p) => ({ name: p.name, revenue: p.revenue })),
     uncostedRevenue: r2(uncostedProducts.reduce((s, p) => s + p.revenue, 0)),
+    costsAreApproximated: f.products.some((p) => p.costApproximated && p.unitCogs !== null),
   };
 
   // Board: decisiones = top-3 recomendaciones; preguntas para socios.
@@ -587,6 +715,15 @@ export function compilePortfolioIntelligence(f: PortfolioFacts): PortfolioIntell
     },
     abcSummary: { aCount: abcCounts.A, bCount: abcCounts.B, cCount: abcCounts.C, aRevenueShare },
     menuEngSummary: { stars: meCounts.star, plowHorses: meCounts.plow_horse, puzzles: meCounts.puzzle, dogs: meCounts.dog, healthyContributionShare },
+    bcgSummary:
+      bcg.size > 0
+        ? {
+            estrellas: products.filter((p) => p.bcg === "estrella").length,
+            vacas: products.filter((p) => p.bcg === "vaca").length,
+            interrogantes: products.filter((p) => p.bcg === "interrogante").length,
+            perros: products.filter((p) => p.bcg === "perro").length,
+          }
+        : null,
     dataQuality,
     boardDecisions,
     boardQuestions: boardQuestions.slice(0, 3),
@@ -594,8 +731,8 @@ export function compilePortfolioIntelligence(f: PortfolioFacts): PortfolioIntell
       f.historyMonths.length >= 3
         ? []
         : [
-            { id: "bcg-interna", reason: `requiere 3 meses de historia (hay ${f.historyMonths.length}) — Fase 2` },
-            { id: "crecimiento", reason: `requiere 3 meses de historia (hay ${f.historyMonths.length}) — Fase 2` },
+            { id: "bcg-interna", reason: `requiere 3 meses de historia (hay ${f.historyMonths.length}) — carga meses anteriores para activarla` },
+            { id: "crecimiento", reason: `requiere 3 meses de historia (hay ${f.historyMonths.length}) — carga meses anteriores para activarlo` },
           ],
   };
 }

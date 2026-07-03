@@ -48,6 +48,24 @@ export function buildPortfolioNarrative(intel: PortfolioIntelligence): Portfolio
     });
   }
 
+  // — Tendencias (solo con historia) —
+  const risers = intel.signals.filter((s) => s.id.startsWith("sig-crece-")).slice(0, 2);
+  const fallers = intel.signals.filter((s) => s.id.startsWith("sig-cae-")).slice(0, 2);
+  if (risers.length > 0 || fallers.length > 0) {
+    const parts: string[] = [];
+    if (risers.length > 0) {
+      parts.push(`El mercado está empujando ${risers.map((s) => s.metric.split(":")[0]).join(" y ")} — recomendamos asegurar stock y visibilidad.`);
+    }
+    if (fallers.length > 0) {
+      parts.push(`${fallers.map((s) => s.metric.split(":")[0]).join(" y ")} ${fallers.length === 1 ? "viene cayendo" : "vienen cayendo"} vs su promedio de 3 meses — investigar la causa (precio, calidad, visibilidad) antes de que se vuelva costumbre.`);
+    }
+    paragraphs.push({
+      text: parts.join(" "),
+      tone: fallers.length > 0 ? "atencion" : "positivo",
+      derivedFrom: [...risers, ...fallers].map((s) => s.id),
+    });
+  }
+
   // — La oportunidad #1 —
   const rec1 = intel.recommendations[0];
   if (rec1) {
@@ -60,13 +78,17 @@ export function buildPortfolioNarrative(intel: PortfolioIntelligence): Portfolio
 
   // — Honestidad de datos —
   const dq = intel.dataQuality;
+  const approxNote = dq.costsAreApproximated
+    ? " Los costos de este mes son aproximados con el costo actual de las recetas (no existe historial de costos anterior)."
+    : "";
   const dataCaveat: PicParagraph | null =
-    dq.costCoveragePct < 90
+    dq.costCoveragePct < 90 || dq.costsAreApproximated
       ? {
           text:
             `Transparencia: conocemos el costo del ${dq.costCoveragePct}% de la venta (${dq.productsWithCost}/${dq.productsTotal} productos). ` +
-            `${fmt(dq.uncostedRevenue)} se analizan solo por venta — sus veredictos quedan en "observar" hasta costearlos. ` +
-            `Ningún número de margen de este reporte está inventado.`,
+            `${fmt(dq.uncostedRevenue)} se analizan solo por venta — sus veredictos quedan en "observar" hasta costearlos.` +
+            approxNote +
+            ` Ningún número de margen de este reporte está inventado.`,
           tone: "atencion",
           derivedFrom: intel.signals.filter((s) => s.methodology === "calidad-datos").map((s) => s.id),
         }

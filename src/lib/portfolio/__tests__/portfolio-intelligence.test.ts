@@ -20,6 +20,8 @@ const mk = (over: Partial<ProductFacts>): ProductFacts => ({
   unitCogs: 4,
   listPrice: 10,
   targetMarginPct: 0.6,
+  costApproximated: false,
+  history: [],
   ...over,
 });
 
@@ -168,6 +170,86 @@ describe("cerebro PIC — cierre para decisión", () => {
 
   it("con cobertura <80% existe la pregunta de datos al directorio", () => {
     expect(story.intelligence.boardQuestions.some((q) => q.id === "q-datos")).toBe(true);
+  });
+});
+
+describe("cerebro PIC — Fase 2: historia, tendencias y BCG interna", () => {
+  /** 4 meses × 4 productos: Cohete A+crece, Ancla A+cae, Base B estable,
+   *  Nuevo apareció en abril (C, creciendo). Cubre los 4 cuadrantes BCG. */
+  function factsWithHistory(): PortfolioFacts {
+    const h = (m: string, units: number, revenue: number) => ({ month: m, units, revenue });
+    return {
+      scope: { businessId: 3, businessName: "Yayi's Centro" },
+      month: "2026-06",
+      monthLabel: "Junio 2026",
+      generatedAt: "2026-07-02T12:00:00Z",
+      historyMonths: ["2026-03", "2026-04", "2026-05", "2026-06"],
+      products: [
+        mk({ name: "Cohete", units: 300, revenue: 3000, avgPrice: 10, unitCogs: 4,
+          history: [h("2026-03", 140, 1400), h("2026-04", 150, 1500), h("2026-05", 160, 1600), h("2026-06", 300, 3000)] }),
+        mk({ name: "Ancla", units: 290, revenue: 2900, avgPrice: 10, unitCogs: 4,
+          history: [h("2026-03", 410, 4100), h("2026-04", 400, 4000), h("2026-05", 390, 3900), h("2026-06", 290, 2900)] }),
+        mk({ name: "Base", units: 100, revenue: 1000, avgPrice: 10, unitCogs: 4,
+          history: [h("2026-03", 100, 1000), h("2026-04", 100, 1000), h("2026-05", 100, 1000), h("2026-06", 100, 1000)] }),
+        mk({ name: "Nuevo", units: 60, revenue: 600, avgPrice: 10, unitCogs: 4,
+          history: [h("2026-04", 20, 200), h("2026-05", 40, 400), h("2026-06", 60, 600)] }),
+      ],
+    };
+  }
+  const story = compilePortfolioStory(factsWithHistory());
+  const byName = (n: string) => story.intelligence.products.find((p) => p.name === n)!;
+
+  it("crecimiento = mes actual vs promedio 3m, con tendencia", () => {
+    const cohete = byName("Cohete");
+    expect(cohete.growthPct).toBeCloseTo(100, 0); // 3000 vs 1500 prom
+    expect(cohete.trend).toBe("sube");
+    expect(byName("Ancla").trend).toBe("baja");
+    expect(byName("Base").trend).toBe("estable");
+  });
+
+  it("BCG interna se activa con ≥3 meses: ejes crecimiento × clase A", () => {
+    expect(story.intelligence.bcgSummary).not.toBeNull();
+    expect(byName("Cohete").bcg).toBe("estrella");    // A + creciendo
+    expect(byName("Ancla").bcg).toBe("vaca");         // A + cayendo (aún pesa)
+    expect(byName("Nuevo").bcg).toBe("interrogante"); // peso bajo + creciendo
+    expect(byName("Base").bcg).toBe("perro");         // peso bajo, sin momentum
+    expect(byName("Cohete").bcgReason).toMatch(/demanda \+100%/);
+  });
+
+  it("detecta productos nuevos (aparecieron después del primer mes cargado)", () => {
+    expect(byName("Nuevo").isNew).toBe(true);
+    expect(byName("Cohete").isNew).toBe(false);
+  });
+
+  it("los componentes Crecimiento y Vitalidad del score COBRAN VIDA", () => {
+    const growth = story.intelligence.health.components.find((c) => c.id === "crecimiento")!;
+    const vital = story.intelligence.health.components.find((c) => c.id === "vitalidad")!;
+    expect(growth.score).not.toBeNull();
+    expect(vital.score).not.toBeNull();
+    expect(growth.formula).toMatch(/\d/);
+  });
+
+  it("emite señales de tendencia con impacto en soles y confianza media", () => {
+    const up = story.intelligence.signals.find((s) => s.id === "sig-crece-p-Cohete")!;
+    const down = story.intelligence.signals.find((s) => s.id === "sig-cae-p-Ancla")!;
+    expect(up.impact).toBeCloseTo(1500, -1);  // 3000 − 1500 prom
+    expect(down.impact).toBeCloseTo(1100, -1); // 4000 prom − 2900
+    expect(up.confidence).toBe("media");
+  });
+
+  it("sin historia, BCG y tendencias quedan declaradas inactivas (honestidad)", () => {
+    const single = compilePortfolioStory(facts());
+    expect(single.intelligence.bcgSummary).toBeNull();
+    expect(single.intelligence.inactiveMethodologies.some((m) => m.id === "bcg-interna")).toBe(true);
+    expect(single.intelligence.products.every((p) => p.trend === null)).toBe(true);
+  });
+
+  it("costos aproximados (historia pre-snapshot) se declaran en la narrativa", () => {
+    const f = factsWithHistory();
+    f.products = f.products.map((p) => ({ ...p, costApproximated: true }));
+    const s = compilePortfolioStory(f);
+    expect(s.intelligence.dataQuality.costsAreApproximated).toBe(true);
+    expect(s.narrative.dataCaveat?.text).toMatch(/aproximados/);
   });
 });
 

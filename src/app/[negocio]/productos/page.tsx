@@ -276,7 +276,19 @@ export default function ProductosPage() {
           </div>
 
           {/* 5 · Evidencia metodológica */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          <div className={`grid grid-cols-1 md:grid-cols-2 ${intel.bcgSummary ? "lg:grid-cols-4" : "lg:grid-cols-3"} gap-4`}>
+            {intel.bcgSummary && (
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <div className="text-xs font-semibold text-gray-900 mb-2">BCG interna</div>
+                <div className="text-xs text-gray-600 space-y-1">
+                  <div>⭐ Estrellas: <strong>{intel.bcgSummary.estrellas}</strong> · 🐄 Vacas: <strong>{intel.bcgSummary.vacas}</strong></div>
+                  <div>❓ Interrogantes: <strong>{intel.bcgSummary.interrogantes}</strong> · 🐶 Perros: <strong>{intel.bcgSummary.perros}</strong></div>
+                  <div className="text-[11px] text-gray-400 mt-1">
+                    Ejes: crecimiento de demanda (3m) × peso en la venta. Interna, no de mercado.
+                  </div>
+                </div>
+              </div>
+            )}
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="text-xs font-semibold text-gray-900 mb-2 flex items-center gap-1.5">
                 <Star className="w-3.5 h-3.5 text-primary" /> Menu Engineering
@@ -524,6 +536,15 @@ function ProductRow({ p }: { p: ProductIntel }) {
           <span className="text-[10px] text-gray-400 shrink-0 hidden md:inline">{p.category ?? ""}</span>
         </div>
         <div className="flex items-center gap-3 shrink-0 text-[11px] text-gray-500">
+          {p.trend && (
+            <span
+              className={`font-medium ${p.trend === "sube" ? "text-emerald-600" : p.trend === "baja" ? "text-red-600" : "text-gray-400"}`}
+              title={`Venta vs promedio de 3 meses: ${p.growthPct! >= 0 ? "+" : ""}${p.growthPct}%`}
+            >
+              {p.trend === "sube" ? "↑" : p.trend === "baja" ? "↓" : "→"}{" "}
+              {p.growthPct! >= 0 ? "+" : ""}{p.growthPct}%
+            </span>
+          )}
           {p.menuEng && <span>{QUADRANT_LABEL[p.menuEng]}</span>}
           <span className="font-mono bg-gray-100 rounded px-1.5 py-0.5">{p.abcClass}</span>
           <span>{p.units} und</span>
@@ -537,6 +558,7 @@ function ProductRow({ p }: { p: ProductIntel }) {
         <div className="px-11 pb-3 text-xs text-gray-600 space-y-1">
           <div>{p.verdictReason}</div>
           {p.menuEngReason && <div className="text-[11px] text-gray-400">Evidencia ME: {p.menuEngReason}</div>}
+          {p.bcg && <div className="text-[11px] text-gray-400">BCG interna: {p.bcg} — {p.bcgReason}</div>}
           {p.hasCost && (
             <div className="text-[11px] text-gray-400">
               Precio prom. {formatCurrency(p.avgPrice)} · costo {formatCurrency(p.unitCogs!)} · contribución {formatCurrency(p.unitContribution!)}/und · utilidad del mes {formatCurrency(p.contribution!)}

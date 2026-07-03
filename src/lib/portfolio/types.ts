@@ -37,6 +37,11 @@ export type ProductFacts = {
   unitCogs: number | null;
   listPrice: number | null;
   targetMarginPct: number | null;
+  /** true = el costo viene de un snapshot POSTERIOR al mes (aproximación
+   *  honesta: no existe historial de costos antes de jul-2026). */
+  costApproximated: boolean;
+  /** Historia mensual del producto (meses cargados ≤ mes del reporte, asc). */
+  history: { month: string; units: number; revenue: number }[];
 };
 
 export type PortfolioFacts = {
@@ -74,6 +79,10 @@ export type Signal = {
 
 export type MenuEngQuadrant = "star" | "plow_horse" | "puzzle" | "dog";
 export type AbcClass = "A" | "B" | "C";
+export type Trend = "sube" | "baja" | "estable";
+/** BCG INTERNA (no de mercado): crecimiento de la demanda del producto ×
+ *  peso en el portafolio (clase A del Pareto). Etiquetada así siempre. */
+export type BcgQuadrant = "estrella" | "vaca" | "interrogante" | "perro";
 
 export type Verdict =
   | "impulsar"          // margen alto, rotación baja → visibilidad/marketing/combos
@@ -103,6 +112,13 @@ export type ProductIntel = {
   abcClass: AbcClass;
   menuEng: MenuEngQuadrant | null;   // null = sin costo (no clasificable)
   menuEngReason: string | null;
+  /** Crecimiento del mes vs promedio de los 3 previos (%). null = sin historia. */
+  growthPct: number | null;
+  trend: Trend | null;
+  bcg: BcgQuadrant | null;           // null = historia insuficiente
+  bcgReason: string | null;
+  /** true = apareció por primera vez después del primer mes cargado. */
+  isNew: boolean;
   // Síntesis
   verdict: Verdict;
   verdictReason: string;             // por qué, con números
@@ -150,6 +166,9 @@ export type DataQuality = {
   /** Top ventas sin costo (renombre o receta faltante) — tarea concreta. */
   topUncosted: { name: string; revenue: number }[];
   uncostedRevenue: number;
+  /** true = los costos de este mes son un snapshot POSTERIOR (historia
+   *  pre-jul-2026: no hay historial de costos y se dice). */
+  costsAreApproximated: boolean;
 };
 
 export type PortfolioIntelligence = {
@@ -165,6 +184,8 @@ export type PortfolioIntelligence = {
   };
   abcSummary: { aCount: number; bCount: number; cCount: number; aRevenueShare: number };
   menuEngSummary: { stars: number; plowHorses: number; puzzles: number; dogs: number; healthyContributionShare: number | null };
+  /** BCG interna — null hasta tener ≥3 meses de historia. */
+  bcgSummary: { estrellas: number; vacas: number; interrogantes: number; perros: number } | null;
   dataQuality: DataQuality;
   boardDecisions: BoardDecision[];   // ≤3
   boardQuestions: BoardQuestionPIC[]; // ≤3

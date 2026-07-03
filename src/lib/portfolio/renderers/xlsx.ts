@@ -66,6 +66,8 @@ export async function renderPortfolioXlsx(story: PortfolioStory): Promise<{ blob
     { header: "Margen %", key: "m", width: 10 },
     { header: "ME", key: "me", width: 12 },
     { header: "ABC", key: "abc", width: 7 },
+    { header: "Tendencia 3m", key: "t", width: 12 },
+    { header: "BCG interna", key: "bcg", width: 13 },
     { header: "Por qué (auditable)", key: "why", width: 80 },
   ]);
   for (const p of i.products) {
@@ -74,7 +76,10 @@ export async function renderPortfolioXlsx(story: PortfolioStory): Promise<{ blob
       r: p.revenue, sh: p.revenueShare / 100, pp: p.avgPrice,
       c: p.unitCogs, cu: p.unitContribution, ct: p.contribution,
       m: p.marginPct !== null ? p.marginPct / 100 : null,
-      me: p.menuEng ?? "—", abc: p.abcClass, why: p.verdictReason,
+      me: p.menuEng ?? "—", abc: p.abcClass,
+      t: p.growthPct !== null ? `${p.growthPct >= 0 ? "+" : ""}${p.growthPct}%` : "—",
+      bcg: p.bcg ?? "—",
+      why: p.verdictReason,
     });
     ["r", "pp", "c", "cu", "ct"].forEach((k) => (row.getCell(k).numFmt = SOLES));
     row.getCell("sh").numFmt = "0.0%";
