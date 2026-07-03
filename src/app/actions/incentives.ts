@@ -165,6 +165,82 @@ export async function getIncentiveDashboard(
   }
 }
 
+export type UpsellCandidate = {
+  name: string;
+  category: string | null;
+  /** Lo que deja cada unidad vendida (S/). */
+  unitContribution: number;
+  /** Unidades vendidas el último mes cargado (contexto de rotación). */
+  unitsLastMonth: number;
+  /** true = margen alto con poca rotación: el candidato ideal a empujar. */
+  hiddenGem: boolean;
+};
+
+/**
+ * Foco de upselling sugerido: los productos de ESTA sede que más dejan
+ * por unidad (datos del PIC, último mes cargado). Expone SOLO lo que el
+ * administrador necesita para dirigir el foco del día (sección 6 de la
+ * política: "usando los márgenes del Pricing") — nada más.
+ */
+export async function getUpsellFocusCandidates(): Promise<
+  | { ok: true; month: string; candidates: UpsellCandidate[] }
+  | { ok: false; error: string }
+> {
+  const bId = await activeBusinessId();
+  const access = await requireIncentivesAccess(bId);
+  if (!access.ok) return access;
+  try {
+    const monthRow = (await sql`
+      SELECT MAX(month) AS m FROM product_month_sales WHERE business_id = ${bId} AND source = 'byte'
+    `) as { m: string | null }[];
+    const month = monthRow[0]?.m;
+    if (!month) return { ok: false, error: "Aún no hay ventas por producto cargadas (módulo Productos)." };
+
+    const rows = (await sql`
+      SELECT COALESCE(p.name, s.product_name_raw) AS name,
+             p.category,
+             s.units::float AS units,
+             s.revenue::float AS revenue,
+             c.unit_cogs::float AS unit_cogs
+      FROM product_month_sales s
+      LEFT JOIN products p ON p.id = s.product_id
+      LEFT JOIN LATERAL (
+        SELECT unit_cogs FROM product_cost_snapshots cs
+        WHERE cs.product_id = s.product_id ORDER BY cs.month DESC LIMIT 1
+      ) c ON true
+      WHERE s.business_id = ${bId} AND s.month = ${month} AND s.source = 'byte'
+        AND s.units > 0 AND c.unit_cogs IS NOT NULL AND c.unit_cogs > 0
+    `) as { name: string; category: string | null; units: number; revenue: number; unit_cogs: number }[];
+
+    const withContribution = rows
+      .map((r) => ({
+        name: r.name,
+        category: r.category,
+        unitContribution: Math.round((r.revenue / r.units - r.unit_cogs) * 100) / 100,
+        unitsLastMonth: Math.round(r.units),
+      }))
+      .filter((r) => r.unitContribution > 0)
+      .sort((a, b) => b.unitContribution - a.unitContribution);
+
+    const medianUnits =
+      withContribution.length > 0
+        ? [...withContribution].sort((a, b) => a.unitsLastMonth - b.unitsLastMonth)[Math.floor(withContribution.length / 2)].unitsLastMonth
+        : 0;
+
+    return {
+      ok: true,
+      month,
+      candidates: withContribution.slice(0, 10).map((r) => ({
+        ...r,
+        hiddenGem: r.unitsLastMonth < medianUnits,
+      })),
+    };
+  } catch (err) {
+    console.error("[getUpsellFocusCandidates] failed:", err);
+    return { ok: false, error: err instanceof Error ? err.message : "Error al cargar candidatos" };
+  }
+}
+
 /** Registro diario del administrador (personas, venta e items del día). */
 export async function saveDailyEntry(input: {
   date: string;

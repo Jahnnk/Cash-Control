@@ -94,12 +94,12 @@ export function ImportControlModal({
 
         <div className="p-6 space-y-4">
           <p className="text-xs text-gray-500">
-            Exporta de Byte los 4 reportes con el rango <strong>desde el día 1 del mes hasta hoy</strong> y
-            suéltalos aquí (varios a la vez):{" "}
-            <strong>Pedidos Anulados · Cortesías · Cambios de Precio · Ventas por Trabajador</strong>.
-            Hazlo con la frecuencia que necesites — semanal o incluso diaria: cada subida{" "}
-            <strong>reemplaza</strong> el rango anterior y actualiza banderas y ranking al instante.
-            El sistema reconoce cada archivo solo.
+            <strong>Rutina semanal (~5 min)</strong> — para banderas de control y ranking; el avance
+            diario de la meta sale del registro del día, no de estos archivos. Exporta de Byte los 4
+            reportes con el rango <strong>desde el día 1 del mes hasta hoy</strong> y suéltalos aquí
+            todos juntos: <strong>Pedidos Anulados · Cortesías · Cambios de Precio · Ventas por
+            Trabajador</strong>. Cada subida <strong>reemplaza</strong> la anterior (no duplica) y el
+            sistema reconoce cada archivo solo. Puedes subirlos más seguido si algo te huele raro.
           </p>
 
           <div

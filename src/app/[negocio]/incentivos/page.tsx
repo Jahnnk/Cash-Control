@@ -8,7 +8,9 @@ import { formatCurrency } from "@/lib/utils";
 import {
   getIncentiveDashboard,
   saveDailyEntry,
+  getUpsellFocusCandidates,
   type IncentiveDashboard,
+  type UpsellCandidate,
 } from "@/app/actions/incentives";
 import { useToast } from "@/components/toast-provider";
 import { ImportControlModal } from "./import-control-modal";
@@ -33,6 +35,7 @@ export default function IncentivosPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  const [focus, setFocus] = useState<{ month: string; candidates: UpsellCandidate[] } | null>(null);
 
   // Registro diario
   const [fecha, setFecha] = useState(todayLima());
@@ -54,6 +57,13 @@ export default function IncentivosPage() {
     load(month);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [month, load]);
+
+  useEffect(() => {
+    (async () => {
+      const r = await getUpsellFocusCandidates();
+      if (r.ok) setFocus({ month: r.month, candidates: r.candidates });
+    })();
+  }, []);
 
   async function handleSaveDay() {
     setSaving(true);
@@ -190,6 +200,30 @@ export default function IncentivosPage() {
               El pozo es el techo; se paga la tabla fija por rol. Equipo: {data.staff.filter((s) => s.jornada === "tiempo_completo").length} tiempo completo · {data.staff.filter((s) => s.jornada === "medio_turno").length} medio turno · 1 admin.
             </div>
           </div>
+
+          {/* 2b · Foco de upselling sugerido (datos del PIC de esta sede) */}
+          {focus && focus.candidates.length > 0 && (
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="text-sm font-semibold text-gray-900 mb-1">
+                💡 Candidatos para el foco del día
+              </div>
+              <div className="text-[11px] text-gray-400 mb-2">
+                Lo que más deja por unidad vendida (carta de esta sede, datos de {focus.month}).
+                💎 = alta contribución con poca rotación: los ideales para empujar. Tú decides según stock y ocasión.
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {focus.candidates.map((c) => (
+                  <span
+                    key={c.name}
+                    className={`text-[11px] rounded-full px-2.5 py-1 border ${c.hiddenGem ? "bg-primary/5 border-primary/30 text-primary font-medium" : "bg-gray-50 border-gray-200 text-gray-700"}`}
+                    title={`${c.unitsLastMonth} und el mes pasado${c.category ? ` · ${c.category}` : ""}`}
+                  >
+                    {c.hiddenGem ? "💎 " : ""}{c.name} · deja {formatCurrency(c.unitContribution)}/und
+                  </span>
+                ))}
+              </div>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* 3 · Registro diario */}
