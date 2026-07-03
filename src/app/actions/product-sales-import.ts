@@ -138,6 +138,44 @@ export async function importProductSales(input: {
   }
 }
 
+/**
+ * Elimina las ventas por producto de UN mes (sede activa). Pensado para
+ * retirar meses incompletos (ej. marzo cargado desde un reporte parcial).
+ * Reversible: re-subir el archivo del mes lo recupera. Los lotes en
+ * import_batches quedan marcados 'rolled_back' (auditoría, no se borran).
+ * NO toca saldos ni movimientos financieros — solo la tabla canónica PIC.
+ */
+export async function deleteProductSalesMonth(
+  month: string,
+): Promise<{ ok: true; deleted: number } | { ok: false; error: string }> {
+  const bId = await activeBusinessId();
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
+    return { ok: false, error: "Mes inválido." };
+  }
+  try {
+    const batches = (await sql`
+      SELECT DISTINCT import_batch_id::text AS id FROM product_month_sales
+      WHERE business_id = ${bId} AND month = ${month} AND source = 'byte' AND import_batch_id IS NOT NULL
+    `) as { id: string }[];
+    const deleted = (await sql`
+      DELETE FROM product_month_sales
+      WHERE business_id = ${bId} AND month = ${month} AND source = 'byte'
+      RETURNING id
+    `) as { id: string }[];
+    if (batches.length > 0) {
+      await sql`
+        UPDATE import_batches SET status = 'rolled_back', rollback_available = false
+        WHERE id = ANY(${batches.map((b) => b.id)}::uuid[]) AND business_id = ${bId}
+      `;
+    }
+    revalidatePath("/[negocio]/productos", "page");
+    return { ok: true, deleted: deleted.length };
+  } catch (err) {
+    console.error("[deleteProductSalesMonth] failed:", err);
+    return { ok: false, error: err instanceof Error ? err.message : "Error al eliminar el mes" };
+  }
+}
+
 export type ProductDataStatus = {
   catalog: { total: number; active: number; latestSnapshotMonth: string | null };
   months: {
