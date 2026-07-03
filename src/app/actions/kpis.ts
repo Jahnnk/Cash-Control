@@ -212,6 +212,91 @@ export async function getBoardDeckData(weekStart: string): Promise<
   }
 }
 
+export type KpiTargetsEdit = {
+  targets: KpiTargets;
+  effectiveMonth: string;
+  /** Referencia del sistema: promedios REALES de las últimas 4 semanas
+   *  (el consejo con evidencia — la decisión de la meta es del CEO). */
+  reference: { ventasProm: number | null; ticketProm: number | null; weeks: number };
+};
+
+/** Metas vigentes + referencia real, para la pantalla de configuración (solo sesión completa). */
+export async function getKpiTargetsForEdit(): Promise<
+  | { ok: true; data: KpiTargetsEdit }
+  | { ok: false; error: string }
+> {
+  const bId = await activeBusinessId();
+  const c = await cookies();
+  const now = Math.floor(Date.now() / 1000);
+  if (!(await verifyAuthToken(c.get("yayis_auth")?.value, process.env.APP_PASSWORD, now))) {
+    return { ok: false, error: "Las metas las ajusta solo la dirección." };
+  }
+  if (bId !== 2 && bId !== 3) return { ok: false, error: "KPIs aplican a las cafeterías." };
+  try {
+    const today = new Date().toISOString().slice(0, 10);
+    const targets = await loadTargets(bId, today.slice(0, 7));
+    const from = new Date();
+    from.setUTCDate(from.getUTCDate() - 28);
+    const { dailies } = await loadDailies(bId, from.toISOString().slice(0, 10), today);
+    const withVentas = dailies.filter((d) => (d.ventas ?? 0) > 0);
+    const ventasProm = withVentas.length > 0
+      ? Math.round((withVentas.reduce((s, d) => s + (d.ventas ?? 0), 0) / withVentas.length) * 100) / 100
+      : null;
+    const conPersonas = withVentas.filter((d) => (d.personas ?? 0) > 0);
+    const personas = conPersonas.reduce((s, d) => s + (d.personas ?? 0), 0);
+    const ticketProm = personas > 0
+      ? Math.round((conPersonas.reduce((s, d) => s + (d.ventas ?? 0), 0) / personas) * 100) / 100
+      : null;
+    return {
+      ok: true,
+      data: {
+        targets,
+        effectiveMonth: today.slice(0, 7),
+        reference: { ventasProm, ticketProm, weeks: 4 },
+      },
+    };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : "Error al cargar metas" };
+  }
+}
+
+/** Guarda las metas de la sede (solo sesión completa; vigencia por mes). */
+export async function saveKpiTargets(input: {
+  effectiveMonth: string;
+  ventaDiaria: number;
+  ticketRef: number;
+  npsMin: number;
+  mermasMaxPct: number;    // en % (ej. 4)
+  tiempoMaxMin: number | null;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const bId = await activeBusinessId();
+  const c = await cookies();
+  const now = Math.floor(Date.now() / 1000);
+  if (!(await verifyAuthToken(c.get("yayis_auth")?.value, process.env.APP_PASSWORD, now))) {
+    return { ok: false, error: "Las metas las ajusta solo la dirección." };
+  }
+  if (bId !== 2 && bId !== 3) return { ok: false, error: "KPIs aplican a las cafeterías." };
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.effectiveMonth)) return { ok: false, error: "Mes de vigencia inválido." };
+  if (input.ventaDiaria <= 0 || input.ticketRef <= 0) return { ok: false, error: "Metas de venta y ticket deben ser mayores a 0." };
+  if (input.npsMin < 0 || input.npsMin > 10) return { ok: false, error: "NPS meta debe estar entre 0 y 10." };
+  if (input.mermasMaxPct <= 0 || input.mermasMaxPct > 50) return { ok: false, error: "Mermas máx. debe estar entre 0 y 50%." };
+  try {
+    await sql`
+      INSERT INTO kpi_targets (business_id, effective_month, venta_diaria, ticket_ref, nps_min, mermas_max_pct, tiempo_max_min)
+      VALUES (${bId}, ${input.effectiveMonth}, ${input.ventaDiaria}, ${input.ticketRef}, ${input.npsMin}, ${input.mermasMaxPct / 100}, ${input.tiempoMaxMin})
+      ON CONFLICT (business_id, effective_month) DO UPDATE
+        SET venta_diaria = EXCLUDED.venta_diaria, ticket_ref = EXCLUDED.ticket_ref,
+            nps_min = EXCLUDED.nps_min, mermas_max_pct = EXCLUDED.mermas_max_pct,
+            tiempo_max_min = EXCLUDED.tiempo_max_min
+    `;
+    revalidatePath("/[negocio]/panel", "page");
+    return { ok: true };
+  } catch (err) {
+    console.error("[saveKpiTargets] failed:", err);
+    return { ok: false, error: err instanceof Error ? err.message : "Error al guardar metas" };
+  }
+}
+
 /** Guarda los KPIs del día (extiende el registro diario de Incentivos). */
 export async function saveDailyKpis(input: {
   date: string;
@@ -234,7 +319,7 @@ export async function saveDailyKpis(input: {
         SET nps = EXCLUDED.nps, mermas_soles = EXCLUDED.mermas_soles,
             tiempo_atencion_min = EXCLUDED.tiempo_atencion_min, updated_at = NOW()
     `;
-    revalidatePath("/[negocio]/incentivos", "page");
+    revalidatePath("/[negocio]/panel", "page");
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";

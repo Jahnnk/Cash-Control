@@ -66,7 +66,7 @@ export async function middleware(request: NextRequest) {
     const valid = await verifyAuthToken(authToken, process.env.APP_PASSWORD, now);
     if (!valid) {
       // 0c. Sesión de ADMINISTRADOR DE SEDE (token v2 con alcance).
-      // Solo puede ver /[su-sede]/incentivos — todo lo demás (saldos,
+      // Solo puede ver /[su-sede]/panel — todo lo demás (saldos,
       // reportes, movimientos, otras sedes) queda bloqueado AQUÍ, a
       // nivel de servidor, incluidos los POST de server actions.
       const adminScope = await verifyScopedToken(
@@ -83,7 +83,7 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL("/login", request.url));
       }
       const sede = adminScope === "admin-fonavi" ? "fonavi" : "centro";
-      const allowedPrefix = `/${sede}/incentivos`;
+      const allowedPrefix = `/${sede}/panel`;
       if (pathname !== allowedPrefix && !pathname.startsWith(allowedPrefix + "/")) {
         return NextResponse.redirect(new URL(allowedPrefix, request.url));
       }
@@ -107,6 +107,11 @@ export async function middleware(request: NextRequest) {
   // 1. Rutas públicas (dentro de la sesión)
   if (PUBLIC_PATHS.includes(pathname)) {
     return NextResponse.next();
+  }
+
+  // 1b. Ruta renombrada: /[sede]/incentivos → /[sede]/panel (Panel de Sede)
+  if (/^\/(fonavi|centro)\/incentivos(\/|$)/.test(pathname)) {
+    return NextResponse.redirect(new URL(pathname.replace("/incentivos", "/panel"), request.url));
   }
 
   const segment = pathname.split("/")[1];
