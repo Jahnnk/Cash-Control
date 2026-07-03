@@ -102,9 +102,12 @@ export function ImportSalesModal({
           {!result && (
             <>
               <p className="text-xs text-gray-500">
-                Sube el reporte de Byte <strong>&ldquo;Productos con mayor rotación&rdquo;</strong> de
-                un mes calendario completo. Re-subir un mes lo reemplaza (no duplica).
-                Este import no toca saldos ni movimientos — alimenta la Inteligencia Comercial.
+                Sube <strong>UN reporte de Byte por mes</strong> (mes calendario completo).
+                El ideal es <strong>&ldquo;Productos con mayor rotación&rdquo;</strong> (cuadra ~99% con la
+                venta); también acepta <strong>&ldquo;Rentabilidad por Plato&rdquo;</strong> (cubre 87-94% en
+                cafeterías) — el sistema detecta el formato solo. No subas ambos del mismo mes:
+                re-subir un mes lo <strong>reemplaza</strong> (no duplica). Los costos NO salen de Byte
+                sino del pricing-engine. Este import no toca saldos ni movimientos.
               </p>
 
               {/* Dropzone */}
@@ -152,6 +155,10 @@ export function ImportSalesModal({
               {parsed && (
                 <div className="space-y-3">
                   <div className="flex flex-wrap gap-4 text-sm bg-gray-50 rounded-lg px-4 py-3">
+                    <div>
+                      <span className="text-gray-500 text-xs">Formato detectado</span>
+                      <div className="font-semibold">{parsed.format === "rotacion" ? "Rotación ✓" : "Rentabilidad"}</div>
+                    </div>
                     <div><span className="text-gray-500 text-xs">Mes</span><div className="font-semibold">{parsed.month ?? "—"}</div></div>
                     <div><span className="text-gray-500 text-xs">Productos</span><div className="font-semibold">{parsed.items.length}</div></div>
                     <div><span className="text-gray-500 text-xs">Total del archivo</span><div className="font-semibold">{formatCurrency(parsedTotal)}</div></div>
