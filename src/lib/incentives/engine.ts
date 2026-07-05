@@ -150,6 +150,131 @@ export function computeProgress(
 }
 
 // ─────────────────────────────────────────────────────────────────
+// LIQUIDACIÓN DEL MES — el acta que congela el resultado y el pago.
+// Candados de la política: piso de tráfico (sin él, la meta NO cuenta),
+// observaciones del verificador resueltas, mes terminado.
+// ─────────────────────────────────────────────────────────────────
+
+export type LiquidationLine = { name: string; jornada: StaffMember["jornada"]; bono: number; premioMv: number };
+
+export type LiquidationResult = {
+  month: string;
+  ticketFinal: number | null;
+  ticketBase: number;
+  personas: number;
+  revenue: number;
+  deltaFinal: number | null;
+  nivel: IncentiveLevel | null;      // null = sin nivel (o piso incumplido)
+  trafficOk: boolean;
+  personasPorDia: number | null;
+  /** Pozo REAL del mes: delta × personas reales × margen × pool. */
+  pozo: number | null;
+  lines: LiquidationLine[];
+  totalBonos: number;
+  /** Impiden cerrar (se resuelven primero). */
+  blockers: string[];
+  /** No impiden cerrar, pero quedan en el acta. */
+  warnings: string[];
+};
+
+export function computeLiquidation(input: {
+  month: string;                      // YYYY-MM
+  todayISO: string;                   // para validar mes terminado
+  config: IncentiveConfigT;
+  staff: StaffMember[];
+  dailies: DailyEntry[];
+  /** Días con registro y SIN segunda firma (pasados). */
+  unverifiedDays: number;
+  /** Días observados por el verificador sin re-confirmar. */
+  observedDays: { date: string; nota: string | null }[];
+  /** Mejor vendedor elegido (opcional — Fase B lo automatiza). */
+  mejorVendedor: string | null;
+}): LiquidationResult {
+  const { config, staff, dailies } = input;
+  const [y, m] = input.month.split("-").map(Number);
+  const daysInMonth = new Date(y, m, 0).getDate();
+  const monthEnd = `${input.month}-${String(daysInMonth).padStart(2, "0")}`;
+
+  const withData = dailies.filter((d) => (d.personas ?? 0) > 0 && (d.revenue ?? 0) > 0);
+  const personas = withData.reduce((s, d) => s + (d.personas ?? 0), 0);
+  const revenue = r2(withData.reduce((s, d) => s + (d.revenue ?? 0), 0));
+  const ticketFinal = personas > 0 ? r2(revenue / personas) : null;
+  const deltaFinal = ticketFinal !== null ? r2(ticketFinal - config.ticketBase) : null;
+  const personasPorDia = withData.length > 0 ? r1(personas / withData.length) : null;
+  const trafficOk = personasPorDia !== null && personasPorDia >= config.trafficFloor;
+
+  const sorted = [...config.levels].sort((a, b) => a.delta - b.delta);
+  // El piso de tráfico es candado de la POLÍTICA: sin él, la meta no cuenta.
+  const nivel =
+    !trafficOk || deltaFinal === null
+      ? null
+      : [...sorted].reverse().find((l) => deltaFinal >= l.delta) ?? null;
+
+  const pozo =
+    deltaFinal !== null && deltaFinal > 0
+      ? r2(deltaFinal * personas * config.marginPct * config.poolPct)
+      : null;
+
+  const active = staff.filter((s) => s.active);
+  const lines: LiquidationLine[] = active.map((s) => {
+    const bono = nivel
+      ? s.jornada === "tiempo_completo" ? nivel.bono_tc
+        : s.jornada === "medio_turno" ? nivel.bono_mt
+        : nivel.bono_admin
+      : 0;
+    const premioMv =
+      nivel && input.mejorVendedor && s.name.trim().toUpperCase() === input.mejorVendedor.trim().toUpperCase()
+        ? nivel.premio_mv
+        : 0;
+    return { name: s.name, jornada: s.jornada, bono, premioMv };
+  });
+  const totalBonos = r2(lines.reduce((s, l) => s + l.bono + l.premioMv, 0));
+
+  const blockers: string[] = [];
+  const warnings: string[] = [];
+  if (input.todayISO <= monthEnd) {
+    blockers.push(`El mes aún no termina (cierra el ${monthEnd}). La liquidación se hace con el mes completo.`);
+  }
+  for (const o of input.observedDays) {
+    blockers.push(
+      `Día ${o.date.slice(8)}/${o.date.slice(5, 7)} OBSERVADO por el verificador${o.nota ? ` ("${o.nota}")` : ""} — corrige el registro y que el verificador re-confirme.`,
+    );
+  }
+  if (withData.length === 0) blockers.push("Sin registros diarios en el mes.");
+  if (input.unverifiedDays > 0) {
+    warnings.push(`${input.unverifiedDays} día(s) con registro sin la segunda firma del verificador.`);
+  }
+  if (!trafficOk && personasPorDia !== null) {
+    warnings.push(
+      `Piso de tráfico incumplido (${personasPorDia} < ${config.trafficFloor} personas/día): por política, la meta NO cuenta — se cierra sin bonos.`,
+    );
+  }
+  if (nivel && !input.mejorVendedor) {
+    warnings.push("Sin mejor vendedor asignado: el premio no se paga este mes (Fase B lo calculará automático).");
+  }
+  if (nivel && pozo !== null && totalBonos > pozo) {
+    warnings.push(`La suma de bonos (S/${totalBonos.toFixed(2)}) excede el pozo real (S/${pozo.toFixed(2)}) — revisar antes de pagar.`);
+  }
+
+  return {
+    month: input.month,
+    ticketFinal,
+    ticketBase: config.ticketBase,
+    personas,
+    revenue,
+    deltaFinal,
+    nivel,
+    trafficOk,
+    personasPorDia,
+    pozo,
+    lines,
+    totalBonos,
+    blockers,
+    warnings,
+  };
+}
+
+// ─────────────────────────────────────────────────────────────────
 // BANDERAS ANTI-TRAMPA (sección 10) — por tasa, no por conteo bruto.
 // ─────────────────────────────────────────────────────────────────
 

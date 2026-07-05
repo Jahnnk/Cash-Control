@@ -16,6 +16,7 @@ import { saveDailyKpis } from "@/app/actions/kpis";
 import { useToast } from "@/components/toast-provider";
 import { ImportControlModal } from "./import-control-modal";
 import { KpisWeekSection } from "./kpis-week";
+import { LiquidationModal } from "./liquidation-modal";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -30,6 +31,12 @@ function currentMonth() {
 function todayLima() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
+
+function monthLabel(m: string) {
+  const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1);
+  const s = d.toLocaleDateString("es-PE", { month: "long", year: "numeric" });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
 export default function IncentivosPage() {
   const { showToast } = useToast();
   const [month, setMonth] = useState(currentMonth());
@@ -37,6 +44,7 @@ export default function IncentivosPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  const [showLiquidation, setShowLiquidation] = useState(false);
   const [focus, setFocus] = useState<{ month: string; candidates: UpsellCandidate[] } | null>(null);
 
   // Registro diario (incentivos + KPIs — un solo ritual)
@@ -120,6 +128,15 @@ export default function IncentivosPage() {
             onChange={(e) => setMonth(e.target.value)}
             className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
           />
+          {data && !data.isAdminSession && (
+            <button
+              onClick={() => setShowLiquidation(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
+              title="Liquidación del mes: congela el resultado y genera el acta de pago (solo dirección)"
+            >
+              🔒 Liquidación
+            </button>
+          )}
           <button
             onClick={() => setShowImport(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
@@ -129,6 +146,19 @@ export default function IncentivosPage() {
           </button>
         </div>
       </div>
+
+      {/* Aviso: ayer sin registrar (el sistema vive de ese hábito) */}
+      {data && month === todayLima().slice(0, 7) && (() => {
+        const ayer = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Lima" }));
+        ayer.setDate(ayer.getDate() - 1);
+        const ayerISO = ayer.toLocaleDateString("en-CA");
+        const registrado = data.dailies.some((d) => d.date === ayerISO && (d.revenue ?? 0) > 0);
+        return !registrado && ayerISO.slice(0, 7) === month ? (
+          <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+            ⏰ <strong>Falta registrar ayer</strong> ({ayerISO.slice(8)}/{ayerISO.slice(5, 7)}). Los KPIs, el avance de la meta y los bonos dependen de ese registro diario.
+          </div>
+        ) : null;
+      })()}
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Cargando…</div>
@@ -399,6 +429,14 @@ export default function IncentivosPage() {
 
       {showImport && (
         <ImportControlModal onClose={() => setShowImport(false)} onImported={() => load(month)} />
+      )}
+      {showLiquidation && (
+        <LiquidationModal
+          sede={window.location.pathname.split("/")[1] === "fonavi" ? "Fonavi" : "Centro"}
+          month={month}
+          monthLabel={monthLabel(month)}
+          onClose={() => setShowLiquidation(false)}
+        />
       )}
     </div>
   );
