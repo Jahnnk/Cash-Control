@@ -57,18 +57,21 @@ export async function loginWithPassword(
     redirect("/");
   }
 
-  // 2) Contraseñas de ADMINISTRADOR DE SEDE: sesión con alcance que
-  //    solo abre /[su-sede]/panel (el middleware bloquea el resto).
-  const adminScopes: { scope: string; sede: string; secret: string | undefined }[] = [
-    { scope: "admin-fonavi", sede: "fonavi", secret: process.env.ADMIN_PASSWORD_FONAVI },
-    { scope: "admin-centro", sede: "centro", secret: process.env.ADMIN_PASSWORD_CENTRO },
+  // 2) Contraseñas CON ALCANCE: administrador de sede (Panel de Sede) y
+  //    verificador de mando medio (solo la pantalla de Verificación —
+  //    la segunda firma del conteo diario). El middleware bloquea el resto.
+  const scopedLogins: { scope: string; secret: string | undefined; landing: string }[] = [
+    { scope: "admin-fonavi", secret: process.env.ADMIN_PASSWORD_FONAVI, landing: "/fonavi/panel" },
+    { scope: "admin-centro", secret: process.env.ADMIN_PASSWORD_CENTRO, landing: "/centro/panel" },
+    { scope: "verif-fonavi", secret: process.env.VERIF_PASSWORD_FONAVI, landing: "/fonavi/verificacion" },
+    { scope: "verif-centro", secret: process.env.VERIF_PASSWORD_CENTRO, landing: "/centro/verificacion" },
   ];
-  for (const a of adminScopes) {
+  for (const a of scopedLogins) {
     if (a.secret && passwordMatches(input, a.secret)) {
       const token = await createScopedToken(a.secret, a.scope, exp);
       const c = await cookies();
       c.set(AUTH_COOKIE, token, cookieOpts);
-      redirect(`/${a.sede}/panel`);
+      redirect(a.landing);
     }
   }
 

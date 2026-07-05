@@ -55,6 +55,8 @@ export type IncentiveDashboard = {
   config: IncentiveConfigT & { levelNames: string[] };
   staff: { name: string; jornada: string; area: string }[];
   dailies: { date: string; personas: number | null; revenue: number | null; items: number | null }[];
+  /** Segunda firma del conteo por día (verificador de mando medio). */
+  verifications: Record<string, { status: "confirmado" | "observado"; nota: string | null }>;
   progress: IncentiveProgress;
   flags: ControlFlag[];
   workers: { nombre: string; mesas: number; total: number; ticketMesa: number | null; periodEnd: string | null }[];
@@ -135,6 +137,40 @@ export async function getIncentiveDashboard(
     );
     const flags = computeFlags(controlEvents, workerSales);
 
+    // Segunda firma: estado por día + banderas de días observados o sin
+    // verificar (resiliente si la migración aún no corre).
+    const verifications: IncentiveDashboard["verifications"] = {};
+    try {
+      const vrows = (await sql`
+        SELECT date::text, status, nota FROM daily_verifications
+        WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
+      `) as { date: string; status: "confirmado" | "observado"; nota: string | null }[];
+      for (const v of vrows) verifications[v.date] = { status: v.status, nota: v.nota };
+      const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+      const observed = vrows.filter((v) => v.status === "observado");
+      for (const o of observed) {
+        flags.unshift({
+          id: `verif-observado-${o.date}`,
+          severity: "alta",
+          usuario: null,
+          title: `Conteo del ${o.date.slice(8)}/${o.date.slice(5, 7)} OBSERVADO por el verificador`,
+          detail: o.nota ?? "Sin nota.",
+        });
+      }
+      const unverified = dailies.filter((d) => d.date < today && (d.revenue ?? 0) > 0 && !verifications[d.date]).length;
+      if (unverified >= 2) {
+        flags.push({
+          id: "verif-pendientes",
+          severity: "media",
+          usuario: null,
+          title: `${unverified} día(s) registrados sin la segunda firma del verificador`,
+          detail: "El ticket que paga bonos requiere doble firma diaria: registra el administrador, confirma el mando medio.",
+        });
+      }
+    } catch {
+      // tabla daily_verifications pendiente de migración
+    }
+
     return {
       ok: true,
       data: {
@@ -142,6 +178,7 @@ export async function getIncentiveDashboard(
         config: { ...config, levelNames: config.levels.map((l) => l.nombre) },
         staff,
         dailies,
+        verifications,
         progress,
         flags,
         workers: workers.map((w) => ({

@@ -69,29 +69,26 @@ export async function middleware(request: NextRequest) {
       // Solo puede ver /[su-sede]/panel — todo lo demás (saldos,
       // reportes, movimientos, otras sedes) queda bloqueado AQUÍ, a
       // nivel de servidor, incluidos los POST de server actions.
-      const adminScope = await verifyScopedToken(
-        authToken,
-        (scope) =>
-          scope === "admin-fonavi"
-            ? process.env.ADMIN_PASSWORD_FONAVI
-            : scope === "admin-centro"
-              ? process.env.ADMIN_PASSWORD_CENTRO
-              : undefined,
-        now,
-      );
-      if (!adminScope) {
+      const scopedSecrets: Record<string, string | undefined> = {
+        "admin-fonavi": process.env.ADMIN_PASSWORD_FONAVI,
+        "admin-centro": process.env.ADMIN_PASSWORD_CENTRO,
+        "verif-fonavi": process.env.VERIF_PASSWORD_FONAVI,
+        "verif-centro": process.env.VERIF_PASSWORD_CENTRO,
+      };
+      const scopedScope = await verifyScopedToken(authToken, (s) => scopedSecrets[s], now);
+      if (!scopedScope) {
         return NextResponse.redirect(new URL("/login", request.url));
       }
-      const sede = adminScope === "admin-fonavi" ? "fonavi" : "centro";
-      const allowedPrefix = `/${sede}/panel`;
+      const [kind, sede] = scopedScope.split("-") as ["admin" | "verif", string];
+      // admin → Panel de Sede completo; verif → SOLO la segunda firma.
+      const allowedPrefix = kind === "admin" ? `/${sede}/panel` : `/${sede}/verificacion`;
       if (pathname !== allowedPrefix && !pathname.startsWith(allowedPrefix + "/")) {
         return NextResponse.redirect(new URL(allowedPrefix, request.url));
       }
-      // Inyectar la sede activa (activeBusinessId) y marcar la sesión
-      // como admin de incentivos (las actions lo re-verifican).
+      // Inyectar la sede activa (activeBusinessId); las actions re-verifican.
       const requestHeaders = new Headers(request.headers);
       requestHeaders.set(BUSINESS_HEADER, sede);
-      requestHeaders.set("x-incentives-admin", sede);
+      requestHeaders.set("x-incentives-admin", scopedScope);
       const response = NextResponse.next({ request: { headers: requestHeaders } });
       response.cookies.set(BUSINESS_COOKIE, sede, {
         path: "/",
