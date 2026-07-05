@@ -7,6 +7,7 @@ import { describe, it, expect } from "vitest";
 import {
   computeProgress,
   computeFlags,
+  computeLiquidation,
   bonusTableSum,
   type IncentiveConfigT,
   type StaffMember,
@@ -82,6 +83,63 @@ describe("motor vs política — los números del documento salen exactos", () =
     expect(p.nivelAlcanzado).toBeNull();
     expect(p.pozoProyectado).toBeNull();
     expect(p.proximoNivel?.level.nombre).toBe("Nivel 1");
+  });
+});
+
+describe("liquidación del mes — candados de la política", () => {
+  const mesDailies = (personasDia: number, ticket: number, dias = 30) =>
+    Array.from({ length: dias }, (_, i) => ({
+      date: `2026-07-${String(i + 1).padStart(2, "0")}`,
+      personas: personasDia,
+      revenue: personasDia * ticket,
+      items: null,
+    }));
+  const base = {
+    month: "2026-07",
+    todayISO: "2026-08-01",
+    config: CENTRO,
+    staff: mkStaff(2, 8),
+    unverifiedDays: 0,
+    observedDays: [] as { date: string; nota: string | null }[],
+    mejorVendedor: null as string | null,
+  };
+
+  it("Nivel 2 limpio: paga la tabla exacta de la política (S/891 con premio)", () => {
+    const r = computeLiquidation({ ...base, dailies: mesDailies(47, 27.82), mejorVendedor: "TC0" });
+    expect(r.blockers).toHaveLength(0);
+    expect(r.nivel?.nombre).toBe("Nivel 2");
+    expect(r.totalBonos).toBe(891); // 2×97 + 8×48 + 179 + premio 134
+    const tc0 = r.lines.find((l) => l.name === "TC0")!;
+    expect(tc0.bono + tc0.premioMv).toBe(97 + 134); // el ejemplo del documento
+  });
+
+  it("mes sin terminar = BLOQUEADO (se liquida con el mes completo)", () => {
+    const r = computeLiquidation({ ...base, todayISO: "2026-07-20", dailies: mesDailies(47, 27.82) });
+    expect(r.blockers.some((b) => b.includes("no termina"))).toBe(true);
+  });
+
+  it("día observado sin resolver = BLOQUEADO con la nota del verificador", () => {
+    const r = computeLiquidation({
+      ...base,
+      dailies: mesDailies(47, 27.82),
+      observedDays: [{ date: "2026-07-10", nota: "conté ~60 y hay 48" }],
+    });
+    expect(r.blockers.some((b) => b.includes("OBSERVADO") && b.includes("conté ~60"))).toBe(true);
+  });
+
+  it("piso de tráfico incumplido: la meta NO cuenta → cierra sin bonos (con aviso)", () => {
+    const r = computeLiquidation({ ...base, dailies: mesDailies(40, 29) }); // ticket altísimo pero 40 < 45
+    expect(r.trafficOk).toBe(false);
+    expect(r.nivel).toBeNull();
+    expect(r.totalBonos).toBe(0);
+    expect(r.warnings.some((w) => w.includes("NO cuenta"))).toBe(true);
+    expect(r.blockers).toHaveLength(0); // se puede cerrar como "sin bono"
+  });
+
+  it("sin mejor vendedor: el premio no se paga y queda avisado", () => {
+    const r = computeLiquidation({ ...base, dailies: mesDailies(47, 27.82) });
+    expect(r.totalBonos).toBe(891 - 134);
+    expect(r.warnings.some((w) => w.includes("mejor vendedor"))).toBe(true);
   });
 });
 
