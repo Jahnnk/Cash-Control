@@ -301,19 +301,29 @@ export default function IncentivosPage() {
                         <th className="text-right px-2 py-1">Personas</th>
                         <th className="text-right px-2 py-1">Venta</th>
                         <th className="text-right px-2 py-1">Ticket</th>
+                        <th className="text-right px-2 py-1" title="Segunda firma del verificador">Firma</th>
                       </tr>
                     </thead>
                     <tbody>
-                      {[...data.dailies].reverse().map((d) => (
-                        <tr key={d.date} className="border-t border-gray-50">
-                          <td className="px-2 py-1">{d.date.slice(8)}/{d.date.slice(5, 7)}</td>
-                          <td className="px-2 py-1 text-right">{d.personas ?? "—"}</td>
-                          <td className="px-2 py-1 text-right">{d.revenue !== null ? formatCurrency(d.revenue) : "—"}</td>
-                          <td className="px-2 py-1 text-right font-medium">
-                            {d.personas && d.revenue ? formatCurrency(Math.round((d.revenue / d.personas) * 100) / 100) : "—"}
-                          </td>
-                        </tr>
-                      ))}
+                      {[...data.dailies].reverse().map((d) => {
+                        const v = data.verifications[d.date];
+                        return (
+                          <tr key={d.date} className="border-t border-gray-50">
+                            <td className="px-2 py-1">{d.date.slice(8)}/{d.date.slice(5, 7)}</td>
+                            <td className="px-2 py-1 text-right">{d.personas ?? "—"}</td>
+                            <td className="px-2 py-1 text-right">{d.revenue !== null ? formatCurrency(d.revenue) : "—"}</td>
+                            <td className="px-2 py-1 text-right font-medium">
+                              {d.personas && d.revenue ? formatCurrency(Math.round((d.revenue / d.personas) * 100) / 100) : "—"}
+                            </td>
+                            <td
+                              className="px-2 py-1 text-right"
+                              title={v ? (v.status === "confirmado" ? "Conteo confirmado por el verificador" : `Observado: ${v.nota ?? ""}`) : "Pendiente de la segunda firma"}
+                            >
+                              {v ? (v.status === "confirmado" ? "✅" : "⚠️") : <span className="text-gray-300">—</span>}
+                            </td>
+                          </tr>
+                        );
+                      })}
                     </tbody>
                   </table>
                 </div>
