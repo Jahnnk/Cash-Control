@@ -19,10 +19,15 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { matchSalesToCatalog } from "@/lib/product-matching";
 import type { ByteRotacionItem } from "@/lib/byte-rotacion-parser";
 
 const sql = neon(process.env.DATABASE_URL!);
+
+function currentMonthLima(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+}
 
 export type ProductSalesImportResult =
   | {
@@ -37,14 +42,46 @@ export type ProductSalesImportResult =
     }
   | { ok: false; error: string };
 
-export async function importProductSales(input: {
+type ImportInput = {
   month: string;
   fileName: string | null;
   items: ByteRotacionItem[];
   declaredTotal: number | null;
   parseWarnings: string[];
-}): Promise<ProductSalesImportResult> {
+};
+
+/** Import completo desde la página Productos — solo dirección. */
+export async function importProductSales(input: ImportInput): Promise<ProductSalesImportResult> {
   const bId = await activeBusinessId();
+  if (!(await requireFullSession())) {
+    return { ok: false, error: "El import de Productos es solo para la dirección." };
+  }
+  return runImport(bId, input, `PIC · ventas por producto (Byte rotación) · ${input.month}`);
+}
+
+/**
+ * Import semanal desde el Panel de Sede (admin o dirección). Alimenta la
+ * MISMA tabla canónica, con dos candados que protegen la historia:
+ * - SOLO el mes en curso (el admin no puede pisar un mes cerrado).
+ * - Solo el formato Rotación canónico (el modal filtra Rentabilidad).
+ * Con esto el foco del día usa ventas frescas y el PIC se alimenta solo.
+ */
+export async function importProductSalesFromPanel(input: ImportInput): Promise<ProductSalesImportResult> {
+  const bId = await activeBusinessId();
+  const role = await getSessionRole();
+  const allowed = role?.kind === "full" || (role?.kind === "admin" && role.sede === bId);
+  if (!allowed) return { ok: false, error: "Sin acceso." };
+  const current = currentMonthLima();
+  if (input.month !== current) {
+    return {
+      ok: false,
+      error: `Desde el panel solo se sube el mes en curso (${current}). Exporta el reporte con el rango del 1 del mes hasta hoy.`,
+    };
+  }
+  return runImport(bId, input, `PIC · rotación semanal desde Panel de Sede · ${input.month}`);
+}
+
+async function runImport(bId: number, input: ImportInput, batchNote: string): Promise<ProductSalesImportResult> {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) {
     return { ok: false, error: "Mes inválido (formato AAAA-MM)." };
   }
@@ -98,7 +135,7 @@ export async function importProductSales(input: {
             movements_count, status, rollback_available, notes, warnings_json)
           VALUES (${batchId}, ${bId}, ${input.fileName}, ${monthStart}, ${monthEnd},
             ${rows.length}, 'completed', false,
-            ${"PIC · ventas por producto (Byte rotación) · " + input.month},
+            ${batchNote},
             ${JSON.stringify(warnings)}::jsonb)`,
       sql`DELETE FROM product_month_sales
           WHERE business_id = ${bId} AND month = ${input.month} AND source = 'byte'`,
@@ -111,18 +148,23 @@ export async function importProductSales(input: {
       ),
     ]);
 
-    // 3) Check de integridad natural contra las ventas Byte del sistema.
+    // 3) Check de integridad natural contra las ventas Byte del sistema
+    //    (tercera fuente: el registro diario del admin en upselling_daily,
+    //    clave para el mes en curso subido desde el Panel de Sede).
     const sys = (await sql`
       SELECT COALESCE(
         NULLIF((SELECT SUM(total)::float FROM byte_sales_daily
                 WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}), 0),
         NULLIF((SELECT SUM(byte_total)::float FROM daily_records
-                WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd} AND archived = false), 0)
+                WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd} AND archived = false), 0),
+        NULLIF((SELECT SUM(revenue)::float FROM upselling_daily
+                WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}), 0)
       ) AS total
     `) as { total: number | null }[];
     const systemMonthTotal = sys[0]?.total ?? null;
 
     revalidatePath("/[negocio]/productos", "page");
+    revalidatePath("/[negocio]/panel", "page");
     return {
       ok: true,
       imported: rows.length,

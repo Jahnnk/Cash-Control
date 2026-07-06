@@ -168,9 +168,14 @@ export default function ProductosPage() {
               onChange={(e) => load(e.target.value)}
               className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
             >
-              {status.months.map((m) => (
-                <option key={m.month} value={m.month}>{monthLabel(m.month)}</option>
-              ))}
+              {status.months.map((m) => {
+                const enCurso = m.month === new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+                return (
+                  <option key={m.month} value={m.month}>
+                    {monthLabel(m.month)}{enCurso ? " (en curso, parcial)" : ""}
+                  </option>
+                );
+              })}
             </select>
           )}
           {story && (

@@ -4,7 +4,13 @@ import { useRef, useState } from "react";
 import { X, Loader2, Upload, FileSpreadsheet, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { parseControlReport } from "@/lib/incentives/byte-control-parsers";
+import { parseByteRotacion } from "@/lib/byte-rotacion-parser";
 import { importControlReport } from "@/app/actions/incentives";
+import { importProductSalesFromPanel } from "@/app/actions/product-sales-import";
+
+function currentMonthLima(): string {
+  return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+}
 
 const KIND_LABEL: Record<string, string> = {
   anulaciones: "Pedidos anulados (histórico)",
@@ -48,6 +54,39 @@ export function ImportControlModal({
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null }) as unknown[][];
         const parsed = parseControlReport(rows);
         if (!parsed.ok) {
+          // ¿Es el reporte de Rotación de productos? (4to de la rutina —
+          // alimenta el foco del día y la base de Productos del PIC).
+          const rot = parseByteRotacion(rows);
+          if (rot.ok) {
+            if (rot.format !== "rotacion") {
+              out.push({ name: file.name, status: "error", detail: "Ese es el reporte de Rentabilidad — sube “Productos con mayor rotación”." });
+              continue;
+            }
+            const current = currentMonthLima();
+            if (rot.month && rot.month !== current) {
+              out.push({ name: file.name, status: "error", detail: `El reporte de rotación debe ser del mes en curso (rango del 1 al día de hoy). Este es de ${rot.month}.` });
+              continue;
+            }
+            const ri = await importProductSalesFromPanel({
+              month: current,
+              fileName: file.name,
+              items: rot.items,
+              declaredTotal: rot.declaredTotal,
+              parseWarnings: rot.warnings,
+            });
+            if (!ri.ok) {
+              out.push({ name: file.name, status: "error", detail: ri.error });
+            } else {
+              setDidImport(true);
+              const delta = ri.deltaVsSystem !== null ? ` · diferencia vs registro diario S/${Math.abs(ri.deltaVsSystem).toFixed(2)}` : "";
+              out.push({
+                name: file.name,
+                status: "ok",
+                detail: `Rotación de productos · ${ri.imported} productos · S/${ri.totalRevenue.toFixed(2)}${delta}`,
+              });
+            }
+            continue;
+          }
           out.push({ name: file.name, status: "error", detail: parsed.errors.join(" ") });
           continue;
         }
@@ -98,12 +137,13 @@ export function ImportControlModal({
 
         <div className="p-6 space-y-4">
           <p className="text-xs text-gray-500">
-            <strong>Rutina semanal (~5 min)</strong> — para banderas de control y ranking; el avance
-            diario de la meta sale del registro del día, no de estos archivos. Exporta de Byte los 3
-            reportes con el rango <strong>desde el día 1 del mes hasta hoy</strong> y suéltalos aquí
-            todos juntos: <strong>Cortesías · Cambios de Precio · Ventas por Trabajador</strong>.
-            Cada subida <strong>reemplaza</strong> la anterior (no duplica) y el sistema reconoce
-            cada archivo solo. Puedes subirlos más seguido si algo te huele raro.
+            <strong>Rutina semanal (~5 min)</strong> — para banderas de control, ranking y el foco
+            de upselling; el avance diario de la meta sale del registro del día, no de estos
+            archivos. Exporta de Byte los 4 reportes con el rango <strong>desde el día 1 del mes
+            hasta hoy</strong> y suéltalos aquí todos juntos: <strong>Productos con Mayor Rotación ·
+            Cortesías · Cambios de Precio · Ventas por Trabajador</strong>. Cada subida
+            <strong> reemplaza</strong> la anterior (no duplica) y el sistema reconoce cada archivo
+            solo. Puedes subirlos más seguido si algo te huele raro.
           </p>
           <p className="text-[11px] text-gray-400">
             Byte ya no genera el reporte de Pedidos Anulados (los asesores no pueden anular pedidos

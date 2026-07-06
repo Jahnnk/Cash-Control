@@ -287,7 +287,7 @@ export default function IncentivosPage() {
                 💡 Candidatos para el foco del día
               </div>
               <div className="text-[11px] text-gray-400 mb-2">
-                Lo que más deja por unidad vendida (carta de esta sede, datos de {focus.month}).
+                Lo que más deja por unidad vendida (carta de esta sede, datos de {focus.month} — se refrescan con el reporte de rotación semanal).
                 💎 = alta contribución con poca rotación: los ideales para empujar. Tú decides según stock y ocasión.
               </div>
               <div className="flex flex-wrap gap-1.5">
@@ -295,7 +295,7 @@ export default function IncentivosPage() {
                   <span
                     key={c.name}
                     className={`text-[11px] rounded-full px-2.5 py-1 border ${c.hiddenGem ? "bg-primary/5 border-primary/30 text-primary font-medium" : "bg-gray-50 border-gray-200 text-gray-700"}`}
-                    title={`${c.unitsLastMonth} und el mes pasado${c.category ? ` · ${c.category}` : ""}`}
+                    title={`${c.unitsLastMonth} und en ese periodo${c.category ? ` · ${c.category}` : ""}`}
                   >
                     {c.hiddenGem ? "💎 " : ""}{c.name} · deja {formatCurrency(c.unitContribution)}/und
                   </span>
