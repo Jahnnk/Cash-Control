@@ -60,6 +60,9 @@ export function HistoryView() {
         <div className="flex flex-wrap items-baseline justify-between gap-2 mb-3">
           <div className="text-sm font-semibold text-gray-900">
             Evolución del portafolio · {data.months.length} meses
+            <span className="ml-2 text-[11px] font-normal text-gray-400">
+              (solo meses completos — el mes en curso entra cuando termina)
+            </span>
           </div>
           {changePct !== null && (
             <div className={`text-xs font-medium ${changePct >= 0 ? "text-emerald-600" : "text-red-600"}`}>

@@ -167,13 +167,18 @@ export type PortfolioHistoryResult =
 export async function getPortfolioHistory(): Promise<PortfolioHistoryResult> {
   const bId = await activeBusinessId();
   try {
+    // Regla del MES PARCIAL: el mes en curso (alimentado semanalmente
+    // desde el Panel de Sede) se EXCLUYE de tendencias, movers y
+    // proyecciones — un mes a medias parecería un derrumbe y dañaría el
+    // análisis (la lección de marzo). Entra solo cuando termina.
+    const currentMonth = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
     const monthsRows = (await sql`
       SELECT DISTINCT month FROM product_month_sales
-      WHERE business_id = ${bId} AND source = 'byte'
+      WHERE business_id = ${bId} AND source = 'byte' AND month < ${currentMonth}
       ORDER BY month
     `) as { month: string }[];
     if (monthsRows.length === 0) {
-      return { ok: false, error: "Aún no hay meses cargados." };
+      return { ok: false, error: "Aún no hay meses completos cargados (el mes en curso entra al histórico cuando termina)." };
     }
 
     // Los meses son independientes entre sí → se consultan en paralelo
