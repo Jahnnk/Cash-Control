@@ -157,12 +157,13 @@ export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
                 <th className="text-right px-3 py-2 font-medium">Ticket (ref {formatCurrency(data!.targets.ticketRef)})</th>
                 <th className="text-right px-3 py-2 font-medium">NPS (≥{data!.targets.npsMin})</th>
                 <th className="text-right px-3 py-2 font-medium">Mermas (≤{Math.round(data!.targets.mermasMaxPct * 100)}%)</th>
-                <th className="text-right px-3 py-2 font-medium">Tiempo</th>
+                <th className="text-right px-3 py-2 font-medium">T. mostrador{data!.targets.tiempoMaxMin !== null ? ` (<${data!.targets.tiempoMaxMin}m)` : ""}</th>
+                <th className="text-right px-3 py-2 font-medium">T. mesa{data!.targets.tiempoMesaMaxMin !== null ? ` (<${data!.targets.tiempoMesaMaxMin}m)` : ""}</th>
               </tr>
             </thead>
             <tbody>
               {s.days.length === 0 ? (
-                <tr><td colSpan={6} className="px-3 py-6 text-center text-gray-400">Sin registros esta semana — se llenan desde &ldquo;Registro del día&rdquo;.</td></tr>
+                <tr><td colSpan={7} className="px-3 py-6 text-center text-gray-400">Sin registros esta semana — se llenan desde &ldquo;Registro del día&rdquo;.</td></tr>
               ) : s.days.map((d) => (
                 <tr key={d.date} className="border-t border-gray-50">
                   <td className="px-3 py-1.5 font-medium text-gray-900">{dayShort(d.date)}</td>
@@ -171,6 +172,7 @@ export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
                   <td className="px-3 py-1.5 text-right"><span className="mr-1.5">{d.nps ?? "—"}</span><Dot t={d.traffic.nps} /></td>
                   <td className="px-3 py-1.5 text-right"><span className="mr-1.5">{d.mermasSoles !== null ? formatCurrency(d.mermasSoles) : "—"}</span><Dot t={d.traffic.mermas} /></td>
                   <td className="px-3 py-1.5 text-right"><span className="mr-1.5">{d.tiempoMin !== null ? `${d.tiempoMin} min` : "—"}</span><Dot t={d.traffic.tiempo} /></td>
+                  <td className="px-3 py-1.5 text-right"><span className="mr-1.5">{d.tiempoMesaMin !== null ? `${d.tiempoMesaMin} min` : "—"}</span><Dot t={d.traffic.tiempoMesa} /></td>
                 </tr>
               ))}
             </tbody>
@@ -189,6 +191,7 @@ export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
                     <span className="mr-1.5">{formatCurrency(s.mermasTotal)}{s.mermasPct !== null ? ` (${s.mermasPct}%)` : ""}</span><Dot t={s.traffic.mermas} />
                   </td>
                   <td className="px-3 py-2 text-right"><span className="mr-1.5">{s.tiempoProm !== null ? `${s.tiempoProm} min` : "—"}</span><Dot t={s.traffic.tiempo} /></td>
+                  <td className="px-3 py-2 text-right"><span className="mr-1.5">{s.tiempoMesaProm !== null ? `${s.tiempoMesaProm} min` : "—"}</span><Dot t={s.traffic.tiempoMesa} /></td>
                 </tr>
               </tfoot>
             )}
@@ -227,7 +230,8 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   const [ticket, setTicket] = useState("");
   const [npsMin, setNpsMin] = useState("");
   const [mermasMax, setMermasMax] = useState("");
-  const [tiempoMax, setTiempoMax] = useState("");
+  const [tiempoMax, setTiempoMax] = useState("");         // mostrador
+  const [tiempoMesaMax, setTiempoMesaMax] = useState(""); // mesa
 
   useEffect(() => {
      
@@ -241,6 +245,7 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         setNpsMin(String(r.data.targets.npsMin));
         setMermasMax(String(Math.round(r.data.targets.mermasMaxPct * 10000) / 100));
         setTiempoMax(r.data.targets.tiempoMaxMin !== null ? String(r.data.targets.tiempoMaxMin) : "");
+        setTiempoMesaMax(r.data.targets.tiempoMesaMaxMin !== null ? String(r.data.targets.tiempoMesaMaxMin) : "");
       }
       setLoading(false);
     })();
@@ -256,6 +261,7 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
       npsMin: Number(npsMin),
       mermasMaxPct: Number(mermasMax),
       tiempoMaxMin: tiempoMax.trim() === "" ? null : Number(tiempoMax),
+      tiempoMesaMaxMin: tiempoMesaMax.trim() === "" ? null : Number(tiempoMesaMax),
     });
     setSaving(false);
     if (!r.ok) { showToast(r.error, "error"); return; }
@@ -314,9 +320,14 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
                   className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
               </div>
               <div>
-                <label className="block text-[11px] text-gray-500 mb-1">Tiempo máx. atención (min, opcional)</label>
+                <label className="block text-[11px] text-gray-500 mb-1">Tiempo máx. mostrador (min)</label>
                 <input type="number" min="0" step="0.5" value={tiempoMax} onChange={(e) => setTiempoMax(e.target.value)}
-                  placeholder="sin meta" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                  placeholder="ej. 6 (sin meta = vacío)" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 mb-1">Tiempo máx. mesa (min)</label>
+                <input type="number" min="0" step="0.5" value={tiempoMesaMax} onChange={(e) => setTiempoMesaMax(e.target.value)}
+                  placeholder="ej. 15 (sin meta = vacío)" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
               </div>
             </div>
             <div className="text-[11px] text-gray-400 mt-2">

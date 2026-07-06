@@ -1,7 +1,9 @@
 /**
  * Incentivos · Parsers de los reportes de CONTROL de Byte (PUROS).
  * Estructuras reales verificadas (jun-2026, Fonavi y Centro):
- *  - Pedidos Anulados:   COD | ID Venta | Cant | Pedido | Fecha Pedido | Fecha Anulación | Total | Motivo | Pedido por | Anulado por
+ *  - Pedidos Anulados (HISTÓRICO — Byte lo eliminó en jul-2026; se
+ *    acepta para re-importar exports antiguos):
+ *                        COD | ID Venta | Cant | Pedido | Fecha Pedido | Fecha Anulación | Total | Motivo | Pedido por | Anulado por
  *  - Cortesías:          Pedido | Cortesía | Usuario | Precio Original | Fecha | Motivo
  *  - Cambios de precio:  Pedido | Plato | Precio Anterior | Precio Nuevo | Diferencia | Usuario | Caja | Fecha (dd/mm/yyyy hh:mm:ss)
  *  - Ventas por trabajador: DNI | Nombres Y Apellidos | Mesas Atendidas | Total (S/)  (primera fila de datos = TOTAL sin nombre)
@@ -173,7 +175,7 @@ export function parseControlReport(rows: unknown[][]): ControlParseResult {
   return {
     ok: false,
     errors: [
-      "No reconozco este archivo. Reportes aceptados: Pedidos Anulados, Cortesías, Cambios de Precio y Ventas por Trabajador (exports de Byte).",
+      "No reconozco este archivo. Reportes aceptados: Cortesías, Cambios de Precio y Ventas por Trabajador (exports de Byte); también Pedidos Anulados antiguos como histórico.",
     ],
   };
 }

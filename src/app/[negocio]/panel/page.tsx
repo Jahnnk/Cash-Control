@@ -3,21 +3,25 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  Trophy, Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag,
+  Trophy, Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag, Pencil, ClipboardList,
 } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import {
   getIncentiveDashboard,
   saveDailyEntry,
   getUpsellFocusCandidates,
+  setFlagStatus,
+  reopenFlag,
   type IncentiveDashboard,
   type UpsellCandidate,
+  type DashboardDaily,
 } from "@/app/actions/incentives";
 import { saveDailyKpis } from "@/app/actions/kpis";
 import { useToast } from "@/components/toast-provider";
 import { ImportControlModal } from "./import-control-modal";
 import { KpisWeekSection } from "./kpis-week";
 import { LiquidationModal } from "./liquidation-modal";
+import { MermaDetailModal } from "./merma-detail-modal";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -54,9 +58,12 @@ export default function IncentivosPage() {
   const [items, setItems] = useState("");
   const [nps, setNps] = useState("");
   const [mermas, setMermas] = useState("");
-  const [tiempo, setTiempo] = useState("");
+  const [tiempo, setTiempo] = useState("");        // mostrador
+  const [tiempoMesa, setTiempoMesa] = useState(""); // mesa
   const [saving, setSaving] = useState(false);
   const [weekRefresh, setWeekRefresh] = useState(0);
+  const [showMermaDetail, setShowMermaDetail] = useState(false);
+  const [editingDate, setEditingDate] = useState<string | null>(null);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -79,6 +86,25 @@ export default function IncentivosPage() {
     })();
   }, []);
 
+  function clearForm() {
+    setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo(""); setTiempoMesa("");
+    setEditingDate(null);
+    setFecha(todayLima());
+  }
+
+  /** Precarga el formulario con los datos de un día para corregirlos. */
+  function startEdit(d: DashboardDaily) {
+    setFecha(d.date);
+    setPersonas(d.personas !== null ? String(d.personas) : "");
+    setVenta(d.revenue !== null ? String(d.revenue) : "");
+    setItems(d.items !== null ? String(d.items) : "");
+    setNps(d.nps !== null ? String(d.nps) : "");
+    setMermas(d.mermasSoles !== null ? String(d.mermasSoles) : "");
+    setTiempo(d.tiempoMin !== null ? String(d.tiempoMin) : "");
+    setTiempoMesa(d.tiempoMesaMin !== null ? String(d.tiempoMesaMin) : "");
+    setEditingDate(d.date);
+  }
+
   async function handleSaveDay() {
     setSaving(true);
     const r = await saveDailyEntry({
@@ -88,19 +114,24 @@ export default function IncentivosPage() {
       items: items.trim() === "" ? null : Number(items),
     });
     if (!r.ok) { setSaving(false); showToast(r.error, "error"); return; }
-    // KPIs del mismo día (NPS, mermas, tiempo) — si se llenó alguno.
-    if (nps.trim() !== "" || mermas.trim() !== "" || tiempo.trim() !== "") {
+    // KPIs del mismo día (NPS, mermas, tiempos) — si se llenó alguno o se edita.
+    if (editingDate !== null || nps.trim() !== "" || mermas.trim() !== "" || tiempo.trim() !== "" || tiempoMesa.trim() !== "") {
       const rk = await saveDailyKpis({
         date: fecha,
         nps: nps.trim() === "" ? null : Number(nps),
         mermasSoles: mermas.trim() === "" ? null : Number(mermas),
         tiempoMin: tiempo.trim() === "" ? null : Number(tiempo),
+        tiempoMesaMin: tiempoMesa.trim() === "" ? null : Number(tiempoMesa),
       });
       if (!rk.ok) { setSaving(false); showToast(rk.error, "error"); return; }
     }
     setSaving(false);
-    showToast("Día registrado", "success");
-    setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo("");
+    if (r.firmaAnulada) {
+      showToast("Día corregido. Ojo: la firma del verificador se anuló porque cambiaron los números — debe volver a firmar.", "success");
+    } else {
+      showToast(editingDate !== null ? "Día corregido" : "Día registrado", "success");
+    }
+    clearForm();
     setWeekRefresh((v) => v + 1);
     await load(month);
   }
@@ -276,7 +307,20 @@ export default function IncentivosPage() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* 3 · Registro diario */}
             <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-sm font-semibold text-gray-900 mb-3">Registro del día (del cierre de Byte)</div>
+              <div className="text-sm font-semibold text-gray-900 mb-3 flex items-center justify-between">
+                <span>Registro del día (del cierre de Byte)</span>
+                {editingDate !== null && (
+                  <button onClick={clearForm} className="text-[11px] font-normal text-gray-500 hover:text-gray-700 underline">
+                    Cancelar edición
+                  </button>
+                )}
+              </div>
+              {editingDate !== null && (
+                <div className="text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-3 py-1.5 mb-2">
+                  ✏️ Corrigiendo el <strong>{editingDate.slice(8)}/{editingDate.slice(5, 7)}</strong> — cambia solo lo que estuvo mal y guarda.
+                  {data.verifications[editingDate]?.status === "confirmado" && " Si cambias personas o venta, la firma del verificador se anula."}
+                </div>
+              )}
               <div className="grid grid-cols-2 gap-2 mb-2">
                 <div>
                   <label className="block text-[11px] text-gray-500 mb-1">Fecha</label>
@@ -305,13 +349,29 @@ export default function IncentivosPage() {
                 </div>
                 <div>
                   <label className="block text-[11px] text-gray-500 mb-1">Mermas del día S/</label>
-                  <input type="number" min="0" step="0.01" value={mermas} onChange={(e) => setMermas(e.target.value)}
-                    placeholder="ej. 27.00" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                  <div className="flex gap-1">
+                    <input type="number" min="0" step="0.01" value={mermas} onChange={(e) => setMermas(e.target.value)}
+                      placeholder="ej. 27.00" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                    <button
+                      type="button"
+                      onClick={() => setShowMermaDetail(true)}
+                      className="shrink-0 inline-flex items-center gap-1 px-2 py-1.5 text-[11px] font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
+                      title="Detallar qué productos se mermaron (cantidad, costo, motivo y acción)"
+                    >
+                      <ClipboardList className="w-3.5 h-3.5" />
+                      Detallar
+                    </button>
+                  </div>
                 </div>
                 <div>
-                  <label className="block text-[11px] text-gray-500 mb-1">Tiempo de atención (min)</label>
+                  <label className="block text-[11px] text-gray-500 mb-1">T. mostrador (min, meta &lt;6)</label>
                   <input type="number" min="0" step="0.5" value={tiempo} onChange={(e) => setTiempo(e.target.value)}
-                    placeholder="ej. 8" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                    placeholder="ej. 5" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">T. mesa (min, meta &lt;15)</label>
+                  <input type="number" min="0" step="0.5" value={tiempoMesa} onChange={(e) => setTiempoMesa(e.target.value)}
+                    placeholder="ej. 12" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
               </div>
               <button
@@ -320,7 +380,7 @@ export default function IncentivosPage() {
                 className="w-full inline-flex items-center justify-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50"
               >
                 {saving ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Save className="w-3.5 h-3.5" />}
-                Guardar día (re-guardar corrige)
+                {editingDate !== null ? "Guardar corrección" : "Guardar día"}
               </button>
               {data.dailies.length > 0 && (
                 <div className="mt-3 max-h-44 overflow-y-auto border border-gray-100 rounded-lg">
@@ -332,13 +392,14 @@ export default function IncentivosPage() {
                         <th className="text-right px-2 py-1">Venta</th>
                         <th className="text-right px-2 py-1">Ticket</th>
                         <th className="text-right px-2 py-1" title="Segunda firma del verificador">Firma</th>
+                        <th className="w-8" />
                       </tr>
                     </thead>
                     <tbody>
                       {[...data.dailies].reverse().map((d) => {
                         const v = data.verifications[d.date];
                         return (
-                          <tr key={d.date} className="border-t border-gray-50">
+                          <tr key={d.date} className={`border-t border-gray-50 ${editingDate === d.date ? "bg-blue-50/60" : ""}`}>
                             <td className="px-2 py-1">{d.date.slice(8)}/{d.date.slice(5, 7)}</td>
                             <td className="px-2 py-1 text-right">{d.personas ?? "—"}</td>
                             <td className="px-2 py-1 text-right">{d.revenue !== null ? formatCurrency(d.revenue) : "—"}</td>
@@ -351,6 +412,16 @@ export default function IncentivosPage() {
                             >
                               {v ? (v.status === "confirmado" ? "✅" : "⚠️") : <span className="text-gray-300">—</span>}
                             </td>
+                            <td className="px-1 py-1 text-center">
+                              <button
+                                onClick={() => startEdit(d)}
+                                className="text-gray-300 hover:text-primary p-0.5"
+                                title="Corregir este día (cualquier campo)"
+                                aria-label={`Editar el ${d.date}`}
+                              >
+                                <Pencil className="w-3 h-3" />
+                              </button>
+                            </td>
                           </tr>
                         );
                       })}
@@ -361,32 +432,7 @@ export default function IncentivosPage() {
             </div>
 
             {/* 4 · Banderas */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-1.5">
-                <Flag className="w-4 h-4 text-red-600" />
-                Banderas de control ({data.flags.length})
-              </div>
-              <div className="text-[11px] text-gray-400 mb-2">
-                Eventos del mes: {data.eventCounts.anulaciones} anulaciones · {data.eventCounts.cortesias} cortesías · {data.eventCounts.cambiosPrecio} cambios de precio
-              </div>
-              {data.flags.length === 0 ? (
-                <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
-                  Sin banderas con los reportes cargados. 👏
-                </div>
-              ) : (
-                <div className="space-y-2 max-h-72 overflow-y-auto">
-                  {data.flags.map((f) => (
-                    <div key={f.id} className={`text-xs rounded-lg px-3 py-2 border ${f.severity === "alta" ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
-                      <div className="font-semibold flex items-center gap-1.5">
-                        <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
-                        {f.usuario ? `${f.usuario}: ` : ""}{f.title}
-                      </div>
-                      <div className="mt-0.5 opacity-80">{f.detail}</div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
+            <FlagsSection month={month} flags={data.flags} eventCounts={data.eventCounts} onChanged={() => load(month)} />
           </div>
 
           {/* 4b · KPIs de la semana (reemplaza el cuadro de Notion) */}
@@ -430,6 +476,18 @@ export default function IncentivosPage() {
       {showImport && (
         <ImportControlModal onClose={() => setShowImport(false)} onImported={() => load(month)} />
       )}
+      {showMermaDetail && (
+        <MermaDetailModal
+          date={fecha}
+          onClose={() => setShowMermaDetail(false)}
+          onSaved={(total) => {
+            setMermas(String(total));
+            setShowMermaDetail(false);
+            setWeekRefresh((v) => v + 1);
+            load(month);
+          }}
+        />
+      )}
       {showLiquidation && (
         <LiquidationModal
           sede={sedeLabel}
@@ -437,6 +495,155 @@ export default function IncentivosPage() {
           monthLabel={monthLabel(month)}
           onClose={() => setShowLiquidation(false)}
         />
+      )}
+    </div>
+  );
+}
+
+/**
+ * Banderas de control con acciones: cada bandera activa se puede marcar
+ * RESUELTA (nota opcional) o DESCARTADA (nota obligatoria — por qué no
+ * aplica). Las atendidas se colapsan abajo con quién y cuándo, y se
+ * pueden reabrir. Las banderas de la segunda firma (verif-*) no tienen
+ * botones: se resuelven re-firmando en la pantalla de Verificación.
+ */
+function FlagsSection({
+  month,
+  flags,
+  eventCounts,
+  onChanged,
+}: {
+  month: string;
+  flags: IncentiveDashboard["flags"];
+  eventCounts: IncentiveDashboard["eventCounts"];
+  onChanged: () => void;
+}) {
+  const { showToast } = useToast();
+  const [noteFor, setNoteFor] = useState<{ flagId: string; status: "resuelta" | "descartada" } | null>(null);
+  const [nota, setNota] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [showResolved, setShowResolved] = useState(false);
+
+  const active = flags.filter((f) => !f.resolution);
+  const resolved = flags.filter((f) => f.resolution);
+
+  async function submit(flagId: string, status: "resuelta" | "descartada", notaTxt: string) {
+    setBusy(true);
+    const r = await setFlagStatus({ month, flagId, status, nota: notaTxt.trim() || null });
+    setBusy(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(status === "resuelta" ? "Bandera marcada como resuelta" : "Bandera descartada", "success");
+    setNoteFor(null); setNota("");
+    onChanged();
+  }
+
+  async function reopen(flagId: string) {
+    setBusy(true);
+    const r = await reopenFlag({ month, flagId });
+    setBusy(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast("Bandera reabierta", "success");
+    onChanged();
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4">
+      <div className="text-sm font-semibold text-gray-900 mb-2 flex items-center gap-1.5">
+        <Flag className="w-4 h-4 text-red-600" />
+        Banderas de control ({active.length})
+      </div>
+      <div className="text-[11px] text-gray-400 mb-2">
+        Eventos del mes: {eventCounts.cortesias} cortesías · {eventCounts.cambiosPrecio} cambios de precio
+        {eventCounts.anulaciones > 0 ? ` · ${eventCounts.anulaciones} anulaciones (histórico)` : ""}
+      </div>
+      {active.length === 0 ? (
+        <div className="text-xs text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+          Sin banderas pendientes con los reportes cargados. 👏
+        </div>
+      ) : (
+        <div className="space-y-2 max-h-72 overflow-y-auto">
+          {active.map((f) => {
+            const manageable = !f.id.startsWith("verif-");
+            return (
+              <div key={f.id} className={`text-xs rounded-lg px-3 py-2 border ${f.severity === "alta" ? "bg-red-50 border-red-200 text-red-800" : "bg-amber-50 border-amber-200 text-amber-800"}`}>
+                <div className="font-semibold flex items-center gap-1.5">
+                  <AlertTriangle className="w-3.5 h-3.5 shrink-0" />
+                  {f.usuario ? `${f.usuario}: ` : ""}{f.title}
+                </div>
+                <div className="mt-0.5 opacity-80">{f.detail}</div>
+                {manageable ? (
+                  noteFor?.flagId === f.id ? (
+                    <div className="mt-2 flex gap-1.5">
+                      <input
+                        autoFocus
+                        value={nota}
+                        onChange={(e) => setNota(e.target.value)}
+                        placeholder={noteFor.status === "resuelta" ? "Nota (opcional): qué se hizo" : "Nota obligatoria: por qué no aplica"}
+                        className="flex-1 border border-gray-300 rounded px-2 py-1 text-[11px] bg-white text-gray-900"
+                      />
+                      <button
+                        onClick={() => submit(f.id, noteFor.status, nota)}
+                        disabled={busy || (noteFor.status === "descartada" && !nota.trim())}
+                        className="px-2 py-1 text-[11px] font-medium text-white bg-primary rounded disabled:opacity-50"
+                      >
+                        OK
+                      </button>
+                      <button onClick={() => { setNoteFor(null); setNota(""); }} className="px-2 py-1 text-[11px] text-gray-500">
+                        ✕
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="mt-1.5 flex gap-1.5">
+                      <button
+                        onClick={() => { setNoteFor({ flagId: f.id, status: "resuelta" }); setNota(""); }}
+                        className="px-2 py-0.5 text-[11px] font-medium rounded border border-emerald-300 bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                      >
+                        ✓ Resuelta
+                      </button>
+                      <button
+                        onClick={() => { setNoteFor({ flagId: f.id, status: "descartada" }); setNota(""); }}
+                        className="px-2 py-0.5 text-[11px] font-medium rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-50"
+                      >
+                        Descartar
+                      </button>
+                    </div>
+                  )
+                ) : (
+                  <div className="mt-1 text-[11px] opacity-70">Se resuelve en la pantalla de Verificación (re-firma del día).</div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {resolved.length > 0 && (
+        <div className="mt-3">
+          <button
+            onClick={() => setShowResolved((v) => !v)}
+            className="text-[11px] text-gray-500 hover:text-gray-700 underline"
+          >
+            {showResolved ? "Ocultar" : "Ver"} banderas atendidas ({resolved.length})
+          </button>
+          {showResolved && (
+            <div className="mt-2 space-y-1.5 max-h-48 overflow-y-auto">
+              {resolved.map((f) => (
+                <div key={f.id} className="text-[11px] rounded-lg px-3 py-2 border border-gray-200 bg-gray-50 text-gray-500">
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="line-through">{f.usuario ? `${f.usuario}: ` : ""}{f.title}</span>
+                    <button onClick={() => reopen(f.id)} disabled={busy} className="shrink-0 underline hover:text-gray-700">
+                      Reabrir
+                    </button>
+                  </div>
+                  <div className="mt-0.5">
+                    {f.resolution!.status === "resuelta" ? "✓ Resuelta" : "Descartada"} por {f.resolution!.resolvedBy === "direccion" ? "la dirección" : "el administrador"}
+                    {f.resolution!.nota ? ` — "${f.resolution!.nota}"` : ""}
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
     </div>
   );

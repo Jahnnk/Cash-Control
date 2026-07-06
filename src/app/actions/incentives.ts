@@ -39,15 +39,34 @@ async function requireIncentivesAccess(bId: number): Promise<{ ok: true; isAdmin
 
 type LevelRow = { nombre: string; delta: number; bono_tc: number; bono_mt: number; bono_admin: number; premio_mv: number };
 
+/** Estado de una bandera atendida (resuelta o descartada con nota). */
+export type FlagResolution = {
+  status: "resuelta" | "descartada";
+  nota: string | null;
+  resolvedBy: string;   // 'direccion' | 'admin'
+  resolvedAt: string;
+};
+
+export type DashboardDaily = {
+  date: string;
+  personas: number | null;
+  revenue: number | null;
+  items: number | null;
+  nps: number | null;
+  mermasSoles: number | null;
+  tiempoMin: number | null;
+  tiempoMesaMin: number | null;
+};
+
 export type IncentiveDashboard = {
   month: string;
   config: IncentiveConfigT & { levelNames: string[] };
   staff: { name: string; jornada: string; area: string }[];
-  dailies: { date: string; personas: number | null; revenue: number | null; items: number | null }[];
+  dailies: DashboardDaily[];
   /** Segunda firma del conteo por día (verificador de mando medio). */
   verifications: Record<string, { status: "confirmado" | "observado"; nota: string | null }>;
   progress: IncentiveProgress;
-  flags: ControlFlag[];
+  flags: (ControlFlag & { resolution: FlagResolution | null })[];
   workers: { nombre: string; mesas: number; total: number; ticketMesa: number | null; periodEnd: string | null }[];
   eventCounts: { anulaciones: number; cortesias: number; cambiosPrecio: number };
   isAdminSession: boolean;
@@ -90,12 +109,39 @@ export async function getIncentiveDashboard(
     const monthStart = `${month}-01`;
     const monthEnd = `${month}-${String(daysInMonth).padStart(2, "0")}`;
 
-    const dailies = (await sql`
-      SELECT date::text, personas, revenue::float AS revenue, items
-      FROM upselling_daily
-      WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
-      ORDER BY date
-    `) as { date: string; personas: number | null; revenue: number | null; items: number | null }[];
+    // Incluye los KPIs del día para poder EDITAR cualquier registro
+    // precargado (fallbacks si las columnas nuevas aún no migran).
+    let dailies: DashboardDaily[];
+    try {
+      dailies = (await sql`
+        SELECT date::text, personas, revenue::float AS revenue, items,
+               nps::float AS nps, mermas_soles::float AS "mermasSoles",
+               tiempo_atencion_min::float AS "tiempoMin", tiempo_mesa_min::float AS "tiempoMesaMin"
+        FROM upselling_daily
+        WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
+        ORDER BY date
+      `) as DashboardDaily[];
+    } catch {
+      try {
+        const rows = (await sql`
+          SELECT date::text, personas, revenue::float AS revenue, items,
+                 nps::float AS nps, mermas_soles::float AS "mermasSoles",
+                 tiempo_atencion_min::float AS "tiempoMin"
+          FROM upselling_daily
+          WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
+          ORDER BY date
+        `) as Omit<DashboardDaily, "tiempoMesaMin">[];
+        dailies = rows.map((r) => ({ ...r, tiempoMesaMin: null }));
+      } catch {
+        const rows = (await sql`
+          SELECT date::text, personas, revenue::float AS revenue, items
+          FROM upselling_daily
+          WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
+          ORDER BY date
+        `) as { date: string; personas: number | null; revenue: number | null; items: number | null }[];
+        dailies = rows.map((r) => ({ ...r, nps: null, mermasSoles: null, tiempoMin: null, tiempoMesaMin: null }));
+      }
+    }
 
     const events = (await sql`
       SELECT kind, event_at::text AS event_at, usuario, producto, amount::float AS amount, motivo
@@ -160,6 +206,21 @@ export async function getIncentiveDashboard(
       // tabla daily_verifications pendiente de migración
     }
 
+    // Estado de atención de cada bandera (resuelta/descartada con nota).
+    let resolutions: Record<string, FlagResolution> = {};
+    try {
+      const rrows = (await sql`
+        SELECT flag_id, status, nota, resolved_by, resolved_at::text AS resolved_at
+        FROM control_flag_status
+        WHERE business_id = ${bId} AND month = ${month}
+      `) as { flag_id: string; status: "resuelta" | "descartada"; nota: string | null; resolved_by: string; resolved_at: string }[];
+      resolutions = Object.fromEntries(
+        rrows.map((r) => [r.flag_id, { status: r.status, nota: r.nota, resolvedBy: r.resolved_by, resolvedAt: r.resolved_at }]),
+      );
+    } catch {
+      // tabla control_flag_status pendiente de migración
+    }
+
     return {
       ok: true,
       data: {
@@ -169,7 +230,7 @@ export async function getIncentiveDashboard(
         dailies,
         verifications,
         progress,
-        flags,
+        flags: flags.map((f) => ({ ...f, resolution: resolutions[f.id] ?? null })),
         workers: workers.map((w) => ({
           nombre: w.nombre,
           mesas: w.mesas,
@@ -267,13 +328,19 @@ export async function getUpsellFocusCandidates(): Promise<
   }
 }
 
-/** Registro diario del administrador (personas, venta e items del día). */
+/**
+ * Registro diario del administrador (personas, venta e items del día).
+ * Re-guardar corrige — cualquier día, cualquier campo. Regla de
+ * integridad de la doble firma: si el día YA estaba firmado por el
+ * verificador y cambian personas o venta (los números que él firmó),
+ * la firma se anula y el verificador debe volver a firmar.
+ */
 export async function saveDailyEntry(input: {
   date: string;
   personas: number;
   revenue: number;
   items: number | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+}): Promise<{ ok: true; firmaAnulada: boolean } | { ok: false; error: string }> {
   const bId = await activeBusinessId();
   const access = await requireIncentivesAccess(bId);
   if (!access.ok) return access;
@@ -282,6 +349,16 @@ export async function saveDailyEntry(input: {
   if (!Number.isFinite(input.revenue) || input.revenue <= 0) return { ok: false, error: "La venta debe ser mayor a 0." };
   if (input.items !== null && (!Number.isFinite(input.items) || input.items < 0)) return { ok: false, error: "Items inválido." };
   try {
+    // ¿Cambian los números firmados de un día ya existente?
+    const prev = (await sql`
+      SELECT personas, revenue::float AS revenue FROM upselling_daily
+      WHERE business_id = ${bId} AND date = ${input.date}
+    `) as { personas: number | null; revenue: number | null }[];
+    const numbersChanged =
+      prev.length > 0 &&
+      (prev[0].personas !== input.personas ||
+        Math.round((prev[0].revenue ?? 0) * 100) !== Math.round(input.revenue * 100));
+
     await sql`
       INSERT INTO upselling_daily (business_id, date, personas, revenue, items, source, updated_at)
       VALUES (${bId}, ${input.date}, ${input.personas}, ${input.revenue}, ${input.items}, 'manual', NOW())
@@ -289,8 +366,24 @@ export async function saveDailyEntry(input: {
         SET personas = EXCLUDED.personas, revenue = EXCLUDED.revenue,
             items = EXCLUDED.items, source = 'manual', updated_at = NOW()
     `;
+
+    let firmaAnulada = false;
+    if (numbersChanged) {
+      try {
+        const deleted = (await sql`
+          DELETE FROM daily_verifications
+          WHERE business_id = ${bId} AND date = ${input.date}
+          RETURNING date
+        `) as { date: string }[];
+        firmaAnulada = deleted.length > 0;
+      } catch {
+        // tabla daily_verifications pendiente de migración — nada que anular
+      }
+    }
+
     revalidatePath("/[negocio]/panel", "page");
-    return { ok: true };
+    revalidatePath("/[negocio]/verificacion", "page");
+    return { ok: true, firmaAnulada };
   } catch (err) {
     console.error("[saveDailyEntry] failed:", err);
     return { ok: false, error: err instanceof Error ? err.message : "Error al guardar el día" };
@@ -346,5 +439,69 @@ export async function importControlReport(input: {
   } catch (err) {
     console.error("[importControlReport] failed:", err);
     return { ok: false, error: err instanceof Error ? err.message : "Error al importar" };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Banderas de control · atender (resolver / descartar) y reabrir.
+// Queda registrado QUIÉN la atendió (admin o dirección) y con qué
+// nota — las banderas de la segunda firma (verif-*) NO pasan por
+// aquí: se resuelven re-firmando en la pantalla de Verificación.
+// ─────────────────────────────────────────────────────────────────
+
+export async function setFlagStatus(input: {
+  month: string;
+  flagId: string;
+  status: "resuelta" | "descartada";
+  nota: string | null;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const bId = await activeBusinessId();
+  const access = await requireIncentivesAccess(bId);
+  if (!access.ok) return access;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) return { ok: false, error: "Mes inválido." };
+  if (!input.flagId || input.flagId.startsWith("verif-")) {
+    return { ok: false, error: "Las banderas de la segunda firma se resuelven en la pantalla de Verificación." };
+  }
+  if (input.status === "descartada" && !input.nota?.trim()) {
+    return { ok: false, error: "Para descartar una bandera, la nota es obligatoria: ¿por qué no aplica?" };
+  }
+  try {
+    const resolvedBy = access.isAdmin ? "admin" : "direccion";
+    await sql`
+      INSERT INTO control_flag_status (business_id, month, flag_id, status, nota, resolved_by, resolved_at)
+      VALUES (${bId}, ${input.month}, ${input.flagId}, ${input.status}, ${input.nota?.trim() || null}, ${resolvedBy}, NOW())
+      ON CONFLICT (business_id, month, flag_id) DO UPDATE
+        SET status = EXCLUDED.status, nota = EXCLUDED.nota,
+            resolved_by = EXCLUDED.resolved_by, resolved_at = NOW()
+    `;
+    revalidatePath("/[negocio]/panel", "page");
+    return { ok: true };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "";
+    if (/control_flag_status/.test(msg)) {
+      return { ok: false, error: "Falta la migración de banderas (tabla control_flag_status) — avísale a Jahnn." };
+    }
+    console.error("[setFlagStatus] failed:", err);
+    return { ok: false, error: msg || "Error al atender la bandera" };
+  }
+}
+
+export async function reopenFlag(input: {
+  month: string;
+  flagId: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const bId = await activeBusinessId();
+  const access = await requireIncentivesAccess(bId);
+  if (!access.ok) return access;
+  try {
+    await sql`
+      DELETE FROM control_flag_status
+      WHERE business_id = ${bId} AND month = ${input.month} AND flag_id = ${input.flagId}
+    `;
+    revalidatePath("/[negocio]/panel", "page");
+    return { ok: true };
+  } catch (err) {
+    console.error("[reopenFlag] failed:", err);
+    return { ok: false, error: err instanceof Error ? err.message : "Error al reabrir la bandera" };
   }
 }
