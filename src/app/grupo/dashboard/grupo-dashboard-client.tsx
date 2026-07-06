@@ -1,11 +1,14 @@
 "use client";
 
 import Link from "next/link";
-import { Landmark, TrendingUp, TrendingDown, Wallet } from "lucide-react";
+import { Landmark, TrendingUp, TrendingDown, Wallet, Scale } from "lucide-react";
 import { KPICard } from "@/components/ui/KPICard";
 import { DataTable } from "@/components/ui/DataTable";
 import { formatCurrency } from "@/lib/utils";
 import type { BusinessSummary } from "@/app/actions/grupo";
+import type { GroupBreakeven } from "@/app/actions/breakeven";
+import { BreakevenBody } from "@/components/breakeven-card";
+import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 
 type Props = {
   selectedMonth: string;
@@ -17,9 +20,12 @@ type Props = {
     monthlyExpenses: number;
     margin: number;
   };
+  breakeven: GroupBreakeven | null;
 };
 
-export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries, totals: t }: Props) {
+const SEDE_CODE: Record<number, ScopeCode> = { 1: "atelier", 2: "fonavi", 3: "centro" };
+
+export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries, totals: t, breakeven }: Props) {
   return (
     <div className="space-y-6">
       <div>
@@ -59,6 +65,39 @@ export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries,
           variant={t.margin >= 0 ? "success" : "danger"}
         />
       </div>
+
+      {/* Punto de equilibrio — la pregunta del CEO: ¿cada sede se paga
+          sola este mes, y el grupo completo? */}
+      {breakeven && (
+        <section className="space-y-2">
+          <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400 flex items-center gap-1.5">
+            <Scale className="w-3.5 h-3.5" />
+            Punto de equilibrio · {isCurrentMonth ? "mes en curso" : selectedMonth}
+          </h2>
+          <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
+            {breakeven.sedes.map((s) => {
+              const code = SEDE_CODE[s.businessId];
+              const theme = code ? BUSINESS_THEMES[code] : null;
+              return (
+                <div key={s.businessId} className="bg-white rounded-xl border border-gray-200 p-4" style={theme ? { borderTopColor: theme.color, borderTopWidth: 3 } : undefined}>
+                  <Link href={code ? `/${code}/dashboard` : "#"} className="text-sm font-semibold text-gray-900 hover:underline">
+                    {s.name}
+                  </Link>
+                  <div className="mt-2">
+                    <BreakevenBody r={s.result} isCurrent={breakeven.isCurrent} compact />
+                  </div>
+                </div>
+              );
+            })}
+            <div className="bg-white rounded-xl border border-gray-200 p-4" style={{ borderTopColor: BUSINESS_THEMES.grupo.color, borderTopWidth: 3 }}>
+              <div className="text-sm font-semibold text-gray-900">Grupo Yayi&apos;s</div>
+              <div className="mt-2">
+                <BreakevenBody r={breakeven.grupo} isCurrent={breakeven.isCurrent} compact />
+              </div>
+            </div>
+          </div>
+        </section>
+      )}
 
       <DataTable
         rowKey={(r) => r.code}
