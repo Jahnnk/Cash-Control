@@ -12,10 +12,9 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { verifyAuthToken, verifyScopedToken } from "@/lib/auth-token";
+import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import {
   computeWeekSummary,
   compareWeeks,
@@ -30,7 +29,6 @@ import {
 
 const sql = neon(process.env.DATABASE_URL!);
 
-const SEDE_BY_SCOPE: Record<string, number> = { "admin-fonavi": 2, "admin-centro": 3 };
 const SEDE_NAMES: Record<number, string> = { 1: "Atelier", 2: "Fonavi", 3: "Centro" };
 
 /** Metas por defecto (las del deck jun-2026) si la tabla aún no existe. */
@@ -40,16 +38,9 @@ const DEFAULT_TARGETS: Record<number, KpiTargets> = {
 };
 
 async function sessionKind(bId: number): Promise<"full" | "admin" | null> {
-  const c = await cookies();
-  const token = c.get("yayis_auth")?.value;
-  const now = Math.floor(Date.now() / 1000);
-  if (await verifyAuthToken(token, process.env.APP_PASSWORD, now)) return "full";
-  const scope = await verifyScopedToken(
-    token,
-    (s) => (s === "admin-fonavi" ? process.env.ADMIN_PASSWORD_FONAVI : s === "admin-centro" ? process.env.ADMIN_PASSWORD_CENTRO : undefined),
-    now,
-  );
-  if (scope && SEDE_BY_SCOPE[scope] === bId) return "admin";
+  const role = await getSessionRole();
+  if (role?.kind === "full") return "full";
+  if (role?.kind === "admin" && role.sede === bId) return "admin";
   return null;
 }
 
@@ -153,10 +144,7 @@ export async function getBoardDeckData(weekStart: string): Promise<
   | { ok: true; data: BoardDeckData }
   | { ok: false; error: string }
 > {
-  const c = await cookies();
-  const token = c.get("yayis_auth")?.value;
-  const now = Math.floor(Date.now() / 1000);
-  if (!(await verifyAuthToken(token, process.env.APP_PASSWORD, now))) {
+  if (!(await requireFullSession())) {
     return { ok: false, error: "El informe de la reunión es solo para la sesión completa." };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return { ok: false, error: "Semana inválida." };
@@ -226,9 +214,7 @@ export async function getKpiTargetsForEdit(): Promise<
   | { ok: false; error: string }
 > {
   const bId = await activeBusinessId();
-  const c = await cookies();
-  const now = Math.floor(Date.now() / 1000);
-  if (!(await verifyAuthToken(c.get("yayis_auth")?.value, process.env.APP_PASSWORD, now))) {
+  if (!(await requireFullSession())) {
     return { ok: false, error: "Las metas las ajusta solo la dirección." };
   }
   if (bId !== 2 && bId !== 3) return { ok: false, error: "KPIs aplican a las cafeterías." };
@@ -270,9 +256,7 @@ export async function saveKpiTargets(input: {
   tiempoMaxMin: number | null;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const bId = await activeBusinessId();
-  const c = await cookies();
-  const now = Math.floor(Date.now() / 1000);
-  if (!(await verifyAuthToken(c.get("yayis_auth")?.value, process.env.APP_PASSWORD, now))) {
+  if (!(await requireFullSession())) {
     return { ok: false, error: "Las metas las ajusta solo la dirección." };
   }
   if (bId !== 2 && bId !== 3) return { ok: false, error: "KPIs aplican a las cafeterías." };

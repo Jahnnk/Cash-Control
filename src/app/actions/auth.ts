@@ -7,6 +7,22 @@ import { createAuthToken, createScopedToken } from "@/lib/auth-token";
 const AUTH_COOKIE = "yayis_auth";
 const SESSION_DAYS = 30;
 
+/**
+ * Pausa uniforme antes de responder a un intento fallido. Frena la
+ * fuerza bruta (limita a ~2 intentos/seg por conexión) sin depender
+ * de estado en memoria, que no sobrevive entre instancias serverless.
+ * Uniforme además evita filtrar por tiempo de respuesta cuál de las
+ * contraseñas (completa o con alcance) estuvo cerca de acertar.
+ */
+const FAILED_LOGIN_DELAY_MS = 500;
+
+/** Cookie NO-httpOnly con el scope de la sesión (solo pista de UI). */
+const SCOPE_HINT_COOKIE = "yayis_scope";
+
+async function failedLoginDelay(): Promise<void> {
+  await new Promise((r) => setTimeout(r, FAILED_LOGIN_DELAY_MS));
+}
+
 /** Comparación en tiempo constante de la contraseña ingresada. */
 function passwordMatches(input: string, expected: string): boolean {
   const enc = new TextEncoder();
@@ -37,6 +53,7 @@ export async function loginWithPassword(
 
   const input = String(formData.get("password") ?? "");
   if (!input) {
+    await failedLoginDelay();
     return { error: "Contraseña incorrecta. Intenta de nuevo." };
   }
 
@@ -54,6 +71,9 @@ export async function loginWithPassword(
     const token = await createAuthToken(expected, exp);
     const c = await cookies();
     c.set(AUTH_COOKIE, token, cookieOpts);
+    // Limpia el indicador de sesión con alcance de un login anterior
+    // en este navegador — si queda, el menú se esconde para Jahnn/Kelly.
+    c.delete(SCOPE_HINT_COOKIE);
     redirect("/");
   }
 
@@ -71,9 +91,14 @@ export async function loginWithPassword(
       const token = await createScopedToken(a.secret, a.scope, exp);
       const c = await cookies();
       c.set(AUTH_COOKIE, token, cookieOpts);
+      // Indicador legible por el cliente para que el menú muestre solo
+      // lo que esta sesión puede usar. NO es seguridad (eso vive en el
+      // middleware y las actions): es UX. Por eso no es httpOnly.
+      c.set(SCOPE_HINT_COOKIE, a.scope, { ...cookieOpts, httpOnly: false });
       redirect(a.landing);
     }
   }
 
+  await failedLoginDelay();
   return { error: "Contraseña incorrecta. Intenta de nuevo." };
 }

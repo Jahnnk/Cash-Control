@@ -11,10 +11,9 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { verifyAuthToken, verifyScopedToken } from "@/lib/auth-token";
+import { getSessionRole } from "@/lib/session-access";
 import {
   computeProgress,
   computeFlags,
@@ -29,22 +28,12 @@ import type { ParsedEvent, ParsedWorkerSales } from "@/lib/incentives/byte-contr
 
 const sql = neon(process.env.DATABASE_URL!);
 
-const SEDE_BY_SCOPE: Record<string, number> = { "admin-fonavi": 2, "admin-centro": 3 };
-
-/** Sesión completa o admin de la sede indicada — si no, error. */
+/** Sesión completa o admin de la sede indicada — si no, error.
+ * El verificador NO pasa por aquí: su rol es solo la segunda firma. */
 async function requireIncentivesAccess(bId: number): Promise<{ ok: true; isAdmin: boolean } | { ok: false; error: string }> {
-  const c = await cookies();
-  const token = c.get("yayis_auth")?.value;
-  const now = Math.floor(Date.now() / 1000);
-  if (await verifyAuthToken(token, process.env.APP_PASSWORD, now)) {
-    return { ok: true, isAdmin: false };
-  }
-  const scope = await verifyScopedToken(
-    token,
-    (s) => (s === "admin-fonavi" ? process.env.ADMIN_PASSWORD_FONAVI : s === "admin-centro" ? process.env.ADMIN_PASSWORD_CENTRO : undefined),
-    now,
-  );
-  if (scope && SEDE_BY_SCOPE[scope] === bId) return { ok: true, isAdmin: true };
+  const role = await getSessionRole();
+  if (role?.kind === "full") return { ok: true, isAdmin: false };
+  if (role?.kind === "admin" && role.sede === bId) return { ok: true, isAdmin: true };
   return { ok: false, error: "Sin acceso a los incentivos de esta sede." };
 }
 

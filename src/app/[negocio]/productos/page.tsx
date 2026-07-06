@@ -7,7 +7,7 @@ import {
   FileDown, Loader2, Calculator, Trash2,
 } from "lucide-react";
 import { simulatePriceChange } from "@/lib/portfolio/simulator";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, monthLabel } from "@/lib/utils";
 import {
   getProductDataStatus,
   deleteProductSalesMonth,
@@ -46,11 +46,6 @@ const QUADRANT_LABEL: Record<string, string> = {
   dog: "🐶 Dog",
 };
 
-function monthLabel(m: string) {
-  const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1);
-  const s = d.toLocaleDateString("es-PE", { month: "long", year: "numeric" });
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 export default function ProductosPage() {
   const [status, setStatus] = useState<ProductDataStatus | null>(null);

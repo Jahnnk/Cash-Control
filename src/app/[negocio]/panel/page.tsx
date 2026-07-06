@@ -1,10 +1,11 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
+import { useParams } from "next/navigation";
 import {
   Trophy, Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag,
 } from "lucide-react";
-import { formatCurrency } from "@/lib/utils";
+import { formatCurrency, monthLabel } from "@/lib/utils";
 import {
   getIncentiveDashboard,
   saveDailyEntry,
@@ -32,12 +33,11 @@ function todayLima() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
-function monthLabel(m: string) {
-  const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1);
-  const s = d.toLocaleDateString("es-PE", { month: "long", year: "numeric" });
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 export default function IncentivosPage() {
+  // Sede desde el segmento [negocio] de la ruta — la fuente de verdad de
+  // Next.js (antes se parseaba window.location a mano).
+  const params = useParams<{ negocio: string }>();
+  const sedeLabel = params.negocio === "fonavi" ? "Fonavi" : "Centro";
   const { showToast } = useToast();
   const [month, setMonth] = useState(currentMonth());
   const [data, setData] = useState<IncentiveDashboard | null>(null);
@@ -432,7 +432,7 @@ export default function IncentivosPage() {
       )}
       {showLiquidation && (
         <LiquidationModal
-          sede={window.location.pathname.split("/")[1] === "fonavi" ? "Fonavi" : "Centro"}
+          sede={sedeLabel}
           month={month}
           monthLabel={monthLabel(month)}
           onClose={() => setShowLiquidation(false)}

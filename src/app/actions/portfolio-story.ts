@@ -13,6 +13,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { compilePortfolioStory } from "@/lib/portfolio/story-compiler";
 import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
 import { normalizeProductName } from "@/lib/product-matching";
+import { monthLabel } from "@/lib/utils";
 import {
   projectNextMonth,
   computeMovers,
@@ -29,12 +30,6 @@ const BUSINESS_NAMES: Record<number, string> = {
   2: "Yayi's Fonavi",
   3: "Yayi's Centro",
 };
-
-function monthLabel(m: string): string {
-  const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1);
-  const s = d.toLocaleDateString("es-PE", { month: "long", year: "numeric" });
-  return s.charAt(0).toUpperCase() + s.slice(1);
-}
 
 /** Colector interno reutilizable (getPortfolioStory y la vista histórica). */
 async function collectFacts(bId: number, month: string): Promise<PortfolioFacts | null> {
@@ -181,10 +176,19 @@ export async function getPortfolioHistory(): Promise<PortfolioHistoryResult> {
       return { ok: false, error: "Aún no hay meses cargados." };
     }
 
+    // Los meses son independientes entre sí → se consultan en paralelo
+    // (antes era secuencial y la espera crecía con cada mes cargado).
+    // El procesamiento posterior sí es en orden para que las series
+    // queden cronológicas.
+    const factsByMonth = await Promise.all(
+      monthsRows.map(({ month }) => collectFacts(bId, month)),
+    );
+
     const summaries: MonthSummary[] = [];
     const series = new Map<string, { name: string; points: { month: string; revenue: number }[] }>();
-    for (const { month } of monthsRows) {
-      const facts = await collectFacts(bId, month);
+    for (let i = 0; i < monthsRows.length; i++) {
+      const month = monthsRows[i].month;
+      const facts = factsByMonth[i];
       if (!facts) continue;
       const intel = compilePortfolioIntelligence(facts);
       summaries.push({
