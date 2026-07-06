@@ -19,35 +19,17 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { verifyAuthToken, verifyScopedToken } from "@/lib/auth-token";
+import { getSessionRole } from "@/lib/session-access";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-const SEDE_BY_SCOPE: Record<string, number> = {
-  "admin-fonavi": 2, "admin-centro": 3,
-  "verif-fonavi": 2, "verif-centro": 3,
-};
-
 async function sessionRole(bId: number): Promise<"full" | "admin" | "verif" | null> {
-  const c = await cookies();
-  const token = c.get("yayis_auth")?.value;
-  const now = Math.floor(Date.now() / 1000);
-  if (await verifyAuthToken(token, process.env.APP_PASSWORD, now)) return "full";
-  const scope = await verifyScopedToken(
-    token,
-    (s) =>
-      s === "admin-fonavi" ? process.env.ADMIN_PASSWORD_FONAVI
-      : s === "admin-centro" ? process.env.ADMIN_PASSWORD_CENTRO
-      : s === "verif-fonavi" ? process.env.VERIF_PASSWORD_FONAVI
-      : s === "verif-centro" ? process.env.VERIF_PASSWORD_CENTRO
-      : undefined,
-    now,
-  );
-  if (!scope || SEDE_BY_SCOPE[scope] !== bId) return null;
-  return scope.startsWith("admin-") ? "admin" : "verif";
+  const role = await getSessionRole();
+  if (role?.kind === "full") return "full";
+  if (role && role.sede === bId) return role.kind;
+  return null;
 }
 
 export type VerificationStatus = {

@@ -89,6 +89,27 @@ lo avisa). Cambiar la contraseña invalida todas las sesiones activas
 
 Excepciones sin login: `/login` y `/api/keep-alive` (token propio).
 
+## Sesiones con alcance (tokens v2)
+
+Además de la contraseña completa existen contraseñas POR SEDE que crean
+tokens v2 (`v2.<exp>.<scope>.<firma>`, firmados con la contraseña del
+scope — ver `src/lib/auth-token.ts` y `src/lib/session-access.ts`):
+
+| Scope | Env var | Acceso permitido |
+|---|---|---|
+| `admin-fonavi` | `ADMIN_PASSWORD_FONAVI` | `/fonavi/panel` |
+| `admin-centro` | `ADMIN_PASSWORD_CENTRO` | `/centro/panel` |
+| `verif-fonavi` | `VERIF_PASSWORD_FONAVI` | `/fonavi/verificacion` |
+| `verif-centro` | `VERIF_PASSWORD_CENTRO` | `/centro/verificacion` |
+
+El middleware bloquea todo fuera del prefijo permitido y las server
+actions re-verifican con `getSessionRole()` de
+`src/lib/session-access.ts` — ÚNICA fuente de verdad para resolver la
+sesión en actions (no re-implementar el switch de contraseñas en cada
+archivo). Fail-closed: scope sin env var nunca valida. La cookie
+`yayis_scope` (no-httpOnly) es solo una pista de UI para el sidebar,
+NUNCA seguridad.
+
 # Keep-Alive Cron (mantener Neon despierta)
 
 El endpoint `GET /api/keep-alive` hace un `SELECT 1` a Neon para

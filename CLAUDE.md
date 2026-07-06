@@ -50,11 +50,18 @@ Egresos con categoría y método de pago (transferencia/efectivo/yape)
 - Los pagos de Fonavi/Centro por créditos antiguos van al banco pero no se reflejan en el Byte del día
 
 ## Páginas
-- `/dashboard` — 5 tarjetas (saldo, ingresos, gastos, CxC, cobertura) + últimos 7 días + conciliación bancaria + efectivo
-- `/registro` — Tab Byte (campos Byte + verificación) + Tab Movimientos (estilo Board: feed de ingresos/egresos)
-- `/clientes` — Lista de clientes con detalle
-- `/reportes` — Semanal, Mensual, Antigüedad de deuda
-- `/configuracion` — Gestión de categorías de egresos
+Multi-tenant: casi todas viven bajo `/[negocio]/...` (negocio = `atelier` | `fonavi` | `centro`; `grupo` = vista consolidada). La sede activa la inyecta el middleware (header `x-active-business` + cookie).
+
+- `/[negocio]/dashboard` — tarjetas de posición de caja + últimos 7 días + conciliación bancaria + Executive Brief (Decision Intelligence)
+- `/[negocio]/registro` — Tab Byte (cierre diario) + Tab Movimientos (feed de ingresos/egresos, grupos visuales)
+- `/[negocio]/presupuesto` — presupuesto por categorías
+- `/atelier/clientes`, `/atelier/fonavi` (por cobrar), `/atelier/prestamos-socio` — solo Atelier (B2B)
+- `/[negocio]/propinas` — propinas
+- `/[negocio]/productos` — Product Intelligence Center: import de reportes Byte, veredictos por producto, histórico + Pareto, simulador, Board Package (PDF/PPT/Excel)
+- `/{fonavi|centro}/panel` — Panel de Sede: incentivos por upselling + KPIs diarios + registro diario del admin + liquidación mensual (solo dirección)
+- `/{fonavi|centro}/verificacion` — segunda firma del conteo diario (rol verificador)
+- `/[negocio]/reportes` — Semanal, Mensual, Antigüedad + Reporte Ejecutivo (EIRS: PDF/PPTX/XLSX)
+- `/[negocio]/configuracion` — categorías de egresos, alias de productos, metas KPI (solo dirección)
 
 ## Preferencias del usuario
 - Idioma: siempre español

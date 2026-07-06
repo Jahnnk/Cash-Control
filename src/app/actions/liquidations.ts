@@ -8,10 +8,9 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { verifyAuthToken } from "@/lib/auth-token";
+import { requireFullSession } from "@/lib/session-access";
 import {
   computeLiquidation,
   type IncentiveConfigT,
@@ -20,12 +19,6 @@ import {
 } from "@/lib/incentives/engine";
 
 const sql = neon(process.env.DATABASE_URL!);
-
-async function requireFullSession(): Promise<boolean> {
-  const c = await cookies();
-  const now = Math.floor(Date.now() / 1000);
-  return verifyAuthToken(c.get("yayis_auth")?.value, process.env.APP_PASSWORD, now);
-}
 
 type LevelRow = { nombre: string; delta: number; bono_tc: number; bono_mt: number; bono_admin: number; premio_mv: number };
 

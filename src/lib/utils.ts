@@ -27,6 +27,16 @@ export function cn(...classes: (string | boolean | undefined | null)[]): string 
 }
 
 /**
+ * "2026-06" → "Junio de 2026". Etiqueta estándar de mes en toda la app
+ * (antes vivía copiada en panel, productos y portfolio-story).
+ */
+export function monthLabel(m: string): string {
+  const d = new Date(Number(m.slice(0, 4)), Number(m.slice(5, 7)) - 1, 1);
+  const s = d.toLocaleDateString("es-PE", { month: "long", year: "numeric" });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+/**
  * Hoy en zona Lima (America/Lima, UTC−5) en formato YYYY-MM-DD.
  * `en-CA` produce el ISO sortable directo. NO uses toISOString() porque
  * devuelve UTC y entre 19:00–23:59 hora Lima ya es el día siguiente UTC,

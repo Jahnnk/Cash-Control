@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { useState, useMemo } from "react";
+import { useState, useMemo, useSyncExternalStore } from "react";
 import {
   LayoutDashboard,
   PenLine,
@@ -66,19 +66,50 @@ function readRoleCookie(): "admin" | "kelly" | null {
   return v === "admin" || v === "kelly" ? v : null;
 }
 
+/**
+ * Pista de sesión con alcance (admin de sede / verificador), seteada en
+ * el login. SOLO afecta qué muestra el menú — la seguridad real vive en
+ * el middleware y las server actions. Sin ella, un admin de sede ve el
+ * menú completo y cada clic lo rebota a su panel (parece un bug).
+ */
+function readScopeHintCookie(): string | null {
+  if (typeof document === "undefined") return null;
+  const m = document.cookie.match(/(?:^|;\s*)yayis_scope=([^;]+)/);
+  return m ? decodeURIComponent(m[1]) : null;
+}
+
+/** La cookie solo cambia con un login (navegación completa) — no hay
+ * nada a lo que suscribirse. */
+function subscribeNever(): () => void {
+  return () => {};
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
   const [switcherOpen, setSwitcherOpen] = useState(false);
-
-  const scope = scopeFromPathname(pathname);
-  // useMemo SIEMPRE se llama en el mismo orden — no condicional.
-  const items = useMemo(
-    () => (scope ? NAV.filter((item) => item.scopes.includes(scope)) : []),
-    [scope]
+  // La cookie es una fuente externa a React: useSyncExternalStore la lee
+  // de forma segura para la hidratación (en el servidor devuelve null).
+  const scopeHint = useSyncExternalStore(
+    subscribeNever,
+    readScopeHintCookie,
+    () => null,
   );
 
-  if (!scope) return null;
+  const scope = scopeFromPathname(pathname);
+  const isScopedAdmin = scopeHint?.startsWith("admin-") ?? false;
+  const isScopedVerif = scopeHint?.startsWith("verif-") ?? false;
+  // useMemo SIEMPRE se llama en el mismo orden — no condicional.
+  const items = useMemo(() => {
+    if (!scope) return [];
+    const base = NAV.filter((item) => item.scopes.includes(scope));
+    // Admin de sede: solo su Panel — el resto del menú lo rebotaría.
+    return isScopedAdmin ? base.filter((i) => i.segment === "panel") : base;
+  }, [scope, isScopedAdmin]);
+
+  // Verificador: su única pantalla (/[sede]/verificacion) no está en el
+  // menú — un sidebar vacío solo estorba en el celular.
+  if (!scope || isScopedVerif) return null;
 
   const theme = BUSINESS_THEMES[scope];
   const ScopeIcon = theme.icon;
@@ -115,7 +146,7 @@ export function Sidebar() {
         {/* Header — switcher con dot del color del negocio */}
         <div className="relative border-b border-white/10">
           <button
-            onClick={() => setSwitcherOpen((v) => !v)}
+            onClick={() => !isScopedAdmin && setSwitcherOpen((v) => !v)}
             className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors text-left"
           >
             <div className="flex items-center gap-3 min-w-0">
@@ -127,7 +158,9 @@ export function Sidebar() {
                 <div className="text-[11px] text-white/70 truncate">{theme.description}</div>
               </div>
             </div>
-            <ChevronDown className={`w-4 h-4 text-white/60 transition-transform shrink-0 ${switcherOpen ? "rotate-180" : ""}`} />
+            {!isScopedAdmin && (
+              <ChevronDown className={`w-4 h-4 text-white/60 transition-transform shrink-0 ${switcherOpen ? "rotate-180" : ""}`} />
+            )}
           </button>
 
           {switcherOpen && (
@@ -191,8 +224,8 @@ export function Sidebar() {
           </button>
         </div>
 
-        {/* Indicador de rol activo */}
-        {role && (
+        {/* Indicador de rol activo (no aplica a sesiones con alcance) */}
+        {role && !isScopedAdmin && (
           <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 text-[11px] text-white/60">
             <User className="w-3 h-3" />
             <span>Usuario: <span className="font-medium text-white/80">{role === "admin" ? "Jahnn" : "Kelly"}</span></span>
@@ -224,6 +257,7 @@ export function Sidebar() {
         {/* Footer: cambiar usuario. "Cambiar negocio" vive en el switcher
             del header (siempre visible) — se quitó de aquí para evitar el
             doble acceso al mismo destino. */}
+        {!isScopedAdmin && (
         <div className="border-t border-white/10 p-3 space-y-1">
           <form action={clearRole}>
             <button
@@ -235,6 +269,7 @@ export function Sidebar() {
             </button>
           </form>
         </div>
+        )}
 
         <div className="p-4 border-t border-white/10">
           <p className="text-xs text-white/40">{theme.label}</p>
