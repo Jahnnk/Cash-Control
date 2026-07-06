@@ -7,7 +7,7 @@ import { parseControlReport } from "@/lib/incentives/byte-control-parsers";
 import { importControlReport } from "@/app/actions/incentives";
 
 const KIND_LABEL: Record<string, string> = {
-  anulaciones: "Pedidos anulados",
+  anulaciones: "Pedidos anulados (histórico)",
   cortesias: "Cortesías",
   cambios_precio: "Cambios de precio",
   ventas_trabajador: "Ventas por trabajador",
@@ -18,7 +18,11 @@ type FileResult = { name: string; status: "ok" | "error"; detail: string };
 /**
  * Incentivos · Subir los reportes de control de Byte (varios a la vez).
  * Cada archivo se auto-clasifica por su encabezado; re-subir un rango
- * lo reemplaza (idempotente). El admin sube 4 archivos 1-2 veces/semana.
+ * lo reemplaza (idempotente). El admin sube 3 archivos 1-2 veces/semana.
+ * Nota jul-2026: Byte eliminó el reporte de Pedidos Anulados (los
+ * asesores ya no pueden anular pedidos pagados; las anulaciones de
+ * comandas pre-pago no generan reporte). Los exports antiguos de
+ * anulados se siguen aceptando como histórico.
  */
 export function ImportControlModal({
   onClose,
@@ -95,11 +99,16 @@ export function ImportControlModal({
         <div className="p-6 space-y-4">
           <p className="text-xs text-gray-500">
             <strong>Rutina semanal (~5 min)</strong> — para banderas de control y ranking; el avance
-            diario de la meta sale del registro del día, no de estos archivos. Exporta de Byte los 4
+            diario de la meta sale del registro del día, no de estos archivos. Exporta de Byte los 3
             reportes con el rango <strong>desde el día 1 del mes hasta hoy</strong> y suéltalos aquí
-            todos juntos: <strong>Pedidos Anulados · Cortesías · Cambios de Precio · Ventas por
-            Trabajador</strong>. Cada subida <strong>reemplaza</strong> la anterior (no duplica) y el
-            sistema reconoce cada archivo solo. Puedes subirlos más seguido si algo te huele raro.
+            todos juntos: <strong>Cortesías · Cambios de Precio · Ventas por Trabajador</strong>.
+            Cada subida <strong>reemplaza</strong> la anterior (no duplica) y el sistema reconoce
+            cada archivo solo. Puedes subirlos más seguido si algo te huele raro.
+          </p>
+          <p className="text-[11px] text-gray-400">
+            Byte ya no genera el reporte de Pedidos Anulados (los asesores no pueden anular pedidos
+            pagados; las anulaciones de comanda antes del pago no salen en reporte, y las
+            devoluciones las maneja el administrador). Si tienes exports antiguos, también se aceptan.
           </p>
 
           <div

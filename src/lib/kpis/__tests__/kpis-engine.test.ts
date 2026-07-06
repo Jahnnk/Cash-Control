@@ -15,18 +15,18 @@ import {
   type KpiDaily,
 } from "../engine";
 
-const CENTRO: KpiTargets = { ventaDiaria: 1266, ticketRef: 24.25, npsMin: 9, mermasMaxPct: 0.04, tiempoMaxMin: null };
+const CENTRO: KpiTargets = { ventaDiaria: 1266, ticketRef: 24.25, npsMin: 9, mermasMaxPct: 0.04, tiempoMaxMin: 6, tiempoMesaMaxMin: 15 };
 
 /** La semana real del cuadro de Notion (Centro, 21-27 jun). Personas
  *  derivadas de ticket = ventas/personas del cuadro. */
 const WEEK: KpiDaily[] = [
-  { date: "2026-06-21", ventas: 1798.2, personas: 69, nps: 9.8, mermasSoles: 35, tiempoMin: null },   // ticket 26.06
-  { date: "2026-06-22", ventas: 1261.5, personas: 51, nps: 9.6, mermasSoles: 0, tiempoMin: null },    // 24.74
-  { date: "2026-06-23", ventas: 1084.9, personas: 56, nps: 9.2, mermasSoles: 27, tiempoMin: null },   // 19.37
-  { date: "2026-06-24", ventas: 939.0, personas: 37, nps: 9.78, mermasSoles: 0, tiempoMin: null },    // 25.38
-  { date: "2026-06-25", ventas: 1188.6, personas: 53, nps: 9.8, mermasSoles: 20, tiempoMin: null },   // 22.43
-  { date: "2026-06-26", ventas: 800.7, personas: 44, nps: 9.0, mermasSoles: 0, tiempoMin: null },     // 18.20
-  { date: "2026-06-27", ventas: 1275.7, personas: 53, nps: 9.3, mermasSoles: 0, tiempoMin: null },    // 24.07
+  { date: "2026-06-21", ventas: 1798.2, personas: 69, nps: 9.8, mermasSoles: 35, tiempoMin: null, tiempoMesaMin: null },   // ticket 26.06
+  { date: "2026-06-22", ventas: 1261.5, personas: 51, nps: 9.6, mermasSoles: 0, tiempoMin: null, tiempoMesaMin: null },    // 24.74
+  { date: "2026-06-23", ventas: 1084.9, personas: 56, nps: 9.2, mermasSoles: 27, tiempoMin: null, tiempoMesaMin: null },   // 19.37
+  { date: "2026-06-24", ventas: 939.0, personas: 37, nps: 9.78, mermasSoles: 0, tiempoMin: null, tiempoMesaMin: null },    // 25.38
+  { date: "2026-06-25", ventas: 1188.6, personas: 53, nps: 9.8, mermasSoles: 20, tiempoMin: null, tiempoMesaMin: null },   // 22.43
+  { date: "2026-06-26", ventas: 800.7, personas: 44, nps: 9.0, mermasSoles: 0, tiempoMin: null, tiempoMesaMin: null },     // 18.20
+  { date: "2026-06-27", ventas: 1275.7, personas: 53, nps: 9.3, mermasSoles: 0, tiempoMin: null, tiempoMesaMin: null },    // 24.07
 ];
 
 describe("semáforos diarios — reproducen el cuadro de Notion", () => {
@@ -47,6 +47,27 @@ describe("semáforos diarios — reproducen el cuadro de Notion", () => {
     expect(d.traffic.nps).toBe("verde");
     expect(d.traffic.mermas).toBe("verde");
     expect(d.traffic.tiempo).toBe("gris");
+    expect(d.traffic.tiempoMesa).toBe("gris");
+  });
+
+  it("tiempos partidos: mostrador (<6) y mesa (<15) semaforizan por separado", () => {
+    // Mostrador 5 min = verde; mesa 19 min (>15×1.2=18) = rojo — un mismo día.
+    const d = computeDayView({ ...WEEK[0], tiempoMin: 5, tiempoMesaMin: 19 }, CENTRO);
+    expect(d.traffic.tiempo).toBe("verde");
+    expect(d.traffic.tiempoMesa).toBe("rojo");
+    // Ámbar: hasta 1.2× la meta (mostrador 7 ≤ 7.2; mesa 17 ≤ 18).
+    const a = computeDayView({ ...WEEK[0], tiempoMin: 7, tiempoMesaMin: 17 }, CENTRO);
+    expect(a.traffic.tiempo).toBe("ambar");
+    expect(a.traffic.tiempoMesa).toBe("ambar");
+  });
+
+  it("promedios semanales de los dos tiempos, cada uno con su semáforo", () => {
+    const week = WEEK.map((d, i) => ({ ...d, tiempoMin: 5 + (i % 2), tiempoMesaMin: 12 }));
+    const s = computeWeekSummary("2026-06-21", week, CENTRO);
+    expect(s.tiempoProm).toBeCloseTo(5.43, 1);   // ≤6 verde
+    expect(s.tiempoMesaProm).toBe(12);           // ≤15 verde
+    expect(s.traffic.tiempo).toBe("verde");
+    expect(s.traffic.tiempoMesa).toBe("verde");
   });
 });
 
