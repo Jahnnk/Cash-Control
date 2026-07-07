@@ -9,6 +9,7 @@ import {
   type VerificationDay,
 } from "@/app/actions/verifications";
 import { useToast } from "@/components/toast-provider";
+import { SalonTimer } from "./salon-timer";
 
 /**
  * Verificación del conteo diario — la SEGUNDA FIRMA (mando medio).
@@ -63,8 +64,23 @@ export default function VerificacionPage() {
       <div>
         <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
           <ShieldCheck className="w-5 h-5 text-primary" />
-          Verificación del conteo diario
+          Encargado de salón
         </h1>
+        <p className="text-xs text-gray-500 mt-1">
+          Dos herramientas: durante el turno, cronometra los tiempos de atención;
+          al cierre, firma que el conteo de personas cuadra con la realidad.
+        </p>
+      </div>
+
+      {/* Herramienta de turno: cronómetro de tiempos de atención */}
+      <SalonTimer />
+
+      {/* Cierre del día: la segunda firma del conteo */}
+      <div>
+        <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+          <ShieldCheck className="w-4 h-4 text-primary" />
+          Verificación del conteo diario
+        </h2>
         <p className="text-xs text-gray-500 mt-1">
           Tu firma confirma que las <strong>personas atendidas</strong> registradas cuadran con el
           salón y el cierre de Byte. Si algo no cuadra, obsérvalo con una nota — se resuelve antes

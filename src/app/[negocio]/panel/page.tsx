@@ -374,6 +374,9 @@ export default function IncentivosPage() {
                     placeholder="ej. 12" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
               </div>
+              <div className="text-[11px] text-gray-400 mb-2">
+                Los tiempos se llenan solos si el encargado de salón usa el cronómetro (promedio medido del día). Escríbelos a mano solo si ese día no se cronometró.
+              </div>
               <button
                 onClick={handleSaveDay}
                 disabled={saving || !personas || !venta}
