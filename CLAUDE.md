@@ -59,7 +59,7 @@ Multi-tenant: casi todas viven bajo `/[negocio]/...` (negocio = `atelier` | `fon
 - `/[negocio]/propinas` — propinas
 - `/[negocio]/productos` — Product Intelligence Center: import de reportes Byte, veredictos por producto, histórico + Pareto, simulador, Board Package (PDF/PPT/Excel)
 - `/{fonavi|centro}/panel` — Panel de Sede: incentivos por upselling + KPIs diarios + registro diario del admin + liquidación mensual (solo dirección)
-- `/{fonavi|centro}/verificacion` — segunda firma del conteo diario (rol verificador)
+- `/{fonavi|centro}/verificacion` — Encargado de salón: cronómetro de tiempos de atención (mostrador comanda→despacho, mesa pedido→servido; alimenta solo el KPI de tiempos vía service_timings) + segunda firma del conteo diario (rol verificador)
 - `/[negocio]/reportes` — Semanal, Mensual, Antigüedad + Reporte Ejecutivo (EIRS: PDF/PPTX/XLSX)
 - `/[negocio]/configuracion` — categorías de egresos, alias de productos, metas KPI (solo dirección)
 
