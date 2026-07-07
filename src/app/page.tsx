@@ -12,13 +12,12 @@ export const dynamic = "force-dynamic";
  * para que Kelly no entre a Atelier sin querer. Si alguien usa URL
  * hackeada puede bypass-ear esto — no es seguridad, es UX defensiva.
  *
- * Si ya hay rol activo, redirige a /select-business para que elija
- * negocio (NO redirige al último negocio usado, para forzar paso
- * consciente cada vez que reabre la app).
+ * Con rol activo: Jahnn (CEO) aterriza directo en el panel del GRUPO
+ * (salud global + por sede); Kelly va al selector de negocio.
  */
 export default async function HomeRoleSelector() {
   const existing = await getActiveRole();
-  if (existing) redirect("/select-business");
+  if (existing) redirect(existing === "admin" ? "/grupo/dashboard" : "/select-business");
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-4 py-12">

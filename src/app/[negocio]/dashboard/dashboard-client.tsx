@@ -13,6 +13,7 @@ import { useBankBalance } from "@/hooks/useBankBalance";
 import { CommandCenter } from "./command-center";
 import type { CommandCenterData } from "@/app/actions/command-center";
 import { LiquidityPanel } from "./liquidity-panel";
+import { BreakevenCard } from "@/components/breakeven-card";
 import type { LiquidityPanelData } from "@/app/actions/liquidity-panel";
 import {
   Receipt,
@@ -232,6 +233,11 @@ export function DashboardClient({
           />
         </div>
       </section>
+
+      {/* Bloque 2b — Punto de equilibrio del mes: ¿cuánto hay que vender
+          para no perder plata, y vamos a llegar? (fijos/variables de la
+          clasificación de Configuración + ventas Byte del mes). */}
+      <BreakevenCard month={data.selectedMonth} />
 
       {/* Bloque 3 — Por cobrar y deudas: SOLO como fallback. Cuando el
           panel de liquidez está activo, "Por cobrar" vive dentro del panel

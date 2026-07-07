@@ -8,8 +8,12 @@ import { ACTIVE_BUSINESS_COOKIE } from "@/lib/active-business";
 const THIRTY_DAYS = 60 * 60 * 24 * 30;
 
 /**
- * Server action: setea cookie del rol y redirige a /select-business.
- * Limpia la cookie del negocio activo para que el usuario elija explícitamente.
+ * Server action: setea cookie del rol y redirige al punto de partida
+ * de cada quien:
+ * - Jahnn (CEO) → directo al panel del GRUPO: la salud de Yayi's
+ *   completa de un vistazo; de ahí baja a cualquier sede con el switcher.
+ * - Kelly → selector de negocio (su trabajo es por sede).
+ * Limpia la cookie del negocio activo para no arrastrar el anterior.
  */
 export async function selectRole(role: Role) {
   const c = await cookies();
@@ -18,9 +22,8 @@ export async function selectRole(role: Role) {
     maxAge: THIRTY_DAYS,
     sameSite: "lax",
   });
-  // Limpiar el negocio activo previo (forzar selección explícita post-rol)
   c.delete(ACTIVE_BUSINESS_COOKIE);
-  redirect("/select-business");
+  redirect(role === "admin" ? "/grupo/dashboard" : "/select-business");
 }
 
 /** Limpia el rol y vuelve al selector raíz. */
