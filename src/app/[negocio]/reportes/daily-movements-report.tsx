@@ -28,6 +28,7 @@ import {
   type ExpenseGroupView,
 } from "@/lib/expense-group-view";
 import { useBankBalance } from "@/hooks/useBankBalance";
+import { BankCheckInline } from "@/components/banking/BankCheckInline";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
 import { Pencil, Trash2, Plus, CheckCircle2, Paperclip, GripVertical, X as XIcon, ShieldCheck, ChevronDown, ChevronRight, Layers, Ungroup } from "lucide-react";
@@ -720,6 +721,10 @@ export function DailyMovementsReport() {
                   {bank.isLoading ? "—" : formatCurrency(bank.current)}
                 </div>
               </div>
+              {/* Diferencia automática vs el saldo real del banco (pedido
+                  de Jahnn): registra lo que ve en su app BCP y el sistema
+                  calcula y muestra la diferencia aquí mismo. */}
+              <BankCheckInline onSaved={() => bank.refresh()} />
             </div>
             <div className="flex items-center gap-2">
               <button
