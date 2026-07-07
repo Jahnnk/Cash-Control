@@ -6,6 +6,15 @@ import { formatCurrency } from "@/lib/utils";
 import { getBreakevenMonth } from "@/app/actions/breakeven";
 import type { BreakevenResult, BreakevenEstado } from "@/lib/breakeven";
 
+const MES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** ["2026-04","2026-05","2026-06"] → "promedio abr–jun". */
+function refLabel(months: string[]): string {
+  const short = (m: string) => MES_CORTO[Number(m.slice(5, 7)) - 1] ?? m;
+  if (months.length === 1) return `mes de ${short(months[0])}`;
+  return `promedio ${short(months[0])}–${short(months[months.length - 1])}`;
+}
+
 const ESTADO_META: Record<BreakevenEstado, { label: string; chip: string; bar: string }> = {
   superado:  { label: "✅ Superado",   chip: "bg-emerald-50 border-emerald-200 text-emerald-800", bar: "bg-emerald-500" },
   en_camino: { label: "🟡 En camino",  chip: "bg-amber-50 border-amber-200 text-amber-800",       bar: "bg-amber-400" },
@@ -63,10 +72,12 @@ export function BreakevenBody({
         </>
       )}
 
-      {!compact && (
+      {r.breakEven !== null && (
         <div className="text-[11px] text-gray-400">
-          Fijos {formatCurrency(r.fijos)} · variables {r.varRatio !== null ? `${Math.round(r.varRatio * 100)}%` : "—"} de las ventas
-          → cada sol vendido deja {r.contributionMargin !== null ? `S/${r.contributionMargin.toFixed(2)}` : "—"} para cubrir fijos.
+          Fijos {formatCurrency(r.fijos)}{r.referenceMonths ? ` (referencia: ${refLabel(r.referenceMonths)})` : ""} · variables {r.varRatio !== null ? `${Math.round(r.varRatio * 100)}%` : "—"} de las ventas
+          {!compact && (
+            <> → cada sol vendido deja {r.contributionMargin !== null ? `S/${r.contributionMargin.toFixed(2)}` : "—"} para cubrir fijos</>
+          )}.
         </div>
       )}
 
