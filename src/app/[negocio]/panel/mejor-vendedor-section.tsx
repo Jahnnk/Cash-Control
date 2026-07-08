@@ -64,7 +64,8 @@ export function MejorVendedorSection({ month }: { month: string }) {
 
       <div className="px-4 py-2.5 bg-primary/5 border-b border-gray-100 text-[11px] text-gray-600 leading-relaxed">
         No gana quien vende más en total, sino <strong>quien más levanta su ticket sobre lo normal de SU turno</strong>.
-        Así el de la mañana no compite contra el pico de la tarde. Se mide por ticket por mesa; pide un mínimo de{" "}
+        Así el de la mañana no compite contra el pico de la tarde. El <strong>full time</strong> (cubre mañana y tarde) compite
+        entre full times; el <strong>medio turno</strong>, dentro de su franja. Se mide por ticket por mesa; pide un mínimo de{" "}
         <strong>{data?.minMesas ?? 60} mesas</strong> en el mes para calificar. El pago sigue asignándose a mano en la liquidación — esto es el ganador sugerido.
       </div>
 
@@ -182,8 +183,9 @@ function TurnosModal({ month, onClose, onSaved }: { month: string; onClose: () =
         </div>
         <div className="p-6 space-y-3">
           <p className="text-xs text-gray-500">
-            Asigna el turno de cada quien. El que trabaja todo el día va como &ldquo;Todo el día&rdquo;.
-            Se usa para comparar a cada vendedor contra lo normal de su turno.
+            <strong>Full time</strong> (turno partido: cubre mañana Y tarde) → &ldquo;Todo el día&rdquo;.{" "}
+            <strong>Medio turno</strong> (solo una franja) → &ldquo;Mañana&rdquo; o &ldquo;Tarde&rdquo;.
+            Se compara a cada vendedor contra lo normal de SU turno.
           </p>
           {!tableReady && (
             <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
@@ -205,9 +207,9 @@ function TurnosModal({ month, onClose, onSaved }: { month: string; onClose: () =
                     onChange={(e) => setTurno(r.nombre, e.target.value as Turno)}
                     className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
                   >
-                    <option value="mañana">Mañana</option>
-                    <option value="tarde">Tarde</option>
-                    <option value="completo">Todo el día</option>
+                    <option value="mañana">Mañana (medio turno)</option>
+                    <option value="tarde">Tarde (medio turno)</option>
+                    <option value="completo">Todo el día (full time)</option>
                   </select>
                 </div>
               ))}
