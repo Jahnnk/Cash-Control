@@ -448,6 +448,20 @@ export default function IncentivosPage() {
                 <Users className="w-4 h-4 text-primary" />
                 Ventas por trabajador (último reporte subido{data.workers[0].periodEnd ? ` · al ${data.workers[0].periodEnd.slice(8)}/${data.workers[0].periodEnd.slice(5, 7)}` : ""})
               </div>
+              {/* Cómo se define de verdad el mejor vendedor (hándicap por
+                  franja). Este cuadro es por mesa/total y NO es el veredicto. */}
+              <div className="px-4 py-2.5 bg-primary/5 border-b border-gray-100 text-[11px] text-gray-600 leading-relaxed">
+                <span className="font-semibold text-gray-800">¿Cómo se elige al mejor vendedor?</span>{" "}
+                No por vender más en total, sino por <strong>cuánto levanta su ticket sobre lo normal de SU franja horaria</strong>.
+                Es una carrera con hándicap: en horas pico lo normal puede ser S/30 y en horas bajas S/20 — quien logra
+                S/23 en la mañana (+3) le gana a quien logra S/31 en el pico (+1), porque movió más la aguja de su propio horario.
+                Así, mañana o tarde, full time o medio turno, todos compiten de igual a igual. Pide un mínimo de clientes en el
+                mes para calificar (nada de ganar con una mesa de suerte).
+                <span className="block mt-1 text-gray-400">
+                  El cuadro de abajo es <strong>referencial</strong> (por mesa y total) — no define el premio. La medición
+                  automática se enciende cuando tengamos las ventas por vendedor y franja; por ahora el premio se asigna a mano en la liquidación.
+                </span>
+              </div>
               <table className="w-full text-sm">
                 <thead>
                   <tr className="text-[11px] uppercase text-gray-500 bg-gray-50">
@@ -458,9 +472,9 @@ export default function IncentivosPage() {
                   </tr>
                 </thead>
                 <tbody>
-                  {data.workers.map((w, i) => (
+                  {data.workers.map((w) => (
                     <tr key={w.nombre} className="border-t border-gray-100">
-                      <td className="px-4 py-2 font-medium text-gray-900">{i === 0 ? "🏆 " : ""}{w.nombre}</td>
+                      <td className="px-4 py-2 font-medium text-gray-900">{w.nombre}</td>
                       <td className="px-4 py-2 text-right text-gray-700">{w.mesas}</td>
                       <td className="px-4 py-2 text-right font-semibold">{formatCurrency(w.total)}</td>
                       <td className="px-4 py-2 text-right text-gray-700">{w.ticketMesa !== null ? formatCurrency(w.ticketMesa) : "—"}</td>
@@ -468,9 +482,6 @@ export default function IncentivosPage() {
                   ))}
                 </tbody>
               </table>
-              <div className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
-                Referencial (por mesa). El premio oficial al mejor vendedor se calcula por ticket POR PERSONA y franja horaria cuando el registro individual esté activo (Fase B).
-              </div>
             </div>
           )}
         </>
