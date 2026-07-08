@@ -35,7 +35,10 @@ Ingresos BCP individuales con cliente opcional:
 - Con cliente = pago de crédito antiguo (Fonavi, Centro, Otros)
 
 ### expenses
-Egresos con categoría y método de pago (transferencia/efectivo/yape)
+Egresos con categoría y método de pago (transferencia/efectivo/yape;
+especiales: pendiente_atelier = espejo de gasto compartido, socio = pagado
+por el socio vía préstamo directo — gasto operativo real que NO toca banco
+ni caja; ver src/lib/payment-methods.ts)
 - Categorías dinámicas desde tabla expense_categories
 
 ### Clientes activos

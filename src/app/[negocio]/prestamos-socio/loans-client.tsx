@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { ArrowDownCircle, ArrowUpCircle, HandCoins, Plus, X, Trash2, Pencil, AlertTriangle } from "lucide-react";
+import { ArrowDownCircle, ArrowUpCircle, HandCoins, Plus, X, Trash2, Pencil, AlertTriangle, ArrowRight, Wallet } from "lucide-react";
 import { DataTable, type DataTableColumn } from "@/components/ui/DataTable";
 import { KPICard } from "@/components/ui/KPICard";
 import { formatCurrency, formatDate, getToday } from "@/lib/utils";
@@ -10,12 +10,15 @@ import { useToast } from "@/components/toast-provider";
 import {
   createLoan,
   createRefund,
+  createDirectLoanWithExpenses,
   updateLoanMovement,
   deleteLoanMovement,
   type LoanEntry,
   type LoanMovement,
   type LoansSummary,
 } from "@/app/actions/loans";
+import { getCategories } from "@/app/actions/categories";
+import { useEffect } from "react";
 
 type Mode = null | "loan" | "refund";
 
@@ -26,10 +29,13 @@ const ENTRY_LABELS: Record<LoanEntry, string> = {
   caja: "A caja (efectivo)",
 };
 const ENTRY_HINTS: Record<LoanEntry, string> = {
-  directo: "Jahnn pagó con su dinero a un tercero. No toca el banco ni la caja de Atelier; solo queda la deuda.",
-  banco: "Jahnn depositó/transfirió a la cuenta BCP de Atelier. El saldo del banco SÍ sube.",
+  directo: "Jahnn pagó obligaciones con su dinero. Abajo detallas QUÉ pagó: cada pago queda como gasto real del negocio (sin tocar banco ni caja) y la deuda se registra sola por el total.",
+  banco: "Jahnn depositó/transfirió a la cuenta BCP de Atelier. El saldo del banco SÍ sube — luego paga las obligaciones desde el banco como siempre.",
   caja: "Jahnn puso efectivo en la caja física. El saldo de caja SÍ sube.",
 };
+
+type DirectItem = { category: string; concept: string; amount: string };
+const emptyItem = (): DirectItem => ({ category: "", concept: "", amount: "" });
 
 export function LoansClient({ summary }: { summary: LoansSummary }) {
   const { showToast } = useToast();
@@ -48,6 +54,21 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
   const [concept, setConcept] = useState("");
   const [notes, setNotes] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // Flujo guiado del préstamo DIRECTO: qué pagó Jahnn (gastos 'socio').
+  const [items, setItems] = useState<DirectItem[]>([emptyItem()]);
+  const [categories, setCategories] = useState<string[]>([]);
+
+  useEffect(() => {
+    getCategories().then((cats) =>
+      setCategories((cats as { name: string }[]).map((c) => c.name)),
+    ).catch(() => setCategories([]));
+  }, []);
+
+  const guidedDirect = mode === "loan" && !editing && entry === "directo";
+  const itemsTotal = items.reduce((s, it) => {
+    const n = parseFloat(it.amount);
+    return s + (Number.isFinite(n) && n > 0 ? n : 0);
+  }, 0);
 
   function resetForm() {
     setDate(getToday());
@@ -56,6 +77,7 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
     setEntry("directo");
     setConcept("");
     setNotes("");
+    setItems([emptyItem()]);
     setError(null);
   }
 
@@ -110,6 +132,34 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
       setError("La fecha no puede ser futura");
       return;
     }
+
+    // Flujo guiado: préstamo directo = gastos pagados por el socio + deuda.
+    if (guidedDirect) {
+      const clean = items
+        .map((it) => ({ category: it.category.trim(), concept: it.concept.trim(), amount: parseFloat(it.amount) }))
+        .filter((it) => it.category || it.concept || Number.isFinite(it.amount));
+      if (clean.length === 0) {
+        setError("Agrega al menos un pago (qué pagó Jahnn, en qué categoría y cuánto)");
+        return;
+      }
+      for (const it of clean) {
+        if (!it.category) { setError("Elige la categoría de cada pago"); return; }
+        if (!it.concept) { setError("Describe cada pago (ej. Cuota préstamo BCP julio)"); return; }
+        if (!Number.isFinite(it.amount) || it.amount <= 0) { setError("Revisa los montos: deben ser mayores a cero"); return; }
+      }
+      startTransition(async () => {
+        const r = await createDirectLoanWithExpenses({
+          date,
+          items: clean,
+          notes: notes.trim() || undefined,
+        });
+        if (!r.success) { setError(r.error); return; }
+        closeModal();
+        router.refresh();
+      });
+      return;
+    }
+
     const amountNum = parseFloat(amount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setError("Ingresa un monto válido mayor a cero");
@@ -293,6 +343,35 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
         </div>
       </div>
 
+      {/* Cómo funciona — el ciclo completo en una franja */}
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 text-xs">
+          <div className="flex-1 flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
+            <ArrowDownCircle className="w-4 h-4 text-emerald-600 shrink-0" />
+            <div>
+              <div className="font-semibold text-emerald-900">1 · Le prestas a Atelier</div>
+              <div className="text-emerald-800/70">Pagas obligaciones directo, o pones plata al banco/caja</div>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 text-gray-300 shrink-0 self-center rotate-90 sm:rotate-0" />
+          <div className="flex-1 flex items-center gap-2 rounded-lg bg-amber-50 border border-amber-200 px-3 py-2">
+            <Wallet className="w-4 h-4 text-amber-600 shrink-0" />
+            <div>
+              <div className="font-semibold text-amber-900">2 · Atelier te debe</div>
+              <div className="text-amber-800/70">La deuda queda visible aquí — sin tocar los números del negocio</div>
+            </div>
+          </div>
+          <ArrowRight className="w-4 h-4 text-gray-300 shrink-0 self-center rotate-90 sm:rotate-0" />
+          <div className="flex-1 flex items-center gap-2 rounded-lg bg-gray-50 border border-gray-200 px-3 py-2">
+            <ArrowUpCircle className="w-4 h-4 text-gray-600 shrink-0" />
+            <div>
+              <div className="font-semibold text-gray-900">3 · Te devuelve</div>
+              <div className="text-gray-500">Cuando entren los cobros B2B, registras la devolución</div>
+            </div>
+          </div>
+        </div>
+      </div>
+
       {/* Summary */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <KPICard
@@ -362,19 +441,21 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Monto (S/)</label>
-                <input
-                  type="number"
-                  step="0.01"
-                  min="0"
-                  value={amount}
-                  onChange={(e) => setAmount(e.target.value)}
-                  placeholder="0.00"
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                  autoFocus
-                />
-              </div>
+              {!guidedDirect && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Monto (S/)</label>
+                  <input
+                    type="number"
+                    step="0.01"
+                    min="0"
+                    value={amount}
+                    onChange={(e) => setAmount(e.target.value)}
+                    placeholder="0.00"
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                    autoFocus
+                  />
+                </div>
+              )}
               {mode === "loan" ? (
                 <div>
                   <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -390,6 +471,68 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
                     ))}
                   </select>
                   <p className="text-[11px] text-gray-500 mt-1">{ENTRY_HINTS[entry]}</p>
+
+                  {guidedDirect && (
+                    <div className="mt-3 space-y-2">
+                      <div className="text-sm font-medium text-gray-700">¿Qué pagó Jahnn?</div>
+                      {items.map((it, i) => (
+                        <div key={i} className="flex gap-1.5 items-start">
+                          <select
+                            value={it.category}
+                            onChange={(e) => setItems((prev) => prev.map((x, j) => (j === i ? { ...x, category: e.target.value } : x)))}
+                            className="w-32 border border-gray-300 rounded-lg px-2 py-2 text-xs bg-white"
+                          >
+                            <option value="">Categoría…</option>
+                            {categories.map((c) => (
+                              <option key={c} value={c}>{c}</option>
+                            ))}
+                          </select>
+                          <input
+                            value={it.concept}
+                            onChange={(e) => setItems((prev) => prev.map((x, j) => (j === i ? { ...x, concept: e.target.value } : x)))}
+                            placeholder="Ej: Cuota préstamo BCP julio"
+                            className="flex-1 border border-gray-300 rounded-lg px-2 py-2 text-xs"
+                          />
+                          <input
+                            type="number"
+                            step="0.01"
+                            min="0"
+                            value={it.amount}
+                            onChange={(e) => setItems((prev) => prev.map((x, j) => (j === i ? { ...x, amount: e.target.value } : x)))}
+                            placeholder="0.00"
+                            className="w-24 border border-gray-300 rounded-lg px-2 py-2 text-xs text-right"
+                          />
+                          <button
+                            type="button"
+                            onClick={() => setItems((prev) => prev.filter((_, j) => j !== i))}
+                            disabled={items.length === 1}
+                            className="text-gray-300 hover:text-red-500 p-1.5 disabled:opacity-30"
+                            aria-label="Quitar pago"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      ))}
+                      <div className="flex items-center justify-between">
+                        <button
+                          type="button"
+                          onClick={() => setItems((prev) => [...prev, emptyItem()])}
+                          className="inline-flex items-center gap-1 text-xs font-medium text-emerald-700 hover:underline"
+                        >
+                          <Plus className="w-3.5 h-3.5" /> Agregar otro pago
+                        </button>
+                        <div className="text-sm">
+                          <span className="text-gray-500">Total del préstamo: </span>
+                          <span className="font-bold text-gray-900">{formatCurrency(Math.round(itemsTotal * 100) / 100)}</span>
+                        </div>
+                      </div>
+                      <p className="text-[11px] text-gray-500 bg-gray-50 border border-gray-200 rounded-lg px-2.5 py-1.5">
+                        Cada pago se registra como <strong>gasto real</strong> del negocio (cuenta en presupuesto y EBITDA)
+                        con método &ldquo;Pagado por el socio&rdquo; — <strong>sin tocar el saldo del banco ni la caja</strong>.
+                        La deuda se crea sola por el total.
+                      </p>
+                    </div>
+                  )}
                 </div>
               ) : (
                 <div>
@@ -410,16 +553,18 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
                   </p>
                 </div>
               )}
-              <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
-                <input
-                  type="text"
-                  value={concept}
-                  onChange={(e) => setConcept(e.target.value)}
-                  placeholder={mode === "loan" ? "Ej: Adelanto alquiler abril" : "Ej: Devolución parcial"}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
-                />
-              </div>
+              {!guidedDirect && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-1">Concepto</label>
+                  <input
+                    type="text"
+                    value={concept}
+                    onChange={(e) => setConcept(e.target.value)}
+                    placeholder={mode === "loan" ? "Ej: Adelanto alquiler abril" : "Ej: Devolución parcial"}
+                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
+                  />
+                </div>
+              )}
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Notas <span className="text-gray-400">(opcional)</span>

@@ -79,6 +79,9 @@ describe("computeBankBalance — reglas canónicas de la cadena", () => {
     expect(computeBankBalance(1000, [], expenses)).toBe(900); // 1000 - 100
     expect(isBankExpenseEligible(tx(200, { paymentMethod: "efectivo" }))).toBe(false);
     expect(isBankExpenseEligible(tx(300, { paymentMethod: "pendiente_atelier" }))).toBe(false);
+    // 'socio': gasto operativo real pagado por Jahnn (préstamo directo) —
+    // jamás salió de la cuenta BCP, así que la cadena no lo resta.
+    expect(isBankExpenseEligible(tx(400, { paymentMethod: "socio" }))).toBe(false);
   });
 });
 

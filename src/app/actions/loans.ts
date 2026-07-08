@@ -26,10 +26,14 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { ATELIER_BUSINESS_ID, LOAN_CATEGORY } from "@/lib/loans";
+import { SOCIO_METHOD } from "@/lib/payment-methods";
 import { recalcBankBalance } from "./daily-records";
+
+const nsql = neon(process.env.DATABASE_URL!);
 
 function assertAtelier(bId: number) {
   if (bId !== ATELIER_BUSINESS_ID) {
@@ -222,6 +226,76 @@ export async function createLoan(data: {
   if (viaBank) await recalcBankBalance(data.date);
 
   revalidatePath("/", "layout");
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Préstamo DIRECTO GUIADO: Jahnn pagó obligaciones con su dinero.
+// UNA operación registra las dos caras de la verdad:
+//   1. Los gastos como egresos operativos REALES (método 'socio':
+//      cuentan en presupuesto/EBITDA/equilibrio, NO tocan banco ni caja).
+//   2. La deuda con el socio por el total (préstamo 'directo').
+// Este era el hueco del módulo: el préstamo de junio (Ethel, S/1,812)
+// registró la deuda pero el gasto nunca existió — junio quedó con
+// insumos invisibles. Con este flujo, imposible que vuelva a pasar.
+// ─────────────────────────────────────────────────────────────────
+
+export type DirectLoanItem = {
+  category: string;
+  concept: string;
+  amount: number;
+};
+
+export async function createDirectLoanWithExpenses(data: {
+  date: string;
+  /** Qué pagó Jahnn (cada pago = un gasto operativo real). */
+  items: DirectLoanItem[];
+  notes?: string;
+}): Promise<{ success: true; total: number } | { success: false; error: string }> {
+  const bId = await activeBusinessId();
+  assertAtelier(bId);
+  try {
+    assertValidLoanDate(data.date);
+  } catch (e) {
+    return { success: false, error: e instanceof Error ? e.message : "Fecha inválida" };
+  }
+  if (!Array.isArray(data.items) || data.items.length === 0) {
+    return { success: false, error: "Agrega al menos un pago que hizo el socio." };
+  }
+  for (const it of data.items) {
+    if (!it.category?.trim()) return { success: false, error: "Cada pago necesita su categoría." };
+    if (!it.concept?.trim()) return { success: false, error: "Cada pago necesita un concepto." };
+    if (!Number.isFinite(it.amount) || it.amount <= 0) {
+      return { success: false, error: `Monto inválido en "${it.concept ?? it.category}".` };
+    }
+  }
+  const total = Math.round(data.items.reduce((s, it) => s + it.amount, 0) * 100) / 100;
+  const loanNote = data.notes?.trim()
+    ? `Préstamo directo: ${data.items.map((i) => i.concept.trim()).join(", ")} — ${data.notes.trim()}`
+    : `Préstamo directo: ${data.items.map((i) => i.concept.trim()).join(", ")}`;
+
+  try {
+    await nsql.transaction([
+      nsql`INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${data.date})
+           ON CONFLICT (business_id, date) DO NOTHING`,
+      // Los gastos: operativos de verdad, pagados por el socio.
+      ...data.items.map(
+        (it) => nsql`
+          INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes)
+          VALUES (${bId}, ${data.date}, ${it.category.trim()}, ${it.concept.trim()},
+                  ${it.amount.toFixed(2)}, ${SOCIO_METHOD}, ${"Pagado por el socio (préstamo directo del " + data.date + ")"})`,
+      ),
+      // La deuda: préstamo directo por el total (no toca banco ni caja).
+      nsql`INSERT INTO bank_income_items (business_id, date, amount, client_id, note, payment_method, is_special_loan, loan_via_bank)
+           VALUES (${bId}, ${data.date}, ${total.toFixed(2)}, NULL, ${loanNote}, 'transferencia', true, false)`,
+    ]);
+    // Ni el préstamo directo ni los gastos 'socio' tocan la cadena del
+    // banco — no hace falta recalcular. Sí refrescamos las vistas.
+    revalidatePath("/", "layout");
+    return { success: true, total };
+  } catch (e) {
+    console.error("[createDirectLoanWithExpenses] failed:", e);
+    return { success: false, error: e instanceof Error ? e.message : "Error al registrar el préstamo" };
+  }
 }
 
 // ─────────────────────────────────────────────────────────────────

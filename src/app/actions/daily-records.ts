@@ -80,7 +80,7 @@ async function propagateFromDate(bId: number, anchorDate: string) {
         ROUND((
           c.calc_balance
           + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
@@ -114,7 +114,7 @@ export async function recalcBankBalance(date: string) {
   await db.execute(sql`
     UPDATE daily_records dr SET
       bank_income  = COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0),
-      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)
+      bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)
     WHERE dr.business_id = ${bId} AND dr.date = ${date}
   `);
 
@@ -136,7 +136,7 @@ export async function recalcBankBalance(date: string) {
         ROUND((
           c.calc_balance
           + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false), 0)
+          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false), 0)
         )::numeric, 2)
       FROM daily_records dr
       JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date

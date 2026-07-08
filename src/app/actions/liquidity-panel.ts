@@ -200,7 +200,7 @@ export async function getLiquidityPanel(): Promise<LiquidityPanelData> {
       UNION ALL
       SELECT bcp_verified_at FROM expenses
         WHERE business_id = ${bId} AND date >= ${monthStart} AND date <= ${today}
-          AND payment_method NOT IN ('efectivo', 'pendiente_atelier') AND is_internal_transfer = false AND archived = false
+          AND payment_method NOT IN ('efectivo', 'pendiente_atelier', 'socio') AND is_internal_transfer = false AND archived = false
           AND (is_special_loan = false OR loan_via_bank = true)
     ) x
   `)).rows[0] as { total: number; verified: number };
