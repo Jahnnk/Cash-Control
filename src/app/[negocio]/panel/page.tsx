@@ -22,6 +22,7 @@ import { ImportControlModal } from "./import-control-modal";
 import { KpisWeekSection } from "./kpis-week";
 import { LiquidationModal } from "./liquidation-modal";
 import { MermaDetailModal } from "./merma-detail-modal";
+import { MejorVendedorSection } from "./mejor-vendedor-section";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -441,26 +442,15 @@ export default function IncentivosPage() {
           {/* 4b · KPIs de la semana (reemplaza el cuadro de Notion) */}
           <KpisWeekSection key={weekRefresh} fullSession={!data.isAdminSession} />
 
-          {/* 5 · Ranking de vendedores */}
+          {/* 5 · Mejor vendedor por turno (hándicap) — el veredicto real */}
+          <MejorVendedorSection month={month} />
+
+          {/* 5b · Ranking crudo por trabajador (referencial: mesas y total) */}
           {data.workers.length > 0 && (
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
               <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-900 flex items-center gap-1.5">
                 <Users className="w-4 h-4 text-primary" />
-                Ventas por trabajador (último reporte subido{data.workers[0].periodEnd ? ` · al ${data.workers[0].periodEnd.slice(8)}/${data.workers[0].periodEnd.slice(5, 7)}` : ""})
-              </div>
-              {/* Cómo se define de verdad el mejor vendedor (hándicap por
-                  franja). Este cuadro es por mesa/total y NO es el veredicto. */}
-              <div className="px-4 py-2.5 bg-primary/5 border-b border-gray-100 text-[11px] text-gray-600 leading-relaxed">
-                <span className="font-semibold text-gray-800">¿Cómo se elige al mejor vendedor?</span>{" "}
-                No por vender más en total, sino por <strong>cuánto levanta su ticket sobre lo normal de SU franja horaria</strong>.
-                Es una carrera con hándicap: en horas pico lo normal puede ser S/30 y en horas bajas S/20 — quien logra
-                S/23 en la mañana (+3) le gana a quien logra S/31 en el pico (+1), porque movió más la aguja de su propio horario.
-                Así, mañana o tarde, full time o medio turno, todos compiten de igual a igual. Pide un mínimo de clientes en el
-                mes para calificar (nada de ganar con una mesa de suerte).
-                <span className="block mt-1 text-gray-400">
-                  El cuadro de abajo es <strong>referencial</strong> (por mesa y total) — no define el premio. La medición
-                  automática se enciende cuando tengamos las ventas por vendedor y franja; por ahora el premio se asigna a mano en la liquidación.
-                </span>
+                Ventas por trabajador · referencial (último reporte subido{data.workers[0].periodEnd ? ` · al ${data.workers[0].periodEnd.slice(8)}/${data.workers[0].periodEnd.slice(5, 7)}` : ""})
               </div>
               <table className="w-full text-sm">
                 <thead>
