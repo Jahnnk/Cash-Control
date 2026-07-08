@@ -13,6 +13,18 @@ export async function getBudgets(activeOnly = true) {
   return result.rows;
 }
 
+/** Ingresos bancarios de un mes completo (misma base que usaba el presupuesto). */
+async function monthBankIncome(bId: number, month: string): Promise<number> {
+  const [y, m] = month.split("-").map(Number);
+  const end = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+  const r = await db.execute(sql`
+    SELECT COALESCE(SUM(bank_income), 0) as total
+    FROM daily_records
+    WHERE business_id = ${bId} AND date >= ${month + "-01"} AND date <= ${end}
+  `);
+  return parseFloat(r.rows[0].total as string);
+}
+
 export async function getBudgetDashboard(month: string) {
   const bId = await activeBusinessId();
   const startDate = `${month}-01`;
@@ -20,12 +32,38 @@ export async function getBudgetDashboard(month: string) {
   const lastDay = new Date(year, m, 0).getDate();
   const endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
-  const incomeResult = await db.execute(sql`
-    SELECT COALESCE(SUM(bank_income), 0) as total
-    FROM daily_records
-    WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate}
-  `);
-  const grossIncome = parseFloat(incomeResult.rows[0].total as string);
+  // Lo realmente cobrado en el mes navegado (en el mes en curso: hasta hoy).
+  const realIncome = await monthBankIncome(bId, month);
+
+  // BASE del presupuesto. La trampa detectada por Jahnn: en el mes en
+  // curso, usar lo cobrado hasta hoy castiga a Atelier (los clientes B2B
+  // pagan a 7/15/30+ días y los fijos como el alquiler caen al inicio del
+  // mes) — todo se pintaba de rojo los primeros días. Por eso:
+  //  - Mes CERRADO: base = ingresos reales del mes completo (como siempre).
+  //  - Mes EN CURSO: base = promedio de los últimos meses cerrados con
+  //    ingresos (hasta 3, mirando máx. 6 atrás) — una proyección estable
+  //    desde el día 1. Misma receta que el punto de equilibrio.
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const isCurrent = month === today.slice(0, 7);
+  let grossIncome = realIncome;
+  let baseSource: "real" | "proyectada" = "real";
+  let referenceMonths: string[] = [];
+  if (isCurrent) {
+    const candidates: string[] = [];
+    for (let i = 1; i <= 6; i++) {
+      const d = new Date(Date.UTC(year, m - 1 - i, 1));
+      candidates.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`);
+    }
+    const prev = await Promise.all(
+      candidates.map(async (c) => ({ month: c, total: await monthBankIncome(bId, c) })),
+    );
+    const usable = prev.filter((r) => r.total > 0).slice(0, 3);
+    if (usable.length > 0) {
+      grossIncome = Math.round((usable.reduce((s, r) => s + r.total, 0) / usable.length) * 100) / 100;
+      baseSource = "proyectada";
+      referenceMonths = usable.map((r) => r.month).sort();
+    }
+  }
 
   // Excluye préstamos del socio: no son gasto operativo.
   const expensesByCategory = await db.execute(sql`
@@ -86,6 +124,11 @@ export async function getBudgetDashboard(month: string) {
 
   return {
     grossIncome,
+    /** Lo realmente cobrado en el mes (hasta hoy si es el mes en curso). */
+    realIncome,
+    /** "proyectada" = base del promedio de meses cerrados (mes en curso). */
+    baseSource,
+    referenceMonths,
     totalSpent,
     totalOperativo,
     totalObligaciones,

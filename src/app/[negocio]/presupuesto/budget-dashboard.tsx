@@ -26,6 +26,9 @@ type BudgetCategory = {
 
 type DashboardData = {
   grossIncome: number;
+  realIncome: number;
+  baseSource: "real" | "proyectada";
+  referenceMonths: string[];
   totalSpent: number;
   totalOperativo: number;
   totalObligaciones: number;
@@ -35,6 +38,16 @@ type DashboardData = {
   obligaciones: BudgetCategory[];
   alerts: BudgetCategory[];
 };
+
+const MES_CORTO = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "sep", "oct", "nov", "dic"];
+
+/** ["2026-04","2026-05","2026-06"] → "abr–jun" (o "jun" si es uno solo). */
+function refLabel(months: string[]): string {
+  const short = (m: string) => MES_CORTO[Number(m.slice(5, 7)) - 1] ?? m;
+  if (months.length === 0) return "";
+  if (months.length === 1) return short(months[0]);
+  return `${short(months[0])}–${short(months[months.length - 1])}`;
+}
 
 const DONUT_COLORS = [
   "#004C40", "#098B5F", "#22C55E", "#EAB308", "#F97316",
@@ -137,12 +150,23 @@ export function BudgetDashboard() {
         </div>
       )}
 
+      {/* Base proyectada: cómo se calculan los topes del mes en curso */}
+      {data.baseSource === "proyectada" && (
+        <div className="bg-primary/5 border border-primary/20 rounded-xl px-4 py-3 text-xs text-gray-700">
+          📊 Los topes de este mes se calculan sobre la <strong>base proyectada</strong>:{" "}
+          <strong>{formatCurrency(data.grossIncome)}</strong> (promedio de ingresos de {refLabel(data.referenceMonths)}).
+          Cobrado hasta hoy: <strong>{formatCurrency(data.realIncome)}</strong> — los pagos B2B que llegan a 7/15/30
+          días ya no pintan el presupuesto de rojo al inicio del mes.
+        </div>
+      )}
+
       {/* Summary Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <KPICard
           icon={<TrendingUp className="w-5 h-5 text-primary-light" />}
-          title="Ingresos brutos"
+          title={data.baseSource === "proyectada" ? "Base del mes (proyectada)" : "Ingresos brutos"}
           value={formatCurrency(data.grossIncome)}
+          subtitle={data.baseSource === "proyectada" ? `Cobrado hasta hoy: ${formatCurrency(data.realIncome)}` : undefined}
           variant="default"
         />
         <KPICard
@@ -159,8 +183,9 @@ export function BudgetDashboard() {
         />
         <KPICard
           icon={<DollarSign className="w-5 h-5 text-primary-light" />}
-          title="Utilidad estimada"
+          title={data.baseSource === "proyectada" ? "Disponible del mes" : "Utilidad estimada"}
           value={formatCurrency(data.utilidad)}
+          subtitle={data.baseSource === "proyectada" ? "Base proyectada − gastado" : undefined}
           variant={data.utilidad >= 0 ? "default" : "danger"}
         />
       </div>
