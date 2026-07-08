@@ -17,7 +17,7 @@
  *
  * ─── Reglas canónicas de la CADENA bank_balance_real (el saldo que se muestra) ───
  *   Ingreso cuenta para el banco si:  !archived && (!is_special_loan || loan_via_bank) && payment_method != 'efectivo'
- *   Egreso  cuenta para el banco si:  !archived && (!is_special_loan || loan_via_bank) && payment_method NOT IN ('efectivo','pendiente_atelier')
+ *   Egreso  cuenta para el banco si:  !archived && (!is_special_loan || loan_via_bank) && payment_method NOT IN ('efectivo','pendiente_atelier','socio')
  *
  * ⚠️ loan_via_bank (junio 2026): un préstamo del socio que SÍ pasó por la
  *    cuenta BCP (Jahnn depositó al banco, o Atelier le devolvió por
@@ -67,7 +67,10 @@ export function isBankExpenseEligible(m: BankMovement): boolean {
     !m.archived &&
     (!m.isSpecialLoan || m.loanViaBank === true) &&
     m.paymentMethod !== "efectivo" &&
-    m.paymentMethod !== "pendiente_atelier"
+    m.paymentMethod !== "pendiente_atelier" &&
+    // 'socio': gasto pagado por Jahnn con su dinero (préstamo directo) —
+    // gasto operativo real, pero nunca salió de la cuenta BCP.
+    m.paymentMethod !== "socio"
   );
 }
 

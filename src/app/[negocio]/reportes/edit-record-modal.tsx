@@ -261,7 +261,7 @@ export function EditRecordModal({
                 )}
                 {!["transferencia", "efectivo", "yape"].includes(paymentMethod) && (
                   <div className="text-[11px] text-gray-500 mt-1">
-                    Método actual: <span className="font-medium">{paymentMethod}</span> (se conserva si no eliges otro).
+                    Método actual: <span className="font-medium">{paymentMethod === "socio" ? "Pagado por el socio (préstamo directo — no toca banco ni caja)" : paymentMethod}</span> (se conserva si no eliges otro).
                   </div>
                 )}
               </div>

@@ -59,7 +59,7 @@ export async function getGroupDashboard(monthInput?: string) {
       `);
       const expRes = await db.execute(sql`
         SELECT COALESCE(SUM(amount), 0) AS t FROM expenses
-        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
+        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
       `);
       bankBalance = Math.round((anchor + parseFloat(incRes.rows[0].t as string) - parseFloat(expRes.rows[0].t as string)) * 100) / 100;
     }

@@ -363,7 +363,7 @@ export async function getReportData(
       d.date::text as date,
       COALESCE(dr.bank_balance_real::float, NULL) as bank_balance,
       COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE date = d.date AND (${businessId}::int IS NULL OR business_id = ${businessId}) AND is_special_loan = false AND is_internal_transfer = false AND archived = false AND payment_method <> 'efectivo'), 0)::float as income,
-      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (${businessId}::int IS NULL OR business_id = ${businessId}) AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)::float as expense
+      COALESCE((SELECT SUM(amount) FROM expenses WHERE date = d.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (${businessId}::int IS NULL OR business_id = ${businessId}) AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)::float as expense
     FROM dates d
     LEFT JOIN daily_records dr ON dr.date = d.date AND (${businessId}::int IS NULL OR dr.business_id = ${businessId}) AND dr.archived = false
     ORDER BY d.date ASC

@@ -102,7 +102,7 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
     WHERE business_id = ${bId} AND date > ${anchorDate} AND date <= ${today}
-      AND payment_method NOT IN ('efectivo','pendiente_atelier')
+      AND payment_method NOT IN ('efectivo','pendiente_atelier','socio')
       AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
   `);
 
@@ -139,7 +139,7 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     daily_outflow AS (
       SELECT date, COALESCE(SUM(amount), 0) AS outflow
       FROM expenses
-      WHERE business_id = ${bId} AND payment_method NOT IN ('efectivo','pendiente_atelier') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
+      WHERE business_id = ${bId} AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
       GROUP BY date
     )
     SELECT
