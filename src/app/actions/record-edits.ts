@@ -3,6 +3,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { validateMovementDate } from "@/lib/money-validation";
 
 // Cliente directo (no Drizzle) para tener acceso a sql.transaction([...]) atómico
 const sql = neon(process.env.DATABASE_URL!);
@@ -80,6 +81,14 @@ function validateNonEmpty(value: unknown, fieldLabel: string): string | null {
   return null;
 }
 
+/** Asegura que exista la fila del día destino antes de re-fechar un movimiento. */
+function ensureDailyRecordQuery(bId: number, date: string) {
+  return sql`
+    INSERT INTO daily_records (business_id, date) VALUES (${bId}, ${date})
+    ON CONFLICT (business_id, date) DO NOTHING
+  `;
+}
+
 // ============================================================================
 // INGRESOS (bank_income_items)
 // ============================================================================
@@ -93,7 +102,7 @@ const ALLOWED_INCOME_METHODS = ["transferencia", "efectivo", "yape", "yape_plin"
 
 export async function updateIncomeItem(
   id: string,
-  changes: { amount: number; note: string; clientId: string | null; paymentMethod?: string }
+  changes: { amount: number; note: string; clientId: string | null; paymentMethod?: string; date?: string }
 ): Promise<Result> {
   const bId = await activeBusinessId();
   const amountErr = validateAmount(changes.amount);
@@ -103,6 +112,27 @@ export async function updateIncomeItem(
   if (!before[0]) return { success: false, error: "El registro ya no existe" };
   const original = before[0];
   const date = original.date as string;
+
+  // ───── Cambio de fecha (opcional) ─────
+  // Mover un ingreso a otro día re-fecha la fila y recalcula la cadena del
+  // saldo en el día ORIGEN y en el DESTINO (el saldo de cada día cambia).
+  const newDate = changes.date ?? date;
+  const dateChanged = newDate !== date;
+  if (dateChanged) {
+    const dateErr = validateMovementDate(newDate);
+    if (dateErr) return { success: false, error: dateErr };
+    // Los movimientos con módulo propio no se re-fechan desde aquí (misma
+    // regla que el arrastre en Movimientos diarios).
+    if (original.is_special_loan) {
+      return { success: false, error: "Este ingreso es un préstamo del socio: cambia su fecha desde el módulo Préstamos socio." };
+    }
+    if (original.is_internal_transfer) {
+      return { success: false, error: "Este ingreso es una transferencia interna: cambia su fecha desde el módulo de Transferencia Interna." };
+    }
+    if (original.is_fonavi_reimbursement) {
+      return { success: false, error: "Este ingreso es un reembolso de Fonavi: se gestiona desde Cuentas por cobrar." };
+    }
+  }
 
   if (changes.clientId !== null) {
     const clientExists = (await sql`SELECT id FROM clients WHERE id = ${changes.clientId}`) as { id: string }[];
@@ -118,21 +148,26 @@ export async function updateIncomeItem(
     return { success: false, error: "Método de pago no válido" };
   }
 
-  const after = { ...original, amount: String(changes.amount), note: changes.note, client_id: changes.clientId, payment_method: newMethod };
+  const after = { ...original, amount: String(changes.amount), note: changes.note, client_id: changes.clientId, payment_method: newMethod, date: newDate };
 
   try {
     await sql.transaction([
+      // El día destino debe existir antes de mover la fila (la cadena lo recorre).
+      ...(dateChanged ? [ensureDailyRecordQuery(bId, newDate)] : []),
       sql`
         UPDATE bank_income_items
-        SET amount = ${changes.amount}, note = ${changes.note}, client_id = ${changes.clientId}, payment_method = ${newMethod}
+        SET amount = ${changes.amount}, note = ${changes.note}, client_id = ${changes.clientId},
+            payment_method = ${newMethod}, date = ${newDate}
         WHERE id = ${id} AND business_id = ${bId}
       `,
       sql`
         INSERT INTO audit_log (business_id, action, record_id, record_type, before_data, after_data, date_affected)
-        VALUES (${bId}, 'edit', ${id}, 'income_item', ${JSON.stringify(original)}::jsonb, ${JSON.stringify(after)}::jsonb, ${date})
+        VALUES (${bId}, 'edit', ${id}, 'income_item', ${JSON.stringify(original)}::jsonb, ${JSON.stringify(after)}::jsonb, ${newDate})
       `,
+      // Origen siempre; destino además si se movió (ambos días cambian).
       recalcDailyTotalsQuery(bId, date),
-      recalcBankBalanceQuery(bId, date),
+      ...(dateChanged ? [recalcDailyTotalsQuery(bId, newDate)] : []),
+      recalcBankBalanceQuery(bId, dateChanged && newDate < date ? newDate : date),
     ]);
   } catch (e) {
     return { success: false, error: e instanceof Error ? e.message : "Error al guardar" };
@@ -190,6 +225,9 @@ export async function updateExpense(
      * Solo permitido si NINGÚN por cobrar tiene reembolsos registrados.
      */
     shared?: null | { ruleId: string; fonaviAmount: number; centroAmount?: number };
+    /** Nueva fecha (opcional). Si cambia, re-fecha el gasto —y su espejo si
+     *  es compartido— y recalcula el saldo del día origen y del destino. */
+    date?: string;
   }
 ): Promise<Result> {
   const bId = await activeBusinessId();
@@ -213,6 +251,20 @@ export async function updateExpense(
   }
   if (original.linked_atelier_expense_id) {
     return { success: false, error: "Este gasto es el espejo automático de un gasto compartido de Atelier. Edítalo desde Atelier (el espejo se ajusta solo)." };
+  }
+
+  // ───── Cambio de fecha (opcional) ─────
+  // A diferencia del arrastre, aquí SÍ se permite re-fechar un gasto
+  // compartido: su espejo en la otra sede se mueve con él en la misma
+  // transacción (el arrastre remite a este editor justamente por eso).
+  const newDate = changes.date ?? date;
+  const dateChanged = newDate !== date;
+  if (dateChanged) {
+    const dateErr = validateMovementDate(newDate);
+    if (dateErr) return { success: false, error: dateErr };
+    if (original.is_special_loan) {
+      return { success: false, error: "Este movimiento es del módulo Préstamos socio: cambia su fecha desde ahí." };
+    }
   }
 
   // ───── Validaciones de la condición de compartido ─────
@@ -277,6 +329,7 @@ export async function updateExpense(
     concept: changes.concept,
     payment_method: changes.paymentMethod,
     notes: changes.notes,
+    date: newDate,
     ...(touchesSharing
       ? {
           is_shared: willBeShared,
@@ -291,6 +344,9 @@ export async function updateExpense(
   // ───── Transacción según el caso (todo o nada: sin huérfanos) ─────
   const txQueries = [];
 
+  // El día destino debe existir antes de mover la fila (la cadena lo recorre).
+  if (dateChanged) txQueries.push(ensureDailyRecordQuery(bId, newDate));
+
   if (!touchesSharing) {
     // Llamada legacy: no tocar la condición de compartido.
     txQueries.push(sql`
@@ -299,9 +355,23 @@ export async function updateExpense(
         category = ${changes.category},
         concept = ${changes.concept},
         payment_method = ${changes.paymentMethod},
-        notes = ${changes.notes}
+        notes = ${changes.notes},
+        date = ${newDate}
       WHERE id = ${id} AND business_id = ${bId}
     `);
+    // Si es compartido y se movió de día, el espejo de la otra sede viaja
+    // con él (su fecha está ligada al gasto original).
+    if (dateChanged && wasShared) {
+      txQueries.push(sql`
+        INSERT INTO daily_records (business_id, date)
+        SELECT DISTINCT business_id, ${newDate}::date FROM expenses
+        WHERE linked_atelier_expense_id = ${id}::uuid
+        ON CONFLICT (business_id, date) DO NOTHING
+      `);
+      txQueries.push(sql`
+        UPDATE expenses SET date = ${newDate} WHERE linked_atelier_expense_id = ${id}::uuid
+      `);
+    }
   } else {
     txQueries.push(sql`
       UPDATE expenses SET
@@ -310,6 +380,7 @@ export async function updateExpense(
         concept = ${changes.concept},
         payment_method = ${changes.paymentMethod},
         notes = ${changes.notes},
+        date = ${newDate},
         is_shared = ${willBeShared},
         shared_rule_id = ${willBeShared ? changes.shared!.ruleId : null},
         atelier_amount = ${atelierAmt !== null ? atelierAmt.toFixed(2) : null},
@@ -337,6 +408,8 @@ export async function updateExpense(
       if ((fonaviAmt ?? 0) > 0) participants.push({ debtorId: 2, part: fonaviAmt! });
       if ((centroAmt ?? 0) > 0) participants.push({ debtorId: 3, part: centroAmt! });
       for (const { debtorId, part } of participants) {
+        // El espejo nace en la fecha VIGENTE del gasto (que pudo cambiar).
+        txQueries.push(ensureDailyRecordQuery(debtorId, newDate));
         // CTE atómica por local: por cobrar + espejo (mismo patrón que la creación)
         txQueries.push(sql`
           WITH receivable_ins AS (
@@ -356,7 +429,7 @@ export async function updateExpense(
             notes, is_shared, linked_atelier_expense_id, linked_receivable_id
           )
           SELECT
-            ${debtorId}, ${date}, cl.cat,
+            ${debtorId}, ${newDate}, cl.cat,
             ${"[Compartido con Atelier] " + changes.concept},
             ${part.toFixed(2)}, 'pendiente_atelier',
             'Auto-generado por gasto compartido en Atelier', false,
@@ -369,10 +442,13 @@ export async function updateExpense(
 
   txQueries.push(sql`
     INSERT INTO audit_log (business_id, action, record_id, record_type, before_data, after_data, date_affected)
-    VALUES (${bId}, 'edit', ${id}, 'expense', ${JSON.stringify(original)}::jsonb, ${JSON.stringify(after)}::jsonb, ${date})
+    VALUES (${bId}, 'edit', ${id}, 'expense', ${JSON.stringify(original)}::jsonb, ${JSON.stringify(after)}::jsonb, ${newDate})
   `);
+  // Origen siempre; destino además si se movió. La cadena se recalcula desde
+  // el más ANTIGUO de los dos días (recorre hacia adelante y cubre ambos).
   txQueries.push(recalcDailyTotalsQuery(bId, date));
-  txQueries.push(recalcBankBalanceQuery(bId, date));
+  if (dateChanged) txQueries.push(recalcDailyTotalsQuery(bId, newDate));
+  txQueries.push(recalcBankBalanceQuery(bId, dateChanged && newDate < date ? newDate : date));
 
   try {
     await sql.transaction(txQueries);
