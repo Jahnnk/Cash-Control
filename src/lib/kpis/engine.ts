@@ -135,8 +135,14 @@ function extremes(days: KpiDayView[], pick: (d: KpiDayView) => number | null, be
     : { best: sorted[0], worst: sorted[sorted.length - 1] };
 }
 
-export function computeWeekSummary(weekStart: string, dailies: KpiDaily[], t: KpiTargets): KpiWeekSummary {
-  const weekEnd = weekEndOf(weekStart);
+/**
+ * Resumen de un RANGO arbitrario de fechas (para reportes con rango
+ * personalizado). computeWeekSummary es el caso particular dom→sáb.
+ * Los campos weekStart/weekEnd del resultado son el inicio/fin del rango.
+ */
+export function computeRangeSummary(rangeStart: string, rangeEnd: string, dailies: KpiDaily[], t: KpiTargets): KpiWeekSummary {
+  const weekStart = rangeStart;
+  const weekEnd = rangeEnd;
   const inWeek = dailies
     .filter((d) => d.date >= weekStart && d.date <= weekEnd)
     .sort((a, b) => a.date.localeCompare(b.date));
@@ -189,6 +195,11 @@ export function computeWeekSummary(weekStart: string, dailies: KpiDaily[], t: Kp
     worst: { ventas: vx.worst, ticket: tx.worst, nps: nx.worst, mermas: mx.worst },
     days,
   };
+}
+
+/** Resumen de la semana dom→sáb (caso particular del rango). */
+export function computeWeekSummary(weekStart: string, dailies: KpiDaily[], t: KpiTargets): KpiWeekSummary {
+  return computeRangeSummary(weekStart, weekEndOf(weekStart), dailies, t);
 }
 
 // ─────────────────────────────────────────────────────────────────

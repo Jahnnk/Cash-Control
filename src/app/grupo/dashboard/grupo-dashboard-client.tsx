@@ -8,6 +8,7 @@ import { formatCurrency } from "@/lib/utils";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { BreakevenBody } from "@/components/breakeven-card";
+import { GroupKpisSection } from "./group-kpis-section";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 
 type Props = {
@@ -65,6 +66,9 @@ export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries,
           variant={t.margin >= 0 ? "success" : "danger"}
         />
       </div>
+
+      {/* KPIs semanales de las 3 sedes — sin entrar a cada una (pedido de Jahnn) */}
+      <GroupKpisSection />
 
       {/* Punto de equilibrio — la pregunta del CEO: ¿cada sede se paga
           sola este mes, y el grupo completo? */}

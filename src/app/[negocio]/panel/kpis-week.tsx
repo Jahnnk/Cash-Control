@@ -1,17 +1,17 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ChevronLeft, ChevronRight, FileDown, Loader2, BarChart3, Settings2, X } from "lucide-react";
+import { ChevronLeft, ChevronRight, BarChart3, Settings2, X } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   getWeeklyKpis,
-  getBoardDeckData,
   getKpiTargetsForEdit,
   saveKpiTargets,
   type WeeklyKpisResult,
 } from "@/app/actions/kpis";
 import { weekStartOf, weekEndOf, type KpiTraffic } from "@/lib/kpis/engine";
 import { useToast } from "@/components/toast-provider";
+import { KpiDeckButton } from "@/components/kpi-deck-button";
 
 const DOT: Record<KpiTraffic, string> = {
   verde: "bg-emerald-500",
@@ -50,13 +50,11 @@ function shiftWeek(ws: string, weeks: number): string {
  * aparece en sesión completa (Jahnn).
  */
 export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
-  const { showToast } = useToast();
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const [weekStart, setWeekStart] = useState(weekStartOf(today));
   const [data, setData] = useState<Extract<WeeklyKpisResult, { ok: true }> | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [generating, setGenerating] = useState(false);
   const [showTargets, setShowTargets] = useState(false);
 
   const load = useCallback(async (ws: string) => {
@@ -72,25 +70,6 @@ export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
     load(weekStart);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [weekStart, load]);
-
-  async function handleDeck() {
-    setGenerating(true);
-    try {
-      const r = await getBoardDeckData(weekStart);
-      if (!r.ok) { showToast(r.error, "error"); return; }
-      const { renderWeeklyKpiDeck } = await import("@/lib/kpis/weekly-deck");
-      const { blob, filename } = await renderWeeklyKpiDeck(r.data);
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
-      showToast("Deck de la reunión generado", "success");
-    } finally {
-      setGenerating(false);
-    }
-  }
 
   const s = data?.summary ?? null;
 
@@ -124,15 +103,7 @@ export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
                 <Settings2 className="w-3.5 h-3.5" />
                 Metas
               </button>
-              <button
-                onClick={handleDeck}
-                disabled={generating}
-                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary border border-primary/30 bg-primary/5 hover:bg-primary hover:text-white rounded-lg transition-colors disabled:opacity-50"
-                title="Genera el PPT de la reunión de los lunes (todas las sedes)"
-              >
-                {generating ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <FileDown className="w-3.5 h-3.5" />}
-                Deck de la reunión
-              </button>
+              <KpiDeckButton defaultStart={weekStart} defaultEnd={weekEndOf(weekStart)} />
             </>
           )}
         </div>

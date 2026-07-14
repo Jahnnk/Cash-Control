@@ -17,6 +17,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import {
   computeWeekSummary,
+  computeRangeSummary,
   compareWeeks,
   pickPriorityRed,
   weekStartOf,
@@ -26,6 +27,7 @@ import {
   type KpiWeekSummary,
   type WowItem,
 } from "@/lib/kpis/engine";
+import { computeProgress, type IncentiveConfigT, type StaffMember } from "@/lib/incentives/engine";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -159,47 +161,136 @@ export async function getWeeklyKpis(weekStart: string): Promise<WeeklyKpisResult
   }
 }
 
+/** Avance del plan de incentivos de una cafetería (para el deck). */
+export type DeckIncentives = {
+  ticketBase: number;
+  ticketActual: number | null;
+  deltaActual: number | null;
+  nivelAlcanzado: string | null;
+  proximoNivel: { nombre: string; faltaSoles: number } | null;
+  trafficOk: boolean;
+  personasPorDia: number | null;
+  trafficFloor: number;
+  pozoProyectado: number | null;
+  /** Suma de bonos a pagar por nivel (tabla fija del roster activo). */
+  niveles: { nombre: string; delta: number; sumaBonos: number }[];
+  month: string;
+};
+
 export type BoardDeckData = {
   weekStart: string;
   weekEnd: string;
-  cafeterias: { sede: string; targets: KpiTargets; summary: KpiWeekSummary; wow: WowItem[] }[];
+  /** true si el rango NO es la semana dom→sáb estándar. */
+  isCustomRange: boolean;
+  cafeterias: { sede: string; targets: KpiTargets; summary: KpiWeekSummary; wow: WowItem[]; incentives: DeckIncentives | null }[];
   atelier: {
     ventasProm: number | null;
     ventasTotal: number;
     daysWithData: number;
     best: { date: string; value: number } | null;
     worst: { date: string; value: number } | null;
+    days: { date: string; value: number }[];
   } | null;
   priorityRed: { sede: string; kpi: string; detail: string } | null;
 };
 
-/** Datos del deck de la reunión de los lunes — SOLO sesión completa. */
-export async function getBoardDeckData(weekStart: string): Promise<
+/** Avance de incentivos del mes que contiene el fin del rango. */
+async function loadDeckIncentives(bId: number, month: string): Promise<DeckIncentives | null> {
+  try {
+    const cfgRows = (await sql`
+      SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels
+      FROM incentive_config WHERE business_id = ${bId} AND effective_month <= ${month}
+      ORDER BY effective_month DESC LIMIT 1
+    `) as { base: number; margin: number; traffic_floor: number; pool: number; levels: IncentiveConfigT["levels"] }[];
+    if (cfgRows.length === 0) return null;
+    const config: IncentiveConfigT = {
+      ticketBase: cfgRows[0].base,
+      marginPct: cfgRows[0].margin,
+      trafficFloor: cfgRows[0].traffic_floor,
+      poolPct: cfgRows[0].pool,
+      levels: cfgRows[0].levels,
+    };
+    const staff = (await sql`
+      SELECT name, jornada, area FROM staff WHERE business_id = ${bId} AND active = true
+    `) as { name: string; jornada: StaffMember["jornada"]; area: string }[];
+    const [y, m] = month.split("-").map(Number);
+    const daysInMonth = new Date(y, m, 0).getDate();
+    const dailies = (await sql`
+      SELECT date::text, personas, revenue::float AS revenue, items
+      FROM upselling_daily
+      WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${`${month}-${String(daysInMonth).padStart(2, "0")}`}
+      ORDER BY date
+    `) as { date: string; personas: number | null; revenue: number | null; items: number | null }[];
+    const p = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, daysInMonth);
+    return {
+      ticketBase: config.ticketBase,
+      ticketActual: p.ticketActual,
+      deltaActual: p.deltaActual,
+      nivelAlcanzado: p.nivelAlcanzado?.nombre ?? null,
+      proximoNivel: p.proximoNivel ? { nombre: p.proximoNivel.level.nombre, faltaSoles: p.proximoNivel.faltaSoles } : null,
+      trafficOk: p.traffic.cumple,
+      personasPorDia: p.traffic.personasPorDia,
+      trafficFloor: p.traffic.floor,
+      pozoProyectado: p.pozoProyectado,
+      niveles: p.porNivel.map((n) => ({ nombre: n.level.nombre, delta: n.level.delta, sumaBonos: n.sumaBonos })),
+      month,
+    };
+  } catch {
+    return null; // sin config o migración pendiente — el deck lo omite
+  }
+}
+
+function shiftDays(date: string, days: number): string {
+  const d = new Date(date + "T12:00:00Z");
+  d.setUTCDate(d.getUTCDate() + days);
+  return d.toISOString().slice(0, 10);
+}
+
+/**
+ * Datos del deck de la reunión — SOLO sesión completa.
+ * Sin `rangeEnd`: la semana dom→sáb que contiene `weekStart` (flujo de los
+ * lunes). Con `rangeEnd`: rango personalizado [weekStart, rangeEnd]; la
+ * comparación "vs anterior" usa la ventana previa del mismo largo.
+ */
+export async function getBoardDeckData(weekStart: string, rangeEnd?: string): Promise<
   | { ok: true; data: BoardDeckData }
   | { ok: false; error: string }
 > {
   if (!(await requireFullSession())) {
     return { ok: false, error: "El informe de la reunión es solo para la sesión completa." };
   }
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return { ok: false, error: "Semana inválida." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return { ok: false, error: "Fecha inicial inválida." };
+  if (rangeEnd !== undefined && !/^\d{4}-\d{2}-\d{2}$/.test(rangeEnd)) return { ok: false, error: "Fecha final inválida." };
   try {
-    const ws = weekStartOf(weekStart);
-    const we = weekEndOf(ws);
-    const prevStart = new Date(ws + "T12:00:00Z");
-    prevStart.setUTCDate(prevStart.getUTCDate() - 7);
-    const ps = prevStart.toISOString().slice(0, 10);
+    // Rango efectivo: personalizado o semana dom→sáb.
+    let ws: string, we: string, isCustomRange: boolean;
+    if (rangeEnd !== undefined) {
+      if (rangeEnd < weekStart) return { ok: false, error: "La fecha final no puede ser anterior a la inicial." };
+      ws = weekStart;
+      we = rangeEnd;
+      isCustomRange = !(weekStartOf(ws) === ws && weekEndOf(ws) === we);
+    } else {
+      ws = weekStartOf(weekStart);
+      we = weekEndOf(ws);
+      isCustomRange = false;
+    }
+    // Ventana anterior del mismo largo (para el "vs anterior").
+    const rangeDays = Math.round((new Date(we + "T12:00:00Z").getTime() - new Date(ws + "T12:00:00Z").getTime()) / 86400000) + 1;
+    const ps = shiftDays(ws, -rangeDays);
+    const pe = shiftDays(ws, -1);
 
     const cafeterias: BoardDeckData["cafeterias"] = [];
     for (const bId of [2, 3]) {
       const targets = await loadTargets(bId, ws.slice(0, 7));
       const { dailies } = await loadDailies(bId, ps, we);
-      const summary = computeWeekSummary(ws, dailies, targets);
-      const previous = computeWeekSummary(ps, dailies, targets);
-      cafeterias.push({ sede: SEDE_NAMES[bId], targets, summary, wow: compareWeeks(summary, previous) });
+      const summary = computeRangeSummary(ws, we, dailies, targets);
+      const previous = computeRangeSummary(ps, pe, dailies, targets);
+      const incentives = await loadDeckIncentives(bId, we.slice(0, 7));
+      cafeterias.push({ sede: SEDE_NAMES[bId], targets, summary, wow: compareWeeks(summary, previous), incentives });
     }
 
     // Atelier: ventas diarias reales desde daily_records (B2B — sin
-    // NPS/mermas del programa; sección informativa como en el deck).
+    // NPS/mermas del programa; con detalle diario para su slide).
     let atelier: BoardDeckData["atelier"] = null;
     const at = (await sql`
       SELECT date::text, byte_total::float AS v FROM daily_records
@@ -215,6 +306,7 @@ export async function getBoardDeckData(weekStart: string): Promise<
         daysWithData: at.length,
         best: { date: sorted[sorted.length - 1].date, value: sorted[sorted.length - 1].v },
         worst: { date: sorted[0].date, value: sorted[0].v },
+        days: at.map((r) => ({ date: r.date, value: r.v })),
       };
     }
 
@@ -223,6 +315,7 @@ export async function getBoardDeckData(weekStart: string): Promise<
       data: {
         weekStart: ws,
         weekEnd: we,
+        isCustomRange,
         cafeterias,
         atelier,
         priorityRed: pickPriorityRed(cafeterias.map((cf) => ({ sede: cf.sede, summary: cf.summary }))),
