@@ -6,7 +6,7 @@ import { X, Loader2 } from "lucide-react";
 import { updateIncomeItem, updateExpense } from "@/app/actions/record-edits";
 import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
 import { computeThreeWaySplit } from "@/lib/shared-split";
-import { formatDateShort } from "@/lib/utils";
+import { formatDateShort, getToday } from "@/lib/utils";
 
 type ClientOption = { id: string; name: string };
 
@@ -70,6 +70,9 @@ export function EditRecordModal({
 
   // Local state
   const [amount, setAmount] = useState(String(target.amount));
+  // Fecha del movimiento: se puede corregir aquí. Al guardar, el sistema
+  // re-fecha el registro y recalcula el saldo del día origen y del destino.
+  const [date, setDate] = useState(target.date);
   const [note, setNote] = useState(isIncome ? target.note : "");
   const [clientId, setClientId] = useState<string>(isIncome ? target.clientId ?? "" : "");
 
@@ -127,11 +130,27 @@ export function EditRecordModal({
 
   const categoryNotListed = !isIncome && category && !categories.includes(category);
 
+  /** Enter en un campo de una línea = guardar (atajo pedido por Jahnn). */
+  function onEnterSave(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key === "Enter" && !saving) {
+      e.preventDefault();
+      handleSave();
+    }
+  }
+
   async function handleSave() {
     setError(null);
     const amountNum = parseFloat(amount);
     if (!Number.isFinite(amountNum) || amountNum <= 0) {
       setError("El monto debe ser mayor a 0");
+      return;
+    }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      setError("La fecha no es válida");
+      return;
+    }
+    if (date > getToday()) {
+      setError("La fecha no puede ser futura");
       return;
     }
     if (canShare && isShared) {
@@ -149,6 +168,7 @@ export function EditRecordModal({
           note: note.trim(),
           clientId: clientId || null,
           paymentMethod,
+          date,
         })
       : await updateExpense(target.id, {
           amount: amountNum,
@@ -156,6 +176,7 @@ export function EditRecordModal({
           concept: concept.trim(),
           paymentMethod,
           notes: notes.trim() || null,
+          date,
           // Solo Atelier gestiona la condición; en Fonavi/Centro no se toca.
           ...(canShare
             ? { shared: isShared ? { ruleId: sharedRuleId, fonaviAmount: Math.max(0, parseFloat(fonaviPart) || 0), centroAmount: Math.max(0, parseFloat(centroPart) || 0) } : null }
@@ -204,9 +225,30 @@ export function EditRecordModal({
                 setAmount(e.target.value);
                 if (canShare && isShared && sharedRuleId) recomputeFonaviDefault(sharedRuleId, e.target.value);
               }}
+              onKeyDown={onEnterSave}
               className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-light/30"
               autoFocus
             />
+            <div className="text-[11px] text-gray-400 mt-1">Pulsa Enter para guardar.</div>
+          </div>
+
+          {/* Fecha — mover el movimiento a otro día */}
+          <div>
+            <label className="block text-xs font-medium text-gray-700 mb-1">Fecha</label>
+            <input
+              type="date"
+              value={date}
+              max={getToday()}
+              onChange={(e) => setDate(e.target.value)}
+              onKeyDown={onEnterSave}
+              className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-primary-light/30"
+            />
+            {date !== target.date && (
+              <div className="text-[11px] text-amber-700 bg-amber-50 border border-amber-200 rounded px-2 py-1 mt-1">
+                Se moverá del {formatDateShort(target.date)} al {formatDateShort(date)}. Se recalculan los saldos de ambos días.
+                {!isIncome && target.isShared && " Su gasto-espejo en la otra sede se mueve también."}
+              </div>
+            )}
           </div>
 
           {isIncome ? (
@@ -273,6 +315,7 @@ export function EditRecordModal({
                   type="text"
                   value={note}
                   onChange={(e) => setNote(e.target.value)}
+              onKeyDown={onEnterSave}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                   placeholder="Opcional"
                 />
@@ -309,6 +352,7 @@ export function EditRecordModal({
                   type="text"
                   value={concept}
                   onChange={(e) => setConcept(e.target.value)}
+              onKeyDown={onEnterSave}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
@@ -349,6 +393,7 @@ export function EditRecordModal({
                   type="text"
                   value={notes}
                   onChange={(e) => setNotes(e.target.value)}
+              onKeyDown={onEnterSave}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm"
                 />
               </div>
