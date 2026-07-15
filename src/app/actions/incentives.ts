@@ -13,7 +13,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import {
   computeProgress,
   computeFlags,
@@ -503,5 +503,141 @@ export async function reopenFlag(input: {
   } catch (err) {
     console.error("[reopenFlag] failed:", err);
     return { ok: false, error: err instanceof Error ? err.message : "Error al reabrir la bandera" };
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Base del programa (ticket base)
+
+   Es el número que manda sobre TODAS las metas: cada nivel se calcula
+   como base + delta. Dos candados innegociables:
+
+   1. Solo la dirección. El bono del admin depende de este número —
+      bajarlo le facilita cobrar. Nadie mueve su propia valla.
+   2. Vigencia por mes. Un mes ya liquidado quedó congelado en su acta;
+      cambiarle la base re-escribiría bonos ya pagados.
+   ───────────────────────────────────────────────────────────────────── */
+
+export type BaseEditorData = {
+  /** Base vigente para el mes consultado. */
+  ticketBase: number;
+  /** Mes de la config que hoy gobierna (puede ser anterior al consultado). */
+  governingMonth: string;
+  /** Deltas de los niveles — para previsualizar las metas resultantes. */
+  levels: { nombre: string; delta: number }[];
+  /** Ticket REAL de meses cerrados: la evidencia para fijar la base. */
+  reference: { month: string; ticket: number; dias: number }[];
+  /** El mes consultado ya tiene acta de liquidación (base congelada). */
+  liquidated: boolean;
+};
+
+export async function getBaseEditor(
+  month: string,
+): Promise<{ ok: true; data: BaseEditorData } | { ok: false; error: string }> {
+  const bId = await activeBusinessId();
+  if (!(await requireFullSession())) {
+    return { ok: false, error: "La base del programa la ajusta solo la dirección." };
+  }
+  if (bId !== 2 && bId !== 3) {
+    return { ok: false, error: "El programa de incentivos aplica a las cafeterías (Fonavi y Centro)." };
+  }
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return { ok: false, error: "Mes inválido." };
+
+  try {
+    const cfg = (await sql`
+      SELECT effective_month, ticket_base::float AS base, levels
+      FROM incentive_config
+      WHERE business_id = ${bId} AND effective_month <= ${month}
+      ORDER BY effective_month DESC LIMIT 1
+    `) as { effective_month: string; base: number; levels: LevelRow[] }[];
+    if (cfg.length === 0) return { ok: false, error: "Sin configuración del programa para esta sede." };
+
+    // Referencia: solo meses CERRADOS. El mes en curso está a medias y
+    // arrastraría la base hacia abajo (mismo patrón que el punto de
+    // equilibrio y el presupuesto).
+    const thisMonth = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+    const ref = (await sql`
+      SELECT to_char(date, 'YYYY-MM') AS month,
+             SUM(revenue)::float AS revenue, SUM(personas)::int AS personas, COUNT(*)::int AS dias
+      FROM upselling_daily
+      WHERE business_id = ${bId} AND personas > 0 AND revenue > 0
+        AND to_char(date, 'YYYY-MM') < ${thisMonth}
+      GROUP BY 1 ORDER BY 1 DESC LIMIT 3
+    `) as { month: string; revenue: number; personas: number; dias: number }[];
+
+    const liq = (await sql`
+      SELECT 1 FROM incentive_liquidations WHERE business_id = ${bId} AND month = ${month} LIMIT 1
+    `) as unknown[];
+
+    return {
+      ok: true,
+      data: {
+        ticketBase: cfg[0].base,
+        governingMonth: cfg[0].effective_month,
+        levels: (cfg[0].levels ?? []).map((l) => ({ nombre: l.nombre, delta: l.delta })),
+        reference: ref.map((r) => ({
+          month: r.month,
+          ticket: Math.round((r.revenue / r.personas) * 100) / 100,
+          dias: r.dias,
+        })),
+        liquidated: liq.length > 0,
+      },
+    };
+  } catch (e) {
+    console.error("[getBaseEditor]", e);
+    return { ok: false, error: "No pude leer la base del programa." };
+  }
+}
+
+export async function saveIncentiveBase(input: {
+  effectiveMonth: string;
+  ticketBase: number;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const bId = await activeBusinessId();
+  if (!(await requireFullSession())) {
+    return { ok: false, error: "La base del programa la ajusta solo la dirección." };
+  }
+  if (bId !== 2 && bId !== 3) {
+    return { ok: false, error: "El programa de incentivos aplica a las cafeterías (Fonavi y Centro)." };
+  }
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.effectiveMonth)) return { ok: false, error: "Mes inválido." };
+  const base = Number(input.ticketBase);
+  if (!Number.isFinite(base) || base <= 0) return { ok: false, error: "La base debe ser un monto mayor a cero." };
+  if (base > 200) return { ok: false, error: "Esa base no parece un ticket promedio (máximo S/200)." };
+
+  try {
+    const liq = (await sql`
+      SELECT 1 FROM incentive_liquidations WHERE business_id = ${bId} AND month = ${input.effectiveMonth} LIMIT 1
+    `) as unknown[];
+    if (liq.length > 0) {
+      return {
+        ok: false,
+        error: "Ese mes ya está liquidado: su base quedó congelada en el acta. Reabre la liquidación si necesitas cambiarla.",
+      };
+    }
+
+    // Hereda el resto de la política (niveles, margen, piso, pozo) de la
+    // config vigente: un mes nuevo con solo la base quedaría sin niveles.
+    const rounded = Math.round(base * 100) / 100;
+    const done = (await sql`
+      INSERT INTO incentive_config
+        (business_id, effective_month, ticket_base, margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller)
+      SELECT ${bId}, ${input.effectiveMonth}, ${rounded},
+             margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller
+      FROM incentive_config
+      WHERE business_id = ${bId} AND effective_month <= ${input.effectiveMonth}
+      ORDER BY effective_month DESC LIMIT 1
+      ON CONFLICT (business_id, effective_month)
+      DO UPDATE SET ticket_base = EXCLUDED.ticket_base
+      RETURNING id
+    `) as { id: string }[];
+    if (done.length === 0) {
+      return { ok: false, error: "Sin configuración previa del programa para esta sede: no puedo heredar los niveles." };
+    }
+    revalidatePath("/[negocio]/panel", "page");
+    return { ok: true };
+  } catch (e) {
+    console.error("[saveIncentiveBase]", e);
+    return { ok: false, error: "No pude guardar la base del programa." };
   }
 }

@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  Trophy, Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag, Pencil, ClipboardList,
+  Trophy, Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag, Pencil, ClipboardList, Settings2,
 } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import {
@@ -23,6 +23,7 @@ import { KpisWeekSection } from "./kpis-week";
 import { LiquidationModal } from "./liquidation-modal";
 import { MermaDetailModal } from "./merma-detail-modal";
 import { MejorVendedorSection } from "./mejor-vendedor-section";
+import { BaseModal } from "./base-modal";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -50,6 +51,7 @@ export default function IncentivosPage() {
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
   const [showLiquidation, setShowLiquidation] = useState(false);
+  const [showBase, setShowBase] = useState(false);
   const [focus, setFocus] = useState<{ month: string; candidates: UpsellCandidate[] } | null>(null);
 
   // Registro diario (incentivos + KPIs — un solo ritual)
@@ -86,6 +88,19 @@ export default function IncentivosPage() {
       if (r.ok) setFocus({ month: r.month, candidates: r.candidates });
     })();
   }, []);
+
+  // Al elegir la fecha, mostrar los tiempos que YA existen para ese día
+  // (los que midió el encargado con el cronómetro). Antes el formulario
+  // salía vacío y el admin no los veía — "no me deja acceder al ítem".
+  // En modo edición no aplica: startEdit ya cargó todos los campos.
+  const dayRecord = data?.dailies.find((d) => d.date === fecha) ?? null;
+  useEffect(() => {
+    if (editingDate !== null) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- reflejar lo medido al cambiar de día */
+    setTiempo(dayRecord?.tiempoMin != null ? String(dayRecord.tiempoMin) : "");
+    setTiempoMesa(dayRecord?.tiempoMesaMin != null ? String(dayRecord.tiempoMesaMin) : "");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [fecha, dayRecord?.tiempoMin, dayRecord?.tiempoMesaMin, editingDate]);
 
   function clearForm() {
     setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo(""); setTiempoMesa("");
@@ -244,8 +259,20 @@ export default function IncentivosPage() {
 
           {/* 2 · Tabla de niveles y pozo */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-900">
-              Niveles y pozo (proyección al cierre con el ritmo actual)
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-gray-900">
+                Niveles y pozo (proyección al cierre con el ritmo actual)
+              </span>
+              {/* La base la mueve solo la dirección: el bono del admin
+                  depende de ella. */}
+              {!data.isAdminSession && (
+                <button
+                  onClick={() => setShowBase(true)}
+                  className="text-xs px-2.5 py-1 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 flex items-center gap-1 shrink-0"
+                >
+                  <Settings2 className="w-3.5 h-3.5" /> Base
+                </button>
+              )}
             </div>
             <table className="w-full text-sm">
               <thead>
@@ -375,9 +402,16 @@ export default function IncentivosPage() {
                     placeholder="ej. 12" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
               </div>
-              <div className="text-[11px] text-gray-400 mb-2">
-                Los tiempos se llenan solos si el encargado de salón usa el cronómetro (promedio medido del día). Escríbelos a mano solo si ese día no se cronometró.
-              </div>
+              {dayRecord && (dayRecord.tiempoMin != null || dayRecord.tiempoMesaMin != null) ? (
+                <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 mb-2">
+                  ⏱️ Tiempos <strong>medidos por el encargado</strong> con el cronómetro — ya están guardados, no los tecleas.
+                  Si un día no se cronometró, ahí sí los escribes a mano.
+                </div>
+              ) : (
+                <div className="text-[11px] text-gray-400 mb-2">
+                  Si el encargado usó el cronómetro, los tiempos aparecen solos al elegir la fecha. Si ese día no se cronometró, escríbelos a mano.
+                </div>
+              )}
               <button
                 onClick={handleSaveDay}
                 disabled={saving || !personas || !venta}
@@ -498,6 +532,14 @@ export default function IncentivosPage() {
           month={month}
           monthLabel={monthLabel(month)}
           onClose={() => setShowLiquidation(false)}
+        />
+      )}
+
+      {showBase && (
+        <BaseModal
+          month={month}
+          onClose={() => setShowBase(false)}
+          onSaved={() => { setShowBase(false); load(month); }}
         />
       )}
     </div>
