@@ -26,6 +26,50 @@ export type BusinessSummary = {
   margin: number;
 };
 
+// ─────────────────────────────────────────────────────────────────
+// Frescura de datos por sede: ¿hasta qué fecha hay información?
+// Kelly registra Fonavi/Centro en su Excel y a veces la entrega con
+// días/semanas de atraso — esta señal le dice a Jahnn exactamente qué
+// rango pedirle para tener las 3 sedes al día.
+// ─────────────────────────────────────────────────────────────────
+
+export type DataFreshness = {
+  businessId: number;
+  name: string;
+  /** Última fecha con actividad financiera registrada (null = nada). */
+  lastDate: string | null;
+  /** Días de atraso vs hoy (0 = al día). */
+  daysBehind: number | null;
+};
+
+export async function getDataFreshness(): Promise<DataFreshness[]> {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const rows = await db.execute(sql`
+    SELECT b.id, b.name,
+      GREATEST(
+        (SELECT MAX(date) FROM expenses e
+          WHERE e.business_id = b.id AND e.archived = false AND e.date <= ${today}),
+        (SELECT MAX(date) FROM bank_income_items i
+          WHERE i.business_id = b.id AND i.archived = false AND i.date <= ${today}),
+        (SELECT MAX(date) FROM daily_records d
+          WHERE d.business_id = b.id AND d.archived = false AND d.date <= ${today}
+            AND (COALESCE(d.byte_total, 0) > 0 OR COALESCE(d.bank_income, 0) > 0 OR d.bank_balance_real IS NOT NULL))
+      )::text AS last_date
+    FROM businesses b
+    WHERE b.active = true
+    ORDER BY b.id
+  `);
+  return (rows.rows as { id: number; name: string; last_date: string | null }[]).map((r) => {
+    let daysBehind: number | null = null;
+    if (r.last_date) {
+      const a = new Date(r.last_date + "T00:00:00Z").getTime();
+      const b = new Date(today + "T00:00:00Z").getTime();
+      daysBehind = Math.max(0, Math.round((b - a) / 86400000));
+    }
+    return { businessId: r.id, name: r.name, lastDate: r.last_date, daysBehind };
+  });
+}
+
 export async function getGroupDashboard(monthInput?: string) {
   const today = new Date().toISOString().slice(0, 10);
   const currentMonth = today.substring(0, 7);

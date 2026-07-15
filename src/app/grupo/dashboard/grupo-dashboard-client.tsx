@@ -9,6 +9,8 @@ import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { BreakevenBody } from "@/components/breakeven-card";
 import { GroupKpisSection } from "./group-kpis-section";
+import { DataFreshnessCard } from "./data-freshness-card";
+import type { DataFreshness } from "@/app/actions/grupo";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 
 type Props = {
@@ -22,11 +24,12 @@ type Props = {
     margin: number;
   };
   breakeven: GroupBreakeven | null;
+  freshness: DataFreshness[];
 };
 
 const SEDE_CODE: Record<number, ScopeCode> = { 1: "atelier", 2: "fonavi", 3: "centro" };
 
-export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries, totals: t, breakeven }: Props) {
+export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness }: Props) {
   return (
     <div className="space-y-6">
       <div>
@@ -67,8 +70,13 @@ export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries,
         />
       </div>
 
-      {/* KPIs semanales de las 3 sedes — sin entrar a cada una (pedido de Jahnn) */}
-      <GroupKpisSection />
+      {/* ¿Hasta cuándo hay datos por sede? — qué pedirle a Kelly */}
+      <DataFreshnessCard items={freshness} />
+
+      {/* KPIs semanales de las 3 sedes — salud de un vistazo. La GENERACIÓN
+          de reportes vive en Reportes del Grupo (dashboard = ver, reportes
+          = documentos — decisión de orden del programa). */}
+      <GroupKpisSection showDeck={false} />
 
       {/* Punto de equilibrio — la pregunta del CEO: ¿cada sede se paga
           sola este mes, y el grupo completo? */}
