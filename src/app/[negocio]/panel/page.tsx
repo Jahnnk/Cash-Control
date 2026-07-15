@@ -87,6 +87,19 @@ export default function IncentivosPage() {
     })();
   }, []);
 
+  // Al elegir la fecha, mostrar los tiempos que YA existen para ese día
+  // (los que midió el encargado con el cronómetro). Antes el formulario
+  // salía vacío y el admin no los veía — "no me deja acceder al ítem".
+  // En modo edición no aplica: startEdit ya cargó todos los campos.
+  const dayRecord = data?.dailies.find((d) => d.date === fecha) ?? null;
+  useEffect(() => {
+    if (editingDate !== null) return;
+    /* eslint-disable react-hooks/set-state-in-effect -- reflejar lo medido al cambiar de día */
+    setTiempo(dayRecord?.tiempoMin != null ? String(dayRecord.tiempoMin) : "");
+    setTiempoMesa(dayRecord?.tiempoMesaMin != null ? String(dayRecord.tiempoMesaMin) : "");
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [fecha, dayRecord?.tiempoMin, dayRecord?.tiempoMesaMin, editingDate]);
+
   function clearForm() {
     setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo(""); setTiempoMesa("");
     setEditingDate(null);
@@ -375,9 +388,16 @@ export default function IncentivosPage() {
                     placeholder="ej. 12" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
               </div>
-              <div className="text-[11px] text-gray-400 mb-2">
-                Los tiempos se llenan solos si el encargado de salón usa el cronómetro (promedio medido del día). Escríbelos a mano solo si ese día no se cronometró.
-              </div>
+              {dayRecord && (dayRecord.tiempoMin != null || dayRecord.tiempoMesaMin != null) ? (
+                <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 mb-2">
+                  ⏱️ Tiempos <strong>medidos por el encargado</strong> con el cronómetro — ya están guardados, no los tecleas.
+                  Si un día no se cronometró, ahí sí los escribes a mano.
+                </div>
+              ) : (
+                <div className="text-[11px] text-gray-400 mb-2">
+                  Si el encargado usó el cronómetro, los tiempos aparecen solos al elegir la fecha. Si ese día no se cronometró, escríbelos a mano.
+                </div>
+              )}
               <button
                 onClick={handleSaveDay}
                 disabled={saving || !personas || !venta}

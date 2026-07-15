@@ -413,7 +413,41 @@ export async function saveKpiTargets(input: {
   }
 }
 
-/** Guarda los KPIs del día (extiende el registro diario de Incentivos). */
+/**
+ * Promedios MEDIDOS por el cronómetro del encargado para un día.
+ * Devuelve null por tipo si no hubo mediciones (o falta la tabla).
+ */
+async function measuredTimes(bId: number, date: string): Promise<{ mostrador: number | null; mesa: number | null }> {
+  try {
+    const rows = (await sql`
+      SELECT kind, AVG(duration_seconds)::float AS avg_s
+      FROM service_timings
+      WHERE business_id = ${bId} AND date = ${date} AND ended_at IS NOT NULL
+      GROUP BY kind
+    `) as { kind: "mostrador" | "mesa"; avg_s: number }[];
+    const pick = (k: string) => {
+      const r = rows.find((x) => x.kind === k);
+      return r ? Math.round((r.avg_s / 60) * 10) / 10 : null;
+    };
+    return { mostrador: pick("mostrador"), mesa: pick("mesa") };
+  } catch {
+    return { mostrador: null, mesa: null };
+  }
+}
+
+/**
+ * Guarda los KPIs del día (extiende el registro diario de Incentivos).
+ *
+ * REGLA DE LOS TIEMPOS (bug reportado por el admin, jul-2026): los
+ * tiempos tienen DOS fuentes — el cronómetro del encargado y el tecleo
+ * del admin. Antes, guardar el día con los campos vacíos escribía NULL
+ * encima de las mediciones del encargado (Fonavi 13-jul perdió
+ * mostrador 5.5 / mesa 8.5 así). Ahora:
+ *   1. Lo MEDIDO manda sobre lo tecleado (es dato real, no estimación).
+ *   2. Un campo vacío NUNCA borra un valor existente (COALESCE).
+ * Para corregir un tiempo mal medido se descarta la medición en el
+ * cronómetro; para uno tecleado, se sobreescribe con el valor correcto.
+ */
 export async function saveDailyKpis(input: {
   date: string;
   nps: number | null;
@@ -430,13 +464,19 @@ export async function saveDailyKpis(input: {
   if (input.tiempoMin !== null && input.tiempoMin < 0) return { ok: false, error: "Tiempo inválido." };
   if (input.tiempoMesaMin !== null && input.tiempoMesaMin < 0) return { ok: false, error: "Tiempo de mesa inválido." };
   try {
+    // Lo medido gana; si no hay medición, vale lo que tecleó el admin.
+    const measured = await measuredTimes(bId, input.date);
+    const tMost = measured.mostrador ?? input.tiempoMin;
+    const tMesa = measured.mesa ?? input.tiempoMesaMin;
     await sql`
       INSERT INTO upselling_daily (business_id, date, nps, mermas_soles, tiempo_atencion_min, tiempo_mesa_min, source, updated_at)
-      VALUES (${bId}, ${input.date}, ${input.nps}, ${input.mermasSoles}, ${input.tiempoMin}, ${input.tiempoMesaMin}, 'manual', NOW())
+      VALUES (${bId}, ${input.date}, ${input.nps}, ${input.mermasSoles}, ${tMost}, ${tMesa}, 'manual', NOW())
       ON CONFLICT (business_id, date) DO UPDATE
         SET nps = EXCLUDED.nps, mermas_soles = EXCLUDED.mermas_soles,
-            tiempo_atencion_min = EXCLUDED.tiempo_atencion_min,
-            tiempo_mesa_min = EXCLUDED.tiempo_mesa_min, updated_at = NOW()
+            -- COALESCE: vacío = "no lo toco", nunca "bórralo".
+            tiempo_atencion_min = COALESCE(EXCLUDED.tiempo_atencion_min, upselling_daily.tiempo_atencion_min),
+            tiempo_mesa_min = COALESCE(EXCLUDED.tiempo_mesa_min, upselling_daily.tiempo_mesa_min),
+            updated_at = NOW()
     `;
     revalidatePath("/[negocio]/panel", "page");
     return { ok: true };
@@ -445,12 +485,14 @@ export async function saveDailyKpis(input: {
     if (/tiempo_mesa_min/.test(msg)) {
       // Migración de tiempo de mesa pendiente → guarda el resto sin perder el día.
       try {
+        // Misma regla que arriba: vacío nunca borra lo medido.
         await sql`
           INSERT INTO upselling_daily (business_id, date, nps, mermas_soles, tiempo_atencion_min, source, updated_at)
           VALUES (${bId}, ${input.date}, ${input.nps}, ${input.mermasSoles}, ${input.tiempoMin}, 'manual', NOW())
           ON CONFLICT (business_id, date) DO UPDATE
             SET nps = EXCLUDED.nps, mermas_soles = EXCLUDED.mermas_soles,
-                tiempo_atencion_min = EXCLUDED.tiempo_atencion_min, updated_at = NOW()
+                tiempo_atencion_min = COALESCE(EXCLUDED.tiempo_atencion_min, upselling_daily.tiempo_atencion_min),
+                updated_at = NOW()
         `;
         revalidatePath("/[negocio]/panel", "page");
         if (input.tiempoMesaMin !== null) {
