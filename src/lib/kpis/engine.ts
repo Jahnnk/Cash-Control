@@ -158,7 +158,10 @@ export function computeRangeSummary(rangeStart: string, rangeEnd: string, dailie
   const withNps = days.filter((d) => d.nps !== null);
   const npsProm = withNps.length > 0 ? r2(withNps.reduce((s, d) => s + (d.nps ?? 0), 0) / withNps.length) : null;
   const mermasTotal = r2(days.reduce((s, d) => s + (d.mermasSoles ?? 0), 0));
-  const mermasPct = ventasTotal > 0 ? r1((mermasTotal / ventasTotal) * 10000) / 100 : null;
+  // % con 2 decimales exactos. OJO: redondear ANTES de dividir producía
+  // colas binarias tipo 0.4429999999995% en pantalla (bug visto por Jahnn):
+  // Math.round(x*10000)/100 sí da un número que se imprime limpio (0.44).
+  const mermasPct = ventasTotal > 0 ? Math.round((mermasTotal / ventasTotal) * 10000) / 100 : null;
   const withTiempo = days.filter((d) => d.tiempoMin !== null);
   const tiempoProm = withTiempo.length > 0 ? r2(withTiempo.reduce((s, d) => s + (d.tiempoMin ?? 0), 0) / withTiempo.length) : null;
   const withTiempoMesa = days.filter((d) => d.tiempoMesaMin !== null);

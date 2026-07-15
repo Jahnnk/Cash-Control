@@ -3,6 +3,7 @@
 import { DataTable } from "@/components/ui/DataTable";
 import { formatCurrency } from "@/lib/utils";
 import type { BusinessSummary } from "@/app/actions/grupo";
+import { GroupKpisSection } from "../dashboard/group-kpis-section";
 
 type Props = {
   selectedMonth: string;
@@ -20,6 +21,13 @@ export function GrupoReportesClient({ selectedMonth, isCurrentMonth, summaries }
         </p>
       </div>
 
+      {/* Reporte de KPIs de la reunión: aquí se GENERA el deck (con rango
+          personalizado). El dashboard solo muestra la salud. */}
+      <GroupKpisSection />
+
+      <div>
+        <h2 className="text-sm font-semibold text-gray-700">Comparativo financiero del mes</h2>
+      </div>
       <DataTable
         rowKey={(r) => r.code}
         data={summaries}

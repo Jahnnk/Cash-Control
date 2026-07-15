@@ -6,6 +6,7 @@ import { formatCurrency } from "@/lib/utils";
 import { getBoardDeckData, type BoardDeckData } from "@/app/actions/kpis";
 import { weekStartOf, weekEndOf, type KpiTraffic } from "@/lib/kpis/engine";
 import { KpiDeckButton } from "@/components/kpi-deck-button";
+import Link from "next/link";
 
 const DOT: Record<KpiTraffic, string> = {
   verde: "bg-emerald-500",
@@ -38,7 +39,7 @@ function shiftWeek(ws: string, weeks: number): string {
  * (getBoardDeckData, solo dirección) + botón del deck con rango
  * personalizado.
  */
-export function GroupKpisSection() {
+export function GroupKpisSection({ showDeck = true }: { showDeck?: boolean } = {}) {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const [weekStart, setWeekStart] = useState(weekStartOf(today));
   const [data, setData] = useState<BoardDeckData | null>(null);
@@ -79,7 +80,13 @@ export function GroupKpisSection() {
           >
             <ChevronRight className="w-4 h-4" />
           </button>
-          <KpiDeckButton defaultStart={weekStart} defaultEnd={weekEndOf(weekStart)} />
+          {showDeck ? (
+            <KpiDeckButton defaultStart={weekStart} defaultEnd={weekEndOf(weekStart)} />
+          ) : (
+            <Link href="/grupo/reportes" className="text-xs font-medium text-primary hover:underline">
+              Generar reporte →
+            </Link>
+          )}
         </div>
       </div>
 
