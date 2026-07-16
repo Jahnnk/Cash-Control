@@ -73,6 +73,9 @@ function IncentivosPage() {
   const [mermas, setMermas] = useState("");
   const [tiempo, setTiempo] = useState("");        // mostrador
   const [tiempoMesa, setTiempoMesa] = useState(""); // mesa
+  const [tiempoDelivery, setTiempoDelivery] = useState(""); // delivery
+  const [delivPedidos, setDelivPedidos] = useState("");
+  const [delivVenta, setDelivVenta] = useState("");
   const [saving, setSaving] = useState(false);
   const [weekRefresh, setWeekRefresh] = useState(0);
   const [showMermaDetail, setShowMermaDetail] = useState(false);
@@ -109,11 +112,12 @@ function IncentivosPage() {
     /* eslint-disable react-hooks/set-state-in-effect -- reflejar lo medido al cambiar de día */
     setTiempo(dayRecord?.tiempoMin != null ? String(dayRecord.tiempoMin) : "");
     setTiempoMesa(dayRecord?.tiempoMesaMin != null ? String(dayRecord.tiempoMesaMin) : "");
+    setTiempoDelivery(dayRecord?.tiempoDeliveryMin != null ? String(dayRecord.tiempoDeliveryMin) : "");
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [fecha, dayRecord?.tiempoMin, dayRecord?.tiempoMesaMin, editingDate]);
+  }, [fecha, dayRecord?.tiempoMin, dayRecord?.tiempoMesaMin, dayRecord?.tiempoDeliveryMin, editingDate]);
 
   function clearForm() {
-    setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo(""); setTiempoMesa("");
+    setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo(""); setTiempoMesa(""); setTiempoDelivery(""); setDelivPedidos(""); setDelivVenta("");
     setEditingDate(null);
     setFecha(todayLima());
   }
@@ -128,6 +132,9 @@ function IncentivosPage() {
     setMermas(d.mermasSoles !== null ? String(d.mermasSoles) : "");
     setTiempo(d.tiempoMin !== null ? String(d.tiempoMin) : "");
     setTiempoMesa(d.tiempoMesaMin !== null ? String(d.tiempoMesaMin) : "");
+    setTiempoDelivery(d.tiempoDeliveryMin !== null ? String(d.tiempoDeliveryMin) : "");
+    setDelivPedidos(d.deliveryPedidos !== null ? String(d.deliveryPedidos) : "");
+    setDelivVenta(d.deliveryVenta !== null ? String(d.deliveryVenta) : "");
     setEditingDate(d.date);
   }
 
@@ -138,16 +145,19 @@ function IncentivosPage() {
       personas: Number(personas),
       revenue: Number(venta),
       items: items.trim() === "" ? null : Number(items),
+      deliveryPedidos: delivPedidos.trim() === "" ? null : Number(delivPedidos),
+      deliveryVenta: delivVenta.trim() === "" ? null : Number(delivVenta),
     });
     if (!r.ok) { setSaving(false); showToast(r.error, "error"); return; }
     // KPIs del mismo día (NPS, mermas, tiempos) — si se llenó alguno o se edita.
-    if (editingDate !== null || nps.trim() !== "" || mermas.trim() !== "" || tiempo.trim() !== "" || tiempoMesa.trim() !== "") {
+    if (editingDate !== null || nps.trim() !== "" || mermas.trim() !== "" || tiempo.trim() !== "" || tiempoMesa.trim() !== "" || tiempoDelivery.trim() !== "") {
       const rk = await saveDailyKpis({
         date: fecha,
         nps: nps.trim() === "" ? null : Number(nps),
         mermasSoles: mermas.trim() === "" ? null : Number(mermas),
         tiempoMin: tiempo.trim() === "" ? null : Number(tiempo),
         tiempoMesaMin: tiempoMesa.trim() === "" ? null : Number(tiempoMesa),
+        tiempoDeliveryMin: tiempoDelivery.trim() === "" ? null : Number(tiempoDelivery),
       });
       if (!rk.ok) { setSaving(false); showToast(rk.error, "error"); return; }
     }
@@ -234,7 +244,7 @@ function IncentivosPage() {
           {/* 1 · Avance del ticket */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500">Ticket promedio ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
+              <div className="text-[11px] uppercase text-gray-500">Ticket promedio salón ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
               <div className="text-2xl font-black text-gray-900">
                 {p.ticketActual !== null ? formatCurrency(p.ticketActual) : "—"}
               </div>
@@ -243,6 +253,11 @@ function IncentivosPage() {
                 {p.deltaActual !== null && (
                   <span className={`ml-1 font-semibold ${p.deltaActual > 0 ? "text-emerald-600" : "text-red-600"}`}>
                     ({p.deltaActual >= 0 ? "+" : ""}{formatCurrency(p.deltaActual)})
+                  </span>
+                )}
+                {p.delivery && (
+                  <span className="block text-gray-400">
+                    🛵 Delivery aparte: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (no cuenta en la meta)
                   </span>
                 )}
               </div>
@@ -419,6 +434,25 @@ function IncentivosPage() {
                   <input type="number" min="0" step="0.5" value={tiempoMesa} onChange={(e) => setTiempoMesa(e.target.value)}
                     placeholder="ej. 12" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">T. delivery (min, registro→motorizado)</label>
+                  <input type="number" min="0" step="0.5" value={tiempoDelivery} onChange={(e) => setTiempoDelivery(e.target.value)}
+                    placeholder="ej. 18" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">Pedidos delivery (del total)</label>
+                  <input type="number" min="0" value={delivPedidos} onChange={(e) => setDelivPedidos(e.target.value)}
+                    placeholder="ej. 8" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">Venta delivery S/ (de la venta total)</label>
+                  <input type="number" min="0" step="0.01" value={delivVenta} onChange={(e) => setDelivVenta(e.target.value)}
+                    placeholder="ej. 96.00" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
+              </div>
+              <div className="text-[11px] text-gray-400 mb-2">
+                🛵 Delivery va DENTRO de personas y venta del día; regístralo aparte para que
+                <strong> no cuente en el ticket del programa</strong> (en un pedido de app nadie puede sugerir extras).
               </div>
               {dayRecord && (dayRecord.tiempoMin != null || dayRecord.tiempoMesaMin != null) ? (
                 <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 mb-2">

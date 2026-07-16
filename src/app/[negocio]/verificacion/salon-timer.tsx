@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Timer, Store, Utensils, Loader2, X, Check } from "lucide-react";
+import { Timer, Store, Utensils, Bike, Loader2, X, Check } from "lucide-react";
 import {
   getServiceTimings,
   startTiming,
@@ -32,11 +32,13 @@ const TEXT: Record<TimingTraffic, string> = {
 const KIND_META: Record<ServiceKind, { label: string; icon: typeof Store; verb: string }> = {
   mostrador: { label: "Mostrador", icon: Store, verb: "Despachado" },
   mesa: { label: "Mesa", icon: Utensils, verb: "Servido" },
+  delivery: { label: "Delivery", icon: Bike, verb: "Con el motorizado" },
 };
 
 /**
  * Cronómetro de tiempos de atención para el encargado de salón.
- * Mostrador (comanda→despacho) y mesa (pedido→servido), varios a la vez.
+ * Mostrador (comanda→despacho), mesa (pedido→servido) y delivery
+ * (registro→entrega al motorizado), varios a la vez.
  * El tiempo lo lleva el servidor; aquí solo se refresca el reloj en vivo.
  */
 export function SalonTimer() {
@@ -109,6 +111,7 @@ export function SalonTimer() {
   const metas = view.metas;
   const sumMost = summarizeKind(view.completedToday, "mostrador", metas.mostrador);
   const sumMesa = summarizeKind(view.completedToday, "mesa", metas.mesa);
+  const sumDeli = summarizeKind(view.completedToday, "delivery", metas.delivery);
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
@@ -118,8 +121,9 @@ export function SalonTimer() {
           Cronómetro de atención
         </div>
         <div className="text-[11px] text-gray-500 mt-0.5">
-          Mostrador: desde la comanda hasta el despacho (meta &lt;{metas.mostrador ?? "—"} min).
-          Mesa: desde que tomas el pedido hasta servir (meta &lt;{metas.mesa ?? "—"} min).
+          Mostrador: comanda → despacho (meta &lt;{metas.mostrador ?? "—"} min).
+          Mesa: pedido → servido (meta &lt;{metas.mesa ?? "—"} min).
+          Delivery: registro del pedido → entrega al motorizado (meta &lt;{metas.delivery ?? "—"} min).
           Puedes tener varios a la vez. El promedio del día alimenta solo el KPI.
         </div>
       </div>
@@ -156,6 +160,14 @@ export function SalonTimer() {
           {starting === "mesa" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Utensils className="w-4 h-4" />}
           Mesa
         </button>
+        <button
+          onClick={() => handleStart("delivery")}
+          disabled={starting !== null || !view.tableReady}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50"
+        >
+          {starting === "delivery" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Bike className="w-4 h-4" />}
+          Delivery
+        </button>
       </div>
 
       {/* En curso */}
@@ -164,7 +176,7 @@ export function SalonTimer() {
           <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-400">En curso</div>
           {view.running.map((r) => {
             const secs = elapsedSeconds(r.startedAt, now);
-            const meta = r.kind === "mostrador" ? metas.mostrador : metas.mesa;
+            const meta = metas[r.kind];
             const tr = timingTraffic(secs, meta);
             const KindIcon = KIND_META[r.kind].icon;
             return (
@@ -198,8 +210,8 @@ export function SalonTimer() {
       )}
 
       {/* Resumen de hoy */}
-      <div className="grid grid-cols-2 gap-2">
-        {[sumMost, sumMesa].map((s) => (
+      <div className="grid grid-cols-3 gap-2">
+        {[sumMost, sumMesa, sumDeli].map((s) => (
           <div key={s.kind} className="rounded-lg border border-gray-200 p-3">
             <div className="text-[10px] uppercase text-gray-400">{KIND_META[s.kind].label} · hoy</div>
             <div className="flex items-baseline gap-1.5">
@@ -226,7 +238,7 @@ export function SalonTimer() {
             <div className="mt-2 space-y-1 max-h-56 overflow-y-auto">
               {view.completedToday.map((r) => {
                 const secs = r.durationSeconds ?? 0;
-                const meta = r.kind === "mostrador" ? metas.mostrador : metas.mesa;
+                const meta = metas[r.kind];
                 const tr = timingTraffic(secs, meta);
                 return (
                   <div key={r.id} className="flex items-center gap-2 text-xs border-t border-gray-50 py-1">

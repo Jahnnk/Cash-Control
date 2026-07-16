@@ -37,8 +37,8 @@ const SEDE_NAMES: Record<number, string> = { 1: "Atelier", 2: "Fonavi", 3: "Cent
 /** Metas por defecto (deck jun-2026 + política de tiempos: mostrador <6
  * min, mesa <15 min) si la tabla aún no existe. */
 const DEFAULT_TARGETS: Record<number, KpiTargets> = {
-  2: { ventaDiaria: 1322, ticketRef: 27.8, npsMin: 9, mermasMaxPct: 0.04, tiempoMaxMin: 6, tiempoMesaMaxMin: 15 },
-  3: { ventaDiaria: 1266, ticketRef: 24.25, npsMin: 9, mermasMaxPct: 0.04, tiempoMaxMin: 6, tiempoMesaMaxMin: 15 },
+  2: { ventaDiaria: 1322, ticketRef: 27.8, npsMin: 9, mermasMaxPct: 0.04, tiempoMaxMin: 6, tiempoMesaMaxMin: 15, tiempoDeliveryMaxMin: 20 },
+  3: { ventaDiaria: 1266, ticketRef: 24.25, npsMin: 9, mermasMaxPct: 0.04, tiempoMaxMin: 6, tiempoMesaMaxMin: 15, tiempoDeliveryMaxMin: 20 },
 };
 
 async function sessionKind(bId: number): Promise<"full" | "admin" | null> {
@@ -52,32 +52,33 @@ async function loadTargets(bId: number, month: string): Promise<KpiTargets> {
   try {
     const rows = (await sql`
       SELECT venta_diaria::float AS vd, ticket_ref::float AS tr, nps_min::float AS nm,
-             mermas_max_pct::float AS mp, tiempo_max_min::float AS tm, tiempo_mesa_max_min::float AS tmm
+             mermas_max_pct::float AS mp, tiempo_max_min::float AS tm, tiempo_mesa_max_min::float AS tmm,
+             tiempo_delivery_max_min::float AS td
       FROM kpi_targets
       WHERE business_id = ${bId} AND effective_month <= ${month}
       ORDER BY effective_month DESC LIMIT 1
-    `) as { vd: number; tr: number; nm: number; mp: number; tm: number | null; tmm: number | null }[];
+    `) as { vd: number; tr: number; nm: number; mp: number; tm: number | null; tmm: number | null; td: number | null }[];
     if (rows.length > 0) {
-      return { ventaDiaria: rows[0].vd, ticketRef: rows[0].tr, npsMin: rows[0].nm, mermasMaxPct: rows[0].mp, tiempoMaxMin: rows[0].tm, tiempoMesaMaxMin: rows[0].tmm };
+      return { ventaDiaria: rows[0].vd, ticketRef: rows[0].tr, npsMin: rows[0].nm, mermasMaxPct: rows[0].mp, tiempoMaxMin: rows[0].tm, tiempoMesaMaxMin: rows[0].tmm, tiempoDeliveryMaxMin: rows[0].td };
     }
   } catch {
-    // Columna tiempo_mesa_max_min pendiente de migración → re-lee sin ella.
+    // Columna tiempo_delivery_max_min pendiente de migración → sin ella.
     try {
       const rows = (await sql`
         SELECT venta_diaria::float AS vd, ticket_ref::float AS tr, nps_min::float AS nm,
-               mermas_max_pct::float AS mp, tiempo_max_min::float AS tm
+               mermas_max_pct::float AS mp, tiempo_max_min::float AS tm, tiempo_mesa_max_min::float AS tmm
         FROM kpi_targets
         WHERE business_id = ${bId} AND effective_month <= ${month}
         ORDER BY effective_month DESC LIMIT 1
-      `) as { vd: number; tr: number; nm: number; mp: number; tm: number | null }[];
+      `) as { vd: number; tr: number; nm: number; mp: number; tm: number | null; tmm: number | null }[];
       if (rows.length > 0) {
-        return { ventaDiaria: rows[0].vd, ticketRef: rows[0].tr, npsMin: rows[0].nm, mermasMaxPct: rows[0].mp, tiempoMaxMin: rows[0].tm, tiempoMesaMaxMin: null };
+        return { ventaDiaria: rows[0].vd, ticketRef: rows[0].tr, npsMin: rows[0].nm, mermasMaxPct: rows[0].mp, tiempoMaxMin: rows[0].tm, tiempoMesaMaxMin: rows[0].tmm, tiempoDeliveryMaxMin: null };
       }
     } catch {
-      // tabla kpi_targets pendiente de migración → defaults
+      // tabla o columna de mesa pendiente → defaults
     }
   }
-  return DEFAULT_TARGETS[bId] ?? { ventaDiaria: 1, ticketRef: 1, npsMin: 9, mermasMaxPct: 0.04, tiempoMaxMin: null, tiempoMesaMaxMin: null };
+  return DEFAULT_TARGETS[bId] ?? { ventaDiaria: 1, ticketRef: 1, npsMin: 9, mermasMaxPct: 0.04, tiempoMaxMin: null, tiempoMesaMaxMin: null, tiempoDeliveryMaxMin: null };
 }
 
 async function loadDailies(bId: number, from: string, to: string): Promise<{ dailies: KpiDaily[]; kpiColumns: boolean }> {
@@ -85,33 +86,36 @@ async function loadDailies(bId: number, from: string, to: string): Promise<{ dai
     const rows = (await sql`
       SELECT date::text, revenue::float AS ventas, personas,
              nps::float AS nps, mermas_soles::float AS mermas, tiempo_atencion_min::float AS tiempo,
-             tiempo_mesa_min::float AS tiempo_mesa
+             tiempo_mesa_min::float AS tiempo_mesa, tiempo_delivery_min::float AS tiempo_delivery
       FROM upselling_daily
       WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to}
       ORDER BY date
-    `) as { date: string; ventas: number | null; personas: number | null; nps: number | null; mermas: number | null; tiempo: number | null; tiempo_mesa: number | null }[];
+    `) as { date: string; ventas: number | null; personas: number | null; nps: number | null; mermas: number | null; tiempo: number | null; tiempo_mesa: number | null; tiempo_delivery: number | null }[];
     return {
       kpiColumns: true,
       dailies: rows.map((r) => ({
         date: r.date, ventas: r.ventas, personas: r.personas,
         nps: r.nps, mermasSoles: r.mermas, tiempoMin: r.tiempo, tiempoMesaMin: r.tiempo_mesa,
+        tiempoDeliveryMin: r.tiempo_delivery,
       })),
     };
   } catch {
-    // Columna tiempo_mesa_min pendiente de migración → sin ella.
+    // Columna tiempo_delivery_min pendiente de migración → sin ella.
     try {
       const rows = (await sql`
         SELECT date::text, revenue::float AS ventas, personas,
-               nps::float AS nps, mermas_soles::float AS mermas, tiempo_atencion_min::float AS tiempo
+               nps::float AS nps, mermas_soles::float AS mermas, tiempo_atencion_min::float AS tiempo,
+               tiempo_mesa_min::float AS tiempo_mesa
         FROM upselling_daily
         WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to}
         ORDER BY date
-      `) as { date: string; ventas: number | null; personas: number | null; nps: number | null; mermas: number | null; tiempo: number | null }[];
+      `) as { date: string; ventas: number | null; personas: number | null; nps: number | null; mermas: number | null; tiempo: number | null; tiempo_mesa: number | null }[];
       return {
         kpiColumns: true,
         dailies: rows.map((r) => ({
           date: r.date, ventas: r.ventas, personas: r.personas,
-          nps: r.nps, mermasSoles: r.mermas, tiempoMin: r.tiempo, tiempoMesaMin: null,
+          nps: r.nps, mermasSoles: r.mermas, tiempoMin: r.tiempo, tiempoMesaMin: r.tiempo_mesa,
+          tiempoDeliveryMin: null,
         })),
       };
     } catch {
@@ -123,7 +127,7 @@ async function loadDailies(bId: number, from: string, to: string): Promise<{ dai
       `) as { date: string; ventas: number | null; personas: number | null }[];
       return {
         kpiColumns: false,
-        dailies: rows.map((r) => ({ date: r.date, ventas: r.ventas, personas: r.personas, nps: null, mermasSoles: null, tiempoMin: null, tiempoMesaMin: null })),
+        dailies: rows.map((r) => ({ date: r.date, ventas: r.ventas, personas: r.personas, nps: null, mermasSoles: null, tiempoMin: null, tiempoMesaMin: null, tiempoDeliveryMin: null })),
       };
     }
   }
@@ -222,12 +226,25 @@ async function loadDeckIncentives(bId: number, month: string): Promise<DeckIncen
     `) as { name: string; jornada: StaffMember["jornada"]; area: string }[];
     const [y, m] = month.split("-").map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
-    const dailies = (await sql`
-      SELECT date::text, personas, revenue::float AS revenue, items
-      FROM upselling_daily
-      WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${`${month}-${String(daysInMonth).padStart(2, "0")}`}
-      ORDER BY date
-    `) as { date: string; personas: number | null; revenue: number | null; items: number | null }[];
+    type DeckDaily = { date: string; personas: number | null; revenue: number | null; items: number | null; deliveryPedidos?: number | null; deliveryVenta?: number | null };
+    let dailies: DeckDaily[];
+    try {
+      dailies = (await sql`
+        SELECT date::text, personas, revenue::float AS revenue, items,
+               delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta"
+        FROM upselling_daily
+        WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${`${month}-${String(daysInMonth).padStart(2, "0")}`}
+        ORDER BY date
+      `) as DeckDaily[];
+    } catch {
+      // Columnas delivery pendientes de migración → ticket como siempre.
+      dailies = (await sql`
+        SELECT date::text, personas, revenue::float AS revenue, items
+        FROM upselling_daily
+        WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${`${month}-${String(daysInMonth).padStart(2, "0")}`}
+        ORDER BY date
+      `) as DeckDaily[];
+    }
     const p = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, daysInMonth);
     return {
       ticketBase: config.ticketBase,
@@ -450,8 +467,9 @@ export async function saveKpiTargets(input: {
   ticketRef: number;
   npsMin: number;
   mermasMaxPct: number;    // en % (ej. 4)
-  tiempoMaxMin: number | null;      // mostrador
-  tiempoMesaMaxMin: number | null;  // mesa
+  tiempoMaxMin: number | null;          // mostrador
+  tiempoMesaMaxMin: number | null;      // mesa
+  tiempoDeliveryMaxMin?: number | null; // delivery
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const bId = await activeBusinessId();
   if (!(await requireFullSession())) {
@@ -462,19 +480,24 @@ export async function saveKpiTargets(input: {
   if (input.ventaDiaria <= 0 || input.ticketRef <= 0) return { ok: false, error: "Metas de venta y ticket deben ser mayores a 0." };
   if (input.npsMin < 0 || input.npsMin > 10) return { ok: false, error: "NPS meta debe estar entre 0 y 10." };
   if (input.mermasMaxPct <= 0 || input.mermasMaxPct > 50) return { ok: false, error: "Mermas máx. debe estar entre 0 y 50%." };
+  const tdMax = input.tiempoDeliveryMaxMin ?? null;
   try {
     await sql`
-      INSERT INTO kpi_targets (business_id, effective_month, venta_diaria, ticket_ref, nps_min, mermas_max_pct, tiempo_max_min, tiempo_mesa_max_min)
-      VALUES (${bId}, ${input.effectiveMonth}, ${input.ventaDiaria}, ${input.ticketRef}, ${input.npsMin}, ${input.mermasMaxPct / 100}, ${input.tiempoMaxMin}, ${input.tiempoMesaMaxMin})
+      INSERT INTO kpi_targets (business_id, effective_month, venta_diaria, ticket_ref, nps_min, mermas_max_pct, tiempo_max_min, tiempo_mesa_max_min, tiempo_delivery_max_min)
+      VALUES (${bId}, ${input.effectiveMonth}, ${input.ventaDiaria}, ${input.ticketRef}, ${input.npsMin}, ${input.mermasMaxPct / 100}, ${input.tiempoMaxMin}, ${input.tiempoMesaMaxMin}, ${tdMax})
       ON CONFLICT (business_id, effective_month) DO UPDATE
         SET venta_diaria = EXCLUDED.venta_diaria, ticket_ref = EXCLUDED.ticket_ref,
             nps_min = EXCLUDED.nps_min, mermas_max_pct = EXCLUDED.mermas_max_pct,
-            tiempo_max_min = EXCLUDED.tiempo_max_min, tiempo_mesa_max_min = EXCLUDED.tiempo_mesa_max_min
+            tiempo_max_min = EXCLUDED.tiempo_max_min, tiempo_mesa_max_min = EXCLUDED.tiempo_mesa_max_min,
+            tiempo_delivery_max_min = EXCLUDED.tiempo_delivery_max_min
     `;
     revalidatePath("/[negocio]/panel", "page");
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
+    if (/tiempo_delivery_max_min/.test(msg)) {
+      return { ok: false, error: "Falta la migración de delivery en la base de datos (columna tiempo_delivery_max_min) — avísale a Jahnn." };
+    }
     if (/tiempo_mesa_max_min/.test(msg)) {
       return { ok: false, error: "Falta la migración de tiempos en la base de datos (columna tiempo_mesa_max_min) — avísale a Jahnn." };
     }
@@ -487,21 +510,21 @@ export async function saveKpiTargets(input: {
  * Promedios MEDIDOS por el cronómetro del encargado para un día.
  * Devuelve null por tipo si no hubo mediciones (o falta la tabla).
  */
-async function measuredTimes(bId: number, date: string): Promise<{ mostrador: number | null; mesa: number | null }> {
+async function measuredTimes(bId: number, date: string): Promise<{ mostrador: number | null; mesa: number | null; delivery: number | null }> {
   try {
     const rows = (await sql`
       SELECT kind, AVG(duration_seconds)::float AS avg_s
       FROM service_timings
       WHERE business_id = ${bId} AND date = ${date} AND ended_at IS NOT NULL
       GROUP BY kind
-    `) as { kind: "mostrador" | "mesa"; avg_s: number }[];
+    `) as { kind: "mostrador" | "mesa" | "delivery"; avg_s: number }[];
     const pick = (k: string) => {
       const r = rows.find((x) => x.kind === k);
       return r ? Math.round((r.avg_s / 60) * 10) / 10 : null;
     };
-    return { mostrador: pick("mostrador"), mesa: pick("mesa") };
+    return { mostrador: pick("mostrador"), mesa: pick("mesa"), delivery: pick("delivery") };
   } catch {
-    return { mostrador: null, mesa: null };
+    return { mostrador: null, mesa: null, delivery: null };
   }
 }
 
@@ -522,8 +545,9 @@ export async function saveDailyKpis(input: {
   date: string;
   nps: number | null;
   mermasSoles: number | null;
-  tiempoMin: number | null;       // mostrador
-  tiempoMesaMin: number | null;   // mesa
+  tiempoMin: number | null;          // mostrador
+  tiempoMesaMin: number | null;      // mesa
+  tiempoDeliveryMin?: number | null; // delivery (registro → motorizado)
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const bId = await activeBusinessId();
   const kind = await sessionKind(bId);
@@ -533,25 +557,52 @@ export async function saveDailyKpis(input: {
   if (input.mermasSoles !== null && input.mermasSoles < 0) return { ok: false, error: "Mermas inválidas." };
   if (input.tiempoMin !== null && input.tiempoMin < 0) return { ok: false, error: "Tiempo inválido." };
   if (input.tiempoMesaMin !== null && input.tiempoMesaMin < 0) return { ok: false, error: "Tiempo de mesa inválido." };
+  const tDeliveryIn = input.tiempoDeliveryMin ?? null;
+  if (tDeliveryIn !== null && tDeliveryIn < 0) return { ok: false, error: "Tiempo de delivery inválido." };
   try {
     // Lo medido gana; si no hay medición, vale lo que tecleó el admin.
     const measured = await measuredTimes(bId, input.date);
     const tMost = measured.mostrador ?? input.tiempoMin;
     const tMesa = measured.mesa ?? input.tiempoMesaMin;
+    const tDeli = measured.delivery ?? tDeliveryIn;
     await sql`
-      INSERT INTO upselling_daily (business_id, date, nps, mermas_soles, tiempo_atencion_min, tiempo_mesa_min, source, updated_at)
-      VALUES (${bId}, ${input.date}, ${input.nps}, ${input.mermasSoles}, ${tMost}, ${tMesa}, 'manual', NOW())
+      INSERT INTO upselling_daily (business_id, date, nps, mermas_soles, tiempo_atencion_min, tiempo_mesa_min, tiempo_delivery_min, source, updated_at)
+      VALUES (${bId}, ${input.date}, ${input.nps}, ${input.mermasSoles}, ${tMost}, ${tMesa}, ${tDeli}, 'manual', NOW())
       ON CONFLICT (business_id, date) DO UPDATE
         SET nps = EXCLUDED.nps, mermas_soles = EXCLUDED.mermas_soles,
             -- COALESCE: vacío = "no lo toco", nunca "bórralo".
             tiempo_atencion_min = COALESCE(EXCLUDED.tiempo_atencion_min, upselling_daily.tiempo_atencion_min),
             tiempo_mesa_min = COALESCE(EXCLUDED.tiempo_mesa_min, upselling_daily.tiempo_mesa_min),
+            tiempo_delivery_min = COALESCE(EXCLUDED.tiempo_delivery_min, upselling_daily.tiempo_delivery_min),
             updated_at = NOW()
     `;
     revalidatePath("/[negocio]/panel", "page");
     return { ok: true };
   } catch (err) {
     const msg = err instanceof Error ? err.message : "";
+    if (/tiempo_delivery_min/.test(msg)) {
+      try {
+        const measured = await measuredTimes(bId, input.date);
+        const tMost = measured.mostrador ?? input.tiempoMin;
+        const tMesa = measured.mesa ?? input.tiempoMesaMin;
+        await sql`
+          INSERT INTO upselling_daily (business_id, date, nps, mermas_soles, tiempo_atencion_min, tiempo_mesa_min, source, updated_at)
+          VALUES (${bId}, ${input.date}, ${input.nps}, ${input.mermasSoles}, ${tMost}, ${tMesa}, 'manual', NOW())
+          ON CONFLICT (business_id, date) DO UPDATE
+            SET nps = EXCLUDED.nps, mermas_soles = EXCLUDED.mermas_soles,
+                tiempo_atencion_min = COALESCE(EXCLUDED.tiempo_atencion_min, upselling_daily.tiempo_atencion_min),
+                tiempo_mesa_min = COALESCE(EXCLUDED.tiempo_mesa_min, upselling_daily.tiempo_mesa_min),
+                updated_at = NOW()
+        `;
+        revalidatePath("/[negocio]/panel", "page");
+        if (tDeliveryIn !== null) {
+          return { ok: false, error: "Guardé todo menos el tiempo de delivery: falta la migración (columna tiempo_delivery_min) — avísale a Jahnn." };
+        }
+        return { ok: true };
+      } catch {
+        /* cae al manejo general */
+      }
+    }
     if (/tiempo_mesa_min/.test(msg)) {
       // Migración de tiempo de mesa pendiente → guarda el resto sin perder el día.
       try {

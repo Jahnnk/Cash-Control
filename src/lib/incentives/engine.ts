@@ -34,7 +34,18 @@ export type StaffMember = {
   active: boolean;
 };
 
-export type DailyEntry = { date: string; personas: number | null; revenue: number | null; items: number | null };
+export type DailyEntry = {
+  date: string;
+  personas: number | null;
+  revenue: number | null;
+  items: number | null;
+  /** Pedidos por delivery del día (dentro de `personas`). Opcional:
+   * null/ausente = 0. En delivery no se puede sugerir extras, así que
+   * se EXCLUYEN del ticket del programa (feedback admins jul-2026). */
+  deliveryPedidos?: number | null;
+  /** Venta por delivery del día (dentro de `revenue`). */
+  deliveryVenta?: number | null;
+};
 
 export type ControlEvent = {
   kind: "anulacion" | "cortesia" | "cambio_precio";
@@ -76,8 +87,11 @@ export type IncentiveProgress = {
   pozoProyectado: number | null;
   /** Tabla de pago por nivel: suma de bonos y colchón vs pozo. */
   porNivel: { level: IncentiveLevel; sumaBonos: number; pozoNivel: number | null; colchon: number | null }[];
-  /** Piso de tráfico (sin él, la meta no cuenta). */
+  /** Piso de tráfico (sin él, la meta no cuenta) — sobre personas TOTALES. */
   traffic: { personasPorDia: number | null; floor: number; cumple: boolean };
+  /** Delivery del periodo (informativo — EXCLUIDO del ticket del programa).
+   * null si no se registró ningún delivery. */
+  delivery: { pedidos: number; venta: number; ticket: number | null } | null;
 };
 
 export function computeProgress(
@@ -92,7 +106,16 @@ export function computeProgress(
   const itemsDays = withData.filter((d) => d.items !== null);
   const items = itemsDays.length > 0 ? itemsDays.reduce((s, d) => s + (d.items ?? 0), 0) : null;
 
-  const ticketActual = personas > 0 ? r2(revenue / personas) : null;
+  // Delivery se EXCLUYE del ticket del programa: nadie puede sugerir
+  // extras en un pedido de app, y promediarlo castiga al equipo por
+  // algo que no controla (misma filosofía del hándicap por turno).
+  // Sin registro de delivery (null/0) todo se comporta como antes.
+  const deliveryPedidos = withData.reduce((s, d) => s + Math.max(0, d.deliveryPedidos ?? 0), 0);
+  const deliveryVenta = r2(withData.reduce((s, d) => s + Math.max(0, d.deliveryVenta ?? 0), 0));
+  const salonPersonas = Math.max(0, personas - deliveryPedidos);
+  const salonRevenue = r2(Math.max(0, revenue - deliveryVenta));
+
+  const ticketActual = salonPersonas > 0 ? r2(salonRevenue / salonPersonas) : null;
   const deltaActual = ticketActual !== null ? r2(ticketActual - config.ticketBase) : null;
   // items/persona solo sobre los días que registraron items (coherencia).
   const personasItemsDays = itemsDays.reduce((s, d) => s + (d.personas ?? 0), 0);
@@ -106,8 +129,10 @@ export function computeProgress(
   const proximoNivel =
     next && deltaActual !== null ? { level: next, faltaSoles: r2(next.delta - deltaActual) } : null;
 
+  // Proyección para el POZO con personas de SALÓN: la utilidad nueva
+  // (delta × clientes) solo se genera donde sí hubo upselling.
   const personasProyectadas =
-    withData.length > 0 ? Math.round((personas / withData.length) * daysInMonth) : null;
+    withData.length > 0 ? Math.round((salonPersonas / withData.length) * daysInMonth) : null;
   const pozoProyectado =
     deltaActual !== null && deltaActual > 0 && personasProyectadas !== null
       ? r2(deltaActual * personasProyectadas * config.marginPct * config.poolPct)
@@ -146,6 +171,14 @@ export function computeProgress(
       floor: config.trafficFloor,
       cumple: personasPorDia !== null && personasPorDia >= config.trafficFloor,
     },
+    delivery:
+      deliveryPedidos > 0
+        ? {
+            pedidos: deliveryPedidos,
+            venta: deliveryVenta,
+            ticket: r2(deliveryVenta / deliveryPedidos),
+          }
+        : null,
   };
 }
 
@@ -154,6 +187,22 @@ export function computeProgress(
 // Candados de la política: piso de tráfico (sin él, la meta NO cuenta),
 // observaciones del verificador resueltas, mes terminado.
 // ─────────────────────────────────────────────────────────────────
+
+/**
+ * Rotación diaria del foco de upselling (feedback del admin de Fonavi,
+ * jul-2026: "las sugerencias son siempre las mismas"). De un pozo de
+ * buenos candidatos se muestran `size` por día, girando la ventana con
+ * la fecha — determinista (mismo día = misma lista, sin Math.random)
+ * para que admin y dirección vean lo mismo. Si el pozo no da para
+ * rotar (≤ size), se devuelve entero.
+ */
+export function pickDailyFocus<T>(pool: T[], size: number, dateISO: string): T[] {
+  if (pool.length <= size) return pool;
+  const [y, m, d] = dateISO.split("-").map(Number);
+  const dayNumber = Math.floor(Date.UTC(y, (m ?? 1) - 1, d ?? 1) / 86400000);
+  const offset = ((dayNumber % pool.length) + pool.length) % pool.length;
+  return Array.from({ length: size }, (_, i) => pool[(offset + i) % pool.length]);
+}
 
 export type LiquidationLine = { name: string; jornada: StaffMember["jornada"]; bono: number; premioMv: number };
 

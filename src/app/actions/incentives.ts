@@ -15,6 +15,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import {
+  pickDailyFocus,
   computeProgress,
   computeFlags,
   type IncentiveConfigT,
@@ -56,6 +57,11 @@ export type DashboardDaily = {
   mermasSoles: number | null;
   tiempoMin: number | null;
   tiempoMesaMin: number | null;
+  tiempoDeliveryMin: number | null;
+  /** Delivery del día (dentro de personas/revenue) — se excluye del
+   * ticket del programa. null = no registrado. */
+  deliveryPedidos: number | null;
+  deliveryVenta: number | null;
 };
 
 export type IncentiveDashboard = {
@@ -116,7 +122,9 @@ export async function getIncentiveDashboard(
       dailies = (await sql`
         SELECT date::text, personas, revenue::float AS revenue, items,
                nps::float AS nps, mermas_soles::float AS "mermasSoles",
-               tiempo_atencion_min::float AS "tiempoMin", tiempo_mesa_min::float AS "tiempoMesaMin"
+               tiempo_atencion_min::float AS "tiempoMin", tiempo_mesa_min::float AS "tiempoMesaMin",
+               tiempo_delivery_min::float AS "tiempoDeliveryMin",
+               delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta"
         FROM upselling_daily
         WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
         ORDER BY date
@@ -126,12 +134,12 @@ export async function getIncentiveDashboard(
         const rows = (await sql`
           SELECT date::text, personas, revenue::float AS revenue, items,
                  nps::float AS nps, mermas_soles::float AS "mermasSoles",
-                 tiempo_atencion_min::float AS "tiempoMin"
+                 tiempo_atencion_min::float AS "tiempoMin", tiempo_mesa_min::float AS "tiempoMesaMin"
           FROM upselling_daily
           WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
           ORDER BY date
-        `) as Omit<DashboardDaily, "tiempoMesaMin">[];
-        dailies = rows.map((r) => ({ ...r, tiempoMesaMin: null }));
+        `) as Omit<DashboardDaily, "tiempoDeliveryMin" | "deliveryPedidos" | "deliveryVenta">[];
+        dailies = rows.map((r) => ({ ...r, tiempoDeliveryMin: null, deliveryPedidos: null, deliveryVenta: null }));
       } catch {
         const rows = (await sql`
           SELECT date::text, personas, revenue::float AS revenue, items
@@ -139,7 +147,10 @@ export async function getIncentiveDashboard(
           WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
           ORDER BY date
         `) as { date: string; personas: number | null; revenue: number | null; items: number | null }[];
-        dailies = rows.map((r) => ({ ...r, nps: null, mermasSoles: null, tiempoMin: null, tiempoMesaMin: null }));
+        dailies = rows.map((r) => ({
+          ...r, nps: null, mermasSoles: null, tiempoMin: null, tiempoMesaMin: null,
+          tiempoDeliveryMin: null, deliveryPedidos: null, deliveryVenta: null,
+        }));
       }
     }
 
@@ -314,13 +325,19 @@ export async function getUpsellFocusCandidates(): Promise<
         ? [...withContribution].sort((a, b) => a.unitsLastMonth - b.unitsLastMonth)[Math.floor(withContribution.length / 2)].unitsLastMonth
         : 0;
 
+    // Pozo de hasta 24 buenos candidatos, y cada día se muestran 10
+    // DISTINTOS rotando con la fecha (feedback del admin: "siempre son
+    // los mismos"). La calidad no baja: todos salen del top del mes.
+    const pool = withContribution.slice(0, 24).map((r) => ({
+      ...r,
+      hiddenGem: r.unitsLastMonth < medianUnits,
+    }));
+    const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+
     return {
       ok: true,
       month,
-      candidates: withContribution.slice(0, 10).map((r) => ({
-        ...r,
-        hiddenGem: r.unitsLastMonth < medianUnits,
-      })),
+      candidates: pickDailyFocus(pool, 10, hoy),
     };
   } catch (err) {
     console.error("[getUpsellFocusCandidates] failed:", err);
@@ -340,6 +357,9 @@ export async function saveDailyEntry(input: {
   personas: number;
   revenue: number;
   items: number | null;
+  /** Delivery del día (dentro de personas/revenue). null = sin delivery. */
+  deliveryPedidos?: number | null;
+  deliveryVenta?: number | null;
 }): Promise<{ ok: true; firmaAnulada: boolean } | { ok: false; error: string }> {
   const bId = await activeBusinessId();
   const access = await requireIncentivesAccess(bId);
@@ -348,6 +368,16 @@ export async function saveDailyEntry(input: {
   if (!Number.isFinite(input.personas) || input.personas <= 0) return { ok: false, error: "Personas debe ser mayor a 0." };
   if (!Number.isFinite(input.revenue) || input.revenue <= 0) return { ok: false, error: "La venta debe ser mayor a 0." };
   if (input.items !== null && (!Number.isFinite(input.items) || input.items < 0)) return { ok: false, error: "Items inválido." };
+  const dPed = input.deliveryPedidos ?? null;
+  const dVen = input.deliveryVenta ?? null;
+  if (dPed !== null && (!Number.isInteger(dPed) || dPed < 0)) return { ok: false, error: "Pedidos delivery inválido (entero ≥ 0)." };
+  if (dVen !== null && (!Number.isFinite(dVen) || dVen < 0)) return { ok: false, error: "Venta delivery inválida." };
+  // El delivery vive DENTRO del total del día: no puede superarlo.
+  if (dPed !== null && dPed >= input.personas) return { ok: false, error: "Los pedidos delivery no pueden ser todas las personas del día." };
+  if (dVen !== null && dVen > input.revenue) return { ok: false, error: "La venta delivery no puede superar la venta total del día." };
+  if ((dPed !== null && dPed > 0) !== (dVen !== null && dVen > 0)) {
+    return { ok: false, error: "Registra pedidos Y venta de delivery juntos (o ninguno)." };
+  }
   try {
     // ¿Cambian los números firmados de un día ya existente?
     const prev = (await sql`
@@ -360,12 +390,26 @@ export async function saveDailyEntry(input: {
         Math.round((prev[0].revenue ?? 0) * 100) !== Math.round(input.revenue * 100));
 
     await sql`
-      INSERT INTO upselling_daily (business_id, date, personas, revenue, items, source, updated_at)
-      VALUES (${bId}, ${input.date}, ${input.personas}, ${input.revenue}, ${input.items}, 'manual', NOW())
+      INSERT INTO upselling_daily (business_id, date, personas, revenue, items, delivery_pedidos, delivery_venta, source, updated_at)
+      VALUES (${bId}, ${input.date}, ${input.personas}, ${input.revenue}, ${input.items}, ${dPed}, ${dVen}, 'manual', NOW())
       ON CONFLICT (business_id, date) DO UPDATE
         SET personas = EXCLUDED.personas, revenue = EXCLUDED.revenue,
-            items = EXCLUDED.items, source = 'manual', updated_at = NOW()
-    `;
+            items = EXCLUDED.items,
+            delivery_pedidos = EXCLUDED.delivery_pedidos, delivery_venta = EXCLUDED.delivery_venta,
+            source = 'manual', updated_at = NOW()
+    `.then(undefined, async (err: unknown) => {
+      // Columnas delivery pendientes de migración: si el admin NO tecleó
+      // delivery, guarda el resto (nada se pierde); si SÍ lo tecleó,
+      // avisar es mejor que botar su dato en silencio.
+      if (dPed !== null || dVen !== null) throw err;
+      await sql`
+        INSERT INTO upselling_daily (business_id, date, personas, revenue, items, source, updated_at)
+        VALUES (${bId}, ${input.date}, ${input.personas}, ${input.revenue}, ${input.items}, 'manual', NOW())
+        ON CONFLICT (business_id, date) DO UPDATE
+          SET personas = EXCLUDED.personas, revenue = EXCLUDED.revenue,
+              items = EXCLUDED.items, source = 'manual', updated_at = NOW()
+      `;
+    });
 
     let firmaAnulada = false;
     if (numbersChanged) {

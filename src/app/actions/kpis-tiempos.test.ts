@@ -103,6 +103,16 @@ describe("saveDailyKpis — la regla de los tiempos", () => {
     expect(t).toContain("mermas_soles = EXCLUDED.mermas_soles");
   });
 
+  it("DELIVERY sigue la misma regla: lo medido manda y COALESCE protege", async () => {
+    fake.state.measured = [{ kind: "delivery", avg_s: 1080 }]; // 18 min medidos
+    const r = await saveDailyKpis({ ...BASE, tiempoDeliveryMin: 99 });
+    expect(r.ok).toBe(true);
+    const q = upsert();
+    expect(q.values).toContain(18);     // gana la medición del encargado
+    expect(q.values).not.toContain(99); // se ignora el tecleo
+    expect(q.text).toContain("tiempo_delivery_min = COALESCE(EXCLUDED.tiempo_delivery_min, upselling_daily.tiempo_delivery_min)");
+  });
+
   it("si falta la tabla del cronómetro, no rompe: cae al valor tecleado", async () => {
     // El helper measuredTimes captura el error y devuelve nulls.
     fake.state.measured = [];
