@@ -8,7 +8,9 @@ This version has breaking changes — APIs, conventions, and file structure may 
 
 ## Ramas
 
-- **`main`** → producción. Auto-deploya a `cash-control.vercel.app`.
+- **`main`** → producción. Auto-deploya a `cash-control-delta.vercel.app`
+  (dominio asignado real — verificado jul-2026; `cash-control.vercel.app`
+  devuelve 404, no usarlo).
 - **`staging`** → preview/validación. Auto-deploya al dominio
   `cash-control-git-staging-jahnnki-6716s-projects.vercel.app`
   (auto-generado por Vercel; reemplazar acá si se configura un alias
@@ -134,13 +136,13 @@ Vercel para **Production, Preview y Development**. El token vive en
 
 1. Crear cuenta en https://cron-job.org (gratis).
 2. Click **Create cronjob**.
-3. URL: `https://cash-control.vercel.app/api/keep-alive?token=<TOKEN>`
+3. URL: `https://cash-control-delta.vercel.app/api/keep-alive?token=<TOKEN>`
 4. Schedule: **cada 4 minutos**.
 5. Notifications: email solo si falla 3 veces seguidas.
 
 Verificar funcionamiento manual:
 ```
-curl "https://cash-control.vercel.app/api/keep-alive?token=<TOKEN>"
+curl "https://cash-control-delta.vercel.app/api/keep-alive?token=<TOKEN>"
 ```
 Respuesta esperada (en horario laboral):
 ```json
