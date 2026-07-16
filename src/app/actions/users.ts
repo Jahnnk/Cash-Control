@@ -35,8 +35,9 @@ export type AppUser = {
 export type UsersOverview = {
   users: AppUser[];
   /** Contraseñas heredadas por sede aún configuradas en Vercel (solo
-   * presencia, nunca el valor) — para recordar borrarlas al migrar. */
-  legacyEnv: { envVar: string; scope: UserScope; configured: boolean }[];
+   * presencia, nunca el valor). `converted` = ya existe un usuario con
+   * esa misma contraseña → falta solo borrar la env var en Vercel. */
+  legacyEnv: { envVar: string; scope: UserScope; configured: boolean; converted: boolean }[];
 };
 
 const NO_ACCESS = { ok: false as const, error: "La gestión de usuarios es solo para la dirección." };
@@ -49,6 +50,7 @@ export async function listUsers(): Promise<{ ok: true; data: UsersOverview } | {
              created_at::text AS "createdAt", last_login::text AS "lastLogin"
       FROM app_users ORDER BY active DESC, scope, nombre
     `) as AppUser[];
+    const hashes = (await sql`SELECT password_hash FROM app_users`) as { password_hash: string }[];
     const legacy: [string, UserScope][] = [
       ["ADMIN_PASSWORD_ATELIER", "admin-atelier"],
       ["ADMIN_PASSWORD_FONAVI", "admin-fonavi"],
@@ -60,7 +62,17 @@ export async function listUsers(): Promise<{ ok: true; data: UsersOverview } | {
       ok: true,
       data: {
         users,
-        legacyEnv: legacy.map(([envVar, scope]) => ({ envVar, scope, configured: Boolean(process.env[envVar]) })),
+        legacyEnv: legacy.map(([envVar, scope]) => {
+          const secret = process.env[envVar];
+          return {
+            envVar,
+            scope,
+            configured: Boolean(secret),
+            // ¿Ya existe un usuario con ESTA misma contraseña? Entonces
+            // el acceso ya fue convertido y solo falta borrar la env var.
+            converted: Boolean(secret) && hashes.some((h) => verifyPassword(secret!, h.password_hash)),
+          };
+        }),
       },
     };
   } catch (err) {
@@ -115,6 +127,49 @@ export async function createUser(input: {
   } catch (err) {
     console.error("[createUser] failed:", err);
     return { ok: false, error: "No pude crear el usuario. ¿Ya corriste la migración app_users?" };
+  }
+}
+
+/**
+ * Convierte un acceso heredado de Vercel (contraseña por sede) en un
+ * usuario con nombre propio, CONSERVANDO la misma contraseña: se lee
+ * del entorno, se hashea y se guarda — la persona sigue entrando igual.
+ * Mientras la env var exista, el login la matchea primero (token v2);
+ * al borrarla en Vercel, la misma contraseña entra por app_users (v3).
+ */
+export async function importLegacyUser(input: {
+  scope: string;
+  nombre: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return NO_ACCESS;
+  const nombre = input.nombre.trim();
+  if (nombre.length < 2 || nombre.length > 60) return { ok: false, error: "Escribe el nombre de la persona (2-60 letras)." };
+  if (!isUserScope(input.scope)) return { ok: false, error: "Rol inválido." };
+  const ENV_BY_SCOPE: Record<UserScope, string> = {
+    "admin-atelier": "ADMIN_PASSWORD_ATELIER",
+    "admin-fonavi": "ADMIN_PASSWORD_FONAVI",
+    "admin-centro": "ADMIN_PASSWORD_CENTRO",
+    "verif-fonavi": "VERIF_PASSWORD_FONAVI",
+    "verif-centro": "VERIF_PASSWORD_CENTRO",
+  };
+  const secret = process.env[ENV_BY_SCOPE[input.scope]];
+  if (!secret) return { ok: false, error: "Ese acceso no tiene contraseña configurada en Vercel." };
+  try {
+    // ¿Ya se importó? La misma contraseña no puede vivir en dos filas
+    // (aquí la contraseña ES la identidad).
+    const rows = (await sql`SELECT password_hash FROM app_users`) as { password_hash: string }[];
+    if (rows.some((r) => verifyPassword(secret, r.password_hash))) {
+      return { ok: false, error: "Ese acceso ya fue convertido en usuario." };
+    }
+    await sql`
+      INSERT INTO app_users (nombre, scope, password_hash)
+      VALUES (${nombre}, ${input.scope}, ${hashPassword(secret)})
+    `;
+    revalidatePath("/grupo/configuracion");
+    return { ok: true };
+  } catch (err) {
+    console.error("[importLegacyUser] failed:", err);
+    return { ok: false, error: "No pude convertir el acceso." };
   }
 }
 

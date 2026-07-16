@@ -40,7 +40,8 @@ vi.mock("@/lib/session-access", () => ({
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
-import { createUser, resetUserPassword, setUserActive } from "./users";
+import { createUser, resetUserPassword, setUserActive, importLegacyUser } from "./users";
+import { hashPassword } from "@/lib/password-hash";
 
 const insert = () => fake.state.queries.find((q) => q.text.includes("INSERT INTO app_users"));
 
@@ -84,6 +85,44 @@ describe("createUser — solo dirección, solo roles del personal", () => {
   it("rechaza nombres vacíos o de una letra", async () => {
     const r = await createUser({ nombre: " x ", scope: "admin-fonavi" });
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("importLegacyUser — convertir acceso de Vercel en usuario con nombre", () => {
+  it("crea el usuario con la MISMA contraseña de la env var (hasheada, nunca en claro)", async () => {
+    process.env.ADMIN_PASSWORD_FONAVI = "contra-de-luis-1234";
+    const r = await importLegacyUser({ scope: "admin-fonavi", nombre: "Luis" });
+    expect(r.ok).toBe(true);
+    const vals = insert()!.values.map(String);
+    expect(vals).toContain("Luis");
+    expect(vals.some((v) => v.startsWith("s1."))).toBe(true);
+    expect(vals).not.toContain("contra-de-luis-1234");
+    delete process.env.ADMIN_PASSWORD_FONAVI;
+  });
+
+  it("si ya fue convertido (misma contraseña ya tiene usuario), avisa y no duplica", async () => {
+    process.env.ADMIN_PASSWORD_CENTRO = "contra-de-chari-5678";
+    fake.state.hashes = [hashPassword("contra-de-chari-5678")];
+    const r = await importLegacyUser({ scope: "admin-centro", nombre: "Chari" });
+    expect(r.ok).toBe(false);
+    if (!r.ok) expect(r.error).toContain("ya fue convertido");
+    expect(insert()).toBeUndefined();
+    delete process.env.ADMIN_PASSWORD_CENTRO;
+  });
+
+  it("sin env var configurada → error claro, nada que convertir", async () => {
+    delete process.env.VERIF_PASSWORD_CENTRO;
+    const r = await importLegacyUser({ scope: "verif-centro", nombre: "Alguien" });
+    expect(r.ok).toBe(false);
+    expect(insert()).toBeUndefined();
+  });
+
+  it("solo dirección convierte", async () => {
+    fake.state.full = false;
+    process.env.ADMIN_PASSWORD_FONAVI = "x-1234";
+    const r = await importLegacyUser({ scope: "admin-fonavi", nombre: "Luis" });
+    expect(r.ok).toBe(false);
+    delete process.env.ADMIN_PASSWORD_FONAVI;
   });
 });
 
