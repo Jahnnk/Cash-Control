@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import {
-  listUsers, createUser, resetUserPassword, setUserActive, renameUser,
+  listUsers, createUser, resetUserPassword, setUserActive, renameUser, importLegacyUser,
   type AppUser, type UsersOverview,
 } from "@/app/actions/users";
 import { USER_SCOPES, SCOPE_LABELS, type UserScope } from "@/lib/user-scopes";
@@ -34,6 +34,7 @@ export function UsersAdmin() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
+  const [converting, setConverting] = useState<{ scope: UserScope; envVar: string } | null>(null);
   const [renaming, setRenaming] = useState<AppUser | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   // Contraseña recién generada: se enseña UNA vez en un modal.
@@ -74,7 +75,10 @@ export function UsersAdmin() {
 
   const activos = data?.users.filter((u) => u.active) ?? [];
   const inactivos = data?.users.filter((u) => !u.active) ?? [];
-  const legacyConfigured = data?.legacyEnv.filter((l) => l.configured) ?? [];
+  // Accesos que HOY funcionan con la contraseña por sede de Vercel y aún
+  // no tienen usuario propio: se muestran como filas, no se esconden.
+  const legacyPending = data?.legacyEnv.filter((l) => l.configured && !l.converted) ?? [];
+  const legacyDone = data?.legacyEnv.filter((l) => l.configured && l.converted) ?? [];
 
   return (
     <div className="space-y-6">
@@ -112,16 +116,39 @@ export function UsersAdmin() {
             </div>
           </div>
 
-          {/* Usuarios activos */}
+          {/* Usuarios activos + accesos heredados de Vercel que siguen
+              funcionando (contraseña compartida por sede, sin nombre) */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
             <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-900">
-              Con acceso ({activos.length})
+              Con acceso ({activos.length + legacyPending.length})
             </div>
-            {activos.length === 0 ? (
+            {legacyPending.length > 0 && (
+              <div className="border-b border-gray-100">
+                {legacyPending.map((l) => (
+                  <div key={l.envVar} className="px-4 py-2.5 flex flex-wrap items-center justify-between gap-2 bg-sky-50/50 border-b border-gray-100 last:border-b-0">
+                    <div className="text-sm">
+                      <span className="font-medium text-gray-900">Sin nombre</span>{" "}
+                      <span className="text-gray-600">· {SCOPE_LABELS[l.scope]}</span>
+                      <div className="text-[11px] text-gray-400">
+                        Entra con la contraseña compartida de la sede (creada en Vercel: <code>{l.envVar}</code>)
+                      </div>
+                    </div>
+                    <button
+                      onClick={() => setConverting({ scope: l.scope, envVar: l.envVar })}
+                      className="text-xs px-2.5 py-1 border border-sky-200 rounded-lg text-sky-700 hover:bg-sky-50"
+                      title="Crea el usuario con nombre CONSERVANDO su misma contraseña"
+                    >
+                      <UserPlus className="w-3 h-3 inline mr-1" />Ponerle nombre
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+            {activos.length === 0 && legacyPending.length === 0 ? (
               <div className="p-6 text-center text-sm text-gray-400">
                 Aún no hay usuarios. Crea el primero con “Nuevo acceso”.
               </div>
-            ) : (
+            ) : activos.length === 0 ? null : (
               <div className="overflow-x-auto">
                 <table className="w-full text-sm">
                   <thead>
@@ -198,14 +225,15 @@ export function UsersAdmin() {
             </div>
           )}
 
-          {/* Contraseñas heredadas de Vercel */}
-          {legacyConfigured.length > 0 && (
+          {/* Accesos ya convertidos: último paso manual en Vercel */}
+          {legacyDone.length > 0 && (
             <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-xs text-amber-800">
-              <strong>Contraseñas antiguas por sede (en Vercel):</strong> siguen valiendo{" "}
-              {legacyConfigured.map((l) => <code key={l.envVar} className="bg-amber-100 px-1 rounded mr-1">{l.envVar}</code>)}.
-              Son compartidas por sede (todos usan la misma), así que no se puede inhabilitar a una sola persona.
-              Cuando cada miembro del equipo tenga su usuario aquí, borra esas variables en Vercel y redeploya —
-              desde entonces solo entran los de esta pantalla.
+              <strong>Último paso (en Vercel):</strong> estos accesos ya tienen su usuario con nombre, así que
+              borra sus variables viejas{" "}
+              {legacyDone.map((l) => <code key={l.envVar} className="bg-amber-100 px-1 rounded mr-1">{l.envVar}</code>)}
+              en Vercel → Settings → Environment Variables y redeploya. No corre prisa (la contraseña es la misma
+              por ambos caminos), pero mientras existan, “Inhabilitar” y “Nueva contraseña” no surten efecto
+              completo: la contraseña compartida vieja seguiría abriendo la puerta.
             </div>
           )}
         </>
@@ -227,6 +255,15 @@ export function UsersAdmin() {
           user={renaming}
           onClose={() => setRenaming(null)}
           onSaved={() => { setRenaming(null); load(); }}
+        />
+      )}
+
+      {converting && (
+        <ConvertModal
+          scope={converting.scope}
+          envVar={converting.envVar}
+          onClose={() => setConverting(null)}
+          onSaved={() => { setConverting(null); load(); }}
         />
       )}
 
@@ -291,6 +328,60 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
             className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark disabled:opacity-50 flex items-center justify-center gap-1.5"
           >
             {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Crear acceso
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+/** Convierte un acceso heredado de Vercel en usuario con nombre,
+ * conservando la MISMA contraseña — nadie tiene que aprenderse otra. */
+function ConvertModal({ scope, envVar, onClose, onSaved }: { scope: UserScope; envVar: string; onClose: () => void; onSaved: () => void }) {
+  const { showToast } = useToast();
+  const [nombre, setNombre] = useState("");
+  const [saving, setSaving] = useState(false);
+
+  async function handleConvert() {
+    setSaving(true);
+    const r = await importLegacyUser({ scope, nombre });
+    setSaving(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(`${nombre.trim()} creado con su misma contraseña de siempre`, "success");
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-md p-6" onClick={(e) => e.stopPropagation()}>
+        <div className="flex items-center justify-between mb-2">
+          <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
+            <UserPlus className="w-4 h-4 text-primary" /> Ponerle nombre al acceso
+          </h3>
+          <button onClick={onClose} className="text-gray-400 hover:text-gray-600" aria-label="Cerrar"><X className="w-4 h-4" /></button>
+        </div>
+        <p className="text-xs text-gray-500 mb-3">
+          {SCOPE_LABELS[scope]} — el usuario se crea <strong>conservando su misma contraseña de siempre</strong>:
+          la persona no nota ningún cambio. Al final, borra <code className="bg-gray-100 px-1 rounded">{envVar}</code> en
+          Vercel para que el control quede solo en esta pantalla.
+        </p>
+        <label className="text-[11px] uppercase text-gray-500">¿Quién usa este acceso?</label>
+        <input
+          value={nombre}
+          onChange={(e) => setNombre(e.target.value)}
+          placeholder="Ej. Luis"
+          autoFocus
+          onKeyDown={(e) => { if (e.key === "Enter" && !saving && nombre.trim().length >= 2) handleConvert(); }}
+          className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+        />
+        <div className="flex gap-2 mt-4">
+          <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+          <button
+            onClick={handleConvert}
+            disabled={saving || nombre.trim().length < 2}
+            className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark disabled:opacity-50 flex items-center justify-center gap-1.5"
+          >
+            {saving && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Crear usuario
           </button>
         </div>
       </div>
