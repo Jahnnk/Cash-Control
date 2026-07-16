@@ -41,7 +41,8 @@ export type DailyEntry = {
   items: number | null;
   /** Pedidos por delivery del día (dentro de `personas`). Opcional:
    * null/ausente = 0. En delivery no se puede sugerir extras, así que
-   * se EXCLUYEN del ticket del programa (feedback admins jul-2026). */
+   * se EXCLUYEN del ticket del programa (feedback admins jul-2026).
+   * Mostrador y mesa NO se separan: ambos mueven el bono. */
   deliveryPedidos?: number | null;
   /** Venta por delivery del día (dentro de `revenue`). */
   deliveryVenta?: number | null;
@@ -89,8 +90,8 @@ export type IncentiveProgress = {
   porNivel: { level: IncentiveLevel; sumaBonos: number; pozoNivel: number | null; colchon: number | null }[];
   /** Piso de tráfico (sin él, la meta no cuenta) — sobre personas TOTALES. */
   traffic: { personasPorDia: number | null; floor: number; cumple: boolean };
-  /** Delivery del periodo (informativo — EXCLUIDO del ticket del programa).
-   * null si no se registró ningún delivery. */
+  /** Delivery del periodo (informativo — lo ÚNICO excluido del ticket
+   * del programa; mostrador y mesa sí cuentan). null si no se registró. */
   delivery: { pedidos: number; venta: number; ticket: number | null } | null;
 };
 
@@ -106,16 +107,19 @@ export function computeProgress(
   const itemsDays = withData.filter((d) => d.items !== null);
   const items = itemsDays.length > 0 ? itemsDays.reduce((s, d) => s + (d.items ?? 0), 0) : null;
 
-  // Delivery se EXCLUYE del ticket del programa: nadie puede sugerir
-  // extras en un pedido de app, y promediarlo castiga al equipo por
-  // algo que no controla (misma filosofía del hándicap por turno).
-  // Sin registro de delivery (null/0) todo se comporta como antes.
+  // Delivery —y SOLO delivery— se excluye del ticket del programa:
+  // nadie puede sugerir extras en un pedido de app, y promediarlo
+  // castiga al equipo por algo que no controla (misma filosofía del
+  // hándicap por turno). MOSTRADOR Y MESA SÍ CUENTAN: ambos son venta
+  // presencial donde el upselling depende del equipo (Jahnn, jul-2026:
+  // "también tenemos ventas en mostrador y también deberían mover el
+  // bono"). Sin registro de delivery (null/0) todo se comporta como antes.
   const deliveryPedidos = withData.reduce((s, d) => s + Math.max(0, d.deliveryPedidos ?? 0), 0);
   const deliveryVenta = r2(withData.reduce((s, d) => s + Math.max(0, d.deliveryVenta ?? 0), 0));
-  const salonPersonas = Math.max(0, personas - deliveryPedidos);
-  const salonRevenue = r2(Math.max(0, revenue - deliveryVenta));
+  const personasPresencial = Math.max(0, personas - deliveryPedidos);
+  const ventaPresencial = r2(Math.max(0, revenue - deliveryVenta));
 
-  const ticketActual = salonPersonas > 0 ? r2(salonRevenue / salonPersonas) : null;
+  const ticketActual = personasPresencial > 0 ? r2(ventaPresencial / personasPresencial) : null;
   const deltaActual = ticketActual !== null ? r2(ticketActual - config.ticketBase) : null;
   // items/persona solo sobre los días que registraron items (coherencia).
   const personasItemsDays = itemsDays.reduce((s, d) => s + (d.personas ?? 0), 0);
@@ -129,10 +133,11 @@ export function computeProgress(
   const proximoNivel =
     next && deltaActual !== null ? { level: next, faltaSoles: r2(next.delta - deltaActual) } : null;
 
-  // Proyección para el POZO con personas de SALÓN: la utilidad nueva
-  // (delta × clientes) solo se genera donde sí hubo upselling.
+  // Proyección para el POZO con clientes PRESENCIALES (mostrador +
+  // mesa): la utilidad nueva (delta × clientes) solo se genera donde
+  // sí se pudo hacer upselling.
   const personasProyectadas =
-    withData.length > 0 ? Math.round((salonPersonas / withData.length) * daysInMonth) : null;
+    withData.length > 0 ? Math.round((personasPresencial / withData.length) * daysInMonth) : null;
   const pozoProyectado =
     deltaActual !== null && deltaActual > 0 && personasProyectadas !== null
       ? r2(deltaActual * personasProyectadas * config.marginPct * config.poolPct)
