@@ -70,6 +70,7 @@ export async function middleware(request: NextRequest) {
       // reportes, movimientos, otras sedes) queda bloqueado AQUÍ, a
       // nivel de servidor, incluidos los POST de server actions.
       const scopedSecrets: Record<string, string | undefined> = {
+        "admin-atelier": process.env.ADMIN_PASSWORD_ATELIER,
         "admin-fonavi": process.env.ADMIN_PASSWORD_FONAVI,
         "admin-centro": process.env.ADMIN_PASSWORD_CENTRO,
         "verif-fonavi": process.env.VERIF_PASSWORD_FONAVI,

@@ -24,6 +24,8 @@ import { LiquidationModal } from "./liquidation-modal";
 import { MermaDetailModal } from "./merma-detail-modal";
 import { MejorVendedorSection } from "./mejor-vendedor-section";
 import { BaseModal } from "./base-modal";
+import { AtelierPanel } from "./atelier-panel";
+import { VentasImportModal } from "./ventas-import-modal";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -39,9 +41,16 @@ function todayLima() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
-export default function IncentivosPage() {
-  // Sede desde el segmento [negocio] de la ruta — la fuente de verdad de
-  // Next.js (antes se parseaba window.location a mano).
+export default function PanelPage() {
+  // Sede desde el segmento [negocio] de la ruta. Atelier (B2B) tiene su
+  // propio panel: registro de venta/pedidos/mermas, sin programa de
+  // incentivos ni KPIs de salón.
+  const params = useParams<{ negocio: string }>();
+  if (params.negocio === "atelier") return <AtelierPanel />;
+  return <IncentivosPage />;
+}
+
+function IncentivosPage() {
   const params = useParams<{ negocio: string }>();
   const sedeLabel = params.negocio === "fonavi" ? "Fonavi" : "Centro";
   const { showToast } = useToast();
@@ -50,6 +59,7 @@ export default function IncentivosPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  const [showVentas, setShowVentas] = useState(false);
   const [showLiquidation, setShowLiquidation] = useState(false);
   const [showBase, setShowBase] = useState(false);
   const [focus, setFocus] = useState<{ month: string; candidates: UpsellCandidate[] } | null>(null);
@@ -184,6 +194,14 @@ export default function IncentivosPage() {
               🔒 Liquidación
             </button>
           )}
+          <button
+            onClick={() => setShowVentas(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
+            title="Reporte semanal de Ventas de Byte — alimenta el acumulado del mes y los comparativos del deck"
+          >
+            <Upload className="w-3.5 h-3.5" />
+            Ventas Byte
+          </button>
           <button
             onClick={() => setShowImport(true)}
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
@@ -540,6 +558,13 @@ export default function IncentivosPage() {
           month={month}
           onClose={() => setShowBase(false)}
           onSaved={() => { setShowBase(false); load(month); }}
+        />
+      )}
+
+      {showVentas && (
+        <VentasImportModal
+          onClose={() => setShowVentas(false)}
+          onImported={() => load(month)}
         />
       )}
     </div>

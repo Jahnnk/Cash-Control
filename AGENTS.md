@@ -97,6 +97,7 @@ scope — ver `src/lib/auth-token.ts` y `src/lib/session-access.ts`):
 
 | Scope | Env var | Acceso permitido |
 |---|---|---|
+| `admin-atelier` | `ADMIN_PASSWORD_ATELIER` | `/atelier/panel` (supervisora operativa) |
 | `admin-fonavi` | `ADMIN_PASSWORD_FONAVI` | `/fonavi/panel` |
 | `admin-centro` | `ADMIN_PASSWORD_CENTRO` | `/centro/panel` |
 | `verif-fonavi` | `VERIF_PASSWORD_FONAVI` | `/fonavi/verificacion` |

@@ -25,6 +25,7 @@ const AUTH_COOKIE = "yayis_auth";
 
 /** Sede (business_id) que corresponde a cada scope de token v2. */
 const SEDE_BY_SCOPE: Record<string, number> = {
+  "admin-atelier": 1, // supervisora operativa (registro diario + ventas Byte)
   "admin-fonavi": 2,
   "admin-centro": 3,
   "verif-fonavi": 2,
@@ -34,6 +35,7 @@ const SEDE_BY_SCOPE: Record<string, number> = {
 /** Contraseña del entorno que firma cada scope. */
 function secretForScope(scope: string): string | undefined {
   switch (scope) {
+    case "admin-atelier": return process.env.ADMIN_PASSWORD_ATELIER;
     case "admin-fonavi": return process.env.ADMIN_PASSWORD_FONAVI;
     case "admin-centro": return process.env.ADMIN_PASSWORD_CENTRO;
     case "verif-fonavi": return process.env.VERIF_PASSWORD_FONAVI;
