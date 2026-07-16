@@ -45,7 +45,7 @@ const NAV: NavItem[] = [
   { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["atelier", "fonavi", "centro"] },
   { segment: "panel",         label: "Panel de Sede",   icon: Trophy,          scopes: ["atelier", "fonavi", "centro"] },
   { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },
-  { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro"] },
+  { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
 ];
 
 function scopeFromPathname(pathname: string): ScopeKey | null {

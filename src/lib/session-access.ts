@@ -19,7 +19,8 @@
  */
 
 import { cookies } from "next/headers";
-import { verifyAuthToken, verifyScopedToken } from "./auth-token";
+import { neon } from "@neondatabase/serverless";
+import { verifyAuthToken, verifyScopedToken, parseUserTokenId, verifyUserToken } from "./auth-token";
 
 const AUTH_COOKIE = "yayis_auth";
 
@@ -50,6 +51,31 @@ export type SessionRole =
   | null;
 
 /**
+ * Resuelve un token v3 (usuario del personal en app_users) a su rol.
+ * Fail-closed en cada paso: sin fila, inactivo o firma inválida → null.
+ * La firma usa el password_hash guardado: cambiar la contraseña o
+ * desactivar al usuario mata sus sesiones al instante.
+ */
+async function resolveUserToken(token: string, now: number): Promise<SessionRole> {
+  const userId = parseUserTokenId(token, now);
+  if (userId === null) return null;
+  try {
+    const sql = neon(process.env.DATABASE_URL!);
+    const rows = (await sql`
+      SELECT scope, password_hash FROM app_users
+      WHERE id = ${userId} AND active = true
+    `) as { scope: string; password_hash: string }[];
+    if (rows.length === 0) return null;
+    if (!(await verifyUserToken(token, rows[0].password_hash, now))) return null;
+    const sede = SEDE_BY_SCOPE[rows[0].scope];
+    if (sede === undefined) return null;
+    return { kind: rows[0].scope.startsWith("admin-") ? "admin" : "verif", sede };
+  } catch {
+    return null; // BD caída o tabla sin migrar → fail-closed
+  }
+}
+
+/**
  * Resuelve el rol de la sesión actual desde la cookie firmada.
  * No recibe la sede: el CALLER decide qué roles acepta y si la sede
  * del token coincide con la que está operando.
@@ -62,10 +88,14 @@ export async function getSessionRole(): Promise<SessionRole> {
     return { kind: "full" };
   }
   const scope = await verifyScopedToken(token, secretForScope, now);
-  if (!scope) return null;
-  const sede = SEDE_BY_SCOPE[scope];
-  if (sede === undefined) return null;
-  return { kind: scope.startsWith("admin-") ? "admin" : "verif", sede };
+  if (scope) {
+    const sede = SEDE_BY_SCOPE[scope];
+    if (sede === undefined) return null;
+    return { kind: scope.startsWith("admin-") ? "admin" : "verif", sede };
+  }
+  // Tokens v3: usuarios del personal gestionados desde la app.
+  if (token) return resolveUserToken(token, now);
+  return null;
 }
 
 /** true solo con contraseña completa (Jahnn/Kelly). */

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
-import { verifyAuthToken, verifyScopedToken } from "@/lib/auth-token";
+import { neon } from "@neondatabase/serverless";
+import { verifyAuthToken, verifyScopedToken, parseUserTokenId, verifyUserToken } from "@/lib/auth-token";
 
 const VALID_SCOPES = ["atelier", "fonavi", "centro", "grupo"] as const;
 type Scope = typeof VALID_SCOPES[number];
@@ -76,7 +77,28 @@ export async function middleware(request: NextRequest) {
         "verif-fonavi": process.env.VERIF_PASSWORD_FONAVI,
         "verif-centro": process.env.VERIF_PASSWORD_CENTRO,
       };
-      const scopedScope = await verifyScopedToken(authToken, (s) => scopedSecrets[s], now);
+      let scopedScope = await verifyScopedToken(authToken, (s) => scopedSecrets[s], now);
+      if (!scopedScope) {
+        // 0d. Usuario del personal (token v3, tabla app_users). La firma
+        // usa el password_hash guardado: desactivar al usuario o cambiar
+        // su contraseña mata la sesión aquí mismo. Fail-closed: BD caída
+        // o tabla sin migrar → /login.
+        const userId = parseUserTokenId(authToken, now);
+        if (userId !== null) {
+          try {
+            const sql = neon(process.env.DATABASE_URL!);
+            const rows = (await sql`
+              SELECT scope, password_hash FROM app_users
+              WHERE id = ${userId} AND active = true
+            `) as { scope: string; password_hash: string }[];
+            if (rows.length > 0 && authToken && (await verifyUserToken(authToken, rows[0].password_hash, now))) {
+              scopedScope = rows[0].scope;
+            }
+          } catch {
+            // fail-closed
+          }
+        }
+      }
       if (!scopedScope) {
         return NextResponse.redirect(new URL("/login", request.url));
       }

@@ -104,3 +104,54 @@ export async function verifyScopedToken(
   const expected = await hmacHex(`${V2}.${parts[1]}.${scope}`, secret);
   return timingSafeEqual(parts[3], expected) ? scope : null;
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Tokens POR PERSONA (v3) — usuarios del personal gestionados en la
+// tabla app_users (jul-2026). Formato: `v3.<exp>.<userId>.<firma>`,
+// firmado con el password_hash GUARDADO de ese usuario. Propiedades:
+//   - Cambiar la contraseña (nuevo hash) invalida sus sesiones al acto.
+//   - Desactivar al usuario: el caller no encuentra fila activa → fuera.
+// El flujo es en dos pasos porque verificar requiere buscar el hash en
+// la BD: parseUserTokenId() da el id sin validar firma; el caller trae
+// la fila (active, scope, password_hash) y llama verifyUserToken().
+// ─────────────────────────────────────────────────────────────────
+
+const V3 = "v3";
+
+export async function createUserToken(
+  passwordHash: string,
+  userId: number,
+  expEpochSeconds: number,
+): Promise<string> {
+  const payload = `${V3}.${expEpochSeconds}.${userId}`;
+  const sig = await hmacHex(payload, passwordHash);
+  return `${payload}.${sig}`;
+}
+
+/** Extrae el userId de un token v3 SIN verificar la firma (para poder
+ * buscar el hash). Valida forma y expiración; null si no es v3. */
+export function parseUserTokenId(
+  token: string | undefined | null,
+  nowEpochSeconds: number,
+): number | null {
+  if (!token) return null;
+  const parts = token.split(".");
+  if (parts.length !== 4 || parts[0] !== V3) return null;
+  const exp = Number(parts[1]);
+  if (!Number.isFinite(exp) || exp <= nowEpochSeconds) return null;
+  const id = Number(parts[2]);
+  return Number.isInteger(id) && id > 0 ? id : null;
+}
+
+export async function verifyUserToken(
+  token: string,
+  passwordHash: string,
+  nowEpochSeconds: number,
+): Promise<boolean> {
+  const parts = token.split(".");
+  if (parts.length !== 4 || parts[0] !== V3 || !passwordHash) return false;
+  const exp = Number(parts[1]);
+  if (!Number.isFinite(exp) || exp <= nowEpochSeconds) return false;
+  const expected = await hmacHex(`${V3}.${parts[1]}.${parts[2]}`, passwordHash);
+  return timingSafeEqual(parts[3], expected);
+}
