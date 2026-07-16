@@ -28,6 +28,8 @@ export type KpiTargets = {
   tiempoMaxMin: number | null;
   /** Meta de tiempo en MESA (min) — ej. 15. */
   tiempoMesaMaxMin: number | null;
+  /** Meta de tiempo de DELIVERY (registro → motorizado, min) — ej. 20. */
+  tiempoDeliveryMaxMin: number | null;
 };
 
 export type KpiDaily = {
@@ -40,6 +42,8 @@ export type KpiDaily = {
   tiempoMin: number | null;
   /** Tiempo de atención en MESA (min). */
   tiempoMesaMin: number | null;
+  /** Tiempo de DELIVERY (registro → entrega al motorizado, min). */
+  tiempoDeliveryMin: number | null;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -71,7 +75,7 @@ export function tiempoTraffic(min: number | null, max: number | null): KpiTraffi
 
 export type KpiDayView = KpiDaily & {
   ticket: number | null;
-  traffic: { ventas: KpiTraffic; ticket: KpiTraffic; nps: KpiTraffic; mermas: KpiTraffic; tiempo: KpiTraffic; tiempoMesa: KpiTraffic };
+  traffic: { ventas: KpiTraffic; ticket: KpiTraffic; nps: KpiTraffic; mermas: KpiTraffic; tiempo: KpiTraffic; tiempoMesa: KpiTraffic; tiempoDelivery: KpiTraffic };
 };
 
 export type KpiExtreme = { date: string; value: number } | null;
@@ -90,7 +94,8 @@ export type KpiWeekSummary = {
   mermasPct: number | null;         // % sobre ventas de la semana
   tiempoProm: number | null;
   tiempoMesaProm: number | null;
-  traffic: { ventas: KpiTraffic; ticket: KpiTraffic; nps: KpiTraffic; mermas: KpiTraffic; tiempo: KpiTraffic; tiempoMesa: KpiTraffic };
+  tiempoDeliveryProm: number | null;
+  traffic: { ventas: KpiTraffic; ticket: KpiTraffic; nps: KpiTraffic; mermas: KpiTraffic; tiempo: KpiTraffic; tiempoMesa: KpiTraffic; tiempoDelivery: KpiTraffic };
   best: { ventas: KpiExtreme; ticket: KpiExtreme; nps: KpiExtreme; mermas: KpiExtreme };
   worst: { ventas: KpiExtreme; ticket: KpiExtreme; nps: KpiExtreme; mermas: KpiExtreme };
   days: KpiDayView[];
@@ -122,6 +127,7 @@ export function computeDayView(d: KpiDaily, t: KpiTargets): KpiDayView {
       mermas: mermasTraffic(d.mermasSoles, d.ventas, t.mermasMaxPct),
       tiempo: tiempoTraffic(d.tiempoMin, t.tiempoMaxMin),
       tiempoMesa: tiempoTraffic(d.tiempoMesaMin, t.tiempoMesaMaxMin),
+      tiempoDelivery: tiempoTraffic(d.tiempoDeliveryMin, t.tiempoDeliveryMaxMin),
     },
   };
 }
@@ -166,6 +172,8 @@ export function computeRangeSummary(rangeStart: string, rangeEnd: string, dailie
   const tiempoProm = withTiempo.length > 0 ? r2(withTiempo.reduce((s, d) => s + (d.tiempoMin ?? 0), 0) / withTiempo.length) : null;
   const withTiempoMesa = days.filter((d) => d.tiempoMesaMin !== null);
   const tiempoMesaProm = withTiempoMesa.length > 0 ? r2(withTiempoMesa.reduce((s, d) => s + (d.tiempoMesaMin ?? 0), 0) / withTiempoMesa.length) : null;
+  const withTiempoDelivery = days.filter((d) => d.tiempoDeliveryMin !== null);
+  const tiempoDeliveryProm = withTiempoDelivery.length > 0 ? r2(withTiempoDelivery.reduce((s, d) => s + (d.tiempoDeliveryMin ?? 0), 0) / withTiempoDelivery.length) : null;
 
   const vx = extremes(days, (d) => d.ventas, "max");
   const tx = extremes(days, (d) => d.ticket, "max");
@@ -186,6 +194,7 @@ export function computeRangeSummary(rangeStart: string, rangeEnd: string, dailie
     mermasPct,
     tiempoProm,
     tiempoMesaProm,
+    tiempoDeliveryProm,
     traffic: {
       ventas: ratioTraffic(ventasProm, t.ventaDiaria),
       ticket: ratioTraffic(ticketProm, t.ticketRef),
@@ -193,6 +202,7 @@ export function computeRangeSummary(rangeStart: string, rangeEnd: string, dailie
       mermas: mermasTraffic(mermasTotal, ventasTotal || null, t.mermasMaxPct),
       tiempo: tiempoTraffic(tiempoProm, t.tiempoMaxMin),
       tiempoMesa: tiempoTraffic(tiempoMesaProm, t.tiempoMesaMaxMin),
+      tiempoDelivery: tiempoTraffic(tiempoDeliveryProm, t.tiempoDeliveryMaxMin),
     },
     best: { ventas: vx.best, ticket: tx.best, nps: nx.best, mermas: mx.best },
     worst: { ventas: vx.worst, ticket: tx.worst, nps: nx.worst, mermas: mx.worst },

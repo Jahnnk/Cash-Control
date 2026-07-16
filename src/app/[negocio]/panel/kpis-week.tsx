@@ -130,6 +130,7 @@ export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
                 <th className="text-right px-3 py-2 font-medium">Mermas (≤{Math.round(data!.targets.mermasMaxPct * 100)}%)</th>
                 <th className="text-right px-3 py-2 font-medium">T. mostrador{data!.targets.tiempoMaxMin !== null ? ` (<${data!.targets.tiempoMaxMin}m)` : ""}</th>
                 <th className="text-right px-3 py-2 font-medium">T. mesa{data!.targets.tiempoMesaMaxMin !== null ? ` (<${data!.targets.tiempoMesaMaxMin}m)` : ""}</th>
+                <th className="text-right px-3 py-2 font-medium">T. delivery{data!.targets.tiempoDeliveryMaxMin !== null ? ` (<${data!.targets.tiempoDeliveryMaxMin}m)` : ""}</th>
               </tr>
             </thead>
             <tbody>
@@ -144,6 +145,7 @@ export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
                   <td className="px-3 py-1.5 text-right"><span className="mr-1.5">{d.mermasSoles !== null ? formatCurrency(d.mermasSoles) : "—"}</span><Dot t={d.traffic.mermas} /></td>
                   <td className="px-3 py-1.5 text-right"><span className="mr-1.5">{d.tiempoMin !== null ? `${d.tiempoMin} min` : "—"}</span><Dot t={d.traffic.tiempo} /></td>
                   <td className="px-3 py-1.5 text-right"><span className="mr-1.5">{d.tiempoMesaMin !== null ? `${d.tiempoMesaMin} min` : "—"}</span><Dot t={d.traffic.tiempoMesa} /></td>
+                  <td className="px-3 py-1.5 text-right"><span className="mr-1.5">{d.tiempoDeliveryMin !== null ? `${d.tiempoDeliveryMin} min` : "—"}</span><Dot t={d.traffic.tiempoDelivery} /></td>
                 </tr>
               ))}
             </tbody>
@@ -163,6 +165,7 @@ export function KpisWeekSection({ fullSession }: { fullSession: boolean }) {
                   </td>
                   <td className="px-3 py-2 text-right"><span className="mr-1.5">{s.tiempoProm !== null ? `${s.tiempoProm} min` : "—"}</span><Dot t={s.traffic.tiempo} /></td>
                   <td className="px-3 py-2 text-right"><span className="mr-1.5">{s.tiempoMesaProm !== null ? `${s.tiempoMesaProm} min` : "—"}</span><Dot t={s.traffic.tiempoMesa} /></td>
+                  <td className="px-3 py-2 text-right"><span className="mr-1.5">{s.tiempoDeliveryProm !== null ? `${s.tiempoDeliveryProm} min` : "—"}</span><Dot t={s.traffic.tiempoDelivery} /></td>
                 </tr>
               </tfoot>
             )}
@@ -203,6 +206,7 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
   const [mermasMax, setMermasMax] = useState("");
   const [tiempoMax, setTiempoMax] = useState("");         // mostrador
   const [tiempoMesaMax, setTiempoMesaMax] = useState(""); // mesa
+  const [tiempoDeliveryMax, setTiempoDeliveryMax] = useState(""); // delivery
 
   useEffect(() => {
      
@@ -217,6 +221,7 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
         setMermasMax(String(Math.round(r.data.targets.mermasMaxPct * 10000) / 100));
         setTiempoMax(r.data.targets.tiempoMaxMin !== null ? String(r.data.targets.tiempoMaxMin) : "");
         setTiempoMesaMax(r.data.targets.tiempoMesaMaxMin !== null ? String(r.data.targets.tiempoMesaMaxMin) : "");
+        setTiempoDeliveryMax(r.data.targets.tiempoDeliveryMaxMin !== null ? String(r.data.targets.tiempoDeliveryMaxMin) : "");
       }
       setLoading(false);
     })();
@@ -233,6 +238,7 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
       mermasMaxPct: Number(mermasMax),
       tiempoMaxMin: tiempoMax.trim() === "" ? null : Number(tiempoMax),
       tiempoMesaMaxMin: tiempoMesaMax.trim() === "" ? null : Number(tiempoMesaMax),
+      tiempoDeliveryMaxMin: tiempoDeliveryMax.trim() === "" ? null : Number(tiempoDeliveryMax),
     });
     setSaving(false);
     if (!r.ok) { showToast(r.error, "error"); return; }
@@ -299,6 +305,11 @@ function TargetsModal({ onClose, onSaved }: { onClose: () => void; onSaved: () =
                 <label className="block text-[11px] text-gray-500 mb-1">Tiempo máx. mesa (min)</label>
                 <input type="number" min="0" step="0.5" value={tiempoMesaMax} onChange={(e) => setTiempoMesaMax(e.target.value)}
                   placeholder="ej. 15 (sin meta = vacío)" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+              </div>
+              <div>
+                <label className="block text-[11px] text-gray-500 mb-1">Tiempo máx. delivery (min)</label>
+                <input type="number" min="0" step="0.5" value={tiempoDeliveryMax} onChange={(e) => setTiempoDeliveryMax(e.target.value)}
+                  placeholder="ej. 20 (sin meta = vacío)" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
               </div>
             </div>
             <div className="text-[11px] text-gray-400 mt-2">

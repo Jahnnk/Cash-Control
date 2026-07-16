@@ -43,11 +43,24 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
 
   const [y, m] = month.split("-").map(Number);
   const monthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
-  const dailies = (await sql`
-    SELECT date::text, personas, revenue::float AS revenue, items
-    FROM upselling_daily WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${monthEnd}
-    ORDER BY date
-  `) as { date: string; personas: number | null; revenue: number | null; items: number | null }[];
+  // El acta usa el MISMO ticket que el panel: delivery excluido
+  // (fallback si las columnas aún no migran).
+  type LiqDaily = { date: string; personas: number | null; revenue: number | null; items: number | null; deliveryPedidos?: number | null; deliveryVenta?: number | null };
+  let dailies: LiqDaily[];
+  try {
+    dailies = (await sql`
+      SELECT date::text, personas, revenue::float AS revenue, items,
+             delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta"
+      FROM upselling_daily WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${monthEnd}
+      ORDER BY date
+    `) as LiqDaily[];
+  } catch {
+    dailies = (await sql`
+      SELECT date::text, personas, revenue::float AS revenue, items
+      FROM upselling_daily WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${monthEnd}
+      ORDER BY date
+    `) as LiqDaily[];
+  }
 
   let unverifiedDays = 0;
   let observedDays: { date: string; nota: string | null }[] = [];

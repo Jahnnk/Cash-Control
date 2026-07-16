@@ -5,6 +5,7 @@
  */
 import { describe, it, expect } from "vitest";
 import {
+  pickDailyFocus,
   computeProgress,
   computeFlags,
   computeLiquidation,
@@ -231,5 +232,91 @@ describe("parsers de reportes de control (estructuras reales)", () => {
   it("normalizeByteDate: ambos formatos reales", () => {
     expect(normalizeByteDate("2026-06-07 11:03:51")).toBe("2026-06-07 11:03:51");
     expect(normalizeByteDate("22/06/2026 19:29:37")).toBe("2026-06-22 19:29:37");
+  });
+});
+
+describe("pickDailyFocus — rotación diaria del foco de upselling", () => {
+  const pool = Array.from({ length: 24 }, (_, i) => `prod-${i}`);
+
+  it("mismo día → misma lista (determinista: admin y dirección ven lo mismo)", () => {
+    expect(pickDailyFocus(pool, 10, "2026-07-16")).toEqual(pickDailyFocus(pool, 10, "2026-07-16"));
+  });
+
+  it("días consecutivos → listas DISTINTAS (el reclamo del admin de Fonavi)", () => {
+    const hoy = pickDailyFocus(pool, 10, "2026-07-16");
+    const manana = pickDailyFocus(pool, 10, "2026-07-17");
+    expect(hoy).not.toEqual(manana);
+    expect(hoy).toHaveLength(10);
+    expect(manana).toHaveLength(10);
+  });
+
+  it("en 24 días se muestran TODOS los candidatos del pozo al menos una vez", () => {
+    const seen = new Set<string>();
+    for (let d = 1; d <= 24; d++) {
+      pickDailyFocus(pool, 10, `2026-07-${String(d).padStart(2, "0")}`).forEach((p) => seen.add(p));
+    }
+    expect(seen.size).toBe(24);
+  });
+
+  it("pozo chico (≤ 10): devuelve todo sin inventar rotación", () => {
+    const chico = ["a", "b", "c"];
+    expect(pickDailyFocus(chico, 10, "2026-07-16")).toEqual(chico);
+  });
+
+  it("sin duplicados dentro del día", () => {
+    const dia = pickDailyFocus(pool, 10, "2026-07-31");
+    expect(new Set(dia).size).toBe(10);
+  });
+});
+
+describe("computeProgress — delivery EXCLUIDO del ticket del programa (jul-2026)", () => {
+  // 10 días: 50 personas/día a S/25 + 10 deliverys/día a S/12 (bajan el promedio).
+  const conDelivery = Array.from({ length: 10 }, (_, i) => ({
+    date: `2026-07-${String(i + 1).padStart(2, "0")}`,
+    personas: 60,               // 50 salón + 10 delivery
+    revenue: 50 * 25 + 10 * 12, // 1250 salón + 120 delivery = 1370
+    items: null,
+    deliveryPedidos: 10,
+    deliveryVenta: 120,
+  }));
+
+  it("el ticket del programa es SOLO salón (el reclamo de los admins)", () => {
+    const p = computeProgress(FONAVI, mkStaff(4, 3), conDelivery, 30);
+    // Con delivery mezclado sería 1370/60 = 22.83 (injusto).
+    expect(p.ticketActual).toBeCloseTo(25.0, 2); // 1250/50, solo salón
+    expect(p.deltaActual).toBeCloseTo(25.0 - 25.44, 2);
+  });
+
+  it("el ticket delivery se reporta APARTE (informativo, no castiga)", () => {
+    const p = computeProgress(FONAVI, mkStaff(4, 3), conDelivery, 30);
+    expect(p.delivery).toEqual({ pedidos: 100, venta: 1200, ticket: 12 });
+  });
+
+  it("el piso de tráfico sigue sobre personas TOTALES (60/día cumple el piso de 49)", () => {
+    const p = computeProgress(FONAVI, mkStaff(4, 3), conDelivery, 30);
+    expect(p.traffic.personasPorDia).toBe(60);
+    expect(p.traffic.cumple).toBe(true);
+  });
+
+  it("el pozo se proyecta con personas de SALÓN (la utilidad nueva sale de ellas)", () => {
+    const p = computeProgress(FONAVI, mkStaff(4, 3), conDelivery, 30);
+    expect(p.personasProyectadas).toBe(50 * 30); // salón/día × días del mes
+  });
+
+  it("RETROCOMPATIBLE: sin registro de delivery, nada cambia", () => {
+    const sinCampos = conDelivery.map(({ deliveryPedidos, deliveryVenta, ...d }) => {
+      void deliveryPedidos; void deliveryVenta;
+      return d;
+    });
+    const p = computeProgress(FONAVI, mkStaff(4, 3), sinCampos, 30);
+    expect(p.ticketActual).toBeCloseTo(1370 / 60, 2); // como siempre fue
+    expect(p.delivery).toBeNull();
+    expect(p.personasProyectadas).toBe(60 * 30);
+  });
+
+  it("datos corruptos (delivery > total) no producen tickets negativos", () => {
+    const raros = [{ date: "2026-07-01", personas: 10, revenue: 100, items: null, deliveryPedidos: 15, deliveryVenta: 200 }];
+    const p = computeProgress(FONAVI, mkStaff(4, 3), raros, 30);
+    expect(p.ticketActual).toBeNull(); // salón quedó en 0 → sin ticket, no basura
   });
 });

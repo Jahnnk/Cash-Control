@@ -6,6 +6,7 @@
  * El encargado de salón (verificador) cronometra cada atención:
  *   - mostrador: comanda → despacho
  *   - mesa:      pedido  → servido
+ *   - delivery:  registro del pedido → entrega al motorizado
  *
  * Fiabilidad: el timer se persiste al INICIAR (started_at = now del
  * servidor). El tiempo transcurrido y la duración final se calculan
@@ -28,7 +29,7 @@ import type { ServiceKind, ServiceTiming } from "@/lib/service-timing";
 const sql = neon(process.env.DATABASE_URL!);
 
 /** Metas por defecto (min) si kpi_targets aún no las tiene. */
-const DEFAULT_META = { mostrador: 6, mesa: 15 };
+const DEFAULT_META = { mostrador: 6, mesa: 15, delivery: 20 };
 
 function todayLima(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
@@ -53,23 +54,42 @@ function toTiming(r: Row): ServiceTiming {
   };
 }
 
-/** Metas de tiempo de la sede (mostrador/mesa), con fallback. */
-async function loadMetas(bId: number, month: string): Promise<{ mostrador: number | null; mesa: number | null }> {
+/** Metas de tiempo de la sede (mostrador/mesa/delivery), con fallback. */
+async function loadMetas(bId: number, month: string): Promise<{ mostrador: number | null; mesa: number | null; delivery: number | null }> {
   try {
     const rows = (await sql`
-      SELECT tiempo_max_min::float AS mostrador, tiempo_mesa_max_min::float AS mesa
+      SELECT tiempo_max_min::float AS mostrador, tiempo_mesa_max_min::float AS mesa,
+             tiempo_delivery_max_min::float AS delivery
       FROM kpi_targets
       WHERE business_id = ${bId} AND effective_month <= ${month}
       ORDER BY effective_month DESC LIMIT 1
-    `) as { mostrador: number | null; mesa: number | null }[];
+    `) as { mostrador: number | null; mesa: number | null; delivery: number | null }[];
     if (rows.length > 0) {
       return {
         mostrador: rows[0].mostrador ?? DEFAULT_META.mostrador,
         mesa: rows[0].mesa ?? DEFAULT_META.mesa,
+        delivery: rows[0].delivery ?? DEFAULT_META.delivery,
       };
     }
   } catch {
-    // kpi_targets o columna de mesa pendiente de migración → defaults
+    // Columna de delivery pendiente de migración → sin ella.
+    try {
+      const rows = (await sql`
+        SELECT tiempo_max_min::float AS mostrador, tiempo_mesa_max_min::float AS mesa
+        FROM kpi_targets
+        WHERE business_id = ${bId} AND effective_month <= ${month}
+        ORDER BY effective_month DESC LIMIT 1
+      `) as { mostrador: number | null; mesa: number | null }[];
+      if (rows.length > 0) {
+        return {
+          mostrador: rows[0].mostrador ?? DEFAULT_META.mostrador,
+          mesa: rows[0].mesa ?? DEFAULT_META.mesa,
+          delivery: DEFAULT_META.delivery,
+        };
+      }
+    } catch {
+      // kpi_targets pendiente de migración → defaults
+    }
   }
   return { ...DEFAULT_META };
 }
@@ -88,33 +108,48 @@ async function syncDailyFromMeasurements(bId: number, date: string): Promise<voi
   `) as { kind: ServiceKind; avg_s: number; n: number }[];
   const most = rows.find((r) => r.kind === "mostrador");
   const mesa = rows.find((r) => r.kind === "mesa");
+  const deli = rows.find((r) => r.kind === "delivery");
   const mostMin = most ? Math.round((most.avg_s / 60) * 10) / 10 : null;
   const mesaMin = mesa ? Math.round((mesa.avg_s / 60) * 10) / 10 : null;
+  const deliMin = deli ? Math.round((deli.avg_s / 60) * 10) / 10 : null;
   try {
     await sql`
-      INSERT INTO upselling_daily (business_id, date, tiempo_atencion_min, tiempo_mesa_min, source, updated_at)
-      VALUES (${bId}, ${date}, ${mostMin}, ${mesaMin}, 'medido', NOW())
+      INSERT INTO upselling_daily (business_id, date, tiempo_atencion_min, tiempo_mesa_min, tiempo_delivery_min, source, updated_at)
+      VALUES (${bId}, ${date}, ${mostMin}, ${mesaMin}, ${deliMin}, 'medido', NOW())
       ON CONFLICT (business_id, date) DO UPDATE
         SET tiempo_atencion_min = COALESCE(EXCLUDED.tiempo_atencion_min, upselling_daily.tiempo_atencion_min),
             tiempo_mesa_min = COALESCE(EXCLUDED.tiempo_mesa_min, upselling_daily.tiempo_mesa_min),
+            tiempo_delivery_min = COALESCE(EXCLUDED.tiempo_delivery_min, upselling_daily.tiempo_delivery_min),
             updated_at = NOW()
     `;
   } catch {
-    // Columna tiempo_mesa_min pendiente → escribe solo mostrador.
-    await sql`
-      INSERT INTO upselling_daily (business_id, date, tiempo_atencion_min, source, updated_at)
-      VALUES (${bId}, ${date}, ${mostMin}, 'medido', NOW())
-      ON CONFLICT (business_id, date) DO UPDATE
-        SET tiempo_atencion_min = COALESCE(EXCLUDED.tiempo_atencion_min, upselling_daily.tiempo_atencion_min),
-            updated_at = NOW()
-    `;
+    // Columna tiempo_delivery_min pendiente → mostrador + mesa.
+    try {
+      await sql`
+        INSERT INTO upselling_daily (business_id, date, tiempo_atencion_min, tiempo_mesa_min, source, updated_at)
+        VALUES (${bId}, ${date}, ${mostMin}, ${mesaMin}, 'medido', NOW())
+        ON CONFLICT (business_id, date) DO UPDATE
+          SET tiempo_atencion_min = COALESCE(EXCLUDED.tiempo_atencion_min, upselling_daily.tiempo_atencion_min),
+              tiempo_mesa_min = COALESCE(EXCLUDED.tiempo_mesa_min, upselling_daily.tiempo_mesa_min),
+              updated_at = NOW()
+      `;
+    } catch {
+      // Columna tiempo_mesa_min pendiente → escribe solo mostrador.
+      await sql`
+        INSERT INTO upselling_daily (business_id, date, tiempo_atencion_min, source, updated_at)
+        VALUES (${bId}, ${date}, ${mostMin}, 'medido', NOW())
+        ON CONFLICT (business_id, date) DO UPDATE
+          SET tiempo_atencion_min = COALESCE(EXCLUDED.tiempo_atencion_min, upselling_daily.tiempo_atencion_min),
+              updated_at = NOW()
+      `;
+    }
   }
 }
 
 export type TimingView = {
   running: ServiceTiming[];
   completedToday: ServiceTiming[];
-  metas: { mostrador: number | null; mesa: number | null };
+  metas: { mostrador: number | null; mesa: number | null; delivery: number | null };
   tableReady: boolean;
 };
 
@@ -156,7 +191,7 @@ export async function startTiming(input: {
 }): Promise<{ ok: true; timing: ServiceTiming } | { ok: false; error: string }> {
   const bId = await activeBusinessId();
   if (!(await hasAccess(bId))) return { ok: false, error: "Sin acceso." };
-  if (input.kind !== "mostrador" && input.kind !== "mesa") return { ok: false, error: "Tipo inválido." };
+  if (input.kind !== "mostrador" && input.kind !== "mesa" && input.kind !== "delivery") return { ok: false, error: "Tipo inválido." };
   const date = todayLima();
   const role = await getSessionRole();
   const by = role?.kind ?? "?";
@@ -168,7 +203,8 @@ export async function startTiming(input: {
         SELECT COUNT(*)::int AS n FROM service_timings
         WHERE business_id = ${bId} AND date = ${date} AND kind = ${input.kind}
       `) as { n: number }[];
-      label = input.kind === "mostrador" ? `Mostrador #${(c[0]?.n ?? 0) + 1}` : `Mesa ${(c[0]?.n ?? 0) + 1}`;
+      const n = (c[0]?.n ?? 0) + 1;
+      label = input.kind === "mostrador" ? `Mostrador #${n}` : input.kind === "mesa" ? `Mesa ${n}` : `Delivery #${n}`;
     }
     const rows = (await sql`
       INSERT INTO service_timings (business_id, date, kind, label, started_at, created_by)

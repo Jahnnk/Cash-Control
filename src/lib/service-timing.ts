@@ -1,9 +1,10 @@
 /**
  * Tiempos de atención medidos · lógica PURA.
  *
- * Dos tipos de servicio, cada uno con su meta configurable (kpi_targets):
+ * Tres tipos de servicio, cada uno con su meta configurable (kpi_targets):
  *   - mostrador: comanda → despacho (meta por defecto <6 min)
  *   - mesa:      pedido  → servido  (meta por defecto <15 min)
+ *   - delivery:  registro del pedido → entrega al motorizado (<20 min)
  *
  * El cronómetro real vive en la base de datos (started_at/ended_at): el
  * tiempo se calcula contra el reloj del servidor, no del teléfono, así
@@ -14,7 +15,7 @@
  * del tablero cuenten la misma historia.
  */
 
-export type ServiceKind = "mostrador" | "mesa";
+export type ServiceKind = "mostrador" | "mesa" | "delivery";
 
 export type TimingTraffic = "verde" | "ambar" | "rojo";
 
