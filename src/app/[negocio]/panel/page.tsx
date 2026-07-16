@@ -244,7 +244,7 @@ function IncentivosPage() {
           {/* 1 · Avance del ticket */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500">Ticket promedio salón ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
+              <div className="text-[11px] uppercase text-gray-500">Ticket promedio sin delivery ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
               <div className="text-2xl font-black text-gray-900">
                 {p.ticketActual !== null ? formatCurrency(p.ticketActual) : "—"}
               </div>
@@ -255,9 +255,10 @@ function IncentivosPage() {
                     ({p.deltaActual >= 0 ? "+" : ""}{formatCurrency(p.deltaActual)})
                   </span>
                 )}
+                <span className="block text-gray-400">Mostrador + mesa — los dos mueven el bono</span>
                 {p.delivery && (
                   <span className="block text-gray-400">
-                    🛵 Delivery aparte: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (no cuenta en la meta)
+                    🛵 Delivery aparte: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (lo único que no cuenta)
                   </span>
                 )}
               </div>
@@ -453,6 +454,7 @@ function IncentivosPage() {
               <div className="text-[11px] text-gray-400 mb-2">
                 🛵 Delivery va DENTRO de personas y venta del día; regístralo aparte para que
                 <strong> no cuente en el ticket del programa</strong> (en un pedido de app nadie puede sugerir extras).
+                Mostrador y mesa <strong>sí cuentan</strong> — no se separan.
               </div>
               {dayRecord && (dayRecord.tiempoMin != null || dayRecord.tiempoMesaMin != null) ? (
                 <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 mb-2">
