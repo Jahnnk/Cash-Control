@@ -113,6 +113,25 @@ archivo). Fail-closed: scope sin env var nunca valida. La cookie
 `yayis_scope` (no-httpOnly) es solo una pista de UI para el sidebar,
 NUNCA seguridad.
 
+## Usuarios del personal (tokens v3, tabla `app_users`)
+
+Desde jul-2026 la dirección gestiona los accesos del personal en
+**Grupo → Configuración** (`/grupo/configuracion`), sin tocar Vercel:
+
+- Cada persona tiene SU contraseña (generada, nunca elegida; se muestra
+  UNA vez y solo se guarda el hash scrypt `s1.<salt>.<hash>`).
+- Tokens `v3.<exp>.<userId>.<firma>` firmados con el `password_hash`
+  guardado → cambiar la contraseña o desactivar (`active=false`)
+  invalida las sesiones AL INSTANTE (middleware y actions releen la
+  fila en cada request).
+- Roles posibles: los 5 scopes del personal (tabla arriba). El rol
+  `full` NO existe en `app_users` a propósito: la llave maestra
+  (`APP_PASSWORD`) se gestiona solo en Vercel — nunca desde la app.
+- Las env vars por sede (tabla arriba) siguen valiendo como legado;
+  la pantalla de usuarios avisa cuáles siguen configuradas para
+  borrarlas al terminar la migración de personas.
+- Migración: `scripts/migrations/2026-07-15-app-users.sql`.
+
 # Keep-Alive Cron (mantener Neon despierta)
 
 El endpoint `GET /api/keep-alive` hace un `SELECT 1` a Neon para

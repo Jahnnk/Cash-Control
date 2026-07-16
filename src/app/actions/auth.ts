@@ -2,7 +2,9 @@
 
 import { cookies } from "next/headers";
 import { redirect } from "next/navigation";
-import { createAuthToken, createScopedToken } from "@/lib/auth-token";
+import { neon } from "@neondatabase/serverless";
+import { createAuthToken, createScopedToken, createUserToken } from "@/lib/auth-token";
+import { verifyPassword } from "@/lib/password-hash";
 
 const AUTH_COOKIE = "yayis_auth";
 const SESSION_DAYS = 30;
@@ -98,6 +100,35 @@ export async function loginWithPassword(
       c.set(SCOPE_HINT_COOKIE, a.scope, { ...cookieOpts, httpOnly: false });
       redirect(a.landing);
     }
+  }
+
+  // 3) Usuarios del PERSONAL (tabla app_users, gestionados por la
+  //    dirección desde Grupo → Configuración). Cada persona tiene SU
+  //    contraseña; la contraseña ES la identidad (no hay usuario).
+  //    Se prueba contra cada usuario activo (~5 personas, scrypt ~50ms
+  //    c/u). Fail-closed: tabla sin migrar o BD caída → login falla.
+  try {
+    const sql = neon(process.env.DATABASE_URL!);
+    const users = (await sql`
+      SELECT id, scope, password_hash FROM app_users WHERE active = true
+    `) as { id: number; scope: string; password_hash: string }[];
+    for (const u of users) {
+      if (verifyPassword(input, u.password_hash)) {
+        const token = await createUserToken(u.password_hash, u.id, exp);
+        const c = await cookies();
+        c.set(AUTH_COOKIE, token, cookieOpts);
+        c.set(SCOPE_HINT_COOKIE, u.scope, { ...cookieOpts, httpOnly: false });
+        try {
+          await sql`UPDATE app_users SET last_login = NOW() WHERE id = ${u.id}`;
+        } catch { /* el login no depende de esta marca */ }
+        const [kind, sede] = u.scope.split("-");
+        redirect(`/${sede}/${kind === "admin" ? "panel" : "verificacion"}`);
+      }
+    }
+  } catch (err) {
+    // redirect() lanza NEXT_REDIRECT a propósito — debe propagarse.
+    if (err && typeof err === "object" && "digest" in err) throw err;
+    console.error("[loginWithPassword] app_users lookup failed:", err);
   }
 
   await failedLoginDelay();
