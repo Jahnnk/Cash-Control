@@ -148,9 +148,71 @@ function atelierDetailSlide(pptx: PptxGenJS, sub: string, at: NonNullable<BoardD
     ]),
   ];
   s.addTable(rows, { x: MX, y: y + 2.0, w: 4.4, fontSize: 9, color: INK, border: { pt: 0.5, color: "E5E7EB" }, autoPage: false });
+
+  // Los otros 2 KPIs de Atelier (registro de la supervisora, jul-2026):
+  // ticket promedio por pedido y mermas de producción.
+  let ny = y + 2.0;
+  if (at.ticketProm !== null) {
+    s.addText(`Ticket promedio: ${fmtS(at.ticketProm)} por pedido`, {
+      x: 5.2, y: ny, w: 4.3, h: 0.3, fontSize: 11, bold: true, color: INK,
+    });
+    ny += 0.36;
+  }
+  if (at.mermasTotal !== null) {
+    s.addText(
+      `Mermas del periodo: ${fmtS(at.mermasTotal)}${at.mermasPct !== null ? ` (${at.mermasPct}% de la venta)` : ""}`,
+      { x: 5.2, y: ny, w: 4.3, h: 0.3, fontSize: 11, bold: true, color: at.mermasPct !== null && at.mermasPct > 4 ? TRAFFIC_HEX.rojo : INK },
+    );
+    ny += 0.36;
+  }
   s.addText(
-    "Atelier es el centro de producción B2B: sus clientes pagan a crédito (7/15/30 días), por eso se mide su VENTA, no los KPIs de salón (NPS, tiempos, ticket por persona).",
-    { x: 5.2, y: y + 2.0, w: 4.3, h: 1.6, fontSize: 10, color: GRAY, italic: true, valign: "top" },
+    "Atelier es el centro de producción B2B: sus clientes pagan a crédito (7/15/30 días), por eso se miden su VENTA, su ticket por pedido y sus mermas — no los KPIs de salón (NPS, tiempos).",
+    { x: 5.2, y: ny + 0.1, w: 4.3, h: 1.4, fontSize: 10, color: GRAY, italic: true, valign: "top" },
+  );
+}
+
+/** Flecha de variación coloreada (▲ verde / ▼ rojo / — gris). */
+function deltaText(pct: number | null): { text: string; color: string } {
+  if (pct === null) return { text: "sin comparativo", color: GRAY };
+  const up = pct >= 0;
+  return { text: `${up ? "▲" : "▼"} ${up ? "+" : ""}${pct}%`, color: up ? TRAFFIC_HEX.verde : TRAFFIC_HEX.rojo };
+}
+
+/** Slide de ventas Byte: acumulado del mes + vs semana y mes pasado. */
+function ventasSlide(pptx: PptxGenJS, sub: string, ventas: NonNullable<BoardDeckData["ventas"]>, weekEnd: string) {
+  const s = baseSlide(pptx, "Ventas del mes (Byte) — ¿cómo vamos vs antes?", sub);
+  const colW = (CONTENT_W - 0.6) / 3;
+  ventas.forEach((v, i) => {
+    const x = MX + i * (colW + 0.3);
+    s.addShape("roundRect", { x, y: BODY_Y, w: colW, h: 3.6, fill: { color: "F8FAF9" }, line: { color: "E5E7EB" }, rectRadius: 0.06 });
+    s.addText(v.sede.toUpperCase(), { x: x + 0.2, y: BODY_Y + 0.12, w: colW - 0.4, h: 0.32, fontSize: 13, bold: true, color: PRIMARY });
+    if (v.hasta === null) {
+      s.addText("Sin reporte de ventas subido.", { x: x + 0.2, y: BODY_Y + 0.7, w: colW - 0.4, h: 0.4, fontSize: 10, italic: true, color: GRAY });
+      return;
+    }
+    // Rango del informe vs ventana anterior
+    s.addText("VENTA DEL PERIODO", { x: x + 0.2, y: BODY_Y + 0.55, w: colW - 0.4, h: 0.24, fontSize: 8, color: GRAY });
+    s.addText(fmtS(v.rango), { x: x + 0.2, y: BODY_Y + 0.78, w: colW - 0.4, h: 0.4, fontSize: 17, bold: true, color: INK });
+    const dr = deltaText(v.deltaRangoPct);
+    s.addText(`${dr.text} vs periodo anterior${v.rangoPrev !== null ? ` (${fmtS(v.rangoPrev)})` : ""}`, {
+      x: x + 0.2, y: BODY_Y + 1.2, w: colW - 0.4, h: 0.26, fontSize: 9, bold: true, color: dr.color,
+    });
+    // Acumulado del mes vs mes pasado (mismos días)
+    s.addText("ACUMULADO DEL MES", { x: x + 0.2, y: BODY_Y + 1.66, w: colW - 0.4, h: 0.24, fontSize: 8, color: GRAY });
+    s.addText(fmtS(v.mes), { x: x + 0.2, y: BODY_Y + 1.89, w: colW - 0.4, h: 0.4, fontSize: 17, bold: true, color: INK });
+    const dm = deltaText(v.deltaMesPct);
+    s.addText(`${dm.text} vs mes pasado a mismos días${v.mesPrev !== null ? ` (${fmtS(v.mesPrev)})` : ""}`, {
+      x: x + 0.2, y: BODY_Y + 2.31, w: colW - 0.4, h: 0.42, fontSize: 9, bold: true, color: dm.color,
+    });
+    // Frescura: hasta cuándo hay datos
+    const fresh = v.hasta < weekEnd;
+    s.addText(`Datos hasta el ${dayShort(v.hasta)}${fresh ? " ⚠ falta subir el reporte" : ""}`, {
+      x: x + 0.2, y: BODY_Y + 2.95, w: colW - 0.4, h: 0.3, fontSize: 8.5, italic: true, color: fresh ? "B45309" : GRAY,
+    });
+  });
+  s.addText(
+    "El comparativo del mes es a MISMOS DÍAS transcurridos (día 1 al corte, ambos meses) — nunca un mes a medias contra un mes completo. Fuente: reporte semanal de Ventas de Byte.",
+    { x: MX, y: 4.6, w: CONTENT_W, h: 0.5, fontSize: 9, italic: true, color: GRAY },
   );
 }
 
@@ -274,7 +336,9 @@ export async function renderWeeklyKpiDeck(data: BoardDeckData): Promise<{ blob: 
     title: "ATELIER (B2B)",
     lines: data.atelier
       ? [["Vendido", `${fmtS(data.atelier.ventasTotal)} en ${data.atelier.daysWithData} días`, "gris"],
-         ["Prom./día", fmtS(data.atelier.ventasProm), "gris"]]
+         ["Ticket · Mermas",
+          `${data.atelier.ticketProm !== null ? fmtS(data.atelier.ticketProm) : "—"} · ${data.atelier.mermasPct !== null ? data.atelier.mermasPct + "%" : "—"}`,
+          "gris"]]
       : [["Sin registro en el periodo", "", "gris"]],
   });
   let by = BODY_Y;
@@ -290,6 +354,9 @@ export async function renderWeeklyKpiDeck(data: BoardDeckData): Promise<{ blob: 
     });
     by += blockH + 0.14;
   }
+
+  // 2b · Ventas del mes (Byte): acumulado + comparativos, las 3 sedes
+  if (data.ventas) ventasSlide(pptx, sub, data.ventas, data.weekEnd);
 
   // 3-4 · Detalle por cafetería
   for (const cf of data.cafeterias) {

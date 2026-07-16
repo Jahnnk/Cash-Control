@@ -28,6 +28,7 @@ import {
   type WowItem,
 } from "@/lib/kpis/engine";
 import { computeProgress, type IncentiveConfigT, type StaffMember } from "@/lib/incentives/engine";
+import { compareVentasSede, type VentasSedeComparison } from "@/lib/kpis/ventas-deck";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -190,7 +191,13 @@ export type BoardDeckData = {
     best: { date: string; value: number } | null;
     worst: { date: string; value: number } | null;
     days: { date: string; value: number }[];
+    /** KPIs del registro de la supervisora (jul-2026); null si aún no registra. */
+    ticketProm: number | null;
+    mermasTotal: number | null;
+    mermasPct: number | null;
   } | null;
+  /** Comparativos de ventas Byte por sede; null si la tabla aún no migra. */
+  ventas: VentasSedeComparison[] | null;
   priorityRed: { sede: string; kpi: string; detail: string } | null;
 };
 
@@ -289,17 +296,46 @@ export async function getBoardDeckData(weekStart: string, rangeEnd?: string): Pr
       cafeterias.push({ sede: SEDE_NAMES[bId], targets, summary, wow: compareWeeks(summary, previous), incentives });
     }
 
-    // Atelier: ventas diarias reales desde daily_records (B2B — sin
-    // NPS/mermas del programa; con detalle diario para su slide).
+    // Atelier: ventas diarias del registro de la supervisora / reporte
+    // de Byte (fuente fresca, jul-2026); si aún no hay, cae al registro
+    // financiero de Kelly (daily_records) para no dejar el slide vacío.
     let atelier: BoardDeckData["atelier"] = null;
-    const at = (await sql`
-      SELECT date::text, byte_total::float AS v FROM daily_records
-      WHERE business_id = 1 AND date BETWEEN ${ws} AND ${we} AND archived = false AND COALESCE(byte_total, 0) > 0
-      ORDER BY date
-    `) as { date: string; v: number }[];
+    let at: { date: string; v: number }[] = [];
+    try {
+      at = (await sql`
+        SELECT date::text, total::float AS v FROM byte_ventas_daily
+        WHERE business_id = 1 AND date BETWEEN ${ws} AND ${we} AND total > 0
+        ORDER BY date
+      `) as { date: string; v: number }[];
+    } catch {
+      // tabla byte_ventas_daily pendiente de migración
+    }
+    if (at.length === 0) {
+      at = (await sql`
+        SELECT date::text, byte_total::float AS v FROM daily_records
+        WHERE business_id = 1 AND date BETWEEN ${ws} AND ${we} AND archived = false AND COALESCE(byte_total, 0) > 0
+        ORDER BY date
+      `) as { date: string; v: number }[];
+    }
     if (at.length > 0) {
       const total = Math.round(at.reduce((s, r) => s + r.v, 0) * 100) / 100;
       const sorted = [...at].sort((a, b) => a.v - b.v);
+      // KPIs de la supervisora en el rango: ticket (venta ÷ pedidos) y
+      // mermas — los 3 KPIs de Atelier completos en su slide.
+      let ticketProm: number | null = null;
+      let mermasTotal: number | null = null;
+      let mermasPct: number | null = null;
+      const kp = (await sql`
+        SELECT SUM(revenue)::float AS venta, SUM(personas)::int AS pedidos, SUM(mermas_soles)::float AS mermas
+        FROM upselling_daily WHERE business_id = 1 AND date BETWEEN ${ws} AND ${we}
+      `) as { venta: number | null; pedidos: number | null; mermas: number | null }[];
+      if (kp.length > 0 && (kp[0].pedidos ?? 0) > 0 && (kp[0].venta ?? 0) > 0) {
+        ticketProm = Math.round((kp[0].venta! / kp[0].pedidos!) * 100) / 100;
+      }
+      if (kp.length > 0 && kp[0].mermas !== null) {
+        mermasTotal = Math.round(kp[0].mermas * 100) / 100;
+        mermasPct = total > 0 ? Math.round((mermasTotal / total) * 10000) / 100 : null;
+      }
       atelier = {
         ventasProm: Math.round((total / at.length) * 100) / 100,
         ventasTotal: total,
@@ -307,7 +343,40 @@ export async function getBoardDeckData(weekStart: string, rangeEnd?: string): Pr
         best: { date: sorted[sorted.length - 1].date, value: sorted[sorted.length - 1].v },
         worst: { date: sorted[0].date, value: sorted[0].v },
         days: at.map((r) => ({ date: r.date, value: r.v })),
+        ticketProm,
+        mermasTotal,
+        mermasPct,
       };
+    }
+
+    // Comparativos de ventas Byte (las 3 sedes): rango vs anterior y mes
+    // vs mes pasado a mismos días. Ventana leída: desde el día 1 del mes
+    // ANTERIOR a `we` (cubre todos los cortes que compara la lib).
+    let ventas: VentasSedeComparison[] | null = null;
+    try {
+      const readFrom = (() => {
+        const [y, m] = we.slice(0, 7).split("-").map(Number);
+        return m === 1 ? `${y - 1}-12-01` : `${y}-${String(m - 1).padStart(2, "0")}-01`;
+      })();
+      // La ventana "anterior" de un rango personalizado puede empezar
+      // antes que el mes pasado — leer desde lo más temprano de ambos.
+      const from = ps < readFrom ? ps : readFrom;
+      const vrows = (await sql`
+        SELECT business_id, date::text, total::float AS total
+        FROM byte_ventas_daily
+        WHERE date BETWEEN ${from} AND ${we}
+      `) as { business_id: number; date: string; total: number }[];
+      ventas = [1, 2, 3].map((bId) =>
+        compareVentasSede(
+          SEDE_NAMES[bId] ?? `Sede ${bId}`,
+          vrows.filter((r) => r.business_id === bId).map((r) => ({ date: r.date, total: r.total })),
+          ws,
+          we,
+        ),
+      );
+      if (ventas.every((v) => v.hasta === null)) ventas = null; // nadie ha subido nada aún
+    } catch {
+      // tabla byte_ventas_daily pendiente de migración — el deck lo omite
     }
 
     return {
@@ -318,6 +387,7 @@ export async function getBoardDeckData(weekStart: string, rangeEnd?: string): Pr
         isCustomRange,
         cafeterias,
         atelier,
+        ventas,
         priorityRed: pickPriorityRed(cafeterias.map((cf) => ({ sede: cf.sede, summary: cf.summary }))),
       },
     };

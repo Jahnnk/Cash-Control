@@ -81,6 +81,7 @@ export async function loginWithPassword(
   //    verificador de mando medio (solo la pantalla de Verificación —
   //    la segunda firma del conteo diario). El middleware bloquea el resto.
   const scopedLogins: { scope: string; secret: string | undefined; landing: string }[] = [
+    { scope: "admin-atelier", secret: process.env.ADMIN_PASSWORD_ATELIER, landing: "/atelier/panel" },
     { scope: "admin-fonavi", secret: process.env.ADMIN_PASSWORD_FONAVI, landing: "/fonavi/panel" },
     { scope: "admin-centro", secret: process.env.ADMIN_PASSWORD_CENTRO, landing: "/centro/panel" },
     { scope: "verif-fonavi", secret: process.env.VERIF_PASSWORD_FONAVI, landing: "/fonavi/verificacion" },
