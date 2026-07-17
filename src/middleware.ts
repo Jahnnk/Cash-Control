@@ -30,8 +30,9 @@ const PUBLIC_API_PREFIXES = ["/api/keep-alive"];
 
 /** Scopes permitidos por rol. */
 function allowedScopesForRole(role: Role): Scope[] {
-  if (role === "admin") return ["atelier", "fonavi", "centro", "grupo"];
-  return ["fonavi", "centro", "grupo"];
+  // Desde jul-2026 Kelly también lleva Atelier — ambos roles ven todo.
+  void role;
+  return ["atelier", "fonavi", "centro", "grupo"];
 }
 
 /**

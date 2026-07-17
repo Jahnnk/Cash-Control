@@ -33,7 +33,7 @@ export default async function SelectBusinessPage() {
           </p>
         </header>
 
-        <div className={`grid grid-cols-1 ${isKelly ? "sm:grid-cols-2" : "sm:grid-cols-3"} gap-4`}>
+        <div className={"grid grid-cols-1 sm:grid-cols-3 gap-4"}>
           {(["atelier", "fonavi", "centro"] as ScopeCode[])
             .filter((code) => allowed.includes(code))
             .map((code) => (

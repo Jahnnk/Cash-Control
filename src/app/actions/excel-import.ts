@@ -66,18 +66,24 @@ function fullMonthDeleteRange(
 
 const VALID_BIDS = [1, 2, 3];
 
-// La importación del Excel de Kelly es solo para las cafeterías que usan ese
-// ledger: Fonavi (2) y Centro (3). Atelier (1) usa el flujo Byte POS y queda
-// fuera. VALID_BIDS se mantiene [1,2,3] porque el cross-contamination check
-// compara los saldos de los 3 negocios.
-const IMPORT_ALLOWED_BIDS = [2, 3];
+// Desde jul-2026 Kelly también lleva las finanzas de Atelier (acuerdo de
+// reunión), así que las 3 sedes aceptan su Excel. PROTECCIÓN CLAVE: los
+// registros manuales ESPECIALES (clientes B2B, préstamos socio, gastos
+// compartidos, clasificaciones no operativas, transferencias internas)
+// NUNCA se archivan al importar — el Excel no sabe expresarlos y
+// aplastarlos rompería CxC, capital inyectado y espejos compartidos.
+// Ver las condiciones "PROTEGIDOS" en el archivado de manuales.
+const IMPORT_ALLOWED_BIDS = [1, 2, 3];
 const IMPORT_NOT_ALLOWED_MSG =
-  "La importación desde Excel solo está disponible para Fonavi y Centro.";
+  "La importación desde Excel no está disponible para esta sede.";
 
 export type ImportPreview = {
   parseResult: ParseResult | null;
   controlVtasResult: ControlVtasParseResult | null;
   manualesEnRango: { ingresos: number; egresos: number };
+  /** Registros manuales ESPECIALES del rango (clientes B2B, préstamos
+   * socio, compartidos, clasificaciones): protegidos — no se archivan. */
+  protegidosEnRango?: { ingresos: number; egresos: number };
   byteSalesDailyEnRango: number;
   tipsPendingEnRango: number;
   roundingAlertsEnRango: number;
@@ -175,12 +181,12 @@ async function existingCategoryNames(bId: number): Promise<Set<string>> {
 
 /**
  * Sede del import. null = acceso denegado (el caller lo convierte a su
- * forma de error). Camino central (sedeCentral): solo dirección y solo
- * las sedes de Kelly (Fonavi/Centro) — Atelier se importa desde Atelier.
+ * forma de error). Camino central (sedeCentral): solo dirección; desde
+ * jul-2026 Kelly lleva las 3 sedes, así que las 3 se aceptan.
  */
 async function importBusinessId(sedeCentral?: string): Promise<number | null> {
   if (sedeCentral !== undefined) {
-    if (sedeCentral !== "fonavi" && sedeCentral !== "centro") return null;
+    if (sedeCentral !== "atelier" && sedeCentral !== "fonavi" && sedeCentral !== "centro") return null;
     if (!(await requireFullSession())) return null;
     return activeBusinessId(sedeCentral);
   }
@@ -213,7 +219,7 @@ export async function previewExcelImport(
   sedeCentral?: string
 ): Promise<ImportPreview | { error: string }> {
   const bId = await importBusinessId(sedeCentral);
-  if (bId === null) return { error: "El import central es solo para la dirección (Fonavi/Centro)." };
+  if (bId === null) return { error: "El import central es solo para la dirección." };
   if (!VALID_BIDS.includes(bId)) {
     return { error: "Negocio activo inválido" };
   }
@@ -258,6 +264,19 @@ export async function previewExcelImport(
     WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
       AND archived = false AND imported_from_excel = false
   `)).rows[0] as { n: number };
+  // Especiales del rango: mismas condiciones que la protección del archivado.
+  const protegidosIn = (await db.execute(sql`
+    SELECT COUNT(*)::int AS n FROM bank_income_items
+    WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
+      AND archived = false AND imported_from_excel = false
+      AND (client_id IS NOT NULL OR is_special_loan = true OR non_operative_category IS NOT NULL OR is_internal_transfer = true OR is_fonavi_reimbursement = true)
+  `)).rows[0] as { n: number };
+  const protegidosEx = (await db.execute(sql`
+    SELECT COUNT(*)::int AS n FROM expenses
+    WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
+      AND archived = false AND imported_from_excel = false
+      AND (is_shared = true OR is_special_loan = true OR is_internal_transfer = true OR payment_method IN ('socio', 'pendiente_atelier'))
+  `)).rows[0] as { n: number };
 
   // Datos en tablas Control de VTAS para el rango
   const byteSalesDaily = (await db.execute(sql`
@@ -286,6 +305,7 @@ export async function previewExcelImport(
     parseResult,
     controlVtasResult,
     manualesEnRango: { ingresos: manualesIn.n, egresos: manualesEx.n },
+    protegidosEnRango: { ingresos: protegidosIn.n, egresos: protegidosEx.n },
     byteSalesDailyEnRango: byteSalesDaily.n,
     tipsPendingEnRango: tipsPending.n,
     roundingAlertsEnRango: roundingAlerts.n,
@@ -307,7 +327,7 @@ export async function executeExcelImport(
   sedeCentral?: string
 ): Promise<ImportResult & { byteSalesDays?: number; tipsCount?: number; alertsCount?: number }> {
   const bId = await importBusinessId(sedeCentral);
-  if (bId === null) return { success: false, error: "El import central es solo para la dirección (Fonavi/Centro)." };
+  if (bId === null) return { success: false, error: "El import central es solo para la dirección." };
   if (!VALID_BIDS.includes(bId)) {
     return { success: false, error: "Negocio activo inválido" };
   }
@@ -411,8 +431,10 @@ export async function executeExcelImport(
 
   if (parseResult) {
     if (options.archivarManualesExistentes) {
-      q.push(txSql`UPDATE bank_income_items SET archived = true WHERE business_id = ${bId} AND date BETWEEN ${delStart} AND ${delEnd} AND archived = false AND imported_from_excel = false`);
-      q.push(txSql`UPDATE expenses SET archived = true WHERE business_id = ${bId} AND date BETWEEN ${delStart} AND ${delEnd} AND archived = false AND imported_from_excel = false`);
+      q.push(txSql`UPDATE bank_income_items SET archived = true WHERE business_id = ${bId} AND date BETWEEN ${delStart} AND ${delEnd} AND archived = false AND imported_from_excel = false
+        AND client_id IS NULL AND is_special_loan = false AND non_operative_category IS NULL AND is_internal_transfer = false AND is_fonavi_reimbursement = false`); // PROTEGIDOS: el Excel no sabe expresarlos
+      q.push(txSql`UPDATE expenses SET archived = true WHERE business_id = ${bId} AND date BETWEEN ${delStart} AND ${delEnd} AND archived = false AND imported_from_excel = false
+        AND is_shared = false AND is_special_loan = false AND is_internal_transfer = false AND payment_method NOT IN ('socio', 'pendiente_atelier')`); // PROTEGIDOS: espejos y préstamos
     }
     // IDEMPOTENCIA: borrar importados previos del MES COMPLETO.
     q.push(txSql`DELETE FROM bank_income_items WHERE business_id = ${bId} AND date BETWEEN ${delStart} AND ${delEnd} AND imported_from_excel = true`);
@@ -600,7 +622,7 @@ export async function executeMultiMonthImport(
   const bId = await importBusinessId(sedeCentral);
   if (bId === null) {
     return {
-      perMonth: plan.map((p) => ({ monthKey: p.monthKey, status: "error" as const, error: "El import central es solo para la dirección (Fonavi/Centro)." })),
+      perMonth: plan.map((p) => ({ monthKey: p.monthKey, status: "error" as const, error: "El import central es solo para la dirección." })),
       importedMonths: 0, skippedMonths: 0, errorMonths: plan.length,
     };
   }

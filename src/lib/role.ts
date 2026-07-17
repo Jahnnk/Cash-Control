@@ -17,10 +17,12 @@ export async function getActiveRole(): Promise<Role | null> {
   return null;
 }
 
-/** Scopes permitidos por rol (NO incluye 'grupo' — se decide aparte). */
+/** Scopes permitidos por rol. Desde jul-2026 Kelly también lleva las
+ * finanzas de Atelier (acuerdo de reunión) — ambos roles ven todo;
+ * el selector queda como prevención de errores, no como restricción. */
 export function allowedScopesForRole(role: Role): Array<"atelier" | "fonavi" | "centro" | "grupo"> {
-  if (role === "admin") return ["atelier", "fonavi", "centro", "grupo"];
-  return ["fonavi", "centro", "grupo"]; // Kelly NO ve Atelier
+  void role;
+  return ["atelier", "fonavi", "centro", "grupo"];
 }
 
 /** True si el rol puede acceder a ese scope. */

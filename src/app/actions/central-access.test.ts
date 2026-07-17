@@ -1,10 +1,10 @@
 /**
  * Candados del camino CENTRAL desde Grupo (jul-2026):
  *
- *  1. Import de Excel con sede explícita (sedeCentral): SOLO dirección
- *     y SOLO Fonavi/Centro. Jamás se adivina la sede de la cookie —
- *     en /grupo la cookie apunta a la última sede visitada y habría
- *     importado los datos de Kelly en la sede equivocada.
+ *  1. Import de Excel con sede explícita (sedeCentral): SOLO dirección.
+ *     Desde jul-2026 Kelly lleva las 3 sedes (Atelier incluida). Jamás
+ *     se adivina la sede de la cookie — en /grupo apunta a la última
+ *     sede visitada y habría importado en la sede equivocada.
  *  2. Reporte ejecutivo del grupo: permiso por SESIÓN (dirección), ya
  *     no por "estar parado en Atelier" (la regla vieja rebotaba a la
  *     dirección cuando generaba desde /grupo).
@@ -51,7 +51,7 @@ vi.mock("@/app/actions/command-center", () => ({
 import { previewExcelImport, getMonthsLoadStatus } from "./excel-import";
 import { getReportFacts } from "./report-facts";
 
-const ACCESS_MSG = "El import central es solo para la dirección (Fonavi/Centro).";
+const ACCESS_MSG = "El import central es solo para la dirección.";
 
 beforeEach(() => {
   fake.full = true;
@@ -66,9 +66,11 @@ describe("import central — sedeCentral", () => {
     expect(await getMonthsLoadStatus(["2026-06"], "fonavi")).toEqual([]);
   });
 
-  it("Atelier NO es sede del import central (se importa desde Atelier)", async () => {
+  it("Atelier SÍ es sede del import central (Kelly lleva las 3 desde jul-2026)", async () => {
     const r = await previewExcelImport("", "kelly.xlsx", null, null, "atelier");
-    expect(r).toEqual({ error: ACCESS_MSG });
+    expect(r).toHaveProperty("error");
+    // Pasa el candado de acceso: el error que sigue es del archivo vacío.
+    expect((r as { error: string }).error).not.toBe(ACCESS_MSG);
   });
 
   it("sede inventada → rechazada", async () => {
@@ -107,5 +109,26 @@ describe("reporte ejecutivo — permiso por sesión, no por ubicación", () => {
     fake.full = false; // admin de Fonavi (activeId 2)
     await expect(getReportFacts({ scope: "unit", unitId: 3, month: "2026-06" }))
       .rejects.toThrow("Solo puedes generar reportes de tu unidad activa");
+  });
+});
+
+describe("import — registros especiales PROTEGIDOS del archivado", () => {
+  // El archivado de manuales vive en SQL dentro de una transacción (no se
+  // puede ejercitar sin un xlsx real), así que este test lee el CÓDIGO y
+  // exige que las condiciones de protección existan en ambos UPDATE.
+  // Si alguien las borra "limpiando", esto truena con nombre y apellido.
+  it("los UPDATE de archivado excluyen clientes B2B, préstamos, compartidos y clasificaciones", async () => {
+    const fs = await import("node:fs");
+    const src = fs.readFileSync("src/app/actions/excel-import.ts", "utf8");
+    // Ingresos: cliente B2B, préstamo socio, clasificación, transferencia, reembolso.
+    const archIn = src.match(/UPDATE bank_income_items SET archived = true[\s\S]{0,400}/)?.[0] ?? "";
+    for (const cond of ["client_id IS NULL", "is_special_loan = false", "non_operative_category IS NULL", "is_internal_transfer = false", "is_fonavi_reimbursement = false"]) {
+      expect(archIn).toContain(cond);
+    }
+    // Egresos: compartidos, préstamo socio, transferencia, métodos espejo.
+    const archEx = src.match(/UPDATE expenses SET archived = true[\s\S]{0,400}/)?.[0] ?? "";
+    for (const cond of ["is_shared = false", "is_special_loan = false", "is_internal_transfer = false", "payment_method NOT IN ('socio', 'pendiente_atelier')"]) {
+      expect(archEx).toContain(cond);
+    }
   });
 });
