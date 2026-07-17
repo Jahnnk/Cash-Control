@@ -1,9 +1,12 @@
 "use client";
 
+import { useState } from "react";
+import { Sparkles } from "lucide-react";
 import { DataTable } from "@/components/ui/DataTable";
 import { formatCurrency } from "@/lib/utils";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import { GroupKpisSection } from "../dashboard/group-kpis-section";
+import { GenerateReportModal } from "@/app/[negocio]/reportes/generate-report-modal";
 
 type Props = {
   selectedMonth: string;
@@ -12,13 +15,27 @@ type Props = {
 };
 
 export function GrupoReportesClient({ selectedMonth, isCurrentMonth, summaries }: Props) {
+  const [showEirs, setShowEirs] = useState(false);
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-2xl font-bold text-gray-900">Reportes del Grupo</h1>
-        <p className="text-sm text-gray-500 mt-1">
-          Comparativo {isCurrentMonth ? "del mes en curso" : `de ${selectedMonth}`}
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Reportes del Grupo</h1>
+          <p className="text-sm text-gray-500 mt-1">
+            Comparativo {isCurrentMonth ? "del mes en curso" : `de ${selectedMonth}`}
+          </p>
+        </div>
+        {/* El MISMO generador de las sedes, arrancando en "Grupo Yayi's".
+            Desde aquí también se puede elegir cualquier sede — un solo
+            lugar para todos los reportes ejecutivos (pedido de Jahnn,
+            jul-2026). */}
+        <button
+          onClick={() => setShowEirs(true)}
+          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
+        >
+          <Sparkles className="w-4 h-4" />
+          Generar Reporte Ejecutivo
+        </button>
       </div>
 
       {/* Reporte de KPIs de la reunión: aquí se GENERA el deck (con rango
@@ -57,6 +74,14 @@ export function GrupoReportesClient({ selectedMonth, isCurrentMonth, summaries }
           <li>Mientras Fonavi y Centro estén vacíos, los totales reflejan solo Atelier.</li>
         </ul>
       </div>
+      {showEirs && (
+        <GenerateReportModal
+          isAtelier={true}
+          activeUnitId={1}
+          initialScope="grupo"
+          onClose={() => setShowEirs(false)}
+        />
+      )}
     </div>
   );
 }

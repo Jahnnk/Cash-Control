@@ -30,10 +30,14 @@ export function ExcelImportModal({
   negocio,
   open,
   onClose,
+  sedeCentral,
 }: {
   negocio: string;
   open: boolean;
   onClose: () => void;
+  /** Import CENTRAL desde Grupo (solo dirección): la sede va explícita
+   * a las actions — jamás adivinada de la cookie. */
+  sedeCentral?: "fonavi" | "centro";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -120,7 +124,7 @@ export function ExcelImportModal({
 
         // Detección READ-ONLY de meses ya cargados (conteos) — para todos los
         // meses, así toggles no requieren refetch.
-        const det = await getMonthsLoadStatus(months.map((m) => m.monthKey));
+        const det = await getMonthsLoadStatus(months.map((m) => m.monthKey), sedeCentral);
         const map: Record<string, MonthLoadDetection> = {};
         const acts: Record<string, "import" | "skip"> = {};
         for (const d of det) {
@@ -165,7 +169,7 @@ export function ExcelImportModal({
         aplicarSaldoInicial,
         archivarManualesExistentes,
         crearCategoriasNuevas,
-      });
+      }, sedeCentral);
       setMultiResult(r);
       setStep("multiresult");
       router.refresh();
@@ -174,7 +178,7 @@ export function ExcelImportModal({
 
   async function loadPreview(b64: string, fName: string, ingGtos: string | null, controlVtas: string | null) {
     setError(null);
-    const p = await previewExcelImport(b64, fName, ingGtos, controlVtas);
+    const p = await previewExcelImport(b64, fName, ingGtos, controlVtas, sedeCentral);
     if ("error" in p) {
       setError(p.error);
       return;
@@ -203,7 +207,7 @@ export function ExcelImportModal({
         aplicarSaldoInicial,
         archivarManualesExistentes,
         crearCategoriasNuevas,
-      });
+      }, sedeCentral);
       if (!r.success) {
         setError(r.error);
         return;

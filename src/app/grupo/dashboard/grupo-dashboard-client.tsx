@@ -10,6 +10,7 @@ import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { BreakevenBody } from "@/components/breakeven-card";
 import { GroupKpisSection } from "./group-kpis-section";
 import { DataFreshnessCard } from "./data-freshness-card";
+import { KellyImportCard } from "./kelly-import-card";
 import type { DataFreshness } from "@/app/actions/grupo";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 
@@ -72,6 +73,10 @@ export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries,
 
       {/* ¿Hasta cuándo hay datos por sede? — qué pedirle a Kelly */}
       <DataFreshnessCard items={freshness} />
+
+      {/* ...y cuando Kelly manda los Excel, se suben AQUÍ mismo, sin
+          entrar sede por sede (la sede se elige explícita — Opción A). */}
+      <KellyImportCard />
 
       {/* KPIs semanales de las 3 sedes — salud de un vistazo. La GENERACIÓN
           de reportes vive en Reportes del Grupo (dashboard = ver, reportes
