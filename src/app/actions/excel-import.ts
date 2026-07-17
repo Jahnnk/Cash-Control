@@ -4,8 +4,12 @@
  * Server actions para importación masiva desde Excel.
  *
  * GUARDS CRÍTICOS DE AISLAMIENTO ENTRE NEGOCIOS:
- *   - El businessId SIEMPRE viene de activeBusinessId() (URL/cookie).
- *   - Jamás se acepta del cliente como parámetro mutable.
+ *   - El businessId viene de activeBusinessId() (URL/cookie); la ÚNICA
+ *     excepción es el import CENTRAL desde Grupo (jul-2026): sede
+ *     explícita elegida por la dirección (requireFullSession) — jamás
+ *     adivinada de la cookie, que en /grupo apunta a la última sede
+ *     visitada y habría importado en la sede equivocada.
+ *   - Fuera de ese camino, jamás se acepta del cliente como parámetro.
  *   - Toda mutación filtra por business_id = bId.
  *   - Cross-check post-import: saldos de los OTROS 2 negocios deben
  *     ser idénticos antes/después. Si difieren > S/0.01 → throw.
@@ -16,6 +20,7 @@ import { sql } from "drizzle-orm";
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { requireFullSession } from "@/lib/session-access";
 import {
   parseExcelFile,
   listSheets,
@@ -161,12 +166,25 @@ async function getSaldosTodosNegocios(): Promise<
   return out;
 }
 
-async function existingCategoryNames(): Promise<Set<string>> {
-  const bId = await activeBusinessId();
+async function existingCategoryNames(bId: number): Promise<Set<string>> {
   const r = await db.execute(sql`
     SELECT name FROM expense_categories WHERE business_id = ${bId}
   `);
   return new Set((r.rows as { name: string }[]).map((x) => x.name.toUpperCase()));
+}
+
+/**
+ * Sede del import. null = acceso denegado (el caller lo convierte a su
+ * forma de error). Camino central (sedeCentral): solo dirección y solo
+ * las sedes de Kelly (Fonavi/Centro) — Atelier se importa desde Atelier.
+ */
+async function importBusinessId(sedeCentral?: string): Promise<number | null> {
+  if (sedeCentral !== undefined) {
+    if (sedeCentral !== "fonavi" && sedeCentral !== "centro") return null;
+    if (!(await requireFullSession())) return null;
+    return activeBusinessId(sedeCentral);
+  }
+  return activeBusinessId();
 }
 
 // ─────────────────────────────────────────────────────────────────
@@ -191,9 +209,11 @@ export async function previewExcelImport(
   fileBase64: string,
   fileName: string,
   ingGtosSheet?: string | null,
-  controlVtasSheet?: string | null
+  controlVtasSheet?: string | null,
+  sedeCentral?: string
 ): Promise<ImportPreview | { error: string }> {
-  const bId = await activeBusinessId();
+  const bId = await importBusinessId(sedeCentral);
+  if (bId === null) return { error: "El import central es solo para la dirección (Fonavi/Centro)." };
   if (!VALID_BIDS.includes(bId)) {
     return { error: "Negocio activo inválido" };
   }
@@ -255,7 +275,7 @@ export async function previewExcelImport(
       AND imported_from_excel = true AND status = 'pending'
   `)).rows[0] as { n: number };
 
-  const existing = await existingCategoryNames();
+  const existing = await existingCategoryNames(bId);
   const categoriasNuevas = parseResult
     ? parseResult.categoriasUnicas.filter((c) => !existing.has(c.toUpperCase()))
     : [];
@@ -283,9 +303,11 @@ export async function executeExcelImport(
   fileName: string,
   ingGtosSheet: string | null,
   controlVtasSheet: string | null,
-  options: ImportOptions
+  options: ImportOptions,
+  sedeCentral?: string
 ): Promise<ImportResult & { byteSalesDays?: number; tipsCount?: number; alertsCount?: number }> {
-  const bId = await activeBusinessId();
+  const bId = await importBusinessId(sedeCentral);
+  if (bId === null) return { success: false, error: "El import central es solo para la dirección (Fonavi/Centro)." };
   if (!VALID_BIDS.includes(bId)) {
     return { success: false, error: "Negocio activo inválido" };
   }
@@ -508,9 +530,11 @@ export type MonthLoadDetection = {
  * UI para mostrar el aviso y la elección Reemplazar/Saltar ANTES de escribir.
  */
 export async function getMonthsLoadStatus(
-  monthKeys: string[]
+  monthKeys: string[],
+  sedeCentral?: string
 ): Promise<MonthLoadDetection[]> {
-  const bId = await activeBusinessId();
+  const bId = await importBusinessId(sedeCentral);
+  if (bId === null) return [];
   if (!IMPORT_ALLOWED_BIDS.includes(bId)) return [];
   const out: MonthLoadDetection[] = [];
   for (const monthKey of monthKeys) {
@@ -570,9 +594,16 @@ export async function executeMultiMonthImport(
   fileBase64: string,
   fileName: string,
   plan: MonthImportPlanItem[],
-  options: ImportOptions
+  options: ImportOptions,
+  sedeCentral?: string
 ): Promise<MultiMonthResult> {
-  const bId = await activeBusinessId();
+  const bId = await importBusinessId(sedeCentral);
+  if (bId === null) {
+    return {
+      perMonth: plan.map((p) => ({ monthKey: p.monthKey, status: "error" as const, error: "El import central es solo para la dirección (Fonavi/Centro)." })),
+      importedMonths: 0, skippedMonths: 0, errorMonths: plan.length,
+    };
+  }
   if (!IMPORT_ALLOWED_BIDS.includes(bId)) {
     return {
       perMonth: plan.map((p) => ({ monthKey: p.monthKey, status: "error" as const, error: IMPORT_NOT_ALLOWED_MSG })),

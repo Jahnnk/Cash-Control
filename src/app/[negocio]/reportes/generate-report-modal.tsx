@@ -44,15 +44,18 @@ export function GenerateReportModal({
   isAtelier,
   activeUnitId,
   onClose,
+  initialScope,
 }: {
   isAtelier: boolean;
   activeUnitId: number;
   onClose: () => void;
+  /** Arranque del selector (ej. "grupo" cuando se abre desde Grupo Yayi's). */
+  initialScope?: ScopeChoice;
 }) {
   const { showToast } = useToast();
   const months = closedMonths();
   const [scope, setScope] = useState<ScopeChoice>(
-    isAtelier ? "atelier" : activeUnitId === 2 ? "fonavi" : "centro",
+    initialScope ?? (isAtelier ? "atelier" : activeUnitId === 2 ? "fonavi" : "centro"),
   );
   const [month, setMonth] = useState(months[0].value);
   const [format, setFormat] = useState<FormatChoice>("pdf");

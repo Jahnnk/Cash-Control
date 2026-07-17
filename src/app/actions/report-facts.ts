@@ -17,6 +17,7 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { activeBusinessId } from "@/lib/active-business";
+import { requireFullSession } from "@/lib/session-access";
 import { salesInRange, opExpensesInRange } from "./command-center";
 import type {
   ReportFacts,
@@ -296,7 +297,18 @@ export async function getReportFacts(input: {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) {
     throw new Error("Mes inválido (formato YYYY-MM)");
   }
-  const activeId = await activeBusinessId();
+  // Permiso por SESIÓN, no por dónde estás parado. La regla vieja
+  // ("grupo solo desde Atelier") era un proxy del rol del dueño de
+  // cuando no existía el panel de Grupo; desde /grupo la cookie de
+  // sede es la última visitada y esa regla rebotaba a la dirección.
+  const full = await requireFullSession();
+  let activeId: number | null = null;
+  try {
+    activeId = await activeBusinessId();
+  } catch {
+    // En /grupo sin cookie de sede no hay negocio activo — la sesión
+    // completa no lo necesita (elige unidad explícita o grupo).
+  }
 
   const allUnits = (await db.execute(sql`
     SELECT id, code, name FROM businesses WHERE active = true ORDER BY id
@@ -305,14 +317,13 @@ export async function getReportFacts(input: {
   let scope: ReportScope;
   let unitRefs: BusinessUnitRef[];
   if (input.scope === "group") {
-    // El grupo completo solo desde la unidad principal (rol del dueño).
-    if (activeId !== 1) throw new Error("El reporte de grupo solo está disponible desde Atelier");
+    if (!full) throw new Error("El reporte del grupo es solo para la dirección");
     scope = { kind: "group", units: allUnits };
     unitRefs = allUnits;
   } else {
-    const unit = allUnits.find((u) => u.id === (input.unitId ?? activeId));
+    const unit = allUnits.find((u) => u.id === (input.unitId ?? activeId ?? -1));
     if (!unit) throw new Error("Unidad de negocio no encontrada");
-    if (activeId !== 1 && unit.id !== activeId) {
+    if (!full && unit.id !== activeId) {
       throw new Error("Solo puedes generar reportes de tu unidad activa");
     }
     scope = { kind: "unit", unit };
