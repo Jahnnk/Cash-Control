@@ -4,6 +4,14 @@
 This version has breaking changes — APIs, conventions, and file structure may all differ from your training data. Read the relevant guide in `node_modules/next/dist/docs/` before writing any code. Heed deprecation notices.
 <!-- END:nextjs-agent-rules -->
 
+# Empezar aquí
+
+**Si eres un agente nuevo en este repo (Codex, Claude u otro): lee
+`docs/CONTEXTO.md` ANTES de trabajar.** Ahí está quién es el usuario y
+cómo comunicarse con él (no es programador, siempre en español), las
+lecciones aprendidas a golpes, el mapa del dominio y el estado actual.
+Este archivo (AGENTS.md) cubre las reglas de ramas, deploy y auth.
+
 # Flujo de ramas y deploys
 
 ## Ramas
