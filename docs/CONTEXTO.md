@@ -37,9 +37,14 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **Byte** = sistema POS. **BCP** = banco. La app existe porque Byte
   registra ventas pero la plata real llega al banco días después: la
   app muestra la posición de caja REAL.
-- **Kelly** = socia y gerente comercial; registra las finanzas de
-  Fonavi/Centro en Excel y a veces demora días/semanas (por eso existe
-  la tarjeta de "frescura de datos" y el import central en Grupo).
+- **Kelly** = socia y gerente comercial; registra las finanzas de las
+  3 SEDES en Excel (Atelier desde jul-2026, acuerdo de reunión) y a
+  veces demora días/semanas (por eso existe la tarjeta de "frescura de
+  datos" y el import central en Grupo). Su rol de UI ve las 3 sedes.
+  OJO Atelier: sus registros especiales (clientes B2B/CxC, préstamos
+  socio, gastos compartidos, clasificaciones no operativas) están
+  PROTEGIDOS del archivado en el import — el Excel no sabe expresarlos
+  y esas capas se registran EN la app, nunca vía Excel.
 - **Personal con acceso**: Luana (supervisora Atelier), Luis (admin
   Fonavi), Chari (admin Centro), Junior (verificador Centro), Jefe de
   tienda Fonavi (verificador). Gestionados en Grupo → Configuración.
@@ -166,7 +171,9 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **Gestión de usuarios** (Grupo → Configuración): crear/inhabilitar/
   renovar contraseña por persona. La llave maestra NO se gestiona ahí.
 - **Import central de Excel de Kelly** (Grupo → Dashboard): botones
-  explícitos por sede (Fonavi/Centro). Atelier se importa desde Atelier.
+  explícitos por sede (Atelier/Fonavi/Centro). Los registros manuales
+  especiales NUNCA se archivan al importar (ver excel-import.ts,
+  condiciones "PROTEGIDOS" — test que lo clava en central-access.test).
 
 ## 7. Estado al 2026-07-19
 

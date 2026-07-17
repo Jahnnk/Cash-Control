@@ -37,7 +37,7 @@ export function ExcelImportModal({
   onClose: () => void;
   /** Import CENTRAL desde Grupo (solo dirección): la sede va explícita
    * a las actions — jamás adivinada de la cookie. */
-  sedeCentral?: "fonavi" | "centro";
+  sedeCentral?: "atelier" | "fonavi" | "centro";
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -715,6 +715,17 @@ function ConfirmStep({
           {archivar && preview.parseResult && (
             <p className="text-xs text-amber-800 mt-2">
               Se archivarán {preview.manualesEnRango.ingresos + preview.manualesEnRango.egresos} movimientos manuales del rango (recuperables).
+            </p>
+          )}
+          {preview.protegidosEnRango !== undefined &&
+            preview.protegidosEnRango.ingresos + preview.protegidosEnRango.egresos > 0 && (
+            <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded px-2 py-1.5 mt-2 flex items-start gap-1.5">
+              <Shield className="w-3.5 h-3.5 shrink-0 mt-0.5" />
+              <span>
+                <strong>{preview.protegidosEnRango.ingresos + preview.protegidosEnRango.egresos} registros especiales protegidos</strong>{" "}
+                (clientes B2B, préstamos socio, compartidos, clasificaciones): NO se archivan ni se
+                reemplazan — el Excel no sabe expresarlos. Siguen intactos después del import.
+              </span>
             </p>
           )}
           {preview.parseResult && (
