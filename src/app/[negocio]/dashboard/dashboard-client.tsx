@@ -14,6 +14,7 @@ import { CommandCenter } from "./command-center";
 import type { CommandCenterData } from "@/app/actions/command-center";
 import { LiquidityPanel } from "./liquidity-panel";
 import { BreakevenCard } from "@/components/breakeven-card";
+import { CapitalCard } from "./capital-card";
 import type { LiquidityPanelData } from "@/app/actions/liquidity-panel";
 import {
   Receipt,
@@ -181,6 +182,11 @@ export function DashboardClient({
           </div>
         </section>
       )}
+
+      {/* Capital inyectado: aportes del socio, préstamos y venta de
+          activos — plata que entró pero NO es venta (se oculta sola si
+          no hay nada; el fetch es de la propia tarjeta). */}
+      <CapitalCard />
 
       {/* Bloque 2 — Flujo del mes */}
       <section className="space-y-2">
