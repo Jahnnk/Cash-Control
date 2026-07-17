@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Landmark, TrendingUp, TrendingDown, Wallet, Scale } from "lucide-react";
+import { Landmark, TrendingUp, TrendingDown, Wallet, Scale, ArrowRight } from "lucide-react";
 import { KPICard } from "@/components/ui/KPICard";
 import { DataTable } from "@/components/ui/DataTable";
 import { formatCurrency } from "@/lib/utils";
@@ -38,6 +38,37 @@ export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries,
         <p className="text-sm text-gray-500 mt-1">
           Vista consolidada · {isCurrentMonth ? "Mes en curso" : `Mes ${selectedMonth}`}
         </p>
+      </div>
+
+      {/* Selector de sede: del consolidado al dashboard COMPLETO de cada
+          una en un clic (pedido de Jahnn, jul-2026 — los links escondidos
+          en las tarjetas de equilibrio no bastaban). */}
+      <div className="grid gap-3" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(200px, 1fr))" }}>
+        {summaries.map((s) => {
+          const code = SEDE_CODE[s.businessId];
+          const theme = code ? BUSINESS_THEMES[code] : null;
+          return (
+            <Link
+              key={s.code}
+              href={`/${s.code}/dashboard`}
+              className="group bg-white rounded-xl border border-gray-200 p-4 hover:shadow-md transition-shadow"
+              style={theme ? { borderLeftColor: theme.color, borderLeftWidth: 4 } : undefined}
+            >
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold text-gray-900">{s.name}</span>
+                <ArrowRight className="w-4 h-4 text-gray-300 group-hover:text-gray-500 group-hover:translate-x-0.5 transition-all" />
+              </div>
+              <div className="mt-1.5 text-xs text-gray-500">
+                Saldo <strong className="text-gray-900">{formatCurrency(s.bankBalance)}</strong>
+                {" · "}Margen{" "}
+                <strong className={s.margin >= 0 ? "text-primary-light" : "text-red-600"}>
+                  {formatCurrency(s.margin)}
+                </strong>
+              </div>
+              <div className="mt-1 text-[11px] text-gray-400">Ver dashboard completo</div>
+            </Link>
+          );
+        })}
       </div>
 
       <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
