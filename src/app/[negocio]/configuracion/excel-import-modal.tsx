@@ -165,26 +165,37 @@ export function ExcelImportModal({
     }
     setError(null);
     startTransition(async () => {
-      const r = await executeMultiMonthImport(fileBase64, fileName, plan, {
-        aplicarSaldoInicial,
-        archivarManualesExistentes,
-        crearCategoriasNuevas,
-      }, sedeCentral);
-      setMultiResult(r);
-      setStep("multiresult");
-      router.refresh();
+      // Un error del servidor se muestra AQUÍ, nunca como pantalla rota
+      // (lección del import central: la pantalla "Algo salió mal" no le
+      // dice nada a nadie).
+      try {
+        const r = await executeMultiMonthImport(fileBase64, fileName, plan, {
+          aplicarSaldoInicial,
+          archivarManualesExistentes,
+          crearCategoriasNuevas,
+        }, sedeCentral);
+        setMultiResult(r);
+        setStep("multiresult");
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error inesperado al importar. Reintenta o avísale a Jahnn.");
+      }
     });
   }
 
   async function loadPreview(b64: string, fName: string, ingGtos: string | null, controlVtas: string | null) {
     setError(null);
-    const p = await previewExcelImport(b64, fName, ingGtos, controlVtas, sedeCentral);
-    if ("error" in p) {
-      setError(p.error);
-      return;
+    try {
+      const p = await previewExcelImport(b64, fName, ingGtos, controlVtas, sedeCentral);
+      if ("error" in p) {
+        setError(p.error);
+        return;
+      }
+      setPreview(p);
+      setStep("preview");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Error inesperado al leer el archivo.");
     }
-    setPreview(p);
-    setStep("preview");
   }
 
   function handleSheetSelected() {
@@ -203,18 +214,22 @@ export function ExcelImportModal({
     if (!selectedIngGtos && !selectedControlVtas) return;
     setError(null);
     startTransition(async () => {
-      const r = await executeExcelImport(fileBase64, fileName, selectedIngGtos, selectedControlVtas, {
-        aplicarSaldoInicial,
-        archivarManualesExistentes,
-        crearCategoriasNuevas,
-      }, sedeCentral);
-      if (!r.success) {
-        setError(r.error);
-        return;
+      try {
+        const r = await executeExcelImport(fileBase64, fileName, selectedIngGtos, selectedControlVtas, {
+          aplicarSaldoInicial,
+          archivarManualesExistentes,
+          crearCategoriasNuevas,
+        }, sedeCentral);
+        if (!r.success) {
+          setError(r.error);
+          return;
+        }
+        setResult(r);
+        setStep("result");
+        router.refresh();
+      } catch (e) {
+        setError(e instanceof Error ? e.message : "Error inesperado al importar. Reintenta o avísale a Jahnn.");
       }
-      setResult(r);
-      setStep("result");
-      router.refresh();
     });
   }
 
