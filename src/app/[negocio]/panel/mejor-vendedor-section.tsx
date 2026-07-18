@@ -66,7 +66,10 @@ export function MejorVendedorSection({ month }: { month: string }) {
         No gana quien vende más en total, sino <strong>quien más levanta su ticket sobre lo normal de SU turno</strong>.
         Así el de la mañana no compite contra el pico de la tarde. El <strong>full time</strong> (cubre mañana y tarde) compite
         entre full times; el <strong>medio turno</strong>, dentro de su franja. Se mide por ticket por mesa; pide un mínimo de{" "}
-        <strong>{data?.minMesas ?? 60} mesas</strong> en el mes para calificar. El pago sigue asignándose a mano en la liquidación — esto es el ganador sugerido.
+        <strong>{data?.minMesas ?? 60} mesas</strong> en el periodo para calificar
+        {data && data.noElegibles > 0 && (
+          <> — <strong>{data.noElegibles} vendedor{data.noElegibles === 1 ? "" : "es"} quedó{data.noElegibles === 1 ? "" : "aron"} fuera</strong> por no llegar a ese mínimo</>
+        )}. El pago sigue asignándose a mano en la liquidación — esto es el ganador sugerido.
       </div>
 
       {loading ? (

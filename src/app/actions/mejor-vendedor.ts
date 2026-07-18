@@ -23,6 +23,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import { computeMejorVendedor, type MejorVendedorResult, type SellerFranjaRecord } from "@/lib/mejor-vendedor";
+import { MIN_MESAS_MEJOR_VENDEDOR, contarNoElegibles } from "@/lib/incentives/best-seller-window";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -30,7 +31,9 @@ export type Turno = "mañana" | "tarde" | "completo";
 const TURNOS: Turno[] = ["mañana", "tarde", "completo"];
 
 /** Mínimo de MESAS en el mes para calificar al premio (piso anti-suerte). */
-const MIN_MESAS = 60;
+// Umbral ÚNICO compartido con el panel del Grupo (incidente jul-2026:
+// dos umbrales = dos ganadores del mismo desayuno).
+const MIN_MESAS = MIN_MESAS_MEJOR_VENDEDOR;
 
 async function requireDireccionOrAdmin(bId: number): Promise<boolean> {
   const role = await getSessionRole();
@@ -73,6 +76,8 @@ export type MejorVendedorView = {
   sinTurnos: boolean;
   periodEnd: string | null;
   minMesas: number;
+  /** Cuántos quedaron fuera del ranking por no llegar al mínimo de mesas. */
+  noElegibles: number;
 };
 
 /** Ranking del mejor vendedor por turno (hándicap) del mes. */
@@ -106,6 +111,7 @@ export async function getMejorVendedor(month: string): Promise<
         sinTurnos: assignedCount === 0,
         periodEnd: workers[0]?.periodEnd ?? null,
         minMesas: MIN_MESAS,
+        noElegibles: contarNoElegibles(workers),
       },
     };
   } catch (err) {
