@@ -52,3 +52,43 @@ describe("buildSedeShareLines", () => {
     expect(SHARE_FOOTER).toContain("aquí no hay letra chica");
   });
 });
+
+/**
+ * REGRESIÓN del incidente jul-2026: el Panel de Sede exigía 60 mesas y
+ * el panel del Grupo 15 → dos ganadores del mismo desayuno (el admin
+ * veía a Jefferson, la dirección a Abigail). El umbral vive en UNA sola
+ * constante; este test impide que alguien vuelva a copiarla a mano.
+ */
+describe("mejor vendedor: un solo umbral en todo el sistema", () => {
+  it("ambos paneles importan la constante compartida (nada de números sueltos)", async () => {
+    const fs = await import("node:fs");
+    const { MIN_MESAS_MEJOR_VENDEDOR } = await import("../best-seller-window");
+    expect(MIN_MESAS_MEJOR_VENDEDOR).toBe(60);
+
+    for (const file of ["src/app/actions/mejor-vendedor.ts", "src/app/actions/group-incentives.ts"]) {
+      const src = fs.readFileSync(file, "utf8");
+      expect(src).toContain("MIN_MESAS_MEJOR_VENDEDOR");
+      // Nadie vuelve a escribir el umbral a mano en estos archivos.
+      expect(src).not.toMatch(/const MIN_MESAS\s*=\s*\d+/);
+    }
+  });
+
+  it("filterWorkersByWindow: 'contenido' exige que el reporte quepa entero en el rango", async () => {
+    const { filterWorkersByWindow } = await import("../best-seller-window");
+    const rows = [
+      { nombre: "SEMANA 1", mesas: 99, total: 2800, period_start: "2026-07-05", period_end: "2026-07-11" },
+      { nombre: "ACUMULADO", mesas: 300, total: 9000, period_start: "2026-07-01", period_end: "2026-07-17" },
+    ];
+    const semana = filterWorkersByWindow(rows, "2026-07-05", "2026-07-11", "contenido");
+    expect(semana.map((r) => r.nombre)).toEqual(["SEMANA 1"]); // el acumulado NO se recorta
+
+    const mes = filterWorkersByWindow(rows, "2026-07-01", "2026-07-31", "inicia-en-ventana");
+    expect(mes).toHaveLength(2);
+  });
+
+  it("contarNoElegibles: los excluidos por el mínimo se pueden mostrar (no se esconden)", async () => {
+    const { contarNoElegibles } = await import("../best-seller-window");
+    // Datos reales de Fonavi 05–11 jul: 99, 97, 59, 55, 33 mesas.
+    expect(contarNoElegibles([{ mesas: 99 }, { mesas: 97 }, { mesas: 59 }, { mesas: 55 }, { mesas: 33 }])).toBe(3);
+  });
+});

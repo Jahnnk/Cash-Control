@@ -26,10 +26,18 @@ import {
   type DailyEntry,
 } from "@/lib/incentives/engine";
 import { computeMejorVendedor, type MejorVendedorResult } from "@/lib/mejor-vendedor";
+import {
+  MIN_MESAS_MEJOR_VENDEDOR,
+  filterWorkersByWindow,
+  contarNoElegibles,
+} from "@/lib/incentives/best-seller-window";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-const MIN_MESAS = 15; // mismo umbral que el Panel de Sede
+// Umbral y ventana ÚNICOS (lib compartida). Antes aquí decía 15 mientras
+// el Panel de Sede exigía 60 → el admin veía a Jefferson y la dirección
+// a Abigail. Nunca más una constante copiada a mano.
+const MIN_MESAS = MIN_MESAS_MEJOR_VENDEDOR;
 
 type LevelRow = { nombre: string; delta: number; bono_tc: number; bono_mt: number; bono_admin: number; premio_mv: number };
 type Turno = "mañana" | "tarde" | "completo";
@@ -49,6 +57,10 @@ export type SedeIncentives = {
   ultimoRegistro: string | null;
   /** El mes ya tiene acta de liquidación (resultado congelado). */
   liquidado: boolean;
+  /** Mínimo de mesas para entrar al ranking y cuántos quedaron fuera —
+   * visible en pantalla: un excluido invisible genera desconfianza. */
+  minMesas: number;
+  noElegibles: number;
 };
 
 export type GroupIncentives = {
@@ -140,20 +152,21 @@ export async function getGroupIncentives(
       let mejorVendedor: MejorVendedorResult | null = null;
       let mvPeriodStart: string | null = null;
       let mvPeriodEnd: string | null = null;
+      let noElegibles = 0;
       try {
-        // Con rango: SOLO reportes cuyo periodo cae DENTRO del rango. Un
-        // reporte acumulado (1 al 17) no se puede "recortar" a la semana
-        // piloto — antes que un ranking engañoso, mejor pedir el export
-        // exacto de Byte. Sin rango: el último reporte del mes (como el
-        // Panel de Sede).
-        const workers = (await sql`
+        // Ventana IDÉNTICA al Panel de Sede en modo mes ("inicia en la
+        // ventana"); en modo rango, "contenido" (un acumulado del 1 al 17
+        // no representa la semana piloto). Una sola definición: lib.
+        const windowMode = range ? "contenido" : "inicia-en-ventana";
+        const candidatos = (await sql`
           SELECT nombre, mesas, total::float AS total,
                  period_start::text AS period_start, period_end::text AS period_end
           FROM worker_period_sales
-          WHERE business_id = ${bId} AND period_start >= ${from} AND period_end <= ${to}
+          WHERE business_id = ${bId} AND period_start >= ${from} AND period_start <= ${to}
             AND imported_at = (SELECT MAX(imported_at) FROM worker_period_sales
-                               WHERE business_id = ${bId} AND period_start >= ${from} AND period_end <= ${to})
+                               WHERE business_id = ${bId} AND period_start >= ${from} AND period_start <= ${to})
         `) as { nombre: string; mesas: number; total: number; period_start: string | null; period_end: string | null }[];
+        const workers = filterWorkersByWindow(candidatos, from, to, windowMode) as typeof candidatos;
         if (workers.length > 0) {
           const shifts = (await sql`
             SELECT nombre, turno FROM worker_shifts WHERE business_id = ${bId}
@@ -170,6 +183,7 @@ export async function getGroupIncentives(
               })),
             minClientes: MIN_MESAS,
           });
+          noElegibles = contarNoElegibles(workers);
           mvPeriodStart = workers[0]?.period_start ?? null;
           mvPeriodEnd = workers[0]?.period_end ?? null;
         }
@@ -198,6 +212,8 @@ export async function getGroupIncentives(
         mvPeriodEnd,
         ultimoRegistro: ult[0]?.d ?? null,
         liquidado,
+        minMesas: MIN_MESAS,
+        noElegibles,
       });
     }
 

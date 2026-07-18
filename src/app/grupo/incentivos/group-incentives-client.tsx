@@ -286,6 +286,12 @@ function SedeCard({ s, isRange }: { s: SedeIncentives; isRange: boolean }) {
                 {s.mejorVendedor.ranking.filter((r) => r.elegible).slice(1, 3).map((r, i) => (
                   <span key={r.seller} className="text-gray-500 text-xs"> · {i === 0 ? "🥈" : "🥉"} {r.seller}</span>
                 ))}
+                {s.noElegibles > 0 && (
+                  <div className="text-[11px] text-gray-500 mt-0.5">
+                    {s.noElegibles} vendedor{s.noElegibles === 1 ? "" : "es"} fuera del ranking por atender
+                    menos de {s.minMesas} mesas en el periodo.
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-xs text-gray-500 mt-0.5">
