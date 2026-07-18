@@ -146,10 +146,17 @@ async function syncDailyFromMeasurements(bId: number, date: string): Promise<voi
   }
 }
 
+export type AyerResumen = { n: number; avgMin: number } | null;
+
 export type TimingView = {
   running: ServiceTiming[];
   completedToday: ServiceTiming[];
   metas: { mostrador: number | null; mesa: number | null; delivery: number | null };
+  /** Resumen de AYER por tipo — el admin llena el reporte de ayer por la
+   * mañana y quiere VER que lo medido quedó guardado (feedback jul-2026:
+   * "no aparece el resumen"; las tarjetas solo mostraban HOY, que a las
+   * 8am va en cero). null = ayer no se midió ese tipo. */
+  ayer: { mostrador: AyerResumen; mesa: AyerResumen; delivery: AyerResumen };
   tableReady: boolean;
 };
 
@@ -162,6 +169,7 @@ export async function getServiceTimings(): Promise<
   if (!(await hasAccess(bId))) return { ok: false, error: "Sin acceso." };
   const date = todayLima();
   const metas = await loadMetas(bId, date.slice(0, 7));
+  const sinAyer = { mostrador: null, mesa: null, delivery: null };
   try {
     const rows = (await sql`
       SELECT id::text, kind, label, started_at::text AS started_at,
@@ -170,17 +178,32 @@ export async function getServiceTimings(): Promise<
       WHERE business_id = ${bId} AND date = ${date}
       ORDER BY started_at DESC
     `) as Row[];
+    let ayer: TimingView["ayer"] = sinAyer;
+    try {
+      const ay = (await sql`
+        SELECT kind, COUNT(*)::int AS n, AVG(duration_seconds)::float AS avg_s
+        FROM service_timings
+        WHERE business_id = ${bId} AND date = ${date}::date - 1 AND ended_at IS NOT NULL
+        GROUP BY kind
+      `) as { kind: ServiceKind; n: number; avg_s: number }[];
+      const pick = (k: ServiceKind) => {
+        const r = ay.find((x) => x.kind === k);
+        return r ? { n: r.n, avgMin: Math.round((r.avg_s / 60) * 10) / 10 } : null;
+      };
+      ayer = { mostrador: pick("mostrador"), mesa: pick("mesa"), delivery: pick("delivery") };
+    } catch { /* el resumen de ayer es informativo — nunca rompe la pantalla */ }
     return {
       ok: true,
       data: {
         running: rows.filter((r) => r.ended_at === null).map(toTiming),
         completedToday: rows.filter((r) => r.ended_at !== null).map(toTiming),
         metas,
+        ayer,
         tableReady: true,
       },
     };
   } catch {
-    return { ok: true, data: { running: [], completedToday: [], metas, tableReady: false } };
+    return { ok: true, data: { running: [], completedToday: [], metas, ayer: sinAyer, tableReady: false } };
   }
 }
 
