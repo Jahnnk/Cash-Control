@@ -224,6 +224,17 @@ export function SalonTimer() {
               {s.count} atención{s.count === 1 ? "" : "es"}
               {s.overMeta > 0 && <span className="text-red-500"> · {s.overMeta} sobre meta</span>}
             </div>
+            {/* Ayer: la prueba de que lo medido quedó guardado — el admin
+                llena el reporte de ayer por la mañana y quería VERLO. */}
+            <div className="text-[10px] text-gray-500 mt-1 border-t border-gray-100 pt-1">
+              Ayer:{" "}
+              {view.ayer[s.kind] ? (
+                <strong>{view.ayer[s.kind]!.avgMin} min</strong>
+              ) : (
+                "sin mediciones"
+              )}
+              {view.ayer[s.kind] && ` · ${view.ayer[s.kind]!.n} atención${view.ayer[s.kind]!.n === 1 ? "" : "es"} ✓ guardado`}
+            </div>
           </div>
         ))}
       </div>
