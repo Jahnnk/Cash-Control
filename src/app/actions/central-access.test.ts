@@ -48,7 +48,7 @@ vi.mock("@/app/actions/command-center", () => ({
   opExpensesInRange: vi.fn(async () => 0),
 }));
 
-import { previewExcelImport, getMonthsLoadStatus } from "./excel-import";
+import { previewExcelImport, getMonthsLoadStatus, executeMultiMonthImport } from "./excel-import";
 import { getReportFacts } from "./report-facts";
 
 const ACCESS_MSG = "El import central es solo para la dirección.";
@@ -109,6 +109,39 @@ describe("reporte ejecutivo — permiso por sesión, no por ubicación", () => {
     fake.full = false; // admin de Fonavi (activeId 2)
     await expect(getReportFacts({ scope: "unit", unitId: 3, month: "2026-06" }))
       .rejects.toThrow("Solo puedes generar reportes de tu unidad activa");
+  });
+});
+
+describe("import multi-mes desde /grupo (el crash que vio Jahnn, 19-jul)", () => {
+  // En /grupo el middleware fija la cookie de sede en "grupo" → resolver
+  // la sede activa LANZA. El bug: executeMultiMonthImport no pasaba
+  // sedeCentral a cada mes → cada mes resolvía por cookie → reventaba y
+  // tumbaba la pantalla completa ("Algo salió mal").
+  it("con sedeCentral, ningún mes intenta adivinar la sede: el lote NUNCA revienta", async () => {
+    fake.activeThrows = true; // simula estar parado en /grupo
+    const plan = [{ monthKey: "2026-06", ingGtosSheet: "Ing&Gtos JUN", controlVtasSheet: null, action: "import" as const }];
+    const r = await executeMultiMonthImport("", "kelly.xlsx", plan, {
+      aplicarSaldoInicial: true, archivarManualesExistentes: true, crearCategoriasNuevas: true,
+    }, "fonavi");
+    // Resuelve (no rechaza). El mes falla por el ARCHIVO vacío, jamás
+    // por "Sin negocio activo" ni por acceso.
+    expect(r.perMonth).toHaveLength(1);
+    expect(r.perMonth[0].status).toBe("error");
+    const msg = (r.perMonth[0] as { error?: string }).error ?? "";
+    expect(msg).not.toContain("Sin negocio activo");
+    expect(msg).not.toBe(ACCESS_MSG);
+  });
+
+  it("un mes que revienta marca SU error — no tumba el lote completo", async () => {
+    const plan = [
+      { monthKey: "2026-05", ingGtosSheet: null, controlVtasSheet: null, action: "import" as const },
+      { monthKey: "2026-06", ingGtosSheet: "Ing&Gtos JUN", controlVtasSheet: null, action: "skip" as const },
+    ];
+    const r = await executeMultiMonthImport("", "kelly.xlsx", plan, {
+      aplicarSaldoInicial: true, archivarManualesExistentes: true, crearCategoriasNuevas: true,
+    }, "centro");
+    expect(r.perMonth.find((m) => m.monthKey === "2026-05")?.status).toBe("error");
+    expect(r.perMonth.find((m) => m.monthKey === "2026-06")?.status).toBe("skipped");
   });
 });
 

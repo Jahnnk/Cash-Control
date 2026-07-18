@@ -489,7 +489,15 @@ export async function executeExcelImport(
   }
 
   // ─── Recalcular saldo BCP en cadena ─────────────────────────────
-  await recalcBankBalance(start);
+  // bId EXPLÍCITO: desde /grupo la cookie dice "grupo" y resolverla aquí
+  // lanzaba — con los datos YA escritos (la transacción había cerrado).
+  // El recálculo además no debe tumbar un import exitoso: si falla, se
+  // loggea y los saldos se refrescan en el siguiente registro del día.
+  try {
+    await recalcBankBalance(start, bId);
+  } catch (err) {
+    console.error("[executeExcelImport] recalcBankBalance falló (import OK):", err);
+  }
 
   // ─── Update batch con counts finales ────────────────────────────
   await db.execute(sql`
@@ -651,7 +659,16 @@ export async function executeMultiMonthImport(
       errorMonths++;
       continue;
     }
-    const r = await executeExcelImport(fileBase64, fileName, item.ingGtosSheet, item.controlVtasSheet, options);
+    // sedeCentral DEBE viajar a cada mes (el bug del import desde Grupo:
+    // sin esto, cada mes resolvía la sede por cookie = "grupo" → throw).
+    // Y un mes que reviente inesperadamente marca SU error, no tumba el lote.
+    let r: Awaited<ReturnType<typeof executeExcelImport>>;
+    try {
+      r = await executeExcelImport(fileBase64, fileName, item.ingGtosSheet, item.controlVtasSheet, options, sedeCentral);
+    } catch (err) {
+      console.error(`[executeMultiMonthImport] mes ${item.monthKey} reventó:`, err);
+      r = { success: false, error: err instanceof Error ? err.message : "Error inesperado en este mes" };
+    }
     if (r.success) {
       perMonth.push({
         monthKey: item.monthKey,

@@ -104,8 +104,11 @@ export async function updateBankBalance(date: string, balance: number) {
   revalidatePath("/", "layout");
 }
 
-export async function recalcBankBalance(date: string) {
-  const bId = await activeBusinessId();
+export async function recalcBankBalance(date: string, explicitBId?: number) {
+  // La sede puede venir EXPLÍCITA (import central desde /grupo, donde la
+  // cookie dice "grupo" y activeBusinessId() lanzaría). Sin param, igual
+  // que siempre: la sede activa de la URL/cookie.
+  const bId = explicitBId ?? (await activeBusinessId());
 
   // Refresca cache del día afectado. `bank_income` mantiene la semántica
   // histórica de "ingresos brutos del día" (banco + efectivo), que es lo
