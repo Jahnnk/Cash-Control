@@ -28,7 +28,10 @@ const SEDE_CODE: Record<number, ScopeCode> = { 2: "fonavi", 3: "centro" };
 
 /** El resumen COPIABLE para el equipo — misma lib que el Panel de Sede. */
 function buildShareText(data: GroupIncentives): string {
-  const lines: string[] = [buildShareHeader(monthLabel(data.month), ddmm(todayLima())), ""];
+  const periodo = data.range
+    ? `del ${ddmm(data.range.from)} al ${ddmm(data.range.to)}`
+    : monthLabel(data.month);
+  const lines: string[] = [buildShareHeader(periodo, ddmm(todayLima())), ""];
   for (const s of data.sedes) {
     const p = s.progress;
     lines.push(...buildSedeShareLines({
@@ -52,14 +55,19 @@ function buildShareText(data: GroupIncentives): string {
 
 export function GroupIncentivesClient() {
   const [month, setMonth] = useState(currentMonth());
+  // Modo rango: para pilotos y premios semanales (ej. el desayuno de la
+  // primera semana) — el bono oficial sigue siendo mensual.
+  const [mode, setMode] = useState<"mes" | "rango">("mes");
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
   const [data, setData] = useState<GroupIncentives | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
 
-  const load = useCallback(async (m: string) => {
+  const load = useCallback(async (m: string, range?: { from: string; to: string }) => {
     setLoading(true);
-    const r = await getGroupIncentives(m);
+    const r = await getGroupIncentives(m, range);
     if (r.ok) { setData(r.data); setError(null); }
     else { setData(null); setError(r.error); }
     setLoading(false);
@@ -67,9 +75,10 @@ export function GroupIncentivesClient() {
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar/cambiar mes */
-    load(month);
+    if (mode === "mes") load(month);
+    else if (from && to) load(from.slice(0, 7), { from, to });
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [month, load]);
+  }, [month, mode, from, to, load]);
 
   async function copyShare() {
     if (!data) return;
@@ -92,13 +101,47 @@ export function GroupIncentivesClient() {
             panel. La transparencia es el motor: comparte el resumen con el equipo.
           </p>
         </div>
-        <input
-          type="month"
-          value={month}
-          onChange={(e) => setMonth(e.target.value)}
-          className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
-        />
+        <div className="flex flex-wrap items-center gap-2">
+          <div className="flex rounded-lg border border-gray-300 overflow-hidden text-xs">
+            <button
+              onClick={() => setMode("mes")}
+              className={`px-3 py-2 ${mode === "mes" ? "bg-primary text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+            >
+              Mes
+            </button>
+            <button
+              onClick={() => setMode("rango")}
+              className={`px-3 py-2 ${mode === "rango" ? "bg-primary text-white" : "bg-white text-gray-600 hover:bg-gray-50"}`}
+              title="Para pilotos y premios semanales (ej. el desayuno de la primera semana)"
+            >
+              Rango
+            </button>
+          </div>
+          {mode === "mes" ? (
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
+            />
+          ) : (
+            <>
+              <input type="date" value={from} onChange={(e) => setFrom(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-2 text-xs bg-white" />
+              <span className="text-xs text-gray-400">→</span>
+              <input type="date" value={to} onChange={(e) => setTo(e.target.value)}
+                className="border border-gray-300 rounded-lg px-2 py-2 text-xs bg-white" />
+            </>
+          )}
+        </div>
       </div>
+
+      {mode === "rango" && (!from || !to) && (
+        <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded-lg px-3 py-2">
+          Elige el rango (ej. la semana piloto) — el avance y el mejor vendedor serán SOLO de esos días.
+          El nivel y el bono oficial se siguen midiendo por mes completo.
+        </div>
+      )}
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Cargando…</div>
@@ -108,7 +151,7 @@ export function GroupIncentivesClient() {
         <>
           {/* Avance por sede */}
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-            {data.sedes.map((s) => <SedeCard key={s.businessId} s={s} />)}
+            {data.sedes.map((s) => <SedeCard key={s.businessId} s={s} isRange={data.range !== null} />)}
           </div>
 
           {/* Para compartir con el equipo */}
@@ -138,7 +181,7 @@ export function GroupIncentivesClient() {
   );
 }
 
-function SedeCard({ s }: { s: SedeIncentives }) {
+function SedeCard({ s, isRange }: { s: SedeIncentives; isRange: boolean }) {
   const p = s.progress;
   const code = SEDE_CODE[s.businessId];
   const theme = code ? BUSINESS_THEMES[code] : null;
@@ -195,14 +238,24 @@ function SedeCard({ s }: { s: SedeIncentives }) {
                 {p.traffic.personasPorDia ?? "—"}/día (mín. {p.traffic.floor})
               </div>
             </div>
-            <div>
-              <div className="text-[11px] uppercase text-gray-500">Pozo proyectado</div>
-              <div className="text-sm font-bold text-gray-900">{p.pozoProyectado !== null ? formatCurrency(p.pozoProyectado) : "—"}</div>
-              <div className="text-[11px] text-gray-400">techo 40% de la utilidad nueva</div>
-            </div>
+            {!isRange && (
+              <div>
+                <div className="text-[11px] uppercase text-gray-500">Pozo proyectado</div>
+                <div className="text-sm font-bold text-gray-900">{p.pozoProyectado !== null ? formatCurrency(p.pozoProyectado) : "—"}</div>
+                <div className="text-[11px] text-gray-400">techo 40% de la utilidad nueva</div>
+              </div>
+            )}
           </div>
 
-          {/* Niveles compactos */}
+          {isRange && (
+            <div className="text-[11px] text-gray-400 mt-2">
+              Vista por rango: el nivel mostrado es el ritmo de ESTOS días. El nivel oficial, el pozo
+              y los bonos se miden por mes completo en la liquidación.
+            </div>
+          )}
+
+          {/* Niveles compactos (constructo mensual — no aplica al rango) */}
+          {!isRange && (
           <table className="w-full text-xs mt-3 border-t border-gray-100">
             <tbody>
               {p.porNivel.map((n) => {
@@ -220,11 +273,12 @@ function SedeCard({ s }: { s: SedeIncentives }) {
               })}
             </tbody>
           </table>
+          )}
 
           {/* Mejor vendedor — el del desayuno */}
           <div className="mt-3 bg-amber-50/60 border border-amber-100 rounded-lg px-3 py-2">
             <div className="text-[11px] uppercase text-amber-800 font-semibold flex items-center gap-1">
-              <Coffee className="w-3 h-3" /> Mejor vendedor {s.mvPeriodEnd ? `(al ${ddmm(s.mvPeriodEnd)})` : ""}
+              <Coffee className="w-3 h-3" /> Mejor vendedor {s.mvPeriodEnd ? `(${s.mvPeriodStart ? `${ddmm(s.mvPeriodStart)}–` : "al "}${ddmm(s.mvPeriodEnd)})` : ""}
             </div>
             {s.mejorVendedor?.ganador ? (
               <div className="text-sm text-gray-900 mt-0.5">
@@ -235,7 +289,9 @@ function SedeCard({ s }: { s: SedeIncentives }) {
               </div>
             ) : (
               <div className="text-xs text-gray-500 mt-0.5">
-                Sin ranking aún — se calcula con el reporte semanal de ventas por trabajador.
+                {isRange
+                  ? "Sin reporte de trabajadores que caiga DENTRO de este rango. Pídele al admin exportar de Byte «Ventas por Trabajador» con este rango exacto y subirlo en su panel — un reporte acumulado no se puede recortar sin mentir."
+                  : "Sin ranking aún — se calcula con el reporte semanal de ventas por trabajador."}
               </div>
             )}
           </div>

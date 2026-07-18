@@ -72,4 +72,22 @@ describe("getGroupIncentives", () => {
     const r = await getGroupIncentives("julio");
     expect(r.ok).toBe(false);
   });
+
+  it("rango: valida fechas y lo devuelve en la respuesta (semana piloto)", async () => {
+    const mal = await getGroupIncentives("2026-07", { from: "2026-07-20", to: "2026-07-14" });
+    expect(mal.ok).toBe(false);
+
+    const r = await getGroupIncentives("2026-07", { from: "2026-07-14", to: "2026-07-20" });
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.data.range).toEqual({ from: "2026-07-14", to: "2026-07-20" });
+    // El motor sigue siendo el mismo (ticket presencial del fixture).
+    expect(r.data.sedes[0].progress?.ticketActual).toBeCloseTo(25.0, 2);
+  });
+
+  it("sin rango: range es null (modo mes normal)", async () => {
+    const r = await getGroupIncentives("2026-07");
+    if (!r.ok) throw new Error("debió resolver");
+    expect(r.data.range).toBeNull();
+  });
 });
