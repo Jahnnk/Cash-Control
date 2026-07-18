@@ -5,6 +5,7 @@ import { Trophy, CheckCircle2, XCircle, Copy, Check, Coffee } from "lucide-react
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getGroupIncentives, type GroupIncentives, type SedeIncentives } from "@/app/actions/group-incentives";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
+import { buildSedeShareLines, buildShareHeader, SHARE_FOOTER } from "@/lib/incentives/share-text";
 
 /**
  * Panel central de Bonos e Incentivos (pedido de Jahnn, jul-2026).
@@ -25,30 +26,27 @@ function ddmm(iso: string | null): string {
 
 const SEDE_CODE: Record<number, ScopeCode> = { 2: "fonavi", 3: "centro" };
 
-/** El resumen COPIABLE para el equipo — números honestos, sin adornos. */
+/** El resumen COPIABLE para el equipo — misma lib que el Panel de Sede. */
 function buildShareText(data: GroupIncentives): string {
-  const lines: string[] = [`🏆 Avance de Bonos e Incentivos · ${monthLabel(data.month)} (corte ${ddmm(todayLima())})`, ""];
+  const lines: string[] = [buildShareHeader(monthLabel(data.month), ddmm(todayLima())), ""];
   for (const s of data.sedes) {
     const p = s.progress;
-    if (!p || p.ticketActual === null) {
-      lines.push(`${s.sede.toUpperCase()}: aún sin días registrados este mes.`);
-      continue;
-    }
-    lines.push(`${s.sede.toUpperCase()} (${p.daysLoaded} días registrados)`);
-    lines.push(`• Ticket promedio: S/${p.ticketActual.toFixed(2)} — base S/${(s.ticketBase ?? 0).toFixed(2)}`);
-    if (p.nivelAlcanzado) {
-      lines.push(`• 🎉 Nivel alcanzado: ${p.nivelAlcanzado.nombre}`);
-    }
-    if (p.proximoNivel) {
-      lines.push(`• Para ${p.proximoNivel.level.nombre}: faltan S/${p.proximoNivel.faltaSoles.toFixed(2)} de ticket (¡se puede!)`);
-    }
-    lines.push(`• Piso de tráfico (${p.traffic.floor}/día): ${p.traffic.cumple ? `✓ cumpliendo (${p.traffic.personasPorDia}/día)` : `✗ vamos en ${p.traffic.personasPorDia ?? 0}/día — sin el piso, la meta no cuenta`}`);
-    if (s.mejorVendedor?.ganador) {
-      lines.push(`• ☕ Mejor vendedor (va ganando el desayuno): ${s.mejorVendedor.ganador}${s.mvPeriodEnd ? ` (al ${ddmm(s.mvPeriodEnd)})` : ""}`);
-    }
+    lines.push(...buildSedeShareLines({
+      sede: s.sede,
+      daysLoaded: p?.daysLoaded ?? 0,
+      ticketActual: p?.ticketActual ?? null,
+      ticketBase: s.ticketBase ?? 0,
+      nivelAlcanzado: p?.nivelAlcanzado?.nombre ?? null,
+      proximoNivel: p?.proximoNivel ? { nombre: p.proximoNivel.level.nombre, faltaSoles: p.proximoNivel.faltaSoles } : null,
+      trafficFloor: p?.traffic.floor ?? 0,
+      personasPorDia: p?.traffic.personasPorDia ?? null,
+      trafficCumple: p?.traffic.cumple ?? false,
+      mejorVendedor: s.mejorVendedor?.ganador ?? null,
+      mvPeriodEnd: s.mvPeriodEnd,
+    }));
     lines.push("");
   }
-  lines.push("Los bonos se calculan con estos mismos números y se pagan con la liquidación del cierre de mes. Cualquier duda, pregunten — aquí no hay letra chica. 💪");
+  lines.push(SHARE_FOOTER);
   return lines.join("\n");
 }
 
