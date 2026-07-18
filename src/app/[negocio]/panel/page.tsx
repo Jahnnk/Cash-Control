@@ -25,6 +25,7 @@ import { MermaDetailModal } from "./merma-detail-modal";
 import { MejorVendedorSection } from "./mejor-vendedor-section";
 import { BaseModal } from "./base-modal";
 import { AtelierPanel } from "./atelier-panel";
+import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 
 /**
@@ -341,6 +342,15 @@ function IncentivosPage() {
               El pozo es el techo; se paga la tabla fija por rol. Equipo: {data.staff.filter((s) => s.jornada === "tiempo_completo").length} tiempo completo · {data.staff.filter((s) => s.jornada === "medio_turno").length} medio turno · 1 admin.
             </div>
           </div>
+
+          {/* 2c · El admin es la cara del programa: resumen copiable para
+              su equipo, con la misma lib de texto que usa la dirección. */}
+          <ShareSummary
+            sedeLabel={sedeLabel}
+            month={month}
+            progress={p}
+            ticketBase={data.config.ticketBase}
+          />
 
           {/* 2b · Foco de upselling sugerido (datos del PIC de esta sede) */}
           {focus && focus.candidates.length > 0 && (

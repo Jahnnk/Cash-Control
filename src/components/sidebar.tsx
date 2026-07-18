@@ -21,6 +21,7 @@ import {
   Banknote,
   Package,
   Trophy,
+  Medal,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -45,6 +46,7 @@ const NAV: NavItem[] = [
   { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["atelier", "fonavi", "centro"] },
   { segment: "panel",         label: "Panel de Sede",   icon: Trophy,          scopes: ["atelier", "fonavi", "centro"] },
   { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },
+  { segment: "incentivos",    label: "Bonos e Incentivos", icon: Medal,        scopes: ["grupo"] },
   { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
 ];
 
