@@ -110,9 +110,11 @@ export function UsersAdmin() {
           <div className="bg-white rounded-xl border border-gray-200 p-4 flex items-start gap-3">
             <ShieldCheck className="w-5 h-5 text-primary shrink-0 mt-0.5" />
             <div className="text-xs text-gray-600">
-              <strong className="text-gray-900">Dirección (Jahnn &amp; Kelly)</strong> — acceso total con la llave maestra.
-              No se gestiona desde esta pantalla a propósito: se cambia solo en Vercel (variable <code className="bg-gray-100 px-1 rounded">APP_PASSWORD</code>),
-              para que ningún error o mal uso aquí adentro pueda dejarte fuera de tu propia app.
+              <strong className="text-gray-900">Dirección</strong> — acceso total. Jahnn con la llave maestra
+              (<code className="bg-gray-100 px-1 rounded">APP_PASSWORD</code>) y Kelly con su llave propia
+              (<code className="bg-gray-100 px-1 rounded">APP_PASSWORD_KELLY</code>, revocable por separado).
+              No se gestionan desde esta pantalla a propósito: se cambian solo en Vercel, para que ningún
+              error o mal uso aquí adentro pueda dejarlos fuera de su propia app.
             </div>
           </div>
 

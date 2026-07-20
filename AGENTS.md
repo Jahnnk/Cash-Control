@@ -91,8 +91,11 @@ prevención de errores, no seguridad.
 
 ## Variable de entorno
 
-`APP_PASSWORD` — la contraseña compartida. Debe estar configurada en
-Vercel para **Production y Preview** (y en `.env.local` para dev).
+`APP_PASSWORD` — la contraseña maestra de Jahnn. `APP_PASSWORD_KELLY`
+(opcional) — la llave PROPIA de Kelly con el mismo poder de dirección,
+revocable por separado (cambiarla solo invalida sus sesiones; además la
+deja directo en su rol). Ambas en Vercel para **Production y Preview**
+(y en `.env.local` para dev).
 **Fail-closed:** si falta, nadie puede entrar (la pantalla de login
 lo avisa). Cambiar la contraseña invalida todas las sesiones activas
 (la cookie se firma con la propia contraseña).
