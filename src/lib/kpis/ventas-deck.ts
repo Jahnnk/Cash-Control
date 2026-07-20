@@ -28,6 +28,10 @@ export type VentasSedeComparison = {
   deltaMesPct: number | null;
   /** Última fecha con datos — para saber si falta subir el reporte. */
   hasta: string | null;
+  /** De dónde salieron los números: 'byte' = reporte de Ventas oficial;
+   * 'registro' = registro diario del panel (respaldo cuando falta el
+   * reporte). null si no hubo datos por ninguna vía. */
+  fuente: "byte" | "registro" | null;
 };
 
 function sum(rows: VentaRow[], from: string, to: string): { total: number; days: number } {
@@ -66,6 +70,7 @@ export function compareVentasSede(
   rows: VentaRow[],
   ws: string,
   we: string,
+  fuente: "byte" | "registro" = "byte",
 ): VentasSedeComparison {
   const rangeDays = Math.round((new Date(we + "T12:00:00Z").getTime() - new Date(ws + "T12:00:00Z").getTime()) / 86400000) + 1;
   const ps = shiftDays(ws, -rangeDays);
@@ -90,5 +95,6 @@ export function compareVentasSede(
     mesPrev: mesPrev.days > 0 ? mesPrev.total : null,
     deltaMesPct: mesPrev.days > 0 ? pct(mes.total, mesPrev.total) : null,
     hasta: withData.length > 0 ? withData[withData.length - 1] : null,
+    fuente: withData.length > 0 ? fuente : null,
   };
 }

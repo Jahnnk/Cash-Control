@@ -47,8 +47,18 @@ describe("compareVentasSede", () => {
     const r = compareVentasSede("Atelier", [], ws, we);
     expect(r).toEqual({
       sede: "Atelier", rango: 0, rangoPrev: null, deltaRangoPct: null,
-      mes: 0, mesPrev: null, deltaMesPct: null, hasta: null,
+      mes: 0, mesPrev: null, deltaMesPct: null, hasta: null, fuente: null,
     });
+  });
+
+  it("marca la fuente: 'byte' (reporte oficial) o 'registro' (respaldo del panel)", () => {
+    expect(compareVentasSede("Fonavi", fixture(), ws, we, "registro").fuente).toBe("registro");
+    expect(compareVentasSede("Centro", fixture(), ws, we, "byte").fuente).toBe("byte");
+  });
+
+  it("por defecto la fuente es 'byte'; sin datos es null (no finge respaldo)", () => {
+    expect(compareVentasSede("Fonavi", fixture(), ws, we).fuente).toBe("byte");
+    expect(compareVentasSede("Atelier", [], ws, we, "registro").fuente).toBeNull();
   });
 
   it("fin de mes: 31-jul compara contra 30-jun (ajuste de mes corto)", () => {
