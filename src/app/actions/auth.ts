@@ -79,6 +79,20 @@ export async function loginWithPassword(
     redirect("/");
   }
 
+  // 1b) Contraseña PROPIA de Kelly (jul-2026: asume las finanzas de las
+  //     3 sedes). Mismo poder de dirección, llave revocable por separado:
+  //     cambiar APP_PASSWORD_KELLY solo invalida SUS sesiones. De paso
+  //     aterriza directo en su rol (sin selector).
+  const kellySecret = process.env.APP_PASSWORD_KELLY;
+  if (kellySecret && passwordMatches(input, kellySecret)) {
+    const token = await createAuthToken(kellySecret, exp);
+    const c = await cookies();
+    c.set(AUTH_COOKIE, token, cookieOpts);
+    c.delete(SCOPE_HINT_COOKIE);
+    c.set("yayis_role", "kelly", { ...cookieOpts, httpOnly: false });
+    redirect("/select-business");
+  }
+
   // 2) Contraseñas CON ALCANCE: administrador de sede (Panel de Sede) y
   //    verificador de mando medio (solo la pantalla de Verificación —
   //    la segunda firma del conteo diario). El middleware bloquea el resto.

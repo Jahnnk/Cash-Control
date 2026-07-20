@@ -89,9 +89,12 @@ Perú. **NO es programador.** Reglas de comunicación:
   `/grupo` cae a la cookie (última sede visitada); para acciones desde
   Grupo la sede debe viajar EXPLÍCITA (ver `sedeCentral` en
   excel-import como patrón).
-- **Auth de 3 niveles** (ver AGENTS.md): v1 = APP_PASSWORD (dirección,
-  vive SOLO en Vercel a propósito), v2 = contraseñas por sede en env
-  vars (legado, en extinción), v3 = usuarios por persona en tabla
+- **Auth de 3 niveles** (ver AGENTS.md): v1 = APP_PASSWORD (Jahnn) y
+  APP_PASSWORD_KELLY (llave propia de Kelly, mismo poder, revocable por
+  separado — jul-2026: ella llena las finanzas de las 3 sedes, Jahnn
+  solo verifica desde Grupo), ambas SOLO en Vercel a propósito; v2 =
+  contraseñas por sede en env vars (legado, YA borradas), v3 = usuarios
+  por persona en tabla
   `app_users` (tokens firmados con el password_hash → inhabilitar o
   renovar mata la sesión al instante). `src/lib/session-access.ts` es
   la ÚNICA fuente de verdad para resolver sesión en actions.

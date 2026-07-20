@@ -65,7 +65,11 @@ export async function middleware(request: NextRequest) {
   if (!AUTH_PUBLIC_PATHS.includes(pathname)) {
     const authToken = request.cookies.get(AUTH_COOKIE)?.value;
     const now = Math.floor(Date.now() / 1000);
-    const valid = await verifyAuthToken(authToken, process.env.APP_PASSWORD, now);
+    // Dos llaves de dirección: la maestra y la propia de Kelly (jul-2026,
+    // revocable por separado). Cualquiera de las dos = sesión completa.
+    const valid =
+      (await verifyAuthToken(authToken, process.env.APP_PASSWORD, now)) ||
+      (await verifyAuthToken(authToken, process.env.APP_PASSWORD_KELLY, now));
     if (!valid) {
       // 0c. Sesión de ADMINISTRADOR DE SEDE (token v2 con alcance).
       // Solo puede ver /[su-sede]/panel — todo lo demás (saldos,

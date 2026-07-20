@@ -204,10 +204,11 @@ function ventasSlide(pptx: PptxGenJS, sub: string, ventas: NonNullable<BoardDeck
     s.addText(`${dm.text} vs mes pasado a mismos días${v.mesPrev !== null ? ` (${fmtS(v.mesPrev)})` : ""}`, {
       x: x + 0.2, y: BODY_Y + 2.31, w: colW - 0.4, h: 0.42, fontSize: 9, bold: true, color: dm.color,
     });
-    // Frescura: hasta cuándo hay datos
+    // Frescura + fuente: distinguir el reporte oficial del respaldo.
     const fresh = v.hasta < weekEnd;
-    s.addText(`Datos hasta el ${dayShort(v.hasta)}${fresh ? " ⚠ falta subir el reporte" : ""}`, {
-      x: x + 0.2, y: BODY_Y + 2.95, w: colW - 0.4, h: 0.3, fontSize: 8.5, italic: true, color: fresh ? "B45309" : GRAY,
+    const fuenteTxt = v.fuente === "registro" ? " · del registro diario (falta el reporte de Byte)" : "";
+    s.addText(`Datos hasta el ${dayShort(v.hasta)}${fresh ? " ⚠ falta subir el reporte" : ""}${fuenteTxt}`, {
+      x: x + 0.2, y: BODY_Y + 2.9, w: colW - 0.4, h: 0.4, fontSize: 8, italic: true, color: fresh || v.fuente === "registro" ? "B45309" : GRAY,
     });
   });
   s.addText(

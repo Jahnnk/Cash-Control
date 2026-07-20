@@ -84,7 +84,10 @@ export async function getSessionRole(): Promise<SessionRole> {
   const c = await cookies();
   const token = c.get(AUTH_COOKIE)?.value;
   const now = Math.floor(Date.now() / 1000);
-  if (await verifyAuthToken(token, process.env.APP_PASSWORD, now)) {
+  if (
+    (await verifyAuthToken(token, process.env.APP_PASSWORD, now)) ||
+    (await verifyAuthToken(token, process.env.APP_PASSWORD_KELLY, now))
+  ) {
     return { kind: "full" };
   }
   const scope = await verifyScopedToken(token, secretForScope, now);
