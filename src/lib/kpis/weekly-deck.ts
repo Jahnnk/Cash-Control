@@ -82,7 +82,7 @@ function kpiCard(
 
 function sedeDetailSlide(
   pptx: PptxGenJS, sub: string, sede: string, s2: KpiWeekSummary,
-  targets: { ventaDiaria: number; ticketRef: number; npsMin: number; mermasMaxPct: number; tiempoMaxMin: number | null; tiempoMesaMaxMin: number | null },
+  targets: { ventaDiaria: number; ticketRef: number; npsMin: number; mermasMaxPct: number; tiempoMaxMin: number | null; tiempoMesaMaxMin: number | null; tiempoDeliveryMaxMin: number | null },
 ) {
   const s = baseSlide(pptx, `${sede} — Detalle de KPIs`, sub);
   const y = BODY_Y;
@@ -108,9 +108,10 @@ function sedeDetailSlide(
     s2.best.mermas ? `Mejor ${dayShort(s2.best.mermas.date)} ${fmtS(s2.best.mermas.value)}` : "",
     s2.worst.mermas ? `Alto ${dayShort(s2.worst.mermas.date)} ${fmtS(s2.worst.mermas.value)}` : "");
 
-  // Tabla diaria (ahora con los DOS tiempos medidos)
+  // Tabla diaria (ahora con los TRES tiempos medidos: mostrador, mesa y
+  // delivery — el cronómetro del encargado mide los tres).
   const rows: PptxGenJS.TableRow[] = [
-    ["Día", "Ventas", "Ticket", "NPS", "Mermas", `T. most. (<${targets.tiempoMaxMin ?? "—"}m)`, `T. mesa (<${targets.tiempoMesaMaxMin ?? "—"}m)`].map((t) => ({
+    ["Día", "Ventas", "Ticket", "NPS", "Mermas", `T. most. (<${targets.tiempoMaxMin ?? "—"}m)`, `T. mesa (<${targets.tiempoMesaMaxMin ?? "—"}m)`, `T. deliv. (<${targets.tiempoDeliveryMaxMin ?? "—"}m)`].map((t) => ({
       text: t, options: { bold: true, color: "FFFFFF", fill: { color: PRIMARY } as PptxGenJS.ShapeFillProps },
     })),
     ...s2.days.map((d): PptxGenJS.TableRow => [
@@ -121,9 +122,10 @@ function sedeDetailSlide(
       { text: d.mermasSoles !== null ? fmtS(d.mermasSoles) : "—", options: { color: TRAFFIC_HEX[d.traffic.mermas] } },
       { text: d.tiempoMin !== null ? `${d.tiempoMin} min` : "—", options: { color: TRAFFIC_HEX[d.traffic.tiempo] } },
       { text: d.tiempoMesaMin !== null ? `${d.tiempoMesaMin} min` : "—", options: { color: TRAFFIC_HEX[d.traffic.tiempoMesa] } },
+      { text: d.tiempoDeliveryMin !== null ? `${d.tiempoDeliveryMin} min` : "—", options: { color: TRAFFIC_HEX[d.traffic.tiempoDelivery] } },
     ]),
   ];
-  s.addTable(rows, { x: MX, y: y + 2.0, w: CONTENT_W, fontSize: 8.5, color: INK, border: { pt: 0.5, color: "E5E7EB" }, autoPage: false });
+  s.addTable(rows, { x: MX, y: y + 2.0, w: CONTENT_W, fontSize: 8, color: INK, border: { pt: 0.5, color: "E5E7EB" }, autoPage: false });
 }
 
 /** Slide detallada de Atelier (B2B: ventas diarias, sin KPIs del programa). */
