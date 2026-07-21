@@ -46,6 +46,12 @@ export type DailyEntry = {
   deliveryPedidos?: number | null;
   /** Venta por delivery del día (dentro de `revenue`). */
   deliveryVenta?: number | null;
+  /** Consumo del PERSONAL del día (20% dscto, se descuenta del sueldo;
+   * dentro de personas/revenue). A un compañero nadie le hace
+   * upselling → también se EXCLUYE del ticket del programa
+   * (observación de Chari, jul-2026). */
+  personalPedidos?: number | null;
+  personalVenta?: number | null;
 };
 
 export type ControlEvent = {
@@ -90,9 +96,12 @@ export type IncentiveProgress = {
   porNivel: { level: IncentiveLevel; sumaBonos: number; pozoNivel: number | null; colchon: number | null }[];
   /** Piso de tráfico (sin él, la meta no cuenta) — sobre personas TOTALES. */
   traffic: { personasPorDia: number | null; floor: number; cumple: boolean };
-  /** Delivery del periodo (informativo — lo ÚNICO excluido del ticket
-   * del programa; mostrador y mesa sí cuentan). null si no se registró. */
+  /** Delivery del periodo (informativo — excluido del ticket del
+   * programa; mostrador y mesa sí cuentan). null si no se registró. */
   delivery: { pedidos: number; venta: number; ticket: number | null } | null;
+  /** Consumo del personal del periodo (informativo — también excluido:
+   * al 20% de descuento y sin upselling posible). null si no se registró. */
+  personal: { pedidos: number; venta: number; ticket: number | null } | null;
 };
 
 export function computeProgress(
@@ -116,8 +125,13 @@ export function computeProgress(
   // bono"). Sin registro de delivery (null/0) todo se comporta como antes.
   const deliveryPedidos = withData.reduce((s, d) => s + Math.max(0, d.deliveryPedidos ?? 0), 0);
   const deliveryVenta = r2(withData.reduce((s, d) => s + Math.max(0, d.deliveryVenta ?? 0), 0));
-  const personasPresencial = Math.max(0, personas - deliveryPedidos);
-  const ventaPresencial = r2(Math.max(0, revenue - deliveryVenta));
+  // Consumo del personal: mismo trato que delivery (Chari, jul-2026) —
+  // compra al 20% de descuento y sin upselling posible; excluirlo evita
+  // que el beneficio al equipo castigue la meta del equipo.
+  const personalPedidos = withData.reduce((s, d) => s + Math.max(0, d.personalPedidos ?? 0), 0);
+  const personalVenta = r2(withData.reduce((s, d) => s + Math.max(0, d.personalVenta ?? 0), 0));
+  const personasPresencial = Math.max(0, personas - deliveryPedidos - personalPedidos);
+  const ventaPresencial = r2(Math.max(0, revenue - deliveryVenta - personalVenta));
 
   const ticketActual = personasPresencial > 0 ? r2(ventaPresencial / personasPresencial) : null;
   const deltaActual = ticketActual !== null ? r2(ticketActual - config.ticketBase) : null;
@@ -182,6 +196,14 @@ export function computeProgress(
             pedidos: deliveryPedidos,
             venta: deliveryVenta,
             ticket: r2(deliveryVenta / deliveryPedidos),
+          }
+        : null,
+    personal:
+      personalPedidos > 0
+        ? {
+            pedidos: personalPedidos,
+            venta: personalVenta,
+            ticket: r2(personalVenta / personalPedidos),
           }
         : null,
   };

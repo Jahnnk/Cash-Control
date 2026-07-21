@@ -339,3 +339,51 @@ describe("computeProgress — delivery EXCLUIDO del ticket del programa (jul-202
     expect(p.ticketActual).toBeNull(); // presencial quedó en 0 → sin ticket, no basura
   });
 });
+
+describe("computeProgress — consumo del PERSONAL excluido (observación de Chari, jul-2026)", () => {
+  // 10 días: 48 clientes/día a S/26 + 4 compras del personal/día a S/8
+  // (con su 20% de descuento — jalaban el promedio hacia abajo).
+  const conPersonal = Array.from({ length: 10 }, (_, i) => ({
+    date: `2026-07-${String(i + 1).padStart(2, "0")}`,
+    personas: 52,                 // 48 clientes + 4 del personal
+    revenue: 48 * 26 + 4 * 8,     // 1248 + 32 = 1280
+    items: null,
+    personalPedidos: 4,
+    personalVenta: 32,
+  }));
+
+  it("el ticket del programa es SOLO clientes (el beneficio no castiga la meta)", () => {
+    const p = computeProgress(FONAVI, mkStaff(4, 3), conPersonal, 30);
+    // Mezclado sería 1280/52 = 24.62; solo clientes = 1248/48 = 26.00.
+    expect(p.ticketActual).toBeCloseTo(26.0, 2);
+  });
+
+  it("el consumo del personal se reporta APARTE (informativo)", () => {
+    const p = computeProgress(FONAVI, mkStaff(4, 3), conPersonal, 30);
+    expect(p.personal).toEqual({ pedidos: 40, venta: 320, ticket: 8 });
+  });
+
+  it("delivery Y personal se excluyen JUNTOS cuando hay ambos", () => {
+    const dia = [{
+      date: "2026-07-01",
+      personas: 60,                       // 50 clientes + 6 delivery + 4 personal
+      revenue: 50 * 25 + 6 * 12 + 4 * 8,  // 1250 + 72 + 32 = 1354
+      items: null,
+      deliveryPedidos: 6, deliveryVenta: 72,
+      personalPedidos: 4, personalVenta: 32,
+    }];
+    const p = computeProgress(FONAVI, mkStaff(4, 3), dia, 30);
+    expect(p.ticketActual).toBeCloseTo(25.0, 2); // 1250/50 — solo clientes
+    expect(p.traffic.personasPorDia).toBe(60);   // piso sobre TOTALES, sin cambio
+  });
+
+  it("RETROCOMPATIBLE: sin registrar consumo del personal, nada cambia", () => {
+    const sinCampos = conPersonal.map(({ personalPedidos, personalVenta, ...d }) => {
+      void personalPedidos; void personalVenta;
+      return d;
+    });
+    const p = computeProgress(FONAVI, mkStaff(4, 3), sinCampos, 30);
+    expect(p.ticketActual).toBeCloseTo(1280 / 52, 2);
+    expect(p.personal).toBeNull();
+  });
+});

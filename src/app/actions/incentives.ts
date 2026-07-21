@@ -62,6 +62,9 @@ export type DashboardDaily = {
    * ticket del programa. null = no registrado. */
   deliveryPedidos: number | null;
   deliveryVenta: number | null;
+  /** Consumo del personal del día (20% dscto) — también excluido. */
+  personalPedidos: number | null;
+  personalVenta: number | null;
 };
 
 export type IncentiveDashboard = {
@@ -124,7 +127,8 @@ export async function getIncentiveDashboard(
                nps::float AS nps, mermas_soles::float AS "mermasSoles",
                tiempo_atencion_min::float AS "tiempoMin", tiempo_mesa_min::float AS "tiempoMesaMin",
                tiempo_delivery_min::float AS "tiempoDeliveryMin",
-               delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta"
+               delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta",
+               personal_pedidos AS "personalPedidos", personal_venta::float AS "personalVenta"
         FROM upselling_daily
         WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
         ORDER BY date
@@ -134,12 +138,14 @@ export async function getIncentiveDashboard(
         const rows = (await sql`
           SELECT date::text, personas, revenue::float AS revenue, items,
                  nps::float AS nps, mermas_soles::float AS "mermasSoles",
-                 tiempo_atencion_min::float AS "tiempoMin", tiempo_mesa_min::float AS "tiempoMesaMin"
+                 tiempo_atencion_min::float AS "tiempoMin", tiempo_mesa_min::float AS "tiempoMesaMin",
+                 tiempo_delivery_min::float AS "tiempoDeliveryMin",
+                 delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta"
           FROM upselling_daily
           WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
           ORDER BY date
-        `) as Omit<DashboardDaily, "tiempoDeliveryMin" | "deliveryPedidos" | "deliveryVenta">[];
-        dailies = rows.map((r) => ({ ...r, tiempoDeliveryMin: null, deliveryPedidos: null, deliveryVenta: null }));
+        `) as Omit<DashboardDaily, "personalPedidos" | "personalVenta">[];
+        dailies = rows.map((r) => ({ ...r, personalPedidos: null, personalVenta: null }));
       } catch {
         const rows = (await sql`
           SELECT date::text, personas, revenue::float AS revenue, items
@@ -150,6 +156,7 @@ export async function getIncentiveDashboard(
         dailies = rows.map((r) => ({
           ...r, nps: null, mermasSoles: null, tiempoMin: null, tiempoMesaMin: null,
           tiempoDeliveryMin: null, deliveryPedidos: null, deliveryVenta: null,
+          personalPedidos: null, personalVenta: null,
         }));
       }
     }
@@ -360,6 +367,9 @@ export async function saveDailyEntry(input: {
   /** Delivery del día (dentro de personas/revenue). null = sin delivery. */
   deliveryPedidos?: number | null;
   deliveryVenta?: number | null;
+  /** Consumo del personal del día (20% dscto). null = sin consumo. */
+  personalPedidos?: number | null;
+  personalVenta?: number | null;
 }): Promise<{ ok: true; firmaAnulada: boolean } | { ok: false; error: string }> {
   const bId = await activeBusinessId();
   const access = await requireIncentivesAccess(bId);
@@ -378,6 +388,20 @@ export async function saveDailyEntry(input: {
   if ((dPed !== null && dPed > 0) !== (dVen !== null && dVen > 0)) {
     return { ok: false, error: "Registra pedidos Y venta de delivery juntos (o ninguno)." };
   }
+  const pPed = input.personalPedidos ?? null;
+  const pVen = input.personalVenta ?? null;
+  if (pPed !== null && (!Number.isInteger(pPed) || pPed < 0)) return { ok: false, error: "Pedidos del personal inválido (entero ≥ 0)." };
+  if (pVen !== null && (!Number.isFinite(pVen) || pVen < 0)) return { ok: false, error: "Venta del personal inválida." };
+  if ((pPed !== null && pPed > 0) !== (pVen !== null && pVen > 0)) {
+    return { ok: false, error: "Registra pedidos Y venta del personal juntos (o ninguno)." };
+  }
+  // Delivery + personal viven DENTRO del total del día.
+  if ((dPed ?? 0) + (pPed ?? 0) >= input.personas) {
+    return { ok: false, error: "Delivery + personal no pueden ser todas las personas del día." };
+  }
+  if ((dVen ?? 0) + (pVen ?? 0) > input.revenue) {
+    return { ok: false, error: "Delivery + personal no pueden superar la venta total del día." };
+  }
   try {
     // ¿Cambian los números firmados de un día ya existente?
     const prev = (await sql`
@@ -390,18 +414,19 @@ export async function saveDailyEntry(input: {
         Math.round((prev[0].revenue ?? 0) * 100) !== Math.round(input.revenue * 100));
 
     await sql`
-      INSERT INTO upselling_daily (business_id, date, personas, revenue, items, delivery_pedidos, delivery_venta, source, updated_at)
-      VALUES (${bId}, ${input.date}, ${input.personas}, ${input.revenue}, ${input.items}, ${dPed}, ${dVen}, 'manual', NOW())
+      INSERT INTO upselling_daily (business_id, date, personas, revenue, items, delivery_pedidos, delivery_venta, personal_pedidos, personal_venta, source, updated_at)
+      VALUES (${bId}, ${input.date}, ${input.personas}, ${input.revenue}, ${input.items}, ${dPed}, ${dVen}, ${pPed}, ${pVen}, 'manual', NOW())
       ON CONFLICT (business_id, date) DO UPDATE
         SET personas = EXCLUDED.personas, revenue = EXCLUDED.revenue,
             items = EXCLUDED.items,
             delivery_pedidos = EXCLUDED.delivery_pedidos, delivery_venta = EXCLUDED.delivery_venta,
+            personal_pedidos = EXCLUDED.personal_pedidos, personal_venta = EXCLUDED.personal_venta,
             source = 'manual', updated_at = NOW()
     `.then(undefined, async (err: unknown) => {
-      // Columnas delivery pendientes de migración: si el admin NO tecleó
-      // delivery, guarda el resto (nada se pierde); si SÍ lo tecleó,
+      // Columnas nuevas pendientes de migración: si el admin NO tecleó
+      // esos datos, guarda el resto (nada se pierde); si SÍ los tecleó,
       // avisar es mejor que botar su dato en silencio.
-      if (dPed !== null || dVen !== null) throw err;
+      if (dPed !== null || dVen !== null || pPed !== null || pVen !== null) throw err;
       await sql`
         INSERT INTO upselling_daily (business_id, date, personas, revenue, items, source, updated_at)
         VALUES (${bId}, ${input.date}, ${input.personas}, ${input.revenue}, ${input.items}, 'manual', NOW())

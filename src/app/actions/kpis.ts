@@ -226,12 +226,13 @@ async function loadDeckIncentives(bId: number, month: string): Promise<DeckIncen
     `) as { name: string; jornada: StaffMember["jornada"]; area: string }[];
     const [y, m] = month.split("-").map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
-    type DeckDaily = { date: string; personas: number | null; revenue: number | null; items: number | null; deliveryPedidos?: number | null; deliveryVenta?: number | null };
+    type DeckDaily = { date: string; personas: number | null; revenue: number | null; items: number | null; deliveryPedidos?: number | null; deliveryVenta?: number | null; personalPedidos?: number | null; personalVenta?: number | null };
     let dailies: DeckDaily[];
     try {
       dailies = (await sql`
         SELECT date::text, personas, revenue::float AS revenue, items,
-               delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta"
+               delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta",
+               personal_pedidos AS "personalPedidos", personal_venta::float AS "personalVenta"
         FROM upselling_daily
         WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${`${month}-${String(daysInMonth).padStart(2, "0")}`}
         ORDER BY date

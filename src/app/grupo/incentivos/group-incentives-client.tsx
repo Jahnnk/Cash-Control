@@ -209,7 +209,7 @@ function SedeCard({ s, isRange }: { s: SedeIncentives; isRange: boolean }) {
         <>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <div className="text-[11px] uppercase text-gray-500">Ticket sin delivery</div>
+              <div className="text-[11px] uppercase text-gray-500">Ticket del programa</div>
               <div className="text-2xl font-black text-gray-900">{formatCurrency(p.ticketActual)}</div>
               <div className="text-[11px] text-gray-500">
                 Base {formatCurrency(s.ticketBase ?? 0)}
