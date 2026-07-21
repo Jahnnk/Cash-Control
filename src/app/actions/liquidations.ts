@@ -45,12 +45,13 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   const monthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
   // El acta usa el MISMO ticket que el panel: delivery excluido
   // (fallback si las columnas aún no migran).
-  type LiqDaily = { date: string; personas: number | null; revenue: number | null; items: number | null; deliveryPedidos?: number | null; deliveryVenta?: number | null };
+  type LiqDaily = { date: string; personas: number | null; revenue: number | null; items: number | null; deliveryPedidos?: number | null; deliveryVenta?: number | null; personalPedidos?: number | null; personalVenta?: number | null };
   let dailies: LiqDaily[];
   try {
     dailies = (await sql`
       SELECT date::text, personas, revenue::float AS revenue, items,
-             delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta"
+             delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta",
+               personal_pedidos AS "personalPedidos", personal_venta::float AS "personalVenta"
       FROM upselling_daily WHERE business_id = ${bId} AND date BETWEEN ${month + "-01"} AND ${monthEnd}
       ORDER BY date
     `) as LiqDaily[];

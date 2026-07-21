@@ -132,7 +132,8 @@ export async function getGroupIncentives(
         try {
           dailies = (await sql`
             SELECT date::text, personas, revenue::float AS revenue, items,
-                   delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta"
+                   delivery_pedidos AS "deliveryPedidos", delivery_venta::float AS "deliveryVenta",
+                   personal_pedidos AS "personalPedidos", personal_venta::float AS "personalVenta"
             FROM upselling_daily
             WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to}
             ORDER BY date

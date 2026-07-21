@@ -77,6 +77,8 @@ function IncentivosPage() {
   const [tiempoDelivery, setTiempoDelivery] = useState(""); // delivery
   const [delivPedidos, setDelivPedidos] = useState("");
   const [delivVenta, setDelivVenta] = useState("");
+  const [persPedidos, setPersPedidos] = useState("");
+  const [persVenta, setPersVenta] = useState("");
   const [saving, setSaving] = useState(false);
   const [weekRefresh, setWeekRefresh] = useState(0);
   const [showMermaDetail, setShowMermaDetail] = useState(false);
@@ -118,7 +120,7 @@ function IncentivosPage() {
   }, [fecha, dayRecord?.tiempoMin, dayRecord?.tiempoMesaMin, dayRecord?.tiempoDeliveryMin, editingDate]);
 
   function clearForm() {
-    setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo(""); setTiempoMesa(""); setTiempoDelivery(""); setDelivPedidos(""); setDelivVenta("");
+    setPersonas(""); setVenta(""); setItems(""); setNps(""); setMermas(""); setTiempo(""); setTiempoMesa(""); setTiempoDelivery(""); setDelivPedidos(""); setDelivVenta(""); setPersPedidos(""); setPersVenta("");
     setEditingDate(null);
     setFecha(todayLima());
   }
@@ -136,6 +138,8 @@ function IncentivosPage() {
     setTiempoDelivery(d.tiempoDeliveryMin !== null ? String(d.tiempoDeliveryMin) : "");
     setDelivPedidos(d.deliveryPedidos !== null ? String(d.deliveryPedidos) : "");
     setDelivVenta(d.deliveryVenta !== null ? String(d.deliveryVenta) : "");
+    setPersPedidos(d.personalPedidos !== null ? String(d.personalPedidos) : "");
+    setPersVenta(d.personalVenta !== null ? String(d.personalVenta) : "");
     setEditingDate(d.date);
   }
 
@@ -148,6 +152,8 @@ function IncentivosPage() {
       items: items.trim() === "" ? null : Number(items),
       deliveryPedidos: delivPedidos.trim() === "" ? null : Number(delivPedidos),
       deliveryVenta: delivVenta.trim() === "" ? null : Number(delivVenta),
+      personalPedidos: persPedidos.trim() === "" ? null : Number(persPedidos),
+      personalVenta: persVenta.trim() === "" ? null : Number(persVenta),
     });
     if (!r.ok) { setSaving(false); showToast(r.error, "error"); return; }
     // KPIs del mismo día (NPS, mermas, tiempos) — si se llenó alguno o se edita.
@@ -245,7 +251,7 @@ function IncentivosPage() {
           {/* 1 · Avance del ticket */}
           <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
             <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500">Ticket promedio sin delivery ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
+              <div className="text-[11px] uppercase text-gray-500">Ticket promedio del programa ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
               <div className="text-2xl font-black text-gray-900">
                 {p.ticketActual !== null ? formatCurrency(p.ticketActual) : "—"}
               </div>
@@ -256,10 +262,15 @@ function IncentivosPage() {
                     ({p.deltaActual >= 0 ? "+" : ""}{formatCurrency(p.deltaActual)})
                   </span>
                 )}
-                <span className="block text-gray-400">Mostrador + mesa — los dos mueven el bono</span>
+                <span className="block text-gray-400">Clientes de mostrador + mesa — los dos mueven el bono</span>
                 {p.delivery && (
                   <span className="block text-gray-400">
-                    🛵 Delivery aparte: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (lo único que no cuenta)
+                    🛵 Delivery aparte: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (no cuenta)
+                  </span>
+                )}
+                {p.personal && (
+                  <span className="block text-gray-400">
+                    👥 Personal aparte: {formatCurrency(p.personal.ticket ?? 0)} × {p.personal.pedidos} compras (no cuenta)
                   </span>
                 )}
               </div>
@@ -460,11 +471,22 @@ function IncentivosPage() {
                   <input type="number" min="0" step="0.01" value={delivVenta} onChange={(e) => setDelivVenta(e.target.value)}
                     placeholder="ej. 96.00" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
                 </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">Pedidos personal (20% dscto)</label>
+                  <input type="number" min="0" value={persPedidos} onChange={(e) => setPersPedidos(e.target.value)}
+                    placeholder="ej. 3" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
+                <div>
+                  <label className="block text-[11px] text-gray-500 mb-1">Venta personal S/ (de la venta total)</label>
+                  <input type="number" min="0" step="0.01" value={persVenta} onChange={(e) => setPersVenta(e.target.value)}
+                    placeholder="ej. 24.00" className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
+                </div>
               </div>
               <div className="text-[11px] text-gray-400 mb-2">
-                🛵 Delivery va DENTRO de personas y venta del día; regístralo aparte para que
-                <strong> no cuente en el ticket del programa</strong> (en un pedido de app nadie puede sugerir extras).
-                Mostrador y mesa <strong>sí cuentan</strong> — no se separan.
+                🛵 Delivery y 👥 consumo del personal van DENTRO de personas y venta del día;
+                regístralos aparte para que <strong>no cuenten en el ticket del programa</strong> (a un
+                pedido de app o a un compañero con su 20% nadie les hace upselling).
+                Mostrador y mesa de clientes <strong>sí cuentan</strong> — no se separan.
               </div>
               {dayRecord && (dayRecord.tiempoMin != null || dayRecord.tiempoMesaMin != null) ? (
                 <div className="text-[11px] text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-lg px-2.5 py-1.5 mb-2">
