@@ -60,6 +60,24 @@ export async function importProductSales(input: ImportInput): Promise<ProductSal
 }
 
 /**
+ * Import desde Grupo → Productos con sede EXPLÍCITA (solo dirección).
+ * Lección /grupo: la cookie de sede ahí dice "grupo" — activeBusinessId()
+ * no sirve y la sede viaja validada como parámetro.
+ */
+export async function importProductSalesForSede(
+  sede: number,
+  input: ImportInput,
+): Promise<ProductSalesImportResult> {
+  if (!(await requireFullSession())) {
+    return { ok: false, error: "El import de Productos es solo para la dirección." };
+  }
+  if (sede !== 1 && sede !== 2 && sede !== 3) {
+    return { ok: false, error: "Sede inválida." };
+  }
+  return runImport(sede, input, `PIC · ventas por producto (Byte rotación, desde Grupo) · ${input.month}`);
+}
+
+/**
  * Import semanal desde el Panel de Sede (admin o dirección). Alimenta la
  * MISMA tabla canónica, con dos candados que protegen la historia:
  * - SOLO el mes en curso (el admin no puede pisar un mes cerrado).

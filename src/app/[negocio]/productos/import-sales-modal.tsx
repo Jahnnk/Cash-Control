@@ -7,6 +7,7 @@ import { useToast } from "@/components/toast-provider";
 import { parseByteRotacion, type ByteRotacionResult } from "@/lib/byte-rotacion-parser";
 import {
   importProductSales,
+  importProductSalesForSede,
   type ProductSalesImportResult,
 } from "@/app/actions/product-sales-import";
 
@@ -18,9 +19,14 @@ import {
 export function ImportSalesModal({
   onClose,
   onImported,
+  sede,
 }: {
   onClose: () => void;
   onImported: () => void;
+  /** Desde Grupo → Productos: sede explícita del import (la cookie ahí
+   * dice "grupo"). Sin ella, el import va a la sede activa (comportamiento
+   * original de la página Productos de cada sede). */
+  sede?: { id: number; name: string };
 }) {
   const { showToast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -61,13 +67,14 @@ export function ImportSalesModal({
     if (!parsed || !parsed.month) return;
     setSaving(true);
     setSaveError(null);
-    const r = await importProductSales({
+    const input = {
       month: parsed.month,
       fileName,
       items: parsed.items,
       declaredTotal: parsed.declaredTotal,
       parseWarnings: parsed.warnings,
-    });
+    };
+    const r = sede ? await importProductSalesForSede(sede.id, input) : await importProductSales(input);
     setSaving(false);
     if (!r.ok) {
       setSaveError(r.error);
@@ -91,7 +98,7 @@ export function ImportSalesModal({
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
             <FileSpreadsheet className="w-5 h-5 text-primary" />
-            Importar ventas por producto (Byte)
+            Importar ventas por producto (Byte){sede ? ` — ${sede.name}` : ""}
           </h2>
           <button onClick={onClose} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100" aria-label="Cerrar">
             <X className="w-4 h-4" />
