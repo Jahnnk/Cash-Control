@@ -11,6 +11,8 @@ import { BreakevenBody } from "@/components/breakeven-card";
 import { GroupKpisSection } from "./group-kpis-section";
 import { DataFreshnessCard } from "./data-freshness-card";
 import { KellyImportCard } from "./kelly-import-card";
+import { VentasSedesSection } from "./ventas-sedes-section";
+import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { DataFreshness } from "@/app/actions/grupo";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 
@@ -26,11 +28,12 @@ type Props = {
   };
   breakeven: GroupBreakeven | null;
   freshness: DataFreshness[];
+  ventas: GroupVentasSede[] | null;
 };
 
 const SEDE_CODE: Record<number, ScopeCode> = { 1: "atelier", 2: "fonavi", 3: "centro" };
 
-export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness }: Props) {
+export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, ventas }: Props) {
   return (
     <div className="space-y-6">
       <div>
@@ -103,6 +106,8 @@ export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries,
       </div>
 
       {/* ¿Hasta cuándo hay datos por sede? — qué pedirle a Kelly */}
+      {ventas && <VentasSedesSection sedes={ventas} />}
+
       <DataFreshnessCard items={freshness} />
 
       {/* ...y cuando Kelly manda los Excel, se suben AQUÍ mismo, sin

@@ -10,6 +10,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
+import { requireFullSession } from "@/lib/session-access";
 import { compilePortfolioStory } from "@/lib/portfolio/story-compiler";
 import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
 import { normalizeProductName } from "@/lib/product-matching";
@@ -135,6 +136,36 @@ export async function getPortfolioStory(month: string): Promise<
   | { ok: false; error: string }
 > {
   const bId = await activeBusinessId();
+  return storyFor(bId, month);
+}
+
+/**
+ * Mismo análisis con sede EXPLÍCITA, para Grupo → Productos (solo
+ * dirección). Lección /grupo: nada de activeBusinessId() ahí.
+ */
+export async function getPortfolioStoryForSede(
+  sede: number,
+  month: string,
+): Promise<
+  | { ok: true; story: PortfolioStory }
+  | { ok: false; error: string }
+> {
+  if (!(await requireFullSession())) {
+    return { ok: false, error: "Solo para la dirección." };
+  }
+  if (sede !== 1 && sede !== 2 && sede !== 3) {
+    return { ok: false, error: "Sede inválida." };
+  }
+  return storyFor(sede, month);
+}
+
+async function storyFor(
+  bId: number,
+  month: string,
+): Promise<
+  | { ok: true; story: PortfolioStory }
+  | { ok: false; error: string }
+> {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
     return { ok: false, error: "Mes inválido." };
   }
