@@ -29,6 +29,7 @@ import {
 } from "@/lib/kpis/engine";
 import { computeProgress, type IncentiveConfigT, type StaffMember } from "@/lib/incentives/engine";
 import { compareVentasSede, type VentasSedeComparison } from "@/lib/kpis/ventas-deck";
+import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -379,29 +380,14 @@ export async function getBoardDeckData(weekStart: string, rangeEnd?: string): Pr
       // La ventana "anterior" de un rango personalizado puede empezar
       // antes que el mes pasado — leer desde lo más temprano de ambos.
       const from = ps < readFrom ? ps : readFrom;
-      const vrows = (await sql`
-        SELECT business_id, date::text, total::float AS total
-        FROM byte_ventas_daily
-        WHERE date BETWEEN ${from} AND ${we}
-      `) as { business_id: number; date: string; total: number }[];
-      // Respaldo: si una sede NO subió su reporte de Ventas Byte pero SÍ
-      // tiene registro diario en el panel (caso Fonavi jul-2026 — la
-      // lámina salía vacía teniendo 14 días de venta registrados),
-      // usamos ese registro. El reporte oficial manda; el registro
-      // rellena. Se marca la fuente para avisar en el modal.
-      const dailyRows = (await sql`
-        SELECT business_id, date::text, revenue::float AS total
-        FROM upselling_daily
-        WHERE business_id IN (2, 3) AND revenue > 0 AND date BETWEEN ${from} AND ${we}
-      `) as { business_id: number; date: string; total: number }[];
-      ventas = [1, 2, 3].map((bId) => {
-        const byte = vrows.filter((r) => r.business_id === bId).map((r) => ({ date: r.date, total: r.total }));
-        if (byte.length > 0) {
-          return compareVentasSede(SEDE_NAMES[bId] ?? `Sede ${bId}`, byte, ws, we, "byte");
-        }
-        const daily = dailyRows.filter((r) => r.business_id === bId).map((r) => ({ date: r.date, total: r.total }));
-        return compareVentasSede(SEDE_NAMES[bId] ?? `Sede ${bId}`, daily, ws, we, "registro");
-      });
+      // Cargador ÚNICO de venta diaria (fuentes combinadas por día, el
+      // oficial manda) — el mismo del dashboard de Grupo: dos lectores
+      // con cadenas distintas = dos verdades, y ya nos pasó (jul-2026).
+      ventas = [];
+      for (const bId of [1, 2, 3]) {
+        const { rows, fuente } = await loadVentaRowsBlended(sql, bId, from, we);
+        ventas.push(compareVentasSede(SEDE_NAMES[bId] ?? `Sede ${bId}`, rows, ws, we, fuente ?? "byte"));
+      }
       if (ventas.every((v) => v.hasta === null)) ventas = null; // nadie tiene nada aún
     } catch {
       // tabla byte_ventas_daily pendiente de migración — el deck lo omite

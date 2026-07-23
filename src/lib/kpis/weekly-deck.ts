@@ -196,19 +196,23 @@ function ventasSlide(pptx: PptxGenJS, sub: string, ventas: NonNullable<BoardDeck
     s.addText("VENTA DEL PERIODO", { x: x + 0.2, y: BODY_Y + 0.55, w: colW - 0.4, h: 0.24, fontSize: 8, color: GRAY });
     s.addText(fmtS(v.rango), { x: x + 0.2, y: BODY_Y + 0.78, w: colW - 0.4, h: 0.4, fontSize: 17, bold: true, color: INK });
     const dr = deltaText(v.deltaRangoPct);
-    s.addText(`${dr.text} vs periodo anterior${v.rangoPrev !== null ? ` (${fmtS(v.rangoPrev)})` : ""}`, {
+    const drDias = v.rangoPrevDias > 0 && v.rangoPrevDias !== v.rangoDias ? ` · ant. con ${v.rangoPrevDias}/${v.rangoDias} días` : "";
+    s.addText(`${dr.text} vs periodo anterior${v.rangoPrev !== null ? ` (${fmtS(v.rangoPrev)})` : ""}${drDias}`, {
       x: x + 0.2, y: BODY_Y + 1.2, w: colW - 0.4, h: 0.26, fontSize: 9, bold: true, color: dr.color,
     });
     // Acumulado del mes vs mes pasado (mismos días)
     s.addText("ACUMULADO DEL MES", { x: x + 0.2, y: BODY_Y + 1.66, w: colW - 0.4, h: 0.24, fontSize: 8, color: GRAY });
     s.addText(fmtS(v.mes), { x: x + 0.2, y: BODY_Y + 1.89, w: colW - 0.4, h: 0.4, fontSize: 17, bold: true, color: INK });
     const dm = deltaText(v.deltaMesPct);
-    s.addText(`${dm.text} vs mes pasado a mismos días${v.mesPrev !== null ? ` (${fmtS(v.mesPrev)})` : ""}`, {
+    const dmDias = v.mesPrevDias > 0 && v.mesPrevDias !== v.mesDias ? ` · ant. con ${v.mesPrevDias}/${v.mesDias} días` : "";
+    s.addText(`${dm.text} vs mes pasado a mismos días${v.mesPrev !== null ? ` (${fmtS(v.mesPrev)})` : ""}${dmDias}`, {
       x: x + 0.2, y: BODY_Y + 2.31, w: colW - 0.4, h: 0.42, fontSize: 9, bold: true, color: dm.color,
     });
     // Frescura + fuente: distinguir el reporte oficial del respaldo.
     const fresh = v.hasta < weekEnd;
-    const fuenteTxt = v.fuente === "registro" ? " · del registro diario (falta el reporte de Byte)" : "";
+    const fuenteTxt = v.fuente === "registro"
+      ? " · del registro diario (falta el reporte de Byte)"
+      : v.fuente === "mixta" ? " · fuentes combinadas (Byte + registro)" : "";
     s.addText(`Datos hasta el ${dayShort(v.hasta)}${fresh ? " ⚠ falta subir el reporte" : ""}${fuenteTxt}`, {
       x: x + 0.2, y: BODY_Y + 2.9, w: colW - 0.4, h: 0.4, fontSize: 8, italic: true, color: fresh || v.fuente === "registro" ? "B45309" : GRAY,
     });
