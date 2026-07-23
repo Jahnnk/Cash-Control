@@ -70,6 +70,57 @@ export async function getDataFreshness(): Promise<DataFreshness[]> {
   });
 }
 
+export type KellyLoadStatus = {
+  businessId: number;
+  name: string;
+  /** Última carga de Excel completada (fecha de subida, Lima) o null. */
+  lastImportAt: string | null;
+  /** Hasta qué fecha cubren los datos cargados (fin del rango del batch). */
+  coversThrough: string | null;
+  /** Días desde la última carga; null = nunca ha cargado. */
+  daysSinceImport: number | null;
+  /** Semáforo del acuerdo semanal (viernes): verde ≤7d, ámbar 8-14, rojo >14 o nunca. */
+  level: "verde" | "ambar" | "rojo";
+};
+
+/**
+ * Semáforo de cargas del Excel de Kelly por sede (transición ago-2026:
+ * ella lleva las finanzas de las 3 sedes y sube los viernes; Jahnn
+ * verifica desde aquí). Regla auditable: verde ≤7 días desde la última
+ * carga completada, ámbar 8-14, rojo >14 o nunca.
+ */
+export async function getKellyLoadStatus(): Promise<KellyLoadStatus[]> {
+  const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const rows = await db.execute(sql`
+    SELECT b.id, b.name,
+      (SELECT MAX(ib.imported_at AT TIME ZONE 'America/Lima')::date::text
+         FROM import_batches ib
+        WHERE ib.business_id = b.id AND ib.status = 'completed') AS last_import,
+      -- "Cubre hasta" = último DÍA CON DATOS reales del Excel
+      -- (byte_sales_daily), no el fin del rango de la pestaña — una
+      -- pestaña "Julio" dice 31/07 aunque los datos lleguen al 22.
+      COALESCE(
+        (SELECT MAX(bs.date)::text FROM byte_sales_daily bs
+          WHERE bs.business_id = b.id AND COALESCE(bs.total, 0) > 0),
+        (SELECT MAX(ib.date_range_end)::text FROM import_batches ib
+          WHERE ib.business_id = b.id AND ib.status = 'completed')
+      ) AS covers
+    FROM businesses b
+    WHERE b.active = true
+    ORDER BY b.id
+  `);
+  return (rows.rows as { id: number; name: string; last_import: string | null; covers: string | null }[]).map((r) => {
+    let days: number | null = null;
+    if (r.last_import) {
+      const a = new Date(r.last_import + "T00:00:00Z").getTime();
+      const b = new Date(today + "T00:00:00Z").getTime();
+      days = Math.max(0, Math.round((b - a) / 86400000));
+    }
+    const level = days === null ? "rojo" : days <= 7 ? "verde" : days <= 14 ? "ambar" : "rojo";
+    return { businessId: r.id, name: r.name, lastImportAt: r.last_import, coversThrough: r.covers, daysSinceImport: days, level };
+  });
+}
+
 export async function getGroupDashboard(monthInput?: string) {
   const today = new Date().toISOString().slice(0, 10);
   const currentMonth = today.substring(0, 7);
