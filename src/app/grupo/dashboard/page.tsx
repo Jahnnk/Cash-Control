@@ -1,4 +1,4 @@
-import { getGroupDashboard, getDataFreshness } from "@/app/actions/grupo";
+import { getGroupDashboard, getDataFreshness, getKellyLoadStatus } from "@/app/actions/grupo";
 import { getGroupVentasComparison } from "@/app/actions/group-ventas";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
 import { GrupoDashboardClient } from "./grupo-dashboard-client";
@@ -7,10 +7,11 @@ export const dynamic = "force-dynamic";
 
 export default async function GrupoDashboardPage() {
   const data = await getGroupDashboard();
-  const [be, freshness, ventas] = await Promise.all([
+  const [be, freshness, ventas, kellyLoads] = await Promise.all([
     getGroupBreakeven(data.selectedMonth),
     getDataFreshness(),
     getGroupVentasComparison(),
+    getKellyLoadStatus(),
   ]);
   return (
     <GrupoDashboardClient
@@ -21,6 +22,7 @@ export default async function GrupoDashboardPage() {
       breakeven={be.ok ? be.data : null}
       freshness={freshness}
       ventas={ventas.ok ? ventas.sedes : null}
+      kellyLoads={kellyLoads}
     />
   );
 }

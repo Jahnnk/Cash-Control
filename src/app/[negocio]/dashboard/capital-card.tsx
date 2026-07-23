@@ -35,9 +35,16 @@ export function CapitalCard() {
       <div className="bg-white rounded-xl border border-gray-200 p-4">
         <div className="grid gap-4" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))" }}>
           <div>
-            <div className="text-[11px] uppercase text-gray-500">Puesto por ti</div>
+            <div className="text-[11px] uppercase text-gray-500">Aporte de capital reconocido</div>
             <div className="text-xl font-black text-gray-900">{formatCurrency(data.totalTuyo)}</div>
             <div className="text-[11px] text-gray-500">Aportes + préstamos + financiamiento</div>
+            {/* Acuerdo de socios jul-2026: TODO lo puesto por Jahnn se
+                reconoce como aporte de capital (aumenta su participación).
+                Es un acuerdo de acta — los saldos internos (préstamos,
+                devoluciones, cuadre) NO cambian por esto. */}
+            <div className="text-[11px] text-primary font-medium mt-0.5">
+              ✓ Reconocido como aporte de capital en acta de socios (jul-2026)
+            </div>
           </div>
           <div>
             <div className="text-[11px] uppercase text-gray-500">Aportes (no se devuelven)</div>
