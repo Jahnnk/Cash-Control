@@ -46,20 +46,11 @@ export function CapitalCard() {
               ✓ Reconocido como aporte de capital en acta de socios (jul-2026)
             </div>
           </div>
-          <div>
-            <div className="text-[11px] uppercase text-gray-500">Aportes (no se devuelven)</div>
-            <div className="text-lg font-bold text-gray-900">{formatCurrency(data.aportes.total)}</div>
-          </div>
-          <div>
-            <div className="text-[11px] uppercase text-gray-500">Préstamos socio</div>
-            <div className="text-lg font-bold text-gray-900">{formatCurrency(data.socio.prestado)}</div>
-            <div className="text-[11px] text-gray-500">
-              devuelto {formatCurrency(data.socio.devuelto)} · pendiente{" "}
-              <strong className={data.socio.pendiente > 0 ? "text-amber-700" : "text-emerald-600"}>
-                {formatCurrency(data.socio.pendiente)}
-              </strong>
-            </div>
-          </div>
+          {/* Aportes y Préstamos socio quedan FUERA del resumen superior
+              (pedido de Jahnn, jul-2026): con el acuerdo de socios, todo
+              se reconoce como aporte de capital y mostrar los subtotales
+              "no se devuelven" / "pendiente" confundía. El desglose sigue
+              vivo en "Ver detalle movimiento por movimiento". */}
           {data.ventaActivos.total > 0 && (
             <div>
               <div className="text-[11px] uppercase text-gray-500">Venta de activos</div>
