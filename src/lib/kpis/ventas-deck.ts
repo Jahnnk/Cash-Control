@@ -26,12 +26,19 @@ export type VentasSedeComparison = {
   /** Mes pasado a mismos días transcurridos; null si no hay datos. */
   mesPrev: number | null;
   deltaMesPct: number | null;
+  /** Días CON datos en cada ventana — la honestidad del comparativo:
+   * si una ventana está a medio cargar, el lector debe verlo. */
+  rangoDias: number;
+  rangoPrevDias: number;
+  mesDias: number;
+  mesPrevDias: number;
   /** Última fecha con datos — para saber si falta subir el reporte. */
   hasta: string | null;
-  /** De dónde salieron los números: 'byte' = reporte de Ventas oficial;
-   * 'registro' = registro diario del panel (respaldo cuando falta el
-   * reporte). null si no hubo datos por ninguna vía. */
-  fuente: "byte" | "registro" | null;
+  /** De dónde salieron los números: 'byte' = reportes de Byte (Ventas
+   * oficial o el Excel de Kelly); 'registro' = registro diario manual
+   * (respaldo); 'mixta' = días de ambas fuentes combinados (el oficial
+   * manda día por día). null si no hubo datos por ninguna vía. */
+  fuente: "byte" | "registro" | "mixta" | null;
 };
 
 function sum(rows: VentaRow[], from: string, to: string): { total: number; days: number } {
@@ -60,9 +67,19 @@ function sameDayPrevMonth(date: string): string {
   return `${py}-${String(pm).padStart(2, "0")}-${String(Math.min(d, lastDay)).padStart(2, "0")}`;
 }
 
-function pct(actual: number, prev: number | null): number | null {
-  if (prev === null || prev <= 0) return null;
-  return Math.round(((actual - prev) / prev) * 10000) / 100;
+/**
+ * Delta % sobre venta PROMEDIO POR DÍA con datos, no sobre totales:
+ * comparar una semana completa contra una semana a medio cargar con
+ * totales infla el % (incidente Atelier +205.9%, jul-2026 — la ventana
+ * anterior tenía 3 de 7 días). Con promedios, los días faltantes no
+ * mienten; los conteos de días quedan expuestos para el lector.
+ */
+function pctPorDia(actual: { total: number; days: number }, prev: { total: number; days: number }): number | null {
+  if (actual.days <= 0 || prev.days <= 0) return null;
+  const a = actual.total / actual.days;
+  const p = prev.total / prev.days;
+  if (p <= 0) return null;
+  return Math.round(((a - p) / p) * 10000) / 100;
 }
 
 export function compareVentasSede(
@@ -70,7 +87,7 @@ export function compareVentasSede(
   rows: VentaRow[],
   ws: string,
   we: string,
-  fuente: "byte" | "registro" = "byte",
+  fuente: "byte" | "registro" | "mixta" = "byte",
 ): VentasSedeComparison {
   const rangeDays = Math.round((new Date(we + "T12:00:00Z").getTime() - new Date(ws + "T12:00:00Z").getTime()) / 86400000) + 1;
   const ps = shiftDays(ws, -rangeDays);
@@ -90,10 +107,14 @@ export function compareVentasSede(
     sede,
     rango: rango.total,
     rangoPrev: rangoPrev.days > 0 ? rangoPrev.total : null,
-    deltaRangoPct: rangoPrev.days > 0 ? pct(rango.total, rangoPrev.total) : null,
+    deltaRangoPct: pctPorDia(rango, rangoPrev),
     mes: mes.total,
     mesPrev: mesPrev.days > 0 ? mesPrev.total : null,
-    deltaMesPct: mesPrev.days > 0 ? pct(mes.total, mesPrev.total) : null,
+    deltaMesPct: pctPorDia(mes, mesPrev),
+    rangoDias: rango.days,
+    rangoPrevDias: rangoPrev.days,
+    mesDias: mes.days,
+    mesPrevDias: mesPrev.days,
     hasta: withData.length > 0 ? withData[withData.length - 1] : null,
     fuente: withData.length > 0 ? fuente : null,
   };

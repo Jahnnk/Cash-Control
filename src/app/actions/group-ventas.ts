@@ -8,9 +8,8 @@
  * Reglas de la casa:
  *  - MISMO cerebro que la lámina de ventas del deck (compareVentasSede):
  *    el dashboard jamás puede contradecir la reunión de los viernes.
- *  - MISMA cadena de fuentes que el deck: reporte de Ventas Byte oficial
- *    (byte_ventas_daily) y, si falta, el registro diario como respaldo
- *    (upselling_daily en cafeterías; daily_records de Kelly en Atelier).
+ *  - MISMO cargador de venta diaria que el deck (loadVentaRowsBlended):
+ *    fuentes combinadas POR DÍA, el reporte oficial manda.
  *  - Sede EXPLÍCITA en todas las consultas (lección /grupo: la cookie
  *    aquí dice "grupo" — nada de activeBusinessId()).
  *  - "Al último reporte": la semana comparada es la ÚLTIMA con datos,
@@ -20,7 +19,8 @@
 
 import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
-import { compareVentasSede, type VentaRow, type VentasSedeComparison } from "@/lib/kpis/ventas-deck";
+import { compareVentasSede, type VentasSedeComparison } from "@/lib/kpis/ventas-deck";
+import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -31,40 +31,6 @@ const SEDES: [number, string][] = [
   [2, "Fonavi"],
   [3, "Centro"],
 ];
-
-/** Filas de venta diaria de una sede con la cadena de fuentes del deck. */
-async function loadVentaRows(
-  bId: number,
-  from: string,
-): Promise<{ rows: VentaRow[]; fuente: "byte" | "registro" | null }> {
-  try {
-    const byte = (await sql`
-      SELECT date::text AS date, total::float AS total
-      FROM byte_ventas_daily
-      WHERE business_id = ${bId} AND date >= ${from} AND total > 0
-      ORDER BY date
-    `) as VentaRow[];
-    if (byte.length > 0) return { rows: byte, fuente: "byte" };
-  } catch {
-    // tabla byte_ventas_daily pendiente de migración → respaldo
-  }
-  if (bId === 1) {
-    const reg = (await sql`
-      SELECT date::text AS date, byte_total::float AS total
-      FROM daily_records
-      WHERE business_id = 1 AND date >= ${from} AND archived = false AND COALESCE(byte_total, 0) > 0
-      ORDER BY date
-    `) as VentaRow[];
-    return { rows: reg, fuente: reg.length > 0 ? "registro" : null };
-  }
-  const reg = (await sql`
-    SELECT date::text AS date, revenue::float AS total
-    FROM upselling_daily
-    WHERE business_id = ${bId} AND date >= ${from} AND COALESCE(revenue, 0) > 0
-    ORDER BY date
-  `) as VentaRow[];
-  return { rows: reg, fuente: reg.length > 0 ? "registro" : null };
-}
 
 function shiftDays(date: string, days: number): string {
   const d = new Date(date + "T12:00:00Z");
@@ -87,13 +53,14 @@ export async function getGroupVentasComparison(): Promise<
 
     const sedes: GroupVentasSede[] = [];
     for (const [bId, nombre] of SEDES) {
-      const { rows, fuente } = await loadVentaRows(bId, from);
+      const { rows, fuente } = await loadVentaRowsBlended(sql, bId, from, today);
       if (rows.length === 0 || fuente === null) {
         sedes.push({
           businessId: bId,
           sede: nombre,
           rango: 0, rangoPrev: null, deltaRangoPct: null,
           mes: 0, mesPrev: null, deltaMesPct: null,
+          rangoDias: 0, rangoPrevDias: 0, mesDias: 0, mesPrevDias: 0,
           hasta: null, fuente: null,
         });
         continue;

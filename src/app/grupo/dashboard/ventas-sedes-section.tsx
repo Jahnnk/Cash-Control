@@ -66,6 +66,9 @@ export function VentasSedesSection({ sedes }: { sedes: GroupVentasSede[] }) {
                     <div className="text-right">
                       <Delta pct={s.deltaRangoPct} />
                       <div className="text-[10px] text-gray-400">vs semana anterior</div>
+                      {s.rangoPrevDias > 0 && s.rangoPrevDias !== s.rangoDias && (
+                        <div className="text-[10px] text-amber-600">anterior: {s.rangoPrevDias}/{s.rangoDias} días</div>
+                      )}
                     </div>
                   </div>
                   <div className="mt-2 flex items-baseline justify-between gap-2 border-t border-gray-100 pt-2">
@@ -76,10 +79,14 @@ export function VentasSedesSection({ sedes }: { sedes: GroupVentasSede[] }) {
                     <div className="text-right">
                       <Delta pct={s.deltaMesPct} />
                       <div className="text-[10px] text-gray-400">vs mes pasado, mismos días</div>
+                      {s.mesPrevDias > 0 && s.mesPrevDias !== s.mesDias && (
+                        <div className="text-[10px] text-amber-600">mes pasado: {s.mesPrevDias}/{s.mesDias} días</div>
+                      )}
                     </div>
                   </div>
                   <div className="mt-2 text-[10px] text-gray-400">
-                    Datos hasta el {ddmm(s.hasta)} · fuente: {s.fuente === "byte" ? "reporte Ventas Byte" : "registro diario"}
+                    Datos hasta el {ddmm(s.hasta)} · fuente: {s.fuente === "byte" ? "reportes Byte" : s.fuente === "mixta" ? "Byte + registro diario" : "registro diario"}
+                    <br />El % compara la venta promedio por día con datos.
                   </div>
                 </>
               )}
