@@ -89,6 +89,18 @@ export function CreateRecordModal({
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
+  // Guardar con Enter (pedido de Jahnn): al presionar Enter dentro de un
+  // campo de texto/número se guarda, igual que el botón. Solo actúa sobre
+  // inputs (no botones de método de pago ni selects) para no interferir.
+  function handleKeyDown(e: React.KeyboardEvent<HTMLDivElement>) {
+    if (e.key !== "Enter" || saving) return;
+    const el = e.target as HTMLElement;
+    if (el.tagName === "INPUT") {
+      e.preventDefault();
+      void handleSave();
+    }
+  }
+
   async function handleSave() {
     setError(null);
 
@@ -184,7 +196,7 @@ export function CreateRecordModal({
         </div>
 
         {/* Form */}
-        <div className="p-6 space-y-4">
+        <div className="p-6 space-y-4" onKeyDown={handleKeyDown}>
           {/* Fecha — siempre editable. Por defecto el día del bloque (o hoy),
               pero puedes cambiarlo a un día anterior. */}
           <div>
