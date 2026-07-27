@@ -37,7 +37,7 @@ const ENTRY_HINTS: Record<LoanEntry, string> = {
 type DirectItem = { category: string; concept: string; amount: string };
 const emptyItem = (): DirectItem => ({ category: "", concept: "", amount: "" });
 
-export function LoansClient({ summary }: { summary: LoansSummary }) {
+export function LoansClient({ summary, capitalReconocido }: { summary: LoansSummary; capitalReconocido: number | null }) {
   const { showToast } = useToast();
   const router = useRouter();
   const [mode, setMode] = useState<Mode>(null);
@@ -376,14 +376,24 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
           Jahnn (acuerdo de socios jul-2026: lo puesto se reconoce como
           aporte). Las devoluciones siguen visibles en el historial y el
           saldo pendiente se sigue calculando igual (prestado − devuelto). */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        {/* Orden: primero el total, luego el pendiente como PARTE de ese
-            total — Jahnn sumó ambas tarjetas creyendo que eran montos
-            separados (jul-2026). El subtítulo lo deja explícito. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        {/* Primero el total reconocido en acta (pedido de Jahnn: verlo
+            también aquí, no solo en el Dashboard). Luego el total
+            prestado y el pendiente como PARTE de ese total — Jahnn sumó
+            ambas tarjetas creyendo que eran montos separados (jul-2026);
+            el subtítulo lo deja explícito. */}
+        {capitalReconocido !== null && (
+          <KPICard
+            title="Aporte de capital reconocido"
+            value={formatCurrency(capitalReconocido)}
+            subtitle="Acta de socios jul-2026 · préstamos + aporte condonado + financiamiento (detalle en el Dashboard)"
+            variant="success"
+          />
+        )}
         <KPICard
           title="Total prestado"
           value={formatCurrency(summary.totalLoaned)}
-          subtitle="Suma de todo lo prestado"
+          subtitle="Suma de todo lo prestado (parte del aporte reconocido)"
         />
         <KPICard
           title="Saldo pendiente"
