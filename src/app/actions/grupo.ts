@@ -138,19 +138,33 @@ export async function getGroupDashboard(monthInput?: string) {
 
   const summaries: BusinessSummary[] = [];
   for (const b of businesses.rows as Array<{ id: number; code: string; name: string }>) {
-    // Saldo BCP — método híbrido por negocio
+    // Saldo BCP — método híbrido por negocio (MISMA lógica que
+    // getUnifiedBankBalance): último saldo real registrado o, si no
+    // hay, el saldo inicial del corte (Fonavi/Centro con reset). Sin
+    // este respaldo, al limpiar las anclas basura (auditoría 27-jul)
+    // el Grupo mostraba S/0.00 mientras la sede mostraba el saldo bien.
     const anchorRes = await db.execute(sql`
-      SELECT bank_balance_real, date FROM daily_records
+      SELECT bank_balance_real::text AS anchor, date::text AS date FROM daily_records
       WHERE business_id = ${b.id} AND bank_balance_real IS NOT NULL AND date <= ${today}
+        AND archived = false
       ORDER BY date DESC LIMIT 1
     `);
+    let anchorRow = anchorRes.rows[0] as { anchor: string; date: string } | undefined;
+    if (!anchorRow) {
+      const cfgRes = await db.execute(sql`
+        SELECT initial_bcp_balance::text AS anchor, initial_balance_date::text AS date
+        FROM businesses
+        WHERE id = ${b.id} AND system_start_date IS NOT NULL AND initial_balance_date IS NOT NULL
+      `);
+      anchorRow = cfgRes.rows[0] as { anchor: string; date: string } | undefined;
+    }
     let bankBalance = 0;
-    if (anchorRes.rows[0]) {
-      const anchor = parseFloat(anchorRes.rows[0].bank_balance_real as string);
-      const anchorDate = anchorRes.rows[0].date as string;
+    if (anchorRow) {
+      const anchor = parseFloat(anchorRow.anchor);
+      const anchorDate = anchorRow.date;
       const incRes = await db.execute(sql`
         SELECT COALESCE(SUM(amount), 0) AS t FROM bank_income_items
-        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
+        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false
       `);
       const expRes = await db.execute(sql`
         SELECT COALESCE(SUM(amount), 0) AS t FROM expenses
