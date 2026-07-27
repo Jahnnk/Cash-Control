@@ -377,16 +377,19 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
           aporte). Las devoluciones siguen visibles en el historial y el
           saldo pendiente se sigue calculando igual (prestado − devuelto). */}
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-        <KPICard
-          title="Saldo pendiente"
-          value={formatCurrency(summary.pendingBalance)}
-          subtitle="Lo que Atelier debe a Jahnn"
-          variant={summary.pendingBalance > 0 ? "warning" : "default"}
-        />
+        {/* Orden: primero el total, luego el pendiente como PARTE de ese
+            total — Jahnn sumó ambas tarjetas creyendo que eran montos
+            separados (jul-2026). El subtítulo lo deja explícito. */}
         <KPICard
           title="Total prestado"
           value={formatCurrency(summary.totalLoaned)}
           subtitle="Suma de todo lo prestado"
+        />
+        <KPICard
+          title="Saldo pendiente"
+          value={formatCurrency(summary.pendingBalance)}
+          subtitle="De lo prestado, aún sin devolver (parte del total, no se suma)"
+          variant={summary.pendingBalance > 0 ? "warning" : "default"}
         />
       </div>
 
