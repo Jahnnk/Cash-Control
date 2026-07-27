@@ -1,5 +1,6 @@
 import { notFound } from "next/navigation";
 import { getLoansSummary } from "@/app/actions/loans";
+import { getCapitalInjections } from "@/app/actions/capital";
 import { LoansClient } from "./loans-client";
 
 export const dynamic = "force-dynamic";
@@ -15,6 +16,9 @@ export default async function PrestamosSocioPage({
 }) {
   const { negocio } = await params;
   if (negocio !== "atelier") notFound();
-  const summary = await getLoansSummary();
-  return <LoansClient summary={summary} />;
+  const [summary, capital] = await Promise.all([getLoansSummary(), getCapitalInjections()]);
+  // Mismo cerebro que la tarjeta Capital del Dashboard (getCapitalInjections):
+  // el total reconocido en acta jamás puede diferir entre pantallas.
+  const capitalReconocido = capital.ok ? capital.data.totalTuyo : null;
+  return <LoansClient summary={summary} capitalReconocido={capitalReconocido} />;
 }
