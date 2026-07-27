@@ -215,6 +215,35 @@ export async function setUserActive(input: {
   }
 }
 
+/**
+ * Cambia el ROL de un usuario existente (transición jul/ago-2026: Luis
+ * pasa de Fonavi a Atelier sin perder su contraseña ni crear usuario
+ * nuevo). Efecto INSTANTÁNEO: el middleware y las actions releen el
+ * scope de app_users en cada request, así que su sesión abierta cambia
+ * de sede al momento — y pierde el acceso a la sede anterior sin
+ * esperar a que expire nada.
+ */
+export async function changeUserScope(input: {
+  id: number;
+  scope: string;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!Number.isInteger(input.id) || input.id <= 0) return { ok: false, error: "Usuario inválido." };
+  if (!isUserScope(input.scope)) return { ok: false, error: "Rol inválido." };
+  try {
+    const rows = (await sql`
+      UPDATE app_users SET scope = ${input.scope}, updated_at = NOW()
+      WHERE id = ${input.id} RETURNING id
+    `) as { id: number }[];
+    if (rows.length === 0) return { ok: false, error: "Ese usuario no existe." };
+    revalidatePath("/grupo/configuracion");
+    return { ok: true };
+  } catch (err) {
+    console.error("[changeUserScope] failed:", err);
+    return { ok: false, error: "No pude cambiar el rol." };
+  }
+}
+
 export async function renameUser(input: {
   id: number;
   nombre: string;
