@@ -372,8 +372,11 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
         </div>
       </div>
 
-      {/* Summary */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+      {/* Summary — "Total devuelto" se quitó del resumen a pedido de
+          Jahnn (acuerdo de socios jul-2026: lo puesto se reconoce como
+          aporte). Las devoluciones siguen visibles en el historial y el
+          saldo pendiente se sigue calculando igual (prestado − devuelto). */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         <KPICard
           title="Saldo pendiente"
           value={formatCurrency(summary.pendingBalance)}
@@ -383,12 +386,7 @@ export function LoansClient({ summary }: { summary: LoansSummary }) {
         <KPICard
           title="Total prestado"
           value={formatCurrency(summary.totalLoaned)}
-          subtitle="Suma histórica de aportes"
-        />
-        <KPICard
-          title="Total devuelto"
-          value={formatCurrency(summary.totalRefunded)}
-          subtitle="Devoluciones realizadas"
+          subtitle="Suma de todo lo prestado"
         />
       </div>
 
