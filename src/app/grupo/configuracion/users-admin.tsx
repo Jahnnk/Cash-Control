@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import {
-  listUsers, createUser, resetUserPassword, setUserActive, renameUser, importLegacyUser,
+  listUsers, createUser, resetUserPassword, setUserActive, renameUser, importLegacyUser, changeUserScope,
   type AppUser, type UsersOverview,
 } from "@/app/actions/users";
 import { USER_SCOPES, SCOPE_LABELS, type UserScope } from "@/lib/user-scopes";
@@ -52,6 +52,20 @@ export function UsersAdmin() {
     load();
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [load]);
+
+  async function handleChangeScope(u: AppUser, scope: string) {
+    if (scope === u.scope) return;
+    // Cambio de sede/rol: efecto INSTANTÁNEO sobre su sesión abierta
+    // (el middleware relee el rol en cada request). Confirmación simple
+    // porque le corta el acceso a su sede actual al momento.
+    if (!confirm(`¿Cambiar el rol de ${u.nombre} a "${SCOPE_LABELS[scope as AppUser["scope"]]}"?\nPierde el acceso a su sede actual AL INSTANTE y su contraseña no cambia.`)) return;
+    setBusyId(u.id);
+    const r = await changeUserScope({ id: u.id, scope });
+    setBusyId(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(`${u.nombre} ahora es ${SCOPE_LABELS[scope as AppUser["scope"]]}.`, "success");
+    load();
+  }
 
   async function handleToggleActive(u: AppUser) {
     if (u.active && !window.confirm(`¿Inhabilitar a ${u.nombre}? Pierde el acceso AL INSTANTE, aunque tenga la sesión abierta.`)) return;
@@ -170,7 +184,19 @@ export function UsersAdmin() {
                             <Pencil className="w-3 h-3 inline" />
                           </button>
                         </td>
-                        <td className="px-4 py-2.5 text-gray-600">{SCOPE_LABELS[u.scope]}</td>
+                        <td className="px-4 py-2.5 text-gray-600">
+                          <select
+                            value={u.scope}
+                            disabled={busyId === u.id}
+                            onChange={(e) => handleChangeScope(u, e.target.value)}
+                            className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white hover:border-gray-300 disabled:opacity-50"
+                            title="Cambiar el rol/sede — efecto inmediato, la contraseña no cambia"
+                          >
+                            {USER_SCOPES.map((sc) => (
+                              <option key={sc} value={sc}>{SCOPE_LABELS[sc]}</option>
+                            ))}
+                          </select>
+                        </td>
                         <td className="px-4 py-2.5 text-gray-500 text-xs">{fmtDate(u.lastLogin)}</td>
                         <td className="px-4 py-2.5 text-right whitespace-nowrap">
                           <button
