@@ -10,7 +10,10 @@
  *   Fila 6: subtotal "Total" (se ignora).
  *
  * 3 capas extraídas:
- *   1. byte_sales_daily: agregado Efectivo + Yape + POS (col G).
+ *   1. byte_sales_daily: Efectivo desde col E (QuipuPOS — la col G
+ *      sale 0 porque el efectivo se deposita al banco cada día;
+ *      auditoría Jahnn+Kelly 27-jul-2026), Yape + POS desde col G
+ *      (lado Cuentas, confirmado contra el banco).
  *   2. tips_pending: diferencias con nota "PROPINA" + todas las
  *      "Ventas al Crédito".
  *   3. rounding_alerts: diferencias != 0 sin "PROPINA" en la nota.
@@ -20,7 +23,7 @@ import * as XLSX from "xlsx";
 
 export type ByteSalesDaily = {
   date: string;            // YYYY-MM-DD
-  efectivo: number;        // lado Cuentas col G (lo que entró a caja/banco)
+  efectivo: number;        // lado QuipuPOS col E (col G = 0: se deposita)
   yape_plin: number;       // lado Cuentas col G
   pos: number;             // lado Cuentas col G
   total: number;           // computed = ef + yp + pos (sin crédito, lado Cuentas)
@@ -291,7 +294,10 @@ export function parseControlVtas(
     }
 
     if (conceptoCuentas === "Efectivo") {
-      if (montoCuentas > 0) ventaDia.efectivo = montoCuentas;
+      // Col E (QuipuPOS): la venta en efectivo REAL del día. La col G
+      // (Cuentas) da 0 porque ese efectivo se deposita al banco — usarla
+      // dejaba "Ventas Byte" del mes sin el efectivo (obs. #1, 27-jul).
+      if (montoQuipupos > 0) ventaDia.efectivo = montoQuipupos;
       // Diferencias en efectivo son raras; si hay y nota='PROPINA', la registramos
       if (diferencia !== 0 && esPropina) {
         propinas.push({
@@ -332,10 +338,11 @@ export function parseControlVtas(
         }
       }
     } else if (conceptoCuentas === "Ventas al Crédito" || conceptoCuentas === "Ventas al Credito") {
-      // Confirmado por usuario: TODAS son propinas
-      if (montoCuentas > 0) {
+      // Monto desde col E (QuipuPOS), no col G (obs. #2, 27-jul-2026):
+      // el crédito real del día es el que reporta el POS.
+      if (montoQuipupos > 0) {
         propinas.push({
-          date: fecha, amount: montoCuentas,
+          date: fecha, amount: montoQuipupos,
           source_concept: "Ventas al Crédito", note_text: nota, collaborator_name: null,
         });
       }

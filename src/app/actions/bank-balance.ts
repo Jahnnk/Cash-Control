@@ -211,17 +211,29 @@ export async function getCashBalance(): Promise<CashBalanceSnapshot> {
 
   // Saldo inicial post-reset (Fonavi/Centro). Atelier no tiene config inicial.
   const cfgRes = await db.execute(sql`
-    SELECT initial_cash_balance::float AS init FROM businesses WHERE id = ${bId}
+    SELECT initial_cash_balance::float AS init, initial_balance_date::text AS init_date,
+           system_start_date::text AS start
+    FROM businesses WHERE id = ${bId}
   `);
-  const initialCash = (cfgRes.rows[0] as { init: number } | undefined)?.init ?? 0;
+  const cfg = cfgRes.rows[0] as { init: number; init_date: string | null; start: string | null } | undefined;
+  const initialCash = cfg?.init ?? 0;
+  // Con reset (Fonavi/Centro): el inicial es un CORTE a una fecha — solo
+  // cuentan los movimientos POSTERIORES. Sin el corte se double-contaba
+  // la historia previa sobre el saldo de cierre (auditoría 27-jul-2026:
+  // caja Fonavi decía S/8,752.19 cuando lo real era S/455.06 — el
+  // inicial de julio + abril-junio otra vez). Atelier (sin reset)
+  // conserva el comportamiento de siempre: toda la historia.
+  const cutoff = cfg?.start && cfg?.init_date ? cfg.init_date : "0001-01-01";
 
   const incRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM bank_income_items
     WHERE business_id = ${bId} AND payment_method = 'efectivo' AND archived = false
+      AND date > ${cutoff}
   `);
   const expRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0) AS total FROM expenses
     WHERE business_id = ${bId} AND payment_method = 'efectivo' AND archived = false
+      AND date > ${cutoff}
   `);
 
   const income = parseFloat(incRes.rows[0].total as string);

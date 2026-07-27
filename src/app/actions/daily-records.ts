@@ -110,6 +110,18 @@ export async function recalcBankBalance(date: string, explicitBId?: number) {
   // que siempre: la sede activa de la URL/cookie.
   const bId = explicitBId ?? (await activeBusinessId());
 
+  // Sedes con RESET (Fonavi/Centro, system_start_date): su saldo BCP es
+  // SIEMPRE virtual (inicial del corte + flujo posterior, ver
+  // getUnifiedBankBalance) y bank_balance_real debe quedar reservado a
+  // LECTURAS REALES del banco. La cadena de abajo, pensada para Atelier
+  // (filas diarias densas), aquí arrancaba de 0 en filas sueltas y
+  // escribía "anclas" calculadas basura que el saldo luego tomaba como
+  // verdad (auditoría 27-jul-2026: Fonavi -4,458.20 vs 19,234.37 real).
+  const resetRes = await db.execute(sql`
+    SELECT system_start_date FROM businesses WHERE id = ${bId}
+  `);
+  const hasReset = !!(resetRes.rows[0] as { system_start_date: string | null } | undefined)?.system_start_date;
+
   // Refresca cache del día afectado. `bank_income` mantiene la semántica
   // histórica de "ingresos brutos del día" (banco + efectivo), que es lo
   // que dashboard/reportes/CxC consumen. La distinción banco vs efectivo
@@ -122,7 +134,7 @@ export async function recalcBankBalance(date: string, explicitBId?: number) {
   `);
 
   // Recalcula bank_balance_real en cadena desde `date` hasta MAX(date) del negocio
-  await db.execute(sql`
+  if (!hasReset) await db.execute(sql`
     WITH RECURSIVE chain AS (
       SELECT
         (${date}::date - INTERVAL '1 day')::date AS date,
