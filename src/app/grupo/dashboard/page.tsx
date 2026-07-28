@@ -1,5 +1,6 @@
 import { getGroupDashboard, getDataFreshness, getKellyLoadStatus } from "@/app/actions/grupo";
 import { getGroupVentasComparison } from "@/app/actions/group-ventas";
+import { listDataCutoffs } from "@/app/actions/data-cutoff";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
 import { GrupoDashboardClient } from "./grupo-dashboard-client";
 
@@ -13,6 +14,7 @@ export default async function GrupoDashboardPage() {
     getGroupVentasComparison(),
     getKellyLoadStatus(),
   ]);
+  const cutoffs = await listDataCutoffs();
   return (
     <GrupoDashboardClient
       selectedMonth={data.selectedMonth}
@@ -23,6 +25,7 @@ export default async function GrupoDashboardPage() {
       freshness={freshness}
       ventas={ventas.ok ? ventas.sedes : null}
       kellyLoads={kellyLoads}
+      cutoffs={cutoffs.ok ? cutoffs.sedes : null}
     />
   );
 }

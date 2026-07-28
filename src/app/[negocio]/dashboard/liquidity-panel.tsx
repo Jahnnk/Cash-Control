@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { useState } from "react";
+import { formatCutoff, cutoffIsStale } from "@/lib/data-cutoff";
 import { formatCurrency } from "@/lib/utils";
 import type { LiquidityPanelData } from "@/app/actions/liquidity-panel";
 import {
@@ -147,8 +148,12 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
 
   return (
     <section className="space-y-2">
+      {/* El encabezado dice hasta CUÁNDO son los datos, no "hoy": el
+          saldo mostrado es la foto del último Excel cargado (pedido de
+          Jahnn, 28-jul — el lunes 27 mostraba datos del 24 a las 6:30
+          p.m., con ventas posteriores ya ocurridas). */}
       <h2 className="text-xs font-semibold uppercase tracking-wide text-gray-400">
-        Liquidez · hoy
+        Liquidez · al {formatCutoff(data.cutoff)}
       </h2>
       <div className="grid gap-4 grid-cols-1 md:grid-cols-2 xl:grid-cols-4">
 
@@ -158,7 +163,7 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex items-center gap-2 text-sm text-gray-500">
-                <Wallet className="w-4 h-4" /> Liquidez disponible
+                <Wallet className="w-4 h-4" /> Liquidez disponible al {formatCutoff(data.cutoff)}
               </div>
               <div className="text-3xl font-extrabold text-gray-900 mt-1">
                 {formatCurrency(data.liquid)}
@@ -171,6 +176,12 @@ export function LiquidityPanel({ data, negocio }: { data: LiquidityPanelData; ne
                   <Coins className="w-3 h-3" /> Caja {formatCurrency(data.cash)}
                 </Link>
               </div>
+              {cutoffIsStale(data.cutoff, data.today) && (
+                <p className="text-[11px] text-amber-700 mt-1.5 leading-snug">
+                  Foto al {formatCutoff(data.cutoff)} — lo que entró o salió después
+                  {data.cutoff.inferred ? " aún no está registrado." : " aún no está registrado (incluido lo de ese mismo día tras el corte)."}
+                </p>
+              )}
             </div>
             <div className="w-36 shrink-0 hidden sm:block">
               <Sparkline points={data.series.map((p) => p.value)} positive={trendPositive} />
