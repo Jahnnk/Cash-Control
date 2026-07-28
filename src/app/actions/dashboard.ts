@@ -101,13 +101,27 @@ export async function getDashboardData(monthInput?: string) {
     const monthlyByteRes = await db.execute(sql`
       SELECT
         COALESCE(SUM(byte_total), 0) as month_byte_total,
-        COALESCE(SUM(bank_income), 0) as month_bank_income,
         COALESCE(SUM(byte_credit_day), 0) as month_credit_day,
         COALESCE(SUM(byte_credit_collected), 0) as month_credit_collected
       FROM daily_records
       WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND archived = false
     `);
     monthlyByte = monthlyByteRes.rows[0] as Record<string, unknown>;
+
+    // Ingresos del mes DESDE LA TABLA FUENTE (bank_income_items), no
+    // desde el cache daily_records.bank_income: ese cache solo existe
+    // en los días con fila de registro diario — denso en Atelier
+    // (registro manual diario) pero casi vacío en Fonavi/Centro (el
+    // Excel de Kelly no crea filas ahí) → la tarjeta "Ingresos" del
+    // mes mostraba S/3,238 en Fonavi y S/0 en Centro teniendo ~S/28k
+    // importados (reporte de Jahnn, 28-jul-2026). MISMOS filtros que
+    // el cache para que Atelier no cambie ni un centavo.
+    const monthIncomeRes = await db.execute(sql`
+      SELECT COALESCE(SUM(amount), 0) AS t FROM bank_income_items
+      WHERE business_id = ${bId} AND date >= ${startOfMonth} AND date <= ${monthEndDate}
+        AND is_special_loan = false AND is_internal_transfer = false AND archived = false
+    `);
+    monthlyByte.month_bank_income = monthIncomeRes.rows[0].t;
   }
 
   // Promedio diario y cobertura
