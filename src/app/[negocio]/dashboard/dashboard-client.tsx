@@ -14,6 +14,7 @@ import { CommandCenter } from "./command-center";
 import type { CommandCenterData } from "@/app/actions/command-center";
 import { LiquidityPanel } from "./liquidity-panel";
 import { BreakevenCard } from "@/components/breakeven-card";
+import { SalesComparisonSection } from "./sales-comparison-section";
 import { CapitalCard } from "./capital-card";
 import type { LiquidityPanelData } from "@/app/actions/liquidity-panel";
 import {
@@ -187,6 +188,11 @@ export function DashboardClient({
           activos — plata que entró pero NO es venta (se oculta sola si
           no hay nada; el fetch es de la propia tarjeta). */}
       <CapitalCard />
+
+      {/* Comparativo de ventas: semana vs semana y mes vs mes (mismos
+          días), con gráficas. Pedido de Jahnn 28-jul; se oculta sola si
+          la sede aún no tiene ventas comparables. */}
+      <SalesComparisonSection />
 
       {/* Bloque 2 — Flujo del mes */}
       <section className="space-y-2">

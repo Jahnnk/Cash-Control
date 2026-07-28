@@ -21,10 +21,16 @@ import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
 import { compareVentasSede, type VentasSedeComparison } from "@/lib/kpis/ventas-deck";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
+import { compareMonths, type MonthComparison } from "@/lib/kpis/month-compare";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-export type GroupVentasSede = VentasSedeComparison & { businessId: number };
+export type GroupVentasSede = VentasSedeComparison & {
+  businessId: number;
+  /** Comparativo del MES emparejado por día (única base honesta del
+   * "vs mes pasado, mismos días"). Ver nota en getGroupVentasComparison. */
+  mesCmp: MonthComparison | null;
+};
 
 const SEDES: [number, string][] = [
   [1, "Atelier"],
@@ -47,9 +53,9 @@ export async function getGroupVentasComparison(): Promise<
   }
   try {
     const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-    // 70 días cubren la ventana más larga que pide compareVentasSede
-    // (mes pasado a mismos días + la semana previa a la última semana).
-    const from = shiftDays(today, -70);
+    // 100 días cubren el mes anterior COMPLETO (para el emparejamiento
+    // día a día) más la semana previa a la última semana con datos.
+    const from = shiftDays(today, -100);
 
     const sedes: GroupVentasSede[] = [];
     for (const [bId, nombre] of SEDES) {
@@ -61,7 +67,7 @@ export async function getGroupVentasComparison(): Promise<
           rango: 0, rangoPrev: null, deltaRangoPct: null,
           mes: 0, mesPrev: null, deltaMesPct: null,
           rangoDias: 0, rangoPrevDias: 0, mesDias: 0, mesPrevDias: 0,
-          hasta: null, fuente: null,
+          hasta: null, fuente: null, mesCmp: null,
         });
         continue;
       }
@@ -69,7 +75,19 @@ export async function getGroupVentasComparison(): Promise<
       // última fecha con datos (no la semana calendario a medias).
       const hasta = rows[rows.length - 1].date;
       const ws = shiftDays(hasta, -6);
-      sedes.push({ businessId: bId, ...compareVentasSede(nombre, rows, ws, hasta, fuente) });
+      // El "vs mes pasado, MISMOS DÍAS" se calcula emparejando día con
+      // día (compareMonths), no con promedios diarios: en Centro, 26
+      // días de julio contra los 7 de junio cargados daban "+0.7%"
+      // cuando los mismos 7 días dan -12.8% (auditoría 28-jul-2026).
+      // Mismo motor que la alerta del dashboard de sede: una verdad.
+      const mesActual = rows.filter((r) => r.date.slice(0, 7) === hasta.slice(0, 7));
+      const [my, mm] = hasta.slice(0, 7).split("-").map(Number);
+      const py = mm === 1 ? my - 1 : my;
+      const pm = mm === 1 ? 12 : mm - 1;
+      const prevPrefix = `${py}-${String(pm).padStart(2, "0")}`;
+      const mesPrevio = rows.filter((r) => r.date.slice(0, 7) === prevPrefix);
+      const mesCmp = compareMonths(mesActual, mesPrevio);
+      sedes.push({ businessId: bId, ...compareVentasSede(nombre, rows, ws, hasta, fuente), mesCmp });
     }
     return { ok: true, sedes };
   } catch (err) {
