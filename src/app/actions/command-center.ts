@@ -20,6 +20,9 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { neon } from "@neondatabase/serverless";
+import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
+import { compareMonths } from "@/lib/kpis/month-compare";
 import { activeBusinessId } from "@/lib/active-business";
 import { getUnifiedBankBalance, getCashBalance } from "./bank-balance";
 import { getBudgetDashboard } from "./budgets";
@@ -92,6 +95,8 @@ export type CommandCenterData = CommandCenterIntel & {
   asOf: string;
 };
 
+const sqlNeon = neon(process.env.DATABASE_URL!);
+
 export async function getCommandCenter(): Promise<CommandCenterData> {
   const bId = await activeBusinessId();
   const today = todayLima();
@@ -125,6 +130,20 @@ export async function getCommandCenter(): Promise<CommandCenterData> {
     opExpensesInRange(bId, win0, win1),
   ]);
   const avgDailyExpense8w = Math.round((opWindow / 56) * 100) / 100;
+
+  // ── Comparativo mes vs mes EMPAREJADO (auditoría de Jahnn, 28-jul):
+  // comparar todo lo del mes actual contra el mes pasado "al mismo
+  // número de día" mentía cuando un lado tenía menos días CON DATOS
+  // (Fonavi: 24 días de julio vs 27 de junio → "-22.7%"; Centro: 24
+  // vs 7 → "+167.8%" inventado). Se emparejan solo los días presentes
+  // en AMBOS meses, con el MISMO cargador de ventas diarias que el
+  // deck y el dashboard de Grupo (una sola verdad).
+  const prevMonthEnd = `${prevY}-${String(prevM).padStart(2, "0")}-${String(prevMonthDays).padStart(2, "0")}`;
+  const [curRows, prevRows] = await Promise.all([
+    loadVentaRowsBlended(sqlNeon, bId, monthStart, today),
+    loadVentaRowsBlended(sqlNeon, bId, prevStart, prevMonthEnd),
+  ]);
+  const salesComparison = compareMonths(curRows.rows, prevRows.rows);
   const opPrev = await opExpensesInRange(bId, prevStart, prevCut);
 
   // ── CxC (solo Atelier tiene cuentas por cobrar a los locales) ──
@@ -249,6 +268,7 @@ export async function getCommandCenter(): Promise<CommandCenterData> {
     sales: {
       monthToDate: Math.round(salesMTD * 100) / 100,
       prevMonthSameCut: Math.round(salesPrev * 100) / 100,
+      comparison: salesComparison,
     },
     opExpenses: {
       monthToDate: Math.round(opMTD * 100) / 100,
