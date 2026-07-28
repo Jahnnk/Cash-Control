@@ -20,6 +20,7 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { activeBusinessId } from "@/lib/active-business";
+import { buildCutoff, type DataCutoff } from "@/lib/data-cutoff";
 import { getUnifiedBankBalance, getCashBalance } from "./bank-balance";
 import { getLatestBankRealCheck } from "./bank-real-checks";
 import { opExpensesInRange } from "./command-center";
@@ -49,6 +50,8 @@ function shiftDays(iso: string, days: number): string {
 
 export type LiquidityPanelData = {
   today: string;
+  /** Hasta qué momento los datos son completos (Excel de Kelly). */
+  cutoff: DataCutoff;
   bank: number;
   cash: number;
   liquid: number;
@@ -97,6 +100,25 @@ export async function getLiquidityPanel(): Promise<LiquidityPanelData> {
   const seriesStart = shiftDays(today, -(SERIES_DAYS - 1));
 
   const [bankSnap, cashSnap] = await Promise.all([getUnifiedBankBalance(), getCashBalance()]);
+
+  // ── Corte de datos: hasta cuándo los números son completos. Lo fija
+  // el import y se ajusta la hora en Grupo → Configuración; si la
+  // columna aún no existe (pre-migración), cae al último movimiento.
+  let storedCutoff: Date | null = null;
+  try {
+    const cutRes = await db.execute(sql`
+      SELECT data_cutoff_at FROM businesses WHERE id = ${bId}
+    `);
+    const raw = (cutRes.rows[0] as { data_cutoff_at: string | Date | null } | undefined)?.data_cutoff_at;
+    if (raw) storedCutoff = new Date(raw as string);
+  } catch { /* columna pendiente de migración */ }
+  const lastMovRes = await db.execute(sql`
+    SELECT GREATEST(
+      (SELECT MAX(date) FROM bank_income_items WHERE business_id = ${bId} AND archived = false),
+      (SELECT MAX(date) FROM expenses WHERE business_id = ${bId} AND archived = false)
+    )::text AS d
+  `);
+  const cutoff = buildCutoff(storedCutoff, (lastMovRes.rows[0] as { d: string | null } | undefined)?.d ?? null);
 
   // ── Serie del banco (forward-fill sobre bank_balance_real) ──
   const bankRows = (await db.execute(sql`
@@ -293,6 +315,7 @@ export async function getLiquidityPanel(): Promise<LiquidityPanelData> {
 
   return {
     today,
+    cutoff,
     bank: bankSnap.current,
     cash: cashSnap.current,
     liquid,

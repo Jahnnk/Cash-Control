@@ -13,6 +13,8 @@ import { DataFreshnessCard } from "./data-freshness-card";
 import { KellyImportCard } from "./kelly-import-card";
 import { VentasSedesSection } from "./ventas-sedes-section";
 import { KellyLoadCard } from "./kelly-load-card";
+import { formatCutoff } from "@/lib/data-cutoff";
+import type { SedeCutoff } from "@/app/actions/data-cutoff";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { DataFreshness, KellyLoadStatus } from "@/app/actions/grupo";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
@@ -31,11 +33,12 @@ type Props = {
   freshness: DataFreshness[];
   ventas: GroupVentasSede[] | null;
   kellyLoads: KellyLoadStatus[];
+  cutoffs: SedeCutoff[] | null;
 };
 
 const SEDE_CODE: Record<number, ScopeCode> = { 1: "atelier", 2: "fonavi", 3: "centro" };
 
-export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, ventas, kellyLoads }: Props) {
+export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, ventas, kellyLoads, cutoffs }: Props) {
   return (
     <div className="space-y-6">
       <div>
@@ -43,6 +46,19 @@ export function GrupoDashboardClient({ selectedMonth, isCurrentMonth, summaries,
         <p className="text-sm text-gray-500 mt-1">
           Vista consolidada · {isCurrentMonth ? "Mes en curso" : `Mes ${selectedMonth}`}
         </p>
+        {/* Los saldos son la foto del último Excel cargado, no de hoy
+            (pedido de Jahnn, 28-jul). Mismo corte que cada sede. */}
+        {cutoffs && cutoffs.length > 0 && (
+          <p className="text-[11px] text-gray-400 mt-0.5">
+            Datos hasta:{" "}
+            {cutoffs.map((c, i) => (
+              <span key={c.businessId}>
+                {i > 0 && " · "}
+                {c.name.replace("Yayi's ", "")} <strong className="text-gray-600">{formatCutoff(c.cutoff)}</strong>
+              </span>
+            ))}
+          </p>
+        )}
       </div>
 
       {/* Selector de sede: del consolidado al dashboard COMPLETO de cada

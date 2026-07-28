@@ -1,4 +1,5 @@
 import { UsersAdmin } from "./users-admin";
+import { CutoffAdmin } from "./cutoff-admin";
 
 /**
  * Grupo → Configuración: gestión de accesos del personal (solo
@@ -6,5 +7,10 @@ import { UsersAdmin } from "./users-admin";
  * alcance, y cada action re-verifica con requireFullSession).
  */
 export default function GrupoConfiguracionPage() {
-  return <UsersAdmin />;
+  return (
+    <div className="space-y-6">
+      <UsersAdmin />
+      <CutoffAdmin />
+    </div>
+  );
 }

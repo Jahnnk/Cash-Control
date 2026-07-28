@@ -499,6 +499,27 @@ export async function executeExcelImport(
     console.error("[executeExcelImport] recalcBankBalance falló (import OK):", err);
   }
 
+  // ─── Corte de datos: hasta cuándo los números de la sede son
+  // completos. Por defecto el ÚLTIMO DÍA CON MOVIMIENTOS a las 23:59
+  // (día completo); si el corte real fue a media tarde (ej. Kelly
+  // cerró el Excel un viernes 6:30 p.m.), se ajusta la hora en
+  // Grupo → Configuración. Tolerante: sin la columna, el dashboard
+  // cae al último movimiento igual.
+  try {
+    await db.execute(sql`
+      UPDATE businesses SET data_cutoff_at = (
+        SELECT (MAX(d)::date + TIME '23:59') AT TIME ZONE 'America/Lima' FROM (
+          SELECT MAX(date) AS d FROM bank_income_items WHERE business_id = ${bId} AND archived = false
+          UNION ALL
+          SELECT MAX(date) FROM expenses WHERE business_id = ${bId} AND archived = false
+        ) t
+      )
+      WHERE id = ${bId}
+    `);
+  } catch (err) {
+    console.error("[executeExcelImport] data_cutoff_at no aplicado (columna pendiente):", err);
+  }
+
   // ─── Update batch con counts finales ────────────────────────────
   await db.execute(sql`
     UPDATE import_batches
