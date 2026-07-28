@@ -38,6 +38,32 @@ export type BudgetStatus = {
   color: "green" | "yellow" | "red";
 };
 
+import type { MonthComparison } from "@/lib/kpis/month-compare";
+
+/**
+ * Base ÚNICA para "vs el mes pasado". Con `comparison` (dashboard en
+ * vivo) usa los días emparejados —los que tienen dato en AMBOS meses—
+ * porque comparar 24 días contra 27 mentía. Sin él (reporte EIRS de un
+ * mes ya CERRADO, donde ambos lados están completos) usa los totales,
+ * que ahí sí son comparables.
+ */
+function growthBase(f: BusinessFacts): {
+  current: number; previous: number; pct: number | null; daysCompared: number; paired: boolean;
+} {
+  const sd = f.sales.comparison?.sameDay;
+  if (sd) {
+    return { current: sd.current, previous: sd.previous, pct: sd.pct, daysCompared: sd.daysCompared, paired: true };
+  }
+  const prev = f.sales.prevMonthSameCut;
+  return {
+    current: f.sales.monthToDate,
+    previous: prev,
+    pct: prev > 0 ? ((f.sales.monthToDate - prev) / prev) * 100 : null,
+    daysCompared: f.daysElapsed,
+    paired: false,
+  };
+}
+
 export type BusinessFacts = {
   businessName: string;
   today: string;         // YYYY-MM-DD (Lima)
@@ -49,7 +75,13 @@ export type BusinessFacts = {
     discrepancyAmount: number | null; // registrado − esperado (puede ser negativo)
   };
   cash: number;
-  sales: { monthToDate: number; prevMonthSameCut: number };
+  sales: {
+    monthToDate: number;
+    prevMonthSameCut: number;
+    /** Comparativo EMPAREJADO (solo días con dato en ambos meses) —
+     * la única base honesta para el % vs el mes pasado. */
+    comparison?: MonthComparison | null;
+  };
   /** Gastos OPERATIVOS (porción del negocio, sin categorías excluidas del EBITDA). */
   opExpenses: { monthToDate: number; prevMonthSameCut: number };
   /** Promedio diario de gasto operativo de las últimas 8 semanas. */
@@ -205,10 +237,11 @@ export function computeHealthScore(f: BusinessFacts): HealthScore {
   // Crecimiento (15%): ventas vs mes anterior al MISMO día (comparación justa).
   // Los días 1–2 del mes son ruido (aún no se registran las ventas del día
   // anterior): puntaje neutral para no alarmar en falso.
-  const tooEarly = f.daysElapsed < 3;
-  const growthPct = f.sales.prevMonthSameCut > 0
-    ? ((f.sales.monthToDate - f.sales.prevMonthSameCut) / f.sales.prevMonthSameCut) * 100
-    : (f.sales.monthToDate > 0 ? 15 : 0);
+  // MISMA base emparejada que la alerta: días con dato en ambos meses.
+  const gcmp = growthBase(f);
+  const gPct = gcmp.pct;
+  const tooEarly = f.daysElapsed < 3 || gcmp.daysCompared < 3;
+  const growthPct: number = gPct !== null ? gPct : (f.sales.monthToDate > 0 ? 15 : 0);
   const growthScore = tooEarly
     ? 60
     : scoreByBreakpoints(growthPct, [
@@ -217,14 +250,14 @@ export function computeHealthScore(f: BusinessFacts): HealthScore {
   components.push({
     key: "crecimiento", label: "Crecimiento", weight: 0.15, score: Math.round(growthScore),
     detail: tooEarly
-      ? "Muy temprano en el mes para medir (día 1–2)."
-      : f.sales.prevMonthSameCut > 0
-        ? `Ventas ${growthPct >= 0 ? "+" : ""}${growthPct.toFixed(1)}% vs el mes pasado al mismo día ${f.daysElapsed}.`
+      ? "Muy temprano en el mes (pocos días comparables): puntaje neutral."
+      : gPct !== null
+        ? `Ventas ${growthPct >= 0 ? "+" : ""}${growthPct.toFixed(1)}% vs el mes pasado (${gcmp.daysCompared} días${gcmp.paired ? " con dato en ambos" : ""}).`
         : "Sin mes anterior comparable.",
     formula: tooEarly
-      ? "Día 1–2 del mes: puntaje neutral (60) para no alarmar en falso."
-      : f.sales.prevMonthSameCut > 0
-        ? `(${fmtS(f.sales.monthToDate)} − ${fmtS(f.sales.prevMonthSameCut)}) ÷ ${fmtS(f.sales.prevMonthSameCut)} = ${growthPct.toFixed(1)}% → escala: −25%=0 · −10%=30 · 0%=60 · +15%=100`
+      ? "Día 1–2 del mes o menos de 3 días comparables: puntaje neutral (60) para no alarmar en falso."
+      : gPct !== null
+        ? `(${fmtS(gcmp.current)} − ${fmtS(gcmp.previous)}) ÷ ${fmtS(gcmp.previous)} = ${growthPct.toFixed(1)}% sobre ${gcmp.daysCompared} días${gcmp.paired ? " emparejados" : ""} → escala: −25%=0 · −10%=30 · 0%=60 · +15%=100`
         : "Sin base de comparación: puntaje neutral.",
   });
 
@@ -457,33 +490,52 @@ export function buildInsights(f: BusinessFacts): Insight[] {
   // — Ventas: caída o crecimiento fuerte vs mismo corte.
   //   Se omite los días 1–2 del mes (las ventas del día anterior suelen
   //   registrarse a la mañana siguiente → compararía contra casi nada).
-  if (f.sales.prevMonthSameCut > 0 && f.daysElapsed >= 3) {
-    const diff = f.sales.monthToDate - f.sales.prevMonthSameCut;
-    const pct = (diff / f.sales.prevMonthSameCut) * 100;
+  const cmp = f.sales.comparison ?? null;
+  const gb = growthBase(f);
+  if (gb.pct !== null && gb.daysCompared >= 3 && f.daysElapsed >= 3) {
+    const sd = gb;
+    const diff = sd.current - sd.previous;
+    const pct = gb.pct;
+    // Contexto que evita conclusiones apresuradas: cuántos días se
+    // compararon de verdad, y la lectura alineada por día de semana
+    // cuando los meses no arrancan el mismo día (en una cafetería un
+    // sábado no se compara contra un martes).
+    const base = gb.paired
+      ? `Comparando los ${sd.daysCompared} días con datos en ambos meses: ${fmtS(sd.current)} vs ${fmtS(sd.previous)}.`
+      : `Al día ${f.daysElapsed} llevas ${fmtS(sd.current)} vs ${fmtS(sd.previous)} del mes anterior al mismo día.`;
+    const wk = cmp && cmp.weekdayShift !== 0 && cmp.weekdayAligned.pct !== null
+      ? ` Alineado por día de semana (sábado con sábado): ${cmp.weekdayAligned.pct >= 0 ? "+" : ""}${cmp.weekdayAligned.pct.toFixed(1)}%.`
+      : "";
+    const cov = cmp?.lowCoverage
+      ? ` ⚠ Solo ${sd.daysCompared} días comparables — falta cargar datos para que el % sea confiable.`
+      : "";
+    // Proyección de cierre sobre el ritmo POR DÍA comparado, no sobre
+    // días de calendario (que incluían días sin datos).
+    const proyect = (diff / sd.daysCompared) * f.daysInMonth;
     if (pct <= -10) {
       out.push({
         id: "ventas-cayendo",
-        severity: "aviso",
+        severity: cmp?.lowCoverage ? "info" : "aviso",
         impact: Math.abs(diff),
         title: `Ventas ${pct.toFixed(1)}% vs el mes pasado`,
-        what: `Al día ${f.daysElapsed} llevas ${fmtS(f.sales.monthToDate)} vs ${fmtS(f.sales.prevMonthSameCut)} del mes anterior al mismo día.`,
+        what: `${base}${wk}${cov}`,
         why: null,
-        consequence: `Si el ritmo no cambia, el mes cerraría ~${fmtS((diff / f.daysElapsed) * f.daysInMonth)} por debajo del anterior.`,
+        consequence: `Si el ritmo no cambia, el mes cerraría ~${fmtS(proyect)} por debajo del anterior.`,
         action: { label: "Ver ventas por día", href: "reportes" },
         benefit: "Detectar hoy qué producto/cliente/día cayó permite reaccionar dentro del mismo mes.",
-        inactionCost: `El mes cierra ~${fmtS(Math.abs((diff / f.daysElapsed) * f.daysInMonth))} por debajo del anterior.`,
+        inactionCost: `El mes cierra ~${fmtS(Math.abs(proyect))} por debajo del anterior.`,
       });
     } else if (pct >= 10) {
       out.push({
         id: "ventas-subiendo",
-        severity: "oportunidad",
+        severity: cmp?.lowCoverage ? "info" : "oportunidad",
         impact: diff,
         title: `Ventas +${pct.toFixed(1)}% vs el mes pasado`,
-        what: `Llevas ${fmtS(diff)} más que el mes anterior al mismo día ${f.daysElapsed}.`,
+        what: `${base}${wk}${cov}`,
         why: null,
         consequence: "Identifica qué lo está impulsando (producto, cliente, día) para repetirlo.",
         action: { label: "Ver ventas por día", href: "reportes" },
-        benefit: `Entender qué impulsa el +${pct.toFixed(1)}% permite repetirlo (vale ~${fmtS(diff)} al corte).`,
+        benefit: `Entender qué impulsa el +${pct.toFixed(1)}% permite repetirlo (vale ~${fmtS(diff)} en los días comparados).`,
         inactionCost: null,
       });
     }

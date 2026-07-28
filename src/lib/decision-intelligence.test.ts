@@ -152,6 +152,51 @@ describe("buildInsights — reglas", () => {
     expect(v?.consequence).toContain("cerraría");
   });
 
+  // Auditoría de Jahnn (28-jul-2026): la alerta comparaba TODO el mes
+  // actual contra el mes pasado hasta el mismo número de día, sin mirar
+  // si ambos lados tenían la misma cantidad de días CON DATOS.
+  it("caso Fonavi: usa los días emparejados, no el -22.7% de ventanas dispares", () => {
+    const ins = buildInsights(
+      healthyFacts({
+        sales: {
+          monthToDate: 25726.27,       // 24 días de julio (Kelly sube los viernes)
+          prevMonthSameCut: 33291.41,  // 27 días de junio → el -22.7% mentiroso
+          comparison: {
+            sameDay: { current: 25726.27, previous: 30494.39, pct: -15.64, daysCompared: 24 },
+            weekdayAligned: { current: 24825.87, previous: 28145.79, pct: -11.8, daysCompared: 21 },
+            weekdayShift: 2, throughDay: 24, lowCoverage: false,
+          },
+        },
+      }),
+    );
+    const v = ins.find((i) => i.id === "ventas-cayendo");
+    expect(v?.title).toContain("-15.6");        // no -22.7
+    expect(v?.what).toContain("24 días");        // dice cuántos comparó
+    expect(v?.what).toContain("-11.8%");         // y la lectura por día de semana
+    expect(v?.severity).toBe("aviso");
+  });
+
+  it("caso Centro: 24 días vs 7 no inventa un +167.8% de crecimiento", () => {
+    const ins = buildInsights(
+      healthyFacts({
+        sales: {
+          monthToDate: 23373.97,      // 24 días de julio
+          prevMonthSameCut: 8727.99,  // solo 7 días de junio cargados
+          comparison: {
+            sameDay: { current: 7561.72, previous: 8727.99, pct: -13.36, daysCompared: 7 },
+            weekdayAligned: { current: 7561.72, previous: 8727.99, pct: -13.36, daysCompared: 7 },
+            weekdayShift: 2, throughDay: 24, lowCoverage: true,
+          },
+        },
+      }),
+    );
+    expect(ins.find((i) => i.id === "ventas-subiendo")).toBeUndefined();
+    const v = ins.find((i) => i.id === "ventas-cayendo");
+    expect(v?.title).toContain("-13.4");
+    expect(v?.severity).toBe("info");            // cobertura baja: no grita
+    expect(v?.what).toContain("Solo 7 días comparables");
+  });
+
   it("CxC al día → oportunidad de cobro; vencidas → aviso con mayor deudor", () => {
     const alDia = buildInsights(
       healthyFacts({
