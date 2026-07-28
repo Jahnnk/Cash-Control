@@ -71,16 +71,23 @@ export function VentasSedesSection({ sedes }: { sedes: GroupVentasSede[] }) {
                       )}
                     </div>
                   </div>
+                  {/* "Mismos días" de verdad: emparejado día con día
+                      (mesCmp), no promedio diario — en Centro 26 días de
+                      julio vs 7 de junio daban "+0.7%" cuando los mismos
+                      7 días dan -12.8% (auditoría 28-jul-2026). */}
                   <div className="mt-2 flex items-baseline justify-between gap-2 border-t border-gray-100 pt-2">
                     <div>
                       <div className="text-[11px] text-gray-500">Mes (al {ddmm(s.hasta)})</div>
                       <div className="text-base font-bold text-gray-900">{formatCurrency(s.mes)}</div>
                     </div>
                     <div className="text-right">
-                      <Delta pct={s.deltaMesPct} />
+                      <Delta pct={s.mesCmp?.sameDay.pct ?? null} />
                       <div className="text-[10px] text-gray-400">vs mes pasado, mismos días</div>
-                      {s.mesPrevDias > 0 && s.mesPrevDias !== s.mesDias && (
-                        <div className="text-[10px] text-amber-600">mes pasado: {s.mesPrevDias}/{s.mesDias} días</div>
+                      {s.mesCmp && (
+                        <div className={`text-[10px] ${s.mesCmp.lowCoverage ? "text-amber-600" : "text-gray-400"}`}>
+                          {s.mesCmp.sameDay.daysCompared} días comparados
+                          {s.mesCmp.lowCoverage && " ⚠ faltan datos"}
+                        </div>
                       )}
                     </div>
                   </div>
