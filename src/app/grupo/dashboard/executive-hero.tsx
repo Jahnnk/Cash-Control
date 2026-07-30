@@ -56,13 +56,13 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
 
   return (
     <section className="bg-white rounded-2xl border border-gray-200/70 shadow-[0_1px_3px_rgba(15,23,42,0.04)] p-7 sm:p-9">
-      <div className="flex flex-col lg:flex-row lg:items-start lg:justify-between gap-8">
+      <div className="flex flex-col xl:flex-row xl:items-start xl:justify-between gap-6 xl:gap-8">
         {/* El número que manda */}
         <div className="min-w-0">
           <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-gray-400">
             Liquidez del grupo · {s.periodo}
           </div>
-          <div className="mt-2 text-[2.75rem] sm:text-6xl font-semibold text-gray-900 tabular-nums tracking-[-0.035em] leading-none">
+          <div className="mt-2 text-[2.25rem] sm:text-[2.75rem] xl:text-[3.25rem] font-semibold text-gray-900 tabular-nums tracking-[-0.035em] leading-none">
             {formatCurrency(s.liquidez)}
           </div>
           <div className="mt-3 text-sm text-gray-400">Banco + caja de las tres sedes</div>
@@ -70,7 +70,7 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
 
         {/* La tendencia, sin ejes ni ruido */}
         {s.serie.length >= 2 && (
-          <div className="w-full lg:w-72 shrink-0">
+          <div className="w-full xl:w-60 shrink-0">
             <div className="text-[10px] font-medium uppercase tracking-[0.09em] text-gray-400 mb-1.5">
               Ventas · últimos {s.serie.length} días
             </div>
