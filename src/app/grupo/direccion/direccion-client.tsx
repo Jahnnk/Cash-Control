@@ -16,6 +16,7 @@ import {
   type Block, type DireccionItem, type MetricKey,
 } from "@/lib/direccion/types";
 import { resolverNumero, formatValor, resumenSalud } from "@/lib/direccion/engine";
+import type { NumeroResuelto } from "@/lib/direccion/types";
 
 /**
  * Sistema de Dirección (ASDR CORE) — adaptado de la pizarra del asesor
@@ -74,7 +75,46 @@ function AddButton({ label, onClick }: { label: string; onClick: () => void }) {
   );
 }
 
-/** Fila de texto simple (objetivos, personas, alertas). */
+/** Objetivo con meta: muestra el avance vivo, igual que un número. */
+function GoalRow({
+  n, onEdit, onDelete,
+}: { n: NumeroResuelto; onEdit: () => void; onDelete: () => void }) {
+  return (
+    <li className="group py-3 border-t border-gray-100 first:border-t-0">
+      <div className="flex items-start justify-between gap-3">
+        <span className="min-w-0 flex-1">
+          <span className="block text-sm text-gray-900 leading-snug">{n.title}</span>
+          {n.detail && <span className="block text-[11px] text-gray-400 mt-0.5 leading-snug">{n.detail}</span>}
+        </span>
+        <span className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity shrink-0">
+          <button onClick={onEdit} className="text-gray-300 hover:text-primary p-1"><Pencil className="w-3.5 h-3.5" /></button>
+          <button onClick={onDelete} className="text-gray-300 hover:text-red-600 p-1"><Trash2 className="w-3.5 h-3.5" /></button>
+        </span>
+      </div>
+      {n.targetValue !== null && (
+        <div className="mt-2">
+          <div className="flex items-baseline justify-between gap-2 text-xs">
+            <span className={`font-semibold tabular-nums ${n.semaforo ? SEMAFORO_TEXT[n.semaforo] : "text-gray-900"}`}>
+              {formatValor(n.value, n.targetUnit)}
+            </span>
+            <span className="text-gray-400 tabular-nums">
+              meta {formatValor(n.targetValue, n.targetUnit)}
+              {n.cumplimientoPct !== null && ` · ${Math.round(n.cumplimientoPct)}%`}
+            </span>
+          </div>
+          {n.cumplimientoPct !== null && n.semaforo && (
+            <div className="mt-1.5"><ProgressBar pct={n.cumplimientoPct} tone={SEMAFORO_BAR[n.semaforo]} /></div>
+          )}
+          {n.value === null && (
+            <p className="mt-1 text-[11px] text-amber-600">Aún sin dato para medir el avance.</p>
+          )}
+        </div>
+      )}
+    </li>
+  );
+}
+
+/** Fila de texto simple (personas, alertas). */
 function TextRow({
   item, onEdit, onDelete,
 }: { item: DireccionItem; onEdit: () => void; onDelete: () => void }) {
@@ -124,6 +164,10 @@ export function DireccionClient() {
 
   const by = (b: Block) => board.items.filter((i) => i.block === b);
   const numeros = by("numero").map((i) => resolverNumero(i, board.metricas));
+  // Los objetivos también pueden llevar meta y avance (pedido de Jahnn:
+  // "si decido que Profit First sea 10%, el sistema debe mostrarme a
+  // qué nivel estamos"). Sin meta se ven como texto simple.
+  const objetivos = by("objetivo").map((i) => resolverNumero(i, board.metricas));
   const salud = resumenSalud(by("salud"));
 
   async function handleDelete(item: DireccionItem) {
@@ -205,9 +249,13 @@ export function DireccionClient() {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
             <Card icon={Target} title="Objetivos del año" hint="¿A dónde vamos?">
               <ul>
-                {by("objetivo").map((i) => (
-                  <TextRow key={i.id} item={i} onEdit={() => setEditing({ block: "objetivo", item: i })} onDelete={() => handleDelete(i)} />
-                ))}
+                {objetivos.map((o) =>
+                  o.targetValue !== null ? (
+                    <GoalRow key={o.id} n={o} onEdit={() => setEditing({ block: "objetivo", item: o })} onDelete={() => handleDelete(o)} />
+                  ) : (
+                    <TextRow key={o.id} item={o} onEdit={() => setEditing({ block: "objetivo", item: o })} onDelete={() => handleDelete(o)} />
+                  ),
+                )}
               </ul>
               <AddButton label="Añadir objetivo" onClick={() => setEditing({ block: "objetivo", item: null })} />
             </Card>
@@ -382,7 +430,8 @@ function ItemModal({
   const [higherIsBetter, setHigherIsBetter] = useState(item?.higherIsBetter ?? true);
   const [saving, setSaving] = useState(false);
 
-  const esNumero = block === "numero";
+  // Objetivos y números comparten la mecánica de meta + avance.
+  const esNumero = block === "numero" || block === "objetivo";
 
   async function handleSave() {
     setSaving(true);

@@ -28,6 +28,10 @@ export const DECISION_STATUS: DecisionStatus[] = ["tomada", "pendiente", "delega
 export const METRIC_KEYS = [
   "ventas_mes_grupo",
   "ventas_delta_pct",
+  "ebitda_mes_grupo",
+  "ebitda_pct_grupo",
+  "profit_first_mes_grupo",
+  "profit_first_pct_grupo",
   "margen_mes_grupo",
   "margen_pct_grupo",
   "liquidez_grupo",
@@ -38,6 +42,10 @@ export type MetricKey = (typeof METRIC_KEYS)[number];
 export const METRIC_LABELS: Record<MetricKey, { label: string; unit: string; hint: string }> = {
   ventas_mes_grupo: { label: "Ventas del mes (grupo)", unit: "S/", hint: "Suma de las 3 sedes en el mes en curso." },
   ventas_delta_pct: { label: "Variación de ventas vs mes pasado", unit: "%", hint: "Solo días con dato en ambos meses." },
+  ebitda_mes_grupo: { label: "EBITDA del mes (S/)", unit: "S/", hint: "Ventas − gastos operativos de las 3 sedes (mismo cálculo que el Reporte Ejecutivo)." },
+  ebitda_pct_grupo: { label: "EBITDA sobre ventas (%)", unit: "%", hint: "EBITDA ÷ ventas del mes. La meta clásica de rentabilidad operativa." },
+  profit_first_mes_grupo: { label: "Profit First separado (S/)", unit: "S/", hint: "Lo que de verdad se movió a las categorías de Ahorro este mes." },
+  profit_first_pct_grupo: { label: "Profit First sobre ventas (%)", unit: "%", hint: "Ahorro separado ÷ ventas. Mide la PRÁCTICA, no la intención." },
   margen_mes_grupo: { label: "Margen del mes (grupo)", unit: "S/", hint: "Ingresos − gastos del mes." },
   margen_pct_grupo: { label: "Margen sobre ventas", unit: "%", hint: "Margen ÷ ventas del mes." },
   liquidez_grupo: { label: "Liquidez (banco + caja)", unit: "S/", hint: "Saldo disponible de las 3 sedes." },

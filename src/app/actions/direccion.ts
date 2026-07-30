@@ -19,6 +19,7 @@ import { BLOCKS, isMetricKey, type Block, type DireccionItem } from "@/lib/direc
 import { getGroupDashboard } from "./grupo";
 import { getGroupVentasComparison } from "./group-ventas";
 import { getGroupBreakeven } from "./breakeven";
+import { salesInRange, opExpensesInRange } from "./command-center";
 
 const sql = neon(process.env.DATABASE_URL!);
 const NO_ACCESS = { ok: false as const, error: "El Sistema de Dirección es solo para la dirección." };
@@ -71,6 +72,41 @@ async function resolverMetricas(): Promise<Record<string, number | null>> {
 
     const be = await getGroupBreakeven(dash.selectedMonth);
     out.equilibrio_pct_grupo = be.ok ? be.data.grupo.avancePct : null;
+
+    // ── EBITDA del grupo: MISMO cálculo que el Reporte Ejecutivo
+    // (ventas − gastos operativos, con la exclusión canónica de
+    // categorías marcadas exclude_from_ebitda). Nada de una fórmula
+    // paralela: si el reporte y el tablero difieren, uno miente.
+    const mesIni = `${dash.selectedMonth}-01`;
+    const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+    const [y2, m2] = dash.selectedMonth.split("-").map(Number);
+    const finMes = `${dash.selectedMonth}-${String(new Date(y2, m2, 0).getDate()).padStart(2, "0")}`;
+    const mesFin = dash.isCurrentMonth ? hoy : finMes;
+
+    let ventasEbitda = 0;
+    let gastosOp = 0;
+    for (const bId of [1, 2, 3]) {
+      ventasEbitda += await salesInRange(bId, mesIni, mesFin);
+      gastosOp += await opExpensesInRange(bId, mesIni, mesFin);
+    }
+    const ebitda = Math.round((ventasEbitda - gastosOp) * 100) / 100;
+    out.ebitda_mes_grupo = ebitda;
+    out.ebitda_pct_grupo = ventasEbitda > 0 ? Math.round((ebitda / ventasEbitda) * 1000) / 10 : null;
+
+    // ── Profit First: lo que REALMENTE se separó a Ahorro este mes.
+    // Mide la práctica, no la intención — si nadie transfirió nada, el
+    // avance es 0 aunque la meta esté escrita.
+    const ahorro = (await sql`
+      SELECT COALESCE(SUM(amount), 0)::float AS t
+      FROM expenses
+      WHERE business_id IN (1, 2, 3)
+        AND date >= ${mesIni} AND date <= ${mesFin}
+        AND archived = false AND is_special_loan = false AND is_internal_transfer = false
+        AND (category ILIKE '%ahorro%' OR category ILIKE '%profit%first%')
+    `) as { t: number }[];
+    const pf = Math.round((ahorro[0]?.t ?? 0) * 100) / 100;
+    out.profit_first_mes_grupo = pf;
+    out.profit_first_pct_grupo = ventasEbitda > 0 ? Math.round((pf / ventasEbitda) * 1000) / 10 : null;
   } catch (err) {
     console.error("[direccion] métricas no resueltas:", err);
   }
@@ -211,13 +247,16 @@ export async function seedDireccionBoard(): Promise<
 
     const seed: SaveItemInput[] = [
       // Objetivos — el destino del año (los números los pone Jahnn).
+      { block: "objetivo", title: "EBITDA sobre ventas", detail: "Escribe TU meta (%) y el avance se calcula solo.", metricKey: "ebitda_pct_grupo", targetUnit: "%", higherIsBetter: true },
+      { block: "objetivo", title: "Profit First", detail: "% de la venta que separas a Ahorro. Mide la práctica, no la intención.", metricKey: "profit_first_pct_grupo", targetUnit: "%", higherIsBetter: true },
+      { block: "objetivo", title: "Las 3 sedes cubren su punto de equilibrio", detail: "Cada una se paga sola, todos los meses.", metricKey: "equilibrio_pct_grupo", targetValue: 100, targetUnit: "%", higherIsBetter: true },
       { block: "objetivo", title: "Sistema funcionando sin que yo opere", detail: "Dirigir desde el panel; Kelly y los admins ejecutan." },
-      { block: "objetivo", title: "Margen sobre ventas", detail: "Define tu meta anual y ajústala en Números que mandan." },
-      { block: "objetivo", title: "Las 3 sedes cubren su punto de equilibrio", detail: "Cada una se paga sola, todos los meses." },
 
       // Números que mandan — enlazados al sistema donde se puede.
       { block: "numero", title: "Ventas del mes (grupo)", metricKey: "ventas_mes_grupo", targetUnit: "S/", higherIsBetter: true },
       { block: "numero", title: "Variación vs mes pasado", metricKey: "ventas_delta_pct", targetUnit: "%", higherIsBetter: true },
+      { block: "numero", title: "EBITDA del mes", metricKey: "ebitda_mes_grupo", targetUnit: "S/", higherIsBetter: true },
+      { block: "numero", title: "Profit First separado", metricKey: "profit_first_mes_grupo", targetUnit: "S/", higherIsBetter: true },
       { block: "numero", title: "Margen sobre ventas", metricKey: "margen_pct_grupo", targetUnit: "%", higherIsBetter: true },
       { block: "numero", title: "Liquidez (banco + caja)", metricKey: "liquidez_grupo", targetUnit: "S/", higherIsBetter: true },
       { block: "numero", title: "Punto de equilibrio del grupo", metricKey: "equilibrio_pct_grupo", targetUnit: "%", targetValue: 100, higherIsBetter: true },
