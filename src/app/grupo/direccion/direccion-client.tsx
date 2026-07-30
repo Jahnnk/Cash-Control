@@ -555,6 +555,12 @@ function ItemModal({
                     ? METRIC_LABELS[metricKey as MetricKey].hint
                     : "El sistema no lo calcula: actualízalo tú cuando lo revises."}
                 </p>
+                {metricKey && METRIC_LABELS[metricKey as MetricKey].unit === "S/" && (
+                  <p className="text-[11px] text-amber-600 mt-1">
+                    Esta métrica está en soles: la meta también. Si tu meta es un
+                    porcentaje (ej. EBITDA 33%), elige arriba la versión “sobre ventas (%)”.
+                  </p>
+                )}
               </div>
 
               {!metricKey && (
@@ -573,10 +579,19 @@ function ItemModal({
                 </div>
                 <div>
                   <label className="block text-xs font-medium text-gray-700 mb-1">Unidad</label>
-                  <select value={targetUnit} onChange={(e) => setTargetUnit(e.target.value)}
-                    className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
-                    {["S/", "%", "pts", "min", "días", "und"].map((u) => <option key={u} value={u}>{u}</option>)}
-                  </select>
+                  {metricKey ? (
+                    // Con métrica enlazada la unidad NO se elige: la manda
+                    // la métrica. Poner "%" sobre un valor en soles daba
+                    // "29182.13% de una meta de 33%".
+                    <div className="w-full border border-gray-200 bg-gray-50 rounded-lg px-3 py-2 text-sm text-gray-500">
+                      {METRIC_LABELS[metricKey as MetricKey].unit} · fijada por la métrica
+                    </div>
+                  ) : (
+                    <select value={targetUnit} onChange={(e) => setTargetUnit(e.target.value)}
+                      className="w-full border border-gray-300 rounded-lg px-3 py-2 text-sm bg-white">
+                      {["S/", "%", "pts", "min", "días", "und"].map((u) => <option key={u} value={u}>{u}</option>)}
+                    </select>
+                  )}
                 </div>
               </div>
 

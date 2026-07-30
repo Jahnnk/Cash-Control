@@ -4,7 +4,7 @@
  * meta (más ventas es bueno; más minutos de entrega es malo).
  */
 import { describe, it, expect } from "vitest";
-import { cumplimiento, semaforoDe, resolverNumero, formatValor, resumenSalud } from "../engine";
+import { cumplimiento, semaforoDe, resolverNumero, formatValor, resumenSalud, unidadDe } from "../engine";
 import type { DireccionItem } from "../types";
 
 const item = (over: Partial<DireccionItem> = {}): DireccionItem => ({
@@ -78,6 +78,47 @@ describe("resolverNumero", () => {
       {},
     );
     expect(r.semaforo).toBe("rojo");
+  });
+});
+
+// Reporte de Jahnn (30-jul-2026): puso meta 33% sobre "EBITDA del mes",
+// que está en SOLES → la pantalla mostró "29182.13%" contra "meta 33%".
+// La unidad la manda la métrica, no lo que quedó guardado.
+describe("unidadDe — la métrica manda sobre la unidad guardada", () => {
+  it("métrica en soles ignora un '%' guardado por error", () => {
+    expect(unidadDe({ metricKey: "ebitda_mes_grupo", targetUnit: "%" })).toBe("S/");
+    expect(unidadDe({ metricKey: "profit_first_mes_grupo", targetUnit: "%" })).toBe("S/");
+  });
+
+  it("métrica en porcentaje se muestra en %", () => {
+    expect(unidadDe({ metricKey: "ebitda_pct_grupo", targetUnit: "S/" })).toBe("%");
+  });
+
+  it("sin métrica enlazada respeta la unidad escrita a mano", () => {
+    expect(unidadDe({ metricKey: null, targetUnit: "pts" })).toBe("pts");
+  });
+});
+
+describe("resolverNumero — coherencia de unidades", () => {
+  it("EBITDA en soles NUNCA se muestra como porcentaje", () => {
+    const r = resolverNumero(
+      item({ title: "EBITDA del mes", metricKey: "ebitda_mes_grupo", targetValue: 33, targetUnit: "%" }),
+      { ebitda_mes_grupo: 29182.13 },
+    );
+    expect(r.targetUnit).toBe("S/");
+    expect(formatValor(r.value, r.targetUnit)).toBe("S/29,182.13");
+    expect(formatValor(r.targetValue, r.targetUnit)).toBe("S/33.00"); // meta absurda, pero honesta
+  });
+
+  it("la meta de EBITDA 33% sí funciona sobre la métrica en %", () => {
+    const r = resolverNumero(
+      item({ title: "EBITDA sobre ventas", metricKey: "ebitda_pct_grupo", targetValue: 33, targetUnit: "%" }),
+      { ebitda_pct_grupo: 35.7 },
+    );
+    expect(r.targetUnit).toBe("%");
+    expect(formatValor(r.value, r.targetUnit)).toBe("35.7%");
+    expect(r.cumplimientoPct).toBeCloseTo(108.2, 1);
+    expect(r.semaforo).toBe("verde");
   });
 });
 
