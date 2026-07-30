@@ -30,6 +30,9 @@ export type GroupVentasSede = VentasSedeComparison & {
   /** Comparativo del MES emparejado por día (única base honesta del
    * "vs mes pasado, mismos días"). Ver nota en getGroupVentasComparison. */
   mesCmp: MonthComparison | null;
+  /** Venta de los últimos 14 días con datos — sparkline del dashboard.
+   * Datos REALES: la sparkline es evidencia, no decoración. */
+  serie14: number[];
 };
 
 const SEDES: [number, string][] = [
@@ -67,7 +70,7 @@ export async function getGroupVentasComparison(): Promise<
           rango: 0, rangoPrev: null, deltaRangoPct: null,
           mes: 0, mesPrev: null, deltaMesPct: null,
           rangoDias: 0, rangoPrevDias: 0, mesDias: 0, mesPrevDias: 0,
-          hasta: null, fuente: null, mesCmp: null,
+          hasta: null, fuente: null, mesCmp: null, serie14: [],
         });
         continue;
       }
@@ -87,7 +90,11 @@ export async function getGroupVentasComparison(): Promise<
       const prevPrefix = `${py}-${String(pm).padStart(2, "0")}`;
       const mesPrevio = rows.filter((r) => r.date.slice(0, 7) === prevPrefix);
       const mesCmp = compareMonths(mesActual, mesPrevio);
-      sedes.push({ businessId: bId, ...compareVentasSede(nombre, rows, ws, hasta, fuente), mesCmp });
+      const desde14 = shiftDays(hasta, -13);
+      const serie14 = rows
+        .filter((r) => r.date >= desde14 && r.date <= hasta && r.total > 0)
+        .map((r) => r.total);
+      sedes.push({ businessId: bId, ...compareVentasSede(nombre, rows, ws, hasta, fuente), mesCmp, serie14 });
     }
     return { ok: true, sedes };
   } catch (err) {
