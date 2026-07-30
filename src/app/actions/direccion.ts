@@ -15,7 +15,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { requireFullSession } from "@/lib/session-access";
-import { BLOCKS, isMetricKey, type Block, type DireccionItem } from "@/lib/direccion/types";
+import { BLOCKS, isMetricKey, METRIC_LABELS, type Block, type DireccionItem } from "@/lib/direccion/types";
 import { getGroupDashboard } from "./grupo";
 import { getGroupVentasComparison } from "./group-ventas";
 import { getGroupBreakeven } from "./breakeven";
@@ -162,6 +162,9 @@ export async function saveDireccionItem(
   if (title.length < 2) return { ok: false, error: "Escribe un texto (mínimo 2 letras)." };
   if (title.length > 200) return { ok: false, error: "Texto demasiado largo (máx. 200)." };
   const metricKey = input.metricKey && isMetricKey(input.metricKey) ? input.metricKey : null;
+  // Con métrica enlazada la unidad la manda la métrica: aceptar "%"
+  // sobre un valor en soles producía "29182.13% de una meta de 33%".
+  const targetUnit = metricKey ? METRIC_LABELS[metricKey].unit : (input.targetUnit?.trim() || null);
 
   try {
     if (input.id) {
@@ -173,7 +176,7 @@ export async function saveDireccionItem(
           metric_key = ${metricKey},
           manual_value = ${input.manualValue ?? null},
           target_value = ${input.targetValue ?? null},
-          target_unit = ${input.targetUnit?.trim() || null},
+          target_unit = ${targetUnit},
           higher_is_better = ${input.higherIsBetter ?? true},
           updated_at = now()
         WHERE id = ${input.id}::uuid RETURNING id::text
@@ -191,7 +194,7 @@ export async function saveDireccionItem(
         (block, position, title, detail, status, metric_key, manual_value, target_value, target_unit, higher_is_better)
       VALUES (${input.block}, ${pos[0]?.p ?? 1}, ${title}, ${input.detail?.trim() || null},
               ${input.status ?? null}, ${metricKey}, ${input.manualValue ?? null},
-              ${input.targetValue ?? null}, ${input.targetUnit?.trim() || null}, ${input.higherIsBetter ?? true})
+              ${input.targetValue ?? null}, ${targetUnit}, ${input.higherIsBetter ?? true})
       RETURNING id::text
     `) as { id: string }[];
     revalidatePath("/grupo/direccion");

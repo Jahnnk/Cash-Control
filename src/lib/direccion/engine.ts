@@ -11,7 +11,18 @@
  * Función PURA: no toca la BD.
  */
 
-import type { DireccionItem, NumeroResuelto } from "./types";
+import { METRIC_LABELS, type DireccionItem, type NumeroResuelto } from "./types";
+
+/**
+ * Unidad REAL de un número. Si está enlazado al sistema, manda la
+ * unidad de la métrica: "EBITDA del mes" son soles aunque alguien haya
+ * elegido "%" en el desplegable. Sin esta regla, S/29,182 se mostraba
+ * como "29182.13%" contra una meta de 33% (reporte de Jahnn, 30-jul).
+ */
+export function unidadDe(item: Pick<DireccionItem, "metricKey" | "targetUnit">): string | null {
+  if (item.metricKey) return METRIC_LABELS[item.metricKey].unit;
+  return item.targetUnit;
+}
 
 /** Desde este % de cumplimiento el número está en verde. */
 export const VERDE_DESDE = 100;
@@ -62,6 +73,9 @@ export function resolverNumero(
       : null;
   return {
     ...item,
+    // La unidad canónica gana: el valor y la meta se muestran en la
+    // misma moneda, siempre.
+    targetUnit: unidadDe(item),
     value,
     automatico,
     cumplimientoPct,
