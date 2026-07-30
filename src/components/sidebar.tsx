@@ -22,6 +22,7 @@ import {
   Package,
   Trophy,
   Medal,
+  Compass,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -37,6 +38,7 @@ type NavItem = {
 
 const NAV: NavItem[] = [
   { segment: "dashboard",     label: "Dashboard",       icon: LayoutDashboard, scopes: ["atelier", "fonavi", "centro", "grupo"] },
+  { segment: "direccion",     label: "Sistema de Dirección", icon: Compass,    scopes: ["grupo"] },
   { segment: "registro",      label: "Registro Diario", icon: PenLine,         scopes: ["atelier", "fonavi", "centro"] },
   { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro"] },
   { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },
