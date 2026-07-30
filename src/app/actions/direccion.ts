@@ -233,19 +233,10 @@ export async function archiveDireccionItem(
 }
 
 /**
- * Siembra el tablero con la estructura adaptada a Yayi's. Solo corre si
- * está VACÍO — nunca pisa lo que Jahnn ya escribió. Las metas van sin
- * número a propósito: son suyas, no copiadas de otra empresa.
+ * Estructura base del tablero, adaptada a Yayi's. Las metas van SIN
+ * número a propósito: son de Jahnn, no copiadas de otra empresa.
  */
-export async function seedDireccionBoard(): Promise<
-  { ok: true; creados: number } | { ok: false; error: string }
-> {
-  if (!(await requireFullSession())) return NO_ACCESS;
-  try {
-    const existentes = (await sql`SELECT COUNT(*)::int AS n FROM direccion_items`) as { n: number }[];
-    if ((existentes[0]?.n ?? 0) > 0) return { ok: false, error: "El tablero ya tiene contenido." };
-
-    const seed: SaveItemInput[] = [
+const SEED: SaveItemInput[] = [
       // Objetivos — el destino del año (los números los pone Jahnn).
       { block: "objetivo", title: "EBITDA sobre ventas", detail: "Escribe TU meta (%) y el avance se calcula solo.", metricKey: "ebitda_pct_grupo", targetUnit: "%", higherIsBetter: true },
       { block: "objetivo", title: "Profit First", detail: "% de la venta que separas a Ahorro. Mide la práctica, no la intención.", metricKey: "profit_first_pct_grupo", targetUnit: "%", higherIsBetter: true },
@@ -287,17 +278,38 @@ export async function seedDireccionBoard(): Promise<
       { block: "alerta", title: "Más ventas ≠ más utilidad" },
       { block: "alerta", title: "Problema repetido = sistema roto" },
       { block: "alerta", title: "Urgente ≠ importante" },
-      { block: "alerta", title: "Si depende de mí, no está listo" },
-    ];
+  { block: "alerta", title: "Si depende de mí, no está listo" },
+];
+
+/**
+ * Prepara el tablero, o lo COMPLETA con lo que falte. Es idempotente:
+ * solo inserta las piezas de la estructura base que aún no existen
+ * (mismo bloque y mismo texto), así que nunca duplica ni pisa lo que
+ * Jahnn ya escribió o editó. Correrlo dos veces es inofensivo.
+ *
+ * Esto importa: cuando la estructura base gana piezas nuevas (EBITDA,
+ * Profit First…), un tablero ya preparado puede recibirlas sin tener
+ * que borrarlo y empezar de cero.
+ */
+export async function seedDireccionBoard(): Promise<
+  { ok: true; creados: number } | { ok: false; error: string }
+> {
+  if (!(await requireFullSession())) return NO_ACCESS;
+  try {
+    const existentes = (await sql`
+      SELECT block, lower(trim(title)) AS t FROM direccion_items
+    `) as { block: string; t: string }[];
+    const yaEsta = new Set(existentes.map((r) => `${r.block}|${r.t}`));
 
     let creados = 0;
-    for (const [i, s] of seed.entries()) {
+    for (const [i, item] of SEED.entries()) {
+      if (yaEsta.has(`${item.block}|${item.title.trim().toLowerCase()}`)) continue;
       await sql`
         INSERT INTO direccion_items
           (block, position, title, detail, status, metric_key, target_value, target_unit, higher_is_better)
-        VALUES (${s.block}, ${i}, ${s.title}, ${s.detail ?? null}, ${s.status ?? null},
-                ${s.metricKey ?? null}, ${s.targetValue ?? null}, ${s.targetUnit ?? null},
-                ${s.higherIsBetter ?? true})
+        VALUES (${item.block}, ${i}, ${item.title}, ${item.detail ?? null}, ${item.status ?? null},
+                ${item.metricKey ?? null}, ${item.targetValue ?? null}, ${item.targetUnit ?? null},
+                ${item.higherIsBetter ?? true})
       `;
       creados++;
     }
