@@ -162,6 +162,7 @@ export function DireccionClient() {
   }
   if (!board) return null;
 
+  const vacio = board.items.length === 0;
   const by = (b: Block) => board.items.filter((i) => i.block === b);
   const numeros = by("numero").map((i) => resolverNumero(i, board.metricas));
   // Los objetivos también pueden llevar meta y avance (pedido de Jahnn:
@@ -192,11 +193,14 @@ export function DireccionClient() {
     const r = await seedDireccionBoard();
     setBusy(false);
     if (!r.ok) { showToast(r.error, "error"); return; }
-    showToast(`Tablero preparado con ${r.creados} elementos — ahora ajústalos a tu realidad.`, "success");
+    showToast(
+      r.creados === 0
+        ? "El tablero ya tiene toda la estructura base."
+        : `${r.creados} ${r.creados === 1 ? "elemento añadido" : "elementos añadidos"} — ahora ajusta las metas a tu realidad.`,
+      "success",
+    );
     load();
   }
-
-  const vacio = board.items.length === 0;
 
   return (
     <div className="space-y-8 pb-4">
@@ -209,12 +213,25 @@ export function DireccionClient() {
             El tablero con el que se dirige: metas, números, sistema, personas y decisiones.
           </p>
         </div>
-        {salud.pct !== null && (
-          <div className="text-right">
-            <div className="text-[10px] font-medium uppercase tracking-[0.09em] text-gray-400">Sistema funcionando</div>
-            <div className="text-2xl font-semibold text-gray-900 tabular-nums">{salud.pct}%</div>
-          </div>
-        )}
+        <div className="flex items-center gap-5">
+          {!vacio && !board.tablaFalta && (
+            <button
+              onClick={handleSeed}
+              disabled={busy}
+              title="Añade las piezas nuevas de la estructura base (EBITDA, Profit First…) sin tocar lo que ya escribiste"
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-gray-400 hover:text-primary transition-colors disabled:opacity-50"
+            >
+              {busy ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Sparkles className="w-3.5 h-3.5" />}
+              Completar con lo que falta
+            </button>
+          )}
+          {salud.pct !== null && (
+            <div className="text-right">
+              <div className="text-[10px] font-medium uppercase tracking-[0.09em] text-gray-400">Sistema funcionando</div>
+              <div className="text-2xl font-semibold text-gray-900 tabular-nums">{salud.pct}%</div>
+            </div>
+          )}
+        </div>
       </header>
 
       {board.tablaFalta && (
