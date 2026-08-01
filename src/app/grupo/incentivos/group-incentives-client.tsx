@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { Trophy, CheckCircle2, XCircle, Copy, Check, Coffee } from "lucide-react";
+import { Trophy, CheckCircle2, XCircle, Copy, Check, Coffee, FileDown } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getGroupIncentives, type GroupIncentives, type SedeIncentives } from "@/app/actions/group-incentives";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
@@ -22,6 +22,23 @@ function todayLima() {
 }
 function ddmm(iso: string | null): string {
   return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—";
+}
+
+/** Etiqueta legible del periodo (mes o rango) — para el título del PDF. */
+function periodoLabel(data: GroupIncentives): string {
+  if (data.range) return `del ${ddmm(data.range.from)} al ${ddmm(data.range.to)} de ${data.range.to.slice(0, 4)}`;
+  return monthLabel(data.month);
+}
+
+/** Días naturales del periodo — para la nota "X de Y días registrados". */
+function daysInPeriod(data: GroupIncentives): number {
+  if (data.range) {
+    const a = new Date(data.range.from + "T12:00:00Z").getTime();
+    const b = new Date(data.range.to + "T12:00:00Z").getTime();
+    return Math.round((b - a) / 86400000) + 1;
+  }
+  const [y, m] = data.month.split("-").map(Number);
+  return new Date(y, m, 0).getDate();
 }
 
 const SEDE_CODE: Record<number, ScopeCode> = { 2: "fonavi", 3: "centro" };
@@ -64,6 +81,7 @@ export function GroupIncentivesClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
+  const [exporting, setExporting] = useState(false);
 
   const load = useCallback(async (m: string, range?: { from: string; to: string }) => {
     setLoading(true);
@@ -87,6 +105,40 @@ export function GroupIncentivesClient() {
       setCopied(true);
       setTimeout(() => setCopied(false), 2500);
     } catch { /* sin clipboard — queda la selección manual */ }
+  }
+
+  async function handleExportPdf() {
+    if (!data) return;
+    setExporting(true);
+    try {
+      const { renderPilotReportPdf } = await import("@/lib/incentives/pilot-report-pdf");
+      const { blob, filename } = renderPilotReportPdf({
+        periodoLabel: periodoLabel(data),
+        daysInPeriod: daysInPeriod(data),
+        generatedAtLabel: new Date().toLocaleString("es-PE", {
+          timeZone: "America/Lima", dateStyle: "medium", timeStyle: "short",
+        }),
+        sedes: data.sedes.map((s) => ({
+          sede: s.sede,
+          progress: s.progress,
+          ticketBase: s.ticketBase,
+          mejorVendedor: s.mejorVendedor,
+          mvPeriodStart: s.mvPeriodStart,
+          mvPeriodEnd: s.mvPeriodEnd,
+          minMesas: s.minMesas,
+          noElegibles: s.noElegibles,
+          dailies: s.dailies,
+        })),
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = filename;
+      a.click();
+      URL.revokeObjectURL(url);
+    } finally {
+      setExporting(false);
+    }
   }
 
   return (
@@ -133,6 +185,14 @@ export function GroupIncentivesClient() {
                 className="border border-gray-300 rounded-lg px-2 py-2 text-xs bg-white" />
             </>
           )}
+          <button
+            onClick={handleExportPdf}
+            disabled={!data || exporting}
+            title="Reporte con el detalle diario completo de ambas sedes, listo para entregar a cada administrador"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+          >
+            <FileDown className="w-3.5 h-3.5" /> {exporting ? "Generando…" : "Exportar PDF"}
+          </button>
         </div>
       </div>
 
