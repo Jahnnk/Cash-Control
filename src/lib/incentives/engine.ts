@@ -104,6 +104,24 @@ export type IncentiveProgress = {
   personal: { pedidos: number; venta: number; ticket: number | null } | null;
 };
 
+/**
+ * Ticket PRESENCIAL de un solo día (misma exclusión de delivery y
+ * consumo del personal que computeProgress, pero fila por fila — para
+ * el detalle diario de reportes exportables: "lujo de detalle" pedido
+ * por Jahnn no puede usar una fórmula distinta a la del agregado).
+ */
+export function dailyPresencial(d: DailyEntry): { personas: number; venta: number; ticket: number | null } {
+  const personasTotal = d.personas ?? 0;
+  const ventaTotal = d.revenue ?? 0;
+  const deliveryPedidos = Math.max(0, d.deliveryPedidos ?? 0);
+  const deliveryVenta = Math.max(0, d.deliveryVenta ?? 0);
+  const personalPedidos = Math.max(0, d.personalPedidos ?? 0);
+  const personalVenta = Math.max(0, d.personalVenta ?? 0);
+  const personas = Math.max(0, personasTotal - deliveryPedidos - personalPedidos);
+  const venta = r2(Math.max(0, ventaTotal - deliveryVenta - personalVenta));
+  return { personas, venta, ticket: personas > 0 ? r2(venta / personas) : null };
+}
+
 export function computeProgress(
   config: IncentiveConfigT,
   staff: StaffMember[],

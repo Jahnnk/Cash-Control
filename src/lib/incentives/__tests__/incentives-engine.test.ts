@@ -10,6 +10,7 @@ import {
   computeFlags,
   computeLiquidation,
   bonusTableSum,
+  dailyPresencial,
   type IncentiveConfigT,
   type StaffMember,
   type IncentiveLevel,
@@ -84,6 +85,35 @@ describe("motor vs política — los números del documento salen exactos", () =
     expect(p.nivelAlcanzado).toBeNull();
     expect(p.pozoProyectado).toBeNull();
     expect(p.proximoNivel?.level.nombre).toBe("Nivel 1");
+  });
+});
+
+describe("dailyPresencial — el ticket de un solo día para el detalle exportable", () => {
+  it("sin delivery ni personal: ticket = venta/personas del día", () => {
+    const r = dailyPresencial({ date: "2026-07-01", personas: 40, revenue: 1000, items: null });
+    expect(r).toEqual({ personas: 40, venta: 1000, ticket: 25 });
+  });
+
+  it("excluye delivery Y personal del día, igual que el agregado", () => {
+    const r = dailyPresencial({
+      date: "2026-07-02", personas: 50, revenue: 1300, items: null,
+      deliveryPedidos: 5, deliveryVenta: 100, personalPedidos: 2, personalVenta: 16,
+    });
+    // presencial: 50-5-2=43 personas, 1300-100-16=1184 venta
+    expect(r.personas).toBe(43);
+    expect(r.venta).toBe(1184);
+    expect(r.ticket).toBeCloseTo(27.53, 2);
+  });
+
+  it("día sin clientes presenciales → ticket null, no divide entre cero", () => {
+    const r = dailyPresencial({ date: "2026-07-03", personas: 5, revenue: 100, items: null, deliveryPedidos: 5, deliveryVenta: 100 });
+    expect(r.personas).toBe(0);
+    expect(r.ticket).toBeNull();
+  });
+
+  it("retrocompatible: sin campos de delivery/personal (undefined) no revienta", () => {
+    const r = dailyPresencial({ date: "2026-07-04", personas: 20, revenue: 500, items: null });
+    expect(r.ticket).toBe(25);
   });
 });
 

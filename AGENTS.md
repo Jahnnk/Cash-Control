@@ -29,9 +29,18 @@ Este archivo (AGENTS.md) cubre las reglas de ramas, deploy y auth.
 | Origen del cambio | Rama destino | Autorizado para pushear |
 |---|---|---|
 | Claude Code | `staging` | ✅ Sí, automático tras cada commit |
-| Claude Code | `main` | ❌ Nunca |
+| Claude Code | `main` (merge de staging) | ✅ Sí, sin pedir OK — ver abajo (decisión de Jahnn, 01-ago-2026) |
 | Jahnn (Terminal) | `staging` | ✅ Sí |
 | Jahnn (GitHub UI o Terminal) | `main` (vía merge de staging) | ✅ Sí |
+
+**Cambio de política (01-ago-2026):** Jahnn pidió explícitamente que
+Claude Code haga el merge `staging → main` por su cuenta, sin esperar
+confirmación — "al final siempre termino aplastando el botón, es una
+pérdida de tiempo". Esto aplica a cambios de código normales (UI,
+lógica, refactors, features) una vez que el CI de `staging` está en
+verde. Las excepciones de abajo (migraciones, DELETEs, mutaciones
+masivas) siguen requiriendo snapshot Neon + OK explícito de Jahnn —
+esa parte NO cambió.
 
 ## Flujo estándar
 
@@ -42,26 +51,27 @@ Este archivo (AGENTS.md) cubre las reglas de ramas, deploy y auth.
    git push origin staging
    ```
 2. Vercel detecta el push y deploya al dominio de staging (~1-2 min).
-3. Claude Code reporta a Jahnn con la URL de staging para validar.
-4. Cuando Jahnn confirma que todo cuadra, hace merge `staging → main`:
-   - **GitHub UI**: "Compare & pull request" → "Merge"
-   - **Terminal**:
-     ```bash
-     git checkout main
-     git merge staging
-     git push origin main
-     ```
-5. Vercel deploya producción automáticamente.
+3. Claude Code verifica que el CI ("Tests") de `staging` quede en verde.
+4. Si el cambio no requiere snapshot Neon (ver excepciones abajo),
+   Claude Code promueve directo a producción sin pedir OK:
+   ```bash
+   git checkout main
+   git merge staging
+   git push origin main
+   ```
+5. Vercel deploya producción automáticamente. Claude Code avisa a
+   Jahnn que ya quedó en producción (no que "está listo para revisar").
 
 ## Reglas duras
 
-- Claude Code **NUNCA** hace push a `main`.
-- Claude Code **SIEMPRE** trabaja sobre `staging`.
+- Claude Code **SIEMPRE** trabaja sobre `staging` para hacer los cambios.
 - Si Claude Code se encuentra en `main` por error, debe cambiar a
   `staging` antes de commitear (`git checkout staging`).
 - Tras cada commit en `staging`, Claude Code hace
-  `git push origin staging` y avisa a Jahnn con el dominio de staging
-  para que valide antes de promover a producción.
+  `git push origin staging`, confirma CI verde, y luego mergea a `main`
+  sin pedir permiso — salvo que el cambio caiga en las excepciones de
+  "Base de datos compartida" (migraciones, DELETEs, mutaciones masivas),
+  donde el candado de snapshot + OK explícito de Jahnn sigue vigente.
 
 ## Base de datos compartida (riesgo a conocer)
 

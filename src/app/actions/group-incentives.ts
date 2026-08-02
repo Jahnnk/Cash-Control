@@ -61,6 +61,10 @@ export type SedeIncentives = {
    * visible en pantalla: un excluido invisible genera desconfianza. */
   minMesas: number;
   noElegibles: number;
+  /** Días crudos del periodo — el detalle día por día para el export
+   * del piloto ("lujo de detalle", Jahnn ago-2026). Vacío si la sede
+   * aún no tiene configuración del programa. */
+  dailies: DailyEntry[];
 };
 
 export type GroupIncentives = {
@@ -114,6 +118,7 @@ export async function getGroupIncentives(
 
       let progress: IncentiveProgress | null = null;
       let ticketBase: number | null = null;
+      let dailies: DailyEntry[] = [];
       if (cfgRows.length > 0) {
         const config: IncentiveConfigT = {
           ticketBase: cfgRows[0].base,
@@ -128,7 +133,6 @@ export async function getGroupIncentives(
           SELECT name, jornada, area FROM staff WHERE business_id = ${bId} AND active = true
         `) as { name: string; jornada: StaffMember["jornada"]; area: string }[];
 
-        let dailies: DailyEntry[];
         try {
           dailies = (await sql`
             SELECT date::text, personas, revenue::float AS revenue, items,
@@ -215,6 +219,7 @@ export async function getGroupIncentives(
         liquidado,
         minMesas: MIN_MESAS,
         noElegibles,
+        dailies,
       });
     }
 

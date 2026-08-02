@@ -39,7 +39,9 @@ export const PDF = {
 };
 
 export function fmtSoles(n: number): string {
-  const sign = n < 0 ? "−" : "";
+  // Guion ASCII, no el signo menos "−" (U+2212): la fuente helvetica de
+  // jsPDF no lo soporta y lo dibuja como un carácter garabateado.
+  const sign = n < 0 ? "-" : "";
   return `${sign}S/ ${Math.abs(n).toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 }
 
