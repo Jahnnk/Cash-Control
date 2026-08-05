@@ -20,6 +20,7 @@
  */
 
 import * as XLSX from "xlsx";
+import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
 
 export type ByteSalesDaily = {
   date: string;            // YYYY-MM-DD
@@ -107,8 +108,9 @@ function clean(v: unknown): string {
 export function listControlVtasSheets(buffer: Buffer | ArrayBuffer): string[] {
   const wb = XLSX.read(buffer, { type: "buffer", cellDates: true });
   // Patrón: "Control de VTAS-MAR26" o "Control de VTAS Abr26" — admite
-  // - o espacio entre VTAS y mes-año.
-  return wb.SheetNames.filter((n) => /^control\s*de\s*vtas[\s\-]?[A-Za-z]{3}\d{2}$/i.test(n));
+  // - o espacio entre VTAS y mes-año. El año es opcional (Kelly a veces
+  // nombra la pestaña "Control de VTAS-JUL" sin el "26").
+  return wb.SheetNames.filter((n) => /^control\s*de\s*vtas[\s\-]?[A-Za-z]{3}(\d{2})?$/i.test(n));
 }
 
 /**
@@ -123,16 +125,9 @@ export function listControlVtasSheets(buffer: Buffer | ArrayBuffer): string[] {
  * sobrescribían día 30 real (S/1,533.70) → mes inflado al doble.
  */
 function parseSheetMonth(sheetName: string): { year: number; month: number } | null {
-  const m = sheetName.match(/Control\s*de\s*VTAS[\s\-]?([A-Za-z]{3})(\d{2})/i);
-  if (!m) return null;
-  const monthMap: Record<string, number> = {
-    ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6,
-    JUL: 7, AGO: 8, SEP: 9, OCT: 10, NOV: 11, DIC: 12,
-  };
-  const month = monthMap[m[1].toUpperCase()];
-  if (!month) return null;
-  const year = 2000 + parseInt(m[2], 10);
-  return { year, month };
+  if (!/Control\s*de\s*VTAS/i.test(sheetName)) return null;
+  const parsed = parseSheetMonthYear(sheetName, currentYearLima());
+  return parsed ? { year: parsed.year, month: parsed.month } : null;
 }
 
 export function parseControlVtas(

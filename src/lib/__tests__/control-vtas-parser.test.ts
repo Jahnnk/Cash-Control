@@ -9,7 +9,7 @@
  */
 import { describe, it, expect } from "vitest";
 import * as XLSX from "xlsx";
-import { parseControlVtas } from "../control-vtas-parser";
+import { parseControlVtas, listControlVtasSheets } from "../control-vtas-parser";
 
 /** Arma un workbook con la estructura REAL de la hoja de Kelly:
  * col B=Fecha, C=Día, D=concepto QuipuPOS, E=monto QuipuPOS,
@@ -58,5 +58,25 @@ describe("parseControlVtas — columnas E/G según la auditoría 27-jul", () => 
 
   it("total_pos_excel = suma del lado QuipuPOS completo (con crédito)", () => {
     expect(r.ventasDiarias[0].total_pos_excel).toBe(1537.7);
+  });
+});
+
+describe("listControlVtasSheets — reconoce la pestaña con o sin el año (reporte Jahnn ago-2026)", () => {
+  function buildWorkbook(sheetNames: string[]): Buffer {
+    const wb = XLSX.utils.book_new();
+    for (const name of sheetNames) {
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet([[null]]), name);
+    }
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  }
+
+  it("reconoce 'Control de VTAS-JUL26' (con año)", () => {
+    const buf = buildWorkbook(["Control de VTAS-JUL26", "Resumen"]);
+    expect(listControlVtasSheets(buf)).toEqual(["Control de VTAS-JUL26"]);
+  });
+
+  it("reconoce 'Control de VTAS-JUL' (Kelly sin el año) — antes se ignoraba en silencio", () => {
+    const buf = buildWorkbook(["Control de VTAS-JUL", "Resumen"]);
+    expect(listControlVtasSheets(buf)).toEqual(["Control de VTAS-JUL"]);
   });
 });
