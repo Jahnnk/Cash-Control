@@ -490,6 +490,12 @@ export async function getDailyBreakdown(
                e.is_shared, e.shared_rule_id::text AS shared_rule_id,
                e.fonavi_amount::float AS fonavi_amount,
                e.centro_amount::float AS centro_amount,
+               -- Porción de ESTA sede. Tiene que ser LA MISMA regla que usa la
+               -- tarjeta "Egresos totales" (incluido el is_shared), o el detalle
+               -- vuelve a no cuadrar. Ojo: hay filas con atelier_amount viejo y
+               -- is_shared=false (p. ej. un gasto que se desmarcó de compartido);
+               -- ahí manda el monto completo, igual que en la tarjeta.
+               (CASE WHEN e.is_shared THEN COALESCE(e.atelier_amount, e.amount) ELSE e.amount END)::float AS own_amount,
                e.linked_atelier_expense_id::text AS linked_atelier_expense_id,
                e.group_id::text AS group_id,
                g.label AS group_label
@@ -508,6 +514,7 @@ export async function getDailyBreakdown(
                is_shared, shared_rule_id::text AS shared_rule_id,
                fonavi_amount::float AS fonavi_amount,
                centro_amount::float AS centro_amount,
+               (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS own_amount,
                linked_atelier_expense_id::text AS linked_atelier_expense_id
         FROM expenses
         WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false

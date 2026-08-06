@@ -658,13 +658,21 @@ export function MonthlyReport() {
                     })()
                   ) : (
                     (() => {
+                      // La cifra que suma es la PORCIÓN DE ESTA SEDE, no el bruto:
+                      // así el detalle cuadra exactamente con la tarjeta "Egresos
+                      // totales". En un gasto compartido el bruto incluye la parte
+                      // de Fonavi/Centro; sumar el bruto hacía que el detalle diera
+                      // más que la tarjeta (lo que no cuadró en la auditoría de las
+                      // socias, abril-2026: S/44,145.16 vs S/42,836.40).
+                      const ownOf = (row: Record<string, unknown>) =>
+                        Number(row.own_amount ?? row.amount ?? 0);
                       const byDate = new Map<string, { items: typeof detailData; total: number }>();
                       for (const row of detailData) {
                         const d = row.date as string;
                         if (!byDate.has(d)) byDate.set(d, { items: [], total: 0 });
                         const entry = byDate.get(d)!;
                         entry.items.push(row);
-                        entry.total += Number(row.amount);
+                        entry.total += ownOf(row);
                       }
                       return (
                         <div className="divide-y divide-gray-100">
@@ -684,7 +692,7 @@ export function MonthlyReport() {
                                         <span>{String(item.concept)}</span>
                                       </span>
                                       <div className="flex items-center gap-2">
-                                        <span className="text-red-600 font-medium">−{formatCurrency(item.amount as string)}</span>
+                                        <span className="text-red-600 font-medium">−{formatCurrency(ownOf(item))}</span>
                                         <div className="flex items-center gap-0.5 opacity-30 group-hover:opacity-100 transition-opacity">
                                           <button
                                             onClick={() => setEditTarget({
@@ -721,6 +729,17 @@ export function MonthlyReport() {
                                         </div>
                                       </div>
                                     </div>
+                                    {/* Gasto compartido: se ve la parte de esta sede
+                                        arriba y acá el porqué, para que nadie tenga
+                                        que adivinar por qué no es el monto del recibo. */}
+                                    {item.is_shared && Math.abs(Number(item.amount) - ownOf(item)) > 0.005 ? (
+                                      <div className="text-[11px] text-amber-700 pl-2 mt-0.5">
+                                        Compartido · recibo total {formatCurrency(item.amount as string)} — de esta sede{" "}
+                                        {formatCurrency(ownOf(item))}
+                                        {Number(item.fonavi_amount ?? 0) > 0 ? `, Fonavi ${formatCurrency(Number(item.fonavi_amount))}` : ""}
+                                        {Number(item.centro_amount ?? 0) > 0 ? `, Centro ${formatCurrency(Number(item.centro_amount))}` : ""}
+                                      </div>
+                                    ) : null}
                                     {item.notes ? (
                                       <div className="text-[11px] text-gray-400 pl-2 mt-0.5">{String(item.notes)}</div>
                                     ) : null}
@@ -731,7 +750,7 @@ export function MonthlyReport() {
                           ))}
                           <div className="px-4 py-3 bg-gray-50 flex items-center justify-between font-semibold text-sm">
                             <span>Total</span>
-                            <span className="text-red-600">−{formatCurrency(detailData.reduce((s, r) => s + Number(r.amount), 0))}</span>
+                            <span className="text-red-600">−{formatCurrency(detailData.reduce((s, r) => s + ownOf(r), 0))}</span>
                           </div>
                         </div>
                       );
