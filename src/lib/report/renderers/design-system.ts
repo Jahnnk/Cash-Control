@@ -81,5 +81,8 @@ export function sectionTitle(doc: jsPDF, y: number, text: string): number {
 
 /** Chip de semáforo (celda de tabla o inline). */
 export function trafficLabel(t: Traffic): string {
-  return t === "verde" ? "● Verde" : t === "ambar" ? "● Ámbar" : "● Rojo";
+  // "•" (U+2022) no "●" (U+25CF): la fuente helvetica de jsPDF solo cubre
+  // WinAnsiEncoding y no tiene glifo para el círculo grande — se dibuja
+  // como texto garabateado (mismo tipo de bug que el signo menos de fmtSoles).
+  return t === "verde" ? "• Verde" : t === "ambar" ? "• Ámbar" : "• Rojo";
 }

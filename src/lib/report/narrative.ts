@@ -68,12 +68,22 @@ function closingParagraph(intel: UnitIntelligence, monthLabel: string): Paragrap
     parts.push(flujo.value >= 0 ? `la caja creció ${fmt(flujo.value)} en el mes` : `la caja se redujo ${fmt(Math.abs(flujo.value))} en el mes`);
   }
   const score = `Salud del negocio: ${intel.healthScore.total}/100 (${intel.healthScore.level}).`;
+
+  // El resultado operativo (EBITDA) mide lo VENDIDO según Byte; el cambio de
+  // caja es lo que YA se movió en el banco y la caja. No tienen por qué
+  // coincidir peso a peso: el cobro de una venta tarda días en llegar al
+  // banco (a veces cruza de mes) — es la razón de ser de esta app. Sin esta
+  // frase, dos cifras del mismo párrafo que no cuadran leen como un error.
+  const bridge = ebitda && flujo
+    ? ` El resultado operativo y el cambio de caja no tienen por qué coincidir: el primero mide lo vendido según Byte, el segundo es el dinero que ya se movió en el banco y la caja, y el cobro de una venta puede tardar varios días en llegar al banco.`
+    : "";
+
   const tone: Paragraph["tone"] =
     (ebitda?.value ?? 0) < 0 || intel.healthScore.total < 40 ? "riesgo"
     : intel.healthScore.total < 60 ? "atencion"
     : (flujo?.value ?? 0) < 0 ? "neutro" : "positivo";
 
-  return { text: `${parts.join(", ")}. ${score}`, tone, derivedFrom: derived };
+  return { text: `${parts.join(", ")}.${bridge} ${score}`, tone, derivedFrom: derived };
 }
 
 /** Formatea el valor de un hallazgo según su unidad (default soles). */
@@ -184,7 +194,7 @@ export function buildNarrative(
   if (m.length >= 2) {
     const dir = m[m.length - 1] > m[0] + 0.5 ? "mejorando" : m[m.length - 1] < m[0] - 0.5 ? "deteriorándose" : "estable";
     profitability.push({
-      text: `El margen operativo viene ${dir} en la ventana de ${m.length} meses (${m.map((x) => `${x.toFixed(1)}%`).join(" → ")}).`,
+      text: `El margen operativo viene ${dir} en la ventana de ${m.length} meses (${m.map((x) => `${x.toFixed(1)}%`).join(" -> ")}).`,
       tone: dir === "deteriorándose" ? "atencion" : dir === "mejorando" ? "positivo" : "neutro",
       derivedFrom: ["margen"],
     });
@@ -294,7 +304,14 @@ export function buildNarrative(
       expectedOutcome,
       questions: questionParagraphs,
     },
-    kpiComments: Object.fromEntries(intel.kpis.map((k) => [k.id, kpiComment(k)])),
+    kpiComments: Object.fromEntries(
+      intel.kpis.map((k) => [
+        k.id,
+        k.id === "flujo"
+          ? `${kpiComment(k)} · no es lo mismo que EBITDA: el cobro de una venta de Byte tarda días en llegar al banco`
+          : kpiComment(k),
+      ]),
+    ),
     mitigations: Object.fromEntries(
       intel.risks.map((r) => [r.mitigationId, MITIGATIONS[r.mitigationId] ?? "Revisar con gerencia."]),
     ),

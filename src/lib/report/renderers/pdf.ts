@@ -123,7 +123,14 @@ function ceoDashboardPage(doc: Doc, story: ReportStory, intel: UnitIntelligence)
       doc.text(`${k.deltaPct >= 0 ? "+" : ""}${k.deltaPct.toFixed(1)}${k.unitSuffix === "%" ? " pts" : "%"}`, x + 4, y + 19.5);
     }
   });
-  y += cardH + 8;
+  y += cardH + 3;
+  doc.setFont("helvetica", "normal").setFontSize(PDF.small).setTextColor(BRAND.gray);
+  const dashboardNote = doc.splitTextToSize(
+    "EBITDA mide lo vendido según Byte; Flujo es lo que ya se movió en banco+caja — no tienen por qué coincidir, el cobro de una venta tarda días en llegar al banco.",
+    w - PDF.margin * 2,
+  ) as string[];
+  doc.text(dashboardNote, PDF.margin, y);
+  y += dashboardNote.length * 3.5 + 3;
 
   // Tendencia (ventas/EBITDA 4 meses)
   const img = lineChart(intel.series.months, [
@@ -223,6 +230,13 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
     margin: { left: PDF.margin, right: PDF.margin },
     headStyles: { fillColor: BRAND.primary },
     styles: { fontSize: 8.5 },
+    columnStyles: {
+      0: { cellWidth: 26 },
+      1: { cellWidth: 24 },
+      2: { cellWidth: 20 },
+      3: { cellWidth: 18 },
+      4: { cellWidth: w - PDF.margin * 2 - (26 + 24 + 20 + 18) },
+    },
     didParseCell: (data) => {
       if (data.section === "body" && data.column.index === 3) {
         const k = intel.kpis[data.row.index];
@@ -258,7 +272,7 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
       if (p) y = writeParagraphs(doc, story, "Riesgos", y, [p]);
       const mit = n.mitigations[r.mitigationId];
       if (mit) {
-        y = writeParagraphs(doc, story, "Riesgos", y, [{ text: `Mitigación recomendada: ${mit}`, tone: "neutro", derivedFrom: [r.id] }], "→") + 1;
+        y = writeParagraphs(doc, story, "Riesgos", y, [{ text: `Mitigación recomendada: ${mit}`, tone: "neutro", derivedFrom: [r.id] }], ">") + 1;
       }
     });
   }

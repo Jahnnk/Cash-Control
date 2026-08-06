@@ -44,7 +44,9 @@ export function buildScorecard(f: UnitFacts): KPI[] {
     prev: prev ? r2(prev.ebitda) : null, deltaPct: deltaPct(f.current.ebitda, prev?.ebitda ?? null),
     trend: trendOf(f.current.ebitda, prev?.ebitda ?? null),
     traffic: f.current.ebitda <= 0 ? "rojo" : prev && f.current.ebitda < prev.ebitda ? "ambar" : "verde",
-    driver: `ventas ${r2(f.current.sales)} − gastos op. ${r2(f.current.opExpenses)}`,
+    // Guion ASCII, no "−" (U+2212): jsPDF/helvetica no tiene ese glifo y
+    // lo dibuja garabateado (mismo bug que fmtSoles, ver design-system.ts).
+    driver: `ventas ${r2(f.current.sales)} - gastos op. ${r2(f.current.opExpenses)}`,
   });
 
   // Margen EBITDA
@@ -67,7 +69,8 @@ export function buildScorecard(f: UnitFacts): KPI[] {
       id: "flujo", label: "Flujo de caja del mes", value: flow, unitSuffix: "S/",
       prev: null, deltaPct: null, trend: flow > 0.5 ? "sube" : flow < -0.5 ? "baja" : "estable",
       traffic: flow >= 0 ? "verde" : flowShare > 0.25 ? "rojo" : "ambar",
-      driver: `liquidez inicio ${r2(f.liquidity.startOfMonth)} → cierre ${r2(f.liquidity.bankEnd + f.liquidity.cashEnd)}`,
+      // "->" ASCII, no "→" (U+2192): mismo bug de glifo faltante en helvetica.
+      driver: `liquidez inicio ${r2(f.liquidity.startOfMonth)} -> cierre ${r2(f.liquidity.bankEnd + f.liquidity.cashEnd)}`,
     });
   }
 
