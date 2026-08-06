@@ -44,6 +44,14 @@ type MonthlyData = {
   bankVariation?: number;
   byCategory: Record<string, unknown>[];
   byteSalesSource?: "byte_sales_daily" | "legacy";
+  /** Puente auditable entre "Resultado del mes" y la variación del
+   *  banco. Opcional por compatibilidad con respuestas antiguas. */
+  bridge?: {
+    resultadoDelMes: number;
+    efectivoNeto: number;
+    noOperativoBanco: number;
+    compartidoOtrasSedes: number;
+  };
 };
 
 type DetailType = "byte" | "income" | "expense" | "total_income" | "bank_variation" | "credit_sales";
@@ -175,15 +183,11 @@ export function MonthlyReport() {
         </div>
       ) : data ? (
         <>
-          {/* Summary cards */}
+          {/* Summary cards — todas sobre la misma base (resultado
+              operativo del mes, banco + efectivo). El movimiento del
+              banco vive en el puente de abajo, donde se explica por
+              qué no es igual a la resta de estas tarjetas. */}
           {(() => {
-            // Variación = ingresos BCP - egresos BCP (calculado en
-            // server por flujo del mes). Fallback al diff de balances
-            // bancarios solo si bankVariation no vino (compat).
-            const variation =
-              typeof data.bankVariation === "number"
-                ? data.bankVariation
-                : data.bankEndBalance - data.bankStartBalance;
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 {(() => {
@@ -328,17 +332,49 @@ export function MonthlyReport() {
                   expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
                   onClick={() => handleCardClick("expense")}
                 />
-                <KPICard
-                  title="Variación saldo banco"
-                  value={formatCurrency(variation)}
-                  subtitle="Ingresos BCP − Egresos BCP"
-                  variant={variation >= 0 ? "success" : "danger"}
-                  withAccentBar={false}
-                  expanded={showDetail === "bank_variation"}
-                  expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
-                  onClick={() => handleCardClick("bank_variation")}
-                />
+                {(() => {
+                  // "Resultado del mes" = Ingresos − Egresos, la resta que
+                  // cualquiera hace de cabeza al ver las dos tarjetas. Antes
+                  // este número no existía en pantalla y en su lugar estaba
+                  // la variación del banco, que se calcula distinto (sin
+                  // efectivo) — así que la resta mental nunca cuadraba y
+                  // parecía un error del sistema (reporte de las socias,
+                  // ago-2026). Ahora la resta se muestra hecha, y el puente
+                  // de abajo explica la diferencia con el banco.
+                  const ingresos = parseFloat((data.totals.total_income as string) || "0");
+                  const egresos = parseFloat((data.totals.total_expenses as string) || "0");
+                  const resultado = data.bridge?.resultadoDelMes ?? ingresos - egresos;
+                  return (
+                    <KPICard
+                      title="Resultado del mes"
+                      value={formatCurrency(resultado)}
+                      subtitle="Ingresos − Egresos"
+                      variant={resultado >= 0 ? "success" : "danger"}
+                      withAccentBar={false}
+                    />
+                  );
+                })()}
               </div>
+            );
+          })()}
+
+          {/* Puente: del resultado del mes al movimiento real del banco */}
+          {(() => {
+            const ingresos = parseFloat((data.totals.total_income as string) || "0");
+            const egresos = parseFloat((data.totals.total_expenses as string) || "0");
+            const resultado = data.bridge?.resultadoDelMes ?? ingresos - egresos;
+            const variation =
+              typeof data.bankVariation === "number"
+                ? data.bankVariation
+                : data.bankEndBalance - data.bankStartBalance;
+            return (
+              <ReconciliationBridge
+                resultado={resultado}
+                bridge={data.bridge}
+                bankVariation={variation}
+                expanded={showDetail === "bank_variation"}
+                onToggle={() => handleCardClick("bank_variation")}
+              />
             );
           })()}
 
@@ -792,6 +828,119 @@ export function MonthlyReport() {
           onDeleted={refreshAfterMutation}
         />
       )}
+    </div>
+  );
+}
+
+/**
+ * Puente entre "Resultado del mes" y "Variación del saldo del banco".
+ *
+ * Nació de una crítica de las socias (ago-2026) que era correcta: en la
+ * pantalla se veía Ingresos, Egresos y Variación del banco, uno al lado
+ * del otro. Cualquiera resta los dos primeros, no le da el tercero, y
+ * concluye que los datos están mal. No estaban mal — respondían
+ * preguntas distintas, pero eso solo lo sabía quien construyó el
+ * sistema. Este bloque hace visible la diferencia, línea por línea,
+ * para que la resta cierre a la vista de cualquiera.
+ *
+ * Las tres partidas que separan una cifra de la otra:
+ *  - Efectivo: se gastó o cobró, pero nunca tocó el banco.
+ *  - No operativo: entró al banco (reembolsos de otras sedes, aportes,
+ *    venta de un activo) pero no es venta del mes.
+ *  - Adelantos a otras sedes: salió de esta cuenta, pero el costo es
+ *    de Fonavi o Centro, no de aquí.
+ */
+function ReconciliationBridge({
+  resultado,
+  bridge,
+  bankVariation,
+  expanded,
+  onToggle,
+}: {
+  resultado: number;
+  bridge?: {
+    resultadoDelMes: number;
+    efectivoNeto: number;
+    noOperativoBanco: number;
+    compartidoOtrasSedes: number;
+  };
+  bankVariation: number;
+  expanded: boolean;
+  onToggle: () => void;
+}) {
+  // Sin datos del puente (versión anterior del servidor) no inventamos
+  // una explicación: mostramos solo las dos cifras.
+  const ajustes = bridge
+    ? [
+        {
+          label: "Efectivo — cobrado o pagado sin pasar por el banco",
+          valor: -bridge.efectivoNeto,
+          ayuda:
+            bridge.efectivoNeto < 0
+              ? "Se pagó en efectivo, así que el banco no bajó por esto."
+              : "Se cobró en efectivo, así que el banco no subió por esto.",
+        },
+        {
+          label: "Entró al banco pero no es venta del mes",
+          valor: bridge.noOperativoBanco,
+          ayuda: "Reembolsos de otras sedes, aportes o venta de activos.",
+        },
+        {
+          label: "Adelantado por cuenta de otras sedes",
+          valor: -bridge.compartidoOtrasSedes,
+          ayuda: "Salió de esta cuenta, pero el costo es de Fonavi o Centro.",
+        },
+      ].filter((a) => Math.abs(a.valor) > 0.005)
+    : [];
+
+  const fmt = (n: number) => `${n >= 0 ? "+" : "−"}${formatCurrency(Math.abs(n))}`;
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+      <div className="px-4 py-3 border-b border-gray-100">
+        <h3 className="text-sm font-semibold text-gray-900">
+          Del resultado del mes al movimiento del banco
+        </h3>
+        <p className="text-[11px] text-gray-500 mt-0.5">
+          {ajustes.length === 0
+            ? "Este mes las dos cifras coinciden: todo el movimiento pasó por el banco."
+            : "Las dos cifras no son iguales, y esta es la razón exacta. Cada línea suma o resta hasta llegar al saldo del banco."}
+        </p>
+      </div>
+
+      <div className="px-4 py-3 space-y-1.5 text-sm">
+        <div className="flex items-baseline justify-between gap-3">
+          <span className="text-gray-900 font-medium">Resultado del mes</span>
+          <span className={`font-semibold tabular-nums ${resultado >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+            {formatCurrency(resultado)}
+          </span>
+        </div>
+
+        {ajustes.map((a) => (
+          <div key={a.label} className="flex items-baseline justify-between gap-3 pl-3">
+            <span className="text-gray-600 text-[13px]">
+              {a.label}
+              <span className="block text-[11px] text-gray-400">{a.ayuda}</span>
+            </span>
+            <span className="tabular-nums text-gray-700 text-[13px] whitespace-nowrap">{fmt(a.valor)}</span>
+          </div>
+        ))}
+
+        <div className="flex items-baseline justify-between gap-3 border-t border-gray-200 pt-2 mt-1">
+          <button
+            onClick={onToggle}
+            className="text-left text-gray-900 font-medium hover:text-primary"
+          >
+            Variación del saldo del banco
+            <span className="block text-[11px] text-primary font-normal">
+              {expanded ? "Click para cerrar" : "Ver detalle diario"}
+            </span>
+          </button>
+          <span className={`font-semibold tabular-nums ${bankVariation >= 0 ? "text-emerald-700" : "text-red-600"}`}>
+            {formatCurrency(bankVariation)}
+          </span>
+        </div>
+      </div>
     </div>
   );
 }
