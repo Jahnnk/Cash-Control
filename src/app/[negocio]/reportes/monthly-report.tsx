@@ -674,8 +674,62 @@ export function MonthlyReport() {
                         entry.items.push(row);
                         entry.total += ownOf(row);
                       }
+
+                      // Para cuadrar contra el extracto del BCP hace falta separar
+                      // dos preguntas que no son la misma:
+                      //   · cuánto COSTÓ el mes (porción de esta sede, banco + efectivo)
+                      //   · cuánto SALIÓ de la cuenta (monto completo, solo banco)
+                      // No son intercambiables: un gasto compartido pagado por banco
+                      // sale ENTERO de la cuenta aunque solo una parte sea costo de
+                      // esta sede, y el efectivo nunca aparece en el extracto.
+                      const esBanco = (m: unknown) =>
+                        m !== "efectivo" && m !== "socio" && m !== "pendiente_atelier";
+                      const costoBanco = detailData
+                        .filter((r) => esBanco(r.payment_method))
+                        .reduce((s, r) => s + ownOf(r), 0);
+                      const costoNoBanco = detailData
+                        .filter((r) => !esBanco(r.payment_method))
+                        .reduce((s, r) => s + ownOf(r), 0);
+                      const salioDelBanco = detailData
+                        .filter((r) => esBanco(r.payment_method))
+                        .reduce((s, r) => s + Number(r.amount ?? 0), 0);
                       return (
                         <div className="divide-y divide-gray-100">
+                          <div className="px-4 py-3 bg-gray-50 space-y-2">
+                            <div>
+                              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                                Cuánto costó el mes
+                              </div>
+                              <div className="mt-1 space-y-0.5 text-xs">
+                                <div className="flex justify-between text-gray-700">
+                                  <span>Pagado por banco</span>
+                                  <span className="tabular-nums">{formatCurrency(costoBanco)}</span>
+                                </div>
+                                <div className="flex justify-between text-gray-700">
+                                  <span>Pagado en efectivo o por el socio</span>
+                                  <span className="tabular-nums">{formatCurrency(costoNoBanco)}</span>
+                                </div>
+                                <div className="flex justify-between font-semibold text-gray-900 border-t border-gray-200 pt-1 mt-1">
+                                  <span>Egresos totales</span>
+                                  <span className="tabular-nums">{formatCurrency(costoBanco + costoNoBanco)}</span>
+                                </div>
+                              </div>
+                            </div>
+                            <div className="border-t border-gray-200 pt-2">
+                              <div className="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">
+                                Para cuadrar con tu extracto del BCP
+                              </div>
+                              <div className="flex justify-between text-xs mt-1">
+                                <span className="text-gray-700">
+                                  Salió de la cuenta este mes
+                                  <span className="block text-[11px] text-gray-400">
+                                    Monto completo de cada cargo, incluida la parte de otras sedes. El efectivo no aparece acá.
+                                  </span>
+                                </span>
+                                <span className="tabular-nums font-semibold text-gray-900">{formatCurrency(salioDelBanco)}</span>
+                              </div>
+                            </div>
+                          </div>
                           {Array.from(byDate.entries()).map(([date, { items, total }]) => (
                             <div key={date} className="px-4 py-3">
                               <div className="flex items-center justify-between mb-1">
