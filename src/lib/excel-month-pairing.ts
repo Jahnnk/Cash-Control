@@ -4,36 +4,29 @@
  * Resuelve dos cosas SIN tocar la base de datos:
  *  1. Emparejar las pestañas por mes — cada mes arrastra su par Ing&Gtos +
  *     Control de VTAS — tolerante a la capitalización inconsistente de los
- *     nombres ("Ing&Gtos Abr26", "Control de VTAS-MAY26", "...Set26", etc.).
+ *     nombres ("Ing&Gtos Abr26", "Control de VTAS-MAY26", "...Set26", etc.)
+ *     y al año faltante ("Control de VTAS-JUL" sin el "26").
  *  2. Clasificar qué meses ya están cargados (idempotencia) a partir de
  *     conteos por mes que el server provee (la query es read-only y vive
  *     en la Parte 2; aquí solo la lógica de clasificación, testeable).
  *
- * Espejo del parser de mes ya usado en excel-importer.ts
- * (getLastDayOfSheetMonth) y control-vtas-parser.ts (parseSheetMonth);
- * se replica el mapa de abreviaturas para mantener este módulo puro y
- * sin dependencias de XLSX.
+ * El parseo de mes/año vive en sheet-month.ts (sin dependencia de XLSX,
+ * para que este módulo se mantenga puro) — único lugar para ese mapa,
+ * compartido también por excel-importer.ts y control-vtas-parser.ts.
  */
 
-/** Abreviaturas de 3 letras → número de mes (1-12). SET y SEP = septiembre. */
-const MONTH_ABBREV: Record<string, number> = {
-  ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6,
-  JUL: 7, AGO: 8, SET: 9, SEP: 9, OCT: 10, NOV: 11, DIC: 12,
-};
+import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
 
 /**
  * Extrae la clave de mes "YYYY-MM" del nombre de una pestaña.
- * Busca el patrón `<abrev-3-letras><año-2-dígitos>` en cualquier parte del
- * nombre, case-insensitive y con separador/espacio opcional. Devuelve null
- * si no se puede deducir el mes.
+ * Busca el patrón `<abrev-3-letras><año-2-dígitos opcional>` en cualquier
+ * parte del nombre, case-insensitive y con separador/espacio opcional. Si
+ * el año no está en el nombre, se asume el año en curso (hora de Perú).
+ * Devuelve null si no se puede deducir el mes.
  */
-export function sheetMonthKey(sheetName: string): string | null {
-  const m = sheetName.match(/([A-Za-z]{3})\s*(\d{2})\b/);
-  if (!m) return null;
-  const month = MONTH_ABBREV[m[1].toUpperCase()];
-  if (!month) return null;
-  const year = 2000 + parseInt(m[2], 10);
-  return `${year}-${String(month).padStart(2, "0")}`;
+export function sheetMonthKey(sheetName: string, fallbackYear: number = currentYearLima()): string | null {
+  const parsed = parseSheetMonthYear(sheetName, fallbackYear);
+  return parsed ? `${parsed.year}-${String(parsed.month).padStart(2, "0")}` : null;
 }
 
 export type MonthPairStatus = "complete" | "only-inggtos" | "only-vtas";

@@ -18,6 +18,7 @@
  */
 
 import * as XLSX from "xlsx";
+import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
 
 // ─────────────────────────────────────────────────────────────────
 // Tipos
@@ -199,11 +200,6 @@ function inferIncomePaymentMethod(concepto: string): "yape_plin" | "pos" | "tran
   return "transferencia";
 }
 
-const MONTH_ABBREV_MAP: Record<string, number> = {
-  ENE: 1, FEB: 2, MAR: 3, ABR: 4, MAY: 5, JUN: 6,
-  JUL: 7, AGO: 8, SET: 9, SEP: 9, OCT: 10, NOV: 11, DIC: 12,
-};
-
 /**
  * Extrae el mes/año del nombre de una pestaña ("Ing&Gtos Abr26",
  * "Control de VTAS-Abr26", etc.) y devuelve el último día calendario
@@ -212,18 +208,16 @@ const MONTH_ABBREV_MAP: Record<string, number> = {
  * Acepta abreviaciones de 3 letras case-insensitive:
  *   ENE FEB MAR ABR MAY JUN JUL AGO SET SEP OCT NOV DIC
  *
- * El año es de 2 dígitos y se interpreta como 20xx.
+ * El año es de 2 dígitos y OPCIONAL: si Kelly nombra la pestaña sin año
+ * (ej. "Ing&Gtos-JUL" en vez de "Ing&Gtos-JUL26"), se asume el año en
+ * curso (hora de Perú) en vez de ignorar la pestaña en silencio.
  *
  * Devuelve null si el patrón no matchea (no se puede deducir el mes).
  */
 export function getLastDayOfSheetMonth(sheetName: string): string | null {
-  // Buscamos un patrón <abreviación-3-letras><año-2-dígitos> en cualquier
-  // parte del nombre de hoja, ej. "Ing&Gtos Abr26", "Control de VTAS-Set26".
-  const m = sheetName.match(/([A-Za-z]{3})\s*(\d{2})\b/);
-  if (!m) return null;
-  const month = MONTH_ABBREV_MAP[m[1].toUpperCase()];
-  if (!month) return null;
-  const year = 2000 + parseInt(m[2], 10);
+  const parsed = parseSheetMonthYear(sheetName, currentYearLima());
+  if (!parsed) return null;
+  const { month, year } = parsed;
   // new Date(year, month, 0) → día 0 del mes siguiente = último día del mes
   // actual. Maneja bisiestos automáticamente (Feb24 → 29, Feb25 → 28).
   const lastDay = new Date(year, month, 0).getDate();

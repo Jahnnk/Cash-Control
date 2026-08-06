@@ -147,6 +147,61 @@ export async function getMonthlyReport(month: string) {
   const bankEgresosBcp = Number(bcpRow.egresos_bcp ?? 0);
   const bankVariation = bankIngresosBcp - bankEgresosBcp;
 
+  // ── PUENTE Resultado del mes → Variación del banco ──────────────
+  // Reporte de las socias (ago-2026): en pantalla se ve "Ingresos" y
+  // "Egresos" al lado de "Variación saldo banco", cualquiera resta los
+  // dos primeros y le sale distinto al tercero — y concluye que el
+  // sistema miente. No miente: las tres tarjetas responden preguntas
+  // distintas. Ingresos/Egresos son el RESULTADO del mes (banco +
+  // efectivo, solo lo operativo); la variación del banco es el
+  // MOVIMIENTO real de la cuenta (sin efectivo, pero con reembolsos y
+  // con la parte de otras sedes que Atelier adelanta).
+  //
+  // Estas 3 partidas son exactamente lo que separa a una de la otra:
+  //   banco = resultado − efectivoNeto + noOperativoBanco − compartidoOtrasSedes
+  // Verificado con error 0.00 en los 5 meses × 3 sedes cargados.
+  // Si alguna de las tarjetas cambia de filtros, ESTE cálculo tiene que
+  // cambiar con ella o el puente deja de cuadrar (y una resta que no
+  // cuadra en pantalla es exactamente el bug que esto vino a matar).
+  const bridgeQ = await db.execute(sql`
+    SELECT
+      -- Efectivo con los MISMOS filtros de las tarjetas Ingresos/Egresos.
+      (SELECT COALESCE(SUM(amount),0)::float FROM bank_income_items
+       WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+         AND is_fonavi_reimbursement = false AND is_special_loan = false
+         AND is_internal_transfer = false AND archived = false
+         AND non_operative_category IS NULL AND payment_method = 'efectivo'
+      ) AS efectivo_in,
+      (SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END),0)::float
+       FROM expenses WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+         AND is_special_loan = false AND is_internal_transfer = false AND archived = false
+         AND payment_method = 'efectivo'
+      ) AS efectivo_out,
+      -- Entró al banco pero NO es venta del mes (reembolsos de otras
+      -- sedes, aportes, venta de activos): suma al banco, no al resultado.
+      (SELECT COALESCE(SUM(amount),0)::float FROM bank_income_items
+       WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+         AND archived = false AND payment_method != 'efectivo'
+         AND is_special_loan = false AND is_internal_transfer = false
+         AND (is_fonavi_reimbursement = true OR non_operative_category IS NOT NULL)
+      ) AS no_operativo_banco,
+      -- Parte de un gasto compartido que le toca a OTRA sede: sale de
+      -- esta cuenta pero no es costo propio, así que baja el banco sin
+      -- aparecer en la tarjeta de Egresos.
+      (SELECT COALESCE(SUM(amount - COALESCE(atelier_amount, amount)),0)::float
+       FROM expenses WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+         AND archived = false AND payment_method != 'efectivo'
+         AND is_special_loan = false AND is_internal_transfer = false AND is_shared = true
+      ) AS compartido_otras_sedes
+  `);
+  const bRow = bridgeQ.rows[0] as {
+    efectivo_in: number; efectivo_out: number;
+    no_operativo_banco: number; compartido_otras_sedes: number;
+  };
+  const efectivoNeto = Number(bRow.efectivo_in ?? 0) - Number(bRow.efectivo_out ?? 0);
+  const noOperativoBanco = Number(bRow.no_operativo_banco ?? 0);
+  const compartidoOtrasSedes = Number(bRow.compartido_otras_sedes ?? 0);
+
   const byCategory = await db.execute(sql`
     SELECT category, SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END) as total
     FROM expenses
@@ -199,6 +254,16 @@ export async function getMonthlyReport(month: string) {
     bankVariation,      // = bankIngresosBcp - bankEgresosBcp
     byCategory: byCategory.rows,
     byteSalesSource, // "byte_sales_daily" (ventas brutas) | "legacy" (cobros)
+    // Puente auditable entre las dos cifras que la gente compara a ojo.
+    // resultadoDelMes = Ingresos − Egresos (lo que cualquiera resta);
+    // y resultadoDelMes − efectivoNeto + noOperativoBanco
+    //   − compartidoOtrasSedes = bankVariation, exacto.
+    bridge: {
+      resultadoDelMes: totalIncomeNum - parseFloat((totalsRow.total_expenses as string) || "0"),
+      efectivoNeto,
+      noOperativoBanco,
+      compartidoOtrasSedes,
+    },
   };
 }
 
@@ -425,6 +490,12 @@ export async function getDailyBreakdown(
                e.is_shared, e.shared_rule_id::text AS shared_rule_id,
                e.fonavi_amount::float AS fonavi_amount,
                e.centro_amount::float AS centro_amount,
+               -- Porción de ESTA sede. Tiene que ser LA MISMA regla que usa la
+               -- tarjeta "Egresos totales" (incluido el is_shared), o el detalle
+               -- vuelve a no cuadrar. Ojo: hay filas con atelier_amount viejo y
+               -- is_shared=false (p. ej. un gasto que se desmarcó de compartido);
+               -- ahí manda el monto completo, igual que en la tarjeta.
+               (CASE WHEN e.is_shared THEN COALESCE(e.atelier_amount, e.amount) ELSE e.amount END)::float AS own_amount,
                e.linked_atelier_expense_id::text AS linked_atelier_expense_id,
                e.group_id::text AS group_id,
                g.label AS group_label
@@ -443,6 +514,7 @@ export async function getDailyBreakdown(
                is_shared, shared_rule_id::text AS shared_rule_id,
                fonavi_amount::float AS fonavi_amount,
                centro_amount::float AS centro_amount,
+               (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS own_amount,
                linked_atelier_expense_id::text AS linked_atelier_expense_id
         FROM expenses
         WHERE business_id = ${bId} AND date >= ${startDate} AND date <= ${endDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false

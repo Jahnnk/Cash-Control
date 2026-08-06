@@ -32,6 +32,11 @@ describe("sheetMonthKey — tolerante a capitalización y separadores", () => {
     expect(sheetMonthKey("Ing&Gtos")).toBeNull();
     expect(sheetMonthKey("Hoja1")).toBeNull();
   });
+
+  it("con el año faltante, usa el fallback en vez de ignorar la pestaña (reporte Jahnn ago-2026)", () => {
+    expect(sheetMonthKey("Control de VTAS-JUL", 2026)).toBe("2026-07");
+    expect(sheetMonthKey("Ing&Gtos-JUL", 2026)).toBe("2026-07");
+  });
 });
 
 describe("pairSheetsByMonth — empareja por mes", () => {
