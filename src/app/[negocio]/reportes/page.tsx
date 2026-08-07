@@ -8,11 +8,12 @@ import { WeeklyReport } from "./weekly-report";
 import { MonthlyReport } from "./monthly-report";
 import { DailyMovementsReport } from "./daily-movements-report";
 import { ReconciliationSection } from "./reconciliation-section";
+import { BcpReconciliationSection } from "./bcp-reconciliation-section";
 import { ExportModal } from "./export-modal";
 
-type Tab = "semanal" | "mensual" | "movimientos" | "conciliacion";
+type Tab = "semanal" | "mensual" | "movimientos" | "cuadre-bcp" | "conciliacion";
 
-const VALID_TABS: Tab[] = ["semanal", "mensual", "movimientos", "conciliacion"];
+const VALID_TABS: Tab[] = ["semanal", "mensual", "movimientos", "cuadre-bcp", "conciliacion"];
 
 function ReportesContent() {
   const searchParams = useSearchParams();
@@ -35,6 +36,10 @@ function ReportesContent() {
     { key: "semanal", label: "Semanal" },
     { key: "mensual", label: "Mensual" },
     { key: "movimientos", label: "Movimientos diarios" },
+    // Dos cuadres distintos, a propósito: "Cuadre BCP" verifica el extracto
+    // del banco contra lo registrado (auditoría de las socias, ago-2026);
+    // "Cuadre Byte ↔ banco" verifica que las ventas del POS lleguen al banco.
+    { key: "cuadre-bcp", label: "Cuadre BCP" },
     // Slug interno "conciliacion" intacto (deep-links del Dashboard);
     // solo cambia la etiqueta visible (Fase B — naming).
     { key: "conciliacion", label: "Cuadre Byte ↔ banco" },
@@ -89,6 +94,7 @@ function ReportesContent() {
       {activeTab === "semanal" && <WeeklyReport />}
       {activeTab === "mensual" && <MonthlyReport />}
       {activeTab === "movimientos" && <DailyMovementsReport />}
+      {activeTab === "cuadre-bcp" && <BcpReconciliationSection />}
       {activeTab === "conciliacion" && <ReconciliationSection />}
     </div>
   );
