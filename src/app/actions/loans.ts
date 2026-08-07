@@ -172,9 +172,20 @@ export async function getLoansSummary(): Promise<LoansSummary> {
   const totalRefunded = movements
     .filter((m) => m.kind === "refund")
     .reduce((s, m) => s + m.amount, 0);
+  // OJO: no todo gasto 'socio' es condonado. createDirectLoanWithExpenses
+  // (el flujo guiado) crea el gasto 'socio' Y una deuda al mismo tiempo —
+  // ese SÍ es préstamo (ya está en totalLoaned) y su nota queda con el
+  // patrón "Pagado por el socio (préstamo directo del ...)". Solo cuenta
+  // como condonado el gasto 'socio' que NO tiene esa deuda emparejada
+  // (los reclasificados a mano en la auditoría del 06-ago-2026, nota
+  // "...aporte del socio, no se devuelve..."). Sumar TODO lo 'socio' sin
+  // este filtro duplica el monto (bug real, detectado por Jahnn al
+  // desconfiar de la cifra el 06-ago-2026 — no se lo inventó).
   const condonedRes = await db.execute(sql`
     SELECT COALESCE(SUM(amount), 0)::float AS t
-    FROM expenses WHERE business_id = ${bId} AND payment_method = ${SOCIO_METHOD} AND archived = false
+    FROM expenses
+    WHERE business_id = ${bId} AND payment_method = ${SOCIO_METHOD} AND archived = false
+      AND notes NOT LIKE 'Pagado por el socio (préstamo directo del%'
   `);
   const totalCondoned = Number((condonedRes.rows[0] as { t: number } | undefined)?.t ?? 0);
 
