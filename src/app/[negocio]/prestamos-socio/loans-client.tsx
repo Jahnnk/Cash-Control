@@ -336,6 +336,7 @@ export function LoansClient({ summary, capitalReconocido }: { summary: LoansSumm
           <button
             onClick={() => { resetForm(); setMode("refund"); }}
             disabled={summary.pendingBalance <= 0}
+            title={summary.pendingBalance <= 0 ? "No hay saldo prestado pendiente de devolver" : undefined}
             className="bg-orange-600 text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-orange-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center gap-2"
           >
             <Plus className="w-4 h-4" /> Registrar devolución
@@ -372,35 +373,62 @@ export function LoansClient({ summary, capitalReconocido }: { summary: LoansSumm
         </div>
       </div>
 
-      {/* Summary — "Total devuelto" se quitó del resumen a pedido de
-          Jahnn (acuerdo de socios jul-2026: lo puesto se reconoce como
-          aporte). Las devoluciones siguen visibles en el historial y el
-          saldo pendiente se sigue calculando igual (prestado − devuelto). */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        {/* Primero el total reconocido en acta (pedido de Jahnn: verlo
-            también aquí, no solo en el Dashboard). Luego el total
-            prestado y el pendiente como PARTE de ese total — Jahnn sumó
-            ambas tarjetas creyendo que eran montos separados (jul-2026);
-            el subtítulo lo deja explícito. */}
+      {/* Resumen — rediseño visual (auditoría de las socias, ago-2026):
+          Jahnn recordaba haber puesto "más de 10 mil" y esta pantalla
+          solo mostraba "Total prestado" S/6,081.90, porque los gastos
+          CONDONADOS (método 'socio' — Jahnn decidió no cobrarlos) nunca
+          se sumaban aquí. La respuesta a "¿cuánto ha puesto el socio?"
+          es prestado + condonado, todo junto — sin mezclar devuelto ni
+          pendiente, que son la OTRA pregunta ("¿cuánto falta pagar?").
+          Puramente visual: no cambia totalLoaned, totalRefunded ni
+          pendingBalance, que siguen calculándose exactamente igual. */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
         {capitalReconocido !== null && (
           <KPICard
             title="Aporte de capital reconocido"
             value={formatCurrency(capitalReconocido)}
-            subtitle="Acta de socios jul-2026 · préstamos + aporte condonado + financiamiento (detalle en el Dashboard)"
+            subtitle="Acta de socios jul-2026 (detalle en el Dashboard)"
             variant="success"
           />
         )}
         <KPICard
-          title="Total prestado"
-          value={formatCurrency(summary.totalLoaned)}
-          subtitle="Suma de todo lo prestado (parte del aporte reconocido)"
+          title="Total puesto por el socio"
+          value={formatCurrency(summary.totalLoaned + summary.totalCondoned)}
+          subtitle="Prestado + condonado, sin restar lo devuelto"
+          variant="success"
         />
-        <KPICard
-          title="Saldo pendiente"
-          value={formatCurrency(summary.pendingBalance)}
-          subtitle="De lo prestado, aún sin devolver (parte del total, no se suma)"
-          variant={summary.pendingBalance > 0 ? "warning" : "default"}
-        />
+      </div>
+
+      <div className="bg-white rounded-xl border border-gray-200 p-4">
+        <div className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-3">
+          De qué se compone
+        </div>
+        <div className="space-y-2.5">
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Prestado</div>
+              <div className="text-[11px] text-gray-500">Atelier lo registra como deuda con el socio</div>
+            </div>
+            <div className="text-sm font-semibold text-emerald-700 tabular-nums">
+              {formatCurrency(summary.totalLoaned)}
+            </div>
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm font-medium text-gray-900">Condonado</div>
+              <div className="text-[11px] text-gray-500">Jahnn pagó el gasto directo y decidió no cobrarlo</div>
+            </div>
+            <div className="text-sm font-semibold text-emerald-700 tabular-nums">
+              {formatCurrency(summary.totalCondoned)}
+            </div>
+          </div>
+          <div className="flex items-center justify-between pt-2.5 border-t border-gray-200">
+            <div className="text-sm font-semibold text-gray-900">Total puesto por el socio</div>
+            <div className="text-sm font-bold text-gray-900 tabular-nums">
+              {formatCurrency(summary.totalLoaned + summary.totalCondoned)}
+            </div>
+          </div>
+        </div>
       </div>
 
       {/* History */}

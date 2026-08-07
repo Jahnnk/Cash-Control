@@ -137,11 +137,13 @@ describe("getLoansSummary — el préstamo via-banco cuenta en el saldo pendient
       [
         { id: "d", kind: "refund", date: "2026-06-06", amount: 500, payment_method: "transferencia", loan_via_bank: true, concept: "Devolución", notes: null, created_at: "t4" },
       ],
+      [{ t: 6510.6 }], // condonado (expenses.payment_method='socio')
     ];
     const s = await getLoansSummary();
     expect(s.totalLoaned).toBe(2912);
     expect(s.totalRefunded).toBe(500);
     expect(s.pendingBalance).toBe(2412);
+    expect(s.totalCondoned).toBe(6510.6);
     const byId = Object.fromEntries(s.movements.map((m) => [m.id, m]));
     expect(byId["a"].entry).toBe("banco");
     expect(byId["a"].viaBank).toBe(true);

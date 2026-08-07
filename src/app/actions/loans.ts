@@ -84,13 +84,22 @@ export type LoansSummary = {
   totalLoaned: number;
   totalRefunded: number;
   pendingBalance: number; // = totalLoaned − totalRefunded (≥ 0 normalmente)
+  /**
+   * Gastos pagados directo por el socio y CONDONADOS (método 'socio' —
+   * ver src/lib/payment-methods.ts): son costo operativo real, pero
+   * Jahnn decidió no cobrarlos, así que NO generan deuda ni pasan por
+   * bank_income_items/is_special_loan. Sin este número, "Total prestado"
+   * subestimaba lo que el socio puso (auditoría de las socias, ago-2026:
+   * Jahnn recordaba "más de 10 mil" y la pantalla solo mostraba 6,081.90).
+   */
+  totalCondoned: number;
   movements: LoanMovement[];
 };
 
 export async function getLoansSummary(): Promise<LoansSummary> {
   const bId = await activeBusinessId();
   if (bId !== ATELIER_BUSINESS_ID) {
-    return { totalLoaned: 0, totalRefunded: 0, pendingBalance: 0, movements: [] };
+    return { totalLoaned: 0, totalRefunded: 0, pendingBalance: 0, totalCondoned: 0, movements: [] };
   }
 
   const loansRes = await db.execute(sql`
@@ -163,11 +172,17 @@ export async function getLoansSummary(): Promise<LoansSummary> {
   const totalRefunded = movements
     .filter((m) => m.kind === "refund")
     .reduce((s, m) => s + m.amount, 0);
+  const condonedRes = await db.execute(sql`
+    SELECT COALESCE(SUM(amount), 0)::float AS t
+    FROM expenses WHERE business_id = ${bId} AND payment_method = ${SOCIO_METHOD} AND archived = false
+  `);
+  const totalCondoned = Number((condonedRes.rows[0] as { t: number } | undefined)?.t ?? 0);
 
   return {
     totalLoaned: Math.round(totalLoaned * 100) / 100,
     totalRefunded: Math.round(totalRefunded * 100) / 100,
     pendingBalance: Math.round((totalLoaned - totalRefunded) * 100) / 100,
+    totalCondoned: Math.round(totalCondoned * 100) / 100,
     movements,
   };
 }
