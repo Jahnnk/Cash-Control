@@ -181,8 +181,16 @@ export async function getLoansSummary(): Promise<LoansSummary> {
   // "...aporte del socio, no se devuelve..."). Sumar TODO lo 'socio' sin
   // este filtro duplica el monto (bug real, detectado por Jahnn al
   // desconfiar de la cifra el 06-ago-2026 — no se lo inventó).
+  //
+  // Además, en un gasto COMPARTIDO solo la porción de Atelier (atelier_amount)
+  // es condonada: la porción de Fonavi/Centro, aunque Jahnn la haya cubierto
+  // al inicio, deja de ser condonada en cuanto esa sede la reembolsa — esa
+  // plata es de Jahnn, no de Atelier (confirmado por él, 06-ago-2026, tras
+  // encontrar 3 gastos compartidos con su recibo ya "cobrado" en
+  // fonavi_receivables). Esos 3 casos ya se reclasificaron a préstamo+
+  // devolución vía scripts/audit/2026-08-06-fonavi-compartidos-a-prestamo.mjs.
   const condonedRes = await db.execute(sql`
-    SELECT COALESCE(SUM(amount), 0)::float AS t
+    SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0)::float AS t
     FROM expenses
     WHERE business_id = ${bId} AND payment_method = ${SOCIO_METHOD} AND archived = false
       AND notes NOT LIKE 'Pagado por el socio (préstamo directo del%'
