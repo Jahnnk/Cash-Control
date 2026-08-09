@@ -9,6 +9,8 @@ import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { BreakevenBody } from "@/components/breakeven-card";
 import { GroupKpisSection } from "./group-kpis-section";
+import { ClientSalesSection } from "@/app/[negocio]/panel/client-sales-section";
+import type { ClientSalesAnalisis } from "@/app/actions/client-sales";
 import { DataFreshnessCard } from "./data-freshness-card";
 import { KellyImportCard } from "./kelly-import-card";
 import { KellyLoadCard } from "./kelly-load-card";
@@ -50,10 +52,12 @@ type Props = {
   ventas: GroupVentasSede[] | null;
   kellyLoads: KellyLoadStatus[];
   cutoffs: SedeCutoff[] | null;
+  clientes: ClientSalesAnalisis;
 };
 
 export function GrupoDashboardClient({
   selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, ventas, kellyLoads, cutoffs,
+  clientes,
 }: Props) {
   const [verDetalle, setVerDetalle] = useState(false);
 
@@ -184,7 +188,15 @@ export function GrupoDashboardClient({
         {pulses.map((p) => <SedePulseCard key={p.businessId} s={p} />)}
       </div>
 
-      {/* 4 · El detalle — plegado. El CEO no lo necesita para decidir. */}
+      {/* 4 · Clientes B2B de Atelier — quién nos compra de verdad.
+              Solo lectura: el que sube el reporte es Luis, desde su panel. */}
+      {clientes.hayDatos && (
+        <div className="pt-1">
+          <ClientSalesSection data={clientes} />
+        </div>
+      )}
+
+      {/* 5 · El detalle — plegado. El CEO no lo necesita para decidir. */}
       <div>
         <button
           onClick={() => setVerDetalle((v) => !v)}

@@ -6,6 +6,9 @@ import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getAtelierPanel, saveAtelierDay, type AtelierPanelData, type AtelierDaily } from "@/app/actions/byte-ventas";
 import { useToast } from "@/components/toast-provider";
 import { VentasImportModal } from "./ventas-import-modal";
+import { ClientSalesImportModal } from "./client-sales-import-modal";
+import { ClientSalesSection } from "./client-sales-section";
+import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
 
 /**
  * Panel de Sede · Atelier (supervisora operativa).
@@ -31,6 +34,10 @@ export function AtelierPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  // Ventas por cliente (reporte semanal de Byte). Va aparte del panel
+  // diario: es otro archivo, otra rutina y otro análisis.
+  const [showClientImport, setShowClientImport] = useState(false);
+  const [clientes, setClientes] = useState<ClientSalesAnalisis | null>(null);
 
   // Registro diario
   const [fecha, setFecha] = useState(todayLima());
@@ -39,6 +46,10 @@ export function AtelierPanel() {
   const [mermas, setMermas] = useState("");
   const [saving, setSaving] = useState(false);
   const [editingDate, setEditingDate] = useState<string | null>(null);
+
+  const loadClientes = useCallback(async () => {
+    setClientes(await getClientSalesAnalisis());
+  }, []);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -53,6 +64,14 @@ export function AtelierPanel() {
     load(month);
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [month, load]);
+
+  // El análisis de clientes no depende del mes elegido arriba: viene del
+  // último reporte semanal importado. Se carga una sola vez.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
+    loadClientes();
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [loadClientes]);
 
   const dayRecord = data?.dailies.find((d) => d.date === fecha) ?? null;
   const dayIsImport = dayRecord?.source === "import";
@@ -290,10 +309,27 @@ export function AtelierPanel() {
         </>
       )}
 
+      {/* 4 · Clientes B2B — del reporte "Ventas por Cliente" de Byte */}
+      <div className="pt-2">
+        {clientes ? (
+          <ClientSalesSection data={clientes} onSubir={() => setShowClientImport(true)} />
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">
+            Cargando clientes…
+          </div>
+        )}
+      </div>
+
       {showImport && (
         <VentasImportModal
           onClose={() => setShowImport(false)}
           onImported={() => load(month)}
+        />
+      )}
+      {showClientImport && (
+        <ClientSalesImportModal
+          onClose={() => setShowClientImport(false)}
+          onImported={loadClientes}
         />
       )}
     </div>
