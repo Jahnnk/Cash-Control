@@ -18,7 +18,7 @@ export function isUserScope(v: string): v is UserScope {
 
 /** Etiquetas en español para la pantalla de usuarios. */
 export const SCOPE_LABELS: Record<UserScope, string> = {
-  "admin-atelier": "Supervisora · Panel de Atelier",
+  "admin-atelier": "Administración · Panel de Atelier",
   "admin-fonavi": "Administración · Panel de Fonavi",
   "admin-centro": "Administración · Panel de Centro",
   "verif-fonavi": "Verificador de conteo · Fonavi",
