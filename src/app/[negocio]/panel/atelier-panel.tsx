@@ -9,6 +9,9 @@ import { VentasImportModal } from "./ventas-import-modal";
 import { ClientSalesImportModal } from "./client-sales-import-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
+import { ReceivablesImportModal } from "./receivables-import-modal";
+import { ReceivablesSection } from "./receivables-section";
+import { getReceivables, type ReceivablesData } from "@/app/actions/receivables";
 
 /**
  * Panel de Sede · Atelier (supervisora operativa).
@@ -38,6 +41,10 @@ export function AtelierPanel() {
   // diario: es otro archivo, otra rutina y otro análisis.
   const [showClientImport, setShowClientImport] = useState(false);
   const [clientes, setClientes] = useState<ClientSalesAnalisis | null>(null);
+  // Cuentas por cobrar: se alimenta de otros dos reportes de Byte
+  // (ventas + consolidado de facturas), con su propia rutina semanal.
+  const [showCobranzaImport, setShowCobranzaImport] = useState(false);
+  const [cobranza, setCobranza] = useState<ReceivablesData | null>(null);
 
   // Registro diario
   const [fecha, setFecha] = useState(todayLima());
@@ -49,6 +56,10 @@ export function AtelierPanel() {
 
   const loadClientes = useCallback(async () => {
     setClientes(await getClientSalesAnalisis());
+  }, []);
+
+  const loadCobranza = useCallback(async () => {
+    setCobranza(await getReceivables());
   }, []);
 
   const load = useCallback(async (m: string) => {
@@ -72,6 +83,14 @@ export function AtelierPanel() {
     loadClientes();
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [loadClientes]);
+
+  // Cuentas por cobrar: tampoco depende del mes elegido arriba — es el
+  // estado vivo de la deuda, no una foto mensual.
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
+    loadCobranza();
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [loadCobranza]);
 
   const dayRecord = data?.dailies.find((d) => d.date === fecha) ?? null;
   const dayIsImport = dayRecord?.source === "import";
@@ -320,6 +339,21 @@ export function AtelierPanel() {
         )}
       </div>
 
+      {/* 5 · Cuentas por cobrar — de los reportes de ventas y facturas */}
+      <div className="pt-2">
+        {cobranza ? (
+          <ReceivablesSection
+            data={cobranza}
+            onSubir={() => setShowCobranzaImport(true)}
+            onRecargar={loadCobranza}
+          />
+        ) : (
+          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">
+            Cargando cuentas por cobrar…
+          </div>
+        )}
+      </div>
+
       {showImport && (
         <VentasImportModal
           onClose={() => setShowImport(false)}
@@ -330,6 +364,12 @@ export function AtelierPanel() {
         <ClientSalesImportModal
           onClose={() => setShowClientImport(false)}
           onImported={loadClientes}
+        />
+      )}
+      {showCobranzaImport && (
+        <ReceivablesImportModal
+          onClose={() => setShowCobranzaImport(false)}
+          onImported={loadCobranza}
         />
       )}
     </div>

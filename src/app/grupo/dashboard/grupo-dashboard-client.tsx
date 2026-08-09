@@ -11,6 +11,8 @@ import { BreakevenBody } from "@/components/breakeven-card";
 import { GroupKpisSection } from "./group-kpis-section";
 import { ClientSalesSection } from "@/app/[negocio]/panel/client-sales-section";
 import type { ClientSalesAnalisis } from "@/app/actions/client-sales";
+import { ReceivablesSection } from "@/app/[negocio]/panel/receivables-section";
+import type { ReceivablesData } from "@/app/actions/receivables";
 import { DataFreshnessCard } from "./data-freshness-card";
 import { KellyImportCard } from "./kelly-import-card";
 import { KellyLoadCard } from "./kelly-load-card";
@@ -53,11 +55,13 @@ type Props = {
   kellyLoads: KellyLoadStatus[];
   cutoffs: SedeCutoff[] | null;
   clientes: ClientSalesAnalisis;
+  cobranza: ReceivablesData;
 };
 
 export function GrupoDashboardClient({
   selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, ventas, kellyLoads, cutoffs,
   clientes,
+  cobranza,
 }: Props) {
   const [verDetalle, setVerDetalle] = useState(false);
 
@@ -196,7 +200,15 @@ export function GrupoDashboardClient({
         </div>
       )}
 
-      {/* 5 · El detalle — plegado. El CEO no lo necesita para decidir. */}
+      {/* 5 · Cuentas por cobrar de Atelier — cuánta plata está afuera.
+              Solo lectura: el que sube los reportes es Luis. */}
+      {cobranza.hayDatos && (
+        <div className="pt-1">
+          <ReceivablesSection data={cobranza} />
+        </div>
+      )}
+
+      {/* 6 · El detalle — plegado. El CEO no lo necesita para decidir. */}
       <div>
         <button
           onClick={() => setVerDetalle((v) => !v)}
