@@ -9,10 +9,8 @@ import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { BreakevenBody } from "@/components/breakeven-card";
 import { GroupKpisSection } from "./group-kpis-section";
-import { ClientSalesSection } from "@/app/[negocio]/panel/client-sales-section";
-import type { ClientSalesAnalisis } from "@/app/actions/client-sales";
-import { ReceivablesSection } from "@/app/[negocio]/panel/receivables-section";
-import type { ReceivablesData } from "@/app/actions/receivables";
+import { AtelierB2BCard } from "./atelier-b2b-card";
+import type { AtelierB2BResumen } from "@/app/actions/atelier-b2b";
 import { DataFreshnessCard } from "./data-freshness-card";
 import { KellyImportCard } from "./kelly-import-card";
 import { KellyLoadCard } from "./kelly-load-card";
@@ -54,14 +52,12 @@ type Props = {
   ventas: GroupVentasSede[] | null;
   kellyLoads: KellyLoadStatus[];
   cutoffs: SedeCutoff[] | null;
-  clientes: ClientSalesAnalisis;
-  cobranza: ReceivablesData;
+  atelierB2B: AtelierB2BResumen;
 };
 
 export function GrupoDashboardClient({
   selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, ventas, kellyLoads, cutoffs,
-  clientes,
-  cobranza,
+  atelierB2B,
 }: Props) {
   const [verDetalle, setVerDetalle] = useState(false);
 
@@ -192,23 +188,13 @@ export function GrupoDashboardClient({
         {pulses.map((p) => <SedePulseCard key={p.businessId} s={p} />)}
       </div>
 
-      {/* 4 · Clientes B2B de Atelier — quién nos compra de verdad.
-              Solo lectura: el que sube el reporte es Luis, desde su panel. */}
-      {clientes.hayDatos && (
-        <div className="pt-1">
-          <ClientSalesSection data={clientes} />
-        </div>
-      )}
+      {/* 4 · Atelier B2B — tres números para decidir. El ranking de
+              clientes y la cobranza documento por documento son
+              operación de Luis: viven detrás del botón "Ver detalle" y
+              ni siquiera se cargan hasta que Jahnn los pide. */}
+      <AtelierB2BCard resumen={atelierB2B} />
 
-      {/* 5 · Cuentas por cobrar de Atelier — cuánta plata está afuera.
-              Solo lectura: el que sube los reportes es Luis. */}
-      {cobranza.hayDatos && (
-        <div className="pt-1">
-          <ReceivablesSection data={cobranza} />
-        </div>
-      )}
-
-      {/* 6 · El detalle — plegado. El CEO no lo necesita para decidir. */}
+      {/* 5 · El detalle — plegado. El CEO no lo necesita para decidir. */}
       <div>
         <button
           onClick={() => setVerDetalle((v) => !v)}
