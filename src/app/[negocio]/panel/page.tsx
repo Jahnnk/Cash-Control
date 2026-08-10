@@ -25,6 +25,7 @@ import { MermaDetailModal } from "./merma-detail-modal";
 import { MejorVendedorSection } from "./mejor-vendedor-section";
 import { BaseModal } from "./base-modal";
 import { AtelierPanel } from "./atelier-panel";
+import { HighlightSlot } from "./highlight-card";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 
@@ -183,6 +184,10 @@ function IncentivosPage() {
 
   return (
     <div className="space-y-6">
+      {/* Lo más importante del día — va primero a propósito: si
+          compitiera con los KPIs, dejaría de ser lo más importante. */}
+      <HighlightSlot />
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>

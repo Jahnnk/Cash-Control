@@ -6,6 +6,7 @@ import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getAtelierPanel, saveAtelierDay, type AtelierPanelData, type AtelierDaily } from "@/app/actions/byte-ventas";
 import { useToast } from "@/components/toast-provider";
 import { VentasImportModal } from "./ventas-import-modal";
+import { HighlightSlot } from "./highlight-card";
 import { ClientSalesImportModal } from "./client-sales-import-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
@@ -136,6 +137,10 @@ export function AtelierPanel() {
 
   return (
     <div className="space-y-6">
+      {/* Lo más importante del día — va primero a propósito: si
+          compitiera con los KPIs, dejaría de ser lo más importante. */}
+      <HighlightSlot />
+
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
