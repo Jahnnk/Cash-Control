@@ -1,7 +1,7 @@
 # Contexto completo del proyecto — léeme antes de trabajar
 
 > Para cualquier agente o desarrollador que llegue nuevo (Codex, Claude,
-> humano). Actualizado: 2026-07-19. Complementa `AGENTS.md` (reglas de
+> humano). Actualizado: 2026-08-10. Complementa `AGENTS.md` (reglas de
 > ramas, deploy y auth) y `CLAUDE.md` (overview técnico). Este archivo
 > cuenta lo que esos dos no cuentan: quién es el usuario, cómo trabajar
 > con él, las lecciones aprendidas a golpes y el estado actual.
@@ -37,17 +37,29 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **Byte** = sistema POS. **BCP** = banco. La app existe porque Byte
   registra ventas pero la plata real llega al banco días después: la
   app muestra la posición de caja REAL.
-- **Kelly** = socia y gerente comercial; registra las finanzas de las
-  3 SEDES en Excel (Atelier desde jul-2026, acuerdo de reunión) y a
-  veces demora días/semanas (por eso existe la tarjeta de "frescura de
-  datos" y el import central en Grupo). Su rol de UI ve las 3 sedes.
-  OJO Atelier: sus registros especiales (clientes B2B/CxC, préstamos
-  socio, gastos compartidos, clasificaciones no operativas) están
-  PROTEGIDOS del archivado en el import — el Excel no sabe expresarlos
-  y esas capas se registran EN la app, nunca vía Excel.
-- **Personal con acceso**: Luana (supervisora Atelier), Luis (admin
-  Fonavi), Chari (admin Centro), Junior (verificador Centro), Jefe de
-  tienda Fonavi (verificador). Gestionados en Grupo → Configuración.
+- **Kelly** = socia y gerente comercial; desde el **01-ago-2026 carga
+  las 3 sedes vía Excel** (antes solo Fonavi/Centro; Atelier se sumó
+  ese mes). Jahnn ya NO llena datos operativos — solo decide y verifica
+  desde Grupo. A veces demora días/semanas (por eso existe la tarjeta
+  de "frescura de datos" y el import central en Grupo). Gaps conocidos
+  de su carga de Atelier: saldo BCP, ventas B2B, reembolsos sin flag
+  (ver `transicion-kelly-agosto` en memoria de Claude).
+  OJO Atelier: sus registros especiales (clientes B2B/CxC, cuentas por
+  cobrar, préstamos socio, gastos compartidos, clasificaciones no
+  operativas) están PROTEGIDOS del archivado en el import — el Excel no
+  sabe expresarlos y esas capas se registran EN la app, nunca vía Excel.
+- **Personal con acceso** (tabla `app_users`, Grupo → Configuración):
+  **Luana fue despedida (ago-2026)**, su cuenta quedó `active=false` —
+  NO borrada, por trazabilidad. **Luis Pisco** es el nuevo administrador
+  de Atelier (`admin-atelier`, mismo scope que tenía Luana: ventas,
+  ticket promedio, mermas, y ahora también Ventas por Cliente y Cuentas
+  por Cobrar). Raúl = admin Fonavi, Chari = admin Centro, Junior =
+  verificador Centro, Jefe de tienda Fonavi = verificador. El label del
+  rol `admin-atelier` dice "Administración · Panel de Atelier" (antes
+  decía "Supervisora", cambiado a pedido de Jahnn al asumir Luis).
+  **Pendiente sin resolver**: `src/app/actions/direccion.ts:273` sigue
+  listando a "Luana · Supervisora Atelier" en el roster del Sistema de
+  Dirección — flagged, Jahnn no ha dicho si quitarla o reemplazarla.
 - Moneda S/. Timezone America/Lima. Cálculos financieros con cuidado
   de redondeo (ver lección de decimales abajo).
 
@@ -70,9 +82,10 @@ Perú. **NO es programador.** Reglas de comunicación:
    Se generan (nunca las inventa un humano), se muestran UNA vez, se
    entregan en persona. En BD solo hashes (scrypt).
 5. **Antes de cada PR**: `npx tsc --noEmit` + `npm run lint` (cero
-   avisos NUEVOS; hay ~31 preexistentes aceptados) + `npx vitest run`
-   (531 tests en verde al día de hoy) + `npm run build`. Esperar el CI
-   "Tests" en verde antes de reportar.
+   avisos NUEVOS; hay ~33 preexistentes aceptados) + `npx vitest run`
+   (663 tests en verde al día de hoy) + `npm run build`. Esperar el CI
+   "Tests" en verde antes de reportar. Si la pantalla se abre en el
+   navegador, esto NO reemplaza probarla ahí (ver lección #8).
 6. **Commits**: mensaje en español contando el POR QUÉ, terminando con
    `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`
    (si eres otro agente, usa tu propia firma — no suplantes).
@@ -91,8 +104,8 @@ Perú. **NO es programador.** Reglas de comunicación:
   excel-import como patrón).
 - **Auth de 3 niveles** (ver AGENTS.md): v1 = APP_PASSWORD (Jahnn) y
   APP_PASSWORD_KELLY (llave propia de Kelly, mismo poder, revocable por
-  separado — jul-2026: ella llena las finanzas de las 3 sedes, Jahnn
-  solo verifica desde Grupo), ambas SOLO en Vercel a propósito; v2 =
+  separado — desde 01-ago-2026 ella llena las finanzas de las 3 sedes,
+  Jahnn solo verifica desde Grupo), ambas SOLO en Vercel a propósito; v2 =
   contraseñas por sede en env vars (legado, YA borradas), v3 = usuarios
   por persona en tabla
   `app_users` (tokens firmados con el password_hash → inhabilitar o
@@ -131,6 +144,30 @@ Perú. **NO es programador.** Reglas de comunicación:
 7. **Verificar antes de afirmar**: consultar la BD/gh antes de decir
    "X está pendiente" o "Y funciona". Ya hubo una disculpa por afirmar
    que PRs estaban sin mergear cuando estaban mergeados.
+8. **Un archivo `"use server"` SOLO puede exportar funciones `async`.**
+   `export const DIAS_PARA_ATRASO = 8` en `receivables.ts` compiló
+   limpio con `tsc` y pasó `lint`, pero tumbó `/atelier/panel` con un
+   500 en el navegador — Next lo rechaza en runtime, no en tipos. TSC
+   nunca lo va a atrapar: **toda pantalla nueva que dependa de una
+   action se abre en el navegador antes de dar el feature por listo**,
+   no basta con `tsc`+`vitest` en verde (PR receivables, 09-ago-2026).
+9. **`findCol` por "contiene todas las palabras" puede dar falso
+   positivo entre encabezados parecidos.** En el Consolidado de
+   Facturas, buscar la columna "T DOC. CLTE." con `findCol(h,"doc","clte")`
+   devolvía "DOC. CLTE." (el RUC) en vez del tipo de documento, porque
+   la primera CONTIENE a la segunda. Un test contra el archivo real lo
+   atrapó. Cuando el archivo trae dos encabezados donde uno es
+   substring del otro, usar coincidencia EXACTA (`findColExacta`), no
+   "contiene" (`src/lib/receivables-parser.ts`).
+10. **El regex de tildes que borra diacríticos se corrompe si se
+    escribe con el rango Unicode literal** en vez de los escapes
+    explícitos — el tool de escritura lo normaliza a caracteres
+    combinados invisibles y el archivo queda con un bug silencioso.
+    Pasó dos veces (client-sales-parser.ts, receivables-parser.ts).
+    Escribir SIEMPRE `.replace(/[\u0300-\u036f]/g, "")` con los
+    escapes `\uXXXX` tal cual, nunca el glifo combinado pegado
+    directo en el código — y verificar con `grep -n "u0300"` tras
+    escribir el archivo.
 
 ## 6. Dominio del negocio implementado (dónde está cada cosa)
 
@@ -177,28 +214,104 @@ Perú. **NO es programador.** Reglas de comunicación:
   explícitos por sede (Atelier/Fonavi/Centro). Los registros manuales
   especiales NUNCA se archivan al importar (ver excel-import.ts,
   condiciones "PROTEGIDOS" — test que lo clava en central-access.test).
+- **Ventas por Cliente** (`/atelier/panel`, sección "Clientes de
+  Atelier"; solo Atelier, id=1): Luis sube semanalmente el "Reporte
+  Ventas por Cliente" de Byte. `src/lib/client-sales-parser.ts` +
+  `src/app/actions/client-sales.ts` (tablas `client_sales_snapshots` /
+  `client_sales_rows`). Modelo de **fotos semanales**: cada archivo es
+  un snapshot con rango de fechas propio, reimportar el mismo rango
+  REEMPLAZA. Ranking de mejores clientes, quién creció/cayó/dejó de
+  comprar (comparación por RUC/DNI, umbral 5%), concentración (80/20).
+  **Decisión de diseño clave**: Fonavi y Centro comprándole a Atelier
+  (`SEDE_RUCS`, por RUC) se separan del ranking en su propio bloque —
+  en la muestra eran 66% del volumen y tapaban a los clientes reales.
+  Visible también en Grupo → Dashboard, solo lectura (mismo componente
+  `ClientSalesSection`, prop `onSubir` opcional).
+- **Cuentas por cobrar** (`/atelier/panel`, debajo de Clientes; solo
+  Atelier): Luis sube el "Reporte de Ventas" + "Consolidado de
+  Facturas" de Byte (juntos, cualquier orden — se autodetectan por sus
+  columnas). `src/lib/receivables-parser.ts` +
+  `src/app/actions/receivables.ts` (tablas `invoice_documents` /
+  `invoice_imports`). A diferencia de Ventas por Cliente, es un
+  **libro vivo por `doc_key`**, NO fotos: una factura cobrada la semana
+  siguiente cambia de estado en su misma fila. Los dos archivos se
+  complementan sin pisarse (ventas manda sobre montos/cobro,
+  consolidado sobre RUC/IGV/anulación). El estado de cobro sale de
+  texto embebido en la columna "Medios" de Byte (`leerMedios`), nadie
+  lo marca a mano — salvo que Luis registre un cobro ANTES de que Byte
+  lo confirme (`marcarCobrado`/`desmarcarCobrado`, se limpia solo).
+  Atraso a 8 días (decisión de Jahnn — el vencimiento a 1 día de Byte
+  es un default, no un plazo real). Cuadre a TRES BANDAS: facturas +
+  boletas + tickets = total de ventas (facturas ≠ ventas y no debe
+  serlo). "Huérfanos" = ventas a crédito sin cuota de cobro en Byte
+  (típico tras anular una factura): se listan aparte, se arreglan
+  asignándoles la cuota EN BYTE, no en la app. Visible en Grupo →
+  Dashboard solo lectura (`ReceivablesSection`).
+- **Cuadre BCP** (`/[negocio]/reportes`, tab "Cuadre BCP"): prueba
+  día-por-día `saldo_ayer + ingresos_banco − egresos_banco = saldo_hoy`
+  contra `daily_records.bank_balance_real`, más un comparador contra el
+  extracto real del banco. Nació de una auditoría con Kelly de 4 meses
+  (abr-jul) que encontró y corrigió errores reales de clasificación
+  (`src/app/actions/bcp-reconciliation.ts`).
+- **EIRS PDF**: el Reporte Ejecutivo explica en prosa por qué EBITDA
+  (Byte, devengado) y Flujo de caja (banco+caja, liquidez) no
+  coinciden — no es un cuadre cerrado como Cuadre BCP, hay un residuo
+  de desfase de cobro sin trackear (`src/lib/report/narrative.ts`).
+- **Préstamos socio**: `getLoansSummary` separa prestado vs condonado
+  sin doble contar los lotes creados por `createDirectLoanWithExpenses`
+  (que generan gasto 'socio' + préstamo a la vez para el mismo hecho
+  económico) — filtro por patrón de nota, ver lección de doble conteo.
 
-## 7. Estado al 2026-07-19
+## 7. Estado al 2026-08-10
 
-- **PRs #67–#94: TODOS mergeados.** `staging` == `main`. CI verde.
-- **Migraciones corridas** (verificadas en BD): feedback-admins,
-  service-timings, worker-shifts, byte-ventas-daily, app-users,
-  delivery (CHECK + columnas). No hay migraciones pendientes.
-- **Usuarios v3 activos**: 5 (Luana, Luis, Chari, Junior, Jefe de
-  tienda Fonavi). Env vars por sede YA BORRADAS de Vercel — el control
-  de accesos es 100% desde la app.
-- **531 tests** en 54 archivos, todos en verde.
+- **`staging` == `main`, sin diferencia.** Último commit:
+  `8410e2d` (fix de un `export const` en archivo `"use server"` que
+  tumbaba `/atelier/panel` con 500 — ver lección #8). Desde el
+  19-jul se sumaron: EIRS PDF bridge, auditoría bancaria abr–jul con
+  Kelly (reclasificaciones + fix de doble conteo en préstamos + tab
+  Cuadre BCP), rol de Atelier renombrado (Luana → Luis Pisco), Ventas
+  por Cliente, y Cuentas por Cobrar.
+- **Migraciones corridas** (verificadas en BD, además de las de
+  jul-2026): `2026-08-09-ventas-por-cliente.sql` (tablas
+  `client_sales_snapshots`/`client_sales_rows`),
+  `2026-08-09-cuentas-por-cobrar.sql` (tablas
+  `invoice_documents`/`invoice_imports`). No hay migraciones pendientes
+  de correr.
+- **Usuarios v3 activos**: Luis Pisco (`admin-atelier`), Raúl
+  (`admin-fonavi`), Chari (`admin-centro`), Junior
+  (`verif-centro`), Jefe de tienda Fonavi (`verif-fonavi`). Luana
+  sigue en la tabla con `active=false` (despedida, no borrada).
+- **663 tests** en 62 archivos, todos en verde (subieron de 531 con
+  los parsers de client-sales y receivables — 12 y 28 tests nuevos).
+- **Datos reales cargados** (no son datos de prueba, no borrar):
+  `invoice_documents` tiene la semana real del 03–08-ago de Atelier
+  (51 documentos); `client_sales_snapshots` tiene al menos 1 snapshot
+  real.
 
 ## 8. Pendientes conocidos (no empezar sin que Jahnn lo pida)
 
+- **Huérfanos de cuentas por cobrar**: 2 ventas (S/150.62, Fonavi y
+  KAPHIY) quedaron sin cuota de cobro en Byte tras anularse su factura
+  — Jahnn tiene que pedirle a Luis que les asigne la cuota EN BYTE; el
+  aviso ámbar desaparece solo cuando suba el archivo de nuevo.
+- **Entrada obsoleta de Luana** en `src/app/actions/direccion.ts:273`
+  ("Luana · Supervisora Atelier", roster del Sistema de Dirección) —
+  flagged dos veces, Jahnn aún no ha dicho si quitarla o reemplazarla
+  por Luis.
+- **Mayo S/831.65 sin explicar**: única diferencia banco-vs-sistema de
+  la auditoría abr-jul con Kelly que quedó genuinamente sin resolver
+  tras búsqueda exhaustiva — necesitaría el detalle línea por línea de
+  Kelly de mayo, o confirmar si ella excluyó el préstamo de S/1,000 del
+  21-may de su suma.
 - **Backlog aprobado y pospuesto**: soft-delete, BaseModal genérico,
   unificar cost_type/cost_group, limpieza EBITDA, typos de categorías.
 - **Re-mirar la base del ticket** (Fonavi 24.70 / Centro 24.82) cuando
   haya 2-3 semanas de datos con delivery registrado: al excluir
   delivery el ticket medido sube un poco.
-- **De Jahnn (no del agente)**: datos de Kelly al día; exports de
-  rotación Atelier mar-may; costear recetas faltantes; revisar la URL
-  del cron keep-alive en cron-job.org (podría apuntar al dominio 404).
+- **De Jahnn (no del agente)**: exports de rotación Atelier mar-may;
+  costear recetas faltantes; revisar la URL del cron keep-alive en
+  cron-job.org (podría apuntar al dominio 404); gaps de la carga de
+  Kelly en Atelier (saldo BCP, B2B, reembolsos sin flag).
 - **Manuales en Dropbox** (`Instructivos/Manual_Panel_de_Sede...`)
   desactualizados tras los últimos PRs — regenerar cuando lo pida.
   SIN contraseñas dentro, siempre.
@@ -207,10 +320,17 @@ Perú. **NO es programador.** Reglas de comunicación:
 
 ```bash
 npx tsc --noEmit        # tipos
-npm run lint            # cero avisos NUEVOS (hay ~31 viejos aceptados)
-npx vitest run          # 531 en verde hoy — si bajan, rompiste algo
+npm run lint            # cero avisos NUEVOS (hay ~33 viejos aceptados)
+npx vitest run          # 663 en verde hoy — si bajan, rompiste algo
 npm run build           # el build de Vercel
 ```
+
+**`tsc`+`lint`+`vitest` en verde NO es suficiente para dar una pantalla
+nueva por lista** — un archivo `"use server"` con un export no-async
+compila y pasa lint pero tumba la página en el navegador (lección #8).
+Toda pantalla nueva que dependa de una `action` se abre en
+`preview_start` + se lee con `read_page`/`javascript_tool` antes de
+reportarla como lista.
 
 Los tests usan drivers de BD falsos (mocks de neon/db) — nunca tocan
 Neon. Para verificar datos reales: scripts efímeros con `npx tsx`
