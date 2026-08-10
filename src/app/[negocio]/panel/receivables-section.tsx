@@ -18,10 +18,14 @@ import {
 } from "recharts";
 import {
   AlertTriangle, Upload, Check, Clock, FileWarning, ShieldCheck, ChevronDown, Building2,
+  Search, X,
 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { filtrarDocumentos } from "@/lib/receivables-search";
 import { useToast } from "@/components/toast-provider";
-import { marcarCobrado, desmarcarCobrado, type ReceivablesData } from "@/app/actions/receivables";
+import {
+  marcarCobrado, desmarcarCobrado, marcarCobradosEnLote, type ReceivablesData,
+} from "@/app/actions/receivables";
 
 const VERDE = "#098B5F";
 const AMBAR = "#B45309";
@@ -50,6 +54,8 @@ export function ReceivablesSection({
   const { showToast } = useToast();
   const [verTodos, setVerTodos] = useState(false);
   const [verCuadre, setVerCuadre] = useState(false);
+  const [busqueda, setBusqueda] = useState("");
+  const [seleccion, setSeleccion] = useState<Set<string>>(new Set());
   const [pendiente, startTransition] = useTransition();
 
   if (data.faltaMigracion) {
@@ -93,7 +99,62 @@ export function ReceivablesSection({
     });
   }
 
-  const visibles = verTodos ? data.documentos : data.documentos.slice(0, 10);
+  // Filtro por cliente, RUC/DNI o número de documento — la lógica vive
+  // en src/lib/receivables-search.ts (pura y testeada).
+  const q = busqueda.trim();
+  const filtrados = filtrarDocumentos(data.documentos, busqueda);
+
+  // Buscando se muestran TODOS los resultados: si buscas un cliente y se
+  // corta en 10, parecería que no tiene más facturas de las que tiene.
+  const visibles = q || verTodos ? filtrados : filtrados.slice(0, 10);
+
+  const seleccionados = data.documentos.filter((d) => seleccion.has(d.docKey));
+  const totalSeleccionado = seleccionados.reduce((s, d) => s + d.total, 0);
+  const seleccionTieneSinMarcar = seleccionados.some((d) => !d.cobradoManual);
+  const seleccionTieneMarcados = seleccionados.some((d) => d.cobradoManual);
+  const todosVisiblesMarcados =
+    visibles.length > 0 && visibles.every((d) => seleccion.has(d.docKey));
+
+  function toggleSeleccion(docKey: string) {
+    setSeleccion((prev) => {
+      const s = new Set(prev);
+      if (s.has(docKey)) s.delete(docKey);
+      else s.add(docKey);
+      return s;
+    });
+  }
+
+  /** El "todos" del encabezado actúa solo sobre lo que se está viendo. */
+  function toggleTodosVisibles() {
+    setSeleccion((prev) => {
+      const s = new Set(prev);
+      if (todosVisiblesMarcados) visibles.forEach((d) => s.delete(d.docKey));
+      else visibles.forEach((d) => s.add(d.docKey));
+      return s;
+    });
+  }
+
+  function marcarLote(cobrado: boolean) {
+    const llaves = seleccionados
+      .filter((d) => d.cobradoManual !== cobrado)
+      .map((d) => d.docKey);
+    if (llaves.length === 0) return;
+    startTransition(async () => {
+      const r = await marcarCobradosEnLote(llaves, cobrado);
+      if (!r.ok) {
+        showToast(r.error, "error");
+        return;
+      }
+      showToast(
+        cobrado
+          ? `${r.n} documento${r.n === 1 ? "" : "s"} marcado${r.n === 1 ? "" : "s"} como cobrado${r.n === 1 ? "" : "s"}`
+          : `Marca quitada a ${r.n} documento${r.n === 1 ? "" : "s"}`,
+        "success",
+      );
+      setSeleccion(new Set());
+      onRecargar?.();
+    });
+  }
   const c = data.cuadre;
   const cuadreOk =
     c.hayAmbos &&
@@ -365,17 +426,95 @@ export function ReceivablesSection({
       {/* Detalle documento por documento */}
       {data.documentos.length > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-gray-100">
-            <h3 className="text-sm font-semibold text-gray-900">Documentos sin cobrar</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              Del más antiguo al más reciente.
-              {onSubir && " Marca lo que ya cobraste y aún no registraste en Byte."}
-            </p>
+          <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Documentos sin cobrar</h3>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                Del más antiguo al más reciente.
+                {onSubir && " Marca lo que ya cobraste y aún no registraste en Byte."}
+              </p>
+            </div>
+            {/* Buscador — pedido de Luis: con 36 documentos encontrar uno
+                a ojo es lento. Busca por nombre, RUC/DNI o número. */}
+            <div className="relative">
+              <Search className="w-3.5 h-3.5 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+              <input
+                type="search"
+                value={busqueda}
+                onChange={(e) => setBusqueda(e.target.value)}
+                placeholder="Buscar cliente, RUC o N° de documento"
+                className="w-full sm:w-72 text-xs border border-gray-300 rounded-lg pl-8 pr-7 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+              />
+              {busqueda && (
+                <button
+                  onClick={() => setBusqueda("")}
+                  aria-label="Limpiar búsqueda"
+                  className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
+
+          {/* Barra de acción en lote — solo aparece con algo seleccionado */}
+          {onSubir && seleccion.size > 0 && (
+            <div className="px-4 py-2.5 bg-blue-50 border-b border-blue-200 flex flex-wrap items-center justify-between gap-2">
+              <div className="text-xs text-blue-900">
+                <strong>
+                  {seleccion.size} documento{seleccion.size === 1 ? "" : "s"} seleccionado
+                  {seleccion.size === 1 ? "" : "s"}
+                </strong>
+                <span className="tabular-nums"> · {formatCurrency(totalSeleccionado)}</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={() => setSeleccion(new Set())}
+                  disabled={pendiente}
+                  className="text-[11px] font-medium text-blue-700 hover:text-blue-900 px-2 py-1 disabled:opacity-50"
+                >
+                  Quitar selección
+                </button>
+                {seleccionTieneSinMarcar && (
+                  <button
+                    onClick={() => marcarLote(true)}
+                    disabled={pendiente}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium bg-blue-600 text-white rounded-lg px-3 py-1.5 hover:bg-blue-700 disabled:opacity-50"
+                  >
+                    <Check className="w-3.5 h-3.5" /> Marcar como cobrados
+                  </button>
+                )}
+                {seleccionTieneMarcados && (
+                  <button
+                    onClick={() => marcarLote(false)}
+                    disabled={pendiente}
+                    className="inline-flex items-center gap-1.5 text-xs font-medium bg-white text-gray-700 border border-gray-300 rounded-lg px-3 py-1.5 hover:bg-gray-50 disabled:opacity-50"
+                  >
+                    Quitar marca
+                  </button>
+                )}
+              </div>
+            </div>
+          )}
+
           <div className="overflow-x-auto">
             <table className="w-full text-sm min-w-[620px]">
               <thead>
                 <tr className="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-500">
+                  {onSubir && (
+                    <th className="pl-4 pr-1 py-2 w-8">
+                      <input
+                        type="checkbox"
+                        checked={todosVisiblesMarcados}
+                        ref={(el) => {
+                          if (el) el.indeterminate = seleccion.size > 0 && !todosVisiblesMarcados;
+                        }}
+                        onChange={toggleTodosVisibles}
+                        aria-label="Seleccionar todos los documentos visibles"
+                        className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary/30 cursor-pointer"
+                      />
+                    </th>
+                  )}
                   <th className="px-4 py-2 text-left font-semibold">Documento</th>
                   <th className="px-4 py-2 text-left font-semibold">Cliente</th>
                   <th className="px-4 py-2 text-right font-semibold">Monto</th>
@@ -387,8 +526,25 @@ export function ReceivablesSection({
                 {visibles.map((d) => (
                   <tr
                     key={d.docKey}
-                    className={`border-t border-gray-100 ${d.cobradoManual ? "bg-blue-50/50" : ""}`}
+                    className={`border-t border-gray-100 ${
+                      seleccion.has(d.docKey)
+                        ? "bg-blue-50"
+                        : d.cobradoManual
+                          ? "bg-blue-50/50"
+                          : ""
+                    }`}
                   >
+                    {onSubir && (
+                      <td className="pl-4 pr-1 py-2">
+                        <input
+                          type="checkbox"
+                          checked={seleccion.has(d.docKey)}
+                          onChange={() => toggleSeleccion(d.docKey)}
+                          aria-label={`Seleccionar ${d.serie ?? d.docKey}`}
+                          className="w-3.5 h-3.5 rounded border-gray-300 text-primary focus:ring-primary/30 cursor-pointer"
+                        />
+                      </td>
+                    )}
                     <td className="px-4 py-2">
                       <div className="text-gray-900 tabular-nums text-xs">{d.serie ?? d.docKey}</div>
                       <div className="text-[10px] text-gray-400">
@@ -404,6 +560,9 @@ export function ReceivablesSection({
                           </span>
                         )}
                       </div>
+                      {d.documento && (
+                        <div className="text-[10px] text-gray-400 tabular-nums">{d.documento}</div>
+                      )}
                     </td>
                     <td className="px-4 py-2 text-right tabular-nums font-medium text-gray-900">
                       {formatCurrency(d.total)}
@@ -444,12 +603,36 @@ export function ReceivablesSection({
               </tbody>
             </table>
           </div>
-          {data.documentos.length > 10 && (
+
+          {q && filtrados.length === 0 && (
+            <div className="px-4 py-8 text-center border-t border-gray-100">
+              <div className="text-sm text-gray-600">
+                Ningún documento sin cobrar coincide con «{busqueda}»
+              </div>
+              <p className="text-[11px] text-gray-400 mt-1">
+                Puede que ya esté cobrado. Acá solo salen los pendientes.
+              </p>
+            </div>
+          )}
+
+          {q && filtrados.length > 0 && (
+            <div className="px-4 py-2.5 text-[11px] text-gray-500 border-t border-gray-100 flex justify-between gap-3">
+              <span>
+                {filtrados.length} de {data.documentos.length} documento
+                {data.documentos.length === 1 ? "" : "s"}
+              </span>
+              <span className="tabular-nums">
+                suman {formatCurrency(filtrados.reduce((s, d) => s + d.total, 0))}
+              </span>
+            </div>
+          )}
+
+          {!q && filtrados.length > 10 && (
             <button
               onClick={() => setVerTodos((v) => !v)}
               className="w-full px-4 py-2.5 text-xs font-medium text-primary hover:bg-gray-50 border-t border-gray-100"
             >
-              {verTodos ? "Ver solo los 10 más antiguos" : `Ver los ${data.documentos.length} documentos`}
+              {verTodos ? "Ver solo los 10 más antiguos" : `Ver los ${filtrados.length} documentos`}
             </button>
           )}
         </div>

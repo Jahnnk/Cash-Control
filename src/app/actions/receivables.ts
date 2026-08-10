@@ -218,6 +218,42 @@ export async function marcarCobrado(
   }
 }
 
+/**
+ * Lo mismo pero para varios documentos a la vez — pedido de Luis
+ * (10-ago-2026): cobra a un cliente que le debe 5 facturas y marcarlas
+ * de a una es tedioso. Un solo UPDATE con `= ANY(...)`, no un bucle:
+ * así o se marcan todas o no se marca ninguna.
+ */
+export async function marcarCobradosEnLote(
+  docKeys: string[],
+  cobrado: boolean,
+): Promise<{ ok: true; n: number } | { ok: false; error: string }> {
+  const acceso = await requireAtelier();
+  if (!acceso.ok) return acceso;
+
+  const llaves = [...new Set((docKeys ?? []).map((k) => k?.trim()).filter(Boolean))] as string[];
+  if (llaves.length === 0) return { ok: false, error: "No seleccionaste ningún documento." };
+  if (llaves.length > 1000) return { ok: false, error: "Demasiados documentos a la vez." };
+
+  try {
+    const filas = (await sql`
+      UPDATE invoice_documents
+      SET cobrado_manual = ${cobrado}::boolean,
+          cobrado_manual_fecha = CASE WHEN ${cobrado}::boolean THEN now() ELSE NULL END,
+          cobrado_manual_nota = NULL,
+          actualizado_en = now()
+      WHERE business_id = ${ATELIER} AND doc_key = ANY(${llaves}::text[])
+      RETURNING doc_key
+    `) as { doc_key: string }[];
+
+    revalidatePath("/", "layout");
+    return { ok: true, n: filas.length };
+  } catch (e) {
+    console.error("[marcarCobradosEnLote] failed:", e);
+    return { ok: false, error: "No pude guardar las marcas." };
+  }
+}
+
 export async function desmarcarCobrado(
   docKey: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
