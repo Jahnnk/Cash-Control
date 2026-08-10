@@ -35,8 +35,11 @@ const ATELIER = 1;
  * atrasada. Decisión de Jahnn (09-ago-2026): 8 días. Byte le pone
  * vencimiento a 1 día a TODO por defecto, así que su fecha no sirve
  * como alerta — marcaría 36 de 49 ventas en rojo el mismo día.
+ *
+ * NO se exporta: un archivo "use server" solo puede exportar funciones
+ * async. La pantalla lo recibe dentro de los datos (`diasParaAtraso`).
  */
-export const DIAS_PARA_ATRASO = 8;
+const DIAS_PARA_ATRASO = 8;
 
 const r2 = (n: number) => Math.round(Number(n || 0) * 100) / 100;
 
