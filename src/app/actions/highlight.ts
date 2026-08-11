@@ -154,11 +154,22 @@ export async function getHighlightSede(): Promise<HighlightSede> {
   const role = await getSessionRole();
   if (!role) return vacio;
 
+  // activeBusinessId() lanza si no hay negocio activo (headers/cookie
+  // ausentes) — no debería pasar en /[negocio]/panel, pero si pasa no
+  // tiene que tumbar la pantalla: se degrada a "sin acceso" como
+  // cualquier otro caso sin permiso.
+  let bId: number;
+  try {
+    bId = await activeBusinessId();
+  } catch (e) {
+    console.error("[getHighlightSede] activeBusinessId:", e);
+    return vacio;
+  }
+
   // Jahnn entrando a /atelier/panel ve el de Atelier: la sede sale de
   // la ruta, no del rol. Lista blanca: dirección completa, o el
   // administrador de ESA sede. El rol de Highlight trabaja desde Grupo
   // y no entra a los paneles de sede.
-  const bId = await activeBusinessId();
   const puedeVer =
     role.kind === "full" || (role.kind === "admin" && role.sede === bId);
   if (!puedeVer) return vacio;
@@ -211,7 +222,13 @@ export async function cerrarHighlight(input: {
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   const role = await getSessionRole();
   if (!role) return { ok: false, error: "Sin acceso." };
-  const bId = await activeBusinessId();
+  let bId: number;
+  try {
+    bId = await activeBusinessId();
+  } catch (e) {
+    console.error("[cerrarHighlight] activeBusinessId:", e);
+    return { ok: false, error: "No pude confirmar la sede activa. Recarga la página." };
+  }
   // Lista blanca: cerrar el Highlight es de quien HIZO el trabajo (el
   // administrador de esa sede) o de dirección completa. Quien solo
   // asigna no puede darse por cumplido a sí mismo.

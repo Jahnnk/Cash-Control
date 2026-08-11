@@ -21,6 +21,7 @@ import {
   getPlanSemana, asignarHighlight, type PlanSemana, type CeldaPlan,
 } from "@/app/actions/highlight";
 import { MAX_TEXTO } from "@/lib/highlight";
+import { conReintento } from "@/lib/con-reintento";
 
 const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
@@ -45,7 +46,14 @@ export function Planificador({ onCambio }: { onCambio?: () => void }) {
   const [guardando, startTransition] = useTransition();
 
   const cargar = useCallback(async () => {
-    setPlan(await getPlanSemana());
+    try {
+      setPlan(await conReintento(() => getPlanSemana()));
+    } catch (e) {
+      // Ya reintentó una vez adentro de conReintento; si sigue fallando,
+      // se queda en el spinner en vez de tumbar la página — no hay nada
+      // bueno que mostrar todavía, pero tampoco hay que romper nada.
+      console.error("[Planificador] cargar:", e);
+    }
   }, []);
 
   useEffect(() => {

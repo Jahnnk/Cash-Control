@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/components/toast-provider";
 import { HighlightPhotos } from "@/components/highlight-photos";
 import { Planificador } from "./planificador";
+import { conReintento } from "@/lib/con-reintento";
 import {
   asignarHighlight, borrarHighlight, getHighlightGrupo,
   type HighlightGrupo, type HighlightGrupoSede,
@@ -59,11 +60,11 @@ export function HighlightConsole({
 
   function irA(nuevaFecha: string) {
     setFecha(nuevaFecha);
-    startTransition(async () => setData(await getHighlightGrupo(nuevaFecha)));
+    startTransition(async () => setData(await conReintento(() => getHighlightGrupo(nuevaFecha))));
   }
 
   function recargar() {
-    startTransition(async () => setData(await getHighlightGrupo(fecha)));
+    startTransition(async () => setData(await conReintento(() => getHighlightGrupo(fecha))));
   }
 
   if (data.faltaMigracion) {

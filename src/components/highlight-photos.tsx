@@ -16,6 +16,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Camera, Loader2, Trash2, X, FileText, ImageOff } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { validateAttachment, isImageType } from "@/lib/attachment-validation";
+import { conReintento } from "@/lib/con-reintento";
 import {
   listHighlightPhotos,
   borrarFotoHighlight,
@@ -55,7 +56,7 @@ export function HighlightPhotos({
     // dentro de un useEffect, y una rechazada ahí tumba la página entera
     // (dispara el error boundary global) en vez de solo esta sección.
     try {
-      const todas = await listHighlightPhotos(highlightId);
+      const todas = await conReintento(() => listHighlightPhotos(highlightId));
       setFotos(todas.filter((f) => f.kind === kind));
     } catch (e) {
       console.error("[HighlightPhotos] cargar:", e);

@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { HighlightPhotos } from "@/components/highlight-photos";
+import { conReintento } from "@/lib/con-reintento";
 import {
   cerrarHighlight, getHighlightSede, type HighlightSede,
 } from "@/app/actions/highlight";
@@ -382,7 +383,11 @@ export function HighlightSlot() {
   const [data, setData] = useState<HighlightSede | null>(null);
 
   const cargar = useCallback(async () => {
-    setData(await getHighlightSede());
+    try {
+      setData(await conReintento(() => getHighlightSede()));
+    } catch (e) {
+      console.error("[HighlightSlot] cargar:", e);
+    }
   }, []);
 
   useEffect(() => {
