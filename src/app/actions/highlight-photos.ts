@@ -116,13 +116,19 @@ export async function borrarFotoHighlight(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!/^[0-9a-f-]{36}$/i.test(id)) return { ok: false, error: "Foto inválida." };
 
-  const rows = (await sql`
-    SELECT a.url AS pathname, a.record_type, a.record_id::text, h.business_id
-    FROM attachments a
-    JOIN highlights h ON h.id = a.record_id
-    WHERE a.id = ${id}
-      AND a.record_type IN ('highlight_indicacion', 'highlight_evidencia')
-  `) as { pathname: string; record_type: string; record_id: string; business_id: number }[];
+  let rows: { pathname: string; record_type: string; record_id: string; business_id: number }[];
+  try {
+    rows = (await sql`
+      SELECT a.url AS pathname, a.record_type, a.record_id::text, h.business_id
+      FROM attachments a
+      JOIN highlights h ON h.id = a.record_id
+      WHERE a.id = ${id}
+        AND a.record_type IN ('highlight_indicacion', 'highlight_evidencia')
+    `) as { pathname: string; record_type: string; record_id: string; business_id: number }[];
+  } catch (e) {
+    console.error("[borrarFotoHighlight] select:", e);
+    return { ok: false, error: "No pude leer la foto. Intenta de nuevo." };
+  }
 
   const fila = rows[0];
   if (!fila) return { ok: false, error: "La foto ya no existe." };

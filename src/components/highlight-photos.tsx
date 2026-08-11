@@ -51,8 +51,16 @@ export function HighlightPhotos({
   const fileRef = useRef<HTMLInputElement>(null);
 
   const cargar = useCallback(async () => {
-    const todas = await listHighlightPhotos(highlightId);
-    setFotos(todas.filter((f) => f.kind === kind));
+    // Nunca dejar que esto rechace sin atrapar: es una promesa que corre
+    // dentro de un useEffect, y una rechazada ahí tumba la página entera
+    // (dispara el error boundary global) en vez de solo esta sección.
+    try {
+      const todas = await listHighlightPhotos(highlightId);
+      setFotos(todas.filter((f) => f.kind === kind));
+    } catch (e) {
+      console.error("[HighlightPhotos] cargar:", e);
+      setFotos([]);
+    }
   }, [highlightId, kind]);
 
   useEffect(() => {

@@ -20,13 +20,28 @@ export const TIPOS_FOTO_HIGHLIGHT: HighlightPhotoKind[] = [
   "highlight_evidencia",
 ];
 
-/** La sede dueña del Highlight. null = no existe. */
+/**
+ * La sede dueña del Highlight. null = no existe (o la BD falló).
+ *
+ * Fail-closed y a prueba de tropiezos de Neon (cold start, blip de red):
+ * un error acá NUNCA debe escapar sin atrapar. Esta función la llaman
+ * varios componentes de fotos EN PARALELO cuando se abre una tarjeta con
+ * Highlight — sin este try/catch, un solo fallo transitorio de conexión
+ * se propaga como promesa rechazada hasta el cliente y tumba la página
+ * entera (ver docs/CONTEXTO.md, incidente 11-ago-2026: "Mañana" con un
+ * Highlight ya cargado disparaba el error boundary global).
+ */
 export async function highlightBusinessId(highlightId: string): Promise<number | null> {
   if (!/^[0-9a-f-]{36}$/i.test(highlightId)) return null;
-  const rows = (await sql`
-    SELECT business_id FROM highlights WHERE id = ${highlightId}
-  `) as { business_id: number }[];
-  return rows[0]?.business_id ?? null;
+  try {
+    const rows = (await sql`
+      SELECT business_id FROM highlights WHERE id = ${highlightId}
+    `) as { business_id: number }[];
+    return rows[0]?.business_id ?? null;
+  } catch (e) {
+    console.error("[highlightBusinessId] failed:", e);
+    return null;
+  }
 }
 
 /**
