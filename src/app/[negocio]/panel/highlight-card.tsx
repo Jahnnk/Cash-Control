@@ -16,6 +16,7 @@ import {
   Sun, Check, X, ChevronDown, Flame, Loader2, PartyPopper, Lightbulb,
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
+import { HighlightPhotos } from "@/components/highlight-photos";
 import {
   cerrarHighlight, getHighlightSede, type HighlightSede,
 } from "@/app/actions/highlight";
@@ -176,6 +177,30 @@ export function HighlightCard({
                   {h.porQue}
                 </p>
               )}
+            </div>
+
+            {/* Lo que dirección quiere que veas */}
+            <div className="mt-4">
+              <HighlightPhotos
+                highlightId={h.id}
+                kind="highlight_indicacion"
+                titulo="Foto de dirección"
+                ayuda="Dirección puede adjuntar una foto para explicar mejor el encargo."
+                puedeSubir={data.esDireccion}
+                puedeBorrar={data.esDireccion}
+              />
+            </div>
+
+            {/* Tu evidencia de que se hizo */}
+            <div className="mt-4">
+              <HighlightPhotos
+                highlightId={h.id}
+                kind="highlight_evidencia"
+                titulo="Tu evidencia"
+                ayuda="Cuando termines, toma una foto de cómo quedó. Dirección la ve al instante."
+                puedeSubir
+                puedeBorrar
+              />
             </div>
 
             {/* Cerrar el día */}

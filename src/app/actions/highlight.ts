@@ -19,6 +19,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
+import { deletePrivateBlob } from "@/lib/blob-storage";
 import {
   validarTexto,
   calcularRacha,
@@ -69,6 +70,8 @@ export type Highlight = {
 
 export type HighlightSede = {
   faltaMigracion?: boolean;
+  /** La pantalla la ve dirección (no el administrador de la sede). */
+  esDireccion: boolean;
   /** El de hoy, que es el que el admin tiene que cumplir. */
   hoy: Highlight | null;
   fecha: string;
@@ -127,6 +130,7 @@ function aHighlight(f: FilaDB): Highlight {
 export async function getHighlightSede(): Promise<HighlightSede> {
   const hoy = getToday();
   const vacio: HighlightSede = {
+    esDireccion: false,
     hoy: null, fecha: hoy, racha: 0,
     cumplimiento: { cerrados: 0, logrados: 0, pendientes: 0, pct: null },
     historial: [],
@@ -156,6 +160,7 @@ export async function getHighlightSede(): Promise<HighlightSede> {
     const cerrados = dias.filter((d) => d.estado !== "pendiente");
 
     return {
+      esDireccion: role.kind === "full",
       hoy: filas[0]?.fecha === hoy ? aHighlight(filas[0]) : null,
       fecha: hoy,
       racha: calcularRacha(cerrados),
@@ -341,6 +346,34 @@ export async function borrarHighlight(
         error: "No se puede quitar: el administrador ya lo cerró. Corrige el texto si hace falta.",
       };
     }
+
+    // Las fotos NO tienen llave foránea contra `highlights` (viven en la
+    // tabla compartida `attachments`), así que si no se limpian acá
+    // quedan filas apuntando a un Highlight inexistente y archivos
+    // pagándose en el Blob para siempre. Primero el archivo y después la
+    // fila, igual que en deleteAttachment: un blob suelto es invisible,
+    // una fila sin archivo rompe la pantalla.
+    const fotos = (await sql`
+      SELECT id::text, url AS pathname FROM attachments
+      WHERE record_id = ${id}
+        AND record_type IN ('highlight_indicacion', 'highlight_evidencia')
+    `) as { id: string; pathname: string }[];
+    for (const f of fotos) {
+      try {
+        await deletePrivateBlob(f.pathname);
+      } catch (e) {
+        // Se sigue: dejar la fila viva sería peor que dejar el archivo.
+        console.error("[borrarHighlight] blob huérfano:", f.pathname, e);
+      }
+    }
+    if (fotos.length > 0) {
+      await sql`
+        DELETE FROM attachments
+        WHERE record_id = ${id}
+          AND record_type IN ('highlight_indicacion', 'highlight_evidencia')
+      `;
+    }
+
     revalidatePath("/", "layout");
     return { ok: true };
   } catch (e) {

@@ -17,6 +17,7 @@ import {
   Flame, Check, X, Loader2, Send, Trash2, Pencil, Lightbulb, ChevronDown,
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
+import { HighlightPhotos } from "@/components/highlight-photos";
 import {
   asignarHighlight, borrarHighlight, getHighlightGrupo,
   type HighlightGrupo, type HighlightGrupoSede,
@@ -354,6 +355,27 @@ function SedeCard({
                   </button>
                 )}
               </div>
+            </div>
+
+            {/* Fotos: la que manda dirección y la que devuelve la sede */}
+            <div className="mt-3 space-y-3">
+              <HighlightPhotos
+                highlightId={h.id}
+                kind="highlight_indicacion"
+                titulo="Foto para la sede"
+                ayuda="Adjunta una foto si quieres que vean exactamente a qué te refieres."
+                puedeSubir
+                puedeBorrar
+                compacto
+              />
+              <HighlightPhotos
+                highlightId={h.id}
+                kind="highlight_evidencia"
+                titulo={`Evidencia de ${sede.sede}`}
+                puedeSubir={false}
+                puedeBorrar
+                compacto
+              />
             </div>
 
             {/* El Reflect del administrador */}
