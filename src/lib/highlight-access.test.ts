@@ -67,6 +67,25 @@ describe("puedeSobreHighlight — administrador de sede", () => {
   });
 });
 
+describe("puedeSobreHighlight — dirección del Highlight (Juani)", () => {
+  beforeEach(() => {
+    fake.state.role = { kind: "highlight", userId: 9, nombre: "Juani" };
+  });
+
+  it("ve y pone la indicación en LAS TRES sedes (no tiene sede propia)", async () => {
+    for (const sede of [ATELIER, FONAVI, CENTRO]) {
+      expect(await puedeSobreHighlight(sede, "ver")).toBe(true);
+      expect(await puedeSobreHighlight(sede, "indicacion")).toBe(true);
+    }
+  });
+
+  it("NO sube evidencia: esa la entrega quien hizo el trabajo", async () => {
+    for (const sede of [ATELIER, FONAVI, CENTRO]) {
+      expect(await puedeSobreHighlight(sede, "evidencia")).toBe(false);
+    }
+  });
+});
+
 describe("puedeSobreHighlight — verificador y sin sesión", () => {
   it("el verificador de conteo no participa del Highlight", async () => {
     fake.state.role = { kind: "verif", sede: CENTRO };

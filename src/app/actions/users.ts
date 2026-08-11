@@ -145,14 +145,17 @@ export async function importLegacyUser(input: {
   const nombre = input.nombre.trim();
   if (nombre.length < 2 || nombre.length > 60) return { ok: false, error: "Escribe el nombre de la persona (2-60 letras)." };
   if (!isUserScope(input.scope)) return { ok: false, error: "Rol inválido." };
-  const ENV_BY_SCOPE: Record<UserScope, string> = {
+  // Solo los scopes legados tienen contraseña en Vercel. "highlight"
+  // nació ya en app_users: no hay nada que importar.
+  const ENV_BY_SCOPE: Partial<Record<UserScope, string>> = {
     "admin-atelier": "ADMIN_PASSWORD_ATELIER",
     "admin-fonavi": "ADMIN_PASSWORD_FONAVI",
     "admin-centro": "ADMIN_PASSWORD_CENTRO",
     "verif-fonavi": "VERIF_PASSWORD_FONAVI",
     "verif-centro": "VERIF_PASSWORD_CENTRO",
   };
-  const secret = process.env[ENV_BY_SCOPE[input.scope]];
+  const envVar = ENV_BY_SCOPE[input.scope];
+  const secret = envVar ? process.env[envVar] : undefined;
   if (!secret) return { ok: false, error: "Ese acceso no tiene contraseña configurada en Vercel." };
   try {
     // ¿Ya se importó? La misma contraseña no puede vivir en dos filas

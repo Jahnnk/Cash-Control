@@ -46,7 +46,9 @@ describe("getSessionRole — dos llaves de dirección (jul-2026)", () => {
   it("la llave PROPIA de Kelly da sesión completa (revocable por separado)", async () => {
     process.env.APP_PASSWORD_KELLY = "llave-de-kelly-9999";
     fake.state.cookieToken = await createAuthToken("llave-de-kelly-9999", NOW + 3600);
-    expect(await getSessionRole()).toEqual({ kind: "full" });
+    // Desde ago-2026 la sesión además dice QUIÉN entró: el Highlight lo
+    // asignan varias personas y hay que poder firmarlo.
+    expect(await getSessionRole()).toEqual({ kind: "full", quien: "kelly" });
   });
 
   it("cambiar la llave de Kelly mata SUS sesiones sin tocar la maestra", async () => {
@@ -55,9 +57,9 @@ describe("getSessionRole — dos llaves de dirección (jul-2026)", () => {
     // Sesión firmada con la llave VIEJA de Kelly → muere.
     fake.state.cookieToken = await createAuthToken("llave-vieja-de-kelly", NOW + 3600);
     expect(await getSessionRole()).toBeNull();
-    // La maestra sigue viva.
+    // La maestra sigue viva, y se distingue de la de Kelly.
     fake.state.cookieToken = await createAuthToken("llave-maestra-1111", NOW + 3600);
-    expect(await getSessionRole()).toEqual({ kind: "full" });
+    expect(await getSessionRole()).toEqual({ kind: "full", quien: "jahnn" });
     delete process.env.APP_PASSWORD;
   });
 

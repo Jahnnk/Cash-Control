@@ -44,8 +44,13 @@ export async function puedeSobreHighlight(
 ): Promise<boolean> {
   const role = await getSessionRole();
   if (!role) return false;
+  // Dirección completa: todo, en cualquier sede.
   if (role.kind === "full") return true;
-  if (role.kind === "verif") return false;
-  if (role.sede !== bId) return false;
-  return accion !== "indicacion";
+  // Dirección del Highlight (Juani): asigna en las tres sedes, así que
+  // también pone la foto de la indicación. No sube evidencia: esa la
+  // entrega quien hizo el trabajo.
+  if (role.kind === "highlight") return accion !== "evidencia";
+  // Administrador de la sede: ve y entrega evidencia de LO SUYO.
+  if (role.kind === "admin" && role.sede === bId) return accion !== "indicacion";
+  return false;
 }

@@ -28,7 +28,11 @@ const sql = neon(process.env.DATABASE_URL!);
 async function sessionRole(bId: number): Promise<"full" | "admin" | "verif" | null> {
   const role = await getSessionRole();
   if (role?.kind === "full") return "full";
-  if (role && role.sede === bId) return role.kind;
+  // Lista blanca explícita: cualquier rol nuevo queda fuera por defecto
+  // (el de Highlight, por ejemplo, no tiene nada que hacer acá).
+  if ((role?.kind === "admin" || role?.kind === "verif") && role.sede === bId) {
+    return role.kind;
+  }
   return null;
 }
 

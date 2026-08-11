@@ -161,6 +161,11 @@ export function HighlightCard({
                   {etiquetaEstado(h.estado)}
                 </span>
               )}
+              {h.asignadoPor && (
+                <div className="text-[11px] font-semibold uppercase tracking-wide text-gray-700/70 mb-1.5">
+                  Te lo dejó {h.asignadoPor}
+                </div>
+              )}
               <p
                 className={`text-2xl font-bold leading-snug ${
                   h.estado === "pendiente" ? "text-gray-900" : "text-gray-500 line-through"

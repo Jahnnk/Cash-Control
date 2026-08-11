@@ -18,6 +18,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { HighlightPhotos } from "@/components/highlight-photos";
+import { Planificador } from "./planificador";
 import {
   asignarHighlight, borrarHighlight, getHighlightGrupo,
   type HighlightGrupo, type HighlightGrupoSede,
@@ -149,6 +150,9 @@ export function HighlightConsole({
           <SedeCard key={s.businessId} sede={s} fecha={fecha} onCambio={recargar} />
         ))}
       </div>
+
+      {/* Programar varios días de un tirón */}
+      <Planificador onCambio={recargar} />
     </div>
   );
 }
@@ -168,21 +172,30 @@ function SedeCard({
   const [texto, setTexto] = useState(h?.texto ?? "");
   const [porQue, setPorQue] = useState(h?.porQue ?? "");
   const [verReflect, setVerReflect] = useState(false);
+  const [choque, setChoque] = useState<{ asignadoPor: string; textoActual: string } | null>(null);
   const [pendiente, startTransition] = useTransition();
 
-  function guardar() {
+  function guardar(reemplazar = false) {
     startTransition(async () => {
       const r = await asignarHighlight({
         businessId: sede.businessId,
         fecha,
         texto,
         porQue,
+        reemplazarDe: reemplazar ? "si" : null,
       });
       if (!r.ok) {
+        // Ya había un Highlight de OTRA persona para ese día: se avisa
+        // en vez de pisarlo callado.
+        if ("confirmar" in r) {
+          setChoque({ asignadoPor: r.asignadoPor, textoActual: r.textoActual });
+          return;
+        }
         showToast(r.error, "error");
         return;
       }
       showToast(`Highlight enviado a ${sede.sede}`, "success");
+      setChoque(null);
       setEditando(false);
       onCambio();
     });
@@ -265,9 +278,39 @@ function SedeCard({
               className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
             />
 
+            {choque && (
+              <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
+                <div className="text-xs font-semibold text-amber-900">
+                  {choque.asignadoPor} ya asignó el Highlight de este día
+                </div>
+                <p className="text-[11px] text-amber-800/90 mt-1">
+                  «{choque.textoActual}»
+                </p>
+                <p className="text-[11px] text-amber-800/80 mt-1.5">
+                  Solo puede haber uno por día. Si lo reemplazas, {sede.sede} verá
+                  el tuyo y no el de {choque.asignadoPor}.
+                </p>
+                <div className="flex gap-2 mt-2">
+                  <button
+                    onClick={() => guardar(true)}
+                    disabled={pendiente}
+                    className="text-[11px] font-semibold bg-amber-600 text-white rounded px-2.5 py-1.5 hover:bg-amber-700 disabled:opacity-50"
+                  >
+                    Reemplazarlo igual
+                  </button>
+                  <button
+                    onClick={() => setChoque(null)}
+                    className="text-[11px] text-amber-800 px-2 py-1.5 hover:underline"
+                  >
+                    Mejor no
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="flex gap-2">
               <button
-                onClick={guardar}
+                onClick={() => guardar()}
                 disabled={pendiente || !texto.trim()}
                 className="flex-1 inline-flex items-center justify-center gap-2 bg-primary text-white rounded-lg px-3 py-2 text-sm font-semibold hover:bg-primary-light disabled:opacity-40"
               >
@@ -334,6 +377,11 @@ function SedeCard({
                 ) : null}
                 {etiquetaEstado(h.estado)}
               </span>
+              {h.asignadoPor && (
+                <span className="text-[11px] text-gray-500">
+                  por <strong className="text-gray-700">{h.asignadoPor}</strong>
+                </span>
+              )}
 
               <div className="ml-auto flex items-center gap-1">
                 <button

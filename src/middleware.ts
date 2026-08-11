@@ -107,6 +107,18 @@ export async function middleware(request: NextRequest) {
       if (!scopedScope) {
         return NextResponse.redirect(new URL("/login", request.url));
       }
+      // Dirección del Highlight (Juani): no tiene sede propia, cubre las
+      // tres. Se le abre SOLO /grupo/highlight — nada de finanzas,
+      // saldos, reportes ni paneles de sede. El candado es acá, a nivel
+      // de servidor, así que también cubre los POST de las actions.
+      if (scopedScope === "highlight") {
+        const permitido = "/grupo/highlight";
+        if (pathname !== permitido && !pathname.startsWith(permitido + "/")) {
+          return NextResponse.redirect(new URL(permitido, request.url));
+        }
+        return NextResponse.next();
+      }
+
       const [kind, sede] = scopedScope.split("-") as ["admin" | "verif", string];
       // admin → Panel de Sede completo; verif → SOLO la segunda firma.
       const allowedPrefix = kind === "admin" ? `/${sede}/panel` : `/${sede}/verificacion`;

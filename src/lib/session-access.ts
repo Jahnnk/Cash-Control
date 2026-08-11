@@ -8,10 +8,16 @@
  * puerta abierta. Este módulo es la única fuente de verdad.
  *
  * Roles posibles:
- *   - "full"  → contraseña completa (Jahnn/Kelly): acceso total.
+ *   - "full"  → contraseña completa (Jahnn/Kelly): acceso total. Trae
+ *               `quien` para poder FIRMAR lo que cada uno hace (los
+ *               Highlights los asignan varias personas y el
+ *               administrador tiene que saber de quién viene el encargo).
  *   - "admin" → administrador de sede (token v2): solo SU sede.
  *   - "verif" → verificador de mando medio (token v2): solo la firma
  *               del conteo de SU sede.
+ *   - "highlight" → dirección compartida del Highlight (token v3): puede
+ *               asignar y supervisar el Highlight de las tres sedes y
+ *               NADA más. No ve finanzas. Es un rol acotado a propósito.
  *   - null    → sin sesión válida.
  *
  * Fail-closed: scope sin contraseña configurada en el entorno nunca
@@ -46,8 +52,9 @@ function secretForScope(scope: string): string | undefined {
 }
 
 export type SessionRole =
-  | { kind: "full" }
+  | { kind: "full"; quien: "jahnn" | "kelly" }
   | { kind: "admin" | "verif"; sede: number }
+  | { kind: "highlight"; userId: number; nombre: string }
   | null;
 
 /**
@@ -62,11 +69,16 @@ async function resolveUserToken(token: string, now: number): Promise<SessionRole
   try {
     const sql = neon(process.env.DATABASE_URL!);
     const rows = (await sql`
-      SELECT scope, password_hash FROM app_users
+      SELECT scope, password_hash, nombre FROM app_users
       WHERE id = ${userId} AND active = true
-    `) as { scope: string; password_hash: string }[];
+    `) as { scope: string; password_hash: string; nombre: string }[];
     if (rows.length === 0) return null;
     if (!(await verifyUserToken(token, rows[0].password_hash, now))) return null;
+
+    // El scope de Highlight no está atado a una sede: cubre las tres.
+    if (rows[0].scope === "highlight") {
+      return { kind: "highlight", userId, nombre: rows[0].nombre };
+    }
     const sede = SEDE_BY_SCOPE[rows[0].scope];
     if (sede === undefined) return null;
     return { kind: rows[0].scope.startsWith("admin-") ? "admin" : "verif", sede };
@@ -84,11 +96,13 @@ export async function getSessionRole(): Promise<SessionRole> {
   const c = await cookies();
   const token = c.get(AUTH_COOKIE)?.value;
   const now = Math.floor(Date.now() / 1000);
-  if (
-    (await verifyAuthToken(token, process.env.APP_PASSWORD, now)) ||
-    (await verifyAuthToken(token, process.env.APP_PASSWORD_KELLY, now))
-  ) {
-    return { kind: "full" };
+  // Se prueban por separado, no con un OR, para saber QUIÉN entró: la
+  // firma del token dice cuál de las dos llaves lo generó.
+  if (await verifyAuthToken(token, process.env.APP_PASSWORD, now)) {
+    return { kind: "full", quien: "jahnn" };
+  }
+  if (await verifyAuthToken(token, process.env.APP_PASSWORD_KELLY, now)) {
+    return { kind: "full", quien: "kelly" };
   }
   const scope = await verifyScopedToken(token, secretForScope, now);
   if (scope) {

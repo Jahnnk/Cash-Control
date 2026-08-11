@@ -45,6 +45,21 @@ function faltaMigracion(e: unknown): boolean {
   return /relation .*highlights.* does not exist/i.test(msg);
 }
 
+/**
+ * Quién puede ASIGNAR, y con qué nombre queda firmado.
+ *
+ * Desde ago-2026 el Highlight lo reparten varias personas (Jahnn y
+ * Juani, que supervisa los locales una o dos veces por semana). El
+ * administrador tiene que saber DE QUIÉN viene el encargo, así que el
+ * nombre no se teclea: sale de la llave con la que entró cada uno.
+ */
+async function quienAsigna(): Promise<string | null> {
+  const role = await getSessionRole();
+  if (role?.kind === "full") return role.quien === "kelly" ? "Kelly" : "Jahnn";
+  if (role?.kind === "highlight") return role.nombre;
+  return null;
+}
+
 const recorta = (s: string | null | undefined, max: number): string | null => {
   const t = (s ?? "").trim();
   return t ? t.slice(0, max) : null;
@@ -140,9 +155,13 @@ export async function getHighlightSede(): Promise<HighlightSede> {
   if (!role) return vacio;
 
   // Jahnn entrando a /atelier/panel ve el de Atelier: la sede sale de
-  // la ruta, no del rol.
+  // la ruta, no del rol. Lista blanca: dirección completa, o el
+  // administrador de ESA sede. El rol de Highlight trabaja desde Grupo
+  // y no entra a los paneles de sede.
   const bId = await activeBusinessId();
-  if (role.kind !== "full" && role.sede !== bId) return vacio;
+  const puedeVer =
+    role.kind === "full" || (role.kind === "admin" && role.sede === bId);
+  if (!puedeVer) return vacio;
 
   try {
     const filas = (await sql`
@@ -193,8 +212,12 @@ export async function cerrarHighlight(input: {
   const role = await getSessionRole();
   if (!role) return { ok: false, error: "Sin acceso." };
   const bId = await activeBusinessId();
-  if (role.kind === "verif") return { ok: false, error: "Sin acceso." };
-  if (role.kind === "admin" && role.sede !== bId) return { ok: false, error: "Sin acceso." };
+  // Lista blanca: cerrar el Highlight es de quien HIZO el trabajo (el
+  // administrador de esa sede) o de dirección completa. Quien solo
+  // asigna no puede darse por cumplido a sí mismo.
+  const puedeCerrar =
+    role.kind === "full" || (role.kind === "admin" && role.sede === bId);
+  if (!puedeCerrar) return { ok: false, error: "Sin acceso." };
   if (input.estado !== "logrado" && input.estado !== "no_logrado") {
     return { ok: false, error: "Estado inválido." };
   }
@@ -243,7 +266,7 @@ export async function getHighlightGrupo(fecha?: string): Promise<HighlightGrupo>
   };
 
   const role = await getSessionRole();
-  if (role?.kind !== "full") return vacio;
+  if (role?.kind !== "full" && role?.kind !== "highlight") return vacio;
 
   try {
     const delDia = (await sql`
@@ -294,8 +317,15 @@ export async function asignarHighlight(input: {
   fecha: string;
   texto: string;
   porQue?: string | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await getSessionRole().then((r) => r?.kind === "full"))) {
+  /** Confirmación explícita para pisar el Highlight de otra persona. */
+  reemplazarDe?: string | null;
+}): Promise<
+  | { ok: true }
+  | { ok: false; error: string }
+  | { ok: false; confirmar: true; asignadoPor: string; textoActual: string }
+> {
+  const firma = await quienAsigna();
+  if (!firma) {
     return { ok: false, error: "Solo dirección puede asignar el Highlight." };
   }
   if (!SEDES.some((s) => s.id === input.businessId)) {
@@ -307,13 +337,33 @@ export async function asignarHighlight(input: {
   if (!v.ok) return { ok: false, error: v.error };
 
   try {
+    // Solo hay UN Highlight por sede y día (lo garantiza el UNIQUE). Con
+    // varias personas asignando, pisar el de otro en silencio sería el
+    // peor error posible: el administrador vería una tarea distinta a la
+    // que su jefe cree haberle dejado. Se avisa y se pide confirmación.
+    const previo = (await sql`
+      SELECT texto, COALESCE(asignado_por, 'otra persona') AS asignado_por
+      FROM highlights
+      WHERE business_id = ${input.businessId} AND fecha = ${input.fecha}
+    `) as { texto: string; asignado_por: string }[];
+
+    if (previo[0] && previo[0].asignado_por !== firma && !input.reemplazarDe) {
+      return {
+        ok: false,
+        confirmar: true,
+        asignadoPor: previo[0].asignado_por,
+        textoActual: previo[0].texto,
+      };
+    }
+
     await sql`
       INSERT INTO highlights (business_id, fecha, texto, por_que, asignado_por)
       VALUES (${input.businessId}, ${input.fecha}, ${v.texto},
-              ${recorta(input.porQue, MAX_POR_QUE)}, 'Dirección')
+              ${recorta(input.porQue, MAX_POR_QUE)}, ${firma})
       ON CONFLICT (business_id, fecha) DO UPDATE SET
         texto = EXCLUDED.texto,
         por_que = EXCLUDED.por_que,
+        asignado_por = EXCLUDED.asignado_por,
         actualizado_en = now()
     `;
     revalidatePath("/", "layout");
@@ -331,7 +381,7 @@ export async function asignarHighlight(input: {
 export async function borrarHighlight(
   id: string,
 ): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await getSessionRole().then((r) => r?.kind === "full"))) {
+  if (!(await quienAsigna())) {
     return { ok: false, error: "Solo dirección puede quitar el Highlight." };
   }
   try {
@@ -379,5 +429,85 @@ export async function borrarHighlight(
   } catch (e) {
     console.error("[borrarHighlight] failed:", e);
     return { ok: false, error: "No pude quitar el Highlight." };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Planificador: varios días de un tirón
+// ─────────────────────────────────────────────────────────────────
+
+export type CeldaPlan = {
+  fecha: string;
+  businessId: number;
+  texto: string | null;
+  asignadoPor: string | null;
+  estado: EstadoHighlight | null;
+};
+
+export type PlanSemana = {
+  faltaMigracion?: boolean;
+  hoy: string;
+  dias: string[];
+  sedes: { businessId: number; sede: string }[];
+  celdas: CeldaPlan[];
+};
+
+/**
+ * Los próximos N días × las 3 sedes, para programar por adelantado.
+ *
+ * Nace de cómo trabaja Jahnn de verdad: el domingo ya sabe qué tienen
+ * que hacer el lunes, el martes y el miércoles. Ir fecha por fecha hacía
+ * que en la práctica no se programara nada.
+ *
+ * El administrador NO ve los días futuros (getHighlightSede filtra por
+ * fecha <= hoy): lo programado le llega recién el día que toca.
+ */
+export async function getPlanSemana(desde?: string, dias = 7): Promise<PlanSemana> {
+  const hoy = getToday();
+  const inicio = desde && esFecha(desde) ? desde : hoy;
+  const n = Math.min(Math.max(dias, 1), 14);
+
+  const fechas: string[] = [];
+  const [y, m, d] = inicio.split("-").map(Number);
+  for (let i = 0; i < n; i++) {
+    const f = new Date(Date.UTC(y, m - 1, d + i));
+    fechas.push(
+      `${f.getUTCFullYear()}-${String(f.getUTCMonth() + 1).padStart(2, "0")}-${String(
+        f.getUTCDate(),
+      ).padStart(2, "0")}`,
+    );
+  }
+
+  const vacio: PlanSemana = {
+    hoy,
+    dias: fechas,
+    sedes: SEDES.map((s) => ({ businessId: s.id, sede: s.nombre })),
+    celdas: [],
+  };
+
+  const role = await getSessionRole();
+  if (role?.kind !== "full" && role?.kind !== "highlight") return vacio;
+
+  try {
+    const filas = (await sql`
+      SELECT business_id, fecha::text AS fecha, texto, asignado_por, estado
+      FROM highlights
+      WHERE fecha >= ${fechas[0]} AND fecha <= ${fechas[fechas.length - 1]}
+    `) as { business_id: number; fecha: string; texto: string; asignado_por: string | null; estado: string }[];
+
+    return {
+      ...vacio,
+      celdas: filas.map((f) => ({
+        fecha: f.fecha,
+        businessId: f.business_id,
+        texto: f.texto,
+        asignadoPor: f.asignado_por,
+        estado: f.estado as EstadoHighlight,
+      })),
+    };
+  } catch (e) {
+    console.error("[getPlanSemana] failed:", e);
+    if (faltaMigracion(e)) return { ...vacio, faltaMigracion: true };
+    return vacio;
   }
 }
