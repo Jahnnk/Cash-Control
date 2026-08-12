@@ -37,7 +37,14 @@ function etiquetaDia(iso: string, hoy: string) {
   };
 }
 
-export function Planificador({ onCambio }: { onCambio?: () => void }) {
+export function Planificador({
+  onCambio,
+  version = 0,
+}: {
+  onCambio?: () => void;
+  /** Sube con cada cambio hecho ARRIBA (tarjetas de sede): fuerza recarga. */
+  version?: number;
+}) {
   const { showToast } = useToast();
   const [plan, setPlan] = useState<PlanSemana | null>(null);
   const [editando, setEditando] = useState<{ fecha: string; businessId: number } | null>(null);
@@ -57,10 +64,10 @@ export function Planificador({ onCambio }: { onCambio?: () => void }) {
   }, []);
 
   useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
+    /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar y ante cambios */
     void cargar();
     /* eslint-enable react-hooks/set-state-in-effect */
-  }, [cargar]);
+  }, [cargar, version]);
 
   function celda(fecha: string, businessId: number): CeldaPlan | undefined {
     return plan?.celdas.find((c) => c.fecha === fecha && c.businessId === businessId);

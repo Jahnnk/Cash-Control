@@ -528,3 +528,170 @@ export async function getPlanSemana(desde?: string, dias = 7): Promise<PlanSeman
     return vacio;
   }
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Control de cumplimiento — pedido de Jahnn, 12-ago-2026
+// ─────────────────────────────────────────────────────────────────
+
+export type CierreReciente = {
+  id: string;
+  businessId: number;
+  sede: string;
+  fecha: string;
+  texto: string;
+  estado: EstadoHighlight;
+  /** ISO del momento en que el administrador lo cerró. */
+  cerradoEn: string | null;
+  tieneReflect: boolean;
+};
+
+export type SinCerrar = {
+  id: string;
+  businessId: number;
+  sede: string;
+  fecha: string;
+  texto: string;
+  /** Días que lleva sin respuesta. */
+  diasEnSilencio: number;
+};
+
+export type EstadoHoySede = {
+  businessId: number;
+  sede: string;
+  /** null = no se le asignó nada hoy. */
+  estado: EstadoHighlight | null;
+  texto: string | null;
+  cerradoEn: string | null;
+};
+
+export type ControlCumplimiento = {
+  faltaMigracion?: boolean;
+  hoy: string;
+  /** Cómo va el día, sede por sede. */
+  estadoHoy: EstadoHoySede[];
+  /**
+   * Highlights de días PASADOS que el administrador nunca cerró. Es la
+   * señal más importante: un "no lo logré" es información, pero el
+   * silencio no dice nada y es lo que hay que perseguir.
+   */
+  sinCerrar: SinCerrar[];
+  /** Lo último que cerró cada sede, para enterarse de un vistazo. */
+  cierresRecientes: CierreReciente[];
+  /** Resumen de los últimos 30 días por sede. */
+  resumen: {
+    businessId: number;
+    sede: string;
+    logrados: number;
+    noLogrados: number;
+    sinCerrar: number;
+    pct: number | null;
+  }[];
+};
+
+/**
+ * Todo lo que dirección necesita para controlar el cumplimiento.
+ *
+ * Se separa en tres preguntas distintas a propósito:
+ *   1. ¿Cómo va HOY?           → estadoHoy
+ *   2. ¿Qué quedó en silencio? → sinCerrar (lo que hay que perseguir)
+ *   3. ¿Qué pasó últimamente?  → cierresRecientes + resumen
+ */
+export async function getControlCumplimiento(): Promise<ControlCumplimiento> {
+  const hoy = getToday();
+  const vacio: ControlCumplimiento = {
+    hoy,
+    estadoHoy: SEDES.map((s) => ({
+      businessId: s.id, sede: s.nombre, estado: null, texto: null, cerradoEn: null,
+    })),
+    sinCerrar: [],
+    cierresRecientes: [],
+    resumen: SEDES.map((s) => ({
+      businessId: s.id, sede: s.nombre, logrados: 0, noLogrados: 0, sinCerrar: 0, pct: null,
+    })),
+  };
+
+  const role = await getSessionRole();
+  if (role?.kind !== "full" && role?.kind !== "highlight") return vacio;
+
+  try {
+    const filas = (await sql`
+      SELECT id, business_id, fecha::text AS fecha, texto, estado,
+             cerrado_en::text AS cerrado_en,
+             (reflect_ayudo IS NOT NULL OR reflect_distrajo IS NOT NULL
+              OR reflect_manana IS NOT NULL) AS tiene_reflect
+      FROM highlights
+      WHERE fecha <= ${hoy} AND fecha >= ${hoy}::date - 30
+      ORDER BY fecha DESC, business_id
+    `) as {
+      id: string; business_id: number; fecha: string; texto: string;
+      estado: string; cerrado_en: string | null; tiene_reflect: boolean;
+    }[];
+
+    const nombre = (id: number) => SEDES.find((s) => s.id === id)?.nombre ?? `Sede ${id}`;
+
+    const estadoHoy: EstadoHoySede[] = SEDES.map((s) => {
+      const f = filas.find((x) => x.business_id === s.id && x.fecha === hoy);
+      return {
+        businessId: s.id,
+        sede: s.nombre,
+        estado: f ? (f.estado as EstadoHighlight) : null,
+        texto: f?.texto ?? null,
+        cerradoEn: f?.cerrado_en ?? null,
+      };
+    });
+
+    // Silencio: asignado en un día ya pasado y nunca cerrado.
+    const sinCerrar: SinCerrar[] = filas
+      .filter((f) => f.fecha < hoy && f.estado === "pendiente")
+      .map((f) => ({
+        id: f.id,
+        businessId: f.business_id,
+        sede: nombre(f.business_id),
+        fecha: f.fecha,
+        texto: f.texto,
+        diasEnSilencio: Math.round(
+          (Date.UTC(...(hoy.split("-").map(Number) as [number, number, number])) -
+            Date.UTC(...(f.fecha.split("-").map(Number) as [number, number, number]))) /
+            86_400_000,
+        ),
+      }))
+      .sort((a, b) => b.diasEnSilencio - a.diasEnSilencio);
+
+    const cierresRecientes: CierreReciente[] = filas
+      .filter((f) => f.estado !== "pendiente")
+      .slice(0, 12)
+      .map((f) => ({
+        id: f.id,
+        businessId: f.business_id,
+        sede: nombre(f.business_id),
+        fecha: f.fecha,
+        texto: f.texto,
+        estado: f.estado as EstadoHighlight,
+        cerradoEn: f.cerrado_en,
+        tieneReflect: f.tiene_reflect,
+      }));
+
+    const resumen = SEDES.map((s) => {
+      const suyas = filas.filter((f) => f.business_id === s.id);
+      const logrados = suyas.filter((f) => f.estado === "logrado").length;
+      const noLogrados = suyas.filter((f) => f.estado === "no_logrado").length;
+      // El de HOY todavía puede cerrarse: no cuenta como silencio.
+      const silencio = suyas.filter((f) => f.estado === "pendiente" && f.fecha < hoy).length;
+      const cerrados = logrados + noLogrados;
+      return {
+        businessId: s.id,
+        sede: s.nombre,
+        logrados,
+        noLogrados,
+        sinCerrar: silencio,
+        pct: cerrados > 0 ? Math.round((logrados / cerrados) * 1000) / 10 : null,
+      };
+    });
+
+    return { hoy, estadoHoy, sinCerrar, cierresRecientes, resumen };
+  } catch (e) {
+    console.error("[getControlCumplimiento] failed:", e);
+    if (faltaMigracion(e)) return { ...vacio, faltaMigracion: true };
+    return vacio;
+  }
+}
