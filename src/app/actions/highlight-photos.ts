@@ -33,7 +33,22 @@ import {
 
 const sql = neon(process.env.DATABASE_URL!);
 
-export type { HighlightPhotoKind };
+// OJO: acá NO va `export type { HighlightPhotoKind }`.
+//
+// En un archivo "use server", Turbopack convierte cada export en una
+// referencia a una server action. La forma RE-EXPORT (`export type { X }`)
+// no se borra en esa transformación: queda código que busca `X` como
+// valor en tiempo de ejecución, y como X es solo un tipo, revienta con
+// "ReferenceError: HighlightPhotoKind is not defined" al evaluar el
+// módulo — tumbando CUALQUIER llamada a una action de ese chunk.
+//
+// Ni `tsc`, ni `npm run build`, ni los tests de Vitest lo detectan (esos
+// transforms sí borran el tipo). Solo aparece en el runtime de producción.
+// Incidente 11-ago-2026: /grupo/highlight daba 500 al cambiar de fecha.
+//
+// Un `export type X = {...}` declarado localmente (como el de abajo) sí
+// es seguro; el problema es únicamente la re-exportación.
+// Quien necesite HighlightPhotoKind, que lo importe de @/lib/highlight-access.
 
 export type HighlightPhoto = {
   id: string;

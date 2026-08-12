@@ -21,8 +21,11 @@ import {
   listHighlightPhotos,
   borrarFotoHighlight,
   type HighlightPhoto,
-  type HighlightPhotoKind,
 } from "@/app/actions/highlight-photos";
+// El tipo se importa de la lib, NO del archivo "use server": re-exportar
+// un tipo desde una action rompe en runtime (ver comentario en
+// src/app/actions/highlight-photos.ts).
+import type { HighlightPhotoKind } from "@/lib/highlight-access";
 
 export function HighlightPhotos({
   highlightId,

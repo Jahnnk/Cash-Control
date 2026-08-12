@@ -151,6 +151,36 @@ Perú. **NO es programador.** Reglas de comunicación:
    nunca lo va a atrapar: **toda pantalla nueva que dependa de una
    action se abre en el navegador antes de dar el feature por listo**,
    no basta con `tsc`+`vitest` en verde (PR receivables, 09-ago-2026).
+
+   **8-bis. Y TAMPOCO puede RE-EXPORTAR un tipo** (11-ago-2026, costó
+   tres intentos de diagnóstico). `export type { HighlightPhotoKind };`
+   en `actions/highlight-photos.ts` producía en producción:
+
+   ```
+   ReferenceError: HighlightPhotoKind is not defined
+       at module evaluation (.../ssr/src_app_actions_*.js)
+   ```
+
+   Turbopack convierte cada export de un `"use server"` en referencia a
+   server action; en esa transformación la re-export de tipo NO se
+   borra y queda buscando el tipo como VALOR. Como revienta al EVALUAR
+   el módulo, tumbaba **toda** llamada a cualquier action de ese chunk
+   (`/grupo/highlight` daba 500 al cambiar de fecha, siempre con el
+   mismo `digest`).
+
+   Lo grave: `tsc`, `npm run build` Y Vitest lo dan por bueno — esos
+   transforms sí borran el tipo. **Solo se ve en el runtime de
+   producción.** Regla: declarar el tipo localmente (`export type X =
+   {...}` es seguro) o importarlo desde una lib; nunca re-exportarlo.
+   Guardia automática: `src/lib/__tests__/use-server-exports.test.ts`.
+
+   **Lección de método**: un `digest` de error IDÉNTICO entre dos
+   intentos = error determinista, NO un tropiezo de red. Perseguí dos
+   veces la hipótesis de "cold start de Neon" (y hasta desplegué un
+   reintento) cuando el digest repetido ya decía que era determinista.
+   Ante un 500 en producción que no se reproduce en local: **pedir el
+   log de Vercel ANTES de tocar código.** Los tres arreglos anteriores
+   fueron a ciegas; el log dio la línea exacta en 30 segundos.
 9. **`findCol` por "contiene todas las palabras" puede dar falso
    positivo entre encabezados parecidos.** En el Consolidado de
    Facturas, buscar la columna "T DOC. CLTE." con `findCol(h,"doc","clte")`
