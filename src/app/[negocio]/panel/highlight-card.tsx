@@ -13,13 +13,14 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import {
-  Sun, Check, X, ChevronDown, Flame, Loader2, PartyPopper, Lightbulb,
+  Sun, Check, X, ChevronDown, Flame, Loader2, PartyPopper, Lightbulb, AlertTriangle,
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { HighlightPhotos } from "@/components/highlight-photos";
 import { conReintento } from "@/lib/con-reintento";
 import {
-  cerrarHighlight, getHighlightSede, type HighlightSede,
+  cerrarHighlight, getHighlightSede,
+  type HighlightSede, type Highlight,
 } from "@/app/actions/highlight";
 import {
   GUIA_HIGHLIGHT, PREGUNTAS_REFLECT, CIERRE_REFLECT, MAX_REFLECT, etiquetaEstado,
@@ -52,7 +53,10 @@ export function HighlightCard({
   const { showToast } = useToast();
   const [verGuia, setVerGuia] = useState(false);
   const [guiaAbierta, setGuiaAbierta] = useState<number | null>(null);
-  const [reflectAbierto, setReflectAbierto] = useState(false);
+  // Qué Highlight se está cerrando: el de hoy o uno de un día anterior.
+  // Antes esto era un booleano atado al de hoy, y por eso los atrasados
+  // no tenían forma de cerrarse.
+  const [cerrando, setCerrando] = useState<Highlight | null>(null);
   const [ayudo, setAyudo] = useState("");
   const [distrajo, setDistrajo] = useState("");
   const [manana, setManana] = useState("");
@@ -62,10 +66,16 @@ export function HighlightCard({
 
   const h = data.hoy;
 
+  function abrirCierre(objetivo: Highlight) {
+    setCerrando(objetivo);
+    setAyudo(""); setDistrajo(""); setManana("");
+  }
+
   function guardar(estado: "logrado" | "no_logrado") {
-    if (!h) return;
+    const objetivo = cerrando;
+    if (!objetivo) return;
     startTransition(async () => {
-      const r = await cerrarHighlight({ id: h.id, estado, ayudo, distrajo, manana });
+      const r = await cerrarHighlight({ id: objetivo.id, estado, ayudo, distrajo, manana });
       if (!r.ok) {
         showToast(r.error, "error");
         return;
@@ -74,7 +84,7 @@ export function HighlightCard({
         estado === "logrado" ? "¡Highlight logrado!" : "Anotado. Mañana es otro día.",
         "success",
       );
-      setReflectAbierto(false);
+      setCerrando(null);
       onRecargar?.();
     });
   }
@@ -210,10 +220,10 @@ export function HighlightCard({
             </div>
 
             {/* Cerrar el día */}
-            {h.estado === "pendiente" && !reflectAbierto && (
+            {h.estado === "pendiente" && cerrando?.id !== h.id && (
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
-                  onClick={() => setReflectAbierto(true)}
+                  onClick={() => abrirCierre(h)}
                   disabled={pendiente}
                   className="flex-1 min-w-[160px] inline-flex items-center justify-center gap-2 bg-primary text-white rounded-xl px-4 py-3 text-sm font-semibold hover:bg-primary-light disabled:opacity-50"
                 >
@@ -222,84 +232,17 @@ export function HighlightCard({
               </div>
             )}
 
-            {/* Reflect */}
-            {(reflectAbierto || (h.estado !== "pendiente" && !h.tieneReflect)) && (
+            {/* Reflect — mismo formulario que usan los atrasados */}
+            {cerrando?.id === h.id && (
               <div className="mt-4 border border-gray-200 rounded-xl p-4">
-                <div className="flex items-center gap-2 mb-1">
-                  <Lightbulb className="w-4 h-4 text-amber-500" />
-                  <h3 className="text-sm font-semibold text-gray-900">Reflect · mejora continua</h3>
-                </div>
-                <p className="text-[11px] text-gray-500 mb-3">
-                  Toma un minuto. Responde lo que te salga; en blanco también vale.
-                </p>
-
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  {PREGUNTAS_REFLECT.ayudo}
-                </label>
-                <textarea
-                  value={ayudo}
-                  onChange={(e) => setAyudo(e.target.value.slice(0, MAX_REFLECT))}
-                  rows={2}
-                  placeholder="Ej: bloqueé la primera hora antes de abrir"
-                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+                <ReflectForm
+                  ayudo={ayudo} setAyudo={setAyudo}
+                  distrajo={distrajo} setDistrajo={setDistrajo}
+                  manana={manana} setManana={setManana}
+                  pendiente={pendiente}
+                  onGuardar={guardar}
+                  onCancelar={() => setCerrando(null)}
                 />
-
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  {PREGUNTAS_REFLECT.distrajo}
-                </label>
-                <textarea
-                  value={distrajo}
-                  onChange={(e) => setDistrajo(e.target.value.slice(0, MAX_REFLECT))}
-                  rows={2}
-                  placeholder="Ej: llegaron proveedores sin avisar"
-                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                />
-
-                <label className="block text-xs font-medium text-gray-700 mb-1.5">
-                  {PREGUNTAS_REFLECT.manana}
-                </label>
-                <textarea
-                  value={manana}
-                  onChange={(e) => setManana(e.target.value.slice(0, MAX_REFLECT))}
-                  rows={2}
-                  placeholder="Ej: empezar 30 minutos antes"
-                  className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
-                />
-
-                <p className="text-[11px] text-gray-400 mt-3 mb-3 italic">{CIERRE_REFLECT}</p>
-
-                <div className="text-xs font-medium text-gray-700 mb-2">
-                  {PREGUNTAS_REFLECT.logrado}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    onClick={() => guardar("logrado")}
-                    disabled={pendiente}
-                    className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 bg-emerald-600 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
-                  >
-                    {pendiente ? (
-                      <Loader2 className="w-4 h-4 animate-spin" />
-                    ) : (
-                      <PartyPopper className="w-4 h-4" />
-                    )}
-                    Sí, lo logré
-                  </button>
-                  <button
-                    onClick={() => guardar("no_logrado")}
-                    disabled={pendiente}
-                    className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 bg-white text-gray-700 border border-gray-300 rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
-                  >
-                    No esta vez
-                  </button>
-                </div>
-                {reflectAbierto && h.estado === "pendiente" && (
-                  <button
-                    onClick={() => setReflectAbierto(false)}
-                    className="w-full text-[11px] text-gray-400 hover:text-gray-600 mt-2"
-                  >
-                    Todavía no, sigo en eso
-                  </button>
-                )}
               </div>
             )}
 
@@ -328,6 +271,68 @@ export function HighlightCard({
               </div>
             )}
           </>
+        )}
+
+        {/* Pendientes de días anteriores: la deuda que quedó abierta.
+            Va DESPUÉS del de hoy (hoy manda) pero antes del historial,
+            porque todavía se puede responder. */}
+        {data.pendientesAnteriores.length > 0 && (
+          <div className="mt-5 pt-4 border-t border-gray-100">
+            <div className="flex items-start gap-2 mb-2">
+              <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+              <div>
+                <div className="text-xs font-semibold text-gray-900">
+                  {data.pendientesAnteriores.length === 1
+                    ? "Tienes un Highlight de otro día sin cerrar"
+                    : `Tienes ${data.pendientesAnteriores.length} Highlights de otros días sin cerrar`}
+                </div>
+                <p className="text-[11px] text-gray-500 mt-0.5">
+                  Ciérralo aunque sea tarde: así queda constancia de lo que pasó.
+                </p>
+              </div>
+            </div>
+
+            <div className="space-y-2">
+              {data.pendientesAnteriores.map((p) => (
+                <div key={p.id} className="border border-amber-200 bg-amber-50/60 rounded-xl p-3">
+                  <div className="flex items-start justify-between gap-3">
+                    <div className="min-w-0">
+                      <div className="text-[10px] uppercase tracking-wide text-amber-700 font-semibold">
+                        {fechaLarga(p.fecha)}
+                        {p.asignadoPor && <> · te lo dejó {p.asignadoPor}</>}
+                      </div>
+                      <div className="text-sm font-semibold text-gray-900 mt-0.5">{p.texto}</div>
+                      {p.porQue && (
+                        <div className="text-[11px] text-gray-600 mt-1">{p.porQue}</div>
+                      )}
+                    </div>
+                    {cerrando?.id !== p.id && (
+                      <button
+                        onClick={() => abrirCierre(p)}
+                        disabled={pendiente}
+                        className="shrink-0 inline-flex items-center gap-1.5 bg-primary text-white rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-primary-light disabled:opacity-50"
+                      >
+                        <Check className="w-3.5 h-3.5" /> Cerrarlo
+                      </button>
+                    )}
+                  </div>
+
+                  {cerrando?.id === p.id && (
+                    <div className="mt-3 border-t border-amber-200 pt-3">
+                      <ReflectForm
+                        ayudo={ayudo} setAyudo={setAyudo}
+                        distrajo={distrajo} setDistrajo={setDistrajo}
+                        manana={manana} setManana={setManana}
+                        pendiente={pendiente}
+                        onGuardar={guardar}
+                        onCancelar={() => setCerrando(null)}
+                      />
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          </div>
         )}
 
         {/* Historial corto: los últimos días, para ver la constancia */}
@@ -402,4 +407,99 @@ export function HighlightSlot() {
     return <div className="rounded-2xl border border-gray-200 bg-white h-48 animate-pulse" />;
   }
   return <HighlightCard data={data} onRecargar={cargar} />;
+}
+
+/**
+ * Formulario del Reflect + los botones de cierre.
+ *
+ * Se extrajo para poder cerrar TAMBIÉN los Highlights de días
+ * anteriores: antes vivía incrustado dentro de la tarjeta de hoy, así
+ * que los atrasados no tenían con qué cerrarse.
+ */
+function ReflectForm({
+  ayudo, setAyudo,
+  distrajo, setDistrajo,
+  manana, setManana,
+  pendiente,
+  onGuardar,
+  onCancelar,
+}: {
+  ayudo: string; setAyudo: (v: string) => void;
+  distrajo: string; setDistrajo: (v: string) => void;
+  manana: string; setManana: (v: string) => void;
+  pendiente: boolean;
+  onGuardar: (estado: "logrado" | "no_logrado") => void;
+  onCancelar: () => void;
+}) {
+  return (
+    <>
+      <div className="flex items-center gap-2 mb-1">
+        <Lightbulb className="w-4 h-4 text-amber-500" />
+        <h3 className="text-sm font-semibold text-gray-900">Reflect · mejora continua</h3>
+      </div>
+      <p className="text-[11px] text-gray-500 mb-3">
+        Toma un minuto. Responde lo que te salga; en blanco también vale.
+      </p>
+
+      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+        {PREGUNTAS_REFLECT.ayudo}
+      </label>
+      <textarea
+        value={ayudo}
+        onChange={(e) => setAyudo(e.target.value.slice(0, MAX_REFLECT))}
+        rows={2}
+        placeholder="Ej: bloqueé la primera hora antes de abrir"
+        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+      />
+
+      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+        {PREGUNTAS_REFLECT.distrajo}
+      </label>
+      <textarea
+        value={distrajo}
+        onChange={(e) => setDistrajo(e.target.value.slice(0, MAX_REFLECT))}
+        rows={2}
+        placeholder="Ej: llegaron proveedores sin avisar"
+        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 mb-3 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+      />
+
+      <label className="block text-xs font-medium text-gray-700 mb-1.5">
+        {PREGUNTAS_REFLECT.manana}
+      </label>
+      <textarea
+        value={manana}
+        onChange={(e) => setManana(e.target.value.slice(0, MAX_REFLECT))}
+        rows={2}
+        placeholder="Ej: empezar 30 minutos antes"
+        className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+      />
+
+      <p className="text-[11px] text-gray-400 mt-3 mb-3 italic">{CIERRE_REFLECT}</p>
+
+      <div className="text-xs font-medium text-gray-700 mb-2">{PREGUNTAS_REFLECT.logrado}</div>
+      <div className="flex flex-wrap gap-2">
+        <button
+          onClick={() => onGuardar("logrado")}
+          disabled={pendiente}
+          className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 bg-emerald-600 text-white rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-emerald-700 disabled:opacity-50"
+        >
+          {pendiente ? <Loader2 className="w-4 h-4 animate-spin" /> : <PartyPopper className="w-4 h-4" />}
+          Sí, lo logré
+        </button>
+        <button
+          onClick={() => onGuardar("no_logrado")}
+          disabled={pendiente}
+          className="flex-1 min-w-[140px] inline-flex items-center justify-center gap-2 bg-white text-gray-700 border border-gray-300 rounded-xl px-4 py-2.5 text-sm font-semibold hover:bg-gray-50 disabled:opacity-50"
+        >
+          No esta vez
+        </button>
+      </div>
+      <button
+        onClick={onCancelar}
+        className="w-full text-[11px] text-gray-400 hover:text-gray-600 mt-2"
+      >
+        Todavía no, sigo en eso
+      </button>
+    </>
+  );
 }

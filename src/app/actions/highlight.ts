@@ -89,6 +89,15 @@ export type HighlightSede = {
   esDireccion: boolean;
   /** El de hoy, que es el que el admin tiene que cumplir. */
   hoy: Highlight | null;
+  /**
+   * Highlights de días ANTERIORES que quedaron sin cerrar.
+   *
+   * Sin esto quedaban atrapados para siempre: el panel solo mostraba el
+   * del día, así que quien terminaba tarde (o a quien le falló el
+   * guardado) no tenía forma de responder nunca — y en el control de
+   * dirección figuraba como silencio, sin culpa suya.
+   */
+  pendientesAnteriores: Highlight[];
   fecha: string;
   /** Días cerrados hacia atrás, para la racha y el historial corto. */
   racha: number;
@@ -146,7 +155,7 @@ export async function getHighlightSede(): Promise<HighlightSede> {
   const hoy = getToday();
   const vacio: HighlightSede = {
     esDireccion: false,
-    hoy: null, fecha: hoy, racha: 0,
+    hoy: null, pendientesAnteriores: [], fecha: hoy, racha: 0,
     cumplimiento: { cerrados: 0, logrados: 0, pendientes: 0, pct: null },
     historial: [],
   };
@@ -192,6 +201,11 @@ export async function getHighlightSede(): Promise<HighlightSede> {
     return {
       esDireccion: role.kind === "full",
       hoy: filas[0]?.fecha === hoy ? aHighlight(filas[0]) : null,
+      // Los de días pasados que nunca se cerraron: se pueden cerrar
+      // tarde. Dirección igual ve la fecha real y la hora de cierre.
+      pendientesAnteriores: filas
+        .filter((f) => f.fecha !== hoy && f.estado === "pendiente")
+        .map(aHighlight),
       fecha: hoy,
       racha: calcularRacha(cerrados),
       cumplimiento: calcularCumplimiento(dias),
