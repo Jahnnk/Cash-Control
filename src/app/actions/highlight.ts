@@ -90,19 +90,21 @@ export type HighlightSede = {
   /** El de hoy, que es el que el admin tiene que cumplir. */
   hoy: Highlight | null;
   /**
-   * Highlights de días ANTERIORES que quedaron sin cerrar.
+   * Highlights de los últimos 7 días (sin contar hoy), cerrados o no.
    *
-   * Sin esto quedaban atrapados para siempre: el panel solo mostraba el
-   * del día, así que quien terminaba tarde (o a quien le falló el
-   * guardado) no tenía forma de responder nunca — y en el control de
-   * dirección figuraba como silencio, sin culpa suya.
+   * Se entregan COMPLETOS —no un resumen— por dos razones que costaron
+   * un reporte cada una:
+   *   · Los pendientes se pueden cerrar tarde. Antes el panel solo
+   *     mostraba el del día y quedaban atrapados para siempre.
+   *   · A los YA CERRADOS todavía se les puede adjuntar la foto de
+   *     evidencia. Luis cerró el suyo y recién ahí quiso subir la foto:
+   *     al cerrarse desaparecía de su vista y se quedaba sin poder.
    */
-  pendientesAnteriores: Highlight[];
+  diasAnteriores: Highlight[];
   fecha: string;
   /** Días cerrados hacia atrás, para la racha y el historial corto. */
   racha: number;
   cumplimiento: Cumplimiento;
-  historial: { fecha: string; texto: string; estado: EstadoHighlight }[];
 };
 
 export type HighlightGrupoSede = {
@@ -155,9 +157,8 @@ export async function getHighlightSede(): Promise<HighlightSede> {
   const hoy = getToday();
   const vacio: HighlightSede = {
     esDireccion: false,
-    hoy: null, pendientesAnteriores: [], fecha: hoy, racha: 0,
+    hoy: null, diasAnteriores: [], fecha: hoy, racha: 0,
     cumplimiento: { cerrados: 0, logrados: 0, pendientes: 0, pct: null },
-    historial: [],
   };
 
   const role = await getSessionRole();
@@ -201,18 +202,18 @@ export async function getHighlightSede(): Promise<HighlightSede> {
     return {
       esDireccion: role.kind === "full",
       hoy: filas[0]?.fecha === hoy ? aHighlight(filas[0]) : null,
-      // Los de días pasados que nunca se cerraron: se pueden cerrar
-      // tarde. Dirección igual ve la fecha real y la hora de cierre.
-      pendientesAnteriores: filas
-        .filter((f) => f.fecha !== hoy && f.estado === "pendiente")
+      // Últimos 7 días sin contar hoy, cerrados o no: los pendientes
+      // para poder cerrarlos, y los cerrados para poder adjuntarles la
+      // foto de evidencia después. Dirección siempre ve la fecha real
+      // del Highlight y la hora real del cierre, así que un cierre o
+      // una foto tardía se notan.
+      diasAnteriores: filas
+        .filter((f) => f.fecha !== hoy)
+        .slice(0, 7)
         .map(aHighlight),
       fecha: hoy,
       racha: calcularRacha(cerrados),
       cumplimiento: calcularCumplimiento(dias),
-      historial: filas
-        .filter((f) => f.fecha !== hoy)
-        .slice(0, 7)
-        .map((f) => ({ fecha: f.fecha, texto: f.texto, estado: f.estado as EstadoHighlight })),
     };
   } catch (e) {
     console.error("[getHighlightSede] failed:", e);
