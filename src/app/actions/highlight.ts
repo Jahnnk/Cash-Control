@@ -239,19 +239,27 @@ export async function cerrarHighlight(input: {
     return { ok: false, error: "Estado inválido." };
   }
 
+  // Las tres respuestas del Reflect se limpian UNA vez y se decide acá
+  // si hubo reflexión. Antes esto se resolvía con un
+  // `CASE WHEN ${param} IS NOT NULL` dentro del SQL, y Postgres no podía
+  // inferir el tipo de ese parámetro (solo aparecía en un IS NOT NULL):
+  // fallaba con "could not determine data type of parameter $5" y el
+  // administrador veía "No pude guardar" al cerrar su Highlight.
+  // Regla: nunca usar un parámetro SOLO dentro de un IS NULL / IS NOT NULL.
+  const ayudo = recorta(input.ayudo, MAX_REFLECT);
+  const distrajo = recorta(input.distrajo, MAX_REFLECT);
+  const manana = recorta(input.manana, MAX_REFLECT);
+  const hayReflect = ayudo !== null || distrajo !== null || manana !== null;
+
   try {
     const filas = (await sql`
       UPDATE highlights
       SET estado = ${input.estado},
           cerrado_en = now(),
-          reflect_ayudo    = ${recorta(input.ayudo, MAX_REFLECT)},
-          reflect_distrajo = ${recorta(input.distrajo, MAX_REFLECT)},
-          reflect_manana   = ${recorta(input.manana, MAX_REFLECT)},
-          reflect_en = CASE
-            WHEN ${recorta(input.ayudo, MAX_REFLECT)} IS NOT NULL
-              OR ${recorta(input.distrajo, MAX_REFLECT)} IS NOT NULL
-              OR ${recorta(input.manana, MAX_REFLECT)} IS NOT NULL
-            THEN now() ELSE NULL END,
+          reflect_ayudo    = ${ayudo},
+          reflect_distrajo = ${distrajo},
+          reflect_manana   = ${manana},
+          reflect_en = ${hayReflect ? new Date().toISOString() : null}::timestamptz,
           actualizado_en = now()
       WHERE id = ${input.id} AND business_id = ${bId}
       RETURNING id
