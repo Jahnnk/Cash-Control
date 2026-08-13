@@ -477,9 +477,13 @@ export async function borrarHighlight(
 // ─────────────────────────────────────────────────────────────────
 
 export type CeldaPlan = {
+  /** Solo existe si el Highlight ya se guardó. Las fotos se cuelgan de
+   *  este id, así que hasta que no se programa no se pueden adjuntar. */
+  id: string;
   fecha: string;
   businessId: number;
   texto: string | null;
+  porQue: string | null;
   asignadoPor: string | null;
   estado: EstadoHighlight | null;
 };
@@ -530,17 +534,19 @@ export async function getPlanSemana(desde?: string, dias = 7): Promise<PlanSeman
 
   try {
     const filas = (await sql`
-      SELECT business_id, fecha::text AS fecha, texto, asignado_por, estado
+      SELECT id, business_id, fecha::text AS fecha, texto, por_que, asignado_por, estado
       FROM highlights
       WHERE fecha >= ${fechas[0]} AND fecha <= ${fechas[fechas.length - 1]}
-    `) as { business_id: number; fecha: string; texto: string; asignado_por: string | null; estado: string }[];
+    `) as { id: string; business_id: number; fecha: string; texto: string; por_que: string | null; asignado_por: string | null; estado: string }[];
 
     return {
       ...vacio,
       celdas: filas.map((f) => ({
+        id: f.id,
         fecha: f.fecha,
         businessId: f.business_id,
         texto: f.texto,
+        porQue: f.por_que,
         asignadoPor: f.asignado_por,
         estado: f.estado as EstadoHighlight,
       })),

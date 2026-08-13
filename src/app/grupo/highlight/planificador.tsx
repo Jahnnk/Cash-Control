@@ -20,7 +20,8 @@ import { useToast } from "@/components/toast-provider";
 import {
   getPlanSemana, asignarHighlight, type PlanSemana, type CeldaPlan,
 } from "@/app/actions/highlight";
-import { MAX_TEXTO } from "@/lib/highlight";
+import { MAX_TEXTO, MAX_POR_QUE } from "@/lib/highlight";
+import { HighlightPhotos } from "@/components/highlight-photos";
 import { conReintento } from "@/lib/con-reintento";
 
 const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
@@ -49,6 +50,7 @@ export function Planificador({
   const [plan, setPlan] = useState<PlanSemana | null>(null);
   const [editando, setEditando] = useState<{ fecha: string; businessId: number } | null>(null);
   const [texto, setTexto] = useState("");
+  const [porQue, setPorQue] = useState("");
   const [choque, setChoque] = useState<{ asignadoPor: string; textoActual: string } | null>(null);
   const [guardando, startTransition] = useTransition();
 
@@ -77,6 +79,7 @@ export function Planificador({
     const c = celda(fecha, businessId);
     setEditando({ fecha, businessId });
     setTexto(c?.texto ?? "");
+    setPorQue(c?.porQue ?? "");
     setChoque(null);
   }
 
@@ -87,6 +90,7 @@ export function Planificador({
         businessId: editando.businessId,
         fecha: editando.fecha,
         texto,
+        porQue,
         reemplazarDe: reemplazar ? "si" : null,
       });
       if (!r.ok) {
@@ -98,9 +102,10 @@ export function Planificador({
         return;
       }
       showToast("Programado", "success");
-      setEditando(null);
-      setTexto("");
       setChoque(null);
+      // El panel queda ABIERTO a propósito: hasta que el Highlight no
+      // existe no tiene id, y sin id no se le puede colgar una foto.
+      // Cerrarlo acá obligaba a volver a entrar solo para adjuntarla.
       await cargar();
       onCambio?.();
     });
@@ -257,7 +262,8 @@ export function Planificador({
             placeholder="Una sola cosa, concreta y verificable"
             className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
           />
-          <div className="flex items-center justify-between mt-2">
+          <div className="flex items-center justify-between mt-1 mb-3">
+            <span className="text-[10px] text-gray-400">Una sola cosa, concreta y verificable</span>
             <span
               className={`text-[10px] tabular-nums ${
                 texto.length > MAX_TEXTO - 20 ? "text-amber-600" : "text-gray-400"
@@ -265,6 +271,44 @@ export function Planificador({
             >
               {texto.length}/{MAX_TEXTO}
             </span>
+          </div>
+
+          <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
+            Por qué importa hoy <span className="normal-case font-normal">(opcional)</span>
+          </label>
+          <textarea
+            value={porQue}
+            onChange={(e) => setPorQue(e.target.value.slice(0, MAX_POR_QUE))}
+            rows={2}
+            placeholder="El contexto ayuda a que lo haga bien, no solo a que lo haga"
+            className="w-full text-sm border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-primary/30 focus:border-primary"
+          />
+
+          {/* Fotos: solo después de programar, porque se cuelgan del
+              Highlight y hasta entonces no existe. */}
+          {(() => {
+            const existente = celda(editando.fecha, editando.businessId);
+            return existente ? (
+              <div className="mt-3">
+                <HighlightPhotos
+                  highlightId={existente.id}
+                  kind="highlight_indicacion"
+                  titulo="Foto para la sede"
+                  ayuda="Adjunta la foto de lo que quieres que vean o cambien."
+                  puedeSubir
+                  puedeBorrar
+                  compacto
+                />
+              </div>
+            ) : (
+              <p className="text-[11px] text-gray-400 mt-2">
+                Para adjuntar una foto, primero programa el Highlight — el panel se
+                queda abierto y la cámara aparece acá mismo.
+              </p>
+            );
+          })()}
+
+          <div className="flex items-center justify-end mt-3">
             <div className="flex gap-2">
               <button
                 onClick={() => {
@@ -273,7 +317,7 @@ export function Planificador({
                 }}
                 className="px-3 py-1.5 text-xs text-gray-500 hover:text-gray-700"
               >
-                Cancelar
+                {celda(editando.fecha, editando.businessId) ? "Listo" : "Cancelar"}
               </button>
               <button
                 onClick={() => guardar()}
@@ -285,7 +329,7 @@ export function Planificador({
                 ) : (
                   <Send className="w-3.5 h-3.5" />
                 )}
-                Programar
+                {celda(editando.fecha, editando.businessId) ? "Guardar cambios" : "Programar"}
               </button>
             </div>
           </div>
