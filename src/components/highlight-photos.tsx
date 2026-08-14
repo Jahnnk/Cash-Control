@@ -88,14 +88,28 @@ export function HighlightPhotos({
         form.set("highlightId", highlightId);
         form.set("kind", kind);
         const res = await fetch("/api/highlight-photos", { method: "POST", body: form });
-        const body = (await res.json()) as { success?: boolean; error?: string };
-        if (!res.ok || !body.success) {
-          showToast(body.error || "No se pudo subir la foto", "error");
+        // La respuesta puede NO ser JSON (un 413 de la plataforma, una
+        // redirección a HTML...). Antes eso reventaba en .json() y caía
+        // en el catch, que culpaba a la conexión y escondía la causa.
+        let body: { success?: boolean; error?: string } | null = null;
+        try {
+          body = (await res.json()) as { success?: boolean; error?: string };
+        } catch {
+          body = null;
+        }
+        if (!res.ok || !body?.success) {
+          showToast(
+            body?.error ??
+              (res.status === 413
+                ? "La foto pesa demasiado. Toma una con menos resolución."
+                : `No se pudo subir la foto (error ${res.status}). Vuelve a intentar.`),
+            "error",
+          );
           continue;
         }
         ok++;
       } catch {
-        showToast("No se pudo subir la foto. Revisa tu conexión.", "error");
+        showToast("No se pudo subir la foto: no hubo respuesta del servidor.", "error");
       }
     }
     setSubiendo(false);

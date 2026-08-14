@@ -28,6 +28,32 @@ const PUBLIC_PATHS = ["/", "/select-business", "/acceso-denegado"];
  */
 const PUBLIC_API_PREFIXES = ["/api/keep-alive"];
 
+/**
+ * Rutas de API que un usuario CON ALCANCE (admin de sede, verificador,
+ * dirección del Highlight) sí puede tocar, aunque estén fuera de su
+ * prefijo de pantalla.
+ *
+ * Sin esta lista el middleware los redirigía a su panel: el navegador
+ * recibía el HTML del panel en vez de una respuesta, `res.json()`
+ * reventaba y el usuario veía "revisa tu conexión". Ese fue el motivo
+ * real de que NINGÚN administrador pudiera subir una foto del Highlight
+ * (13-ago-2026) — el permiso nunca fue el problema, la petición ni
+ * siquiera llegaba.
+ *
+ * Cada una revalida permisos por su cuenta y no se confía en esta lista
+ * como control de acceso:
+ *   · /api/highlight-photos  → puedeSobreHighlight(sede del Highlight)
+ *   · /api/attachments/[id]  → por rol si es foto de Highlight; por
+ *                              negocio activo si es constancia de pago
+ *                              (y la sede activa la inyecta este mismo
+ *                              middleware, así que queda acotado).
+ */
+const API_CON_ALCANCE = ["/api/highlight-photos", "/api/attachments"];
+
+function esApiConAlcance(pathname: string): boolean {
+  return API_CON_ALCANCE.some((p) => pathname === p || pathname.startsWith(p + "/"));
+}
+
 /** Scopes permitidos por rol. */
 function allowedScopesForRole(role: Role): Scope[] {
   // Desde jul-2026 Kelly también lleva Atelier — ambos roles ven todo.
@@ -113,16 +139,22 @@ export async function middleware(request: NextRequest) {
       // de servidor, así que también cubre los POST de las actions.
       if (scopedScope === "highlight") {
         const permitido = "/grupo/highlight";
-        if (pathname !== permitido && !pathname.startsWith(permitido + "/")) {
-          return NextResponse.redirect(new URL(permitido, request.url));
-        }
+        const ok =
+          pathname === permitido ||
+          pathname.startsWith(permitido + "/") ||
+          esApiConAlcance(pathname); // subir/ver las fotos de indicación
+        if (!ok) return NextResponse.redirect(new URL(permitido, request.url));
         return NextResponse.next();
       }
 
       const [kind, sede] = scopedScope.split("-") as ["admin" | "verif", string];
       // admin → Panel de Sede completo; verif → SOLO la segunda firma.
       const allowedPrefix = kind === "admin" ? `/${sede}/panel` : `/${sede}/verificacion`;
-      if (pathname !== allowedPrefix && !pathname.startsWith(allowedPrefix + "/")) {
+      const permitido =
+        pathname === allowedPrefix ||
+        pathname.startsWith(allowedPrefix + "/") ||
+        esApiConAlcance(pathname); // subir su evidencia y ver las fotos
+      if (!permitido) {
         return NextResponse.redirect(new URL(allowedPrefix, request.url));
       }
       // Inyectar la sede activa (activeBusinessId); las actions re-verifican.

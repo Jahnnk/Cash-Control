@@ -3,7 +3,17 @@
  * tamaño acotado. Mensajes en español listos para mostrar.
  */
 
-export const ATTACHMENT_MAX_BYTES = 5 * 1024 * 1024; // 5 MB
+/**
+ * 4 MB, no 5.
+ *
+ * Vercel corta las peticiones a funciones serverless en ~4.5 MB de
+ * cuerpo, ANTES de que lleguen a nuestro código. Con el tope en 5 MB,
+ * una foto de 4.6 MB pasaba la validación del navegador y después
+ * rebotaba en la plataforma con un 413 que ni siquiera es JSON — el
+ * usuario veía un error de conexión sin sentido. 4 MB deja margen para
+ * la envoltura del multipart y sigue siendo de sobra para una foto.
+ */
+export const ATTACHMENT_MAX_BYTES = 4 * 1024 * 1024; // 4 MB
 
 export const ATTACHMENT_ALLOWED_TYPES: Record<string, string> = {
   "image/jpeg": "JPG",
@@ -28,7 +38,7 @@ export function validateAttachment(
     return "El archivo está vacío o no se pudo leer";
   }
   if (sizeBytes > ATTACHMENT_MAX_BYTES) {
-    return `El archivo pesa más de 5 MB (${(sizeBytes / 1024 / 1024).toFixed(1)} MB). Comprime la imagen o usa una captura más liviana.`;
+    return `El archivo pesa ${(sizeBytes / 1024 / 1024).toFixed(1)} MB y el máximo son 4 MB. Toma la foto con menos resolución o compártela comprimida.`;
   }
   return null;
 }

@@ -14,8 +14,10 @@ describe("validateAttachment", () => {
     }
   });
 
-  it("rechaza archivos de más de 5 MB", () => {
-    expect(validateAttachment("image/jpeg", ATTACHMENT_MAX_BYTES + 1)).toMatch(/más de 5 MB/);
+  // 4 MB, no 5: por encima de ~4.5 MB la plataforma corta la petición
+  // antes de que llegue al servidor (ver comentario en el módulo).
+  it("rechaza archivos por encima del tope (4 MB)", () => {
+    expect(validateAttachment("image/jpeg", ATTACHMENT_MAX_BYTES + 1)).toMatch(/máximo son 4 MB/);
     expect(validateAttachment("image/jpeg", ATTACHMENT_MAX_BYTES)).toBeNull(); // exacto OK
   });
 
