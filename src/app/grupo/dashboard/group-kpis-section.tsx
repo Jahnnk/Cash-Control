@@ -7,6 +7,7 @@ import { getBoardDeckData, type BoardDeckData } from "@/app/actions/kpis";
 import { weekStartOf, weekEndOf, type KpiTraffic } from "@/lib/kpis/engine";
 import { KpiDeckButton } from "@/components/kpi-deck-button";
 import Link from "next/link";
+import { EstadoLlenadoReportes } from "./estado-llenado";
 
 const DOT: Record<KpiTraffic, string> = {
   verde: "bg-emerald-500",
@@ -89,6 +90,11 @@ export function GroupKpisSection({ showDeck = true }: { showDeck?: boolean } = {
           )}
         </div>
       </div>
+
+      {/* ¿Están al día los reportes? Va ARRIBA de los KPIs a propósito:
+          si faltan días, los promedios de abajo están incompletos y hay
+          que leerlos sabiéndolo. */}
+      <EstadoLlenadoReportes weekStart={weekStart} />
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (
