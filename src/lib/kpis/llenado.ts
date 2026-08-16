@@ -101,6 +101,19 @@ function diaSemana(fecha: string): number {
   return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
 }
 
+/**
+ * La fecha `n` días antes. Sirve para armar la ventana móvil de los
+ * últimos 7 días que ve el administrador en su panel: a él le importa
+ * "lo que se me está pasando", no el calendario de domingo a sábado.
+ */
+export function restarDias(fecha: string, n: number): string {
+  const [y, m, d] = fecha.split("-").map(Number);
+  const f = new Date(Date.UTC(y, m - 1, d - n));
+  return `${f.getUTCFullYear()}-${String(f.getUTCMonth() + 1).padStart(2, "0")}-${String(
+    f.getUTCDate(),
+  ).padStart(2, "0")}`;
+}
+
 /** Los 7 días de la semana que arranca en `weekStart` (domingo). */
 export function diasDeLaSemana(weekStart: string): string[] {
   const [y, m, d] = weekStart.split("-").map(Number);
@@ -196,4 +209,110 @@ export function resumenFaltantes(estado: EstadoLlenado): string {
       return `${s.sede} (${dias})`;
     })
     .join(" · ");
+}
+
+/**
+ * Días seguidos con registro, contando hacia atrás desde AYER.
+ *
+ * Hoy se salta a propósito: el día sigue abierto y no debe leerse como
+ * si ya hubiera cortado la racha — sería castigar a las 9 de la mañana
+ * a quien todavía no cerró. Un día libre no suma ni corta: no rompió
+ * nada quien no tenía que reportar.
+ */
+export function rachaDeRegistro(dias: DiaLlenado[], hoy: string): number {
+  let racha = 0;
+  for (const d of [...dias].reverse()) {
+    if (d.fecha === hoy) continue;
+    if (d.estado === "dia-libre" || d.estado === "sin-operar") continue;
+    if (d.estado === "lleno" || d.estado === "incompleto") racha++;
+    else break;
+  }
+  return racha;
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Qué le decimos al administrador en su panel.
+ *
+ * Está acá y no dentro del componente a propósito: las palabras que lee
+ * Raúl cada mañana son una decisión de negocio, no un detalle de
+ * pantalla. Acá se pueden probar una por una.
+ * ───────────────────────────────────────────────────────────────────── */
+
+export type MensajeKpis = {
+  tono: "verde" | "ambar" | "rojo";
+  titulo: string;
+  detalle: string;
+  /**
+   * Fecha que conviene abrir en el formulario, o null si no hay nada
+   * que hacer. Es lo que convierte el aviso en un clic.
+   */
+  accion: string | null;
+};
+
+/** "mar 11 y mié 12" — como lo diría una persona, no una lista. */
+function enumerar(fechas: string[]): string {
+  const e = fechas.map(etiquetaDia);
+  if (e.length <= 1) return e.join("");
+  return `${e.slice(0, -1).join(", ")} y ${e[e.length - 1]}`;
+}
+
+export function mensajeEstadoKpis(input: { hoy: string; dias: DiaLlenado[] }): MensajeKpis {
+  const { hoy, dias } = input;
+  const faltantes = dias.filter((d) => d.estado === "falta").map((d) => d.fecha);
+  const incompletos = dias.filter((d) => d.estado === "incompleto");
+  const estadoHoy = dias.find((d) => d.fecha === hoy)?.estado ?? "hoy";
+
+  // Lo VENCIDO manda sobre lo de hoy: que falte el cierre de hoy a las
+  // 3pm es normal, que falte el del martes no.
+  if (faltantes.length > 0) {
+    return {
+      tono: "rojo",
+      titulo: faltantes.length === 1
+        ? `Falta registrar el ${enumerar(faltantes)}`
+        : `Faltan ${faltantes.length} días por registrar`,
+      detalle: faltantes.length === 1
+        ? "Sin ese día no corren los KPIs, la meta ni el bono."
+        : `${enumerar(faltantes)}. Sin esos días no corren los KPIs, la meta ni el bono.`,
+      accion: faltantes[0],
+    };
+  }
+
+  if (estadoHoy === "hoy") {
+    return {
+      tono: "ambar",
+      titulo: "KPIs de hoy: aún sin registrar",
+      detalle: "Se llenan con el cierre del día. Todavía estás a tiempo.",
+      accion: hoy,
+    };
+  }
+
+  if (incompletos.length > 0) {
+    const primero = incompletos[0];
+    return {
+      tono: "ambar",
+      titulo: "Registrado, pero falta un dato",
+      detalle: incompletos.length === 1
+        ? `Al ${etiquetaDia(primero.fecha)} le falta ${primero.faltan.join(" y ")}.`
+        : `${incompletos.length} días registrados a medias: ${enumerar(incompletos.map((d) => d.fecha))}.`,
+      accion: primero.fecha,
+    };
+  }
+
+  // Sin esto, un domingo de descanso felicitaría por un registro que
+  // nadie hizo.
+  if (estadoHoy === "dia-libre") {
+    return {
+      tono: "verde",
+      titulo: "Hoy es día libre",
+      detalle: "No tienes registro pendiente. La semana está al día.",
+      accion: null,
+    };
+  }
+
+  return {
+    tono: "verde",
+    titulo: "KPIs de hoy registrados",
+    detalle: "Todo al día. Nada pendiente de la última semana.",
+    accion: null,
+  };
 }

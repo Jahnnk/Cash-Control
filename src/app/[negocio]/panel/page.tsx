@@ -26,6 +26,7 @@ import { MejorVendedorSection } from "./mejor-vendedor-section";
 import { BaseModal } from "./base-modal";
 import { AtelierPanel } from "./atelier-panel";
 import { HighlightSlot } from "./highlight-card";
+import { EstadoKpisCard } from "./estado-kpis-card";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 
@@ -180,6 +181,17 @@ function IncentivosPage() {
     await load(month);
   }
 
+  /**
+   * Del aviso al formulario en un clic. Sin esto la tarjeta solo
+   * reclama, y el administrador tiene que ir a buscar dónde se arregla.
+   */
+  function irAlRegistro(fechaObjetivo: string) {
+    setFecha(fechaObjetivo);
+    document.getElementById("registro-diario")?.scrollIntoView({
+      behavior: "smooth", block: "center",
+    });
+  }
+
   const p = data?.progress ?? null;
 
   return (
@@ -187,6 +199,10 @@ function IncentivosPage() {
       {/* Lo más importante del día — va primero a propósito: si
           compitiera con los KPIs, dejaría de ser lo más importante. */}
       <HighlightSlot />
+
+      {/* ¿Ya registré los KPIs de hoy? Va debajo del Highlight y arriba
+          de todo lo demás: es lo que no se les puede pasar. */}
+      <EstadoKpisCard refrescar={weekRefresh} onRegistrar={irAlRegistro} />
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -233,19 +249,6 @@ function IncentivosPage() {
           </button>
         </div>
       </div>
-
-      {/* Aviso: ayer sin registrar (el sistema vive de ese hábito) */}
-      {data && month === todayLima().slice(0, 7) && (() => {
-        const ayer = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Lima" }));
-        ayer.setDate(ayer.getDate() - 1);
-        const ayerISO = ayer.toLocaleDateString("en-CA");
-        const registrado = data.dailies.some((d) => d.date === ayerISO && (d.revenue ?? 0) > 0);
-        return !registrado && ayerISO.slice(0, 7) === month ? (
-          <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            ⏰ <strong>Falta registrar ayer</strong> ({ayerISO.slice(8)}/{ayerISO.slice(5, 7)}). Los KPIs, el avance de la meta y los bonos dependen de ese registro diario.
-          </div>
-        ) : null;
-      })()}
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Cargando…</div>
@@ -394,7 +397,7 @@ function IncentivosPage() {
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* 3 · Registro diario */}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
+            <div id="registro-diario" className="bg-white rounded-xl border border-gray-200 p-4 scroll-mt-4">
               <div className="text-sm font-semibold text-gray-900 mb-3 flex items-center justify-between">
                 <span>Registro del día (del cierre de Byte)</span>
                 {editingDate !== null && (

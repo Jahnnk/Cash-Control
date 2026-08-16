@@ -9,6 +9,7 @@
 import { describe, it, expect } from "vitest";
 import {
   evaluarLlenado, diasDeLaSemana, resumenFaltantes, etiquetaDia,
+  restarDias, rachaDeRegistro, mensajeEstadoKpis,
   TODA_LA_SEMANA, LUNES_A_SABADO,
   type FilaDia, type SedeInfo,
 } from "./llenado";
@@ -200,5 +201,146 @@ describe("días libres por sede (Atelier no reporta domingos)", () => {
     );
     const r = evaluarLlenado({ weekStart: SEMANA, hoy: "2026-08-16", sedes, filas });
     expect(resumenFaltantes(r)).toBe("Atelier (dom 9)");
+  });
+});
+
+describe("restarDias — la ventana móvil del panel del administrador", () => {
+  it("resta días dentro del mismo mes", () => {
+    expect(restarDias("2026-08-16", 6)).toBe("2026-08-10");
+  });
+
+  it("cruza para atrás el cambio de mes", () => {
+    expect(restarDias("2026-08-03", 6)).toBe("2026-07-28");
+  });
+
+  it("sirve para armar los 7 días que terminan hoy", () => {
+    // Es la clave de la tarjeta del panel: al admin le importa lo que
+    // se le está pasando, no el calendario de domingo a sábado.
+    expect(diasDeLaSemana(restarDias("2026-08-16", 6))).toEqual([
+      "2026-08-10", "2026-08-11", "2026-08-12", "2026-08-13",
+      "2026-08-14", "2026-08-15", "2026-08-16",
+    ]);
+  });
+
+  it("un lunes, la ventana SÍ alcanza los pendientes de la semana pasada", () => {
+    // Con la semana del calendario, el lunes solo se vería dom+lun y
+    // todo lo que quedó debiendo la semana anterior desaparecería.
+    const lunes = "2026-08-10";
+    const ventana = diasDeLaSemana(restarDias(lunes, 6));
+    expect(ventana[0]).toBe("2026-08-04");  // martes anterior
+    expect(ventana).toContain("2026-08-07"); // viernes anterior
+  });
+});
+
+describe("rachaDeRegistro — el hábito, no la deuda", () => {
+  const HOY = "2026-08-16";
+  const d = (fecha: string, estado: string) =>
+    ({ fecha, estado, faltan: [] }) as Parameters<typeof rachaDeRegistro>[0][number];
+
+  it("cuenta los días seguidos registrados hasta ayer", () => {
+    const dias = [
+      d("2026-08-13", "lleno"), d("2026-08-14", "lleno"),
+      d("2026-08-15", "lleno"), d("2026-08-16", "hoy"),
+    ];
+    expect(rachaDeRegistro(dias, HOY)).toBe(3);
+  });
+
+  it("hoy sin registrar NO corta la racha: el día sigue abierto", () => {
+    // Castigar a las 9 de la mañana a quien todavía no cierra sería
+    // exactamente la alarma falsa que estamos evitando.
+    const dias = [d("2026-08-15", "lleno"), d("2026-08-16", "hoy")];
+    expect(rachaDeRegistro(dias, HOY)).toBe(1);
+  });
+
+  it("un día sin registrar sí la corta", () => {
+    const dias = [
+      d("2026-08-13", "lleno"), d("2026-08-14", "falta"),
+      d("2026-08-15", "lleno"), d("2026-08-16", "hoy"),
+    ];
+    expect(rachaDeRegistro(dias, HOY)).toBe(1);
+  });
+
+  it("un día libre no suma ni corta", () => {
+    // Atelier libra domingo: no rompió nada quien no debía reportar.
+    const dias = [
+      d("2026-08-13", "lleno"), d("2026-08-14", "lleno"),
+      d("2026-08-15", "dia-libre"), d("2026-08-16", "hoy"),
+    ];
+    expect(rachaDeRegistro(dias, HOY)).toBe(2);
+  });
+
+  it("un día registrado a medias igual cuenta: el registro existe", () => {
+    const dias = [d("2026-08-14", "lleno"), d("2026-08-15", "incompleto"), d("2026-08-16", "hoy")];
+    expect(rachaDeRegistro(dias, HOY)).toBe(2);
+  });
+});
+
+describe("mensajeEstadoKpis — lo que lee el administrador al entrar", () => {
+  const HOY = "2026-08-16";
+  const d = (fecha: string, estado: string, faltan: string[] = []) =>
+    ({ fecha, estado, faltan }) as Parameters<typeof rachaDeRegistro>[0][number];
+
+  it("todo al día: confirma, no desaparece", () => {
+    // La mitad del pedido de Jahnn era justamente el aviso en positivo.
+    const m = mensajeEstadoKpis({ hoy: HOY, dias: [d("2026-08-15", "lleno"), d(HOY, "lleno")] });
+    expect(m.tono).toBe("verde");
+    expect(m.titulo).toBe("KPIs de hoy registrados");
+    expect(m.accion).toBeNull();      // no hay nada que hacer
+  });
+
+  it("hoy pendiente: ámbar y sin dramatismo", () => {
+    const m = mensajeEstadoKpis({ hoy: HOY, dias: [d("2026-08-15", "lleno"), d(HOY, "hoy")] });
+    expect(m.tono).toBe("ambar");
+    expect(m.titulo).toBe("KPIs de hoy: aún sin registrar");
+    expect(m.detalle).toContain("Todavía estás a tiempo");
+    expect(m.accion).toBe(HOY);
+  });
+
+  it("un día vencido: rojo y con nombre y apellido", () => {
+    const m = mensajeEstadoKpis({ hoy: HOY, dias: [d("2026-08-14", "falta"), d(HOY, "lleno")] });
+    expect(m.tono).toBe("rojo");
+    expect(m.titulo).toBe("Falta registrar el vie 14");
+    expect(m.accion).toBe("2026-08-14");
+  });
+
+  it("varios días vencidos: los enumera como los diría una persona", () => {
+    const m = mensajeEstadoKpis({
+      hoy: HOY,
+      dias: [d("2026-08-12", "falta"), d("2026-08-13", "falta"), d("2026-08-14", "falta"), d(HOY, "hoy")],
+    });
+    expect(m.titulo).toBe("Faltan 3 días por registrar");
+    expect(m.detalle).toContain("mié 12, jue 13 y vie 14");
+    expect(m.accion).toBe("2026-08-12");   // abre la deuda más vieja
+  });
+
+  it("lo VENCIDO manda sobre lo de hoy", () => {
+    // Que falte el cierre de hoy a las 3pm es normal; que falte el del
+    // miércoles no. Si están las dos cosas, gana la deuda vieja.
+    const m = mensajeEstadoKpis({ hoy: HOY, dias: [d("2026-08-12", "falta"), d(HOY, "hoy")] });
+    expect(m.tono).toBe("rojo");
+    expect(m.titulo).toBe("Falta registrar el mié 12");
+  });
+
+  it("registrado a medias: dice QUÉ dato falta", () => {
+    const m = mensajeEstadoKpis({
+      hoy: HOY,
+      dias: [d("2026-08-14", "incompleto", ["NPS"]), d(HOY, "lleno")],
+    });
+    expect(m.tono).toBe("ambar");
+    expect(m.detalle).toBe("Al vie 14 le falta NPS.");
+    expect(m.accion).toBe("2026-08-14");
+  });
+
+  it("un día libre no se felicita como si hubiera registrado", () => {
+    // Atelier libra domingo: decir "KPIs de hoy registrados" sería falso.
+    const m = mensajeEstadoKpis({ hoy: HOY, dias: [d("2026-08-15", "lleno"), d(HOY, "dia-libre")] });
+    expect(m.tono).toBe("verde");
+    expect(m.titulo).toBe("Hoy es día libre");
+    expect(m.accion).toBeNull();
+  });
+
+  it("un día futuro nunca genera reclamo", () => {
+    const m = mensajeEstadoKpis({ hoy: HOY, dias: [d(HOY, "lleno"), d("2026-08-17", "futuro")] });
+    expect(m.tono).toBe("verde");
   });
 });
