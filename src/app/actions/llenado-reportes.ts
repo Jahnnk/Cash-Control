@@ -16,7 +16,7 @@ import { neon } from "@neondatabase/serverless";
 import { getSessionRole } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
 import {
-  evaluarLlenado, diasDeLaSemana,
+  evaluarLlenado, diasDeLaSemana, TODA_LA_SEMANA, LUNES_A_SABADO,
   type EstadoLlenado, type FilaDia, type SedeInfo,
 } from "@/lib/kpis/llenado";
 
@@ -24,6 +24,27 @@ const sql = neon(process.env.DATABASE_URL!);
 
 /** Atelier (1) es producción: no lleva NPS ni tiempos de salón. */
 const ES_CAFETERIA: Record<number, boolean> = { 1: false, 2: true, 3: true };
+
+/**
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │  QUÉ DÍAS SE ESPERA QUE REPORTE CADA SEDE                       │
+ * │                                                                 │
+ * │  Para que Atelier vuelva a reportar los domingos, cambia su     │
+ * │  línea a TODA_LA_SEMANA. No hay que tocar nada más.             │
+ * └─────────────────────────────────────────────────────────────────┘
+ *
+ * Atelier libra los domingos (día libre de su administrador, decisión
+ * de Jahnn del 16-ago-2026): reclamárselo cada semana sería ruido fijo,
+ * y una alerta que siempre está encendida deja de leerse.
+ *
+ * Si un domingo IGUAL registran, se muestra como cualquier día lleno:
+ * el dato real siempre gana sobre lo esperado.
+ */
+const DIAS_ESPERADOS: Record<number, number[]> = {
+  1: LUNES_A_SABADO,   // Atelier
+  2: TODA_LA_SEMANA,   // Fonavi
+  3: TODA_LA_SEMANA,   // Centro
+};
 
 const VACIO = (weekStart: string, hoy: string): EstadoLlenado => ({
   weekStart, hoy, sedes: [], alDia: true,
@@ -62,6 +83,7 @@ export async function getLlenadoReportes(weekStart: string): Promise<EstadoLlena
       sede: n.name.replace(/^Yayi'?s\s+/i, ""),
       desde: n.desde,
       esCafeteria: ES_CAFETERIA[n.id] ?? true,
+      diasEsperados: DIAS_ESPERADOS[n.id] ?? TODA_LA_SEMANA,
     }));
 
     const filas: FilaDia[] = filasDb.map((f) => ({

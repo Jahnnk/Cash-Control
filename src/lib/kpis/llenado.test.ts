@@ -9,6 +9,7 @@
 import { describe, it, expect } from "vitest";
 import {
   evaluarLlenado, diasDeLaSemana, resumenFaltantes, etiquetaDia,
+  TODA_LA_SEMANA, LUNES_A_SABADO,
   type FilaDia, type SedeInfo,
 } from "./llenado";
 
@@ -16,9 +17,10 @@ import {
 const SEMANA = "2026-08-09";
 
 const SEDES: SedeInfo[] = [
-  { businessId: 1, sede: "Atelier", desde: null, esCafeteria: false },
-  { businessId: 2, sede: "Fonavi", desde: "2026-08-01", esCafeteria: true },
-  { businessId: 3, sede: "Centro", desde: "2026-06-01", esCafeteria: true },
+  // Atelier libra los domingos (día libre del administrador).
+  { businessId: 1, sede: "Atelier", desde: null, esCafeteria: false, diasEsperados: LUNES_A_SABADO },
+  { businessId: 2, sede: "Fonavi", desde: "2026-08-01", esCafeteria: true, diasEsperados: TODA_LA_SEMANA },
+  { businessId: 3, sede: "Centro", desde: "2026-06-01", esCafeteria: true, diasEsperados: TODA_LA_SEMANA },
 ];
 
 const dia = (businessId: number, fecha: string, extra: Partial<FilaDia> = {}): FilaDia => ({
@@ -136,7 +138,7 @@ describe("evaluarLlenado — lo que sí hay que perseguir", () => {
     );
     const r = evaluarLlenado({
       weekStart: SEMANA, hoy: "2026-08-16",
-      sedes: [SEDES[0]], filas,
+      sedes: [{ ...SEDES[0], diasEsperados: TODA_LA_SEMANA }], filas,
     });
     expect(r.totalIncompletos).toBe(0);
     expect(r.sedes[0].dias.every((d) => d.estado === "lleno")).toBe(true);
@@ -155,5 +157,48 @@ describe("etiquetaDia", () => {
   it("nombra el día como lo diría una persona", () => {
     expect(etiquetaDia("2026-08-09")).toBe("dom 9");
     expect(etiquetaDia("2026-08-15")).toBe("sáb 15");
+  });
+});
+
+describe("días libres por sede (Atelier no reporta domingos)", () => {
+  it("un domingo sin datos NO cuenta como falta para Atelier", () => {
+    // Semana completa salvo el domingo de Atelier: debe quedar al día.
+    const filas = semanaCompleta().filter(
+      (f) => !(f.businessId === 1 && f.fecha === "2026-08-09"),
+    );
+    const r = evaluarLlenado({ weekStart: SEMANA, hoy: "2026-08-16", sedes: SEDES, filas });
+    expect(r.alDia).toBe(true);
+    expect(r.totalFaltan).toBe(0);
+    const atelier = r.sedes.find((s) => s.sede === "Atelier")!;
+    expect(atelier.dias.find((d) => d.fecha === "2026-08-09")!.estado).toBe("dia-libre");
+  });
+
+  it("pero un domingo SÍ registrado se muestra lleno: el dato manda", () => {
+    // El día que Atelier decida reportar domingos, no hay que tocar nada.
+    const r = evaluarLlenado({
+      weekStart: SEMANA, hoy: "2026-08-16", sedes: SEDES, filas: semanaCompleta(),
+    });
+    const atelier = r.sedes.find((s) => s.sede === "Atelier")!;
+    expect(atelier.dias.find((d) => d.fecha === "2026-08-09")!.estado).toBe("lleno");
+  });
+
+  it("a las cafeterías el domingo SÍ se les exige", () => {
+    const filas = semanaCompleta().filter(
+      (f) => !(f.businessId === 2 && f.fecha === "2026-08-09"),
+    );
+    const r = evaluarLlenado({ weekStart: SEMANA, hoy: "2026-08-16", sedes: SEDES, filas });
+    expect(r.totalFaltan).toBe(1);
+    expect(resumenFaltantes(r)).toBe("Fonavi (dom 9)");
+  });
+
+  it("abrir Atelier a los 7 días es cambiar una lista, nada más", () => {
+    const sedes = SEDES.map((s) =>
+      s.sede === "Atelier" ? { ...s, diasEsperados: TODA_LA_SEMANA } : s,
+    );
+    const filas = semanaCompleta().filter(
+      (f) => !(f.businessId === 1 && f.fecha === "2026-08-09"),
+    );
+    const r = evaluarLlenado({ weekStart: SEMANA, hoy: "2026-08-16", sedes, filas });
+    expect(resumenFaltantes(r)).toBe("Atelier (dom 9)");
   });
 });

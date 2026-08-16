@@ -14,6 +14,15 @@
  *  3. El día de HOY no se cuenta como falta: el administrador cierra al
  *     final de la jornada. Se muestra aparte como "pendiente de hoy",
  *     que es un aviso, no una deuda.
+ *  4. Cada sede declara QUÉ DÍAS de la semana se espera que registre.
+ *     Atelier no reporta domingos: es el día libre de su administrador
+ *     (decisión de Jahnn, 16-ago-2026). Marcárselo en rojo cada semana
+ *     sería ruido garantizado.
+ *
+ * Lo de los días esperados es un DATO, no una regla escrita en la
+ * lógica: si mañana Atelier pasa a reportar de lunes a domingo, se
+ * cambia la lista y ya. Y si un domingo SÍ registran, se pinta como
+ * cualquier día lleno — el dato real siempre gana sobre lo esperado.
  *
  * Además distingue FALTA de INCOMPLETO: si está la venta pero no el NPS,
  * el reporte existe y solo le falta un dato. Son problemas distintos y
@@ -26,6 +35,7 @@ export type EstadoDia =
   | "falta"         // no hay registro y ya debería haberlo
   | "hoy"           // es hoy y aún no registra: normal hasta el cierre
   | "futuro"        // todavía no llega
+  | "dia-libre"     // esa sede no reporta ese día de la semana
   | "sin-operar";   // la sede aún no existía en el sistema
 
 export type DiaLlenado = {
@@ -71,7 +81,25 @@ export type SedeInfo = {
   /** Desde cuándo la sede opera en el sistema. null = siempre. */
   desde: string | null;
   esCafeteria: boolean;
+  /**
+   * Días de la semana en que SÍ se espera registro (0=dom … 6=sáb).
+   * Un día fuera de esta lista no cuenta como falta, pero si igual
+   * llega el dato se muestra normalmente.
+   */
+  diasEsperados: number[];
 };
+
+/** Los 7 días. Es lo normal para una sede que reporta todos los días. */
+export const TODA_LA_SEMANA = [0, 1, 2, 3, 4, 5, 6];
+
+/** Lunes a sábado: para quien libra los domingos. */
+export const LUNES_A_SABADO = [1, 2, 3, 4, 5, 6];
+
+/** Día de la semana (0=dom) de una fecha ISO, sin líos de zona horaria. */
+function diaSemana(fecha: string): number {
+  const [y, m, d] = fecha.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+}
 
 /** Los 7 días de la semana que arranca en `weekStart` (domingo). */
 export function diasDeLaSemana(weekStart: string): string[] {
@@ -102,6 +130,12 @@ export function evaluarLlenado(input: {
       const tieneVenta = fila != null && fila.revenue != null;
 
       if (!tieneVenta) {
+        // El dato manda sobre lo esperado, así que esto se pregunta
+        // DESPUÉS de descartar que haya registro: un domingo con datos
+        // se pinta como cualquier otro día lleno.
+        if (!s.diasEsperados.includes(diaSemana(fecha))) {
+          return { fecha, estado: "dia-libre", faltan: [] };
+        }
         // Hoy todavía no vence: el cierre se hace al terminar la jornada.
         return { fecha, estado: fecha === hoy ? "hoy" : "falta", faltan: [] };
       }

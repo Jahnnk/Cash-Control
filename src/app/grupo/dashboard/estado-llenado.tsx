@@ -22,6 +22,10 @@ const CELDA: Record<EstadoDia, { clase: string; titulo: string }> = {
   falta: { clase: "bg-red-500", titulo: "Sin registrar" },
   hoy: { clase: "bg-gray-300 ring-2 ring-gray-400 ring-offset-1", titulo: "Es hoy: aún puede registrarse" },
   futuro: { clase: "bg-gray-100", titulo: "Todavía no llega" },
+  "dia-libre": {
+    clase: "bg-gray-50 border border-gray-200",
+    titulo: "Día libre: esta sede no reporta ese día",
+  },
   "sin-operar": { clase: "bg-gray-50 border border-dashed border-gray-200", titulo: "La sede aún no operaba" },
 };
 
@@ -165,8 +169,8 @@ export function EstadoLlenadoReportes({ weekStart }: { weekStart: string }) {
           </div>
 
           <p className="text-[10px] text-gray-400 mt-1.5">
-            Atelier se llena con el reporte de Byte; Fonavi y Centro, con el registro
-            diario del administrador.
+            Atelier se llena con el reporte de Byte y no reporta domingos (día libre);
+            Fonavi y Centro, con el registro diario del administrador.
           </p>
         </div>
       )}
