@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useState, useTransition } from "react";
 import {
-  Lightbulb, Check, X, Loader2, AlertTriangle, CalendarClock, ChevronDown,
+  Lightbulb, Check, X, Loader2, AlertTriangle, CalendarClock, ChevronDown, CalendarCog,
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { conReintento } from "@/lib/con-reintento";
@@ -42,6 +42,12 @@ function diaRelativo(iso: string, hoy: string) {
   const manana = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
   if (iso === manana) return "mañana";
   return fechaCorta(iso);
+}
+
+/** El día siguiente a `iso` — valor inicial al abrir "aprobar para otro día". */
+function diaSiguiente(iso: string): string {
+  const [y, m, d] = iso.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
 }
 
 export function BandejaPropuestas({
@@ -180,20 +186,28 @@ function TarjetaPropuesta({
   const [pendiente, startTransition] = useTransition();
   const [rechazando, setRechazando] = useState(false);
   const [motivo, setMotivo] = useState("");
-  // Cuando hay choque: a qué día correr el Highlight que ya estaba.
+  // Para qué día se aprueba: por defecto el propuesto, pero se puede
+  // cambiar ANTES de aprobar — por ejemplo si hoy ya tiene otro
+  // Highlight y prefiero correr ESTA a mañana en vez de mover el que
+  // ya estaba. `null` = usando el día propuesto sin abrir el selector.
+  const [otroDia, setOtroDia] = useState<string | null>(null);
+  // Cuando hay choque: para qué día se chocó y a dónde correr el que
+  // ya estaba. Se guarda la fecha porque puede ser la propuesta o la
+  // que Jahnn eligió a mano — el mensaje tiene que hablar de la buena.
   const [conflicto, setConflicto] = useState<{
+    fecha: string;
     existente: { texto: string; asignadoPor: string | null };
     mover: string;
   } | null>(null);
 
-  function aprobar(moverExistenteA?: string) {
+  function aprobar(fecha: string, moverExistenteA?: string) {
     startTransition(async () => {
-      const r = await aprobarPropuesta({ id: p.id, moverExistenteA });
+      const r = await aprobarPropuesta({ id: p.id, fecha, moverExistenteA });
       if (!r.ok) {
         // El choque no es un error: es la pregunta de a dónde correr el
         // Highlight que ya estaba. La base no se tocó todavía.
         if ("conflicto" in r) {
-          setConflicto({ existente: r.existente, mover: r.sugerido ?? "" });
+          setConflicto({ fecha, existente: r.existente, mover: r.sugerido ?? "" });
           return;
         }
         showToast(r.error, "error");
@@ -201,11 +215,12 @@ function TarjetaPropuesta({
       }
       showToast(
         r.movido
-          ? `Aprobada. "${r.movido.texto}" se corrió al ${fechaCorta(r.movido.a)}.`
-          : "Propuesta aprobada: ya es el Highlight de ese día.",
+          ? `Aprobada para el ${fechaCorta(fecha)}. "${r.movido.texto}" se corrió al ${fechaCorta(r.movido.a)}.`
+          : `Aprobada para el ${fechaCorta(fecha)}.`,
         "success",
       );
       setConflicto(null);
+      setOtroDia(null);
       onListo();
     });
   }
@@ -241,8 +256,10 @@ function TarjetaPropuesta({
           <div className="text-sm text-gray-900 font-medium">{p.texto}</div>
           {p.porQue && <p className="text-xs text-gray-600 mt-1">{p.porQue}</p>}
 
-          {/* El choque se ve ANTES de decidir, no después. */}
-          {p.choqueCon && !conflicto && (
+          {/* El choque se ve ANTES de decidir, no después. Solo aplica
+              al día propuesto: si Jahnn ya está eligiendo otro día, este
+              aviso hablaría de un día que ya no es el que se va a usar. */}
+          {p.choqueCon && !conflicto && otroDia === null && (
             <div className="mt-2 text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
@@ -250,16 +267,16 @@ function TarjetaPropuesta({
                 {p.choqueCon.asignadoPor && ` (${p.choqueCon.asignadoPor})`}.
                 {p.choqueCon.cerrado
                   ? " Ya está cerrado, así que habría que aprobar esta para otro día."
-                  : " Si apruebas esta, decides a qué día correr la que estaba."}
+                  : " Si apruebas esta, decides a qué día correr la que estaba — o apruébala para otro día sin tocar la de hoy."}
               </span>
             </div>
           )}
         </div>
 
-        {!rechazando && !conflicto && (
+        {!rechazando && !conflicto && otroDia === null && (
           <div className="flex items-center gap-1.5 shrink-0">
             <button
-              onClick={() => aprobar()}
+              onClick={() => aprobar(p.fecha)}
               disabled={pendiente}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50"
             >
@@ -278,7 +295,60 @@ function TarjetaPropuesta({
         )}
       </div>
 
-      {/* Choque: a dónde corro el que ya estaba */}
+      {/* Aprobar para OTRO día: sin conflicto todavía, sin mover nada —
+          solo cambia dónde aterriza ESTA propuesta. Si el día elegido
+          también choca, se cae en el mismo flujo de conflicto de abajo. */}
+      {!rechazando && !conflicto && otroDia === null && (
+        <button
+          onClick={() => setOtroDia(diaSiguiente(p.fecha))}
+          disabled={pendiente}
+          className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 underline decoration-dotted underline-offset-2"
+        >
+          <CalendarCog className="w-3 h-3" />
+          Aprobar para otro día
+        </button>
+      )}
+
+      {otroDia !== null && !conflicto && (
+        <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
+          <div className="text-xs font-semibold text-gray-800 flex items-center gap-1.5">
+            <CalendarCog className="w-4 h-4" />
+            ¿Para qué día apruebo «{p.texto}»?
+          </div>
+          <p className="text-[11px] text-gray-500 mt-1">
+            {p.choqueCon
+              ? `Así el Highlight de ${diaRelativo(p.fecha, hoy)} (${p.choqueCon.texto}) queda como está.`
+              : "Se aprueba igual, solo que para esta otra fecha en vez de la propuesta."}
+          </p>
+          <div className="flex items-center gap-2 mt-2 flex-wrap">
+            <input
+              type="date"
+              value={otroDia}
+              min={hoy}
+              onChange={(e) => setOtroDia(e.target.value)}
+              className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+            />
+            <button
+              onClick={() => aprobar(otroDia)}
+              disabled={pendiente || !otroDia}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50"
+            >
+              {pendiente ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
+              Aprobar para ese día
+            </button>
+            <button
+              onClick={() => setOtroDia(null)}
+              className="text-[11px] text-gray-500 underline"
+            >
+              Cancelar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Choque: a dónde corro el que ya estaba. Puede venir del día
+          propuesto o del día que Jahnn eligió a mano en "otro día" —
+          `conflicto.fecha` es siempre el que de verdad se está usando. */}
       {conflicto && (
         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
           <div className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
@@ -287,7 +357,7 @@ function TarjetaPropuesta({
           </div>
           <p className="text-[11px] text-amber-800/90 mt-1">
             Lo asignó {conflicto.existente.asignadoPor ?? "dirección"}. No se pierde: se mueve al día
-            que elijas y la propuesta de {p.propuestaPor} toma el {diaRelativo(p.fecha, hoy)}.
+            que elijas y la propuesta de {p.propuestaPor} toma el {diaRelativo(conflicto.fecha, hoy)}.
           </p>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <input
@@ -298,7 +368,7 @@ function TarjetaPropuesta({
               className="border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white"
             />
             <button
-              onClick={() => aprobar(conflicto.mover)}
+              onClick={() => aprobar(conflicto.fecha, conflicto.mover)}
               disabled={pendiente || !conflicto.mover}
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50"
             >
