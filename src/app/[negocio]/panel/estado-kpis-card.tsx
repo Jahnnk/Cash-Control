@@ -87,7 +87,7 @@ export function EstadoKpisCard({
 
   // Las palabras las decide la librería, no la pantalla: así el
   // mensaje se puede probar sin abrir un navegador.
-  const msg = mensajeEstadoKpis({ hoy: data.hoy, dias: data.dias });
+  const msg = mensajeEstadoKpis({ hoy: data.hoy, dias: data.dias, modo: data.modo });
 
   const TONO = {
     verde: { caja: "border-emerald-200 bg-emerald-50", texto: "text-emerald-900", sub: "text-emerald-800/90", icono: "text-emerald-600" },

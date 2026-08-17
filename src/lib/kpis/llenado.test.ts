@@ -344,3 +344,64 @@ describe("mensajeEstadoKpis — lo que lee el administrador al entrar", () => {
     expect(m.tono).toBe("verde");
   });
 });
+
+describe("mensajeEstadoKpis — Atelier, que se llena con el reporte de Byte", () => {
+  const HOY = "2026-08-16";
+  const d = (fecha: string, estado: string, faltan: string[] = []) =>
+    ({ fecha, estado, faltan }) as Parameters<typeof rachaDeRegistro>[0][number];
+  const atelier = (dias: Parameters<typeof rachaDeRegistro>[0]) =>
+    mensajeEstadoKpis({ hoy: HOY, dias, modo: "importado" as const });
+
+  it("un día faltante ofrece los DOS caminos: el reporte y el registro a mano", () => {
+    // Jahnn pidió que no se descarte la carga manual: por eso el aviso
+    // la nombra, en vez de mandar solo a subir el Excel.
+    const m = atelier([d("2026-08-14", "falta"), d(HOY, "lleno")]);
+    expect(m.tono).toBe("rojo");
+    expect(m.titulo).toBe("Falta registrar el vie 14");
+    expect(m.detalle).toContain("reporte de Byte");
+    expect(m.detalle).toContain("a mano");
+    expect(m.accion).toBe("2026-08-14");   // el botón lleva al formulario
+  });
+
+  it("varios días faltantes también nombran los dos caminos", () => {
+    const m = atelier([d("2026-08-13", "falta"), d("2026-08-14", "falta"), d(HOY, "lleno")]);
+    expect(m.detalle).toContain("jue 13 y vie 14");
+    expect(m.detalle).toContain("a mano");
+  });
+
+  it("hoy pendiente habla del cierre, no de teclear KPIs", () => {
+    const m = atelier([d("2026-08-15", "lleno"), d(HOY, "hoy")]);
+    expect(m.titulo).toBe("Cierre de hoy: aún sin registrar");
+    expect(m.detalle).toContain("También puedes cargarlo a mano");
+  });
+
+  it("al día dice 'cierre registrado', no 'KPIs registrados'", () => {
+    const m = atelier([d("2026-08-15", "lleno"), d(HOY, "lleno")]);
+    expect(m.tono).toBe("verde");
+    expect(m.titulo).toBe("Cierre de hoy registrado");
+  });
+
+  it("el domingo libre de Atelier no se felicita ni se reclama", () => {
+    const m = atelier([d("2026-08-15", "lleno"), d(HOY, "dia-libre")]);
+    expect(m.titulo).toBe("Hoy es día libre");
+    expect(m.accion).toBeNull();
+  });
+
+  it("pasar Atelier a carga manual es cambiar una palabra", () => {
+    // El día que Jahnn quiera que Atelier se teclee como Fonavi, se
+    // cambia "importado" por "manual" y el aviso habla igual que allá.
+    const dias = [d("2026-08-14", "falta"), d(HOY, "lleno")];
+    const comoFonavi = mensajeEstadoKpis({ hoy: HOY, dias, modo: "manual" });
+    expect(comoFonavi.detalle).toBe("Sin ese día no corren los KPIs, la meta ni el bono.");
+    expect(comoFonavi.titulo).toBe(atelier(dias).titulo);   // la regla no cambia
+  });
+
+  it("el modo NO cambia qué día falta, solo cómo se dice", () => {
+    const dias = [d("2026-08-12", "falta"), d("2026-08-14", "falta"), d(HOY, "hoy")];
+    const a = mensajeEstadoKpis({ hoy: HOY, dias, modo: "importado" });
+    const b = mensajeEstadoKpis({ hoy: HOY, dias, modo: "manual" });
+    expect(a.tono).toBe(b.tono);
+    expect(a.titulo).toBe(b.titulo);
+    expect(a.accion).toBe(b.accion);
+  });
+});

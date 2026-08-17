@@ -238,6 +238,21 @@ export function rachaDeRegistro(dias: DiaLlenado[], hoy: string): number {
  * pantalla. Acá se pueden probar una por una.
  * ───────────────────────────────────────────────────────────────────── */
 
+/**
+ * De dónde sale normalmente el dato de esa sede.
+ *
+ *  · "manual"     → el administrador lo teclea (Fonavi, Centro).
+ *  · "importado"  → llega con el reporte de Byte (Atelier), aunque
+ *                   TAMBIÉN se puede teclear: el panel de Atelier ya
+ *                   tiene su formulario y lo importado manda sobre lo
+ *                   manual.
+ *
+ * Solo cambia las PALABRAS, no la regla: el día falta igual venga de
+ * donde venga. El día que Atelier pase a cargarse a mano, se cambia a
+ * "manual" y el aviso habla como el de Fonavi.
+ */
+export type ModoRegistro = "manual" | "importado";
+
 export type MensajeKpis = {
   tono: "verde" | "ambar" | "rojo";
   titulo: string;
@@ -256,8 +271,20 @@ function enumerar(fechas: string[]): string {
   return `${e.slice(0, -1).join(", ")} y ${e[e.length - 1]}`;
 }
 
-export function mensajeEstadoKpis(input: { hoy: string; dias: DiaLlenado[] }): MensajeKpis {
-  const { hoy, dias } = input;
+export function mensajeEstadoKpis(input: {
+  hoy: string;
+  dias: DiaLlenado[];
+  modo?: ModoRegistro;
+}): MensajeKpis {
+  const { hoy, dias, modo = "manual" } = input;
+  const importado = modo === "importado";
+  // La coletilla que le dice al administrador CÓMO se arregla.
+  const comoSeLlena = importado
+    ? "Llega con el reporte de Byte, o regístralo a mano acá abajo."
+    : "Sin ese día no corren los KPIs, la meta ni el bono.";
+  const comoSeLlenanVarios = importado
+    ? "Llegan con el reporte de Byte, o regístralos a mano acá abajo."
+    : "Sin esos días no corren los KPIs, la meta ni el bono.";
   const faltantes = dias.filter((d) => d.estado === "falta").map((d) => d.fecha);
   const incompletos = dias.filter((d) => d.estado === "incompleto");
   const estadoHoy = dias.find((d) => d.fecha === hoy)?.estado ?? "hoy";
@@ -271,8 +298,8 @@ export function mensajeEstadoKpis(input: { hoy: string; dias: DiaLlenado[] }): M
         ? `Falta registrar el ${enumerar(faltantes)}`
         : `Faltan ${faltantes.length} días por registrar`,
       detalle: faltantes.length === 1
-        ? "Sin ese día no corren los KPIs, la meta ni el bono."
-        : `${enumerar(faltantes)}. Sin esos días no corren los KPIs, la meta ni el bono.`,
+        ? comoSeLlena
+        : `${enumerar(faltantes)}. ${comoSeLlenanVarios}`,
       accion: faltantes[0],
     };
   }
@@ -280,8 +307,10 @@ export function mensajeEstadoKpis(input: { hoy: string; dias: DiaLlenado[] }): M
   if (estadoHoy === "hoy") {
     return {
       tono: "ambar",
-      titulo: "KPIs de hoy: aún sin registrar",
-      detalle: "Se llenan con el cierre del día. Todavía estás a tiempo.",
+      titulo: importado ? "Cierre de hoy: aún sin registrar" : "KPIs de hoy: aún sin registrar",
+      detalle: importado
+        ? "Llega con el reporte de Byte al cierre. También puedes cargarlo a mano."
+        : "Se llenan con el cierre del día. Todavía estás a tiempo.",
       accion: hoy,
     };
   }
@@ -311,7 +340,7 @@ export function mensajeEstadoKpis(input: { hoy: string; dias: DiaLlenado[] }): M
 
   return {
     tono: "verde",
-    titulo: "KPIs de hoy registrados",
+    titulo: importado ? "Cierre de hoy registrado" : "KPIs de hoy registrados",
     detalle: "Todo al día. Nada pendiente de la última semana.",
     accion: null,
   };

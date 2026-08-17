@@ -18,7 +18,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
 import {
   evaluarLlenado, diasDeLaSemana, restarDias, rachaDeRegistro, TODA_LA_SEMANA, LUNES_A_SABADO,
-  type EstadoLlenado, type DiaLlenado, type FilaDia, type SedeInfo,
+  type EstadoLlenado, type DiaLlenado, type FilaDia, type SedeInfo, type ModoRegistro,
 } from "@/lib/kpis/llenado";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -45,6 +45,25 @@ const DIAS_ESPERADOS: Record<number, number[]> = {
   1: LUNES_A_SABADO,   // Atelier
   2: TODA_LA_SEMANA,   // Fonavi
   3: TODA_LA_SEMANA,   // Centro
+};
+
+/**
+ * ┌─────────────────────────────────────────────────────────────────┐
+ * │  DE DÓNDE SALE EL DATO DE CADA SEDE                             │
+ * │                                                                 │
+ * │  Cambia la línea de una sede a "manual" y su aviso pasa a       │
+ * │  hablar de teclear el día, no de subir el reporte.              │
+ * └─────────────────────────────────────────────────────────────────┘
+ *
+ * Atelier va como "importado" porque su día normal llega con el
+ * reporte de Byte — pero su panel YA tiene formulario manual, y por
+ * eso el aviso menciona los dos caminos. Esto solo cambia las
+ * palabras: el día falta igual, venga de donde venga.
+ */
+const MODO_REGISTRO: Record<number, ModoRegistro> = {
+  1: "importado",  // Atelier
+  2: "manual",     // Fonavi
+  3: "manual",     // Centro
 };
 
 const VACIO = (weekStart: string, hoy: string): EstadoLlenado => ({
@@ -128,10 +147,12 @@ export type EstadoKpisSede = {
   dias: DiaLlenado[];
   /** Días seguidos registrados hasta ayer: el hábito, no la deuda. */
   racha: number;
+  /** Cómo llena sus días esta sede: solo cambia el texto del aviso. */
+  modo: ModoRegistro;
 };
 
 const SIN_ACCESO = (hoy: string): EstadoKpisSede => ({
-  visible: false, hoy, dias: [], racha: 0,
+  visible: false, hoy, dias: [], racha: 0, modo: "manual",
 });
 
 export async function getEstadoKpisSede(): Promise<EstadoKpisSede> {
@@ -190,7 +211,11 @@ export async function getEstadoKpisSede(): Promise<EstadoKpisSede> {
 
     // Qué mensaje mostrar lo decide mensajeEstadoKpis() en la librería,
     // con los mismos días que se devuelven acá.
-    return { visible: true, hoy, dias, racha: rachaDeRegistro(dias, hoy) };
+    return {
+      visible: true, hoy, dias,
+      racha: rachaDeRegistro(dias, hoy),
+      modo: MODO_REGISTRO[bId] ?? "manual",
+    };
   } catch (e) {
     console.error("[getEstadoKpisSede] failed:", e);
     return SIN_ACCESO(hoy);

@@ -7,6 +7,7 @@ import { getAtelierPanel, saveAtelierDay, type AtelierPanelData, type AtelierDai
 import { useToast } from "@/components/toast-provider";
 import { VentasImportModal } from "./ventas-import-modal";
 import { HighlightSlot } from "./highlight-card";
+import { EstadoKpisCard } from "./estado-kpis-card";
 import { ClientSalesImportModal } from "./client-sales-import-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
@@ -104,6 +105,22 @@ export function AtelierPanel() {
       ? Math.round((ventaN / pedidosN) * 100) / 100
       : null;
 
+  // Sube de valor cada vez que cambia el registro (guardar a mano o
+  // subir el reporte de Byte) para que el aviso vuelva a preguntar.
+  const [refrescarAviso, setRefrescarAviso] = useState(0);
+
+  /**
+   * Del aviso al formulario en un clic. Sin esto la tarjeta solo
+   * reclama, y la supervisora tiene que ir a buscar dónde se arregla.
+   */
+  function irAlRegistro(fechaObjetivo: string) {
+    setFecha(fechaObjetivo);
+    setEditingDate(null);
+    document.getElementById("registro-diario")?.scrollIntoView({
+      behavior: "smooth", block: "center",
+    });
+  }
+
   function clearForm() {
     setVenta(""); setPedidos(""); setMermas("");
     setEditingDate(null);
@@ -130,6 +147,7 @@ export function AtelierPanel() {
     if (!r.ok) { showToast(r.error, "error"); return; }
     showToast(editingDate !== null ? "Día corregido" : "Día registrado", "success");
     clearForm();
+    setRefrescarAviso((v) => v + 1);
     await load(month);
   }
 
@@ -140,6 +158,11 @@ export function AtelierPanel() {
       {/* Lo más importante del día — va primero a propósito: si
           compitiera con los KPIs, dejaría de ser lo más importante. */}
       <HighlightSlot />
+
+      {/* ¿Ya quedó registrado el día? Mismo aviso que ven Fonavi y
+          Centro, con las palabras de Atelier: acá el día normal llega
+          con el reporte de Byte, aunque también se puede teclear. */}
+      <EstadoKpisCard refrescar={refrescarAviso} onRegistrar={irAlRegistro} />
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -169,19 +192,6 @@ export function AtelierPanel() {
         </div>
       </div>
 
-      {/* Aviso: ayer sin registrar (el deck vive de este hábito) */}
-      {data && month === todayLima().slice(0, 7) && (() => {
-        const ayer = new Date(new Date().toLocaleString("en-US", { timeZone: "America/Lima" }));
-        ayer.setDate(ayer.getDate() - 1);
-        const ayerISO = ayer.toLocaleDateString("en-CA");
-        const registrado = data.dailies.some((d) => d.date === ayerISO && (d.venta ?? 0) > 0);
-        return !registrado && ayerISO.slice(0, 7) === month ? (
-          <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-            ⏰ <strong>Falta registrar ayer</strong> ({ayerISO.slice(8)}/{ayerISO.slice(5, 7)}). El
-            acumulado del mes y el deck de la reunión dependen de este registro.
-          </div>
-        ) : null;
-      })()}
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Cargando…</div>
@@ -221,7 +231,7 @@ export function AtelierPanel() {
           </div>
 
           {/* 2 · Registro diario */}
-          <div className="bg-white rounded-xl border border-gray-200 p-4">
+          <div id="registro-diario" className="bg-white rounded-xl border border-gray-200 p-4 scroll-mt-4">
             <div className="text-sm font-semibold text-gray-900 mb-1">
               {editingDate !== null ? `Corrigiendo el ${editingDate.slice(8)}/${editingDate.slice(5, 7)}` : "Registro del día (del cierre de Byte)"}
             </div>
@@ -362,7 +372,13 @@ export function AtelierPanel() {
       {showImport && (
         <VentasImportModal
           onClose={() => setShowImport(false)}
-          onImported={() => load(month)}
+          onImported={() => {
+            // El reporte de Byte es el camino principal de Atelier: si
+            // el aviso no se entera, seguiría reclamando días que
+            // acaban de llegar.
+            setRefrescarAviso((v) => v + 1);
+            return load(month);
+          }}
         />
       )}
       {showClientImport && (
