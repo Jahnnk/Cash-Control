@@ -630,6 +630,34 @@ function PreviewStep({
           <Row label="Ingresos / Egresos" value={`${p.ingresos} / ${p.egresos}`} />
           <Row label="Devoluciones" value={String(p.devoluciones)} />
           <Row label="Saldos finales (calculados)" value={`Ef ${formatCurrency(p.totales.saldoFinalEfectivo)} · BCP ${formatCurrency(p.totales.saldoFinalBcp)}`} />
+
+          {/* El saldo REAL del banco que anotó Kelly. Se busca por
+              encabezado y por el saldo que lo acompaña, no por celda fija
+              (pedido de Jahnn, 17-ago-2026: "no necesariamente el importe
+              del banco va a estar siempre en el mismo número de celda"). */}
+          {p.saldoBancoReal ? (
+            <>
+              <Row
+                label="Saldo real del banco (del Excel)"
+                value={`${formatCurrency(p.saldoBancoReal.valor)}  ·  fila ${p.saldoBancoReal.fila}`}
+              />
+              <p
+                className={`text-[11px] mt-1 ${
+                  Math.abs(p.saldoBancoReal.diferencia) < 0.01 ? "text-emerald-700" : "text-amber-700"
+                }`}
+              >
+                {Math.abs(p.saldoBancoReal.diferencia) < 0.01
+                  ? "✓ Cuadra exacto con el libro de Kelly."
+                  : `⚠ El libro de Kelly da ${formatCurrency(p.saldoBancoReal.saldoLibro)}: le falta cuadrar ${formatCurrency(Math.abs(p.saldoBancoReal.diferencia))} contra su banco.`}
+                {p.saldoBancoReal.lecturasEncontradas > 1 &&
+                  ` La columna traía ${p.saldoBancoReal.lecturasEncontradas} lecturas (las otras son de meses anteriores).`}
+              </p>
+            </>
+          ) : (
+            p.saldoBancoMotivo && (
+              <p className="text-[11px] text-amber-700 mt-1">⚠ Saldo del banco: {p.saldoBancoMotivo}</p>
+            )
+          )}
         </Section>
       )}
 

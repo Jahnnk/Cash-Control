@@ -19,6 +19,7 @@
 
 import * as XLSX from "xlsx";
 import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
+import { leerSaldoBancoExcel, type SaldoBancoExcel } from "./saldo-banco-excel";
 
 // ─────────────────────────────────────────────────────────────────
 // Tipos
@@ -109,6 +110,16 @@ export type ParseResult = {
     saldoFinalBcp: number;
   };
   distribucionPaymentMethod: Record<string, number>;
+  /**
+   * El saldo REAL del banco que anotó Kelly, buscado por encabezado y
+   * por el saldo que lo acompaña (nunca por posición de celda — ver
+   * src/lib/saldo-banco-excel.ts). `null` si no lo anotó o si todas las
+   * lecturas de la columna eran de meses anteriores: en ese caso vale
+   * más no dar dato que dar uno equivocado.
+   */
+  saldoBancoReal: SaldoBancoExcel | null;
+  /** Por qué no se pudo leer, cuando `saldoBancoReal` es null. */
+  saldoBancoMotivo: string | null;
   ingresos: number;
   egresos: number;
   devoluciones: number;
@@ -626,6 +637,18 @@ export function parseExcelFile(
   const saldoFinalEfectivo = r2((saldoInicialEfectivo ?? 0) + inEfR - exEfR);
   const saldoFinalBcp = r2((saldoInicialBcp ?? 0) + inBcR - exBcR);
 
+  // El saldo REAL del banco que anotó Kelly. Pasada aparte y 100% por
+  // encabezado: el resto de este parser lee por posición fija y no se
+  // toca para no romper lo que ya funciona.
+  const lectura = leerSaldoBancoExcel(rows);
+  if (!lectura.ok) {
+    warnings.push(`Saldo del banco: ${lectura.motivo}`);
+  } else if (lectura.saldo.lecturasEncontradas > 1) {
+    warnings.push(
+      `La columna del banco tenía ${lectura.saldo.lecturasEncontradas} lecturas; se tomó la de la fila ${lectura.saldo.fila} (S/${lectura.saldo.valor.toFixed(2)}), que es la que acompaña al saldo final del libro.`,
+    );
+  }
+
   return {
     saldoInicial: {
       efectivo: saldoInicialEfectivo,
@@ -647,6 +670,8 @@ export function parseExcelFile(
       saldoFinalBcp,
     },
     distribucionPaymentMethod: distMethod,
+    saldoBancoReal: lectura.ok ? lectura.saldo : null,
+    saldoBancoMotivo: lectura.ok ? null : lectura.motivo,
     ingresos,
     egresos,
     devoluciones,
@@ -669,6 +694,7 @@ function emptyResult(errores: string[], warnings: string[]): ParseResult {
       saldoFinalEfectivo: 0, saldoFinalBcp: 0,
     },
     distribucionPaymentMethod: { transferencia: 0, efectivo: 0, yape_plin: 0, pos: 0 },
+    saldoBancoReal: null, saldoBancoMotivo: null,
     ingresos: 0, egresos: 0, devoluciones: 0, ventasByte: 0,
   };
 }
