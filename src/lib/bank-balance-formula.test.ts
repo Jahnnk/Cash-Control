@@ -150,8 +150,12 @@ describe("computeCashBalance — caja física separada del banco", () => {
 // `payment_method <> 'efectivo'` en ingresos.
 describe("5. las fórmulas de create y edit/delete usan los mismos filtros", () => {
   const read = (rel: string) => readFileSync(resolve(process.cwd(), rel), "utf8");
-  const dailyRecords = read("src/app/actions/daily-records.ts");
-  const recordEdits = read("src/app/actions/record-edits.ts");
+  // La CADENA vive en un solo archivo desde el 17-ago-2026. Antes estaba
+  // copiada en daily-records.ts, record-edits.ts y fonavi-receivables.ts
+  // (tres veces), y una de esas copias se quedó sin el candado de las
+  // sedes con reset: escribió saldos calculados desde cero y dejó a
+  // Fonavi mostrando -S/455.61 con S/15,594.02 en el banco.
+  const cadena = read("src/lib/saldo-bcp-sql.ts");
 
   // Extrae la(s) cláusula(s) de suma de ingresos de bank_income_items.
   // Las cláusulas viven en UNA línea de SQL, así que se captura hasta el
@@ -164,27 +168,24 @@ describe("5. las fórmulas de create y edit/delete usan los mismos filtros", () 
     return matches ?? [];
   };
 
-  it("daily-records.ts: la cadena excluye préstamos-socio (salvo via banco) y efectivo en ingresos", () => {
-    const chainClause = incomeClauses(dailyRecords).find((c) =>
-      c.includes("payment_method <> 'efectivo'"),
-    );
-    expect(chainClause, "no se encontró la cláusula de la cadena").toBeTruthy();
-    expect(chainClause!).toContain("(is_special_loan = false OR loan_via_bank = true)");
-    expect(chainClause!).toContain("payment_method <> 'efectivo'");
-    expect(chainClause!).toContain("archived = false");
+  it("la cadena excluye préstamos-socio (salvo via banco) y efectivo en ingresos", () => {
+    const clauses = incomeClauses(cadena);
+    expect(clauses.length, "no se encontró la suma de ingresos").toBeGreaterThan(0);
+    for (const c of clauses) {
+      expect(c).toContain("(is_special_loan = false OR loan_via_bank = true)");
+      expect(c).toContain("payment_method <> 'efectivo'");
+      expect(c).toContain("archived = false");
+    }
   });
 
-  it("record-edits.ts: la cadena excluye préstamos-socio (salvo via banco) y efectivo en ingresos (fix del bug)", () => {
-    const clauses = incomeClauses(recordEdits);
-    expect(clauses.length, "no se encontró la suma de ingresos").toBeGreaterThan(0);
-    const chainClause = clauses.find((c) => c.includes("payment_method <> 'efectivo'"));
-    expect(
-      chainClause,
-      "record-edits.ts NO excluye efectivo/préstamos en ingresos — REGRESIÓN del bug de mayo 2026",
-    ).toBeTruthy();
-    expect(chainClause!).toContain("(is_special_loan = false OR loan_via_bank = true)");
-    expect(chainClause!).toContain("payment_method <> 'efectivo'");
-    expect(chainClause!).toContain("archived = false");
+  it("las DOS cadenas del archivo (desde fecha y desde ancla) filtran igual", () => {
+    // Antes eran archivos distintos y por eso podían divergir. Ahora son
+    // dos funciones vecinas, pero igual se comprueba: la de "desde ancla"
+    // corre por otro camino (entrar el saldo real de un día).
+    const norm = (x: string) => x.replace(/\$\{[^}]+\}/g, "?").replace(/\s+/g, " ").trim();
+    const clauses = incomeClauses(cadena).map(norm);
+    expect(clauses.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(clauses).size, "las dos cadenas filtran distinto").toBe(1);
   });
 
   it("TODAS las réplicas de la cadena usan el predicado extendido de préstamos via banco", () => {
@@ -192,13 +193,11 @@ describe("5. las fórmulas de create y edit/delete usan los mismos filtros", () 
     // secas en la cadena), un préstamo via-banco contaría en unas vistas y
     // en otras no → saldos divergentes según la pantalla.
     const replicas = [
-      "src/app/actions/daily-records.ts",
-      "src/app/actions/record-edits.ts",
+      "src/lib/saldo-bcp-sql.ts",
       "src/app/actions/bank-balance.ts",
       "src/app/actions/bank-real-checks.ts",
       "src/app/actions/excel-import.ts",
       "src/app/actions/grupo.ts",
-      "src/app/actions/fonavi-receivables.ts",
     ];
     for (const rel of replicas) {
       const src = read(rel);
@@ -209,12 +208,18 @@ describe("5. las fórmulas de create y edit/delete usan los mismos filtros", () 
     }
   });
 
-  it("ambas implementaciones comparten los mismos filtros de ingreso en la cadena", () => {
-    const norm = (s: string) =>
-      s.replace(/\$\{[^}]+\}/g, "?").replace(/\s+/g, " ").trim();
-    const a = incomeClauses(dailyRecords).find((c) => c.includes("payment_method <> 'efectivo'"));
-    const b = incomeClauses(recordEdits).find((c) => c.includes("payment_method <> 'efectivo'"));
-    expect(a && b).toBeTruthy();
-    expect(norm(a!)).toBe(norm(b!));
+  it("ya no quedan copias sueltas de la cadena", () => {
+    // El bug nació de un copy-paste que se quedó sin candado. Si alguien
+    // vuelve a escribir la cadena en un archivo de actions, esto avisa.
+    for (const rel of [
+      "src/app/actions/daily-records.ts",
+      "src/app/actions/record-edits.ts",
+      "src/app/actions/fonavi-receivables.ts",
+    ]) {
+      expect(
+        read(rel).includes("SET bank_balance_real = chain.calc_balance"),
+        `${rel} volvió a tener su propia copia de la cadena`,
+      ).toBe(false);
+    }
   });
 });

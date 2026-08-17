@@ -3,6 +3,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { cadenaSaldoDesdeFecha } from "@/lib/saldo-bcp-sql";
 import { recalcBankBalance } from "./daily-records";
 import {
   isReimbursementMethod,
@@ -45,38 +46,11 @@ function debtorCascadeQueries(bId: number, date: string) {
             AND is_special_loan = false AND is_internal_transfer = false AND archived = false), 0)
       WHERE business_id = ${bId} AND date = ${date}
     `,
-    sql`
-      WITH RECURSIVE chain AS (
-        SELECT
-          (${date}::date - INTERVAL '1 day')::date AS date,
-          COALESCE((
-            SELECT bank_balance_real::numeric FROM daily_records
-            WHERE business_id = ${bId} AND date < ${date} AND bank_balance_real IS NOT NULL
-            ORDER BY date DESC LIMIT 1
-          ), 0) AS calc_balance
-        UNION ALL
-        SELECT
-          dr.date,
-          ROUND((
-            c.calc_balance
-            + COALESCE((SELECT SUM(amount) FROM bank_income_items
-                WHERE business_id = ${bId} AND date = dr.date
-                  AND payment_method <> 'efectivo'
-                  AND (is_special_loan = false OR loan_via_bank = true) AND is_internal_transfer = false AND archived = false), 0)
-            - COALESCE((SELECT SUM(amount) FROM expenses
-                WHERE business_id = ${bId} AND date = dr.date
-                  AND payment_method NOT IN ('efectivo','pendiente_atelier','socio')
-                  AND (is_special_loan = false OR loan_via_bank = true) AND is_internal_transfer = false AND archived = false), 0)
-          )::numeric, 2)
-        FROM daily_records dr
-        JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-        WHERE dr.business_id = ${bId} AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = ${bId})
-      )
-      UPDATE daily_records dr
-      SET bank_balance_real = chain.calc_balance
-      FROM chain
-      WHERE dr.business_id = ${bId} AND dr.date = chain.date AND dr.date >= ${date}
-    `,
+    // Cadena única (src/lib/saldo-bcp-sql.ts). Era una de TRES copias que
+    // vivían en este archivo. El candado de las sedes con reset la deja
+    // inerte, que es lo correcto: su saldo BCP es virtual y
+    // bank_balance_real guarda solo lecturas reales del banco.
+    cadenaSaldoDesdeFecha(sql, bId, date),
   ];
 }
 
@@ -416,31 +390,8 @@ export async function deleteReimbursementAllocation(allocationId: string): Promi
       bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${ATELIER_ID} AND date = ${a.date} AND payment_method NOT IN ('efectivo','pendiente_atelier','socio')), 0)
     WHERE business_id = ${ATELIER_ID} AND date = ${a.date}
   `);
-  queries.push(sql`
-    WITH RECURSIVE chain AS (
-      SELECT
-        (${a.date}::date - INTERVAL '1 day')::date AS date,
-        COALESCE((
-          SELECT bank_balance_real::numeric FROM daily_records
-          WHERE business_id = ${ATELIER_ID} AND date < ${a.date} AND bank_balance_real IS NOT NULL
-          ORDER BY date DESC LIMIT 1
-        ), 0) AS calc_balance
-      UNION ALL
-      SELECT
-        dr.date,
-        ROUND((
-          c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${ATELIER_ID} AND date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${ATELIER_ID} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio')), 0)
-        )::numeric, 2)
-      FROM daily_records dr
-      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.business_id = ${ATELIER_ID} AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = ${ATELIER_ID})
-    )
-    UPDATE daily_records dr SET bank_balance_real = chain.calc_balance
-    FROM chain
-    WHERE dr.business_id = ${ATELIER_ID} AND dr.date = chain.date AND dr.date >= ${a.date}
-  `);
+  // Cadena única (ver arriba). Atelier también tiene corte.
+  queries.push(cadenaSaldoDesdeFecha(sql, ATELIER_ID, a.date));
 
   try {
     await sql.transaction(queries);
@@ -489,31 +440,8 @@ export async function deleteFonaviReimbursement(incomeItemId: string): Promise<{
       bank_expense = COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${ATELIER_ID} AND date = ${date} AND payment_method NOT IN ('efectivo','pendiente_atelier','socio')), 0)
     WHERE business_id = ${ATELIER_ID} AND date = ${date}
   `);
-  queries.push(sql`
-    WITH RECURSIVE chain AS (
-      SELECT
-        (${date}::date - INTERVAL '1 day')::date AS date,
-        COALESCE((
-          SELECT bank_balance_real::numeric FROM daily_records
-          WHERE business_id = ${ATELIER_ID} AND date < ${date} AND bank_balance_real IS NOT NULL
-          ORDER BY date DESC LIMIT 1
-        ), 0) AS calc_balance
-      UNION ALL
-      SELECT
-        dr.date,
-        ROUND((
-          c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${ATELIER_ID} AND date = dr.date), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${ATELIER_ID} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio')), 0)
-        )::numeric, 2)
-      FROM daily_records dr
-      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.business_id = ${ATELIER_ID} AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = ${ATELIER_ID})
-    )
-    UPDATE daily_records dr SET bank_balance_real = chain.calc_balance
-    FROM chain
-    WHERE dr.business_id = ${ATELIER_ID} AND dr.date = chain.date AND dr.date >= ${date}
-  `);
+  // Cadena única (ver arriba). Atelier también tiene corte.
+  queries.push(cadenaSaldoDesdeFecha(sql, ATELIER_ID, date));
 
   try {
     await sql.transaction(queries);

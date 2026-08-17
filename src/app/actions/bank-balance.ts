@@ -3,6 +3,7 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { activeBusinessId } from "@/lib/active-business";
+import { anclaSaldoBcp } from "@/lib/saldo-bcp-sql";
 
 export type BankBalanceSnapshot = {
   /** Saldo BCP HOY calculado dinámicamente (anchor + flujo posterior). */
@@ -61,19 +62,14 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
   const reconciledThrough = cfg?.reconciled_through ?? "0001-01-01";
 
   // ── 1. Anchor: último saldo guardado ≤ hoy en filas NO archivadas
-  const anchorRes = await db.execute(sql`
-    SELECT bank_balance_real, date FROM daily_records
-    WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL AND date <= ${today}
-      AND archived = false
-    ORDER BY date DESC LIMIT 1
-  `);
+  const anchorRes = await db.execute(anclaSaldoBcp(sql, bId, today));
 
   let anchorBalance: number;
   let anchorDate: string;
   let hasAnchor: boolean;
 
   if (anchorRes.rows[0]) {
-    anchorBalance = parseFloat(anchorRes.rows[0].bank_balance_real as string);
+    anchorBalance = anchorRes.rows[0].balance as number;
     anchorDate = anchorRes.rows[0].date as string;
     hasAnchor = true;
   } else if (hasReset && cfg?.init_date) {
@@ -154,6 +150,11 @@ export async function getUnifiedBankBalance(): Promise<BankBalanceSnapshot> {
     LEFT JOIN daily_outflow o ON o.date = c.date
     WHERE c.prev_balance IS NOT NULL
       AND c.date > ${reconciledThrough}
+      -- Y nunca antes del corte del sistema: los días previos son de la
+      -- vida anterior de la sede y sus saldos no tienen por qué encadenar
+      -- con los movimientos de hoy. Sin esto, Atelier avisaba de un
+      -- "descuadre" del 12-jul teniendo el corte el 01-ago.
+      AND (${cfg?.start ?? null}::date IS NULL OR c.date >= ${cfg?.start ?? null}::date)
       AND ABS(c.balance - (c.prev_balance + COALESCE(i.inflow, 0) - COALESCE(o.outflow, 0))) >= ${DISCREPANCY_TOLERANCE}
     ORDER BY c.date ASC
     LIMIT 1

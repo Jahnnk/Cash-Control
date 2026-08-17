@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { anclaSaldoBcp } from "@/lib/saldo-bcp-sql";
 
 // systemBalanceAtCheck = saldo al cierre del día checkDate.
 // Si checkDate === hoy, incluye los movimientos del día hasta el
@@ -49,18 +50,13 @@ async function getSystemBalanceAtDate(
   const hasReset = !!(cfg?.start);
 
   // 1. Anchor: último saldo guardado con date <= checkDate, NO archivado
-  const anchorRes = await db.execute(sql`
-    SELECT bank_balance_real, date::text AS d FROM daily_records
-    WHERE business_id = ${bId} AND bank_balance_real IS NOT NULL
-      AND date <= ${checkDate} AND archived = false
-    ORDER BY date DESC LIMIT 1
-  `);
+  const anchorRes = await db.execute(anclaSaldoBcp(sql, bId, checkDate));
 
   let anchorBalance: number;
   let anchorDate: string;
   if (anchorRes.rows[0]) {
-    anchorBalance = parseFloat(anchorRes.rows[0].bank_balance_real as string);
-    anchorDate = anchorRes.rows[0].d as string;
+    anchorBalance = anchorRes.rows[0].balance as number;
+    anchorDate = anchorRes.rows[0].date as string;
   } else if (hasReset && cfg?.init_date && cfg.init_date <= checkDate) {
     anchorBalance = cfg.init_bcp ?? 0;
     anchorDate = cfg.init_date;

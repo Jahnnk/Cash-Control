@@ -3,6 +3,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { cadenaSaldoDesdeFecha } from "@/lib/saldo-bcp-sql";
 import { validateMovementDate } from "@/lib/money-validation";
 
 // Cliente directo (no Drizzle) para tener acceso a sql.transaction([...]) atómico
@@ -34,36 +35,11 @@ function recalcDailyTotalsQuery(bId: number, date: string) {
   `;
 }
 
-function recalcBankBalanceQuery(bId: number, date: string) {
-  return sql`
-    WITH RECURSIVE chain AS (
-      SELECT
-        (${date}::date - INTERVAL '1 day')::date AS date,
-        COALESCE((
-          SELECT bank_balance_real::numeric FROM daily_records
-          WHERE business_id = ${bId} AND date < ${date} AND bank_balance_real IS NOT NULL AND archived = false
-          ORDER BY date DESC LIMIT 1
-        ), 0) AS calc_balance
-
-      UNION ALL
-
-      SELECT
-        dr.date,
-        ROUND((
-          c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false), 0)
-        )::numeric, 2)
-      FROM daily_records dr
-      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.business_id = ${bId} AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = ${bId} AND archived = false) AND dr.archived = false
-    )
-    UPDATE daily_records dr
-    SET bank_balance_real = chain.calc_balance
-    FROM chain
-    WHERE dr.business_id = ${bId} AND dr.date = chain.date AND dr.date >= ${date}
-  `;
-}
+// La cadena vive en src/lib/saldo-bcp-sql.ts. Estaba COPIADA aquí y esa
+// copia se quedó sin el candado de las sedes con reset — el bug que dejó
+// a Fonavi en -S/455.61 el 17-ago-2026. Ahora hay una sola.
+const recalcBankBalanceQuery = (bId: number, date: string) =>
+  cadenaSaldoDesdeFecha(sql, bId, date);
 
 function revalidateAll() {
   revalidatePath("/", "layout");

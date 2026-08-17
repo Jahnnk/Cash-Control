@@ -97,7 +97,7 @@ Perú. **NO es programador.** Reglas de comunicación:
    entregan en persona. En BD solo hashes (scrypt).
 5. **Antes de cada PR**: `npx tsc --noEmit` + `npm run lint` (cero
    avisos NUEVOS; hay ~33 preexistentes aceptados) + `npx vitest run`
-   (769 tests en verde al día de hoy) + `npm run build`. Esperar el CI
+   (775 tests en verde al día de hoy) + `npm run build`. Esperar el CI
    "Tests" en verde antes de reportar. Si la pantalla se abre en el
    navegador, esto NO reemplaza probarla ahí (ver lección #8).
 6. **Commits**: mensaje en español contando el POR QUÉ (no el qué: el
@@ -243,6 +243,42 @@ Perú. **NO es programador.** Reglas de comunicación:
     proceso que barra la tabla cada madrugada, y el dato empieza a
     mentir apenas ese proceso falle una vez. Mismo criterio en el
     estado de llenado de reportes.
+
+14. **Una consulta COPIADA es un candado que algún día falta.** La
+    cadena que escribe `bank_balance_real` estaba copiada palabra por
+    palabra en tres archivos. En jul-2026 se le puso el candado de las
+    sedes con reset a UNA copia (`daily-records.ts`); las otras dos
+    (`record-edits.ts`, `fonavi-receivables.ts`) se quedaron sin él. El
+    5-ago alguien editó tres movimientos de Fonavi, la copia sin candado
+    escribió saldos calculados **arrancando de cero**, y el panel mostró
+    **−S/455.61** cuando el banco tenía S/15,594.02:
+
+    ```
+    28-jul:       0 + 802.44 −    54.79 =    747.65
+    30-jul:       0 + 839.84 − 1,517.24 =   −677.40
+    03-ago: −677.40 + 703.83 − 1,395.00 = −1,368.57   ← quedó de "ancla"
+    ```
+
+    Dos reglas que salieron de acá:
+
+    · **El candado va DENTRO del SQL, no en el llamador.** Un
+      `if (!hasReset)` protege a los llamadores que existen hoy; el
+      `NOT EXISTS (... system_start_date IS NOT NULL)` en el `WHERE`
+      viaja con la consulta y protege a los que vengan. Todo vive en
+      `src/lib/saldo-bcp-sql.ts` — una sola copia.
+    · **`bank_balance_real` significa cosas distintas según la sede.**
+      Sin reset (Atelier hasta jul): cadena de saldos calculados. Con
+      reset (las 3 hoy): SOLO lecturas reales del banco; el saldo se
+      arma virtual desde el corte. Misma columna, dos significados — es
+      la trampa de fondo, y por eso el candado tiene que ser estructural.
+
+    Guardias: `src/lib/__tests__/saldo-bcp-sql.test.ts` (exige el candado
+    y sale a buscar copias nuevas por todo `src/`) y el caso 5 de
+    `bank-balance-formula.test.ts`. La primera versión del test encontró
+    sola la tercera copia que yo no había visto.
+
+    **Un saldo de banco NEGATIVO es imposible**: si aparece, no es un
+    error de suma, es que algo calculado se coló como lectura real.
 
 ## 6. Dominio del negocio implementado (dónde está cada cosa)
 
@@ -429,12 +465,23 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **El rol `admin` ahora carga `nombre`** cuando la persona entró con su
   usuario propio de `app_users` (opcional: las contraseñas por sede
   heredadas no saben quién entró, y ahí se firma con la sede).
-- **769 tests** en 70 archivos, todos en verde (subieron de 663).
+- **775 tests** en 71 archivos, todos en verde (subieron de 663).
 - **Informe de traspaso a Kelly** (ago-2026): se probó por dos caminos
   independientes que Atelier se entregó el 01-ago con **S/2,045.79** en
   banco (cadena día a día de 120 días, 0 descuadres; y reconstrucción
   mes a mes, los 4 meses cerrando en 0.00). Cierre del informe: lunes
   10-ago 4:29pm.
+- **Incidente Fonavi (17-ago-2026), cerrado**: el panel mostraba
+  −S/455.61 de saldo. Causa: tres `bank_balance_real` calculados por una
+  copia sin candado de la cadena (lección #14). Se limpiaron los tres
+  (`scripts/migrations/2026-08-17-fonavi-saldos-calculados.sql`, con OK
+  de Jahnn; incluye el SQL de reversión) y ahora Fonavi da **S/15,518.53
+  de banco y S/163.50 de caja**, que es EXACTO a lo que calcula el Excel
+  de Kelly. Contra el BCP real quedan −S/75.49, la misma diferencia que
+  ella ya arrastra en su propia hoja: el sistema quedó cuadrado CON Kelly.
+  De paso, la detección de descuadres dejó de mirar días anteriores al
+  corte de cada sede (Atelier avisaba de un "descuadre" del 12-jul
+  teniendo corte el 01-ago).
 - **Datos reales cargados** (no son datos de prueba, no borrar):
   `invoice_documents` con la semana del 03–08-ago de Atelier (51
   documentos), `client_sales_snapshots` con al menos 1 snapshot real,
@@ -485,7 +532,7 @@ Perú. **NO es programador.** Reglas de comunicación:
 ```bash
 npx tsc --noEmit        # tipos
 npm run lint            # cero avisos NUEVOS (hay ~33 viejos aceptados)
-npx vitest run          # 769 en verde hoy — si bajan, rompiste algo
+npx vitest run          # 775 en verde hoy — si bajan, rompiste algo
 npm run build           # el build de Vercel
 ```
 

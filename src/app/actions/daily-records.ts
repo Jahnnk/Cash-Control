@@ -4,6 +4,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { cadenaSaldoDesdeFecha, cadenaSaldoDesdeAncla } from "@/lib/saldo-bcp-sql";
 
 /**
  * Todas las queries filtran por business_id (Ola 7). El INSERT/UPDATE en
@@ -67,30 +68,8 @@ export async function upsertDailyRecord(data: {
  * recalcular los saldos de otros negocios.
  */
 async function propagateFromDate(bId: number, anchorDate: string) {
-  await db.execute(sql`
-    WITH RECURSIVE chain AS (
-      SELECT date, bank_balance_real::numeric AS calc_balance
-      FROM daily_records
-      WHERE business_id = ${bId} AND date = ${anchorDate} AND bank_balance_real IS NOT NULL AND archived = false
-
-      UNION ALL
-
-      SELECT
-        dr.date,
-        ROUND((
-          c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false), 0)
-        )::numeric, 2)
-      FROM daily_records dr
-      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.business_id = ${bId} AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = ${bId} AND archived = false) AND dr.archived = false
-    )
-    UPDATE daily_records dr
-    SET bank_balance_real = chain.calc_balance
-    FROM chain
-    WHERE dr.business_id = ${bId} AND dr.date = chain.date AND dr.date > ${anchorDate}
-  `);
+  // El candado de las sedes con reset viaja DENTRO de la consulta.
+  await db.execute(cadenaSaldoDesdeAncla(sql, bId, anchorDate));
 }
 
 export async function updateBankBalance(date: string, balance: number) {
@@ -134,34 +113,7 @@ export async function recalcBankBalance(date: string, explicitBId?: number) {
   `);
 
   // Recalcula bank_balance_real en cadena desde `date` hasta MAX(date) del negocio
-  if (!hasReset) await db.execute(sql`
-    WITH RECURSIVE chain AS (
-      SELECT
-        (${date}::date - INTERVAL '1 day')::date AS date,
-        COALESCE((
-          SELECT bank_balance_real::numeric FROM daily_records
-          WHERE business_id = ${bId} AND date < ${date} AND bank_balance_real IS NOT NULL AND archived = false
-          ORDER BY date DESC LIMIT 1
-        ), 0) AS calc_balance
-
-      UNION ALL
-
-      SELECT
-        dr.date,
-        ROUND((
-          c.calc_balance
-          + COALESCE((SELECT SUM(amount) FROM bank_income_items WHERE business_id = ${bId} AND date = dr.date AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false), 0)
-          - COALESCE((SELECT SUM(amount) FROM expenses WHERE business_id = ${bId} AND date = dr.date AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false), 0)
-        )::numeric, 2)
-      FROM daily_records dr
-      JOIN chain c ON dr.date = (c.date + INTERVAL '1 day')::date
-      WHERE dr.business_id = ${bId} AND dr.date <= (SELECT MAX(date) FROM daily_records WHERE business_id = ${bId} AND archived = false) AND dr.archived = false
-    )
-    UPDATE daily_records dr
-    SET bank_balance_real = chain.calc_balance
-    FROM chain
-    WHERE dr.business_id = ${bId} AND dr.date = chain.date AND dr.date >= ${date}
-  `);
+  if (!hasReset) await db.execute(cadenaSaldoDesdeFecha(sql, bId, date));
 
   // Retroceso del marcador "Cuadrado hasta": si se modificó el saldo de un
   // día YA dado por cuadrado (date <= reconciled_through_date), el marcador
