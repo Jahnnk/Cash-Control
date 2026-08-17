@@ -17,6 +17,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { HighlightPhotos } from "@/components/highlight-photos";
+import { HistorialHighlights } from "./historial-highlights";
 import { conReintento } from "@/lib/con-reintento";
 import {
   cerrarHighlight, getHighlightSede,
@@ -267,135 +268,101 @@ export function HighlightCard({
           </>
         )}
 
-        {/* Días anteriores: pendientes por cerrar y cerrados a los que
-            todavía se les puede adjuntar la foto de evidencia. */}
-        {data.diasAnteriores.length > 0 && (
-          <div className="mt-5 pt-4 border-t border-gray-100">
-            {(() => {
-              const sinCerrar = data.diasAnteriores.filter((p) => p.estado === "pendiente");
-              return (
-                <div className="flex items-start gap-2 mb-2">
-                  {sinCerrar.length > 0 ? (
+        {/* Días anteriores, en dos partes que NO son lo mismo:
+            lo que falta cerrar pide una acción y va desplegado; lo ya
+            cerrado es historia y va en el calendario. */}
+        {(() => {
+          const sinCerrar = data.diasAnteriores.filter((p) => p.estado === "pendiente");
+          const cerrados = data.diasAnteriores.filter((p) => p.estado !== "pendiente");
+          return (
+            <>
+              {sinCerrar.length > 0 && (
+                <div className="mt-5 pt-4 border-t border-gray-100">
+                  <div className="flex items-start gap-2 mb-2">
                     <AlertTriangle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
-                  ) : null}
-                  <div>
-                    <div className="text-xs font-semibold text-gray-900">
-                      {sinCerrar.length === 0
-                        ? "Días anteriores"
-                        : sinCerrar.length === 1
+                    <div>
+                      <div className="text-xs font-semibold text-gray-900">
+                        {sinCerrar.length === 1
                           ? "Tienes un Highlight de otro día sin cerrar"
                           : `Tienes ${sinCerrar.length} Highlights de otros días sin cerrar`}
+                      </div>
+                      <p className="text-[11px] text-gray-500 mt-0.5">
+                        Ciérralo aunque sea tarde: así queda constancia de lo que pasó.
+                      </p>
                     </div>
-                    <p className="text-[11px] text-gray-500 mt-0.5">
-                      {sinCerrar.length > 0
-                        ? "Ciérralo aunque sea tarde: así queda constancia de lo que pasó."
-                        : "Puedes seguir adjuntando la foto de lo que hiciste."}
-                    </p>
                   </div>
-                </div>
-              );
-            })()}
 
-            <div className="space-y-2">
-              {data.diasAnteriores.map((p) => {
-                const abierto = p.estado === "pendiente";
-                return (
-                  <div
-                    key={p.id}
-                    className={`rounded-xl p-3 border ${
-                      abierto ? "border-amber-200 bg-amber-50/60" : "border-gray-200 bg-gray-50/60"
-                    }`}
-                  >
-                    <div className="flex items-start justify-between gap-3">
-                      <div className="min-w-0">
-                        <div className="flex items-center gap-1.5 flex-wrap">
-                          <span
-                            className={`text-[10px] uppercase tracking-wide font-semibold ${
-                              abierto ? "text-amber-700" : "text-gray-500"
-                            }`}
-                          >
-                            {fechaLarga(p.fecha)}
-                            {p.asignadoPor && <> · te lo dejó {p.asignadoPor}</>}
-                          </span>
-                          {p.estado === "logrado" && (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase rounded-full px-1.5 py-0.5 bg-emerald-600 text-white">
-                              <Check className="w-2.5 h-2.5" /> Logrado
+                  <div className="space-y-2">
+                    {sinCerrar.map((p) => (
+                      <div key={p.id} className="rounded-xl p-3 border border-amber-200 bg-amber-50/60">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-700">
+                              {fechaLarga(p.fecha)}
+                              {p.asignadoPor && <> · te lo dejó {p.asignadoPor}</>}
                             </span>
-                          )}
-                          {p.estado === "no_logrado" && (
-                            <span className="inline-flex items-center gap-1 text-[9px] font-bold uppercase rounded-full px-1.5 py-0.5 bg-gray-500 text-white">
-                              <X className="w-2.5 h-2.5" /> No se logró
-                            </span>
+                            <div className="text-sm font-semibold mt-0.5 text-gray-900">{p.texto}</div>
+                            {p.porQue && (
+                              <div className="text-[11px] text-gray-600 mt-1">{p.porQue}</div>
+                            )}
+                          </div>
+                          {cerrando?.id !== p.id && (
+                            <button
+                              onClick={() => abrirCierre(p)}
+                              disabled={pendiente}
+                              className="shrink-0 inline-flex items-center gap-1.5 bg-primary text-white rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-primary-light disabled:opacity-50"
+                            >
+                              <Check className="w-3.5 h-3.5" /> Cerrarlo
+                            </button>
                           )}
                         </div>
-                        <div
-                          className={`text-sm font-semibold mt-0.5 ${
-                            abierto ? "text-gray-900" : "text-gray-500"
-                          }`}
-                        >
-                          {p.texto}
+
+                        <div className="mt-3 space-y-3">
+                          <HighlightPhotos
+                            highlightId={p.id}
+                            kind="highlight_indicacion"
+                            titulo="Foto de dirección"
+                            puedeSubir={data.esDireccion}
+                            puedeBorrar={data.esDireccion}
+                            compacto
+                          />
+                          <HighlightPhotos
+                            highlightId={p.id}
+                            kind="highlight_evidencia"
+                            titulo="Tu evidencia"
+                            ayuda="Sube la foto de cómo quedó."
+                            puedeSubir
+                            puedeBorrar
+                            compacto
+                          />
                         </div>
-                        {p.porQue && abierto && (
-                          <div className="text-[11px] text-gray-600 mt-1">{p.porQue}</div>
+
+                        {cerrando?.id === p.id && (
+                          <div className="mt-3 border-t border-amber-200 pt-3">
+                            <ReflectForm
+                              ayudo={ayudo} setAyudo={setAyudo}
+                              distrajo={distrajo} setDistrajo={setDistrajo}
+                              manana={manana} setManana={setManana}
+                              pendiente={pendiente}
+                              onGuardar={guardar}
+                              onCancelar={() => setCerrando(null)}
+                            />
+                          </div>
                         )}
                       </div>
-                      {abierto && cerrando?.id !== p.id && (
-                        <button
-                          onClick={() => abrirCierre(p)}
-                          disabled={pendiente}
-                          className="shrink-0 inline-flex items-center gap-1.5 bg-primary text-white rounded-lg px-3 py-1.5 text-xs font-semibold hover:bg-primary-light disabled:opacity-50"
-                        >
-                          <Check className="w-3.5 h-3.5" /> Cerrarlo
-                        </button>
-                      )}
-                    </div>
-
-                    {/* Fotos: la de dirección y la evidencia. Siguen
-                        disponibles aunque el Highlight ya esté cerrado. */}
-                    <div className="mt-3 space-y-3">
-                      <HighlightPhotos
-                        highlightId={p.id}
-                        kind="highlight_indicacion"
-                        titulo="Foto de dirección"
-                        puedeSubir={data.esDireccion}
-                        puedeBorrar={data.esDireccion}
-                        compacto
-                      />
-                      <HighlightPhotos
-                        highlightId={p.id}
-                        kind="highlight_evidencia"
-                        titulo="Tu evidencia"
-                        ayuda="Todavía puedes subir la foto de cómo quedó."
-                        puedeSubir
-                        puedeBorrar
-                        compacto
-                      />
-                    </div>
-
-                    {cerrando?.id === p.id && (
-                      <div className="mt-3 border-t border-amber-200 pt-3">
-                        <ReflectForm
-                          ayudo={ayudo} setAyudo={setAyudo}
-                          distrajo={distrajo} setDistrajo={setDistrajo}
-                          manana={manana} setManana={setManana}
-                          pendiente={pendiente}
-                          onGuardar={guardar}
-                          onCancelar={() => setCerrando(null)}
-                        />
-                      </div>
-                    )}
+                    ))}
                   </div>
-                );
-              })}
-            </div>
+                </div>
+              )}
 
-            {data.cumplimiento.pct !== null && (
-              <div className="text-[11px] text-gray-400 mt-2 text-right">
-                {data.cumplimiento.pct}% cumplido en los últimos 30 días
-              </div>
-            )}
-          </div>
-        )}
+              <HistorialHighlights
+                dias={cerrados}
+                esDireccion={data.esDireccion}
+                pct={data.cumplimiento.pct}
+              />
+            </>
+          );
+        })()}
       </div>
     </div>
   );
