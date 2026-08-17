@@ -8,6 +8,7 @@ import { useToast } from "@/components/toast-provider";
 import { VentasImportModal } from "./ventas-import-modal";
 import { HighlightSlot } from "./highlight-card";
 import { EstadoKpisCard } from "./estado-kpis-card";
+import { ProponerHighlight } from "./proponer-highlight";
 import { ClientSalesImportModal } from "./client-sales-import-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
@@ -163,6 +164,9 @@ export function AtelierPanel() {
           Centro, con las palabras de Atelier: acá el día normal llega
           con el reporte de Byte, aunque también se puede teclear. */}
       <EstadoKpisCard refrescar={refrescarAviso} onRegistrar={irAlRegistro} />
+
+      {/* Luis también propone: la operación de Atelier la ve él. */}
+      <ProponerHighlight />
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">

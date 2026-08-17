@@ -53,7 +53,11 @@ function secretForScope(scope: string): string | undefined {
 
 export type SessionRole =
   | { kind: "full"; quien: "jahnn" | "kelly" }
-  | { kind: "admin" | "verif"; sede: number }
+  // `nombre` solo viene con los usuarios de la tabla app_users. Las
+  // contraseñas por sede heredadas (ADMIN_PASSWORD_FONAVI) no saben
+  // quién entró, así que queda undefined y quien lo use debe tener un
+  // respaldo — no es un dato garantizado.
+  | { kind: "admin" | "verif"; sede: number; nombre?: string }
   | { kind: "highlight"; userId: number; nombre: string }
   | null;
 
@@ -81,7 +85,11 @@ async function resolveUserToken(token: string, now: number): Promise<SessionRole
     }
     const sede = SEDE_BY_SCOPE[rows[0].scope];
     if (sede === undefined) return null;
-    return { kind: rows[0].scope.startsWith("admin-") ? "admin" : "verif", sede };
+    return {
+      kind: rows[0].scope.startsWith("admin-") ? "admin" : "verif",
+      sede,
+      nombre: rows[0].nombre,
+    };
   } catch {
     return null; // BD caída o tabla sin migrar → fail-closed
   }

@@ -20,6 +20,7 @@ import { useToast } from "@/components/toast-provider";
 import { HighlightPhotos } from "@/components/highlight-photos";
 import { Planificador } from "./planificador";
 import { ControlCumplimiento } from "./control-cumplimiento";
+import { BandejaPropuestas } from "./bandeja-propuestas";
 import { conReintento } from "@/lib/con-reintento";
 import {
   asignarHighlight, borrarHighlight, getHighlightGrupo,
@@ -118,6 +119,10 @@ export function HighlightConsole({
       {/* Control de cumplimiento: lo primero, porque es lo que hay que
           vigilar. Solo levanta la voz cuando hay algo sin responder. */}
       <ControlCumplimiento version={version} />
+
+      {/* Lo que proponen los administradores. Va arriba porque una
+          propuesta sin responder tiene fecha de vencimiento. */}
+      <BandejaPropuestas version={version} onCambio={recargar} />
 
       {/* Qué día estoy asignando */}
       <div className="flex flex-wrap items-center gap-2">
