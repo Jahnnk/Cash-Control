@@ -1,7 +1,7 @@
 # Contexto completo del proyecto — léeme antes de trabajar
 
 > Para cualquier agente o desarrollador que llegue nuevo (Codex, Claude,
-> humano). Actualizado: 2026-08-10. Complementa `AGENTS.md` (reglas de
+> humano). Actualizado: 2026-08-17. Complementa `AGENTS.md` (reglas de
 > ramas, deploy y auth) y `CLAUDE.md` (overview técnico). Este archivo
 > cuenta lo que esos dos no cuentan: quién es el usuario, cómo trabajar
 > con él, las lecciones aprendidas a golpes y el estado actual.
@@ -57,6 +57,10 @@ Perú. **NO es programador.** Reglas de comunicación:
   verificador Centro, Jefe de tienda Fonavi = verificador. El label del
   rol `admin-atelier` dice "Administración · Panel de Atelier" (antes
   decía "Supervisora", cambiado a pedido de Jahnn al asumir Luis).
+  **Juani** = socia y pareja de Jahnn; supervisa los locales una o dos
+  veces por semana. Desde ago-2026 tiene usuario con scope `highlight`:
+  asigna Highlights en las 3 sedes y aprueba las propuestas de los
+  administradores, sin acceso a nada más de la app.
   **Pendiente sin resolver**: `src/app/actions/direccion.ts:273` sigue
   listando a "Luana · Supervisora Atelier" en el roster del Sistema de
   Dirección — flagged, Jahnn no ha dicho si quitarla o reemplazarla.
@@ -65,30 +69,42 @@ Perú. **NO es programador.** Reglas de comunicación:
 
 ## 3. Reglas duras de operación (NUNCA romper)
 
-1. **Trabajar SIEMPRE en `staging`, NUNCA pushear a `main`.** Tras cada
-   commit: `git push origin staging` + crear PR a main. **El PR lo
-   mergea Jahnn**, nunca el agente.
+1. **Trabajar SIEMPRE en `staging`.** Tras cada commit:
+   `git push origin staging`, esperar el CI "Tests" en verde y **mergear
+   a `main` sin pedir OK** — política de Jahnn del 01-ago-2026 ("al
+   final siempre termino aplastando el botón, es una pérdida de
+   tiempo"). Aplica a cambios de código normales. Las excepciones de
+   base de datos (regla 2 y 3) NO cambiaron. AGENTS.md es la fuente
+   de verdad de esto; este documento solo lo resume.
 2. **Staging y producción comparten la MISMA base de datos Neon.**
    Toda escritura desde staging impacta producción. Escrituras directas
    a datos de producción requieren confirmación explícita de Jahnn
    ("sí, hazlo"). DELETE requiere snapshot Neon < 24h (salvo flujos
    idempotentes DELETE+INSERT tipo import).
-3. **Migraciones de schema: el agente NUNCA las ejecuta.** Se escribe el
-   SQL en `scripts/migrations/AAAA-MM-DD-nombre.sql` (idempotente, con
-   comentario de propósito) y se le entrega a Jahnn para que lo corra en
-   el SQL Editor de Neon después de un snapshot. El código debe degradar
-   con gracia mientras la migración no corra (try/catch con fallback).
+3. **Migraciones de schema: solo con OK EXPLÍCITO de Jahnn**, nunca por
+   iniciativa propia. Se escribe el SQL en
+   `scripts/migrations/AAAA-MM-DD-nombre.sql` (idempotente, con
+   comentario de propósito), se le explica qué toca y qué riesgo tiene,
+   y recién con su "sí" se corre (o la corre él en el SQL Editor de
+   Neon). Para cualquier cosa que modifique datos existentes, además
+   snapshot de Neon antes. El código debe degradar con gracia mientras
+   la migración no corra (try/catch + `faltaMigracion`, con la pantalla
+   ocultándose sola — ver `highlight-propuestas.ts` como patrón).
+   OJO: el driver de neon rechaza varias sentencias en un `.query()`;
+   hay que partirlas.
 4. **Contraseñas: JAMÁS en documentos, manuales o texto persistente.**
    Se generan (nunca las inventa un humano), se muestran UNA vez, se
    entregan en persona. En BD solo hashes (scrypt).
 5. **Antes de cada PR**: `npx tsc --noEmit` + `npm run lint` (cero
    avisos NUEVOS; hay ~33 preexistentes aceptados) + `npx vitest run`
-   (663 tests en verde al día de hoy) + `npm run build`. Esperar el CI
+   (769 tests en verde al día de hoy) + `npm run build`. Esperar el CI
    "Tests" en verde antes de reportar. Si la pantalla se abre en el
    navegador, esto NO reemplaza probarla ahí (ver lección #8).
-6. **Commits**: mensaje en español contando el POR QUÉ, terminando con
-   `Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>`
-   (si eres otro agente, usa tu propia firma — no suplantes).
+6. **Commits**: mensaje en español contando el POR QUÉ (no el qué: el
+   diff ya dice qué cambió), terminando con la firma del modelo que lo
+   escribió — hoy `Co-Authored-By: Claude Opus 5
+   <noreply@anthropic.com>`. Si eres otro agente o un modelo distinto,
+   usa TU propia firma; no suplantes.
 7. **Dominio de producción real: `cash-control-delta.vercel.app`**
    (`cash-control.vercel.app` da 404 — no usarlo nunca en docs ni links).
 
@@ -199,6 +215,35 @@ Perú. **NO es programador.** Reglas de comunicación:
     directo en el código — y verificar con `grep -n "u0300"` tras
     escribir el archivo.
 
+11. **Un parámetro que SOLO aparece dentro de `IS NULL` / `IS NOT NULL`
+    revienta en Postgres**: `could not determine data type of parameter
+    $N`. Pasó al cerrar un Highlight (`reflect_en = CASE WHEN ${ayudo}
+    IS NOT NULL OR ... THEN now() END`) y los administradores veían "No
+    pude guardar" (13-ago-2026). Formas seguras: comparar una COLUMNA
+    (`columna IS NOT NULL`), castear explícito (`${p}::text IS NULL`),
+    o —mejor— calcular el booleano en JS y mandar un solo parámetro.
+    Por qué se escapó: probé el SQL a mano con literales, no la action
+    real con parámetros. **Reproducir siempre llamando a la action.**
+    Guardia: `src/lib/__tests__/sql-parametros.test.ts`.
+12. **Las sesiones con alcance también bloquean `/api/*`.** El
+    middleware encierra a un scope (`admin-fonavi`) dentro de su prefijo
+    de ruta, y `/api/highlight-photos` cae fuera: Raúl recibía un
+    redirect a HTML, `res.json()` explotaba y el toast culpaba a "tu
+    conexión". Explicaba por qué NO existía ni una foto en todo el
+    sistema. Toda ruta de API que use el personal va en la lista blanca
+    `API_CON_ALCANCE` de `src/middleware.ts`. Guardia:
+    `src/lib/__tests__/middleware-api-alcance.test.ts`. De paso: el
+    límite real de subida en Vercel es ~4.5 MB (por eso
+    `ATTACHMENT_MAX_BYTES` = 4 MB), y un mensaje de error que adivina la
+    causa ("revisa tu conexión") esconde el problema — mostrar el código
+    de estado real.
+13. **Un estado que depende del reloj no se guarda, se deduce.** Las
+    propuestas de Highlight "caducadas" son (pendiente + fecha pasada) y
+    se calculan al leer (`estadoEfectivo`). Guardarlas obligaría a un
+    proceso que barra la tabla cada madrugada, y el dato empieza a
+    mentir apenas ese proceso falle una vez. Mismo criterio en el
+    estado de llenado de reportes.
+
 ## 6. Dominio del negocio implementado (dónde está cada cosa)
 
 - **Incentivos por upselling** (Fonavi/Centro): motor puro en
@@ -292,31 +337,108 @@ Perú. **NO es programador.** Reglas de comunicación:
   (que generan gasto 'socio' + préstamo a la vez para el mismo hecho
   económico) — filtro por patrón de nota, ver lección de doble conteo.
 
-## 7. Estado al 2026-08-10
+- **Highlight diario** (metodología *Make Time*, ago-2026): UNA sola
+  tarea por sede y día. `src/lib/highlight.ts` (guía, Reflect, racha,
+  cumplimiento) + `src/app/actions/highlight.ts` + tarjeta amarilla
+  `[negocio]/panel/highlight-card.tsx` + consola `/grupo/highlight`.
+  - **La regla que sostiene todo**: `UNIQUE (business_id, fecha)` en
+    `highlights`. Está en la migración documentada como "es la regla, no
+    una optimización". No aflojarla.
+  - **Quién asigna**: Jahnn, Kelly y **Juani** (socia; usuario con scope
+    `highlight`, alcance a las 3 sedes, sin acceso al resto de la app).
+    La firma NO se teclea: sale de la llave con la que entró cada uno,
+    porque el admin tiene que saber de quién viene el encargo. Pisar el
+    Highlight de otra persona pide confirmación explícita.
+  - **Cierre**: el admin marca logrado/no logrado y responde el Reflect
+    (3 preguntas abiertas; la cuarta ES el estado, no se guarda dos
+    veces). Puede cerrar días ANTERIORES — se veían solo los de hoy y
+    los atrasados quedaban sin forma de cerrarse.
+  - **Fotos** (`highlight_indicacion` de dirección / `highlight_evidencia`
+    del admin) vía `/api/highlight-photos`; se pueden adjuntar también a
+    los últimos 7 días, no solo a hoy.
+  - **Planificador semanal** (`planificador.tsx`): programar por fecha
+    por adelantado, con "por qué importa" y foto.
+  - **Control de cumplimiento** (`control-cumplimiento.tsx`): quién
+    cerró y quién no. Solo levanta la voz cuando hay algo sin responder.
+- **Propuestas de Highlight** (17-ago-2026): el administrador propone y
+  dirección aprueba. `src/lib/highlight-propuestas.ts` (lógica pura) +
+  `src/app/actions/highlight-propuestas.ts` + `proponer-highlight.tsx`
+  (panel de sede) + `bandeja-propuestas.tsx` (consola de Grupo).
+  - **Tabla APARTE** (`highlight_propuestas`), no un estado más en
+    `highlights`: una propuesta para un día ya ocupado chocaría contra
+    el UNIQUE, y aflojarlo obligaría a cada consulta existente a
+    acordarse de filtrar propuestas — el día que una se olvide, el admin
+    ve una propuesta sin aprobar como si fuera su tarea del día.
+  - **El choque nunca se resuelve solo**: aprobar sobre un día ocupado
+    NO toca la base; devuelve `conflicto`, muestra qué había y quién lo
+    asignó, y sugiere el primer día libre. La segunda llamada, con
+    `moverExistenteA`, mueve el que estaba — todo en `sql.transaction`,
+    porque a medias la sede queda sin Highlight o con dos.
+  - **Decisiones de Jahnn**: aprueban él y Juani; se propone desde HOY
+    en adelante (el formulario sugiere mañana); la propuesta sin
+    respuesta CADUCA y no se auto-aprueba. Las caducadas se le muestran
+    a propósito — es el espejo de su propio tiempo de respuesta; si
+    nadie contesta, los admins dejan de proponer y la idea se muere.
+  - Una sola propuesta pendiente por sede y día (índice parcial único).
+- **¿Están al día los reportes?** (`src/lib/kpis/llenado.ts`, lógica
+  pura): estado de cada casilla sede × día. Dos vistas, UN cerebro —
+  si cada pantalla contara por su cuenta, Jahnn vería "falta" y el admin
+  "al día", y se acaba la confianza en el semáforo.
+  - **Grupo → Reportes** (`estado-llenado.tsx`): cuadrícula 3 sedes × 7
+    días de la semana del calendario. Una línea verde cuando todo está
+    bien; la cuadrícula se abre sola solo si hay algo que reclamar.
+  - **Panel de sede** (`estado-kpis-card.tsx`, debajo del Highlight):
+    ventana móvil de los ÚLTIMOS 7 DÍAS (no la semana de domingo a
+    sábado: un lunes, el calendario le escondería al admin lo que quedó
+    debiendo la semana anterior). Lo vencido manda sobre lo de hoy;
+    cuando está al día NO desaparece, se queda en verde — la
+    confirmación es lo que hace hábito. Botón que lleva al formulario
+    con la fecha ya elegida.
+  - **Dos datos configurables por sede** en `actions/llenado-reportes.ts`,
+    con recuadro explicativo: `DIAS_ESPERADOS` (Atelier libra los
+    domingos → `LUNES_A_SABADO`; cambiar a `TODA_LA_SEMANA` y listo) y
+    `MODO_REGISTRO` ("importado" en Atelier — su día llega con el
+    reporte de Byte, aunque su panel YA tiene formulario manual —
+    "manual" en Fonavi/Centro). El modo solo cambia las PALABRAS del
+    aviso, nunca qué día se considera faltante (hay test que lo clava).
+  - **El dato real gana sobre lo esperado**: si un domingo Atelier SÍ
+    registra, se pinta como cualquier día lleno.
 
-- **`staging` == `main`, sin diferencia.** Último commit:
-  `8410e2d` (fix de un `export const` en archivo `"use server"` que
-  tumbaba `/atelier/panel` con 500 — ver lección #8). Desde el
-  19-jul se sumaron: EIRS PDF bridge, auditoría bancaria abr–jul con
-  Kelly (reclasificaciones + fix de doble conteo en préstamos + tab
-  Cuadre BCP), rol de Atelier renombrado (Luana → Luis Pisco), Ventas
-  por Cliente, y Cuentas por Cobrar.
-- **Migraciones corridas** (verificadas en BD, además de las de
-  jul-2026): `2026-08-09-ventas-por-cliente.sql` (tablas
-  `client_sales_snapshots`/`client_sales_rows`),
-  `2026-08-09-cuentas-por-cobrar.sql` (tablas
-  `invoice_documents`/`invoice_imports`). No hay migraciones pendientes
-  de correr.
+## 7. Estado al 2026-08-17
+
+- **`staging` == `main`, sin diferencia.** Último commit: `782a36a`
+  (propuestas de Highlight). Desde el 10-ago se sumaron, en orden: el
+  sistema de Highlight completo (asignación, fotos, Juani como segunda
+  persona que asigna, planificador semanal, control de cumplimiento),
+  el estado de llenado de reportes en Grupo, el aviso de KPIs en el
+  panel de las 3 sedes, el día libre de Atelier, y las propuestas de
+  Highlight de los administradores.
+- **Migraciones corridas** (verificadas en BD): además de las de
+  jul/ago, `2026-08-10-highlight.sql` (tabla `highlights`),
+  `2026-08-11-app-users-scope-highlight.sql` (permite el scope
+  `highlight` en el CHECK de `app_users` — hubo que partir el DROP y el
+  ADD porque el driver de neon rechaza multi-statement en `.query()`) y
+  `2026-08-17-highlight-propuestas.sql` (tabla `highlight_propuestas`,
+  creada con OK explícito de Jahnn; tabla nueva y vacía, no tocó ni una
+  fila existente). **No hay migraciones pendientes de correr.**
 - **Usuarios v3 activos**: Luis Pisco (`admin-atelier`), Raúl
-  (`admin-fonavi`), Chari (`admin-centro`), Junior
-  (`verif-centro`), Jefe de tienda Fonavi (`verif-fonavi`). Luana
-  sigue en la tabla con `active=false` (despedida, no borrada).
-- **663 tests** en 62 archivos, todos en verde (subieron de 531 con
-  los parsers de client-sales y receivables — 12 y 28 tests nuevos).
+  (`admin-fonavi`), Chari (`admin-centro`), Junior (`verif-centro`),
+  Jefe de tienda Fonavi (`verif-fonavi`), **Juani** (`highlight`, solo
+  Highlight en las 3 sedes). Luana sigue con `active=false` (despedida,
+  no borrada).
+- **El rol `admin` ahora carga `nombre`** cuando la persona entró con su
+  usuario propio de `app_users` (opcional: las contraseñas por sede
+  heredadas no saben quién entró, y ahí se firma con la sede).
+- **769 tests** en 70 archivos, todos en verde (subieron de 663).
+- **Informe de traspaso a Kelly** (ago-2026): se probó por dos caminos
+  independientes que Atelier se entregó el 01-ago con **S/2,045.79** en
+  banco (cadena día a día de 120 días, 0 descuadres; y reconstrucción
+  mes a mes, los 4 meses cerrando en 0.00). Cierre del informe: lunes
+  10-ago 4:29pm.
 - **Datos reales cargados** (no son datos de prueba, no borrar):
-  `invoice_documents` tiene la semana real del 03–08-ago de Atelier
-  (51 documentos); `client_sales_snapshots` tiene al menos 1 snapshot
-  real.
+  `invoice_documents` con la semana del 03–08-ago de Atelier (51
+  documentos), `client_sales_snapshots` con al menos 1 snapshot real,
+  `highlights` con los Highlights reales que ya cerraron los admins.
 
 ## 8. Pendientes conocidos (no empezar sin que Jahnn lo pida)
 
@@ -338,6 +460,18 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **Re-mirar la base del ticket** (Fonavi 24.70 / Centro 24.82) cuando
   haya 2-3 semanas de datos con delivery registrado: al excluir
   delivery el ticket medido sube un poco.
+- **Confirmar que las fotos del Highlight ya suben de verdad**: el
+  bloqueo del middleware se arregló (lección #12) pero no se pudo
+  comprobar en el navegador con la sesión de un administrador —
+  preguntarle a Raúl o a Luis.
+- **Agosto de Atelier cierra en cero cuando aparezcan dos movimientos**:
+  el pago de S/44.80 de Mendo Aliaga (factura FB02-1202, seguía
+  pendiente) y S/0.15 de ITF de un domingo. La diferencia se mantuvo
+  EXACTA en S/44.95 entre dos lecturas distintas del banco, lo que
+  prueba que es un movimiento concreto que falta y no un error de suma.
+- **Dos egresos de agosto sin categorizar** ("Desconocido / Por
+  confirmar"): S/2,071.00 y S/1,600.69 — juntos, 36% del gasto bancario
+  del mes.
 - **De Jahnn (no del agente)**: exports de rotación Atelier mar-may;
   costear recetas faltantes; revisar la URL del cron keep-alive en
   cron-job.org (podría apuntar al dominio 404); gaps de la carga de
@@ -351,7 +485,7 @@ Perú. **NO es programador.** Reglas de comunicación:
 ```bash
 npx tsc --noEmit        # tipos
 npm run lint            # cero avisos NUEVOS (hay ~33 viejos aceptados)
-npx vitest run          # 663 en verde hoy — si bajan, rompiste algo
+npx vitest run          # 769 en verde hoy — si bajan, rompiste algo
 npm run build           # el build de Vercel
 ```
 
@@ -361,6 +495,19 @@ compila y pasa lint pero tumba la página en el navegador (lección #8).
 Toda pantalla nueva que dependa de una `action` se abre en
 `preview_start` + se lee con `read_page`/`javascript_tool` antes de
 reportarla como lista.
+
+**Pero ojo con el login**: la app entera está detrás de contraseña, y el
+agente NO teclea contraseñas para autenticarse (ni siquiera las de
+`.env.local`). En la práctica eso deja la verificación visual fuera de
+alcance, y hay que compensarlo de otra forma: **sacar las decisiones y
+los TEXTOS del componente a una librería pura y probarlos uno por uno**
+(así se hizo con `mensajeEstadoKpis`). Un componente que solo pinta lo
+que decide una función probada es mucho menos riesgoso que uno que
+decide por su cuenta. Además, verificar las actions contra la BD real
+con un test efímero + mocks de `session-access`/`active-business`
+alcanza para probar permisos y flujos completos sin navegador (así se
+probó el flujo de propuestas, incluido el choque de días).
+Decirle a Jahnn con todas sus letras qué quedó sin ver en pantalla.
 
 Los tests usan drivers de BD falsos (mocks de neon/db) — nunca tocan
 Neon. Para verificar datos reales: scripts efímeros con `npx tsx`
