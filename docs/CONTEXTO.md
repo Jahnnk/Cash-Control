@@ -97,7 +97,7 @@ Perú. **NO es programador.** Reglas de comunicación:
    entregan en persona. En BD solo hashes (scrypt).
 5. **Antes de cada PR**: `npx tsc --noEmit` + `npm run lint` (cero
    avisos NUEVOS; hay ~33 preexistentes aceptados) + `npx vitest run`
-   (775 tests en verde al día de hoy) + `npm run build`. Esperar el CI
+   (847 tests en verde al día de hoy) + `npm run build`. Esperar el CI
    "Tests" en verde antes de reportar. Si la pantalla se abre en el
    navegador, esto NO reemplaza probarla ahí (ver lección #8).
 6. **Commits**: mensaje en español contando el POR QUÉ (no el qué: el
@@ -280,6 +280,28 @@ Perú. **NO es programador.** Reglas de comunicación:
     **Un saldo de banco NEGATIVO es imposible**: si aparece, no es un
     error de suma, es que algo calculado se coló como lectura real.
 
+15. **Nunca probar contra datos reales confiando en un "deshacer" al
+    final.** El 18-ago-2026 corrí un test contra la BD de producción que
+    modificaba la rotación de Fonavi y la restauraba al terminar. El
+    test se pasó del timeout de 5s de Vitest, murió antes de restaurar,
+    y **borró los 118 platos de agosto de Fonavi** (S/19,014.60). Hubo
+    que pedirle a Raúl que volviera a subir su archivo.
+
+    Es el mismo error que este documento le señala al código en la
+    lección #14: *una salvaguarda que solo corre si todo sale bien no es
+    una salvaguarda*. El `finally` no ayuda contra un timeout del
+    runner.
+
+    Reglas que salieron de acá:
+
+    · Para verificar lógica que ESCRIBE, usar datos desechables: un
+      `business_id` inventado (999), un mes futuro, un rango que no
+      existe. Se borra al final y si no se borra, no le importa a nadie.
+    · Si de verdad hace falta tocar una fila real, copiarla FUERA de la
+      base antes (a un archivo), no a una variable del test.
+    · Subir el timeout no arregla el problema de fondo: el riesgo es
+      escribir sobre producción, no la duración.
+
 ## 6. Dominio del negocio implementado (dónde está cada cosa)
 
 - **Incentivos por upselling** (Fonavi/Centro): motor puro en
@@ -312,6 +334,24 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **PIC (Productos)**: import de rotación Byte, veredictos, Pareto,
   simulador. Alimenta el "foco del día" del panel (rota por fecha
   sobre un pozo de 24 candidatos — `pickDailyFocus`).
+  - **Se acumula POR PERÍODOS** (`product_period_sales`, 18-ago-2026):
+    cada carga guarda su rango y el mes es la SUMA de sus períodos;
+    `product_month_sales` se recalcula desde ahí, así que todo lo que
+    la lee siguió igual. La regla que evita el doble conteo es una
+    sola: **una carga nueva REEMPLAZA a las que pisa** — semanas
+    sueltas se suman, el mes entero encima las reemplaza a todas, y
+    re-subir una semana la actualiza. Lógica pura en
+    `src/lib/productos/periodos.ts`.
+  - **Byte NO da detalle por día**: el reporte trae una fila por plato
+    con el total del rango. La semana es lo más fino posible, y un
+    rango que cruza de mes se rechaza pidiendo dos archivos — repartir
+    sería inventar.
+  - **Lo suben los ADMINISTRADORES** desde su Panel de Sede
+    (`ImportControlModal`), cada sábado. Dirección también puede desde
+    Productos. Control de cumplimiento: `getEstadoCargasProductos`
+    (Grupo) y `getCargaProductosSede` (panel), que además detectan la
+    carga TRUNCADA — Centro subió agosto con 10 platos de ~108 porque
+    exportó el "Top 10" de Byte.
 - **Préstamos socio** (`/atelier/prestamos-socio`): prestar → deber →
   devolver sin mover saldos operativos. Método de pago 'socio' = gasto
   operativo real que NO toca banco ni caja. 11 cadenas bancarias
@@ -465,7 +505,7 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **El rol `admin` ahora carga `nombre`** cuando la persona entró con su
   usuario propio de `app_users` (opcional: las contraseñas por sede
   heredadas no saben quién entró, y ahí se firma con la sede).
-- **775 tests** en 71 archivos, todos en verde (subieron de 663).
+- **847 tests** en 76 archivos, todos en verde (subieron de 663).
 - **Informe de traspaso a Kelly** (ago-2026): se probó por dos caminos
   independientes que Atelier se entregó el 01-ago con **S/2,045.79** en
   banco (cadena día a día de 120 días, 0 descuadres; y reconstrucción
@@ -532,7 +572,7 @@ Perú. **NO es programador.** Reglas de comunicación:
 ```bash
 npx tsc --noEmit        # tipos
 npm run lint            # cero avisos NUEVOS (hay ~33 viejos aceptados)
-npx vitest run          # 775 en verde hoy — si bajan, rompiste algo
+npx vitest run          # 847 en verde hoy — si bajan, rompiste algo
 npm run build           # el build de Vercel
 ```
 
