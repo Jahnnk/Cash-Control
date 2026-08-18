@@ -21,6 +21,7 @@
 
 import * as XLSX from "xlsx";
 import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
+import { conciliarFechaConHoja, resumenCorrecciones } from "./fecha-mes-hoja";
 
 export type ByteSalesDaily = {
   date: string;            // YYYY-MM-DD
@@ -61,6 +62,12 @@ export type ControlVtasParseResult = {
   errores: string[];
   warnings: string[];
   rangoFechas: { start: string | null; end: string | null };
+  /**
+   * Fechas que estaban en otro mes y se corrigieron al mes de la hoja,
+   * con la prueba del día de la semana. Se exponen para que el import
+   * pueda decir QUÉ cambió en vez de hacerlo por debajo.
+   */
+  fechasCorregidas: { original: string; fecha: string }[];
 };
 
 // ─────────────────────────────────────────────────────────────────
@@ -182,6 +189,7 @@ export function parseControlVtas(
   //   +7 Referencia "(1)" "(2)" ...
   //   +8 Nota descriptiva
   const idxFecha = dateColIdx;
+  const idxDiaSemana = dateColIdx + 1;   // "Viernes" — la prueba del mes
   const idxConceptoQuipu = dateColIdx + 2;
   const idxMontoQuipu = dateColIdx + 3;
   const idxConceptoCuentas = dateColIdx + 4;
@@ -205,6 +213,9 @@ export function parseControlVtas(
 
   let ultimaFecha: string | null = null;
   let emptyRowStreak = 0;
+  // Fechas que estaban en otro mes: corregidas (con prueba) y descartadas.
+  const correcciones: { original: string; fecha: string }[] = [];
+  const descartadas: { original: string; motivo: string }[] = [];
 
   // Header en fila 0. Datos desde fila 1.
   for (let i = 1; i < rows.length; i++) {
@@ -246,13 +257,25 @@ export function parseControlVtas(
       if (ultimaFecha) fecha = ultimaFecha;
       else continue;
     } else {
-      // Validar que la fecha caiga dentro del mes esperado por el
-      // nombre de la hoja. Cualquier cosa fuera es ruido.
+      // La fecha tiene que caer en el mes de la hoja. Si no cae, antes
+      // se descartaba EN SILENCIO; ahora se intenta conciliar con el día
+      // de la semana que escribió Kelly, que es la prueba de cuál era el
+      // mes bueno (ver src/lib/fecha-mes-hoja.ts). Sin esa prueba se
+      // sigue descartando, pero avisando.
       if (sheetMonth) {
-        const [fy, fm] = fecha.split("-").map(Number);
-        if (fy !== sheetMonth.year || fm !== sheetMonth.month) {
+        const r = conciliarFechaConHoja({
+          fecha,
+          diaSemana: row[idxDiaSemana],
+          mesHoja: sheetMonth,
+        });
+        if (r.estado === "descartada") {
+          descartadas.push({ original: r.original, motivo: r.motivo });
           ultimaFecha = null;
           continue;
+        }
+        if (r.estado === "corregida") {
+          correcciones.push({ original: r.original, fecha: r.fecha });
+          fecha = r.fecha;
         }
       }
       ultimaFecha = fecha;
@@ -357,8 +380,20 @@ export function parseControlVtas(
   const start = ventasDiarias[0]?.date ?? null;
   const end = ventasDiarias[ventasDiarias.length - 1]?.date ?? null;
 
+  // Avisar SIEMPRE de lo que se tocó o se dejó fuera. Antes esto se
+  // descartaba en silencio y nadie se enteraba de que faltaban días.
+  if (correcciones.length > 0) warnings.push(resumenCorrecciones(correcciones));
+  if (descartadas.length > 0) {
+    const ej = descartadas[0];
+    warnings.push(
+      `Se dejaron fuera ${descartadas.length} ${descartadas.length === 1 ? "fila" : "filas"} con fecha de otro mes ` +
+      `(ej. ${ej.original}: ${ej.motivo}).`,
+    );
+  }
+
   return {
     ventasDiarias,
+    fechasCorregidas: correcciones,
     propinas,
     alertasRedondeo: alertas,
     errores,
@@ -375,5 +410,6 @@ function emptyResult(errores: string[], warnings: string[]): ControlVtasParseRes
     errores,
     warnings,
     rangoFechas: { start: null, end: null },
+    fechasCorregidas: [],
   };
 }

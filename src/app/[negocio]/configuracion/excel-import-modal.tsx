@@ -667,6 +667,22 @@ function PreviewStep({
           <Row label="Total ventas (Ef + Yape + POS)" value={formatCurrency(cvTotalVentas)} />
           <Row label="Propinas detectadas" value={`${cv.propinas.length} · ${formatCurrency(cvTotalPropinas)}`} />
           <Row label="Alertas de redondeo" value={String(cv.alertasRedondeo.length)} />
+
+          {/* Fechas que Kelly escribió con el mes del mes anterior. Se
+              corrigen solo cuando el día de la semana lo prueba (pedido
+              de Jahnn, 17-ago-2026). Antes se descartaban en silencio y
+              esos días simplemente no entraban. */}
+          {cv.fechasCorregidas.length > 0 && (
+            <div className="mt-2 text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-2">
+              📅 <strong>{cv.fechasCorregidas.length} fechas corregidas</strong> al mes de la pestaña.
+              Kelly escribió el mes anterior, pero el día de la semana que puso confirma cuál era el
+              bueno.
+              <div className="mt-1 text-blue-700/90">
+                {cv.fechasCorregidas.slice(0, 3).map((f) => `${f.original} → ${f.fecha}`).join(" · ")}
+                {cv.fechasCorregidas.length > 3 && ` · y ${cv.fechasCorregidas.length - 3} más`}
+              </div>
+            </div>
+          )}
           {(preview.byteSalesDailyEnRango > 0 || preview.tipsPendingEnRango > 0 || preview.roundingAlertsEnRango > 0) && (
             <p className="text-[11px] text-amber-700 mt-2">
               ⚠ Existen registros previos en el rango ({preview.byteSalesDailyEnRango} ventas Byte, {preview.tipsPendingEnRango} propinas pending, {preview.roundingAlertsEnRango} alertas pending) que serán reemplazados.
