@@ -22,6 +22,8 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { matchSalesToCatalog } from "@/lib/product-matching";
 import type { ByteRotacionItem } from "@/lib/byte-rotacion-parser";
+import { evaluarCargas, type CargaSede, type ResumenCargas } from "@/lib/productos/cargas";
+import { getToday } from "@/lib/utils";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -281,4 +283,83 @@ export async function getProductDataStatus(): Promise<ProductDataStatus> {
       importedAt: m.imported_at,
     })),
   };
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Control de cargas del reporte de productos (pedido de Jahnn, 18-ago-2026)
+ *
+ * "El sistema deberá reportarme los días de subida de este informe, que
+ *  idealmente son todos los sábados."
+ *
+ * OJO con la zona horaria: `imported_at` se guarda en UTC y las cargas
+ * suelen hacerse de noche. La del 15-ago 22:45 de Lima quedó grabada
+ * como 16-ago 03:45 UTC — leerla en UTC la corre al día siguiente y
+ * convierte un sábado en domingo. Se convierte a Lima en el SELECT.
+ * ───────────────────────────────────────────────────────────────────── */
+
+export type EstadoCargasProductos = {
+  esDireccion: boolean;
+  hoy: string;
+  resumen: ResumenCargas | null;
+};
+
+export async function getEstadoCargasProductos(): Promise<EstadoCargasProductos> {
+  const hoy = getToday();
+  const role = await getSessionRole();
+  // Es una vista de control de las 3 sedes: solo dirección.
+  if (role?.kind !== "full") return { esDireccion: false, hoy, resumen: null };
+
+  try {
+    const filas = (await sql`
+      WITH por_mes AS (
+        SELECT business_id, month,
+               COUNT(*)::int AS productos,
+               MAX(imported_at) AS cargado_en
+        FROM product_month_sales
+        GROUP BY business_id, month
+      ),
+      ultima AS (
+        SELECT DISTINCT ON (business_id)
+               business_id, month, productos, cargado_en
+        FROM por_mes
+        ORDER BY business_id, cargado_en DESC
+      ),
+      habitual AS (
+        -- Mediana de las cargas ANTERIORES: si la última viene truncada,
+        -- no debe arrastrar hacia abajo su propia referencia.
+        SELECT p.business_id,
+               PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p.productos)::int AS mediana
+        FROM por_mes p
+        JOIN ultima u ON u.business_id = p.business_id
+        WHERE p.month <> u.month
+        GROUP BY p.business_id
+      )
+      SELECT b.id AS business_id, b.name,
+             (u.cargado_en AT TIME ZONE 'America/Lima')::date::text AS ultima_carga,
+             u.month AS ultimo_mes,
+             COALESCE(u.productos, 0) AS productos,
+             h.mediana
+      FROM businesses b
+      LEFT JOIN ultima u ON u.business_id = b.id
+      LEFT JOIN habitual h ON h.business_id = b.id
+      ORDER BY b.id
+    `) as {
+      business_id: number; name: string; ultima_carga: string | null;
+      ultimo_mes: string | null; productos: number; mediana: number | null;
+    }[];
+
+    const cargas: CargaSede[] = filas.map((f) => ({
+      businessId: f.business_id,
+      sede: f.name.replace(/^Yayi'?s\s+/i, ""),
+      ultimaCarga: f.ultima_carga,
+      ultimoMes: f.ultimo_mes,
+      productosUltimaCarga: f.productos,
+      productosHabitual: f.mediana,
+    }));
+
+    return { esDireccion: true, hoy, resumen: evaluarCargas(cargas, hoy) };
+  } catch (e) {
+    console.error("[getEstadoCargasProductos] failed:", e);
+    return { esDireccion: true, hoy, resumen: null };
+  }
 }

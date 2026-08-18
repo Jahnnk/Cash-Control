@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
+import { ControlCargasProductos } from "./control-cargas";
 import { Package, Upload, ArrowRight, Rocket, ShieldCheck, SlidersHorizontal, Search, FlaskConical, Eye } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getPortfolioStoryForSede } from "@/app/actions/portfolio-story";
@@ -90,6 +91,11 @@ export function GrupoProductosClient() {
           className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
         />
       </div>
+
+      {/* ¿Se está subiendo el reporte que alimenta todo esto? Va arriba
+          porque un análisis con datos viejos es peor que no tenerlo:
+          parece actual y no lo es. */}
+      <ControlCargasProductos />
 
       {/* Carga semanal del reporte de Byte */}
       <section className="bg-white rounded-xl border border-gray-200 p-4">
