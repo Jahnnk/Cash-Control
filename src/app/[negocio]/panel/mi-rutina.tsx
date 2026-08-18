@@ -23,6 +23,7 @@ import {
   CheckCircle2, AlertTriangle, Upload, ChevronDown, CalendarDays, ClipboardList,
 } from "lucide-react";
 import { getCargaProductosSede, type CargaSedePropia } from "@/app/actions/product-sales-import";
+import { describirPeriodo } from "@/lib/productos/periodos";
 import { conReintento } from "@/lib/con-reintento";
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
@@ -95,10 +96,12 @@ export function MiRutina({
     detalle = "Todavía no se ha subido ninguno en esta sede.";
   } else if (finDeSemana) {
     titulo = "Hoy toca el reporte de productos";
-    detalle = `El último fue el ${e.ultimaCarga ? fechaCorta(e.ultimaCarga) : "—"}. Súbelo antes de cerrar el día.`;
+    // Se le dice la semana EXACTA que tiene que pedirle a Byte. Sin
+    // esto tiene que calcularla él, y ahí es donde se equivoca.
+    detalle = `Exporta de Byte ${describirPeriodo(data.semanaQueToca)} y súbelo antes de cerrar.`;
   } else {
     titulo = "Reporte de productos pendiente";
-    detalle = `${e.detalle} Toca subirlo el sábado.`;
+    detalle = `${e.detalle} El sábado toca ${describirPeriodo(data.semanaQueToca)}.`;
   }
 
   return (
@@ -121,6 +124,27 @@ export function MiRutina({
           </button>
         )}
       </div>
+
+      {/* La cobertura del mes: lo que hace esto verificable. Ver un
+          total no dice si falta una semana; ver el hueco, sí. */}
+      {data.cobertura && data.cobertura.diasEsperados > 0 && (
+        <div className="px-4 pb-2 -mt-1">
+          <div className="flex items-center gap-2">
+            <div className="h-1.5 flex-1 rounded-full bg-gray-200 overflow-hidden">
+              <div
+                className={`h-full rounded-full ${data.cobertura.completa ? "bg-emerald-500" : "bg-amber-400"}`}
+                style={{ width: `${Math.round((data.cobertura.diasCubiertos / data.cobertura.diasEsperados) * 100)}%` }}
+              />
+            </div>
+            <span className="text-[10px] text-gray-500 shrink-0">
+              {data.cobertura.diasCubiertos} de {data.cobertura.diasEsperados} días del mes
+            </span>
+          </div>
+          {!data.cobertura.completa && data.huecos && (
+            <div className="text-[11px] text-amber-700 mt-1">Faltan {data.huecos}.</div>
+          )}
+        </div>
+      )}
 
       <button
         onClick={() => setVerGuia((v) => !v)}
@@ -151,8 +175,12 @@ export function MiRutina({
             </p>
             <ul className="mt-1 space-y-0.5 list-disc pl-4">
               <li>
-                En Byte elige el rango <strong>del día 1 del mes hasta hoy</strong>, no solo la
-                semana. Si subes una semana suelta, se pierde lo que ya iba del mes.
+                En Byte elige <strong>la semana que terminó</strong> — este sábado toca{" "}
+                {describirPeriodo(data.semanaQueToca)}. Las semanas se van sumando solas.
+              </li>
+              <li>
+                Si un sábado se te pasó, no importa: sube el rango que falte, o el mes entero. El
+                sistema lo ordena y <strong>nunca cuenta dos veces</strong>.
               </li>
               <li>
                 Exporta <strong>todos los platos</strong>, no el Top 10: con 10 no se ve la carta

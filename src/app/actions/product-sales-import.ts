@@ -23,6 +23,10 @@ import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { matchSalesToCatalog } from "@/lib/product-matching";
 import type { ByteRotacionItem } from "@/lib/byte-rotacion-parser";
 import {
+  cruzaDeMes, describirPeriodo, semanaQueToca, coberturaDelMes, describirHuecos,
+  type Periodo, type Cobertura,
+} from "@/lib/productos/periodos";
+import {
   evaluarCargas, evaluarCarga, ultimoSabado,
   type CargaSede, type ResumenCargas, type EstadoCarga,
 } from "@/lib/productos/cargas";
@@ -105,28 +109,33 @@ export async function importProductSalesFromPanel(input: ImportInput): Promise<P
     };
   }
 
-  // El reporte tiene que ser ACUMULADO desde el 1. Guardar un mes
-  // REEMPLAZA lo que había (ver runImport), así que un archivo de una
-  // sola semana — el export por defecto de Byte, "del 10 al 16" — borra
-  // el resto del mes y deja el análisis con 7 días. La validación vive
-  // acá y no solo en el modal porque el modal se puede saltar.
-  const inicioMes = `${current}-01`;
-  if (input.periodStart && input.periodStart !== inicioMes) {
-    return {
-      ok: false,
-      error:
-        `Ese reporte va del ${input.periodStart} al ${input.periodEnd ?? "?"}, o sea una parte del mes. ` +
-        `Súbelo ACUMULADO: en Byte elige el rango del ${inicioMes} hasta hoy y vuelve a exportar. ` +
-        `Si se sube solo una semana, se pierde lo que ya estaba cargado del mes.`,
-    };
-  }
-
+  // Cualquier rango dentro del mes vale: se acumula por períodos y una
+  // carga nueva reemplaza a las que pisa (ver runImport). Lo ideal es la
+  // semana, pero si sube el mes entero también sale bien.
   return runImport(bId, input, `PIC · rotación semanal desde Panel de Sede · ${input.month}`);
 }
 
 async function runImport(bId: number, input: ImportInput, batchNote: string): Promise<ProductSalesImportResult> {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) {
     return { ok: false, error: "Mes inválido (formato AAAA-MM)." };
+  }
+
+  // Un período NO puede cruzar de mes. El reporte trae una fila por
+  // plato con el total del rango, sin fecha por fila: si abarca del 29
+  // de agosto al 4 de setiembre, no hay forma de saber cuánto fue de
+  // cada mes. La única salida honesta es pedir los dos archivos.
+  if (input.periodStart && input.periodEnd) {
+    const cruce = cruzaDeMes({ inicio: input.periodStart, fin: input.periodEnd });
+    if (cruce.cruza) {
+      const [a, b] = cruce.corte;
+      return {
+        ok: false,
+        error:
+          `Ese reporte va ${describirPeriodo({ inicio: input.periodStart, fin: input.periodEnd })}, ` +
+          `y cruza de un mes al otro. El reporte de Byte no trae el detalle por día, así que no se ` +
+          `puede repartir. Súbelo en DOS archivos: uno ${describirPeriodo(a)} y otro ${describirPeriodo(b)}.`,
+      };
+    }
   }
   if (!Array.isArray(input.items) || input.items.length === 0) {
     return { ok: false, error: "No hay productos para importar." };
@@ -173,22 +182,51 @@ async function runImport(bId: number, input: ImportInput, batchNote: string): Pr
       ...match.matched.map((it) => ({ ...it, productId: it.productId as string | null })),
       ...match.unmatched.map((it) => ({ ...it, productId: null as string | null })),
     ];
+
+    // El período que cubre este archivo. Sin rango declarado (cargas
+    // viejas desde Grupo) se asume el mes entero, que es lo que esas
+    // cargas siempre fueron.
+    const pIni = input.periodStart ?? monthStart;
+    const pFin = input.periodEnd ?? monthEnd;
+
     await sql.transaction([
       sql`INSERT INTO import_batches (id, business_id, file_name, date_range_start, date_range_end,
             movements_count, status, rollback_available, notes, warnings_json)
-          VALUES (${batchId}, ${bId}, ${input.fileName}, ${monthStart}, ${monthEnd},
+          VALUES (${batchId}, ${bId}, ${input.fileName}, ${pIni}, ${pFin},
             ${rows.length}, 'completed', false,
             ${batchNote},
             ${JSON.stringify(warnings)}::jsonb)`,
-      sql`DELETE FROM product_month_sales
-          WHERE business_id = ${bId} AND month = ${input.month} AND source = 'byte'`,
+
+      // 1) Fuera los períodos que este archivo PISA. Es la regla que
+      //    evita el doble conteo: el mes entero reemplaza a las semanas
+      //    de adentro, y re-subir una semana la actualiza.
+      sql`DELETE FROM product_period_sales
+          WHERE business_id = ${bId} AND source = 'byte'
+            AND period_start <= ${pFin}::date AND ${pIni}::date <= period_end`,
+
+      // 2) Entra el período nuevo.
       ...rows.map(
         (it) => sql`
-          INSERT INTO product_month_sales
-            (business_id, product_id, product_name_raw, month, units, revenue, source, import_batch_id)
-          VALUES (${bId}, ${it.productId}, ${it.name}, ${input.month},
-                  ${it.units}, ${it.revenue}, 'byte', ${batchId})`,
+          INSERT INTO product_period_sales
+            (business_id, period_start, period_end, month, product_id, product_name_raw,
+             units, revenue, source, import_batch_id, file_name)
+          VALUES (${bId}, ${pIni}, ${pFin}, ${input.month}, ${it.productId}, ${it.name},
+                  ${it.units}, ${it.revenue}, 'byte', ${batchId}, ${input.fileName})`,
       ),
+
+      // 3) El mes se RECALCULA como la suma de sus períodos. Todo lo que
+      //    ya lee product_month_sales (portfolio, alias, incentivos)
+      //    sigue igual sin enterarse de este cambio.
+      sql`DELETE FROM product_month_sales
+          WHERE business_id = ${bId} AND month = ${input.month} AND source = 'byte'`,
+      sql`INSERT INTO product_month_sales
+            (business_id, product_id, product_name_raw, month, units, revenue, source, import_batch_id)
+          SELECT business_id, product_id, MIN(product_name_raw), month,
+                 SUM(units), SUM(revenue), 'byte', ${batchId}
+          FROM product_period_sales
+          WHERE business_id = ${bId} AND month = ${input.month} AND source = 'byte'
+          GROUP BY business_id, month, product_id,
+                   CASE WHEN product_id IS NULL THEN lower(product_name_raw) ELSE NULL END`,
     ]);
 
     // 3) Check de integridad natural contra las ventas Byte del sistema
@@ -402,12 +440,22 @@ export type CargaSedePropia = {
   estado: EstadoCarga | null;
   /** Sábado de esta semana: el día en que toca subirlo. */
   sabado: string;
+  /** La semana concreta que hay que exportar de Byte este sábado. */
+  semanaQueToca: Periodo;
+  /** Qué parte del mes en curso ya está cubierta. */
+  cobertura: Cobertura | null;
+  /** Los tramos que faltan, en palabras. */
+  huecos: string;
 };
 
 export async function getCargaProductosSede(): Promise<CargaSedePropia> {
   const hoy = getToday();
   const sabado = ultimoSabado(hoy);
-  const vacio: CargaSedePropia = { visible: false, hoy, estado: null, sabado };
+  const semana = semanaQueToca(sabado);
+  const vacio: CargaSedePropia = {
+    visible: false, hoy, estado: null, sabado,
+    semanaQueToca: semana, cobertura: null, huecos: "",
+  };
 
   const role = await getSessionRole();
   if (!role) return vacio;
@@ -455,7 +503,22 @@ export async function getCargaProductosSede(): Promise<CargaSedePropia> {
       productosUltimaCarga: f.productos,
       productosHabitual: f.mediana,
     };
-    return { visible: true, hoy, estado: evaluarCarga(carga, hoy), sabado };
+    // Cobertura del mes en curso: qué días ya tienen datos y cuáles no.
+    // Es lo que hace esto auditable — se ve el hueco, no solo un total.
+    const mes = hoy.slice(0, 7);
+    const periodos = (await sql`
+      SELECT DISTINCT period_start::text AS inicio, period_end::text AS fin
+      FROM product_period_sales
+      WHERE business_id = ${bId} AND month = ${mes} AND source = 'byte'
+    `) as { inicio: string; fin: string }[];
+    const cobertura = coberturaDelMes(periodos, mes, hoy);
+
+    return {
+      visible: true, hoy, estado: evaluarCarga(carga, hoy), sabado,
+      semanaQueToca: semana,
+      cobertura,
+      huecos: describirHuecos(cobertura.huecos),
+    };
   } catch (e) {
     console.error("[getCargaProductosSede] failed:", e);
     return vacio;

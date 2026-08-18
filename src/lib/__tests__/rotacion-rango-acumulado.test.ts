@@ -1,46 +1,64 @@
 /**
- * Guardia: el reporte de rotación tiene que ser ACUMULADO desde el 1.
+ * Guardia del acumulado por períodos del reporte de rotación.
  *
- * Guardar un mes REEMPLAZA lo que había (`DELETE ... WHERE month` en
- * runImport). Así que subir el export por defecto de Byte — "del 10 al
- * 16", una semana suelta — borra el resto del mes y deja el análisis
- * con 7 días de datos.
+ * HISTORIA (importa para no volver atrás):
  *
- * Se descubrió el 18-ago-2026, justo cuando se iba a volver rutina que
- * cada administrador lo subiera los sábados: el archivo que Jahnn mandó
- * como ejemplo era exactamente ese, una semana. Habría vaciado el mes
- * de las tres sedes, cada sábado, en silencio.
+ * El 18-ago-2026 se descubrió que subir el export por defecto de Byte
+ * —"del 10 al 16", una semana— BORRABA el resto del mes, porque guardar
+ * un mes lo reemplazaba entero. El primer parche fue exigir que el
+ * reporte empezara el día 1. Funcionaba, pero obligaba a Kelly y a los
+ * administradores a exportar siempre el acumulado.
  *
- * Estos tests leen el CÓDIGO, no la base: exigen que la validación esté
- * en la action (donde no se puede saltar) y no solo en el modal.
+ * Ese mismo día Jahnn pidió lo correcto: que se pueda subir por semanas
+ * Y que si alguien sube el mes entero también salga bien. Así que la
+ * restricción del día 1 se reemplazó por acumulación real por períodos.
+ *
+ * Lo que estos tests protegen ahora:
+ *   · que una carga nueva REEMPLACE a las que pisa (sin eso, subir el
+ *     mes sobre tres semanas ya cargadas duplicaría las ventas);
+ *   · que el mes se RECALCULE como la suma de sus períodos;
+ *   · que un rango que cruza de mes se rechace (no se puede repartir:
+ *     el reporte no trae fecha por fila).
  */
 import { describe, it, expect } from "vitest";
 import { readFileSync } from "fs";
 import { resolve } from "path";
 
 const leer = (rel: string) => readFileSync(resolve(process.cwd(), rel), "utf8");
+const action = leer("src/app/actions/product-sales-import.ts");
 
-describe("la validación del rango vive en el servidor", () => {
-  const action = leer("src/app/actions/product-sales-import.ts");
-
-  it("importProductSalesFromPanel compara el inicio del rango con el día 1", () => {
-    // Si esto se cae, el modal sigue avisando pero la action acepta
-    // cualquier rango — y el modal se puede saltar.
-    expect(action).toContain("input.periodStart");
-    expect(action).toMatch(/periodStart !== inicioMes/);
+describe("acumulación por períodos", () => {
+  it("una carga nueva borra los períodos que PISA, no todo el mes", () => {
+    // Si esto se cae y vuelve a borrar por mes, subir una semana borra
+    // el resto del mes — el bug original.
+    expect(action).toMatch(/DELETE FROM product_period_sales/);
+    expect(action).toMatch(/period_start <= \$\{pFin\}::date AND \$\{pIni\}::date <= period_end/);
   });
 
-  it("el mensaje dice CÓMO exportarlo bien, no solo que está mal", () => {
-    expect(action).toMatch(/ACUMULADO/);
-    expect(action).toMatch(/hasta hoy/);
-    expect(action).toMatch(/se pierde lo que ya estaba cargado/);
+  it("el mes se recalcula sumando sus períodos", () => {
+    expect(action).toMatch(/INSERT INTO product_month_sales[\s\S]{0,400}SELECT business_id, product_id/);
+    expect(action).toMatch(/SUM\(units\), SUM\(revenue\)/);
+    expect(action).toMatch(/FROM product_period_sales/);
   });
 
-  it("sigue siendo verdad que guardar un mes lo reemplaza", () => {
-    // Esta prueba es el "por qué" de la de arriba. Si algún día el
-    // import pasa a acumular en vez de reemplazar, esto se cae y hay
-    // que revisar si la restricción del rango sigue haciendo falta.
-    expect(action).toMatch(/DELETE FROM product_month_sales\s+WHERE business_id = \$\{bId\} AND month = \$\{input\.month\}/);
+  it("agrupa los no matcheados por nombre para no partirlos en dos filas", () => {
+    expect(action).toMatch(/CASE WHEN product_id IS NULL THEN lower\(product_name_raw\) ELSE NULL END/);
+  });
+
+  it("ya NO exige que el reporte empiece el día 1", () => {
+    // La regla vieja. Si reaparece, se pierde la carga semanal.
+    expect(action).not.toMatch(/periodStart !== inicioMes/);
+  });
+});
+
+describe("rangos que cruzan de mes", () => {
+  it("se rechazan pidiendo dos archivos", () => {
+    expect(action).toMatch(/cruzaDeMes/);
+    expect(action).toMatch(/DOS archivos/);
+  });
+
+  it("el mensaje explica POR QUÉ no se puede repartir", () => {
+    expect(action).toMatch(/no trae el detalle por día/);
   });
 });
 
