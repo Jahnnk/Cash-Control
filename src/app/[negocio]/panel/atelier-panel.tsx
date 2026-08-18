@@ -9,6 +9,8 @@ import { VentasImportModal } from "./ventas-import-modal";
 import { HighlightSlot } from "./highlight-card";
 import { EstadoKpisCard } from "./estado-kpis-card";
 import { ProponerHighlight } from "./proponer-highlight";
+import { MiRutina } from "./mi-rutina";
+import { ImportControlModal } from "./import-control-modal";
 import { ClientSalesImportModal } from "./client-sales-import-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
@@ -40,6 +42,9 @@ export function AtelierPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  // Atelier NO tenía forma de subir el reporte de rotación desde su
+  // panel: por eso su última carga era del 3-jul, hecha desde Grupo.
+  const [showRotacion, setShowRotacion] = useState(false);
   // Ventas por cliente (reporte semanal de Byte). Va aparte del panel
   // diario: es otro archivo, otra rutina y otro análisis.
   const [showClientImport, setShowClientImport] = useState(false);
@@ -167,6 +172,9 @@ export function AtelierPanel() {
 
       {/* Luis también propone: la operación de Atelier la ve él. */}
       <ProponerHighlight />
+
+      {/* Luis sube lo mismo: el reporte de rotación cada sábado. */}
+      <MiRutina refrescar={refrescarAviso} onSubirReporte={() => setShowRotacion(true)} />
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -383,6 +391,12 @@ export function AtelierPanel() {
             setRefrescarAviso((v) => v + 1);
             return load(month);
           }}
+        />
+      )}
+      {showRotacion && (
+        <ImportControlModal
+          onClose={() => setShowRotacion(false)}
+          onImported={() => setRefrescarAviso((v) => v + 1)}
         />
       )}
       {showClientImport && (

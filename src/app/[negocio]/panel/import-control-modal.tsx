@@ -73,6 +73,10 @@ export function ImportControlModal({
               items: rot.items,
               declaredTotal: rot.declaredTotal,
               parseWarnings: rot.warnings,
+              // El rango viaja para que el servidor pueda rechazar un
+              // reporte de una sola semana: subirlo BORRA el resto del mes.
+              periodStart: rot.periodStart,
+              periodEnd: rot.periodEnd,
             });
             if (!ri.ok) {
               out.push({ name: file.name, status: "error", detail: ri.error });

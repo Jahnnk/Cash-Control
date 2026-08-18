@@ -22,7 +22,10 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { matchSalesToCatalog } from "@/lib/product-matching";
 import type { ByteRotacionItem } from "@/lib/byte-rotacion-parser";
-import { evaluarCargas, type CargaSede, type ResumenCargas } from "@/lib/productos/cargas";
+import {
+  evaluarCargas, evaluarCarga, ultimoSabado,
+  type CargaSede, type ResumenCargas, type EstadoCarga,
+} from "@/lib/productos/cargas";
 import { getToday } from "@/lib/utils";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -50,6 +53,9 @@ type ImportInput = {
   items: ByteRotacionItem[];
   declaredTotal: number | null;
   parseWarnings: string[];
+  /** Rango del título del reporte, para validar que sea acumulado. */
+  periodStart?: string | null;
+  periodEnd?: string | null;
 };
 
 /** Import completo desde la página Productos — solo dirección. */
@@ -98,6 +104,23 @@ export async function importProductSalesFromPanel(input: ImportInput): Promise<P
       error: `Desde el panel solo se sube el mes en curso (${current}). Exporta el reporte con el rango del 1 del mes hasta hoy.`,
     };
   }
+
+  // El reporte tiene que ser ACUMULADO desde el 1. Guardar un mes
+  // REEMPLAZA lo que había (ver runImport), así que un archivo de una
+  // sola semana — el export por defecto de Byte, "del 10 al 16" — borra
+  // el resto del mes y deja el análisis con 7 días. La validación vive
+  // acá y no solo en el modal porque el modal se puede saltar.
+  const inicioMes = `${current}-01`;
+  if (input.periodStart && input.periodStart !== inicioMes) {
+    return {
+      ok: false,
+      error:
+        `Ese reporte va del ${input.periodStart} al ${input.periodEnd ?? "?"}, o sea una parte del mes. ` +
+        `Súbelo ACUMULADO: en Byte elige el rango del ${inicioMes} hasta hoy y vuelve a exportar. ` +
+        `Si se sube solo una semana, se pierde lo que ya estaba cargado del mes.`,
+    };
+  }
+
   return runImport(bId, input, `PIC · rotación semanal desde Panel de Sede · ${input.month}`);
 }
 
@@ -361,5 +384,80 @@ export async function getEstadoCargasProductos(): Promise<EstadoCargasProductos>
   } catch (e) {
     console.error("[getEstadoCargasProductos] failed:", e);
     return { esDireccion: true, hoy, resumen: null };
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * El mismo control, pero visto desde el panel de UNA sede.
+ *
+ * Pedido de Jahnn (18-ago-2026): que el administrador vea, como en el
+ * Highlight, si ya subió lo que le toca. Corre sobre la MISMA función
+ * que el control de Grupo: si cada pantalla contara por su cuenta,
+ * Jahnn vería "falta" y el administrador "listo".
+ * ───────────────────────────────────────────────────────────────────── */
+
+export type CargaSedePropia = {
+  visible: boolean;
+  hoy: string;
+  estado: EstadoCarga | null;
+  /** Sábado de esta semana: el día en que toca subirlo. */
+  sabado: string;
+};
+
+export async function getCargaProductosSede(): Promise<CargaSedePropia> {
+  const hoy = getToday();
+  const sabado = ultimoSabado(hoy);
+  const vacio: CargaSedePropia = { visible: false, hoy, estado: null, sabado };
+
+  const role = await getSessionRole();
+  if (!role) return vacio;
+
+  let bId: number;
+  try {
+    bId = await activeBusinessId();
+  } catch (e) {
+    console.error("[getCargaProductosSede] activeBusinessId:", e);
+    return vacio;
+  }
+  const puedeVer = role.kind === "full" || (role.kind === "admin" && role.sede === bId);
+  if (!puedeVer) return vacio;
+
+  try {
+    const filas = (await sql`
+      WITH por_mes AS (
+        SELECT month, COUNT(*)::int AS productos, MAX(imported_at) AS cargado_en
+        FROM product_month_sales WHERE business_id = ${bId} GROUP BY month
+      ),
+      ultima AS (
+        SELECT month, productos, cargado_en FROM por_mes ORDER BY cargado_en DESC LIMIT 1
+      )
+      SELECT b.name,
+             (u.cargado_en AT TIME ZONE 'America/Lima')::date::text AS ultima_carga,
+             u.month AS ultimo_mes,
+             COALESCE(u.productos, 0) AS productos,
+             (SELECT PERCENTILE_CONT(0.5) WITHIN GROUP (ORDER BY p.productos)::int
+                FROM por_mes p WHERE p.month <> (SELECT month FROM ultima)) AS mediana
+      FROM businesses b
+      LEFT JOIN ultima u ON true
+      WHERE b.id = ${bId}
+    `) as {
+      name: string; ultima_carga: string | null; ultimo_mes: string | null;
+      productos: number; mediana: number | null;
+    }[];
+    if (filas.length === 0) return vacio;
+
+    const f = filas[0];
+    const carga: CargaSede = {
+      businessId: bId,
+      sede: f.name.replace(/^Yayi'?s\s+/i, ""),
+      ultimaCarga: f.ultima_carga,
+      ultimoMes: f.ultimo_mes,
+      productosUltimaCarga: f.productos,
+      productosHabitual: f.mediana,
+    };
+    return { visible: true, hoy, estado: evaluarCarga(carga, hoy), sabado };
+  } catch (e) {
+    console.error("[getCargaProductosSede] failed:", e);
+    return vacio;
   }
 }

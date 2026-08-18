@@ -28,6 +28,7 @@ import { AtelierPanel } from "./atelier-panel";
 import { HighlightSlot } from "./highlight-card";
 import { EstadoKpisCard } from "./estado-kpis-card";
 import { ProponerHighlight } from "./proponer-highlight";
+import { MiRutina } from "./mi-rutina";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 
@@ -204,6 +205,10 @@ function IncentivosPage() {
       {/* ¿Ya registré los KPIs de hoy? Va debajo del Highlight y arriba
           de todo lo demás: es lo que no se les puede pasar. */}
       <EstadoKpisCard refrescar={weekRefresh} onRegistrar={irAlRegistro} />
+
+      {/* Lo que le toca subir y cómo va. La guía va pegada al estado a
+          propósito: una guía aparte se lee una vez y se olvida. */}
+      <MiRutina refrescar={weekRefresh} onSubirReporte={() => setShowImport(true)} />
 
       {/* Proponer va después del Highlight y del aviso de KPIs: primero
           lo que hay que hacer hoy, después lo que uno sugiere. */}
