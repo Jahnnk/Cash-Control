@@ -18,6 +18,8 @@
 
 import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
+import { filasVentasTrabajador } from "@/lib/incentivos/ventas-trabajador-sql";
+import { ventasPorTrabajador, type FilaPeriodo } from "@/lib/incentivos/ventas-trabajador";
 import {
   computeProgress,
   type IncentiveConfigT,
@@ -163,14 +165,9 @@ export async function getGroupIncentives(
         // ventana"); en modo rango, "contenido" (un acumulado del 1 al 17
         // no representa la semana piloto). Una sola definición: lib.
         const windowMode = range ? "contenido" : "inicia-en-ventana";
-        const candidatos = (await sql`
-          SELECT nombre, mesas, total::float AS total,
-                 period_start::text AS period_start, period_end::text AS period_end
-          FROM worker_period_sales
-          WHERE business_id = ${bId} AND period_start >= ${from} AND period_start <= ${to}
-            AND imported_at = (SELECT MAX(imported_at) FROM worker_period_sales
-                               WHERE business_id = ${bId} AND period_start >= ${from} AND period_start <= ${to})
-        `) as { nombre: string; mesas: number; total: number; period_start: string | null; period_end: string | null }[];
+        const candidatos = ventasPorTrabajador(
+          (await filasVentasTrabajador(sql, bId, from, to)) as FilaPeriodo[],
+        ).map((w) => ({ ...w, period_start: w.periodStart, period_end: w.periodEnd }));
         const workers = filterWorkersByWindow(candidatos, from, to, windowMode) as typeof candidatos;
         if (workers.length > 0) {
           const shifts = (await sql`

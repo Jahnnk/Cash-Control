@@ -13,6 +13,8 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { filasVentasTrabajador, borrarPeriodosQuePisa } from "@/lib/incentivos/ventas-trabajador-sql";
+import { ventasPorTrabajador, type FilaPeriodo } from "@/lib/incentivos/ventas-trabajador";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import {
   pickDailyFocus,
@@ -168,14 +170,11 @@ export async function getIncentiveDashboard(
       ORDER BY event_at
     `) as { kind: ControlEvent["kind"]; event_at: string; usuario: string | null; producto: string | null; amount: number | null; motivo: string | null }[];
 
-    const workers = (await sql`
-      SELECT nombre, mesas, total::float AS total, period_end::text AS period_end
-      FROM worker_period_sales
-      WHERE business_id = ${bId} AND period_start >= ${monthStart} AND period_start <= ${monthEnd}
-        AND imported_at = (SELECT MAX(imported_at) FROM worker_period_sales
-                           WHERE business_id = ${bId} AND period_start >= ${monthStart} AND period_start <= ${monthEnd})
-      ORDER BY total DESC
-    `) as { nombre: string; mesas: number; total: number; period_end: string | null }[];
+    // Solapes resueltos al leer: la tabla puede tener versiones viejas
+    // de un mismo rango y aquí solo pesan las vigentes.
+    const workers = ventasPorTrabajador(
+      (await filasVentasTrabajador(sql, bId, monthStart, monthEnd)) as FilaPeriodo[],
+    );
 
     const controlEvents: ControlEvent[] = events.map((e) => ({
       kind: e.kind, eventAt: e.event_at, usuario: e.usuario, producto: e.producto, amount: e.amount, motivo: e.motivo,
@@ -254,7 +253,7 @@ export async function getIncentiveDashboard(
           mesas: w.mesas,
           total: w.total,
           ticketMesa: w.mesas > 0 ? Math.round((w.total / w.mesas) * 100) / 100 : null,
-          periodEnd: w.period_end,
+          periodEnd: w.periodEnd,
         })),
         eventCounts: {
           anulaciones: events.filter((e) => e.kind === "anulacion").length,
@@ -480,7 +479,9 @@ export async function importControlReport(input: {
       await sql.transaction([
         sql`INSERT INTO import_batches (id, business_id, file_name, date_range_start, date_range_end, movements_count, status, rollback_available, notes)
             VALUES (${batchId}, ${bId}, ${input.fileName}, ${ps}, ${pe}, ${input.workers.length}, 'completed', false, ${"Incentivos · ventas por trabajador"})`,
-        sql`DELETE FROM worker_period_sales WHERE business_id = ${bId} AND period_start = ${ps} AND period_end = ${pe}`,
+        // Fuera los períodos que este archivo PISA (antes solo se borraba
+      // el rango IDÉNTICO, y por eso se acumulaban solapes).
+      borrarPeriodosQuePisa(sql, bId, ps, pe),
         ...input.workers.map((w) => sql`
           INSERT INTO worker_period_sales (business_id, period_start, period_end, dni, nombre, mesas, total, import_batch_id)
           VALUES (${bId}, ${ps}, ${pe}, ${w.dni}, ${w.nombre}, ${w.mesas}, ${w.total}, ${batchId})`),

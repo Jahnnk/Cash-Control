@@ -21,6 +21,9 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { filasVentasTrabajador } from "@/lib/incentivos/ventas-trabajador-sql";
+import { ventasPorTrabajador, type FilaPeriodo } from "@/lib/incentivos/ventas-trabajador";
+
 import { getSessionRole } from "@/lib/session-access";
 import { computeMejorVendedor, type MejorVendedorResult, type SellerFranjaRecord } from "@/lib/mejor-vendedor";
 import { MIN_MESAS_MEJOR_VENDEDOR, contarNoElegibles } from "@/lib/incentives/best-seller-window";
@@ -46,14 +49,10 @@ async function latestWorkers(bId: number, month: string): Promise<{ nombre: stri
   const monthStart = `${month}-01`;
   const [y, m] = month.split("-").map(Number);
   const monthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
-  return (await sql`
-    SELECT nombre, mesas, total::float AS total, period_end::text AS "periodEnd"
-    FROM worker_period_sales
-    WHERE business_id = ${bId} AND period_start >= ${monthStart} AND period_start <= ${monthEnd}
-      AND imported_at = (SELECT MAX(imported_at) FROM worker_period_sales
-                         WHERE business_id = ${bId} AND period_start >= ${monthStart} AND period_start <= ${monthEnd})
-    ORDER BY total DESC
-  `) as { nombre: string; mesas: number; total: number; periodEnd: string | null }[];
+  const filas = ventasPorTrabajador(
+    (await filasVentasTrabajador(sql, bId, monthStart, monthEnd)) as FilaPeriodo[],
+  );
+  return filas.map((f) => ({ nombre: f.nombre, mesas: f.mesas, total: f.total, periodEnd: f.periodEnd }));
 }
 
 async function loadShifts(bId: number): Promise<Map<string, Turno>> {
