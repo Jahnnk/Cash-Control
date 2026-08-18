@@ -23,7 +23,7 @@ import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { matchSalesToCatalog } from "@/lib/product-matching";
 import type { ByteRotacionItem } from "@/lib/byte-rotacion-parser";
 import {
-  cruzaDeMes, describirPeriodo, semanaQueToca, coberturaDelMes, describirHuecos,
+  cruzaDeMes, describirPeriodo, coberturaDelMes, describirHuecos,
   type Periodo, type Cobertura,
 } from "@/lib/productos/periodos";
 import {
@@ -440,8 +440,18 @@ export type CargaSedePropia = {
   estado: EstadoCarga | null;
   /** Sábado de esta semana: el día en que toca subirlo. */
   sabado: string;
-  /** La semana concreta que hay que exportar de Byte este sábado. */
-  semanaQueToca: Periodo;
+  /**
+   * El rango que hay que exportar de Byte: del 1 del mes hasta hoy.
+   *
+   * Es acumulado y NO semanal a propósito. La rutina del sábado son
+   * CUATRO reportes (rotación, cortesías, cambios de precio, ventas por
+   * trabajador) y los otros tres son el candado de los bonos de ticket
+   * promedio: si se suben por semanas sueltas, un cambio de precio o
+   * una cortesía registrada tarde se queda fuera del control. Un solo
+   * rango para los cuatro es una sola instrucción y una sola forma de
+   * equivocarse.
+   */
+  rangoQueToca: Periodo;
   /** Qué parte del mes en curso ya está cubierta. */
   cobertura: Cobertura | null;
   /** Los tramos que faltan, en palabras. */
@@ -451,10 +461,10 @@ export type CargaSedePropia = {
 export async function getCargaProductosSede(): Promise<CargaSedePropia> {
   const hoy = getToday();
   const sabado = ultimoSabado(hoy);
-  const semana = semanaQueToca(sabado);
+  const rango: Periodo = { inicio: `${hoy.slice(0, 7)}-01`, fin: hoy };
   const vacio: CargaSedePropia = {
     visible: false, hoy, estado: null, sabado,
-    semanaQueToca: semana, cobertura: null, huecos: "",
+    rangoQueToca: rango, cobertura: null, huecos: "",
   };
 
   const role = await getSessionRole();
@@ -515,7 +525,7 @@ export async function getCargaProductosSede(): Promise<CargaSedePropia> {
 
     return {
       visible: true, hoy, estado: evaluarCarga(carga, hoy), sabado,
-      semanaQueToca: semana,
+      rangoQueToca: rango,
       cobertura,
       huecos: describirHuecos(cobertura.huecos),
     };

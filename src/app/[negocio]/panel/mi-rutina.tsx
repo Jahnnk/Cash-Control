@@ -89,19 +89,20 @@ export function MiRutina({
       `Trajo ${e.productosUltimaCarga} platos y esta sede suele tener ~${e.productosHabitual}. ` +
       `En Byte exporta la lista COMPLETA, no el Top 10.`;
   } else if (alDia) {
-    titulo = "Reporte de productos: subido";
-    detalle = `Lo subiste el ${e.ultimaCarga ? fechaCorta(e.ultimaCarga) : "—"} con ${e.productosUltimaCarga} platos. Nada pendiente.`;
+    titulo = "Reportes de Byte: subidos";
+    detalle = `Los subiste el ${e.ultimaCarga ? fechaCorta(e.ultimaCarga) : "—"} · ${e.productosUltimaCarga} platos. Nada pendiente.`;
   } else if (e.estado === "nunca") {
-    titulo = "Falta subir el reporte de productos";
+    titulo = "Faltan los reportes de Byte";
     detalle = "Todavía no se ha subido ninguno en esta sede.";
   } else if (finDeSemana) {
-    titulo = "Hoy toca el reporte de productos";
-    // Se le dice la semana EXACTA que tiene que pedirle a Byte. Sin
-    // esto tiene que calcularla él, y ahí es donde se equivoca.
-    detalle = `Exporta de Byte ${describirPeriodo(data.semanaQueToca)} y súbelo antes de cerrar.`;
+    titulo = "Hoy toca subir los reportes de Byte";
+    // El rango EXACTO que hay que pedirle a Byte, ya calculado. Es el
+    // mismo para los 4 archivos: una sola instrucción, una sola forma
+    // de equivocarse.
+    detalle = `Exporta los 4 reportes ${describirPeriodo(data.rangoQueToca)} y suéltalos juntos.`;
   } else {
-    titulo = "Reporte de productos pendiente";
-    detalle = `${e.detalle} El sábado toca ${describirPeriodo(data.semanaQueToca)}.`;
+    titulo = "Reportes de Byte pendientes";
+    detalle = `${e.detalle} El sábado se suben los 4, ${describirPeriodo(data.rangoQueToca)}.`;
   }
 
   return (
@@ -170,21 +171,31 @@ export function MiRutina({
           <div>
             <div className="font-semibold text-gray-900 text-xs">Cada sábado · antes de cerrar</div>
             <p className="mt-0.5">
-              Sube el reporte de Byte <strong>&ldquo;Platos con mayor rotación&rdquo;</strong> con el
-              botón <em>Subir reportes de control</em>.
+              Con el botón <em>Subir ahora</em> suelta los <strong>4 reportes de Byte</strong> juntos,
+              todos con el rango <strong>{describirPeriodo(data.rangoQueToca)}</strong>:
+            </p>
+            <ul className="mt-1 space-y-0.5 list-disc pl-4">
+              <li>Platos con Mayor Rotación</li>
+              <li>Cortesías</li>
+              <li>Cambios de Precio</li>
+              <li>Ventas por Trabajador</li>
+            </ul>
+            <p className="mt-1.5">
+              Los tres últimos son el <strong>control del bono</strong> de ticket promedio: sin ellos
+              el sistema no puede separar el upselling real de una cortesía o un cambio de precio.
             </p>
             <ul className="mt-1 space-y-0.5 list-disc pl-4">
               <li>
-                En Byte elige <strong>la semana que terminó</strong> — este sábado toca{" "}
-                {describirPeriodo(data.semanaQueToca)}. Las semanas se van sumando solas.
+                Siempre <strong>desde el día 1 del mes hasta hoy</strong>, no solo la semana. El
+                sistema reemplaza lo anterior, <strong>nunca duplica</strong>.
               </li>
               <li>
-                Si un sábado se te pasó, no importa: sube el rango que falte, o el mes entero. El
-                sistema lo ordena y <strong>nunca cuenta dos veces</strong>.
+                Si un sábado se te pasó, no pasa nada: el rango del 1 a hoy recupera los días que
+                faltaron.
               </li>
               <li>
-                Exporta <strong>todos los platos</strong>, no el Top 10: con 10 no se ve la carta
-                completa.
+                En rotación exporta <strong>todos los platos</strong>, no el Top 10: con 10 no se ve
+                la carta completa.
               </li>
               <li>Es el de &ldquo;rotación&rdquo;, no el de &ldquo;rentabilidad&rdquo;.</li>
             </ul>
