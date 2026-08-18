@@ -1,7 +1,7 @@
 # Contexto completo del proyecto — léeme antes de trabajar
 
 > Para cualquier agente o desarrollador que llegue nuevo (Codex, Claude,
-> humano). Actualizado: 2026-08-17. Complementa `AGENTS.md` (reglas de
+> humano). Actualizado: 2026-08-18. Complementa `AGENTS.md` (reglas de
 > ramas, deploy y auth) y `CLAUDE.md` (overview técnico). Este archivo
 > cuenta lo que esos dos no cuentan: quién es el usuario, cómo trabajar
 > con él, las lecciones aprendidas a golpes y el estado actual.
@@ -97,7 +97,7 @@ Perú. **NO es programador.** Reglas de comunicación:
    entregan en persona. En BD solo hashes (scrypt).
 5. **Antes de cada PR**: `npx tsc --noEmit` + `npm run lint` (cero
    avisos NUEVOS; hay ~33 preexistentes aceptados) + `npx vitest run`
-   (847 tests en verde al día de hoy) + `npm run build`. Esperar el CI
+   (859 tests en verde al día de hoy) + `npm run build`. Esperar el CI
    "Tests" en verde antes de reportar. Si la pantalla se abre en el
    navegador, esto NO reemplaza probarla ahí (ver lección #8).
 6. **Commits**: mensaje en español contando el POR QUÉ (no el qué: el
@@ -302,6 +302,26 @@ Perú. **NO es programador.** Reglas de comunicación:
     · Subir el timeout no arregla el problema de fondo: el riesgo es
       escribir sobre producción, no la duración.
 
+16. **"El último gana" no es una regla, es una apuesta.** Tres
+    pantallas resolvían los períodos solapados de Ventas por Trabajador
+    tomando solo las filas de la última carga (`imported_at = MAX(...)`).
+    Evitaba el doble conteo, pero acierta SOLO si la última carga es
+    además la más completa. En Fonavi julio acertó de casualidad; con el
+    orden invertido el ranking del mes habría mostrado S/9,069 en vez de
+    S/35,611, sin avisar.
+
+    Cuando haya que elegir entre datos que se pisan, la regla tiene que
+    apoyarse en lo que la hace correcta (qué tramo cubre cada uno), no
+    en un proxy que suele correlacionar (cuál llegó último). Si el proxy
+    falla, falla en silencio.
+
+    Corolario del mismo día: **si el dato está sucio pero lo que se
+    MUESTRA está bien, arreglar al leer antes que borrar.** Jahnn frenó
+    la limpieza — "la administradora de Centro hace este seguimiento
+    diario, no podemos de un momento a otro cambiar datos, tickets,
+    métricas o rankings" — y tenía razón: resolver en memoria dio los
+    mismos números, sin tocar una fila y sin ventana de riesgo.
+
 ## 6. Dominio del negocio implementado (dónde está cada cosa)
 
 - **Incentivos por upselling** (Fonavi/Centro): motor puro en
@@ -317,6 +337,21 @@ Perú. **NO es programador.** Reglas de comunicación:
   Cronómetro del encargado (`service_timings`) alimenta los tiempos.
 - **Mejor vendedor por turno**: hándicap — compara contra lo normal del
   PROPIO turno, no contra el pico. `worker_shifts`.
+  - **Los períodos que se pisan se resuelven al LEER**
+    (`src/lib/incentivos/ventas-trabajador.ts`, 18-ago-2026). El import
+    borraba solo el rango IDÉNTICO, así que subir el acumulado del 1 a
+    hoy cada sábado dejó períodos solapados (Centro julio tiene cinco).
+    Los tres lectores se defendían con `imported_at = MAX(...)` — "la
+    última carga gana", que solo acierta si la última es además la más
+    completa. En Fonavi julio acertó de casualidad; al revés habría
+    mostrado S/9,069 en vez de S/35,611.
+    Se resolvió en memoria y NO borrando filas, a pedido de Jahnn: "la
+    administradora de Centro hace este seguimiento diario, no podemos
+    de un momento a otro cambiar datos, tickets, métricas o rankings".
+    Verificado trabajador por trabajador: los números no se movieron.
+  - **El ticket promedio NO sale de esta tabla**: `computeProgress`
+    recibe config, staff, dailies y días del mes. `worker_period_sales`
+    solo alimenta el ranking y las banderas de control.
 - **Registro diario del admin**: personas, venta, items, delivery
   (pedidos+venta, dentro del total), NPS, mermas, tiempos. Segunda
   firma del verificador; corregir números firmados anula la firma.
@@ -352,6 +387,14 @@ Perú. **NO es programador.** Reglas de comunicación:
     (Grupo) y `getCargaProductosSede` (panel), que además detectan la
     carga TRUNCADA — Centro subió agosto con 10 platos de ~108 porque
     exportó el "Top 10" de Byte.
+  - **La rutina del sábado son CUATRO archivos, no uno**, todos con el
+    rango **del 1 del mes hasta hoy**: Platos con Mayor Rotación,
+    Cortesías, Cambios de Precio y Ventas por Trabajador. Los tres
+    últimos son el candado del bono de ticket promedio — sin ellos no
+    se puede separar el upselling real de una cortesía o un cambio de
+    precio. Los cuatro reemplazan por rango, así que el acumulado es
+    una sola instrucción para todos. (La tarjeta `MiRutina` del panel
+    llegó a pedir "la semana" y contradecía al modal; corregido.)
 - **Préstamos socio** (`/atelier/prestamos-socio`): prestar → deber →
   devolver sin mover saldos operativos. Método de pago 'socio' = gasto
   operativo real que NO toca banco ni caja. 11 cadenas bancarias
@@ -505,7 +548,7 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **El rol `admin` ahora carga `nombre`** cuando la persona entró con su
   usuario propio de `app_users` (opcional: las contraseñas por sede
   heredadas no saben quién entró, y ahí se firma con la sede).
-- **847 tests** en 76 archivos, todos en verde (subieron de 663).
+- **859 tests** en 78 archivos, todos en verde (subieron de 663).
 - **Informe de traspaso a Kelly** (ago-2026): se probó por dos caminos
   independientes que Atelier se entregó el 01-ago con **S/2,045.79** en
   banco (cadena día a día de 120 días, 0 descuadres; y reconstrucción
@@ -522,6 +565,11 @@ Perú. **NO es programador.** Reglas de comunicación:
   De paso, la detección de descuadres dejó de mirar días anteriores al
   corte de cada sede (Atelier avisaba de un "descuadre" del 12-jul
   teniendo corte el 01-ago).
+- **Rotación de Fonavi de agosto: BORRADA por un test mío (18-ago-2026).**
+  Corrí contra producción un test que modificaba y restauraba al final;
+  Vitest lo mató por timeout antes del restore (lección #15). Se
+  perdieron 118 platos / S/19,014.60. Jahnn ya le avisó a Raúl para que
+  vuelva a subir. NO se tocó nada financiero ni las otras dos sedes.
 - **Datos reales cargados** (no son datos de prueba, no borrar):
   `invoice_documents` con la semana del 03–08-ago de Atelier (51
   documentos), `client_sales_snapshots` con al menos 1 snapshot real,
@@ -559,6 +607,13 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **Dos egresos de agosto sin categorizar** ("Desconocido / Por
   confirmar"): S/2,071.00 y S/1,600.69 — juntos, 36% del gasto bancario
   del mes.
+- **Fonavi debe re-subir los 4 reportes de agosto** (rango 1-ago → hoy):
+  rotación (perdida por el test), cortesías y cambios de precio (nunca
+  entraron — julio tuvo 10 cortesías y agosto 0, mientras Centro sí
+  tiene 5), y ventas por trabajador (solo llega al 15).
+- **Atelier y Centro con la rotación pendiente**: Atelier no subía desde
+  el 3-jul (recién ahora tiene el botón en su panel); Centro subió
+  agosto con 10 platos de ~108 (export del "Top 10").
 - **De Jahnn (no del agente)**: exports de rotación Atelier mar-may;
   costear recetas faltantes; revisar la URL del cron keep-alive en
   cron-job.org (podría apuntar al dominio 404); gaps de la carga de
@@ -572,7 +627,7 @@ Perú. **NO es programador.** Reglas de comunicación:
 ```bash
 npx tsc --noEmit        # tipos
 npm run lint            # cero avisos NUEVOS (hay ~33 viejos aceptados)
-npx vitest run          # 847 en verde hoy — si bajan, rompiste algo
+npx vitest run          # 859 en verde hoy — si bajan, rompiste algo
 npm run build           # el build de Vercel
 ```
 
