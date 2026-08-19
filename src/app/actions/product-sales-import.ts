@@ -31,6 +31,10 @@ import {
   type CargaSede, type ResumenCargas, type EstadoCarga,
 } from "@/lib/productos/cargas";
 import { getToday } from "@/lib/utils";
+import {
+  claveDesdeNota, evaluarReportesSemanales,
+  type CargaRegistrada, type EstadoSemanal,
+} from "@/lib/incentivos/reportes-semanales";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -435,6 +439,8 @@ export async function getEstadoCargasProductos(): Promise<EstadoCargasProductos>
  * ───────────────────────────────────────────────────────────────────── */
 
 export type CargaSedePropia = {
+  /** Los 4 reportes del sábado y cuáles faltan esta semana. */
+  semanal: EstadoSemanal | null;
   visible: boolean;
   hoy: string;
   estado: EstadoCarga | null;
@@ -463,6 +469,7 @@ export async function getCargaProductosSede(): Promise<CargaSedePropia> {
   const sabado = ultimoSabado(hoy);
   const rango: Periodo = { inicio: `${hoy.slice(0, 7)}-01`, fin: hoy };
   const vacio: CargaSedePropia = {
+    semanal: null,
     visible: false, hoy, estado: null, sabado,
     rangoQueToca: rango, cobertura: null, huecos: "",
   };
@@ -523,7 +530,30 @@ export async function getCargaProductosSede(): Promise<CargaSedePropia> {
     `) as { inicio: string; fin: string }[];
     const cobertura = coberturaDelMes(periodos, mes, hoy);
 
+    // Los 4 reportes del sábado. Se leen de import_batches y no de los
+    // datos: Cortesías y Cambios de Precio pueden venir legítimamente
+    // vacíos, y "no hubo" no es lo mismo que "no lo subiste".
+    let semanal: EstadoSemanal | null = null;
+    try {
+      const subidas = (await sql`
+        SELECT notes, (imported_at AT TIME ZONE 'America/Lima')::date::text AS fecha
+        FROM import_batches
+        WHERE business_id = ${bId} AND notes IS NOT NULL
+        ORDER BY imported_at DESC
+        LIMIT 200
+      `) as { notes: string | null; fecha: string }[];
+      const cargas: CargaRegistrada[] = [];
+      for (const x of subidas) {
+        const clave = claveDesdeNota(x.notes);
+        if (clave) cargas.push({ clave, fecha: x.fecha });
+      }
+      semanal = evaluarReportesSemanales(cargas, hoy);
+    } catch (e) {
+      console.error("[getCargaProductosSede] semanal:", e);
+    }
+
     return {
+      semanal,
       visible: true, hoy, estado: evaluarCarga(carga, hoy), sabado,
       rangoQueToca: rango,
       cobertura,

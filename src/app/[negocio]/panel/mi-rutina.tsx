@@ -20,10 +20,11 @@
 
 import { useCallback, useEffect, useState } from "react";
 import {
-  CheckCircle2, AlertTriangle, Upload, ChevronDown, CalendarDays, ClipboardList,
+  CheckCircle2, AlertTriangle, Upload, ChevronDown, CalendarDays, ClipboardList, Circle,
 } from "lucide-react";
 import { getCargaProductosSede, type CargaSedePropia } from "@/app/actions/product-sales-import";
 import { describirPeriodo } from "@/lib/productos/periodos";
+import { nombrarFaltantes } from "@/lib/incentivos/reportes-semanales";
 import { conReintento } from "@/lib/con-reintento";
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
@@ -67,7 +68,10 @@ export function MiRutina({
   if (!data || !data.visible || !data.estado) return null;
 
   const e = data.estado;
-  const alDia = e.estado === "al-dia";
+  const sem = data.semanal;
+  // "Al día" exige los CUATRO. Antes bastaba el de rotación y la
+  // tarjeta se ponía verde con tres archivos sin subir.
+  const alDia = e.estado === "al-dia" && (sem?.completo ?? true);
   const finDeSemana = esFinDeSemana(data.hoy);
   // Solo se levanta la voz el fin de semana o cuando ya se saltaron
   // sábados. Un martes con el reporte del sábado subido: silencio.
@@ -94,6 +98,10 @@ export function MiRutina({
   } else if (e.estado === "nunca") {
     titulo = "Faltan los reportes de Byte";
     detalle = "Todavía no se ha subido ninguno en esta sede.";
+  } else if (sem && !sem.completo && sem.faltan.length < 4 && e.estado === "al-dia") {
+    // Subió algunos pero no todos: lo útil es decir CUÁLES faltan.
+    titulo = `Faltan ${sem.faltan.length} de los 4 reportes de Byte`;
+    detalle = `${nombrarFaltantes(sem.faltan)}. Mismo rango: ${describirPeriodo(data.rangoQueToca)}.`;
   } else if (finDeSemana) {
     titulo = "Hoy toca subir los reportes de Byte";
     // El rango EXACTO que hay que pedirle a Byte, ya calculado. Es el
@@ -125,6 +133,35 @@ export function MiRutina({
           </button>
         )}
       </div>
+
+      {/* Los 4 del sábado, uno por uno. Es el pedido de Jahnn: que vean
+          de un vistazo cuál falta, como en el Highlight. Se muestra
+          mientras falte alguno; con los cuatro subidos desaparece para
+          no ocupar espacio con una lista de ✓. */}
+      {sem && !sem.completo && (
+        <div className="px-4 pb-2 space-y-1">
+          {sem.reportes.map((r) => (
+            <div key={r.clave} className="flex items-start gap-2 text-[11px]">
+              {r.subidoEstaSemana ? (
+                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600 mt-px shrink-0" />
+              ) : (
+                <Circle className="w-3.5 h-3.5 text-gray-300 mt-px shrink-0" />
+              )}
+              <div className="min-w-0">
+                <span className={r.subidoEstaSemana ? "text-gray-500 line-through" : "font-medium text-gray-900"}>
+                  {r.nombre}
+                </span>
+                {!r.subidoEstaSemana && (
+                  <span className="text-gray-500"> — {r.porQue}</span>
+                )}
+                {!r.subidoEstaSemana && r.ultimaCarga === null && (
+                  <span className="ml-1 text-[10px] text-amber-700 font-medium">nunca se ha subido</span>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
 
       {/* La cobertura del mes: lo que hace esto verificable. Ver un
           total no dice si falta una semana; ver el hueco, sí. */}
