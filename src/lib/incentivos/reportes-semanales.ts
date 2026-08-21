@@ -69,7 +69,15 @@ export const REPORTES_SEMANALES: {
  */
 export function claveDesdeNota(nota: string | null | undefined): ClaveReporte | null {
   const n = String(nota ?? "");
-  if (/^PIC · rotación/i.test(n)) return "rotacion";
+  // El de rotación se sube por dos caminos y cada uno deja su propia
+  // nota: "PIC · rotación semanal desde Panel de Sede" (el admin) y
+  // "PIC · ventas por producto (Byte rotación)" (dirección, desde
+  // Productos). Cuentan los dos: la pregunta es si el reporte entró,
+  // no por qué puerta. OJO: "(Byte rentabilidad)" es OTRO reporte y
+  // no debe colarse.
+  if (/^PIC ·/i.test(n) && /rotaci[oó]n/i.test(n) && !/rentabilidad/i.test(n)) {
+    return "rotacion";
+  }
   if (/^Incentivos · cortesias/i.test(n)) return "cortesias";
   if (/^Incentivos · cambios_precio/i.test(n)) return "cambios_precio";
   if (/^Incentivos · ventas por trabajador/i.test(n)) return "ventas_trabajador";

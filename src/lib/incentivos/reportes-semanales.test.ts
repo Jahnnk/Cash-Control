@@ -38,6 +38,17 @@ describe("claveDesdeNota", () => {
     expect(claveDesdeNota("Incentivos · ventas por trabajador")).toBe("ventas_trabajador");
   });
 
+  it("reconoce el de rotación subido por dirección desde Productos", () => {
+    // Otra puerta, otra nota — pero es el mismo reporte. Lo que importa
+    // es si entró, no quién lo subió.
+    expect(claveDesdeNota("PIC · ventas por producto (Byte rotación) · 2026-06")).toBe("rotacion");
+  });
+
+  it("NO confunde rentabilidad con rotación", () => {
+    // Es otro reporte de Byte; contarlo daría un verde falso.
+    expect(claveDesdeNota("PIC · ventas por producto (Byte rentabilidad) · 2026-05")).toBeNull();
+  });
+
   it("ignora las subidas que no son de esta rutina", () => {
     // El Excel de Kelly deja notas de otro formato.
     expect(claveDesdeNota("byte_sales_days=31, tips=14, alerts=22")).toBeNull();

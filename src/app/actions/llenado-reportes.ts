@@ -17,6 +17,12 @@ import { getSessionRole } from "@/lib/session-access";
 import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
 import {
+  claveDesdeNota, evaluarReportesSemanales, type CargaRegistrada,
+} from "@/lib/incentivos/reportes-semanales";
+import {
+  evaluarCumplimiento, type SedeCumplimiento, type ControlCumplimiento,
+} from "@/lib/control-cumplimiento";
+import {
   evaluarLlenado, diasDeLaSemana, restarDias, rachaDeRegistro, TODA_LA_SEMANA, LUNES_A_SABADO,
   type EstadoLlenado, type DiaLlenado, type FilaDia, type SedeInfo, type ModoRegistro,
 } from "@/lib/kpis/llenado";
@@ -219,5 +225,104 @@ export async function getEstadoKpisSede(): Promise<EstadoKpisSede> {
   } catch (e) {
     console.error("[getEstadoKpisSede] failed:", e);
     return SIN_ACCESO(hoy);
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+ * Control de cumplimiento de dirección: KPIs diarios + los 4 archivos
+ * del sábado, las 3 sedes en una sola respuesta.
+ *
+ * Pedido de Jahnn (19-ago-2026): "para mí es muy importante corroborar
+ * que los administradores están al día".
+ *
+ * Las dos mitades ya existían pero repartidas: los KPIs se veían en
+ * Grupo → Reportes y los archivos solo en el panel de cada admin (y de
+ * los cuatro, a dirección le llegaba uno). Había que entrar a tres
+ * paneles y cruzarlo de memoria.
+ *
+ * Se reusa `evaluarLlenado` — el MISMO cerebro del cuadro semanal — para
+ * que dirección y administradores no puedan ver cosas distintas.
+ * ───────────────────────────────────────────────────────────────────── */
+
+export type EstadoCumplimiento = {
+  esDireccion: boolean;
+  hoy: string;
+  control: ControlCumplimiento | null;
+};
+
+export async function getCumplimientoEquipo(): Promise<EstadoCumplimiento> {
+  const hoy = getToday();
+  const role = await getSessionRole();
+  // Vista de control de las 3 sedes: solo dirección.
+  if (role?.kind !== "full") return { esDireccion: false, hoy, control: null };
+
+  try {
+    // ── 1. KPIs diarios: ventana móvil de los últimos 7 días ──────────
+    // La misma que ve el administrador en su panel, para que no haya dos
+    // verdades. La semana del calendario escondería, un lunes, todo lo
+    // que quedó debiendo la semana anterior.
+    const desde = restarDias(hoy, 6);
+
+    const negocios = (await sql`
+      SELECT id, name, system_start_date::text AS desde
+      FROM businesses ORDER BY id
+    `) as { id: number; name: string; desde: string | null }[];
+
+    const filasDb = (await sql`
+      SELECT business_id, date::text AS fecha,
+             revenue::float AS revenue, nps::float AS nps, mermas_soles::float AS mermas
+      FROM upselling_daily
+      WHERE date >= ${desde} AND date <= ${hoy}
+    `) as { business_id: number; fecha: string; revenue: number | null; nps: number | null; mermas: number | null }[];
+
+    const sedes: SedeInfo[] = negocios.map((n) => ({
+      businessId: n.id,
+      sede: n.name.replace(/^Yayi'?s\s+/i, ""),
+      desde: n.desde,
+      esCafeteria: ES_CAFETERIA[n.id] ?? true,
+      diasEsperados: DIAS_ESPERADOS[n.id] ?? TODA_LA_SEMANA,
+    }));
+
+    const filas: FilaDia[] = filasDb.map((f) => ({
+      businessId: f.business_id, fecha: f.fecha,
+      revenue: f.revenue, nps: f.nps, mermas: f.mermas,
+    }));
+
+    const llenado = evaluarLlenado({ weekStart: desde, hoy, sedes, filas });
+
+    // ── 2. Los 4 archivos del sábado, por sede ────────────────────────
+    // De import_batches y no de los datos: Cortesías y Cambios de Precio
+    // pueden venir legítimamente vacíos, y "no hubo" no es lo mismo que
+    // "no lo subiste".
+    const subidas = (await sql`
+      SELECT business_id, notes,
+             (imported_at AT TIME ZONE 'America/Lima')::date::text AS fecha
+      FROM import_batches
+      WHERE notes IS NOT NULL AND imported_at >= (${desde}::date - INTERVAL '60 days')
+      ORDER BY imported_at DESC
+      LIMIT 600
+    `) as { business_id: number; notes: string | null; fecha: string }[];
+
+    const porSede = new Map<number, CargaRegistrada[]>();
+    for (const s of subidas) {
+      const clave = claveDesdeNota(s.notes);
+      if (!clave) continue;
+      const lista = porSede.get(s.business_id) ?? [];
+      lista.push({ clave, fecha: s.fecha });
+      porSede.set(s.business_id, lista);
+    }
+
+    // ── 3. Juntar ─────────────────────────────────────────────────────
+    const entrada: SedeCumplimiento[] = llenado.sedes.map((s) => ({
+      businessId: s.businessId,
+      sede: s.sede,
+      diasKpiFaltantes: s.dias.filter((d) => d.estado === "falta").map((d) => d.fecha),
+      semanal: evaluarReportesSemanales(porSede.get(s.businessId) ?? [], hoy),
+    }));
+
+    return { esDireccion: true, hoy, control: evaluarCumplimiento(entrada) };
+  } catch (e) {
+    console.error("[getCumplimientoEquipo] failed:", e);
+    return { esDireccion: true, hoy, control: null };
   }
 }

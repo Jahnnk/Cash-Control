@@ -17,6 +17,7 @@ import { KellyLoadCard } from "./kelly-load-card";
 import { ExecutiveHero, type HeroStats } from "./executive-hero";
 import { SedePulseCard, type SedePulse } from "./sede-pulse-card";
 import { TodayActionsCard } from "./today-actions-card";
+import { CumplimientoEquipo } from "./cumplimiento-equipo";
 import { buildTodayActions } from "@/lib/grupo/today-actions";
 import { formatCutoff } from "@/lib/data-cutoff";
 import type { SedeCutoff } from "@/app/actions/data-cutoff";
@@ -181,6 +182,12 @@ export function GrupoDashboardClient({
         </div>
         <TodayActionsCard actions={actions} />
       </div>
+
+      {/* ¿Están todos al día? Va arriba de todo el análisis a propósito:
+          si falta información, los números de abajo están incompletos y
+          conviene saberlo ANTES de leerlos. Con todo al día es una sola
+          línea verde. */}
+      <CumplimientoEquipo />
 
       {/* 3 · ¿Qué negocio preocupa? ¿Cuál va mejor? — las tres juntas y
              ordenadas, para compararlas de un vistazo. */}
