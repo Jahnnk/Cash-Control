@@ -1,7 +1,7 @@
 # Contexto completo del proyecto — léeme antes de trabajar
 
 > Para cualquier agente o desarrollador que llegue nuevo (Codex, Claude,
-> humano). Actualizado: 2026-08-18. Complementa `AGENTS.md` (reglas de
+> humano). Actualizado: 2026-08-19. Complementa `AGENTS.md` (reglas de
 > ramas, deploy y auth) y `CLAUDE.md` (overview técnico). Este archivo
 > cuenta lo que esos dos no cuentan: quién es el usuario, cómo trabajar
 > con él, las lecciones aprendidas a golpes y el estado actual.
@@ -53,14 +53,28 @@ Perú. **NO es programador.** Reglas de comunicación:
   NO borrada, por trazabilidad. **Luis Pisco** es el nuevo administrador
   de Atelier (`admin-atelier`, mismo scope que tenía Luana: ventas,
   ticket promedio, mermas, y ahora también Ventas por Cliente y Cuentas
-  por Cobrar). Raúl = admin Fonavi, Chari = admin Centro, Junior =
-  verificador Centro, Jefe de tienda Fonavi = verificador. El label del
-  rol `admin-atelier` dice "Administración · Panel de Atelier" (antes
-  decía "Supervisora", cambiado a pedido de Jahnn al asumir Luis).
+  por Cobrar). **Raúl renunció (19-ago-2026)**, cuenta `active=false`.
+  **Chari** cubre Fonavi además de Centro por ~1 mes (dos cuentas
+  separadas: "Chari Centro" `admin-centro` y "Chari Fonavi"
+  `admin-fonavi` — el schema de `app_users` ata UN scope por fila, no
+  se puede compartir contraseña entre sedes). Junior = verificador
+  Centro, Jefe de tienda Fonavi = verificador (contraseña regenerada
+  19-ago tras la salida de Raúl). El label del rol `admin-atelier` dice
+  "Administración · Panel de Atelier" (antes decía "Supervisora",
+  cambiado a pedido de Jahnn al asumir Luis).
   **Juani** = socia y pareja de Jahnn; supervisa los locales una o dos
   veces por semana. Desde ago-2026 tiene usuario con scope `highlight`:
   asigna Highlights en las 3 sedes y aprueba las propuestas de los
   administradores, sin acceso a nada más de la app.
+  **Con dos sedes en el mismo navegador**: la sesión vive en la cookie
+  del navegador, no en la pestaña — dos pestañas del mismo Chrome
+  comparten sesión, así que Chari no puede estar en Centro y Fonavi a
+  la vez ahí. Solución sin tocar código: navegador distinto o modo
+  incógnito para una de las dos. Evaluado un esquema de cookies por
+  ruta (`/fonavi` vs `/centro`) para sesiones simultáneas reales —
+  descartado por ahora: rompería las rutas compartidas fuera de esos
+  prefijos (`/api/highlight-photos`, `/api/attachments`) y el beneficio
+  no compensa el riesgo para una cobertura de un mes.
   **Pendiente sin resolver**: `src/app/actions/direccion.ts:273` sigue
   listando a "Luana · Supervisora Atelier" en el roster del Sistema de
   Dirección — flagged, Jahnn no ha dicho si quitarla o reemplazarla.
@@ -97,7 +111,7 @@ Perú. **NO es programador.** Reglas de comunicación:
    entregan en persona. En BD solo hashes (scrypt).
 5. **Antes de cada PR**: `npx tsc --noEmit` + `npm run lint` (cero
    avisos NUEVOS; hay ~33 preexistentes aceptados) + `npx vitest run`
-   (859 tests en verde al día de hoy) + `npm run build`. Esperar el CI
+   (889 tests en verde al día de hoy) + `npm run build`. Esperar el CI
    "Tests" en verde antes de reportar. Si la pantalla se abre en el
    navegador, esto NO reemplaza probarla ahí (ver lección #8).
 6. **Commits**: mensaje en español contando el POR QUÉ (no el qué: el
@@ -322,6 +336,17 @@ Perú. **NO es programador.** Reglas de comunicación:
     métricas o rankings" — y tenía razón: resolver en memoria dio los
     mismos números, sin tocar una fila y sin ventana de riesgo.
 
+17. **Una sesión con alcance siempre gana, aunque el link diga otra
+    cosa.** Middleware: si la cookie trae un scope (`admin-centro`) y
+    la ruta pedida no es su `allowedPrefix`, redirige AHÍ — sin
+    importar qué URL se haya escrito. Pasó dos veces con Chari: le
+    pasaban un link a Fonavi y aterrizaba en Centro, porque su
+    navegador ya tenía sesión de Centro viva. La única ruta exenta es
+    `/login` (`AUTH_PUBLIC_PATHS`); es el único lugar al que se puede
+    ir para CAMBIAR de sesión — cualquier otro link, con sesión activa
+    de otra sede, rebota. Explicárselo así a Jahnn: "no es que el link
+    esté mal, es que ya tenía una sesión abierta que gana siempre".
+
 ## 6. Dominio del negocio implementado (dónde está cada cosa)
 
 - **Incentivos por upselling** (Fonavi/Centro): motor puro en
@@ -395,6 +420,30 @@ Perú. **NO es programador.** Reglas de comunicación:
     precio. Los cuatro reemplazan por rango, así que el acumulado es
     una sola instrucción para todos. (La tarjeta `MiRutina` del panel
     llegó a pedir "la semana" y contradecía al modal; corregido.)
+  - **`claveDesdeNota` reconoce el de rotación por DOS notas distintas**
+    (`src/lib/incentivos/reportes-semanales.ts`): "…desde Panel de Sede"
+    cuando lo sube el admin, "…ventas por producto (Byte rotación)"
+    cuando lo sube dirección desde Productos. Sin las dos, las cargas
+    viejas de Atelier (hechas desde Grupo antes de tener el botón en su
+    panel) no contaban como subidas. Cuidado: NO debe colar
+    "(Byte rentabilidad)", que es otro reporte — regex con negativo.
+- **Control de cumplimiento** (Grupo → Dashboard, tarjeta arriba de
+  todo, 19-ago-2026): responde "¿están todos al día?" juntando KPIs
+  diarios + los 4 reportes del sábado, las 3 sedes en una sola vista.
+  Antes vivían repartidos: KPIs se veían en Reportes, los 4 archivos
+  solo cada admin los veía en SU panel — a dirección le llegaba UNO
+  (rotación) y en otra pantalla. `src/lib/control-cumplimiento.ts`
+  (lógica pura) + `getCumplimientoEquipo` en `actions/llenado-reportes.ts`
+  + `cumplimiento-equipo.tsx`. Reusa `evaluarLlenado` (mismo cerebro que
+  el cuadro semanal) para que dirección y admins nunca vean cosas
+  distintas.
+  - **Severidad de tres niveles, no dos**: un día de KPI sin registrar
+    es `urgente` (el dato no vuelve — el día queda sin venta/NPS/mermas
+    para siempre); un archivo del sábado que falta es `atencion` (se
+    recupera el sábado siguiente); un archivo que NUNCA se subió sube a
+    `urgente` (no es un olvido de la semana, es una rutina que no
+    arrancó). El verde exige LAS DOS mitades a la vez — un semáforo que
+    se enciende con la mitad hecha es peor que no tenerlo.
 - **Préstamos socio** (`/atelier/prestamos-socio`): prestar → deber →
   devolver sin mover saldos operativos. Método de pago 'socio' = gasto
   operativo real que NO toca banco ni caja. 11 cadenas bancarias
@@ -523,32 +572,37 @@ Perú. **NO es programador.** Reglas de comunicación:
   - **El dato real gana sobre lo esperado**: si un domingo Atelier SÍ
     registra, se pinta como cualquier día lleno.
 
-## 7. Estado al 2026-08-17
+## 7. Estado al 2026-08-19
 
-- **`staging` == `main`, sin diferencia.** Último commit: `782a36a`
-  (propuestas de Highlight). Desde el 10-ago se sumaron, en orden: el
-  sistema de Highlight completo (asignación, fotos, Juani como segunda
-  persona que asigna, planificador semanal, control de cumplimiento),
-  el estado de llenado de reportes en Grupo, el aviso de KPIs en el
-  panel de las 3 sedes, el día libre de Atelier, y las propuestas de
-  Highlight de los administradores.
-- **Migraciones corridas** (verificadas en BD): además de las de
-  jul/ago, `2026-08-10-highlight.sql` (tabla `highlights`),
-  `2026-08-11-app-users-scope-highlight.sql` (permite el scope
-  `highlight` en el CHECK de `app_users` — hubo que partir el DROP y el
-  ADD porque el driver de neon rechaza multi-statement en `.query()`) y
-  `2026-08-17-highlight-propuestas.sql` (tabla `highlight_propuestas`,
-  creada con OK explícito de Jahnn; tabla nueva y vacía, no tocó ni una
-  fila existente). **No hay migraciones pendientes de correr.**
-- **Usuarios v3 activos**: Luis Pisco (`admin-atelier`), Raúl
-  (`admin-fonavi`), Chari (`admin-centro`), Junior (`verif-centro`),
-  Jefe de tienda Fonavi (`verif-fonavi`), **Juani** (`highlight`, solo
-  Highlight en las 3 sedes). Luana sigue con `active=false` (despedida,
-  no borrada).
+- **`staging` == `main`, sin diferencia.** Desde el 17-ago se sumaron,
+  en orden: el saldo real del banco leído del Excel de Kelly por
+  encabezado (no por celda), la corrección de fechas mal tecleadas por
+  mes (`fecha-mes-hoja.ts`), el control de cargas del reporte de
+  productos, la rutina de 4 archivos del sábado en el panel de cada
+  sede, la rotación de productos acumulada POR PERÍODOS (ya no por mes
+  reemplazado entero), Ventas por Trabajador resolviendo sus solapes al
+  leer, y el control de cumplimiento unificado en Grupo → Dashboard.
+- **Migraciones corridas** (verificadas en BD, con OK de Jahnn):
+  `2026-08-17-highlight-propuestas.sql`,
+  `2026-08-17-fonavi-saldos-calculados.sql` (ver incidente abajo) y
+  `2026-08-18-rotacion-por-periodos.sql` (tabla `product_period_sales`;
+  sembrada con lo ya cargado como "mes completo" para no perder
+  histórico — `product_month_sales` no se tocó). **No hay migraciones
+  pendientes de correr.**
+- **Cambio de personal (19-ago-2026)**: **Raúl renunció**, cuenta
+  `active=false`. **Chari cubre Fonavi además de Centro** por ~1 mes,
+  con dos cuentas separadas (`admin-centro` / `admin-fonavi` — un
+  scope por fila, no se puede compartir). Contraseña del verificador
+  Fonavi regenerada. Dos confusiones reales que costó aclarar (ver
+  lección #17): "el link se abre en Centro" (la sesión con alcance
+  siempre gana, solo `/login` permite cambiar) y "¿la contraseña puede
+  ser su DNI?" (no — Byte y Cash Control son sistemas distintos a
+  propósito, y este tiene los números reales del negocio).
 - **El rol `admin` ahora carga `nombre`** cuando la persona entró con su
   usuario propio de `app_users` (opcional: las contraseñas por sede
   heredadas no saben quién entró, y ahí se firma con la sede).
-- **859 tests** en 78 archivos, todos en verde (subieron de 663).
+- **889 tests** en 84 archivos, todos en verde (subieron de 663 el
+  10-ago).
 - **Informe de traspaso a Kelly** (ago-2026): se probó por dos caminos
   independientes que Atelier se entregó el 01-ago con **S/2,045.79** en
   banco (cadena día a día de 120 días, 0 descuadres; y reconstrucción
@@ -570,6 +624,12 @@ Perú. **NO es programador.** Reglas de comunicación:
   Vitest lo mató por timeout antes del restore (lección #15). Se
   perdieron 118 platos / S/19,014.60. Jahnn ya le avisó a Raúl para que
   vuelva a subir. NO se tocó nada financiero ni las otras dos sedes.
+- **"Cambios de Precio" no se ha subido NUNCA, en ninguna sede**,
+  desde que existe el registro (verificado en `import_batches`, sin una
+  sola fila con esa nota). Es el archivo que permite descartar que un
+  "upselling" sea en realidad un precio bajado a mano — el candado del
+  bono. El control de cumplimiento de Grupo lo marca `urgente` en las
+  3 sedes al 19-ago.
 - **Datos reales cargados** (no son datos de prueba, no borrar):
   `invoice_documents` con la semana del 03–08-ago de Atelier (51
   documentos), `client_sales_snapshots` con al menos 1 snapshot real,
@@ -598,7 +658,7 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **Confirmar que las fotos del Highlight ya suben de verdad**: el
   bloqueo del middleware se arregló (lección #12) pero no se pudo
   comprobar en el navegador con la sesión de un administrador —
-  preguntarle a Raúl o a Luis.
+  preguntarle a Luis o a Chari (Raúl ya no está).
 - **Agosto de Atelier cierra en cero cuando aparezcan dos movimientos**:
   el pago de S/44.80 de Mendo Aliaga (factura FB02-1202, seguía
   pendiente) y S/0.15 de ITF de un domingo. La diferencia se mantuvo
@@ -614,6 +674,14 @@ Perú. **NO es programador.** Reglas de comunicación:
 - **Atelier y Centro con la rotación pendiente**: Atelier no subía desde
   el 3-jul (recién ahora tiene el botón en su panel); Centro subió
   agosto con 10 platos de ~108 (export del "Top 10").
+- **"Cambios de Precio" pendiente en las 3 sedes desde siempre** —
+  nunca se subió ni una vez. Pedírselo a Luis, Chari (Centro y Fonavi)
+  con el rango del mes en curso hasta hoy. Confirmado por el nuevo
+  control de cumplimiento de Grupo → Dashboard.
+- **Confirmar que la cuenta "Chari Fonavi" ya funciona**: se generó el
+  19-ago con OK de Jahnn pero no hay `last_login` registrado todavía —
+  verificar que haya podido entrar sin quedar atrapada en la sesión de
+  Centro (lección #17).
 - **De Jahnn (no del agente)**: exports de rotación Atelier mar-may;
   costear recetas faltantes; revisar la URL del cron keep-alive en
   cron-job.org (podría apuntar al dominio 404); gaps de la carga de
@@ -627,7 +695,7 @@ Perú. **NO es programador.** Reglas de comunicación:
 ```bash
 npx tsc --noEmit        # tipos
 npm run lint            # cero avisos NUEVOS (hay ~33 viejos aceptados)
-npx vitest run          # 859 en verde hoy — si bajan, rompiste algo
+npx vitest run          # 889 en verde hoy — si bajan, rompiste algo
 npm run build           # el build de Vercel
 ```
 
