@@ -36,6 +36,7 @@ export type EstadoDia =
   | "hoy"           // es hoy y aún no registra: normal hasta el cierre
   | "futuro"        // todavía no llega
   | "dia-libre"     // esa sede no reporta ese día de la semana
+  | "pausado"       // dirección lo marcó no operativo (corte de luz, feriado)
   | "sin-operar";   // la sede aún no existía en el sistema
 
 export type DiaLlenado = {
@@ -81,6 +82,12 @@ export type SedeInfo = {
   /** Desde cuándo la sede opera en el sistema. null = siempre. */
   desde: string | null;
   esCafeteria: boolean;
+  /**
+   * Días que dirección marcó como NO operativos (corte de luz, feriado).
+   * No se les reclama registro y no cuentan para la meta — pero si el
+   * día IGUAL trae datos, se muestra lleno: el dato real siempre gana.
+   */
+  diasPausados?: string[];
   /**
    * Días de la semana en que SÍ se espera registro (0=dom … 6=sáb).
    * Un día fuera de esta lista no cuenta como falta, pero si igual
@@ -146,6 +153,12 @@ export function evaluarLlenado(input: {
         // El dato manda sobre lo esperado, así que esto se pregunta
         // DESPUÉS de descartar que haya registro: un domingo con datos
         // se pinta como cualquier otro día lleno.
+        //
+        // Un día que dirección pausó tampoco se reclama: no es que se
+        // les haya olvidado, es que no hubo qué registrar.
+        if (s.diasPausados?.includes(fecha)) {
+          return { fecha, estado: "pausado", faltan: [] };
+        }
         if (!s.diasEsperados.includes(diaSemana(fecha))) {
           return { fecha, estado: "dia-libre", faltan: [] };
         }
@@ -223,7 +236,7 @@ export function rachaDeRegistro(dias: DiaLlenado[], hoy: string): number {
   let racha = 0;
   for (const d of [...dias].reverse()) {
     if (d.fecha === hoy) continue;
-    if (d.estado === "dia-libre" || d.estado === "sin-operar") continue;
+    if (d.estado === "dia-libre" || d.estado === "pausado" || d.estado === "sin-operar") continue;
     if (d.estado === "lleno" || d.estado === "incompleto") racha++;
     else break;
   }
@@ -324,6 +337,18 @@ export function mensajeEstadoKpis(input: {
         ? `Al ${etiquetaDia(primero.fecha)} le falta ${primero.faltan.join(" y ")}.`
         : `${incompletos.length} días registrados a medias: ${enumerar(incompletos.map((d) => d.fecha))}.`,
       accion: primero.fecha,
+    };
+  }
+
+  // Un día que dirección pausó (corte de luz, feriado) no se felicita ni
+  // se reclama: se explica, para que el admin sepa que ya está cubierto
+  // y no ande preocupado por su ticket promedio.
+  if (estadoHoy === "pausado") {
+    return {
+      tono: "verde",
+      titulo: "Hoy no cuenta para la meta",
+      detalle: "Dirección marcó este día como no operativo: no afecta su ticket promedio.",
+      accion: null,
     };
   }
 

@@ -35,6 +35,7 @@ const PUNTO: Record<EstadoDia, string> = {
   hoy: "bg-gray-300 ring-2 ring-gray-400 ring-offset-1",
   futuro: "bg-gray-100",
   "dia-libre": "bg-gray-50 border border-gray-200",
+  pausado: "bg-sky-100 border border-sky-300",
   "sin-operar": "bg-gray-50 border border-dashed border-gray-200",
 };
 
@@ -45,6 +46,7 @@ const TITULO_PUNTO: Record<EstadoDia, string> = {
   hoy: "Es hoy: aún puedes registrarlo",
   futuro: "Todavía no llega",
   "dia-libre": "Día libre",
+  pausado: "Día no operativo: no cuenta para la meta",
   "sin-operar": "La sede aún no operaba",
 };
 

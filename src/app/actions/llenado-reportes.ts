@@ -26,6 +26,7 @@ import {
   evaluarLlenado, diasDeLaSemana, restarDias, rachaDeRegistro, TODA_LA_SEMANA, LUNES_A_SABADO,
   type EstadoLlenado, type DiaLlenado, type FilaDia, type SedeInfo, type ModoRegistro,
 } from "@/lib/kpis/llenado";
+import { getTodosLosDiasPausados } from "./dias-no-operativos";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -47,6 +48,18 @@ const ES_CAFETERIA: Record<number, boolean> = { 1: false, 2: true, 3: true };
  * Si un domingo IGUAL registran, se muestra como cualquier día lleno:
  * el dato real siempre gana sobre lo esperado.
  */
+/**
+ * Los días que dirección marcó como no operativos, agrupados por sede.
+ * Se le pasan a `evaluarLlenado` para que no los reclame en rojo: no es
+ * que se les haya olvidado registrar, es que no hubo qué registrar.
+ */
+async function pausadosPorSede(desde: string): Promise<Record<number, string[]>> {
+  const dias = await getTodosLosDiasPausados(desde);
+  const porSede: Record<number, string[]> = {};
+  for (const d of dias) (porSede[d.businessId] ??= []).push(d.fecha);
+  return porSede;
+}
+
 const DIAS_ESPERADOS: Record<number, number[]> = {
   1: LUNES_A_SABADO,   // Atelier
   2: TODA_LA_SEMANA,   // Fonavi
@@ -102,6 +115,7 @@ export async function getLlenadoReportes(weekStart: string): Promise<EstadoLlena
       WHERE date >= ${desde} AND date <= ${hasta}
     `) as { business_id: number; fecha: string; revenue: number | null; nps: number | null; mermas: number | null }[];
 
+    const pausados = await pausadosPorSede(desde);
     const sedes: SedeInfo[] = negocios.map((n) => ({
       businessId: n.id,
       // "Yayi's Fonavi" → "Fonavi": en una tabla de 3 columnas el
@@ -109,6 +123,7 @@ export async function getLlenadoReportes(weekStart: string): Promise<EstadoLlena
       sede: n.name.replace(/^Yayi'?s\s+/i, ""),
       desde: n.desde,
       esCafeteria: ES_CAFETERIA[n.id] ?? true,
+      diasPausados: pausados[n.id] ?? [],
       diasEsperados: DIAS_ESPERADOS[n.id] ?? TODA_LA_SEMANA,
     }));
 
@@ -202,6 +217,7 @@ export async function getEstadoKpisSede(): Promise<EstadoKpisSede> {
       sede: negocios[0].name.replace(/^Yayi'?s\s+/i, ""),
       desde: negocios[0].desde,
       esCafeteria: ES_CAFETERIA[bId] ?? true,
+      diasPausados: (await pausadosPorSede(desde))[bId] ?? [],
       diasEsperados: DIAS_ESPERADOS[bId] ?? TODA_LA_SEMANA,
     };
 
@@ -275,11 +291,13 @@ export async function getCumplimientoEquipo(): Promise<EstadoCumplimiento> {
       WHERE date >= ${desde} AND date <= ${hoy}
     `) as { business_id: number; fecha: string; revenue: number | null; nps: number | null; mermas: number | null }[];
 
+    const pausados = await pausadosPorSede(desde);
     const sedes: SedeInfo[] = negocios.map((n) => ({
       businessId: n.id,
       sede: n.name.replace(/^Yayi'?s\s+/i, ""),
       desde: n.desde,
       esCafeteria: ES_CAFETERIA[n.id] ?? true,
+      diasPausados: pausados[n.id] ?? [],
       diasEsperados: DIAS_ESPERADOS[n.id] ?? TODA_LA_SEMANA,
     }));
 

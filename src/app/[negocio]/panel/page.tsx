@@ -27,6 +27,7 @@ import { BaseModal } from "./base-modal";
 import { AtelierPanel } from "./atelier-panel";
 import { HighlightSlot } from "./highlight-card";
 import { EstadoKpisCard } from "./estado-kpis-card";
+import { DiasNoOperativosCard } from "./dias-no-operativos-card";
 import { ProponerHighlight } from "./proponer-highlight";
 import { MiRutina } from "./mi-rutina";
 import { ShareSummary } from "./share-summary";
@@ -209,6 +210,11 @@ function IncentivosPage() {
       {/* Lo que le toca subir y cómo va. La guía va pegada al estado a
           propósito: una guía aparte se lee una vez y se olvida. */}
       <MiRutina refrescar={weekRefresh} onSubirReporte={() => setShowImport(true)} />
+
+      {/* Días que no cuentan (corte de luz, feriado). Va pegado al
+          estado de KPIs porque es la respuesta a "¿por qué ese día está
+          distinto?". El administrador solo la ve si hay algo marcado. */}
+      <DiasNoOperativosCard onCambio={() => { setWeekRefresh((n) => n + 1); void load(month); }} />
 
       {/* Proponer va después del Highlight y del aviso de KPIs: primero
           lo que hay que hacer hoy, después lo que uno sugiere. */}

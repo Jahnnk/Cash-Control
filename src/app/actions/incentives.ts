@@ -13,6 +13,10 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { getTodosLosDiasPausados } from "./dias-no-operativos";
+import {
+  indicePausados, sinDiasPausados, diasOperativosDelMes,
+} from "@/lib/incentivos/dias-no-operativos";
 import { filasVentasTrabajador, borrarPeriodosQuePisa } from "@/lib/incentivos/ventas-trabajador-sql";
 import { ventasPorTrabajador, type FilaPeriodo } from "@/lib/incentivos/ventas-trabajador";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
@@ -181,11 +185,24 @@ export async function getIncentiveDashboard(
     }));
     const workerSales: WorkerSales[] = workers.map((w) => ({ nombre: w.nombre, mesas: w.mesas, total: w.total }));
 
+    // Días que dirección marcó como NO operativos (corte de luz,
+    // feriado, local cerrado). Se sacan ANTES de que el motor calcule:
+    // el motor no tiene por qué saber de cortes de luz, recibe los días
+    // que cuentan y hace su trabajo (su lógica no se toca).
+    //
+    // OJO: solo se excluyen del TICKET y del PISO DE TRÁFICO. La venta
+    // de un día parcial sigue en ventas, caja y reportes — esa plata
+    // entró de verdad (decisión de Jahnn, 22-ago-2026).
+    const pausadosMes = await getTodosLosDiasPausados(monthStart);
+    const indice = indicePausados(pausadosMes);
+    const diasQueCuentan = sinDiasPausados(dailies, indice, bId);
+    const diasOperativos = diasOperativosDelMes(daysInMonth, month, pausadosMes, bId);
+
     const progress = computeProgress(
       config,
       staff.map((s) => ({ ...s, active: true })),
-      dailies,
-      daysInMonth,
+      diasQueCuentan,
+      diasOperativos,
     );
     const flags = computeFlags(controlEvents, workerSales);
 

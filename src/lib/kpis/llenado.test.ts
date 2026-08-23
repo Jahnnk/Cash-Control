@@ -405,3 +405,45 @@ describe("mensajeEstadoKpis — Atelier, que se llena con el reporte de Byte", (
     expect(a.accion).toBe(b.accion);
   });
 });
+
+describe("días pausados por dirección", () => {
+  // El caso real: 22-ago-2026, corte de luz en Centro. Sin esto, ese día
+  // le quedaba en rojo a Chari para siempre.
+  it("un día pausado no se reclama como falta", () => {
+    const sedes = SEDES.map((s) =>
+      s.businessId === 3 ? { ...s, diasPausados: ["2026-08-19"] } : s,
+    );
+    const r = evaluarLlenado({
+      weekStart: "2026-08-16", hoy: "2026-08-22", sedes, filas: [],
+    });
+    const centro = r.sedes.find((s) => s.businessId === 3)!;
+    const dia = centro.dias.find((d) => d.fecha === "2026-08-19")!;
+    expect(dia.estado).toBe("pausado");
+    expect(centro.dias.filter((d) => d.estado === "falta")).not.toContainEqual(dia);
+  });
+
+  it("pausar Centro no pausa Fonavi el mismo día", () => {
+    const sedes = SEDES.map((s) =>
+      s.businessId === 3 ? { ...s, diasPausados: ["2026-08-19"] } : s,
+    );
+    const r = evaluarLlenado({
+      weekStart: "2026-08-16", hoy: "2026-08-22", sedes, filas: [],
+    });
+    const fonavi = r.sedes.find((s) => s.businessId === 2)!;
+    expect(fonavi.dias.find((d) => d.fecha === "2026-08-19")!.estado).toBe("falta");
+  });
+
+  it("si el día pausado IGUAL trae datos, se pinta lleno: el dato manda", () => {
+    const sedes = SEDES.map((s) =>
+      s.businessId === 3 ? { ...s, diasPausados: ["2026-08-19"] } : s,
+    );
+    const r = evaluarLlenado({
+      weekStart: "2026-08-16",
+      hoy: "2026-08-22",
+      sedes,
+      filas: [{ businessId: 3, fecha: "2026-08-19", revenue: 800, nps: 9, mermas: 10 }],
+    });
+    const centro = r.sedes.find((s) => s.businessId === 3)!;
+    expect(centro.dias.find((d) => d.fecha === "2026-08-19")!.estado).toBe("lleno");
+  });
+});

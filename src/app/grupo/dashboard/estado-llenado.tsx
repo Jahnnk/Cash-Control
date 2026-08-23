@@ -26,6 +26,10 @@ const CELDA: Record<EstadoDia, { clase: string; titulo: string }> = {
     clase: "bg-gray-50 border border-gray-200",
     titulo: "Día libre: esta sede no reporta ese día",
   },
+  pausado: {
+    clase: "bg-sky-100 border border-sky-300",
+    titulo: "Día no operativo: no cuenta para la meta",
+  },
   "sin-operar": { clase: "bg-gray-50 border border-dashed border-gray-200", titulo: "La sede aún no operaba" },
 };
 
