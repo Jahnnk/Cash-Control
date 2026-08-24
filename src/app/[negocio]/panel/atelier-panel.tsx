@@ -174,7 +174,7 @@ export function AtelierPanel() {
       <ProponerHighlight />
 
       {/* Luis sube lo mismo: el reporte de rotación cada sábado. */}
-      <MiRutina refrescar={refrescarAviso} onSubirReporte={() => setShowRotacion(true)} />
+      <MiRutina esProduccion refrescar={refrescarAviso} onSubirReporte={() => setShowRotacion(true)} />
 
       {/* Header */}
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -395,6 +395,7 @@ export function AtelierPanel() {
       )}
       {showRotacion && (
         <ImportControlModal
+          soloRotacion
           onClose={() => setShowRotacion(false)}
           onImported={() => setRefrescarAviso((v) => v + 1)}
         />

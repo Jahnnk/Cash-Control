@@ -63,6 +63,36 @@ export const REPORTES_SEMANALES: {
 ];
 
 /**
+ * Qué reportes le tocan a CADA sede.
+ *
+ * Atelier no es una cafetería, es el centro de PRODUCCIÓN, y tres de
+ * los cuatro archivos no existen en su operación (decisión de Jahnn,
+ * 24-ago-2026):
+ *
+ *   · Cortesías — no atiende público, no regala nada en mostrador.
+ *   · Cambios de Precio — no hay caja que baje un precio a mano.
+ *   · Ventas por Trabajador — su único "vendedor" es Luis, el propio
+ *     administrador. Un ranking de una persona no es un ranking.
+ *
+ * Los tres existen para sostener el bono por ticket promedio, y ese
+ * bono hoy solo corre en Fonavi y Centro. Pedirle a Luis que suba tres
+ * archivos vacíos no controla nada: enseña a ignorar los avisos.
+ *
+ * Si mañana Atelier entra al bono, se le agregan las claves acá y todo
+ * lo demás sigue funcionando igual.
+ */
+export const REPORTES_POR_SEDE: Record<number, ClaveReporte[]> = {
+  1: ["rotacion"],   // Atelier — producción
+};
+
+/** Los reportes que aplican a una sede. Por defecto, los cuatro. */
+export function reportesDeLaSede(businessId?: number) {
+  const claves = businessId != null ? REPORTES_POR_SEDE[businessId] : undefined;
+  if (!claves) return REPORTES_SEMANALES;
+  return REPORTES_SEMANALES.filter((r) => claves.includes(r.clave));
+}
+
+/**
  * De qué reporte es una subida, leyendo la nota que dejó el import.
  * Devuelve null para las subidas que no son de esta rutina (el Excel de
  * Kelly, por ejemplo).
@@ -122,12 +152,14 @@ export function sabadoDeLaSemana(hoy: string): string {
 export function evaluarReportesSemanales(
   cargas: CargaRegistrada[],
   hoy: string,
+  /** Para pedirle a cada sede solo lo que su operación produce. */
+  businessId?: number,
 ): EstadoSemanal {
   const sabado = sabadoDeLaSemana(hoy);
   const [y, m, d] = hoy.split("-").map(Number);
   const esSabado = new Date(Date.UTC(y, m - 1, d)).getUTCDay() === 6;
 
-  const reportes: EstadoReporte[] = REPORTES_SEMANALES.map((r) => {
+  const reportes: EstadoReporte[] = reportesDeLaSede(businessId).map((r) => {
     const suyas = cargas.filter((c) => c.clave === r.clave).map((c) => c.fecha).sort();
     const ultima = suyas.length > 0 ? suyas[suyas.length - 1] : null;
     return {

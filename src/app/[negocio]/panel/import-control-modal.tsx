@@ -33,9 +33,17 @@ type FileResult = { name: string; status: "ok" | "error"; detail: string };
 export function ImportControlModal({
   onClose,
   onImported,
+  soloRotacion = false,
 }: {
   onClose: () => void;
   onImported: () => void;
+  /**
+   * Atelier es producción: solo sube Platos con Mayor Rotación. Los
+   * otros tres archivos no existen en su operación (no da cortesías,
+   * no cambia precios en caja, y su único vendedor es el propio
+   * administrador). Ver REPORTES_POR_SEDE.
+   */
+  soloRotacion?: boolean;
 }) {
   const { showToast } = useToast();
   const fileRef = useRef<HTMLInputElement>(null);
@@ -143,11 +151,16 @@ export function ImportControlModal({
           <p className="text-xs text-gray-500">
             <strong>Rutina semanal (~5 min)</strong> — para banderas de control, ranking y el foco
             de upselling; el avance diario de la meta sale del registro del día, no de estos
-            archivos. Exporta de Byte los 4 reportes con el rango <strong>desde el día 1 del mes
-            hasta hoy</strong> y suéltalos aquí todos juntos: <strong>Productos con Mayor Rotación ·
-            Cortesías · Cambios de Precio · Ventas por Trabajador</strong>. Cada subida
+            archivos. Exporta de Byte {soloRotacion ? "el reporte" : "los 4 reportes"} con el rango{" "}
+            <strong>desde el día 1 del mes hasta hoy</strong> y suéltalo{soloRotacion ? "" : "s"} aquí
+            {soloRotacion ? " " : " todos juntos: "}
+            <strong>
+              {soloRotacion
+                ? "Productos con Mayor Rotación"
+                : "Productos con Mayor Rotación · Cortesías · Cambios de Precio · Ventas por Trabajador"}
+            </strong>. Cada subida
             <strong> reemplaza</strong> la anterior (no duplica) y el sistema reconoce cada archivo
-            solo. Puedes subirlos más seguido si algo te huele raro.
+            solo. Puedes subirlo{soloRotacion ? "" : "s"} más seguido si algo te huele raro.
           </p>
           <p className="text-[11px] text-gray-400">
             Byte ya no genera el reporte de Pedidos Anulados (los asesores no pueden anular pedidos

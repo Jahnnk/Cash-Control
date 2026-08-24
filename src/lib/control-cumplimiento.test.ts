@@ -19,8 +19,10 @@ const reporte = (
   subidoEstaSemana: subido, ultimaCarga: subido ? "2026-08-22" : ultimaCarga,
 });
 
-const semanal = (faltan: EstadoReporte[]): EstadoSemanal => ({
-  reportes: [], faltan, completo: faltan.length === 0,
+/** `cuantos` = los reportes que le tocan a la sede (Atelier: 1). */
+const semanal = (faltan: EstadoReporte[], cuantos = 4): EstadoSemanal => ({
+  reportes: Array.from({ length: cuantos }, (_, i) => reporte(`R${i + 1}`, true)),
+  faltan, completo: faltan.length === 0,
   sabado: "2026-08-22", esSabado: true, nuncaSubidos: [],
 });
 

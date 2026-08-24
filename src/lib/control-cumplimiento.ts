@@ -90,10 +90,14 @@ export function evaluarSede(s: SedeCumplimiento): SedeEvaluada {
     );
   }
   if (hayArchivos) {
+    // Cuántos le tocan a ESTA sede, no "4" a secas: a Atelier solo le
+    // corresponde el de rotación, y decirle "falta 1 de los 4" sería
+    // reclamarle tres archivos que su operación no produce.
+    const total = s.semanal?.reportes.length || 4;
     partes.push(
       archivosFaltantes.length === 1
-        ? "falta 1 de los 4 reportes"
-        : `faltan ${archivosFaltantes.length} de los 4 reportes`,
+        ? `falta 1 de los ${total} reportes`
+        : `faltan ${archivosFaltantes.length} de los ${total} reportes`,
     );
   }
 

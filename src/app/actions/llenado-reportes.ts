@@ -335,7 +335,7 @@ export async function getCumplimientoEquipo(): Promise<EstadoCumplimiento> {
       businessId: s.businessId,
       sede: s.sede,
       diasKpiFaltantes: s.dias.filter((d) => d.estado === "falta").map((d) => d.fecha),
-      semanal: evaluarReportesSemanales(porSede.get(s.businessId) ?? [], hoy),
+      semanal: evaluarReportesSemanales(porSede.get(s.businessId) ?? [], hoy, s.businessId),
     }));
 
     return { esDireccion: true, hoy, control: evaluarCumplimiento(entrada) };

@@ -8,7 +8,7 @@
 import { describe, it, expect } from "vitest";
 import {
   REPORTES_SEMANALES, claveDesdeNota, evaluarReportesSemanales,
-  sabadoDeLaSemana, nombrarFaltantes, type CargaRegistrada,
+  sabadoDeLaSemana, nombrarFaltantes, reportesDeLaSede, type CargaRegistrada,
 } from "./reportes-semanales";
 
 // Sábado 22 de agosto de 2026. El sábado anterior fue el 15.
@@ -141,5 +141,44 @@ describe("nombrarFaltantes", () => {
 
   it("vacío cuando no falta nada", () => {
     expect(nombrarFaltantes([])).toBe("");
+  });
+});
+
+describe("qué reportes le tocan a cada sede", () => {
+  // Decisión de Jahnn (24-ago-2026): Atelier es producción, no cafetería.
+  it("a Atelier solo le toca rotación", () => {
+    const r = reportesDeLaSede(1).map((x) => x.clave);
+    expect(r).toEqual(["rotacion"]);
+  });
+
+  it("a Fonavi y Centro les tocan los cuatro", () => {
+    expect(reportesDeLaSede(2)).toHaveLength(4);
+    expect(reportesDeLaSede(3)).toHaveLength(4);
+  });
+
+  it("sin sede conocida asume los cuatro: no relaja el control por accidente", () => {
+    expect(reportesDeLaSede()).toHaveLength(4);
+    expect(reportesDeLaSede(999)).toHaveLength(4);
+  });
+
+  it("Atelier queda COMPLETO subiendo solo rotación", () => {
+    // Con la regla vieja, Luis quedaba en rojo para siempre por tres
+    // archivos que su operación no genera.
+    const cargas = [{ clave: "rotacion" as const, fecha: "2026-08-22" }];
+    const atelier = evaluarReportesSemanales(cargas, "2026-08-22", 1);
+    expect(atelier.completo).toBe(true);
+    expect(atelier.faltan).toHaveLength(0);
+    expect(atelier.nuncaSubidos).toHaveLength(0);
+
+    // La misma subida en Centro deja tres pendientes.
+    const centro = evaluarReportesSemanales(cargas, "2026-08-22", 3);
+    expect(centro.completo).toBe(false);
+    expect(centro.faltan).toHaveLength(3);
+  });
+
+  it("Atelier sin subir nada sigue quedando en falta", () => {
+    const a = evaluarReportesSemanales([], "2026-08-22", 1);
+    expect(a.completo).toBe(false);
+    expect(a.nuncaSubidos.map((r) => r.clave)).toEqual(["rotacion"]);
   });
 });

@@ -43,10 +43,17 @@ function esFinDeSemana(iso: string): boolean {
 export function MiRutina({
   refrescar,
   onSubirReporte,
+  esProduccion = false,
 }: {
   refrescar?: number;
   /** Abre el modal de "Subir reportes de control". */
   onSubirReporte?: () => void;
+  /**
+   * Atelier: centro de producción, no cafetería. No lleva NPS y no
+   * entra al bono por ticket promedio — hablarle de "la meta y el
+   * bono" a Luis sería prometerle algo que no existe.
+   */
+  esProduccion?: boolean;
 }) {
   const [data, setData] = useState<CargaSedePropia | null>(null);
   const [verGuia, setVerGuia] = useState(false);
@@ -87,6 +94,13 @@ export function MiRutina({
 
   let titulo: string;
   let detalle: string;
+  // Cuántos archivos le tocan a ESTA sede: Atelier solo sube el de
+  // rotación (no da cortesías ni cambios de precio, y su único vendedor
+  // es el propio administrador). Hablar de "los 4" en su panel sería
+  // pedirle tres archivos que no existen.
+  const cuantos = sem?.reportes.length ?? 4;
+  const nArchivos = cuantos === 1 ? "el reporte de Byte" : `los ${cuantos} reportes de Byte`;
+
   if (e.estado === "incompleto") {
     titulo = "El reporte de productos llegó incompleto";
     detalle =
@@ -98,19 +112,23 @@ export function MiRutina({
   } else if (e.estado === "nunca") {
     titulo = "Faltan los reportes de Byte";
     detalle = "Todavía no se ha subido ninguno en esta sede.";
-  } else if (sem && !sem.completo && sem.faltan.length < 4 && e.estado === "al-dia") {
+  } else if (sem && !sem.completo && sem.faltan.length < cuantos && e.estado === "al-dia") {
     // Subió algunos pero no todos: lo útil es decir CUÁLES faltan.
-    titulo = `Faltan ${sem.faltan.length} de los 4 reportes de Byte`;
+    titulo = `Faltan ${sem.faltan.length} de ${nArchivos}`;
     detalle = `${nombrarFaltantes(sem.faltan)}. Mismo rango: ${describirPeriodo(data.rangoQueToca)}.`;
   } else if (finDeSemana) {
-    titulo = "Hoy toca subir los reportes de Byte";
+    titulo = cuantos === 1 ? "Hoy toca subir el reporte de Byte" : "Hoy toca subir los reportes de Byte";
     // El rango EXACTO que hay que pedirle a Byte, ya calculado. Es el
     // mismo para los 4 archivos: una sola instrucción, una sola forma
     // de equivocarse.
-    detalle = `Exporta los 4 reportes ${describirPeriodo(data.rangoQueToca)} y suéltalos juntos.`;
+    detalle = cuantos === 1
+      ? `Exporta Platos con Mayor Rotación ${describirPeriodo(data.rangoQueToca)}.`
+      : `Exporta ${nArchivos} ${describirPeriodo(data.rangoQueToca)} y suéltalos juntos.`;
   } else {
     titulo = "Reportes de Byte pendientes";
-    detalle = `${e.detalle} El sábado se suben los 4, ${describirPeriodo(data.rangoQueToca)}.`;
+    detalle = cuantos === 1
+      ? `${e.detalle} Se sube cada sábado, ${describirPeriodo(data.rangoQueToca)}.`
+      : `${e.detalle} El sábado se suben los ${cuantos}, ${describirPeriodo(data.rangoQueToca)}.`;
   }
 
   return (
@@ -200,27 +218,46 @@ export function MiRutina({
           <div>
             <div className="font-semibold text-gray-900 text-xs">Todos los días · al cerrar</div>
             <p className="mt-0.5">
-              Llena el <strong>registro del día</strong> acá abajo: personas atendidas, venta, NPS y
-              mermas. De ahí salen tus KPIs, el avance de la meta y el bono — si falta un día, esos
-              tres quedan incompletos.
+              {esProduccion ? (
+                <>
+                  Llena el <strong>registro del día</strong> acá abajo: venta, pedidos y mermas. De
+                  ahí salen tus KPIs y el seguimiento del mes — si falta un día, quedan incompletos.
+                </>
+              ) : (
+                <>
+                  Llena el <strong>registro del día</strong> acá abajo: personas atendidas, venta,
+                  NPS y mermas. De ahí salen tus KPIs, el avance de la meta y el bono — si falta un
+                  día, esos tres quedan incompletos.
+                </>
+              )}
             </p>
           </div>
           <div>
             <div className="font-semibold text-gray-900 text-xs">Cada sábado · antes de cerrar</div>
             <p className="mt-0.5">
-              Con el botón <em>Subir ahora</em> suelta los <strong>4 reportes de Byte</strong> juntos,
-              todos con el rango <strong>{describirPeriodo(data.rangoQueToca)}</strong>:
+              Con el botón <em>Subir ahora</em> suelta{" "}
+              {cuantos === 1 ? (
+                <><strong>el reporte de Byte</strong></>
+              ) : (
+                <><strong>los {cuantos} reportes de Byte</strong> juntos</>
+              )}
+              , con el rango <strong>{describirPeriodo(data.rangoQueToca)}</strong>:
             </p>
+            {/* La lista sale de los reportes que ESTA sede sí produce.
+                Escribirlos a mano volvería a pedirle a Atelier las
+                cortesías que su operación no genera. */}
             <ul className="mt-1 space-y-0.5 list-disc pl-4">
-              <li>Platos con Mayor Rotación</li>
-              <li>Cortesías</li>
-              <li>Cambios de Precio</li>
-              <li>Ventas por Trabajador</li>
+              {(sem?.reportes ?? []).map((r) => (
+                <li key={r.clave}>{r.nombre}</li>
+              ))}
             </ul>
-            <p className="mt-1.5">
-              Los tres últimos son el <strong>control del bono</strong> de ticket promedio: sin ellos
-              el sistema no puede separar el upselling real de una cortesía o un cambio de precio.
-            </p>
+            {cuantos > 1 && (
+              <p className="mt-1.5">
+                Los tres últimos son el <strong>control del bono</strong> de ticket promedio: sin
+                ellos el sistema no puede separar el upselling real de una cortesía o un cambio de
+                precio.
+              </p>
+            )}
             <ul className="mt-1 space-y-0.5 list-disc pl-4">
               <li>
                 Siempre <strong>desde el día 1 del mes hasta hoy</strong>, no solo la semana. El

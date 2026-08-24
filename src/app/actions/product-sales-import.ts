@@ -547,7 +547,7 @@ export async function getCargaProductosSede(): Promise<CargaSedePropia> {
         const clave = claveDesdeNota(x.notes);
         if (clave) cargas.push({ clave, fecha: x.fecha });
       }
-      semanal = evaluarReportesSemanales(cargas, hoy);
+      semanal = evaluarReportesSemanales(cargas, hoy, bId);
     } catch (e) {
       console.error("[getCargaProductosSede] semanal:", e);
     }

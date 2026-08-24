@@ -121,7 +121,7 @@ export function CumplimientoEquipo() {
             >
               {hayAlgo
                 ? control.pendientes.map((p) => p.sede).join(" · ")
-                : "KPIs diarios al día y los 4 reportes de Byte de esta semana subidos."}
+                : "KPIs diarios al día y los reportes de Byte de esta semana subidos."}
             </div>
           </div>
         </div>
@@ -169,8 +169,9 @@ export function CumplimientoEquipo() {
           })}
 
           <p className="text-[10px] text-gray-400 pt-1">
-            KPIs de los últimos 7 días · los 4 reportes de Byte se suben cada sábado. Es lo mismo
-            que ve cada administrador en su panel.
+            KPIs de los últimos 7 días · los reportes de Byte se suben cada sábado (Atelier solo
+            sube rotación: como área de producción no da cortesías ni cambios de precio). Es lo
+            mismo que ve cada administrador en su panel.
           </p>
         </div>
       )}
