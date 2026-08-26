@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileDown, Loader2, X, CalendarRange } from "lucide-react";
 import { getBoardDeckData } from "@/app/actions/kpis";
 import { getBoardPortfolio } from "@/app/actions/board-portfolio";
+import { getGroupBreakeven } from "@/app/actions/breakeven";
 import { getToday } from "@/lib/utils";
 import { useToast } from "@/components/toast-provider";
 
@@ -25,18 +26,21 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
     if (end < start) { showToast("La fecha final no puede ser anterior a la inicial", "error"); return; }
     setGenerating(true);
     try {
-      // El portafolio se pide EN PARALELO y su fallo no tumba el deck:
-      // si no hay ventas de productos cargadas, salen las láminas de
+      // El portafolio y el punto de equilibrio se piden EN PARALELO y su
+      // fallo no tumba el deck: si faltan datos salen las láminas de
       // siempre (decisión de diseño, 24-ago-2026).
-      const [r, port] = await Promise.all([
+      const mes = end.slice(0, 7);
+      const [r, port, be] = await Promise.all([
         getBoardDeckData(start, end),
-        getBoardPortfolio(end.slice(0, 7)),
+        getBoardPortfolio(mes),
+        getGroupBreakeven(mes),
       ]);
       if (!r.ok) { showToast(r.error, "error"); return; }
       const { renderWeeklyKpiDeck } = await import("@/lib/kpis/weekly-deck");
       const { blob, filename } = await renderWeeklyKpiDeck(
         r.data,
-        port.ok ? port.data : null,
+        port.ok ? port.sedes : null,
+        be.ok ? be.data : null,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -44,7 +48,18 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-      showToast(port.ok ? "Deck generado (con portafolio de productos)" : `Deck generado — sin portafolio: ${port.error}`, "success");
+            // El aviso nombra lo que FALTÓ, no solo que salió: si una parte no
+      // entró, hay que enterarse ahora y no en la reunión.
+      const faltaron = [
+        port.ok ? null : `portafolio (${port.error})`,
+        be.ok ? null : `punto de equilibrio (${be.error})`,
+      ].filter(Boolean);
+      showToast(
+        faltaron.length === 0
+          ? "Deck generado (con portafolio por sede y punto de equilibrio)"
+          : `Deck generado — sin ${faltaron.join(" ni ")}`,
+        "success",
+      );
       setOpen(false);
     } finally {
       setGenerating(false);

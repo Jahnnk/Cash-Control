@@ -1,44 +1,55 @@
 "use server";
 
 /**
- * El portafolio de productos del GRUPO, para el Deck de la reunión.
+ * El portafolio de productos POR SEDE, para el Deck de la reunión.
  *
  * Pedido de Jahnn (24-ago-2026): que el deck exponga el análisis de
  * portafolio por rentabilidad × popularidad, con tendencia y proyección,
  * "para saber qué productos mantener, promocionar, reemplazar".
  *
+ * Corregido el 26-ago-2026, también a pedido suyo: el análisis va POR
+ * SEDE — Fonavi, Centro y Atelier por separado — no consolidado.
+ *
+ * ─── Por qué por sede resultó ser lo correcto ───
+ *
+ * La primera versión juntaba las cafeterías y dejaba a Atelier fuera,
+ * porque su venta B2B a granel (un pedido de 200 panes) aplastaba la
+ * variable de popularidad de un mostrador que vende cappuccinos de uno
+ * en uno, y porque su costo unitario es otro: la "Empanada Mixta" de
+ * Atelier cuesta S/1.72 y la de cafetería S/4.07.
+ *
+ * Separando por sede ese problema desaparece solo: cada sede se compara
+ * CONSIGO MISMA. El umbral de popularidad y el margen promedio se
+ * calculan dentro de la sede, así que Atelier se mide contra Atelier y
+ * nadie compite contra una escala que no es la suya. Y aparece algo que
+ * el consolidado escondía: un plato puede ser estrella en Centro y
+ * candidato a reemplazo en Fonavi, y eso es justo lo que hay que
+ * discutir en la reunión.
+ *
  * ─── Un solo cerebro ───
  *
- * No hay análisis nuevo acá. Se juntan las ventas de las 3 sedes en un
- * solo portafolio y se pasan por `compilePortfolioIntelligence`, el
- * mismo motor que ya alimenta el Product Intelligence Center de cada
- * sede. Si el deck dijera algo distinto de lo que dice el PIC, la
- * reunión se convertiría en una discusión sobre cuál pantalla tiene
- * razón.
- *
- * ─── Por qué el grupo y no una sede ───
- *
- * La carta se decide para la cadena: un croissant que en Centro es
- * estrella y en Fonavi es perro sigue siendo un solo producto con una
- * sola receta y un solo costo. Sumar unidades y venta da la señal real
- * de qué mantener y qué promocionar.
+ * No hay análisis nuevo acá. Cada sede pasa por
+ * `compilePortfolioIntelligence`, el mismo motor que alimenta el Product
+ * Intelligence Center de esa sede. Si el deck dijera algo distinto de lo
+ * que dice el PIC, la reunión se volvería una discusión sobre cuál
+ * pantalla tiene razón.
  *
  * ─── La regla del mes parcial (lección de marzo) ───
  *
  * El mes en curso se alimenta con las subidas semanales, así que a
  * mitad de mes está incompleto. Igual que en `getPortfolioHistory`, las
  * TENDENCIAS y la PROYECCIÓN se calculan solo con meses cerrados: un
- * mes a medias parece un derrumbe. La MATRIZ sí puede usar el mes en
- * curso, porque compara productos entre sí dentro del mismo periodo —
- * eso no se distorsiona por estar a la mitad; y el deck avisa que el
- * mes sigue abierto.
+ * mes a medias parece un derrumbe. La MATRIZ sí usa el mes en curso,
+ * porque compara productos entre sí dentro del mismo periodo — eso no
+ * se distorsiona por estar a la mitad; y la lámina avisa que sigue
+ * abierto.
  */
 
 import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
 import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
 import {
-  armarFacts, keyDeCarta, estaEliminadoEnByte,
+  armarFacts, keyDeProducto, estaEliminadoEnByte,
   type FilaVenta, type FilaHistoria,
 } from "@/lib/portfolio/facts-sql";
 import { computeMovers, projectNextMonth, type MonthSummary } from "@/lib/portfolio/history";
@@ -47,34 +58,23 @@ import { monthLabel } from "@/lib/utils";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-/**
- * Las CAFETERÍAS. Atelier (1) queda fuera a propósito.
- *
- * Atelier es producción B2B: sus "productos" son pedidos mayoristas a
- * clientes, no platos de carta. Mezclarlo rompería la variable de
- * popularidad, que se mide en unidades: un pedido de 200 panes a un
- * cliente aplastaría a todos los cappuccinos del mostrador, y el
- * cuadrante diría que el mostrador no vende. Además su costo unitario
- * es otro — la "Empanada Mixta" de Atelier cuesta S/1.72 (a granel) y
- * la de cafetería S/4.07 (con presentación).
- *
- * Atelier tiene su propio análisis en /atelier/productos, con su
- * lógica de B2B. Misma línea que los reportes semanales: producción y
- * cafetería no se miden con la misma vara.
- */
-const SEDES_CARTA = [2, 3];
+const SEDES: { id: number; nombre: string }[] = [
+  { id: 2, nombre: "Fonavi" },
+  { id: 3, nombre: "Centro" },
+  { id: 1, nombre: "Atelier" },   // al final: es producción, no cafetería
+];
 
 const mesActualLima = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
 
 /**
- * Ventas del mes con su costo resuelto, sumando las sedes pedidas.
+ * Ventas del mes con su costo resuelto.
  *
  * El LATERAL del costo es el mismo de siempre (snapshot más reciente
  * ≤ mes; si no hay, el más antiguo, marcado como aproximado). No
  * duplicar esta consulta: ver el comentario de facts-sql.ts.
  */
-async function ventasDelMes(bIds: number[], month: string): Promise<FilaVenta[]> {
+async function ventasDelMes(bId: number, month: string): Promise<FilaVenta[]> {
   return (await sql`
     SELECT s.product_id::text AS product_id,
            s.product_name_raw,
@@ -97,24 +97,120 @@ async function ventasDelMes(bIds: number[], month: string): Promise<FilaVenta[]>
                cs.month ASC
       LIMIT 1
     ) c ON true
-    WHERE s.business_id = ANY(${bIds}) AND s.month = ${month} AND s.source = 'byte'
+    WHERE s.business_id = ${bId} AND s.month = ${month} AND s.source = 'byte'
     ORDER BY s.revenue DESC
   `) as FilaVenta[];
 }
 
-async function historiaHasta(bIds: number[], month: string): Promise<FilaHistoria[]> {
+async function historiaHasta(bId: number, month: string): Promise<FilaHistoria[]> {
   return (await sql`
     SELECT product_id::text AS product_id, product_name_raw, month,
            SUM(units)::float AS units, SUM(revenue)::float AS revenue
     FROM product_month_sales
-    WHERE business_id = ANY(${bIds}) AND source = 'byte' AND month <= ${month}
+    WHERE business_id = ${bId} AND source = 'byte' AND month <= ${month}
     GROUP BY product_id, product_name_raw, month
     ORDER BY month
   `) as FilaHistoria[];
 }
 
+async function mesesCargados(bId: number, month: string): Promise<string[]> {
+  const rows = (await sql`
+    SELECT DISTINCT month FROM product_month_sales
+    WHERE business_id = ${bId} AND source = 'byte' AND month <= ${month}
+    ORDER BY month
+  `) as { month: string }[];
+  return rows.map((r) => r.month);
+}
+
+/** El portafolio de UNA sede. null = esa sede no tiene ventas del mes. */
+async function portafolioDeSede(
+  bId: number, month: string, mesActual: string,
+): Promise<BoardPortfolio | null> {
+  const [ventasRaw, historiaRaw, meses] = await Promise.all([
+    ventasDelMes(bId, month),
+    historiaHasta(bId, month),
+    mesesCargados(bId, month),
+  ]);
+
+  // Los productos que Byte marcó como eliminados se sacan UNA vez, acá,
+  // y no en cada consumidor: `armarFacts` los filtra por su cuenta, pero
+  // la serie de tendencias se arma directo de `historia` y sin esto el
+  // "producto que más cayó" salía siendo uno que ya no está en la carta.
+  // Una regla aplicada en dos sitios es una regla que tarde o temprano
+  // se aplica en uno solo.
+  const ventas = ventasRaw.filter((v) => !estaEliminadoEnByte(v.product_name_raw));
+  const historia = historiaRaw.filter((h) => !estaEliminadoEnByte(h.product_name_raw));
+
+  const facts = armarFacts({
+    scope: { businessId: bId, businessName: `Sede ${bId}` },
+    month, ventas, historia, historyMonths: meses,
+    // Por sede NO se fusiona: cada producto del catálogo es uno solo.
+    fusionarSedes: false,
+  });
+  if (!facts) return null;
+
+  const intel = compilePortfolioIntelligence(facts);
+
+  // ── Tendencia y proyección: SOLO meses cerrados ────────────────────
+  const mesesCerrados = meses.filter((m) => m < mesActual);
+  const serie = new Map<string, { name: string; points: { month: string; revenue: number }[] }>();
+  const porMes = new Map<string, { revenue: number; keys: Set<string> }>();
+  const nombrePorKey = new Map(facts.products.map((p) => [p.key, p.name] as const));
+
+  for (const h of historia) {
+    if (!mesesCerrados.includes(h.month)) continue;
+    const key = keyDeProducto(h.product_id, h.product_name_raw);
+    if (!serie.has(key)) {
+      serie.set(key, { name: nombrePorKey.get(key) ?? h.product_name_raw, points: [] });
+    }
+    const pts = serie.get(key)!.points;
+    const ya = pts.find((x) => x.month === h.month);
+    if (ya) ya.revenue += Number(h.revenue) || 0;
+    else pts.push({ month: h.month, revenue: Number(h.revenue) || 0 });
+
+    const acc = porMes.get(h.month) ?? { revenue: 0, keys: new Set<string>() };
+    acc.revenue += Number(h.revenue) || 0;
+    acc.keys.add(key);
+    porMes.set(h.month, acc);
+  }
+
+  // La serie mensual que alimenta la proyección. La contribución exacta
+  // exigiría recompilar cada mes; se usa la venta real y la contribución
+  // proporcional a la cobertura — lo que se muestra es venta.
+  const cobertura = intel.health.costCoveragePct / 100;
+  const resumenMeses: MonthSummary[] = mesesCerrados
+    .map((m) => {
+      const acc = porMes.get(m);
+      if (!acc) return null;
+      const revenue = Math.round(acc.revenue * 100) / 100;
+      return {
+        month: m, monthLabel: monthLabel(m), revenue,
+        contribution: Math.round(revenue * cobertura * 100) / 100,
+        costCoveragePct: intel.health.costCoveragePct,
+        health: intel.health.total,
+        products: acc.keys.size,
+      };
+    })
+    .filter((x): x is MonthSummary => x !== null);
+
+  return construirBoardPortfolio({
+    intel,
+    mes: month,
+    mesLabel: monthLabel(month),
+    mesEnCurso: month >= mesActual,
+    movers: computeMovers(serie),
+    proyeccion: resumenMeses.length >= 2 ? projectNextMonth(resumenMeses) : null,
+  });
+}
+
+export type PortafolioSede = {
+  businessId: number;
+  sede: string;
+  portafolio: BoardPortfolio;
+};
+
 export type BoardPortfolioResult =
-  | { ok: true; data: BoardPortfolio }
+  | { ok: true; sedes: PortafolioSede[] }
   | { ok: false; error: string };
 
 /**
@@ -123,114 +219,31 @@ export type BoardPortfolioResult =
  */
 export async function getBoardPortfolio(month: string): Promise<BoardPortfolioResult> {
   if (!(await requireFullSession())) {
-    return { ok: false, error: "Solo dirección puede ver el portafolio del grupo." };
+    return { ok: false, error: "Solo dirección puede ver el portafolio." };
   }
   if (!/^\d{4}-\d{2}$/.test(month)) return { ok: false, error: "Mes inválido." };
 
   try {
     const mesActual = mesActualLima();
-    const mesEnCurso = month >= mesActual;
+    const resultados = await Promise.all(
+      SEDES.map(async (s) => ({
+        businessId: s.id,
+        sede: s.nombre,
+        portafolio: await portafolioDeSede(s.id, month, mesActual),
+      })),
+    );
 
-    const mesesCargados = async () =>
-      (await sql`
-        SELECT DISTINCT month FROM product_month_sales
-        WHERE business_id = ANY(${SEDES_CARTA}) AND source = 'byte' AND month <= ${month}
-        ORDER BY month
-      `) as { month: string }[];
-
-    const [ventasRaw, historiaRaw, mesesRows] = await Promise.all([
-      ventasDelMes(SEDES_CARTA, month),
-      historiaHasta(SEDES_CARTA, month),
-      mesesCargados(),
-    ]);
-
-    // Los productos que Byte marcó como eliminados se sacan UNA vez,
-    // acá, y no en cada consumidor: `armarFacts` los filtra por su
-    // cuenta, pero la serie de tendencias se arma directo de `historia`
-    // y sin esto el "producto que más cayó" salía siendo uno que ya no
-    // está en la carta. Una regla aplicada en dos sitios es una regla
-    // que tarde o temprano se aplica en uno solo.
-    const ventas = ventasRaw.filter((v) => !estaEliminadoEnByte(v.product_name_raw));
-    const historia = historiaRaw.filter((h) => !estaEliminadoEnByte(h.product_name_raw));
-
-    const facts = armarFacts({
-      scope: { businessId: 0, businessName: "Yayi's · Fonavi + Centro" },
-      month,
-      ventas,
-      historia,
-      historyMonths: mesesRows.map((m) => m.month),
-      // El mismo plato catalogado "(Fonavi)" y sin sufijo es UNO solo.
-      fusionarSedes: true,
-    });
-    if (!facts) {
+    // Una sede sin ventas cargadas no genera lámina: mejor que no exista
+    // a que salga en blanco ocupando un turno de la reunión.
+    const sedes = resultados.filter(
+      (r): r is PortafolioSede => r.portafolio !== null,
+    );
+    if (sedes.length === 0) {
       return { ok: false, error: `No hay ventas de productos cargadas para ${monthLabel(month)}.` };
     }
-
-    const intel = compilePortfolioIntelligence(facts);
-
-    // ── Tendencia y proyección: SOLO meses cerrados ──────────────────
-    // La lección de marzo: un mes a medias parece un derrumbe. Se
-    // construyen desde la historia ya consultada, sin volver a la base.
-    const mesesCerrados = mesesRows.map((m) => m.month).filter((m) => m < mesActual);
-    const serie = new Map<string, { name: string; points: { month: string; revenue: number }[] }>();
-    const porMes = new Map<string, { revenue: number; keys: Set<string> }>();
-    const nombrePorKey = new Map<string, string>();
-    for (const p of facts.products) nombrePorKey.set(p.key, p.name);
-
-    for (const h of historia) {
-      if (!mesesCerrados.includes(h.month)) continue;
-      const key = keyDeCarta(null, h.product_name_raw);
-      const nombre = nombrePorKey.get(key) ?? h.product_name_raw;
-      if (!serie.has(key)) serie.set(key, { name: nombre, points: [] });
-      const pts = serie.get(key)!.points;
-      const ya = pts.find((x) => x.month === h.month);
-      if (ya) ya.revenue += Number(h.revenue) || 0;
-      else pts.push({ month: h.month, revenue: Number(h.revenue) || 0 });
-
-      const acc = porMes.get(h.month) ?? { revenue: 0, keys: new Set<string>() };
-      acc.revenue += Number(h.revenue) || 0;
-      acc.keys.add(key);
-      porMes.set(h.month, acc);
-    }
-
-    const movers = computeMovers(serie);
-
-    // La serie mensual que alimenta la proyección. La contribución y la
-    // salud exactas exigirían recompilar cada mes; acá se usa la venta
-    // real y se deja la contribución proporcional a la cobertura del
-    // mes analizado — la proyección es de VENTA, que es lo que se
-    // muestra en la reunión.
-    const cobertura = intel.health.costCoveragePct / 100;
-    const resumenMeses: MonthSummary[] = mesesCerrados
-      .map((m) => {
-        const acc = porMes.get(m);
-        if (!acc) return null;
-        const revenue = Math.round(acc.revenue * 100) / 100;
-        return {
-          month: m,
-          monthLabel: monthLabel(m),
-          revenue,
-          contribution: Math.round(revenue * cobertura * 100) / 100,
-          costCoveragePct: intel.health.costCoveragePct,
-          health: intel.health.total,
-          products: acc.keys.size,
-        };
-      })
-      .filter((x): x is MonthSummary => x !== null);
-
-    return {
-      ok: true,
-      data: construirBoardPortfolio({
-        intel,
-        mes: month,
-        mesLabel: monthLabel(month),
-        mesEnCurso,
-        movers,
-        proyeccion: resumenMeses.length >= 2 ? projectNextMonth(resumenMeses) : null,
-      }),
-    };
+    return { ok: true, sedes };
   } catch (err) {
     console.error("[getBoardPortfolio] failed:", err);
-    return { ok: false, error: "No pude armar el portafolio del grupo." };
+    return { ok: false, error: "No pude armar el portafolio de productos." };
   }
 }

@@ -15,7 +15,9 @@ import { BRAND } from "../report/renderers/design-system";
 import type { BoardDeckData } from "@/app/actions/kpis";
 import type { KpiTraffic, KpiWeekSummary } from "./engine";
 import type { BoardPortfolio } from "@/lib/portfolio/board-view";
+import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { portfolioSlides } from "./portfolio-slides";
+import { breakevenSlide } from "./breakeven-slide";
 
 const PRIMARY = BRAND.primary.replace("#", "");
 const INK = BRAND.ink.replace("#", "");
@@ -285,11 +287,14 @@ function incentivesSlide(pptx: PptxGenJS, sub: string, cafeterias: BoardDeckData
 export async function renderWeeklyKpiDeck(
   data: BoardDeckData,
   /**
-   * Portafolio de productos (Fonavi + Centro). Opcional a propósito: si
-   * no hay ventas cargadas o la consulta falla, el deck sale igual — la
-   * reunión de KPIs no se cae porque falte el análisis de carta.
+   * Portafolio de productos, una tanda de láminas POR SEDE. Opcional a
+   * propósito: si no hay ventas cargadas o la consulta falla, el deck
+   * sale igual — la reunión de KPIs no se cae porque falte el análisis
+   * de carta.
    */
-  portafolio?: BoardPortfolio | null,
+  portafolio?: { sede: string; portafolio: BoardPortfolio }[] | null,
+  /** Punto de equilibrio por sede. Opcional por la misma razón. */
+  breakeven?: GroupBreakeven | null,
 ): Promise<{ blob: Blob; filename: string }> {
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "WIDE", width: 10, height: 5.625 });
@@ -386,10 +391,17 @@ export async function renderWeeklyKpiDeck(
   // 6 · Meta de ticket & plan de incentivos
   incentivesSlide(pptx, sub, data.cafeterias);
 
-  // 6b · Portafolio de productos: qué mantener, promocionar, reemplazar.
-  // Va DESPUÉS de los KPIs y ANTES de las conclusiones: primero cómo
-  // vamos, después qué vendemos, y recién ahí qué decidimos.
-  if (portafolio) portfolioSlides((t, sb) => baseSlide(pptx, t, sb), sub, portafolio);
+  // 6b · Punto de equilibrio: ¿cada sede cubre sus costos este mes?
+  // Va antes del detalle de productos porque es la pregunta más grande:
+  // primero si el mes se sostiene, después qué producto lo sostiene.
+  if (breakeven) breakevenSlide((t, sb) => baseSlide(pptx, t, sb), sub, breakeven);
+
+  // 6c · Portafolio de productos por sede: qué mantener, promocionar o
+  // reemplazar. Después de los KPIs y antes de las conclusiones:
+  // primero cómo vamos, después qué vendemos, y recién ahí qué decidimos.
+  if (portafolio && portafolio.length > 0) {
+    portfolioSlides((t, sb) => baseSlide(pptx, t, sb), sub, portafolio);
+  }
 
   // 7 · Qué mejoró / qué empeoró + KPI rojo priorizado
   const wowSlide = baseSlide(pptx, "¿Qué mejoró, qué empeoró y qué hacemos?", sub);

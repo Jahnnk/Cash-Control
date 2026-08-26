@@ -62,11 +62,11 @@ function pct(n: number | null): string {
  * caja negra: nadie discute un número que no sabe de dónde sale, solo
  * lo acepta o lo ignora — y las dos cosas son malas en una reunión.
  */
-export function matrizSlide(nueva: SlideFactory, sub: string, bp: BoardPortfolio) {
-  const s = nueva("Portafolio: qué mantener, promocionar o reemplazar", sub);
+export function matrizSlide(nueva: SlideFactory, sub: string, bp: BoardPortfolio, sede: string) {
+  const s = nueva(`${sede} — qué mantener, promocionar o reemplazar`, sub);
 
   s.addText(
-    `${bp.mesLabel}${bp.mesEnCurso ? " (mes en curso)" : ""} · Fonavi + Centro · rentabilidad × popularidad`,
+    `${bp.mesLabel}${bp.mesEnCurso ? " (mes en curso)" : ""} · rentabilidad × popularidad, medido DENTRO de ${sede}`,
     { x: MX, y: BODY_Y - 0.32, w: CONTENT_W, h: 0.26, fontSize: 9.5, italic: true, color: "6B7280" },
   );
 
@@ -140,8 +140,8 @@ export function matrizSlide(nueva: SlideFactory, sub: string, bp: BoardPortfolio
  * lección de marzo). Si no hay historia suficiente se dice, no se
  * dibuja una tendencia inventada con dos puntos.
  */
-export function movimientoSlide(nueva: SlideFactory, sub: string, bp: BoardPortfolio) {
-  const s = nueva("Movimiento del portafolio y proyección", sub);
+export function movimientoSlide(nueva: SlideFactory, sub: string, bp: BoardPortfolio, sede: string) {
+  const s = nueva(`${sede} — movimiento del portafolio y proyección`, sub);
   s.addText("Comparado entre meses CERRADOS: el mes en curso no entra (a medias parecería una caída).", {
     x: MX, y: BODY_Y - 0.32, w: CONTENT_W, h: 0.26, fontSize: 9, italic: true, color: "6B7280",
   });
@@ -207,8 +207,8 @@ export function movimientoSlide(nueva: SlideFactory, sub: string, bp: BoardPortf
  * hay ninguna, la lámina lo dice en vez de inventar una tarea: una
  * reunión con una acción falsa es peor que una reunión sin acciones.
  */
-export function decisionesSlide(nueva: SlideFactory, sub: string, bp: BoardPortfolio) {
-  const s = nueva("Decisiones de carta para hoy", sub);
+export function decisionesSlide(nueva: SlideFactory, sub: string, bp: BoardPortfolio, sede: string) {
+  const s = nueva(`${sede} — decisiones de carta para hoy`, sub);
   let y = BODY_Y;
 
   if (bp.decisiones.length === 0) {
@@ -259,9 +259,31 @@ export function decisionesSlide(nueva: SlideFactory, sub: string, bp: BoardPortf
   }
 }
 
-/** Las tres láminas, en orden. */
-export function portfolioSlides(nueva: SlideFactory, sub: string, bp: BoardPortfolio) {
-  matrizSlide(nueva, sub, bp);
-  movimientoSlide(nueva, sub, bp);
-  decisionesSlide(nueva, sub, bp);
+/**
+ * Las láminas de portafolio de TODAS las sedes.
+ *
+ * Se agrupan POR SEDE, no por tipo de lámina: las tres de Fonavi
+ * seguidas, después las tres de Centro. En la reunión se habla de una
+ * sede a la vez, con su administrador — saltar entre "las matrices de
+ * las tres" y luego "los movimientos de las tres" obligaría a volver
+ * atrás cada vez.
+ *
+ * Una sede con muy pocos productos costeados no genera las tres: la de
+ * movimiento y la de decisiones solo salen si tienen algo que decir. Una
+ * lámina vacía se lleva un turno de la reunión sin dar nada.
+ */
+export function portfolioSlides(
+  nueva: SlideFactory,
+  sub: string,
+  sedes: { sede: string; portafolio: BoardPortfolio }[],
+) {
+  for (const { sede, portafolio: bp } of sedes) {
+    matrizSlide(nueva, sub, bp, sede);
+    if (bp.suben.length > 0 || bp.bajan.length > 0 || bp.proyeccion) {
+      movimientoSlide(nueva, sub, bp, sede);
+    }
+    if (bp.decisiones.length > 0 || bp.preguntas.length > 0) {
+      decisionesSlide(nueva, sub, bp, sede);
+    }
+  }
 }

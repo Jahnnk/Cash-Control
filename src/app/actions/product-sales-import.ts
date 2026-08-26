@@ -31,6 +31,7 @@ import {
   type CargaSede, type ResumenCargas, type EstadoCarga,
 } from "@/lib/productos/cargas";
 import { getToday } from "@/lib/utils";
+import { elegirFuenteVentas, type FuenteVenta } from "@/lib/ventas-mes-sql";
 import {
   claveDesdeNota, evaluarReportesSemanales,
   type CargaRegistrada, type EstadoSemanal,
@@ -236,17 +237,37 @@ async function runImport(bId: number, input: ImportInput, batchNote: string): Pr
     // 3) Check de integridad natural contra las ventas Byte del sistema
     //    (tercera fuente: el registro diario del admin en upselling_daily,
     //    clave para el mes en curso subido desde el Panel de Sede).
+    // La elección de fuente vive en lib/ventas-mes-sql.ts: una fuente
+    // rota (filas en cero de un import a medias) ya no puede ganarle a
+    // una completa. Antes esta cadena estaba copiada acá y en
+    // breakeven.ts — dos copias de la misma regla es como empieza a
+    // divergir un número.
     const sys = (await sql`
-      SELECT COALESCE(
-        NULLIF((SELECT SUM(total)::float FROM byte_sales_daily
-                WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}), 0),
-        NULLIF((SELECT SUM(byte_total)::float FROM daily_records
-                WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd} AND archived = false), 0),
-        NULLIF((SELECT SUM(revenue)::float FROM upselling_daily
-                WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}), 0)
-      ) AS total
-    `) as { total: number | null }[];
-    const systemMonthTotal = sys[0]?.total ?? null;
+      SELECT 'byte' AS fuente,
+             COALESCE(SUM(total), 0)::float AS total,
+             COUNT(*) FILTER (WHERE total > 0)::int AS dias
+      FROM byte_sales_daily
+      WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
+      UNION ALL
+      SELECT 'cierre',
+             COALESCE(SUM(byte_total), 0)::float,
+             COUNT(*) FILTER (WHERE byte_total > 0)::int
+      FROM daily_records
+      WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd} AND archived = false
+      UNION ALL
+      SELECT 'registro',
+             COALESCE(SUM(revenue), 0)::float,
+             COUNT(*) FILTER (WHERE revenue > 0)::int
+      FROM upselling_daily
+      WHERE business_id = ${bId} AND date BETWEEN ${monthStart} AND ${monthEnd}
+    `) as { fuente: FuenteVenta["fuente"]; total: number; dias: number }[];
+    const ordenFuentes: FuenteVenta["fuente"][] = ["byte", "cierre", "registro"];
+    const elegida = elegirFuenteVentas(
+      ordenFuentes.map((f) => sys.find((r) => r.fuente === f) ?? { fuente: f, total: 0, dias: 0 }),
+    );
+    // null (y no 0) cuando no hay ninguna fuente: el check de integridad
+    // distingue "no hay con qué comparar" de "comparó y dio cero".
+    const systemMonthTotal = elegida.fuente === null ? null : elegida.total;
 
     revalidatePath("/[negocio]/productos", "page");
     revalidatePath("/[negocio]/panel", "page");

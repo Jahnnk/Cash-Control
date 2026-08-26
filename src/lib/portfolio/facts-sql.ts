@@ -169,9 +169,9 @@ export function armarFacts(input: {
     porKey.set(key, {
       productId: r.product_id || null,
       key,
-      name: input.fusionarSedes
-        ? nombreDeCarta(r.catalog_name, r.product_name_raw)
-        : r.catalog_name || r.product_name_raw,
+      // El sufijo se quita SIEMPRE: en la lámina de Fonavi, escribir
+      // "Cappuccino (Fonavi)" es repetir el título de la diapositiva.
+      name: nombreDeCarta(r.catalog_name, r.product_name_raw),
       category: r.category || null,
       units,
       revenue,

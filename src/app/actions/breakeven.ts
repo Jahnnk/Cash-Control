@@ -16,6 +16,7 @@ import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
 import { buildFixedVariable } from "@/lib/fixed-variable";
+import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
 import { computeBreakeven, type BreakevenResult, type BreakevenReference } from "@/lib/breakeven";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -37,20 +38,52 @@ function monthMeta(month: string) {
   return { start, end, daysInMonth, daysElapsed, isCurrent };
 }
 
-/** Ventas Byte del mes de una sede (misma cadena de fuentes del PIC). */
+/**
+ * Ventas Byte del mes de una sede.
+ *
+ * Trae las TRES fuentes con sus días de venta y deja que
+ * `elegirFuenteVentas` decida: una fuente rota (31 filas en cero) ya no
+ * puede ganarle a una completa. La regla y su porqué viven en
+ * lib/ventas-mes-sql.ts — no reimplementarla acá.
+ */
 async function monthSales(bId: number, start: string, end: string): Promise<number> {
+  return (await ventasDelMesConFuente(bId, start, end)).total;
+}
+
+async function ventasDelMesConFuente(bId: number, start: string, end: string): Promise<VentasMes> {
   const rows = (await sql`
-    SELECT COALESCE(
-      NULLIF((SELECT SUM(total)::float FROM byte_sales_daily
-              WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}), 0),
-      NULLIF((SELECT SUM(byte_total)::float FROM daily_records
-              WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end} AND archived = false), 0),
-      NULLIF((SELECT SUM(revenue)::float FROM upselling_daily
-              WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}), 0),
-      0
-    ) AS total
-  `) as { total: number }[];
-  return rows[0]?.total ?? 0;
+    SELECT 'byte' AS fuente,
+           COALESCE(SUM(total), 0)::float AS total,
+           COUNT(*) FILTER (WHERE total > 0)::int AS dias,
+           MAX(date) FILTER (WHERE total > 0)::text AS ultimo_dia
+    FROM byte_sales_daily
+    WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
+    UNION ALL
+    SELECT 'cierre',
+           COALESCE(SUM(byte_total), 0)::float,
+           COUNT(*) FILTER (WHERE byte_total > 0)::int,
+           MAX(date) FILTER (WHERE byte_total > 0)::text
+    FROM daily_records
+    WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end} AND archived = false
+    UNION ALL
+    SELECT 'registro',
+           COALESCE(SUM(revenue), 0)::float,
+           COUNT(*) FILTER (WHERE revenue > 0)::int,
+           MAX(date) FILTER (WHERE revenue > 0)::text
+    FROM upselling_daily
+    WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
+  `) as { fuente: FuenteVenta["fuente"]; total: number; dias: number; ultimo_dia: string | null }[];
+
+  // El orden del UNION ALL no está garantizado: se reordena por la
+  // preferencia, que es lo que la regla necesita para decidir.
+  const orden: FuenteVenta["fuente"][] = ["byte", "cierre", "registro"];
+  const fuentes: FuenteVenta[] = orden.map((f) => {
+    const r = rows.find((x) => x.fuente === f);
+    return r
+      ? { fuente: f, total: r.total, dias: r.dias, ultimoDia: r.ultimo_dia }
+      : { fuente: f, total: 0, dias: 0, ultimoDia: null };
+  });
+  return elegirFuenteVentas(fuentes);
 }
 
 /** Fijos/variables/sin-clasificar operativos del mes de una sede. */
@@ -169,7 +202,18 @@ export async function getBreakevenMonth(month: string): Promise<
 export type GroupBreakeven = {
   month: string;
   isCurrent: boolean;
-  sedes: { businessId: number; name: string; result: BreakevenResult }[];
+  sedes: {
+    businessId: number;
+    name: string;
+    result: BreakevenResult;
+    /**
+     * Hasta qué día llegan las ventas cargadas de esa sede. Sin esto, un
+     * reporte de Byte atrasado hace ver "en riesgo" a una sede que solo
+     * tiene días sin cargar (le pasó a Fonavi en agosto: ventas al 18 y
+     * el mes iba por el 26).
+     */
+    ventasHasta: string | null;
+  }[];
   /** Consolidado: Σ fijos / (1 − Σ variables / Σ ventas). */
   grupo: BreakevenResult;
 };
@@ -186,12 +230,12 @@ export async function getGroupBreakeven(month: string): Promise<
     const ids = [1, 2, 3];
     const perSede = await Promise.all(
       ids.map(async (bId) => {
-        const [ventas, costs, reference] = await Promise.all([
-          monthSales(bId, start, end),
+        const [v, costs, reference] = await Promise.all([
+          ventasDelMesConFuente(bId, start, end),
           monthCosts(bId, start, end),
           isCurrent ? buildReference(bId, month) : Promise.resolve(null),
         ]);
-        return { bId, ventas, reference, ...costs };
+        return { bId, ventas: v.total, ventasHasta: v.ultimoDia, reference, ...costs };
       }),
     );
     const sedes = perSede.map((s) => {
@@ -204,11 +248,15 @@ export async function getGroupBreakeven(month: string): Promise<
           ...r.warnings.filter((w) => !w.includes("No hay costos fijos clasificados")),
           "Mes en curso sin referencia histórica: se necesita al menos un mes cerrado con ventas y costos fijos clasificados.",
         ];
-        return { businessId: s.bId, name: SEDE_NAMES[s.bId] ?? `Negocio ${s.bId}`, result: r };
+        return {
+          businessId: s.bId, name: SEDE_NAMES[s.bId] ?? `Negocio ${s.bId}`,
+          result: r, ventasHasta: s.ventasHasta,
+        };
       }
       return {
         businessId: s.bId,
         name: SEDE_NAMES[s.bId] ?? `Negocio ${s.bId}`,
+        ventasHasta: s.ventasHasta,
         result: computeBreakeven({
           fijos: s.fijos,
           variables: s.variables,
