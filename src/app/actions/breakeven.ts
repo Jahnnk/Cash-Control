@@ -127,6 +127,17 @@ function prevMonths(month: string, n: number): string[] {
   return out; // del más reciente al más antiguo
 }
 
+/**
+ * Qué fracción del mes tiene que estar cargada para que sirva de
+ * referencia. Con menos, sus costos (del mes entero) se comparan contra
+ * ventas parciales y el ratio de variables se dispara.
+ *
+ * 70% deja fuera a Centro en mayo (11 días de 31 = 35%) y a Fonavi en
+ * abril (10 de 30 = 33%), y mantiene todos los meses sanos, que van de
+ * 26/30 (87%) para arriba.
+ */
+const COBERTURA_MINIMA_REFERENCIA = 0.7;
+
 /** Agregado interno de la referencia (permite consolidar el grupo). */
 type RefAgg = BreakevenReference & { sumVariables: number; sumVentas: number };
 
@@ -141,15 +152,26 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
   const candidates = prevMonths(month, 6);
   const rows = await Promise.all(
     candidates.map(async (m) => {
-      const { start, end } = monthMeta(m);
-      const [ventas, costs] = await Promise.all([
-        monthSales(bId, start, end),
+      const { start, end, daysInMonth } = monthMeta(m);
+      const [v, costs] = await Promise.all([
+        ventasDelMesConFuente(bId, start, end),
         monthCosts(bId, start, end),
       ]);
-      return { month: m, ventas, ...costs };
+      return { month: m, ventas: v.total, diasVenta: v.dias, daysInMonth, ...costs };
     }),
   );
-  const usable = rows.filter((r) => r.fijos > 0 && r.ventas > 0).slice(0, 3);
+
+  // Un mes con las VENTAS a medias no sirve de referencia: sus costos
+  // son del mes entero y sus ventas no, así que el ratio de variables
+  // sale disparado. Le pasó a Centro: mayo tenía 11 días de venta
+  // cargados de 31, con los costos completos → 197% de variables sobre
+  // ventas. Promediado con junio y julio daba un margen de contribución
+  // NEGATIVO y el sistema concluía "cada sol vendido pierde plata",
+  // cuando el problema era el mes incompleto, no el negocio.
+  const usable = rows
+    .filter((r) => r.fijos > 0 && r.ventas > 0)
+    .filter((r) => r.diasVenta >= r.daysInMonth * COBERTURA_MINIMA_REFERENCIA)
+    .slice(0, 3);
   if (usable.length === 0) return null;
   const sumVariables = usable.reduce((s, r) => s + r.variables, 0);
   const sumVentas = usable.reduce((s, r) => s + r.ventas, 0);
