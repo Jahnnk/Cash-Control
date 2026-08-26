@@ -207,10 +207,9 @@ export type GroupBreakeven = {
     name: string;
     result: BreakevenResult;
     /**
-     * Hasta qué día llegan las ventas cargadas de esa sede. Sin esto, un
-     * reporte de Byte atrasado hace ver "en riesgo" a una sede que solo
-     * tiene días sin cargar (le pasó a Fonavi en agosto: ventas al 18 y
-     * el mes iba por el 26).
+     * Hasta qué día llegan las ventas cargadas de esa sede. Sin esto, una
+     * sede con días sin cargar se ve "en riesgo" por eso y no por vender
+     * poco — y en la reunión se le reclama al administrador equivocado.
      */
     ventasHasta: string | null;
   }[];
