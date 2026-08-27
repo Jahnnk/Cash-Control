@@ -115,9 +115,10 @@ export function renderPilotReportPdf(input: PilotReportInput): { blob: Blob; fil
 
   doc.setFont("helvetica", "italic").setFontSize(8.5).setTextColor(BRAND.gray);
   const introLines = doc.splitTextToSize(
-    "El ticket del programa excluye delivery y consumo del personal (ninguno de los dos permite " +
-    "hacer upselling): solo cuenta la venta presencial de mostrador y mesa, donde el equipo sí puede " +
-    "influir. El detalle día por día y el ranking completo están en las páginas de cada sede.",
+    "El ticket del programa cuenta mostrador, mesa y delivery: en las tres el pedido lo atiende el " +
+    "equipo y el upselling depende de ellos. Solo se excluye el consumo del personal, que va con " +
+    "descuento y sin posibilidad de sugerir. El detalle día por día y el ranking completo están en " +
+    "las páginas de cada sede.",
     w - PDF.margin * 2,
   );
   doc.text(introLines, PDF.margin, y);
@@ -166,7 +167,7 @@ export function renderPilotReportPdf(input: PilotReportInput): { blob: Blob; fil
 
     if (p.delivery) {
       doc.setTextColor(BRAND.gray);
-      doc.text(`Delivery aparte (no cuenta): ${fmtSoles(p.delivery.ticket ?? 0)} × ${p.delivery.pedidos} pedidos`, PDF.margin, y);
+      doc.text(`Delivery (sí cuenta): ${fmtSoles(p.delivery.ticket ?? 0)} × ${p.delivery.pedidos} pedidos`, PDF.margin, y);
       y += 5;
       doc.setTextColor(BRAND.ink);
     }

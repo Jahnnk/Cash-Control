@@ -40,7 +40,7 @@ export type DailyEntry = {
   revenue: number | null;
   items: number | null;
   /** Pedidos por delivery del día (dentro de `personas`). Opcional:
-   * null/ausente = 0. En delivery no se puede sugerir extras, así que
+   * null/ausente = 0. Desde ago-2026 SÍ cuentan para el ticket, así que
    * se EXCLUYEN del ticket del programa (feedback admins jul-2026).
    * Mostrador y mesa NO se separan: ambos mueven el bono. */
   deliveryPedidos?: number | null;
@@ -96,8 +96,8 @@ export type IncentiveProgress = {
   porNivel: { level: IncentiveLevel; sumaBonos: number; pozoNivel: number | null; colchon: number | null }[];
   /** Piso de tráfico (sin él, la meta no cuenta) — sobre personas TOTALES. */
   traffic: { personasPorDia: number | null; floor: number; cumple: boolean };
-  /** Delivery del periodo (informativo — excluido del ticket del
-   * programa; mostrador y mesa sí cuentan). null si no se registró. */
+  /** Delivery del periodo (informativo — desde ago-2026 SÍ entra al
+   * ticket del programa). null si no se registró. */
   delivery: { pedidos: number; venta: number; ticket: number | null } | null;
   /** Consumo del personal del periodo (informativo — también excluido:
    * al 20% de descuento y sin upselling posible). null si no se registró. */
@@ -105,20 +105,16 @@ export type IncentiveProgress = {
 };
 
 /**
- * Ticket PRESENCIAL de un solo día (misma exclusión de delivery y
- * consumo del personal que computeProgress, pero fila por fila — para
- * el detalle diario de reportes exportables: "lujo de detalle" pedido
- * por Jahnn no puede usar una fórmula distinta a la del agregado).
+ * Ticket que cuenta para el programa, de un solo día — misma fórmula
+ * que `computeProgress` pero fila por fila, para el detalle diario de
+ * los reportes exportables. El "lujo de detalle" que pidió Jahnn no
+ * puede usar una fórmula distinta a la del agregado.
  */
 export function dailyPresencial(d: DailyEntry): { personas: number; venta: number; ticket: number | null } {
-  const personasTotal = d.personas ?? 0;
-  const ventaTotal = d.revenue ?? 0;
-  const deliveryPedidos = Math.max(0, d.deliveryPedidos ?? 0);
-  const deliveryVenta = Math.max(0, d.deliveryVenta ?? 0);
   const personalPedidos = Math.max(0, d.personalPedidos ?? 0);
   const personalVenta = Math.max(0, d.personalVenta ?? 0);
-  const personas = Math.max(0, personasTotal - deliveryPedidos - personalPedidos);
-  const venta = r2(Math.max(0, ventaTotal - deliveryVenta - personalVenta));
+  const personas = Math.max(0, (d.personas ?? 0) - personalPedidos);
+  const venta = r2(Math.max(0, (d.revenue ?? 0) - personalVenta));
   return { personas, venta, ticket: personas > 0 ? r2(venta / personas) : null };
 }
 
@@ -134,22 +130,34 @@ export function computeProgress(
   const itemsDays = withData.filter((d) => d.items !== null);
   const items = itemsDays.length > 0 ? itemsDays.reduce((s, d) => s + (d.items ?? 0), 0) : null;
 
-  // Delivery —y SOLO delivery— se excluye del ticket del programa:
-  // nadie puede sugerir extras en un pedido de app, y promediarlo
-  // castiga al equipo por algo que no controla (misma filosofía del
-  // hándicap por turno). MOSTRADOR Y MESA SÍ CUENTAN: ambos son venta
-  // presencial donde el upselling depende del equipo (Jahnn, jul-2026:
-  // "también tenemos ventas en mostrador y también deberían mover el
-  // bono"). Sin registro de delivery (null/0) todo se comporta como antes.
-  const deliveryPedidos = withData.reduce((s, d) => s + Math.max(0, d.deliveryPedidos ?? 0), 0);
-  const deliveryVenta = r2(withData.reduce((s, d) => s + Math.max(0, d.deliveryVenta ?? 0), 0));
-  // Consumo del personal: mismo trato que delivery (Chari, jul-2026) —
-  // compra al 20% de descuento y sin upselling posible; excluirlo evita
-  // que el beneficio al equipo castigue la meta del equipo.
+  // ── Qué entra al ticket del programa ──────────────────────────────
+  //
+  // DELIVERY: SÍ cuenta desde ago-2026. Antes se excluía por una razón
+  // que resultó no aplicar acá: "en un pedido de app nadie puede
+  // sugerir extras". Pero en Fonavi el delivery entra por WhatsApp y
+  // teléfono, y lo atiende el equipo — o sea que el upselling depende
+  // de ellos igual que en mostrador (Chari vía Jahnn, ago-2026). Y no
+  // es marginal: 65 pedidos en agosto con un ticket de S/46.12, el
+  // DOBLE del presencial (S/23.06). Dejarlos fuera les quitaba la
+  // oportunidad más rentable que tienen.
+  //
+  // CONSUMO DEL PERSONAL: sigue fuera (Chari, jul-2026). Compran al 20%
+  // de descuento y no hay upselling posible; incluirlo haría que un
+  // beneficio para el equipo le baje la meta al equipo.
+  //
+  // OJO al cambiar esto: la BASE del ticket tiene que medirse con el
+  // MISMO criterio. Si se mide con delivery contra una base calculada
+  // sin él, el ticket sube solo por el cambio de regla y el bono se
+  // regala (en Fonavi eran S/1.23, el 82% del primer nivel). Por eso
+  // `getBaseEditor` usa esta misma fórmula.
   const personalPedidos = withData.reduce((s, d) => s + Math.max(0, d.personalPedidos ?? 0), 0);
   const personalVenta = r2(withData.reduce((s, d) => s + Math.max(0, d.personalVenta ?? 0), 0));
-  const personasPresencial = Math.max(0, personas - deliveryPedidos - personalPedidos);
-  const ventaPresencial = r2(Math.max(0, revenue - deliveryVenta - personalVenta));
+  const personasPresencial = Math.max(0, personas - personalPedidos);
+  const ventaPresencial = r2(Math.max(0, revenue - personalVenta));
+
+  // Delivery: solo informativo, para poder verlo aparte en el panel.
+  const deliveryPedidos = withData.reduce((s, d) => s + Math.max(0, d.deliveryPedidos ?? 0), 0);
+  const deliveryVenta = r2(withData.reduce((s, d) => s + Math.max(0, d.deliveryVenta ?? 0), 0));
 
   const ticketActual = personasPresencial > 0 ? r2(ventaPresencial / personasPresencial) : null;
   const deltaActual = ticketActual !== null ? r2(ticketActual - config.ticketBase) : null;
@@ -165,9 +173,9 @@ export function computeProgress(
   const proximoNivel =
     next && deltaActual !== null ? { level: next, faltaSoles: r2(next.delta - deltaActual) } : null;
 
-  // Proyección para el POZO con clientes PRESENCIALES (mostrador +
-  // mesa): la utilidad nueva (delta × clientes) solo se genera donde
-  // sí se pudo hacer upselling.
+  // Proyección para el POZO con los clientes que cuentan (mostrador,
+  // mesa y delivery): la utilidad nueva (delta × clientes) se genera
+  // donde sí se pudo hacer upselling.
   const personasProyectadas =
     withData.length > 0 ? Math.round((personasPresencial / withData.length) * daysInMonth) : null;
   const pozoProyectado =

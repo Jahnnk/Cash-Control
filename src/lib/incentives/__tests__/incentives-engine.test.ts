@@ -94,19 +94,19 @@ describe("dailyPresencial — el ticket de un solo día para el detalle exportab
     expect(r).toEqual({ personas: 40, venta: 1000, ticket: 25 });
   });
 
-  it("excluye delivery Y personal del día, igual que el agregado", () => {
+  it("el delivery SÍ entra; solo el consumo del personal se resta", () => {
     const r = dailyPresencial({
       date: "2026-07-02", personas: 50, revenue: 1300, items: null,
       deliveryPedidos: 5, deliveryVenta: 100, personalPedidos: 2, personalVenta: 16,
     });
-    // presencial: 50-5-2=43 personas, 1300-100-16=1184 venta
-    expect(r.personas).toBe(43);
-    expect(r.venta).toBe(1184);
-    expect(r.ticket).toBeCloseTo(27.53, 2);
+    // 50-2=48 personas, 1300-16=1284 venta — el delivery queda adentro.
+    expect(r.personas).toBe(48);
+    expect(r.venta).toBe(1284);
+    expect(r.ticket).toBeCloseTo(26.75, 2);
   });
 
-  it("día sin clientes presenciales → ticket null, no divide entre cero", () => {
-    const r = dailyPresencial({ date: "2026-07-03", personas: 5, revenue: 100, items: null, deliveryPedidos: 5, deliveryVenta: 100 });
+  it("un día que fue TODO consumo del personal no divide entre cero", () => {
+    const r = dailyPresencial({ date: "2026-07-03", personas: 5, revenue: 100, items: null, personalPedidos: 5, personalVenta: 100 });
     expect(r.personas).toBe(0);
     expect(r.ticket).toBeNull();
   });
@@ -299,9 +299,12 @@ describe("pickDailyFocus — rotación diaria del foco de upselling", () => {
   });
 });
 
-describe("computeProgress — delivery EXCLUIDO del ticket del programa (jul-2026)", () => {
-  // 10 días: 50 clientes presenciales/día (mostrador + mesa, ambos cuentan)
-  // a S/25 + 10 deliverys/día a S/12 (que bajaban el promedio).
+describe("computeProgress — el delivery SÍ cuenta para el ticket (ago-2026)", () => {
+  // Cambio de política: en Fonavi el delivery entra por WhatsApp y lo
+  // atiende el equipo, así que el upselling depende de ellos igual que
+  // en mostrador (Chari vía Jahnn). Antes se restaba.
+  //
+  // 10 días: 50 clientes de salón/día a S/25 + 10 deliverys/día a S/12.
   const conDelivery = Array.from({ length: 10 }, (_, i) => ({
     date: `2026-07-${String(i + 1).padStart(2, "0")}`,
     personas: 60,               // 50 salón + 10 delivery
@@ -311,14 +314,13 @@ describe("computeProgress — delivery EXCLUIDO del ticket del programa (jul-202
     deliveryVenta: 120,
   }));
 
-  it("el ticket del programa es TODO lo presencial (mostrador + mesa), sin delivery", () => {
+  it("el ticket incluye el delivery: mostrador, mesa y delivery cuentan", () => {
     const p = computeProgress(FONAVI, mkStaff(4, 3), conDelivery, 30);
-    // Con delivery mezclado sería 1370/60 = 22.83 (injusto).
-    expect(p.ticketActual).toBeCloseTo(25.0, 2); // 1250/50: mostrador + mesa
-    expect(p.deltaActual).toBeCloseTo(25.0 - 25.44, 2);
+    expect(p.ticketActual).toBeCloseTo(1370 / 60, 2); // 22.83, todo junto
+    expect(p.deltaActual).toBeCloseTo(1370 / 60 - 25.44, 2);
   });
 
-  it("el ticket delivery se reporta APARTE (informativo, no castiga)", () => {
+  it("el delivery se sigue reportando APARTE, para poder mirarlo solo", () => {
     const p = computeProgress(FONAVI, mkStaff(4, 3), conDelivery, 30);
     expect(p.delivery).toEqual({ pedidos: 100, venta: 1200, ticket: 12 });
   });
@@ -329,15 +331,15 @@ describe("computeProgress — delivery EXCLUIDO del ticket del programa (jul-202
     expect(p.traffic.cumple).toBe(true);
   });
 
-  it("el pozo se proyecta con clientes PRESENCIALES (la utilidad nueva sale de ellos)", () => {
+  it("el pozo se proyecta con TODOS los clientes que cuentan, delivery incluido", () => {
     const p = computeProgress(FONAVI, mkStaff(4, 3), conDelivery, 30);
-    expect(p.personasProyectadas).toBe(50 * 30); // presenciales/día × días del mes
+    expect(p.personasProyectadas).toBe(60 * 30); // 60/día × días del mes
   });
 
   it("MOSTRADOR CUENTA IGUAL QUE MESA: el motor no los distingue (duda de Jahnn, jul-2026)", () => {
-    // Día A: 40 clientes de mostrador a S/20 + 20 de mesa a S/35 (sin delivery).
-    // El motor solo ve el TOTAL presencial: no existe forma de que el
-    // mostrador quede fuera del bono — solo delivery se resta.
+    // Día A: 40 clientes de mostrador a S/20 + 20 de mesa a S/35.
+    // El motor solo ve el total: no existe forma de que el mostrador
+    // quede fuera del bono.
     const soloPresencial = [{
       date: "2026-07-01",
       personas: 60,                    // 40 mostrador + 20 mesa
@@ -363,10 +365,10 @@ describe("computeProgress — delivery EXCLUIDO del ticket del programa (jul-202
     expect(p.personasProyectadas).toBe(60 * 30);
   });
 
-  it("datos corruptos (delivery > total) no producen tickets negativos", () => {
-    const raros = [{ date: "2026-07-01", personas: 10, revenue: 100, items: null, deliveryPedidos: 15, deliveryVenta: 200 }];
+  it("datos corruptos (personal > total) no producen tickets negativos", () => {
+    const raros = [{ date: "2026-07-01", personas: 10, revenue: 100, items: null, personalPedidos: 15, personalVenta: 200 }];
     const p = computeProgress(FONAVI, mkStaff(4, 3), raros, 30);
-    expect(p.ticketActual).toBeNull(); // presencial quedó en 0 → sin ticket, no basura
+    expect(p.ticketActual).toBeNull(); // quedó en 0 clientes → sin ticket, no basura
   });
 });
 
@@ -393,17 +395,18 @@ describe("computeProgress — consumo del PERSONAL excluido (observación de Cha
     expect(p.personal).toEqual({ pedidos: 40, venta: 320, ticket: 8 });
   });
 
-  it("delivery Y personal se excluyen JUNTOS cuando hay ambos", () => {
+  it("con delivery Y personal a la vez: entra el delivery, sale el personal", () => {
     const dia = [{
       date: "2026-07-01",
-      personas: 60,                       // 50 clientes + 6 delivery + 4 personal
+      personas: 60,                       // 50 salón + 6 delivery + 4 personal
       revenue: 50 * 25 + 6 * 12 + 4 * 8,  // 1250 + 72 + 32 = 1354
       items: null,
       deliveryPedidos: 6, deliveryVenta: 72,
       personalPedidos: 4, personalVenta: 32,
     }];
     const p = computeProgress(FONAVI, mkStaff(4, 3), dia, 30);
-    expect(p.ticketActual).toBeCloseTo(25.0, 2); // 1250/50 — solo clientes
+    // 56 clientes (60 − 4 del personal) y S/1322 (1354 − 32).
+    expect(p.ticketActual).toBeCloseTo(1322 / 56, 2);
     expect(p.traffic.personasPorDia).toBe(60);   // piso sobre TOTALES, sin cambio
   });
 
@@ -415,5 +418,49 @@ describe("computeProgress — consumo del PERSONAL excluido (observación de Cha
     const p = computeProgress(FONAVI, mkStaff(4, 3), sinCampos, 30);
     expect(p.ticketActual).toBeCloseTo(1280 / 52, 2);
     expect(p.personal).toBeNull();
+  });
+});
+
+describe("la base y la medición tienen que usar el MISMO criterio", () => {
+  /**
+   * Esto no prueba una función: prueba una RELACIÓN entre dos partes
+   * del sistema que se rompió una vez y costó plata.
+   *
+   * El editor de la base mostraba `revenue/personas` a secas mientras
+   * el motor restaba delivery y consumo del personal. Dirección fijaba
+   * la base mirando un ticket más alto del que el equipo iba a competir,
+   * y la meta quedaba más difícil de lo previsto: en Fonavi, S/22.51
+   * contra S/22.11 en julio.
+   *
+   * Si alguien vuelve a cambiar qué entra al ticket, este test falla y
+   * recuerda que `getBaseEditor` tiene que cambiar con él.
+   */
+  const dias = Array.from({ length: 10 }, (_, i) => ({
+    date: `2026-08-${String(i + 1).padStart(2, "0")}`,
+    personas: 60,                       // 50 salón + 6 delivery + 4 personal
+    revenue: 50 * 25 + 6 * 46 + 4 * 8,  // 1250 + 276 + 32 = 1558
+    items: null,
+    deliveryPedidos: 6, deliveryVenta: 276,
+    personalPedidos: 4, personalVenta: 32,
+  }));
+
+  /** La fórmula que usa `getBaseEditor` para su ticket de referencia. */
+  const referenciaDelEditor = (ds: typeof dias) => {
+    const personas = ds.reduce((s, d) => s + d.personas - (d.personalPedidos ?? 0), 0);
+    const venta = ds.reduce((s, d) => s + d.revenue - (d.personalVenta ?? 0), 0);
+    return Math.round((venta / personas) * 100) / 100;
+  };
+
+  it("el ticket de referencia coincide con el que mide el motor", () => {
+    const p = computeProgress(FONAVI, mkStaff(4, 3), dias, 31);
+    expect(p.ticketActual).toBeCloseTo(referenciaDelEditor(dias), 2);
+  });
+
+  it("y sigue coincidiendo cuando no hay delivery", () => {
+    const sinDelivery = dias.map((d) => ({
+      ...d, personas: 54, revenue: 1282, deliveryPedidos: 0, deliveryVenta: 0,
+    }));
+    const p = computeProgress(FONAVI, mkStaff(4, 3), sinDelivery, 31);
+    expect(p.ticketActual).toBeCloseTo(referenciaDelEditor(sinDelivery), 2);
   });
 });
