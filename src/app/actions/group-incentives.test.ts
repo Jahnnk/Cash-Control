@@ -54,15 +54,15 @@ describe("getGroupIncentives", () => {
     expect(r.ok).toBe(false);
   });
 
-  it("usa el MISMO cerebro que el Panel de Sede: delivery incluido (ago-2026)", async () => {
+  it("usa el MISMO cerebro que el Panel de Sede: ticket presencial (sin delivery)", async () => {
     const r = await getGroupIncentives("2026-07");
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.data.sedes).toHaveLength(2);
     const fonavi = r.data.sedes[0];
     expect(fonavi.sede).toBe("Fonavi");
-    // 1370/60 = 22.83: mostrador, mesa y delivery, los tres cuentan.
-    expect(fonavi.progress?.ticketActual).toBeCloseTo(22.83, 2);
+    // 1250/50 presencial — NO 1370/60 (22.83) que incluiría delivery.
+    expect(fonavi.progress?.ticketActual).toBeCloseTo(25.0, 2);
     expect(fonavi.ticketBase).toBe(25.44);
     expect(fonavi.progress?.delivery).toEqual({ pedidos: 10, venta: 120, ticket: 12 });
     expect(fonavi.ultimoRegistro).toBe("2026-07-01");
@@ -81,8 +81,8 @@ describe("getGroupIncentives", () => {
     expect(r.ok).toBe(true);
     if (!r.ok) return;
     expect(r.data.range).toEqual({ from: "2026-07-14", to: "2026-07-20" });
-    // El motor sigue siendo el mismo que el del panel.
-    expect(r.data.sedes[0].progress?.ticketActual).toBeCloseTo(22.83, 2);
+    // El motor sigue siendo el mismo (ticket presencial del fixture).
+    expect(r.data.sedes[0].progress?.ticketActual).toBeCloseTo(25.0, 2);
   });
 
   it("sin rango: range es null (modo mes normal)", async () => {

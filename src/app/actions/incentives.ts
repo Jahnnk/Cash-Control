@@ -642,21 +642,10 @@ export async function getBaseEditor(
     // Referencia: solo meses CERRADOS. El mes en curso está a medias y
     // arrastraría la base hacia abajo (mismo patrón que el punto de
     // equilibrio y el presupuesto).
-    //
-    // El ticket de referencia se calcula con la MISMA fórmula del motor
-    // (restando el consumo del personal). Antes usaba revenue/personas
-    // a secas, así que mostraba un ticket MÁS ALTO del que el motor iba
-    // a medir — en Fonavi, S/22.51 contra S/22.11 en julio y S/23.93
-    // contra S/23.06 en agosto. Quien fijaba la base miraba un número y
-    // el equipo competía contra otro, y la meta quedaba más difícil de
-    // lo que dirección creía. Si el motor cambia qué entra al ticket,
-    // esta consulta tiene que cambiar con él.
     const thisMonth = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
     const ref = (await sql`
       SELECT to_char(date, 'YYYY-MM') AS month,
-             (SUM(revenue) - SUM(COALESCE(personal_venta, 0)))::float AS revenue,
-             (SUM(personas) - SUM(COALESCE(personal_pedidos, 0)))::int AS personas,
-             COUNT(*)::int AS dias
+             SUM(revenue)::float AS revenue, SUM(personas)::int AS personas, COUNT(*)::int AS dias
       FROM upselling_daily
       WHERE business_id = ${bId} AND personas > 0 AND revenue > 0
         AND to_char(date, 'YYYY-MM') < ${thisMonth}
@@ -675,7 +664,7 @@ export async function getBaseEditor(
         levels: (cfg[0].levels ?? []).map((l) => ({ nombre: l.nombre, delta: l.delta })),
         reference: ref.map((r) => ({
           month: r.month,
-          ticket: r.personas > 0 ? Math.round((r.revenue / r.personas) * 100) / 100 : 0,
+          ticket: Math.round((r.revenue / r.personas) * 100) / 100,
           dias: r.dias,
         })),
         liquidated: liq.length > 0,

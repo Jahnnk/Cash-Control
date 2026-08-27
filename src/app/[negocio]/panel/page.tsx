@@ -286,12 +286,10 @@ function IncentivosPage() {
                     ({p.deltaActual >= 0 ? "+" : ""}{formatCurrency(p.deltaActual)})
                   </span>
                 )}
-                <span className="block text-gray-400">
-                  Mostrador, mesa y delivery — los tres mueven el bono
-                </span>
+                <span className="block text-gray-400">Clientes de mostrador + mesa — los dos mueven el bono</span>
                 {p.delivery && (
                   <span className="block text-gray-400">
-                    🛵 Delivery: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (sí cuenta)
+                    🛵 Delivery aparte: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (no cuenta)
                   </span>
                 )}
                 {p.personal && (
