@@ -79,7 +79,8 @@ export type ParseWarning = {
     | "type_mismatch"
     | "empty_date"
     | "balance_row"
-    | "stale_forward_fill";
+    | "stale_forward_fill"
+    | "amount_without_data";
   originalType?: string | null;
   correctedType?: "I" | "G";
   originalDate?: null;
@@ -394,7 +395,41 @@ export function parseExcelFile(
                               // posible warning stale_forward_fill abajo).
     if (normalizedTipo === null) {
       if (!hasAnyAmount) continue; // descarte normal: ni tipo ni monto
-      if (!isInformativeRow) continue; // saldos / basura → silencioso como antes
+      if (!isInformativeRow) {
+        // Fila con PLATA pero sin concepto ni grupo: no se puede
+        // importar (no hay con qué categorizarla) pero tampoco puede
+        // desaparecer sin dejar rastro. Le pasó a Fonavi en agosto: la
+        // fila 208 traía S/112.20 y nada más, y el mes quedaba
+        // descuadrado en ese monto exacto sin ninguna pista de por qué.
+        //
+        // Se exige FECHA PROPIA en la celda. Es lo que separa un
+        // movimiento de una fila de TOTALES: al pie de cada hoja hay
+        // filas de resumen con importes grandes (S/47,697.34 en Atelier,
+        // S/32,443.00 en Fonavi) y ninguna tiene fecha. Sin esta
+        // condición el aviso señalaba justamente esas y el que importa
+        // de verdad se perdía entre el ruido.
+        //
+        // Las filas de saldo tampoco entran: `isBalanceAccumulatorRow` y
+        // el grupo "SALDO" se manejan más arriba.
+        const tieneFechaPropia = toDateStr(fechaRaw) !== null;
+        if (tieneFechaPropia && !isBalanceAccumulatorRow && grupoRaw.toUpperCase() !== "SALDO") {
+          parseWarnings.push({
+            rowNumber: excelRow,
+            date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
+            amount: detectedAmount,
+            column: hasMixedAmounts ? "mixed" : hasIncomeAmount ? "ic" : "gc",
+            description,
+            reason: "amount_without_data",
+            originalType: tipoRaw || null,
+            severity: "info",
+            message:
+              `Fila ${excelRow}: tiene un importe de S/${detectedAmount.toFixed(2)} pero le ` +
+              `falta el concepto y el grupo, así que no se puede importar. ` +
+              `El mes va a quedar descuadrado en ese monto hasta que se complete en el Excel.`,
+          });
+        }
+        continue;
+      }
       if (hasMixedAmounts) {
         // Bloqueante: imposible deducir intención
         parseWarnings.push({

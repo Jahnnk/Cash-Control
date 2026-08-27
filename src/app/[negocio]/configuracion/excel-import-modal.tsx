@@ -16,6 +16,7 @@ import {
   type MultiMonthResult,
 } from "@/app/actions/excel-import";
 import { pairSheetsByMonth, type MonthPair } from "@/lib/excel-month-pairing";
+import type { ParseWarning } from "@/lib/excel-importer";
 import { mensajeFechasFueraDelMes } from "@/lib/filas-fuera-del-mes";
 import { resumenCuadre } from "@/lib/cuadre-excel";
 
@@ -1021,26 +1022,17 @@ function Row({ label, value }: { label: string; value: string }) {
   );
 }
 
-// ParseWarning estructura — duplicada acá para evitar import circular
-type ParseWarningRow = {
-  rowNumber: number;
-  date: string | null;
-  amount: number;
-  column: "ie" | "ic" | "ge" | "gc" | "mixed" | "none";
-  description: string;
-  reason:
-    | "empty_type"
-    | "type_mismatch"
-    | "empty_date"
-    | "balance_row"
-    | "stale_forward_fill";
-  originalType?: string | null;
-  correctedType?: "I" | "G";
-  originalDate?: null;
-  correctedDate?: string;
-  message?: string;
-  severity: "autocorrected" | "blocking_error" | "silenced" | "info";
-};
+/**
+ * Se usa el tipo del parser, no una copia.
+ *
+ * Estaba duplicado acá "para evitar import circular", pero es solo un
+ * TIPO: `import type` se borra al compilar y no crea ninguna
+ * dependencia en runtime. La copia ya se quedó atrás una vez — al
+ * agregar el motivo `amount_without_data` la pantalla dejó de compilar
+ * — y esa es exactamente la clase de divergencia silenciosa que hay que
+ * evitar en un archivo que muestra plata.
+ */
+type ParseWarningRow = ParseWarning;
 
 function ParseWarningsSection({
   autocorrected,
