@@ -35,6 +35,10 @@ import { sheetMonthKey, monthRange } from "@/lib/excel-month-pairing";
 import {
   revisarFechasDelMes, mensajeFechasFueraDelMes, type RevisionFechas,
 } from "@/lib/filas-fuera-del-mes";
+import {
+  construirCuadre, motivoSoloSistema,
+  type CuadreExcel, type MovimientoSoloSistema,
+} from "@/lib/cuadre-excel";
 import { recalcBankBalance } from "./daily-records";
 
 // Cliente neon directo para sql.transaction([...]) atómico (mismo patrón que
@@ -65,6 +69,28 @@ function fullMonthDeleteRange(
   const delStart = ranges.map((r) => r.start).sort()[0];
   const delEnd = ranges.map((r) => r.end).sort().slice(-1)[0];
   return { delStart, delEnd };
+}
+
+/**
+ * Suma los ingresos y egresos del Excel que pertenecen al mes de la
+ * pestaña. Sin `mes` (nombre de hoja no reconocido) suma todo, que es el
+ * comportamiento razonable cuando no hay con qué filtrar.
+ */
+function totalesDelMes(
+  movimientos: { date: string; type: "income" | "expense"; amount: number }[],
+  mes: string | null,
+): { excelIngresos: number; excelEgresos: number } {
+  let excelIngresos = 0;
+  let excelEgresos = 0;
+  for (const m of movimientos) {
+    if (mes && m.date?.slice(0, 7) !== mes) continue;
+    if (m.type === "income") excelIngresos += m.amount;
+    else excelEgresos += m.amount;
+  }
+  return {
+    excelIngresos: Math.round(excelIngresos * 100) / 100,
+    excelEgresos: Math.round(excelEgresos * 100) / 100,
+  };
 }
 
 const VALID_BIDS = [1, 2, 3];
@@ -103,6 +129,12 @@ export type ImportPreview = {
    * lib/filas-fuera-del-mes.ts).
    */
   fechasFueraDelMes: RevisionFechas | null;
+  /**
+   * Comparación contra el Excel: qué va a mostrar el sistema después de
+   * importar y por qué puede no ser idéntico al archivo. null si no se
+   * pudo calcular (sin pestaña de Ing&Gtos).
+   */
+  cuadre: CuadreExcel | null;
 };
 
 export type ImportOptions = {
@@ -288,6 +320,59 @@ export async function previewExcelImport(
       AND (is_shared = true OR is_special_loan = true OR is_internal_transfer = true OR payment_method IN ('socio', 'pendiente_atelier'))
   `)).rows[0] as { n: number };
 
+  // ── Lo que el sistema tiene y el Excel no trae ────────────────────
+  // Se piden los movimientos ENTEROS (no un conteo) porque el cuadre
+  // tiene que poder decir CUÁL es la diferencia, no solo cuánta.
+  const soloSistemaIn = (await db.execute(sql`
+    SELECT date::text AS fecha, COALESCE(note, '') AS detalle, amount::float AS monto,
+           client_id, is_special_loan, is_internal_transfer,
+           non_operative_category, is_fonavi_reimbursement, payment_method
+    FROM bank_income_items
+    WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
+      AND archived = false AND imported_from_excel = false
+  `)).rows as Record<string, unknown>[];
+  const soloSistemaEx = (await db.execute(sql`
+    SELECT date::text AS fecha,
+           (category || COALESCE(' · ' || concept, '')) AS detalle,
+           -- La parte PROPIA de la sede: un compartido de S/2,700 suma
+           -- S/1,800 a Atelier, que es lo que se compara con el Excel.
+           (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS monto,
+           is_shared, is_special_loan, is_internal_transfer, payment_method
+    FROM expenses
+    WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
+      AND archived = false AND imported_from_excel = false
+      AND payment_method <> 'pendiente_atelier'
+  `)).rows as Record<string, unknown>[];
+
+  const movimientosSoloSistema: MovimientoSoloSistema[] = [
+    ...soloSistemaIn.map((r) => ({
+      tipo: "ingreso" as const,
+      fecha: String(r.fecha),
+      detalle: String(r.detalle || "(sin detalle)"),
+      monto: Number(r.monto) || 0,
+      motivo: motivoSoloSistema({
+        clientId: r.client_id as string | null,
+        isSpecialLoan: r.is_special_loan as boolean,
+        isInternalTransfer: r.is_internal_transfer as boolean,
+        nonOperativeCategory: r.non_operative_category as string | null,
+        isFonaviReimbursement: r.is_fonavi_reimbursement as boolean,
+        paymentMethod: r.payment_method as string | null,
+      }),
+    })),
+    ...soloSistemaEx.map((r) => ({
+      tipo: "egreso" as const,
+      fecha: String(r.fecha),
+      detalle: String(r.detalle || "(sin detalle)"),
+      monto: Number(r.monto) || 0,
+      motivo: motivoSoloSistema({
+        isShared: r.is_shared as boolean,
+        isSpecialLoan: r.is_special_loan as boolean,
+        isInternalTransfer: r.is_internal_transfer as boolean,
+        paymentMethod: r.payment_method as string | null,
+      }),
+    })),
+  ];
+
   // Datos en tablas Control de VTAS para el rango
   const byteSalesDaily = (await db.execute(sql`
     SELECT COUNT(*)::int AS n FROM byte_sales_daily
@@ -331,6 +416,21 @@ export async function previewExcelImport(
       parseResult?.movimientos ?? [],
       ingGtosSheet ? sheetMonthKey(ingGtosSheet) : null,
     ),
+    cuadre: parseResult
+      ? construirCuadre({
+          // Se suman los movimientos del MES DE LA PESTAÑA, no los
+          // totales crudos del parser: si el archivo trae filas con
+          // fecha de otro mes, incluirlas daría un total del Excel que
+          // no corresponde al mes y el cuadre compararía peras con
+          // manzanas. (En Atelier, agosto salía S/47,697.34 en vez de
+          // S/47,642.34 por tres filas del 12 de julio.)
+          ...totalesDelMes(
+            parseResult.movimientos,
+            ingGtosSheet ? sheetMonthKey(ingGtosSheet) : null,
+          ),
+          movimientos: movimientosSoloSistema,
+        })
+      : null,
   };
 }
 

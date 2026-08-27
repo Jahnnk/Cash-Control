@@ -17,6 +17,7 @@ import {
 } from "@/app/actions/excel-import";
 import { pairSheetsByMonth, type MonthPair } from "@/lib/excel-month-pairing";
 import { mensajeFechasFueraDelMes } from "@/lib/filas-fuera-del-mes";
+import { resumenCuadre } from "@/lib/cuadre-excel";
 
 type Step = "select" | "months" | "sheets" | "preview" | "confirm" | "result" | "multiresult";
 
@@ -634,6 +635,76 @@ function PreviewStep({
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* El cuadre contra el Excel. Va arriba porque es la pregunta con
+          la que Jahnn abre el archivo cada semana: ¿esto va a coincidir
+          con lo que me dio Kelly, y si no, por qué? */}
+      {preview.cuadre && (
+        <div
+          className={`rounded-lg border p-3 ${
+            preview.cuadre.cuadra
+              ? "border-emerald-300 bg-emerald-50"
+              : "border-sky-300 bg-sky-50"
+          }`}
+        >
+          <div
+            className={`font-semibold mb-1 ${
+              preview.cuadre.cuadra ? "text-emerald-900" : "text-sky-900"
+            }`}
+          >
+            {preview.cuadre.cuadra
+              ? "✓ Va a cuadrar con el Excel"
+              : "Cuadre con el Excel de Kelly"}
+          </div>
+          <p className={`text-xs mb-2 ${preview.cuadre.cuadra ? "text-emerald-800" : "text-sky-900"}`}>
+            {resumenCuadre(preview.cuadre)}
+          </p>
+
+          <div className="grid grid-cols-3 gap-2 text-[11px] mb-2">
+            <div />
+            <div className="font-semibold text-gray-600 text-right">Ingresos</div>
+            <div className="font-semibold text-gray-600 text-right">Egresos</div>
+            <div className="text-gray-600">En el Excel</div>
+            <div className="text-right">{formatCurrency(preview.cuadre.excel.ingresos)}</div>
+            <div className="text-right">{formatCurrency(preview.cuadre.excel.egresos)}</div>
+            {!preview.cuadre.cuadra && (
+              <>
+                <div className="text-gray-600">Solo en el sistema</div>
+                <div className="text-right">+{formatCurrency(preview.cuadre.soloSistema.ingresos)}</div>
+                <div className="text-right">+{formatCurrency(preview.cuadre.soloSistema.egresos)}</div>
+              </>
+            )}
+            <div className="font-semibold text-gray-900 border-t border-gray-300 pt-1">
+              Va a mostrar el sistema
+            </div>
+            <div className="text-right font-semibold border-t border-gray-300 pt-1">
+              {formatCurrency(preview.cuadre.esperado.ingresos)}
+            </div>
+            <div className="text-right font-semibold border-t border-gray-300 pt-1">
+              {formatCurrency(preview.cuadre.esperado.egresos)}
+            </div>
+          </div>
+
+          {preview.cuadre.movimientos.length > 0 && (
+            <div className="max-h-36 overflow-y-auto rounded border border-sky-200 bg-white">
+              <table className="w-full text-[11px]">
+                <tbody>
+                  {preview.cuadre.movimientos.map((m, i) => (
+                    <tr key={`${m.fecha}-${m.detalle}-${i}`} className="border-b border-gray-100 last:border-0">
+                      <td className="px-2 py-1 text-gray-500 whitespace-nowrap">{m.fecha}</td>
+                      <td className="px-2 py-1 text-gray-800">{m.detalle}</td>
+                      <td className="px-2 py-1 text-gray-500 italic whitespace-nowrap">{m.motivo}</td>
+                      <td className="px-2 py-1 text-right font-medium whitespace-nowrap">
+                        {m.tipo === "egreso" ? "−" : "+"}{formatCurrency(m.monto)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
       )}
 
