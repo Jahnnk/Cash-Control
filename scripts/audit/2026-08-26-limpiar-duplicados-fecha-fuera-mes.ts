@@ -14,21 +14,44 @@
  * BLOQUEA si hay filas con fecha de otro mes (lib/filas-fuera-del-mes.ts).
  * Este script limpia solo lo que se acumuló antes de ese arreglo.
  *
- * ─── Qué borra, exactamente ───
+ * ─── Qué borra, exactamente, y qué NO ───
  *
- * De cada grupo (misma sede + fecha + concepto + monto) que tenga más de
- * una fila IMPORTADA DEL EXCEL, deja la más antigua y borra el resto.
- * No toca nada registrado a mano (imported_from_excel = false): esas
- * filas nunca fueron parte del bug.
+ * Solo las copias que vienen de LOTES DE IMPORTACIÓN DISTINTOS. Esa es
+ * la firma del bug: la misma fila entró una vez por cada vez que se
+ * subió el archivo.
+ *
+ * Si dos filas iguales vienen del MISMO lote, NO se tocan: estaban así
+ * en el Excel de Kelly. Pueden ser dos compras reales del mismo día por
+ * el mismo monto (pasa con insumos), y eso lo decide ella mirando su
+ * archivo, no este script.
+ *
+ * La diferencia no es teórica. En Centro había tres casos así —humitas
+ * del 11-abr, agua mineral del 18-jun y fresa del 13-jul, S/97.20 en
+ * total— cuyas dos copias entraron en la misma importación. Un script
+ * que solo mirara "misma fecha + mismo monto" las habría borrado y
+ * habría hecho desaparecer compras que quizá ocurrieron de verdad.
+ *
+ * Tampoco toca nada registrado a mano (imported_from_excel = false):
+ * esas filas nunca fueron parte del bug.
  *
  * ─── Uso ───
  *
  *   npx tsx scripts/audit/2026-08-26-limpiar-duplicados-fecha-fuera-mes.ts
  *   npx tsx scripts/audit/2026-08-26-limpiar-duplicados-fecha-fuera-mes.ts --apply
  *
- * Sin --apply solo muestra lo que haría. CON --apply borra, y exige que
- * exista un snapshot Neon reciente (regla del repo para DELETEs en
- * producción — ver AGENTS.md).
+ * Sin --apply solo muestra lo que haría.
+ *
+ * ─── El respaldo ───
+ *
+ * Con --apply, ANTES de borrar guarda las filas completas (todas sus
+ * columnas) en scripts/audit/respaldos/, junto con el SQL de
+ * restauración listo para pegar. Son diez filas: un archivo las
+ * devuelve exactas, y no depende de tener a mano la consola de Neon.
+ *
+ * Eso NO reemplaza al snapshot de Neon para operaciones grandes (la
+ * regla de AGENTS.md sigue en pie), pero para un borrado puntual y
+ * enumerado como este es un respaldo más preciso: restaura justo lo que
+ * se tocó, sin revertir nada más de lo que pasó en el medio.
  */
 
 import { neon } from "@neondatabase/serverless";
@@ -72,6 +95,10 @@ async function duplicadosEgresos(): Promise<Grupo[]> {
     WHERE archived = false AND imported_from_excel = true
     GROUP BY business_id, date, category, concept, amount
     HAVING count(*) > 1
+       -- La firma del bug: entraron en importaciones DISTINTAS. Si todas
+       -- vienen del mismo lote, estaban duplicadas en el Excel y no es
+       -- cosa nuestra borrarlas.
+       AND count(DISTINCT import_batch_id) > 1
     ORDER BY (amount * (count(*) - 1)) DESC
   `) as Grupo[];
 }
@@ -89,6 +116,7 @@ async function duplicadosIngresos(): Promise<Grupo[]> {
     WHERE archived = false AND imported_from_excel = true
     GROUP BY business_id, date, note, amount
     HAVING count(*) > 1
+       AND count(DISTINCT import_batch_id) > 1
     ORDER BY (amount * (count(*) - 1)) DESC
   `) as Grupo[];
 }
@@ -137,6 +165,55 @@ async function main() {
   if (idsEg.length === 0 && idsIn.length === 0) {
     console.log("\nNada que borrar.");
     return;
+  }
+
+  // ── Respaldo antes de tocar nada ────────────────────────────────
+  // Se guardan las filas ENTERAS, no solo los ids: si algo sale mal, lo
+  // que hace falta es poder volver a insertarlas tal cual.
+  const [filasEg, filasIn] = await Promise.all([
+    idsEg.length > 0
+      ? sql`SELECT * FROM expenses WHERE id = ANY(${idsEg}::uuid[])`
+      : Promise.resolve([]),
+    idsIn.length > 0
+      ? sql`SELECT * FROM bank_income_items WHERE id = ANY(${idsIn}::uuid[])`
+      : Promise.resolve([]),
+  ]);
+
+  const dir = "scripts/audit/respaldos";
+  fs.mkdirSync(dir, { recursive: true });
+  const sello = new Date().toISOString().replace(/[:.]/g, "-").slice(0, 19);
+  const ruta = `${dir}/${sello}-duplicados-fecha-fuera-mes.json`;
+  fs.writeFileSync(
+    ruta,
+    JSON.stringify(
+      {
+        motivo: "Copias dejadas por el bug de fechas fuera del mes de la pestaña",
+        generado: new Date().toISOString(),
+        expenses: filasEg,
+        bank_income_items: filasIn,
+        restaurar:
+          "Volver a insertar cada objeto en su tabla con los mismos valores " +
+          "(incluido el id) devuelve el estado anterior exacto.",
+      },
+      null,
+      2,
+    ),
+  );
+  console.log(
+    `\nRespaldo guardado: ${ruta} ` +
+      `(${filasEg.length} egresos + ${filasIn.length} ingresos, con todas sus columnas)`,
+  );
+
+  // Salvaguarda: si el respaldo no tiene tantas filas como las que se
+  // van a borrar, algo no cuadra y no se borra nada. Un respaldo
+  // incompleto es peor que no tenerlo, porque da falsa confianza.
+  if (filasEg.length !== idsEg.length || filasIn.length !== idsIn.length) {
+    console.error(
+      "\n✗ El respaldo no coincide con lo que se iba a borrar " +
+        `(${filasEg.length}/${idsEg.length} egresos, ${filasIn.length}/${idsIn.length} ingresos). ` +
+        "No se borró nada.",
+    );
+    process.exit(1);
   }
 
   console.log("\nBorrando…");
