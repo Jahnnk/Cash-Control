@@ -16,6 +16,7 @@ import {
   type MultiMonthResult,
 } from "@/app/actions/excel-import";
 import { pairSheetsByMonth, type MonthPair } from "@/lib/excel-month-pairing";
+import { mensajeFechasFueraDelMes } from "@/lib/filas-fuera-del-mes";
 
 type Step = "select" | "months" | "sheets" | "preview" | "confirm" | "result" | "multiresult";
 
@@ -589,10 +590,53 @@ function PreviewStep({
   const autocorrectedWarnings = parseWarnings.filter((w) => w.severity === "autocorrected");
   const silencedWarnings = parseWarnings.filter((w) => w.severity === "silenced");
   const infoWarnings = parseWarnings.filter((w) => w.severity === "info");
-  const hasBlocking = blockingWarnings.length > 0;
+  // Filas con fecha de otro mes: bloquean igual que un warning del
+  // parser. Se acumulan una copia por importación (ver
+  // lib/filas-fuera-del-mes.ts), así que no se pueden dejar pasar.
+  const fueraDelMes = preview.fechasFueraDelMes;
+  const hasBlocking = blockingWarnings.length > 0 || fueraDelMes !== null;
 
   return (
     <div className="space-y-4 text-sm">
+      {/* Va PRIMERO, antes que cualquier otro dato: si el Excel tiene
+          fechas de otro mes, todo lo que sigue está descuadrado. */}
+      {fueraDelMes && (
+        <div className="rounded-lg border border-red-300 bg-red-50 p-3">
+          <div className="font-semibold text-red-900 mb-1">
+            ⚠ Hay fechas de otro mes en esta pestaña — no se puede importar
+          </div>
+          <p className="text-xs text-red-800 mb-2">
+            {mensajeFechasFueraDelMes(fueraDelMes)}
+          </p>
+          <div className="max-h-40 overflow-y-auto rounded border border-red-200 bg-white">
+            <table className="w-full text-[11px]">
+              <thead className="bg-red-100/60 text-red-900">
+                <tr>
+                  <th className="text-left px-2 py-1">Fila</th>
+                  <th className="text-left px-2 py-1">Fecha</th>
+                  <th className="text-left px-2 py-1">Concepto</th>
+                  <th className="text-right px-2 py-1">Monto</th>
+                </tr>
+              </thead>
+              <tbody>
+                {fueraDelMes.filas.map((f) => (
+                  <tr key={`${f.excelRow}-${f.fecha}-${f.monto}`} className="border-t border-red-100">
+                    <td className="px-2 py-1 text-gray-500">{f.excelRow}</td>
+                    <td className="px-2 py-1 font-medium text-red-700">{f.fecha}</td>
+                    <td className="px-2 py-1 text-gray-700">
+                      {f.nota || f.categoria}
+                    </td>
+                    <td className="px-2 py-1 text-right font-medium">
+                      {f.tipo === "expense" ? "−" : "+"}{formatCurrency(f.monto)}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
       <Section icon="📅" title="Rango y archivo">
         <Row label="Archivo" value={preview.fileName} />
         {preview.ingGtosSheet && <Row label="Pestaña Ing&Gtos" value={preview.ingGtosSheet} />}
@@ -737,7 +781,13 @@ function PreviewStep({
         <button
           onClick={onContinue}
           disabled={hasBlocking}
-          title={hasBlocking ? "Hay filas bloqueantes que el parser no puede autocorregir. Pídele a Kelly que arregle el Excel antes de importar." : undefined}
+          title={
+            fueraDelMes
+              ? "Hay filas con fecha de otro mes. Corrige las fechas en el Excel antes de importar."
+              : hasBlocking
+                ? "Hay filas bloqueantes que el parser no puede autocorregir. Pídele a Kelly que arregle el Excel antes de importar."
+                : undefined
+          }
           className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
         >
           Importar

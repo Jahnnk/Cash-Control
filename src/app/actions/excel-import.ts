@@ -32,6 +32,9 @@ import {
   type ControlVtasParseResult,
 } from "@/lib/control-vtas-parser";
 import { sheetMonthKey, monthRange } from "@/lib/excel-month-pairing";
+import {
+  revisarFechasDelMes, mensajeFechasFueraDelMes, type RevisionFechas,
+} from "@/lib/filas-fuera-del-mes";
 import { recalcBankBalance } from "./daily-records";
 
 // Cliente neon directo para sql.transaction([...]) atómico (mismo patrón que
@@ -93,6 +96,13 @@ export type ImportPreview = {
   ingGtosSheet: string | null;
   controlVtasSheet: string | null;
   rangoUnificado: { start: string | null; end: string | null };
+  /**
+   * Filas con fecha de OTRO mes dentro de la pestaña. null = todo en
+   * orden. Si viene, la importación se bloquea: esas filas descuadran
+   * el total del Excel y se duplican en cada re-importación (ver
+   * lib/filas-fuera-del-mes.ts).
+   */
+  fechasFueraDelMes: RevisionFechas | null;
 };
 
 export type ImportOptions = {
@@ -315,6 +325,12 @@ export async function previewExcelImport(
     ingGtosSheet: ingGtosSheet ?? null,
     controlVtasSheet: controlVtasSheet ?? null,
     rangoUnificado: { start, end },
+    // Se calcula acá para que la pantalla lo muestre ANTES de que Jahnn
+    // le dé a importar, no como un error después del clic.
+    fechasFueraDelMes: revisarFechasDelMes(
+      parseResult?.movimientos ?? [],
+      ingGtosSheet ? sheetMonthKey(ingGtosSheet) : null,
+    ),
   };
 }
 
@@ -347,6 +363,19 @@ export async function executeExcelImport(
   }
   if (controlVtasResult && controlVtasResult.errores.length > 0) {
     return { success: false, error: "Control de VTAS: " + controlVtasResult.errores.join("; ") };
+  }
+
+  // Bloqueo si hay filas con fecha de otro mes. Va ANTES de tocar nada:
+  // esas filas caen fuera del rango de limpieza y se acumulan una copia
+  // por importación — así se juntaron S/4,613 de harina repetida en
+  // julio de Atelier. Decisión de Jahnn (26-ago-2026): avisar y parar,
+  // no autocorregir, porque el error hay que arreglarlo en el Excel.
+  const fueraDelMes = revisarFechasDelMes(
+    parseResult?.movimientos ?? [],
+    ingGtosSheet ? sheetMonthKey(ingGtosSheet) : null,
+  );
+  if (fueraDelMes) {
+    return { success: false, error: mensajeFechasFueraDelMes(fueraDelMes) };
   }
 
   // Bloqueo si el parser detectó filas que no puede autocorregir
