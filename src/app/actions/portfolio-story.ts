@@ -10,7 +10,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
-import { requireFullSession } from "@/lib/session-access";
+import { requireFullSession, getSessionRole } from "@/lib/session-access";
 import { compilePortfolioStory } from "@/lib/portfolio/story-compiler";
 import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
 import { normalizeProductName } from "@/lib/product-matching";
@@ -48,7 +48,8 @@ async function collectFacts(bId: number, month: string): Promise<PortfolioFacts 
              c.unit_cogs::float AS unit_cogs,
              c.list_price::float AS list_price,
              c.target_margin_pct::float AS target_margin_pct,
-             c.month AS cost_month
+             c.month AS cost_month,
+             COALESCE(p.es_acompanamiento, false) AS es_acompanamiento
       FROM product_month_sales s
       LEFT JOIN products p ON p.id = s.product_id
       LEFT JOIN LATERAL (
@@ -113,6 +114,7 @@ async function collectFacts(bId: number, month: string): Promise<PortfolioFacts 
         units,
         revenue,
         avgPrice: units > 0 ? Math.round((revenue / units) * 100) / 100 : 0,
+        isAccompaniment: r.es_acompanamiento === true,
         unitCogs: r.unit_cogs != null ? Number(r.unit_cogs) : null,
         listPrice: r.list_price != null ? Number(r.list_price) : null,
         targetMarginPct: r.target_margin_pct != null ? Number(r.target_margin_pct) : null,
@@ -132,7 +134,7 @@ async function collectFacts(bId: number, month: string): Promise<PortfolioFacts 
 }
 
 export async function getPortfolioStory(month: string): Promise<
-  | { ok: true; story: PortfolioStory }
+  | { ok: true; story: PortfolioStory; puedeMarcarAcompanamiento: boolean }
   | { ok: false; error: string }
 > {
   const bId = await activeBusinessId();
@@ -147,7 +149,7 @@ export async function getPortfolioStoryForSede(
   sede: number,
   month: string,
 ): Promise<
-  | { ok: true; story: PortfolioStory }
+  | { ok: true; story: PortfolioStory; puedeMarcarAcompanamiento: boolean }
   | { ok: false; error: string }
 > {
   if (!(await requireFullSession())) {
@@ -163,7 +165,7 @@ async function storyFor(
   bId: number,
   month: string,
 ): Promise<
-  | { ok: true; story: PortfolioStory }
+  | { ok: true; story: PortfolioStory; puedeMarcarAcompanamiento: boolean }
   | { ok: false; error: string }
 > {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) {
@@ -174,10 +176,49 @@ async function storyFor(
     if (!facts) {
       return { ok: false, error: "No hay ventas por producto cargadas para ese mes. Importa el reporte de Byte primero." };
     }
-    return { ok: true, story: compilePortfolioStory(facts) };
+    // Solo dirección marca acompañamientos (Jahnn, 27-ago-2026) — igual
+    // que la base del bono, es una lectura del análisis, no una tarea
+    // operativa. Los admins SIGUEN viendo el PIC completo, solo no ven
+    // el control para marcar.
+    const role = await getSessionRole();
+    return {
+      ok: true,
+      story: compilePortfolioStory(facts),
+      puedeMarcarAcompanamiento: role?.kind === "full",
+    };
   } catch (err) {
     console.error("[getPortfolioStory] failed:", err);
     return { ok: false, error: err instanceof Error ? err.message : "Error al compilar el análisis" };
+  }
+}
+
+/**
+ * Marca o desmarca un producto como acompañamiento/extra (huevo
+ * sancochado, tocino…): queda fuera del menu engineering porque su
+ * popularidad depende del plato al que acompaña, no de sí mismo.
+ *
+ * No la toca el sync del pricing-engine (scripts/sync-product-catalog.ts
+ * solo actualiza sku/name/category/active en su upsert) — se marca una
+ * vez y no se pierde en la siguiente sincronización.
+ */
+export async function setProductAccompaniment(input: {
+  productId: string;
+  value: boolean;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) {
+    return { ok: false, error: "Solo dirección puede marcar un producto como acompañamiento." };
+  }
+  try {
+    const r = await sql`
+      UPDATE products SET es_acompanamiento = ${input.value}
+      WHERE id = ${input.productId}::uuid
+      RETURNING id
+    `;
+    if (r.length === 0) return { ok: false, error: "No encontré ese producto." };
+    return { ok: true };
+  } catch (err) {
+    console.error("[setProductAccompaniment] failed:", err);
+    return { ok: false, error: "No pude guardar el cambio." };
   }
 }
 

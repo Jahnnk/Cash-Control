@@ -14,7 +14,7 @@ import {
   type ProductDataStatus,
 } from "@/app/actions/product-sales-import";
 import { useToast } from "@/components/toast-provider";
-import { getPortfolioStory } from "@/app/actions/portfolio-story";
+import { getPortfolioStory, setProductAccompaniment } from "@/app/actions/portfolio-story";
 import type { PortfolioStory, ProductIntel, Verdict } from "@/lib/portfolio/types";
 import { ImportSalesModal } from "./import-sales-modal";
 import { LinkProductsModal } from "./link-products-modal";
@@ -51,6 +51,7 @@ export default function ProductosPage() {
   const [status, setStatus] = useState<ProductDataStatus | null>(null);
   const [story, setStory] = useState<PortfolioStory | null>(null);
   const [storyError, setStoryError] = useState<string | null>(null);
+  const [puedeMarcarAcompanamiento, setPuedeMarcarAcompanamiento] = useState(false);
   const [month, setMonth] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
@@ -110,8 +111,14 @@ export default function ProductosPage() {
     setMonth(m);
     if (m) {
       const r = await getPortfolioStory(m);
-      if (r.ok) { setStory(r.story); setStoryError(null); }
-      else { setStory(null); setStoryError(r.error); }
+      if (r.ok) {
+        setStory(r.story);
+        setPuedeMarcarAcompanamiento(r.puedeMarcarAcompanamiento);
+        setStoryError(null);
+      } else {
+        setStory(null);
+        setStoryError(r.error);
+      }
     } else {
       setStory(null);
     }
@@ -308,7 +315,12 @@ export default function ProductosPage() {
                     {story.narrative.verdictIntro[verdict]}
                   </div>
                   {products.map((p) => (
-                    <ProductRow key={p.key} p={p} />
+                    <ProductRow
+                      key={p.key}
+                      p={p}
+                      puedeMarcar={puedeMarcarAcompanamiento}
+                      onCambiado={() => load(month)}
+                    />
                   ))}
                 </div>
               );
@@ -595,8 +607,31 @@ function PriceSimulatorCard({ products }: { products: ProductIntel[] }) {
 }
 
 /** Fila de producto con evidencia expandible (por qué su veredicto). */
-function ProductRow({ p }: { p: ProductIntel }) {
+function ProductRow({
+  p, puedeMarcar, onCambiado,
+}: {
+  p: ProductIntel;
+  /** Solo dirección ve el control para marcar/desmarcar. */
+  puedeMarcar: boolean;
+  onCambiado: () => void;
+}) {
   const [open, setOpen] = useState(false);
+  const [guardando, setGuardando] = useState(false);
+  const { showToast } = useToast();
+
+  async function alternarAcompanamiento() {
+    if (!p.productId) return; // sin fila de catálogo no hay qué marcar
+    setGuardando(true);
+    const r = await setProductAccompaniment({ productId: p.productId, value: !p.isAccompaniment });
+    setGuardando(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(
+      p.isAccompaniment ? "Vuelve a competir por rentabilidad × popularidad" : "Marcado como acompañamiento: sale de la matriz",
+      "success",
+    );
+    onCambiado();
+  }
+
   return (
     <div className="border-b border-gray-50 last:border-0">
       <button
@@ -619,6 +654,11 @@ function ProductRow({ p }: { p: ProductIntel }) {
             </span>
           )}
           {p.menuEng && <span>{QUADRANT_LABEL[p.menuEng]}</span>}
+          {p.isAccompaniment && (
+            <span className="text-gray-400 italic" title="No compite por rentabilidad × popularidad">
+              acompañamiento
+            </span>
+          )}
           <span className="font-mono bg-gray-100 rounded px-1.5 py-0.5">{p.abcClass}</span>
           <span>{p.units} und</span>
           <span className="font-semibold text-gray-800">{formatCurrency(p.revenue)}</span>
@@ -636,6 +676,20 @@ function ProductRow({ p }: { p: ProductIntel }) {
             <div className="text-[11px] text-gray-400">
               Precio prom. {formatCurrency(p.avgPrice)} · costo {formatCurrency(p.unitCogs!)} · contribución {formatCurrency(p.unitContribution!)}/und · utilidad del mes {formatCurrency(p.contribution!)}
             </div>
+          )}
+          {puedeMarcar && p.productId && (
+            <button
+              onClick={alternarAcompanamiento}
+              disabled={guardando}
+              className="mt-1 inline-flex items-center gap-1.5 px-2 py-1 text-[11px] font-medium text-gray-600 border border-gray-200 hover:bg-gray-50 rounded-lg disabled:opacity-50"
+              title="Un acompañamiento (huevo, tocino…) no compite por rentabilidad × popularidad como un plato final"
+            >
+              {guardando
+                ? "Guardando…"
+                : p.isAccompaniment
+                  ? "✕ Ya no es acompañamiento"
+                  : "＋ Es un acompañamiento (no un plato final)"}
+            </button>
           )}
         </div>
       )}

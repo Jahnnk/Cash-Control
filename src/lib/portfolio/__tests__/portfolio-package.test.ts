@@ -26,6 +26,7 @@ const mk = (over: Partial<ProductFacts>): ProductFacts => ({
   listPrice: 10,
   targetMarginPct: 0.6,
   costApproximated: false,
+  isAccompaniment: false,
   history: [],
   ...over,
 });

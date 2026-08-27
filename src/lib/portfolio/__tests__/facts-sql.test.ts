@@ -11,7 +11,7 @@ import { armarFacts, keyDeCarta, estaEliminadoEnByte, type FilaVenta } from "../
 const venta = (o: Partial<FilaVenta>): FilaVenta => ({
   product_id: null, product_name_raw: "X", units: 10, revenue: 100,
   catalog_name: null, category: null, unit_cogs: 4, list_price: 10,
-  target_margin_pct: 0.6, cost_month: "2026-07", ...o,
+  target_margin_pct: 0.6, cost_month: "2026-07", es_acompanamiento: false, ...o,
 });
 
 const armar = (ventas: FilaVenta[], fusionar = true) =>
@@ -86,6 +86,30 @@ describe("productos eliminados en Byte", () => {
 
   it("si TODO estaba eliminado, no inventa un portafolio vacío", () => {
     expect(armar([venta({ product_name_raw: "[ELIMINADO 2026-01-01 00:00:00] X" })])).toBeNull();
+  });
+});
+
+describe("marca de acompañamiento", () => {
+  // El caso real: Jahnn notó que el huevo sancochado y sus variantes
+  // salían como "candidato a reemplazo" — no son platos finales, son
+  // extras del desayuno.
+  it("propaga la marca del catálogo al producto de los hechos", () => {
+    const f = armar([venta({ catalog_name: "Huevo Sancochado", es_acompanamiento: true })])!;
+    expect(f.products[0].isAccompaniment).toBe(true);
+  });
+
+  it("por defecto no es acompañamiento", () => {
+    const f = armar([venta({ catalog_name: "Empanada Mixta" })])!;
+    expect(f.products[0].isAccompaniment).toBe(false);
+  });
+
+  it("al fusionar sedes, si CUALQUIERA la marcó, el producto fusionado queda marcado", () => {
+    const f = armar([
+      venta({ catalog_name: "Huevo Sancochado", product_name_raw: "HUEVO", units: 5, es_acompanamiento: false }),
+      venta({ catalog_name: "Huevo Sancochado (Fonavi)", product_name_raw: "HUEVO", units: 6, es_acompanamiento: true }),
+    ])!;
+    expect(f.products).toHaveLength(1);
+    expect(f.products[0].isAccompaniment).toBe(true);
   });
 });
 

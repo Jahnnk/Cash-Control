@@ -21,6 +21,7 @@ const prod = (
 ): ProductIntel => ({
   key: name, productId: null, name, category: null,
   units, revenue, avgPrice: revenue / units, revenueShare: 0.1,
+  isAccompaniment: false,
   hasCost: unitContribution !== null, unitCogs: 1,
   unitContribution, contribution: unitContribution !== null ? unitContribution * units : null,
   marginPct: 0.3, targetMarginPct: 0.35,

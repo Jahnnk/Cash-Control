@@ -21,11 +21,12 @@ const mk = (over: Partial<ProductFacts>): ProductFacts => ({
   listPrice: 10,
   targetMarginPct: 0.6,
   costApproximated: false,
+  isAccompaniment: false,
   history: [],
   ...over,
 });
 
-/** Portafolio fixture: estrella, plow horse bajo objetivo, puzzle, dog, sin costo. */
+/** Portafolio fixture: estrella, plow horse bajo objetivo, puzzle, dog, sin costo, acompañamiento. */
 function facts(): PortfolioFacts {
   return {
     scope: { businessId: 3, businessName: "Yayi's Centro" },
@@ -44,6 +45,9 @@ function facts(): PortfolioFacts {
       mk({ name: "Perrito", units: 10, revenue: 60, avgPrice: 6, unitCogs: 5 }),
       // Sin costo: vende fuerte pero sin receta
       mk({ name: "Misterio", units: 300, revenue: 2900, avgPrice: 9.67, unitCogs: null, targetMarginPct: null }),
+      // Acompañamiento: CON costo, poca rotación (como un "dog" cualquiera
+      // en los números) — pero marcado como extra, no como plato final.
+      mk({ name: "Huevo", units: 8, revenue: 24, avgPrice: 3, unitCogs: 1.5, isAccompaniment: true }),
     ],
   };
 }
@@ -67,6 +71,28 @@ describe("cerebro PIC — clasificaciones", () => {
     expect(quadrants.get("p-Joya")?.q).toBe("puzzle");
     expect(quadrants.get("p-Perrito")?.q).toBe("dog");
     expect(quadrants.has("p-Misterio")).toBe(false); // sin costo: no clasificable
+  });
+
+  it("un acompañamiento con costo TAMPOCO entra al cuadrante (caso Jahnn, 27-ago-2026)", () => {
+    const metrics = computeBaseMetrics(facts());
+    const { quadrants } = classifyMenuEng(metrics);
+    // "Huevo" tiene costo y poca rotación — en números sería un dog
+    // más — pero está marcado como acompañamiento y queda sin cuadrante,
+    // igual que un producto sin costo.
+    expect(quadrants.has("p-Huevo")).toBe(false);
+  });
+
+  it("el acompañamiento no distorsiona el umbral de los demás productos", () => {
+    // Sin la exclusión, "Huevo" (8 und, muy por debajo del resto) entra
+    // al cálculo de popularidad y de margen promedio y podría mover a
+    // qué lado cae cada producto real. Con la exclusión, el resto
+    // clasifica exactamente igual que en el fixture sin acompañamiento.
+    const metrics = computeBaseMetrics(facts());
+    const { quadrants } = classifyMenuEng(metrics);
+    expect(quadrants.get("p-Estrella")?.q).toBe("star");
+    expect(quadrants.get("p-Caballito")?.q).toBe("plow_horse");
+    expect(quadrants.get("p-Joya")?.q).toBe("puzzle");
+    expect(quadrants.get("p-Perrito")?.q).toBe("dog");
   });
 });
 
@@ -107,6 +133,17 @@ describe("cerebro PIC — síntesis de veredicto único", () => {
     expect(p.marginPct).toBeNull();
     expect(p.menuEng).toBeNull();
     expect(p.verdictReason).toMatch(/no conocemos su costo/);
+  });
+
+  it("acompañamiento → observar con el motivo, nunca 'candidato a reemplazo'", () => {
+    // El caso que reportó Jahnn: el huevo sancochado salía como dog
+    // ("revisar") solo por tener poca rotación, cuando su rotación baja
+    // es normal — acompaña, no se pide solo.
+    const p = byName("Huevo");
+    expect(p.verdict).toBe("observar");
+    expect(p.menuEng).toBeNull();
+    expect(p.verdictReason).toMatch(/acompañamiento/);
+    expect(p.verdictReason).not.toMatch(/revisar|reemplazo/i);
   });
 });
 

@@ -41,6 +41,8 @@ export type FilaVenta = {
   list_price: number | null;
   target_margin_pct: number | null;
   cost_month: string | null;
+  /** Marca de dirección: acompañamiento/extra, no plato final. */
+  es_acompanamiento: boolean;
 };
 
 export type FilaHistoria = {
@@ -153,6 +155,10 @@ export function armarFacts(input: {
       // Al fusionar, el costo se pondera por unidades. Normalmente son
       // idénticos (misma receta), pero si difieren no se elige uno al
       // azar: el promedio ponderado es el costo real de lo vendido.
+      // Si CUALQUIERA de las filas fusionadas está marcada, el
+      // producto fusionado queda marcado: es el mismo plato en las dos
+      // sedes, y basta con que dirección lo haya marcado en una.
+      if (r.es_acompanamiento === true) ya.isAccompaniment = true;
       const cogsNuevo = r.unit_cogs != null ? Number(r.unit_cogs) : null;
       if (ya.unitCogs != null && cogsNuevo != null && ya.units + units > 0) {
         ya.unitCogs =
@@ -168,6 +174,7 @@ export function armarFacts(input: {
     const costMonth = r.cost_month || null;
     porKey.set(key, {
       productId: r.product_id || null,
+      isAccompaniment: r.es_acompanamiento === true,
       key,
       // El sufijo se quita SIEMPRE: en la lámina de Fonavi, escribir
       // "Cappuccino (Fonavi)" es repetir el título de la diapositiva.

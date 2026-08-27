@@ -41,12 +41,19 @@ const COLOR_CUADRANTE: Record<string, string> = {
 /**
  * Cuántos productos entran POR BLOQUE en la lámina.
  *
- * Son 3, no 5: con 4 la rejilla 2×2 se pasaba del alto de la
- * diapositiva y el último bloque se encimaba con la frase de cierre.
- * El total real sigue en el encabezado del bloque ("19 productos"), así
- * que se ve un resumen, no una lista recortada en silencio.
+ * Pedido de Jahnn (27-ago-2026): "me gustaría que se vea el top 5 de
+ * productos por categoría… actualmente solo se ven 3". Coincide con el
+ * MAX_POR_CUADRANTE de board-view.ts — la capa de datos ya traía 5, lo
+ * que faltaba era espacio en la lámina.
+ *
+ * Para que quepan se movió la frase de "qué mirar primero" (antes al
+ * pie de la lámina) a la CABECERA, y se comprimió el encabezado de cada
+ * bloque a una sola línea (título + regla juntos, en vez de dos). Con
+ * eso los cuatro bloques caben con 5 productos cada uno sin salirse del
+ * alto de la diapositiva — verificado con el arnés de medición que se
+ * usa en todo este archivo (ningún elemento puede pasar de ~5.55").
  */
-const EN_LAMINA = 3;
+const EN_LAMINA = 5;
 
 const soles = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
 
@@ -65,71 +72,73 @@ function pct(n: number | null): string {
 export function matrizSlide(nueva: SlideFactory, sub: string, bp: BoardPortfolio, sede: string) {
   const s = nueva(`${sede} — qué mantener, promocionar o reemplazar`, sub);
 
+  // "Qué mirar primero" va ARRIBA, no al pie: con 5 productos por
+  // cuadrante ya no queda una línea suelta debajo de la rejilla, y de
+  // paso es mejor lectura — la conclusión antes que la evidencia.
+  s.addText(`→ ${tituloDeAtencion(bp)}`, {
+    x: MX, y: BODY_Y - 0.06, w: CONTENT_W, h: 0.34, fontSize: 10.5, bold: true, color: "111827",
+  });
   s.addText(
     `${bp.mesLabel}${bp.mesEnCurso ? " (mes en curso)" : ""} · rentabilidad × popularidad, medido DENTRO de ${sede}`,
-    { x: MX, y: BODY_Y - 0.32, w: CONTENT_W, h: 0.26, fontSize: 9.5, italic: true, color: "6B7280" },
+    { x: MX, y: BODY_Y + 0.28, w: CONTENT_W, h: 0.18, fontSize: 8, italic: true, color: "6B7280" },
   );
 
   // La advertencia de cobertura: roja si el análisis no debe dirigir.
   const alerta = bp.cobertura.insuficiente;
+  const covY = BODY_Y + 0.5;
   s.addShape("roundRect", {
-    x: MX, y: BODY_Y, w: CONTENT_W, h: 0.42,
+    x: MX, y: covY, w: CONTENT_W, h: 0.32,
     fill: { color: alerta ? "FEF2F2" : "F0FDF4" },
     line: { color: alerta ? "FECACA" : "BBF7D0" },
     rectRadius: 0.04,
   });
   s.addText(bp.cobertura.advertencia, {
-    x: MX + 0.15, y: BODY_Y + 0.02, w: CONTENT_W - 0.3, h: 0.38,
-    fontSize: 9, bold: alerta, color: alerta ? "B91C1C" : "166534", valign: "middle",
+    x: MX + 0.15, y: covY + 0.01, w: CONTENT_W - 0.3, h: 0.3,
+    fontSize: 8.5, bold: alerta, color: alerta ? "B91C1C" : "166534", valign: "middle",
   });
 
-  // Cuatro bloques en 2×2.
-  const gy = BODY_Y + 0.5;      // 1.95
+  // Cuatro bloques en 2×2, cada uno con hasta 5 productos.
+  const gy = covY + 0.32 + 0.12;
   const bw = (CONTENT_W - 0.25) / 2;
-  const bh = 1.35;              // 2 filas + gap terminan en 4.80
+  const bh = 1.44;
   bp.cuadrantes.forEach((c, i) => {
     const x = MX + (i % 2) * (bw + 0.25);
-    const y = gy + Math.floor(i / 2) * (bh + 0.15);
+    const y = gy + Math.floor(i / 2) * (bh + 0.1);
     const color = COLOR_CUADRANTE[c.q] ?? "6B7280";
 
     s.addShape("roundRect", { x, y, w: bw, h: bh, fill: { color: "FFFFFF" }, line: { color: "E5E7EB" }, rectRadius: 0.04 });
     s.addShape("rect", { x, y, w: bw, h: 0.05, fill: { color } });
+    // Título + total + venta en una línea, la regla en la siguiente:
+    // el mismo contenido de antes, en dos líneas más bajas en vez de
+    // tres, para dejarle sitio a los 5 productos.
     s.addText(`${c.titulo}  ·  ${c.total} producto${c.total === 1 ? "" : "s"}  ·  ${soles(c.venta)}`, {
-      x: x + 0.12, y: y + 0.1, w: bw - 0.24, h: 0.26, fontSize: 10.5, bold: true, color,
+      x: x + 0.12, y: y + 0.07, w: bw - 0.24, h: 0.2, fontSize: 9.5, bold: true, color,
     });
     s.addText(c.regla, {
-      x: x + 0.12, y: y + 0.34, w: bw - 0.24, h: 0.22, fontSize: 7.5, italic: true, color: "6B7280",
+      x: x + 0.12, y: y + 0.26, w: bw - 0.24, h: 0.16, fontSize: 7, italic: true, color: "6B7280",
     });
 
     if (c.productos.length === 0) {
       s.addText("Ninguno este mes.", {
-        x: x + 0.12, y: y + 0.6, w: bw - 0.24, h: 0.25, fontSize: 9, color: "9CA3AF",
+        x: x + 0.12, y: y + 0.48, w: bw - 0.24, h: 0.22, fontSize: 8.5, color: "9CA3AF",
       });
     } else {
+      // El total ya salió en el encabezado ("19 productos"): si hay más
+      // de 5, no hace falta una línea aparte diciéndolo otra vez.
       c.productos.slice(0, EN_LAMINA).forEach((p, j) => {
-        const py = y + 0.58 + j * 0.23;
+        const py = y + 0.45 + j * 0.192;
         s.addText(p.nombre, {
-          x: x + 0.12, y: py, w: bw - 1.75, h: 0.22, fontSize: 8.5, color: "111827",
+          x: x + 0.12, y: py, w: bw - 1.7, h: 0.19, fontSize: 7.8, color: "111827",
         });
         s.addText(`${Math.round(p.unidades)} und`, {
-          x: x + bw - 1.6, y: py, w: 0.6, h: 0.22, fontSize: 8, color: "6B7280", align: "right",
+          x: x + bw - 1.55, y: py, w: 0.58, h: 0.19, fontSize: 7.3, color: "6B7280", align: "right",
         });
         s.addText(
           p.contribucionUnitaria !== null ? `S/${p.contribucionUnitaria.toFixed(2)}/und` : "—",
-          { x: x + bw - 0.95, y: py, w: 0.83, h: 0.22, fontSize: 8, bold: true, color, align: "right" },
+          { x: x + bw - 0.93, y: py, w: 0.81, h: 0.19, fontSize: 7.3, bold: true, color, align: "right" },
         );
       });
-      if (c.total > EN_LAMINA) {
-        s.addText(`+${c.total - EN_LAMINA} más`, {
-          x: x + 0.12, y: y + 0.58 + EN_LAMINA * 0.23, w: bw - 0.24, h: 0.18,
-          fontSize: 7, italic: true, color: "9CA3AF",
-        });
-      }
     }
-  });
-
-  s.addText(`→ ${tituloDeAtencion(bp)}`, {
-    x: MX, y: 4.92, w: CONTENT_W, h: 0.32, fontSize: 10, bold: true, color: "111827",
   });
 }
 

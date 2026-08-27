@@ -86,6 +86,7 @@ export function computeBaseMetrics(f: PortfolioFacts): BaseMetrics[] {
         contribution,
         marginPct,
         targetMarginPct: p.targetMarginPct,
+        isAccompaniment: p.isAccompaniment,
         growthPct,
         trend,
         isNew,
@@ -148,7 +149,13 @@ export function classifyAbc(metrics: BaseMetrics[]): Map<string, AbcClass> {
 export function classifyMenuEng(
   metrics: BaseMetrics[],
 ): { quadrants: Map<string, { q: MenuEngQuadrant; reason: string }>; avgUnitContribution: number | null } {
-  const costed = metrics.filter((m) => m.hasCost && m.units > 0);
+  // Los acompañamientos quedan FUERA de la comparación, no solo sin
+  // cuadrante propio: si entraran al cálculo, su popularidad casi nula
+  // (depende del plato al que acompañan, no de sí mismos) bajaría el
+  // umbral de "popular" y el promedio de margen para TODOS los demás
+  // productos — distorsionando el cuadrante de todo el portafolio por
+  // un puñado de extras (Jahnn, 27-ago-2026).
+  const costed = metrics.filter((m) => m.hasCost && m.units > 0 && !m.isAccompaniment);
   const quadrants = new Map<string, { q: MenuEngQuadrant; reason: string }>();
   if (costed.length < 3) return { quadrants, avgUnitContribution: null }; // muestra insuficiente
 
@@ -370,6 +377,14 @@ export function synthesizeVerdicts(
     if (!m.hasCost) {
       verdict = "observar";
       reason = `Vende ${fmt(m.revenue)}/mes pero no conocemos su costo — completar receta o alias antes de decidir.`;
+    } else if (m.isAccompaniment) {
+      // Va ANTES que cualquier chequeo de cuadrante: aunque tenga costo
+      // y "quad" sea null por la exclusión de classifyMenuEng, sin esta
+      // rama caería al último "observar" genérico ("sin señal fuerte")
+      // sin explicar POR QUÉ no tiene cuadrante — y esa explicación es
+      // justo lo que evita que alguien vuelva a marcarlo por error.
+      verdict = "observar";
+      reason = `Es un acompañamiento (no un plato final): su popularidad depende del plato al que acompaña, no compite por rentabilidad × popularidad como los demás.`;
     } else if (signals.some((s) => s.id === `sig-precio-${m.key}`)) {
       verdict = "ajustar_precio";
       reason = `Popular pero con margen ${m.marginPct}% bajo su objetivo ${r1((m.targetMarginPct ?? 0) * 100)}% — hay plata sobre la mesa.`;

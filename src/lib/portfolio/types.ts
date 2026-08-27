@@ -40,6 +40,14 @@ export type ProductFacts = {
   /** true = el costo viene de un snapshot POSTERIOR al mes (aproximación
    *  honesta: no existe historial de costos antes de jul-2026). */
   costApproximated: boolean;
+  /**
+   * true = es un acompañamiento/extra (huevo sancochado, tocino…), no un
+   * plato final. Se excluye del menu engineering: su popularidad depende
+   * del plato al que acompaña, no de sí mismo, así que comparado como si
+   * compitiera solo siempre sale con poca rotación (Jahnn, 27-ago-2026).
+   * Marcado a mano por dirección en el Product Intelligence Center.
+   */
+  isAccompaniment: boolean;
   /** Historia mensual del producto (meses cargados ≤ mes del reporte, asc). */
   history: { month: string; units: number; revenue: number }[];
 };
@@ -108,9 +116,11 @@ export type ProductIntel = {
   contribution: number | null;       // utilidad de contribución del mes
   marginPct: number | null;          // contribution / revenue
   targetMarginPct: number | null;
+  /** true = acompañamiento/extra, no un plato final (ver ProductFacts). */
+  isAccompaniment: boolean;
   // Clasificaciones (evidencia, no recomendaciones)
   abcClass: AbcClass;
-  menuEng: MenuEngQuadrant | null;   // null = sin costo (no clasificable)
+  menuEng: MenuEngQuadrant | null;   // null = sin costo o es acompañamiento
   menuEngReason: string | null;
   /** Crecimiento del mes vs promedio de los 3 previos (%). null = sin historia. */
   growthPct: number | null;

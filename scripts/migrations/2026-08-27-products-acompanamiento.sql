@@ -1,0 +1,47 @@
+-- ============================================================
+-- Marca de "acompañamiento" en el catálogo de productos
+-- Pedido de Jahnn (27-ago-2026)
+-- ============================================================
+--
+-- "Productos como el huevo sancochado, huevo revuelto, huevo revuelto
+--  con tocino… son generalmente productos que acompañan… no deberían
+--  estar en 'candidatos a reemplazo' por no ser productos finales."
+--
+-- QUÉ RESUELVE
+--
+-- El análisis de portafolio (menu engineering) compara cada producto
+-- por rentabilidad × popularidad, como si todos compitieran por ser
+-- "el plato que alguien pide". Un acompañamiento (huevo, tocino) no
+-- compite en esos términos: su popularidad depende de qué tan popular
+-- es el plato al que acompaña, no de sí mismo. Comparado con una
+-- empanada o una porción de cake, siempre va a salir con poca rotación
+-- y termina marcado como "candidato a reemplazo" sin serlo.
+--
+-- POR QUÉ UNA COLUMNA Y NO UNA CATEGORÍA
+--
+-- Ya existe `category` (sincronizada desde el pricing-engine), pero los
+-- huevos comparten categoría ("Tostadas / Brunch / Desayunos") con
+-- platos que SÍ son finales (Desayuno Rústico, Tostadas Francesas).
+-- Excluir la categoría entera sacaría también a esos. Hace falta una
+-- marca por producto, no por categoría.
+--
+-- POR QUÉ NO LA TOCA EL SYNC DEL PRICING-ENGINE
+--
+-- scripts/sync-product-catalog.ts solo actualiza sku, name, category y
+-- active en el UPDATE del upsert (ver ON CONFLICT ... DO UPDATE SET).
+-- Una columna nueva que ese UPDATE no menciona queda intacta en cada
+-- sincronización — se marca una vez y no se pierde.
+--
+-- QUIÉN LA MARCA
+--
+-- Solo dirección (decisión de Jahnn) — es una lectura del análisis de
+-- carta, no una tarea operativa. Se marca desde el Product Intelligence
+-- Center (/[negocio]/productos), producto por producto.
+--
+-- RIESGO: ninguno para los datos existentes. Columna nueva con
+-- default false — ningún producto queda marcado como acompañamiento
+-- hasta que dirección lo haga a mano.
+-- ============================================================
+
+ALTER TABLE products
+  ADD COLUMN IF NOT EXISTS es_acompanamiento boolean NOT NULL DEFAULT false;
