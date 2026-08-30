@@ -89,13 +89,24 @@ describe("resolverCategoria · lo que NO se debe adivinar", () => {
   // Estos son los casos reales de Fonavi (ago-2026). El nombre no dice
   // nada; solo el concepto de la fila lo aclara, y eso no lo puede leer
   // ningún parecido de texto. Tienen que llegarle a dirección.
-  it("deja pendientes las categorías genuinamente nuevas", () => {
-    for (const n of ["PENDIENTE", "FALTA RENDIR", "DEUDA"]) {
+  it("deja pendientes las palabras que hoy significan una cosa y mañana otra", () => {
+    // En ago-2026 "PENDIENTE" resultó ser el SIS del personal y "DEUDA"
+    // una devolución. Esas filas se corrigieron a mano, pero las palabras
+    // NO se metieron al diccionario: si vuelven a aparecer significando
+    // otra cosa, el sistema tiene que preguntar de nuevo.
+    for (const n of ["PENDIENTE", "DEUDA"]) {
       const r = resolverCategoria(n);
       expect(r.confianza).toBe("desconocida");
       expect(r.grupo).toBeNull();
       expect(r.canonica).toBe(n);
     }
+  });
+
+  it("sí traduce las que son verdad siempre", () => {
+    // Estas también salieron de la misma revisión, pero son verdad
+    // independientemente de la fila: lo que falta rendir es caja chica.
+    expect(resolverCategoria("FALTA RENDIR").canonica).toBe("CAJA CHICA");
+    expect(resolverCategoria("Accesorios Atelier").canonica).toBe("VAJILLA");
   });
 
   it("nunca corrige nombres cortos por parecido", () => {
@@ -134,9 +145,9 @@ describe("categoriasQueNecesitanDecision", () => {
       "INSUMSO",      // parecido
       "PENDIENTE",    // desconocida
       "PENDIENTE",    // repetida
-      "FALTA RENDIR", // desconocida
+      "DEUDA",        // desconocida
     ]);
-    expect(pendientes.map((p) => p.canonica)).toEqual(["PENDIENTE", "FALTA RENDIR"]);
+    expect(pendientes.map((p) => p.canonica)).toEqual(["PENDIENTE", "DEUDA"]);
   });
 
   it("no pide decisión cuando el Excel viene limpio", () => {

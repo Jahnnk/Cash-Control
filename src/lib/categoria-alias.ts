@@ -119,6 +119,21 @@ const ALIAS: Record<string, string> = {
   // pone de acuerdo con los flags.
   "prestamos del socio": "PRESTAMOS SOCIO",
   "prestamo del socio": "PRESTAMOS SOCIO",
+
+  // Aprobadas por Jahnn el 30-ago-2026, de las que el resolvedor dejó
+  // pendientes. Solo entran acá las que son verdad SIEMPRE, no las que
+  // resultaron ser una cosa esta vez:
+  //   · "Accesorios Atelier" eran tápers, moldes y tartaletas.
+  //   · Las devoluciones a Fonavi/Centro son plata que vuelve.
+  //   · Lo que falta rendir es caja chica que todavía no se rindió.
+  // "PENDIENTE" y "DEUDA" quedaron FUERA a propósito: esta vez fueron el
+  // SIS del personal y una devolución, pero son palabras que mañana
+  // pueden significar cualquier cosa. Se corrigieron en los datos ya
+  // cargados; si vuelven a aparecer, el sistema las pregunta de nuevo.
+  "accesorios atelier": "VAJILLA",
+  "devoluciones fonavi, centro": "VUELTOS Y DEVOLUCIONES",
+  "devoluciones fonavi centro": "VUELTOS Y DEVOLUCIONES",
+  "falta rendir": "CAJA CHICA",
 };
 
 /** Quita tildes y baja a minúscula, para que "REMODELACIÒN" y "Remodelación" lleguen igual. */

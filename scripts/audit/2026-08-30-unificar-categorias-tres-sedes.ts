@@ -60,6 +60,27 @@ if (!url) throw new Error("Falta DATABASE_URL");
 const sql = neon(url);
 
 const APPLY = process.argv.includes("--apply");
+
+/**
+ * Correcciones PUNTUALES de datos ya cargados, aprobadas por Jahnn el
+ * 30-ago-2026. Deliberadamente NO están en el diccionario de alias.
+ *
+ * "PENDIENTE" resultó ser el SIS de Joseph y Luana (seguro de salud, o
+ * sea planilla) y "DEUDA" una devolución de un pago hecho a Kelly en
+ * marzo. Son verdad para ESTAS filas, no reglas del negocio: mañana esas
+ * mismas palabras pueden significar otra cosa. Si se metieran al
+ * diccionario, el sistema empezaría a mandar gastos a la categoría
+ * equivocada en silencio — justo lo que el resolvedor evita.
+ *
+ * Cuando vuelvan a aparecer, el import se las va a preguntar de nuevo.
+ * Es lo correcto.
+ */
+const DECISIONES_PUNTUALES: Record<number, Record<string, string>> = {
+  2: {
+    PENDIENTE: "PLANILLA",
+    DEUDA: "VUELTOS Y DEVOLUCIONES",
+  },
+};
 const SEDES: { id: number; nombre: string }[] = [
   { id: 1, nombre: "ATELIER" },
   { id: 2, nombre: "FONAVI" },
@@ -121,8 +142,19 @@ async function main() {
     `) as Fila[];
 
     // ── 1 · UNIFICAR ────────────────────────────────────────────────
+    // La decisión puntual, si existe, manda sobre el resolvedor.
+    const puntuales = DECISIONES_PUNTUALES[sede.id] ?? {};
+    const resolver = (nombre: string) => {
+      const puntual = puntuales[nombre.toUpperCase()];
+      if (puntual) {
+        return { canonica: puntual, confianza: "decisión de Jahnn", motivo: "Corrección puntual aprobada." };
+      }
+      const r = resolverCategoria(nombre);
+      return { canonica: r.canonica, confianza: r.confianza as string, motivo: r.motivo };
+    };
+
     const renombres = usadas
-      .map((u) => ({ ...u, r: resolverCategoria(u.category) }))
+      .map((u) => ({ ...u, r: resolver(u.category) }))
       .filter((u) => u.r.canonica !== u.category);
 
     console.log(`\n── 1 · UNIFICAR (${renombres.length}) ──`);
@@ -144,6 +176,42 @@ async function main() {
           UPDATE expenses SET category = ${x.r.canonica}
           WHERE business_id = ${sede.id} AND category = ${x.category} AND archived = false
         `;
+      }
+
+      // ── 1b · NORMALIZAR LAS FILAS DEL CATÁLOGO ────────────────────
+      //
+      // Renombrar el gasto no alcanza: la fila vieja del catálogo queda
+      // ahí, y las REGLAS DE GASTO COMPARTIDO la apuntan por id — el
+      // alquiler S/1,800/900, la luz, el internet, el gas. Si esa fila se
+      // borra, se rompe el reparto entre Atelier y Fonavi (de hecho la
+      // base lo impide con una llave foránea).
+      //
+      // Por eso: cuando el nombre canónico todavía NO existe, la fila se
+      // renombra EN SITIO y las reglas la siguen solas. Cuando ya existe,
+      // hay que fusionar: las reglas se mudan a la fila que sobrevive y
+      // recién ahí se borra la vieja.
+      const filas = (await sql`
+        SELECT id::text, name FROM expense_categories WHERE business_id = ${sede.id}
+      `) as { id: string; name: string }[];
+
+      for (const fila of filas) {
+        const destino = resolver(fila.name).canonica;
+        if (destino === fila.name) continue;
+
+        const yaExiste = (await sql`
+          SELECT id::text FROM expense_categories
+          WHERE business_id = ${sede.id} AND name = ${destino}
+        `) as { id: string }[];
+
+        if (yaExiste.length === 0) {
+          await sql`UPDATE expense_categories SET name = ${destino} WHERE id = ${fila.id}`;
+        } else {
+          await sql`
+            UPDATE shared_expense_rules SET category_id = ${yaExiste[0].id}
+            WHERE category_id = ${fila.id}
+          `;
+          await sql`DELETE FROM expense_categories WHERE id = ${fila.id}`;
+        }
       }
     }
 
@@ -191,7 +259,7 @@ async function main() {
     // (hay test), así que da lo mismo antes o después de --apply.
     const acumulado = new Map<string, { movs: number; total: number }>();
     for (const u of usadas) {
-      const canon = resolverCategoria(u.category).canonica;
+      const canon = resolver(u.category).canonica;
       const prev = acumulado.get(canon) ?? { movs: 0, total: 0 };
       acumulado.set(canon, { movs: prev.movs + u.movs, total: prev.total + u.total });
     }
@@ -201,7 +269,7 @@ async function main() {
 
     const pendientes = usadasDespues
       .filter((u) => !grupoDelCatalogo(u.category))
-      .map((u) => ({ ...u, r: resolverCategoria(u.category) }));
+      .map((u) => ({ ...u, r: resolver(u.category) }));
 
     console.log(`\n── 3 · PENDIENTES DE DECISIÓN (${pendientes.length}) ──`);
     if (pendientes.length === 0) console.log("   (ninguna: todo el gasto quedó clasificado)");
@@ -214,12 +282,17 @@ async function main() {
 
     // ── 4 · BORRAR las vacías ───────────────────────────────────────
     if (APPLY) {
+      // Una categoría sin gastos PERO usada por una regla de gasto
+      // compartido no se borra: la regla la necesita viva.
       const borradas = (await sql`
         DELETE FROM expense_categories c
         WHERE c.business_id = ${sede.id}
           AND NOT EXISTS (
             SELECT 1 FROM expenses e
             WHERE e.business_id = ${sede.id} AND e.category = c.name AND e.archived = false
+          )
+          AND NOT EXISTS (
+            SELECT 1 FROM shared_expense_rules r WHERE r.category_id = c.id
           )
         RETURNING name
       `) as { name: string }[];
