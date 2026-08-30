@@ -18,6 +18,7 @@
  */
 
 import * as XLSX from "xlsx";
+import { categoriaCanonica } from "./categoria-alias";
 import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
 import { leerSaldoBancoExcel, type SaldoBancoExcel } from "./saldo-banco-excel";
 
@@ -626,9 +627,16 @@ export function parseExcelFile(
     let note = buildNote(proveedor, concepto, cp, ncp);
     if (isRefund) note = `[DEVOLUCION] ${note}`;
 
-    const cat = grupoRaw || "Sin categoría";
+    // Se corrige la variante mal escrita ANTES de guardar: si entra
+    // "PACKAGIN", el sistema crearía una categoría nueva y el gasto
+    // quedaría partido en dos líneas que deberían ser una. El mapa solo
+    // traduce variantes conocidas — ver lib/categoria-alias.ts.
+    const cat = categoriaCanonica(grupoRaw) || "OTROS";
     categorias.add(cat);
 
+    // OJO: sobre el grupo CRUDO, no sobre el corregido. "VENTAS" no está
+    // en el mapa de variantes, pero si algún día se agregara, esta
+    // marca no debe cambiar de significado por eso.
     const isByteSale = grupoRaw.toUpperCase() === "VENTAS";
 
     movimientos.push({

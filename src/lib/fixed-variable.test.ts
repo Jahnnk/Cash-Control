@@ -83,3 +83,53 @@ describe("buildFixedVariable", () => {
     expect(r.fijo.pctOfOperative).toBe(0);
   });
 });
+
+describe("variantes del mismo nombre con clasificación distinta", () => {
+  /**
+   * El caso real de Centro (ago-2026): S/53,598 de sueldos contando como
+   * costo variable porque `PLANILLA` (fijo) y `Planilla` (variable, sin
+   * un solo gasto) colisionaban y ganaba la que llegara primero.
+   */
+  const enConflicto: FVCategoryMeta[] = [
+    { name: "PLANILLA", excludeFromEbitda: false, costGroup: "fijo" },
+    { name: "Planilla", excludeFromEbitda: false, costGroup: "variable" },
+  ];
+
+  it("el resultado NO depende del orden en que lleguen las categorías", () => {
+    const a = buildGroupMap(enConflicto);
+    const b = buildGroupMap([...enConflicto].reverse());
+    expect(a.get("Planilla")).toBe(b.get("Planilla"));
+  });
+
+  it("ante fijo vs variable gana FIJO: subestimar los fijos abarata el equilibrio", () => {
+    expect(buildGroupMap(enConflicto).get("Planilla")).toBe("fijo");
+    expect(buildGroupMap([...enConflicto].reverse()).get("Planilla")).toBe("fijo");
+  });
+
+  it("y el gasto real cae del lado correcto, escrito como se escriba", () => {
+    const r = buildFixedVariable(
+      [{ category: "PLANILLA", amount: 11275.29 }],
+      [...enConflicto].reverse(),
+    );
+    expect(r.fijo.total).toBe(11275.29);
+    expect(r.variable.total).toBe(0);
+  });
+
+  it("no operativo sigue mandando sobre todo lo demás", () => {
+    const cats: FVCategoryMeta[] = [
+      { name: "AHORRO", excludeFromEbitda: false, costGroup: "fijo" },
+      { name: "Ahorro", excludeFromEbitda: true, costGroup: null },
+    ];
+    expect(buildGroupMap(cats).get("Ahorro")).toBe("no_operativo");
+    expect(buildGroupMap([...cats].reverse()).get("Ahorro")).toBe("no_operativo");
+  });
+
+  it("una clasificación real gana sobre 'sin clasificar'", () => {
+    const cats: FVCategoryMeta[] = [
+      { name: "Limpieza", excludeFromEbitda: false, costGroup: null },
+      { name: "LIMPIEZA", excludeFromEbitda: false, costGroup: "variable" },
+    ];
+    expect(buildGroupMap(cats).get("Limpieza")).toBe("variable");
+    expect(buildGroupMap([...cats].reverse()).get("Limpieza")).toBe("variable");
+  });
+});

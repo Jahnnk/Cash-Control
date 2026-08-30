@@ -44,19 +44,52 @@ export type FixedVariableReport = {
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-/** Mapa nombre-normalizado → grupo efectivo, fusionando variantes de caso. */
+/**
+ * Mapa nombre-normalizado → grupo efectivo, fusionando variantes de caso.
+ *
+ * ─── Por qué la prioridad es explícita y no "la primera que llegue" ───
+ *
+ * Hasta ago-2026 este mapa conservaba la primera clasificación que veía
+ * ("mantener la clasificación ya vista"). Como las categorías llegan de
+ * un SELECT sin ORDER BY, el orden no está garantizado: la misma
+ * planilla podía salir fija en una consulta y variable en la siguiente.
+ *
+ * Le pasó a Centro y no era un detalle. `PLANILLA` estaba clasificada
+ * como fija y `Planilla` (minúscula, sin un solo gasto, resto del
+ * catálogo original) como variable. Al colisionar, S/53,598 de sueldos
+ * —el gasto más fijo que existe— terminaron contando como costo
+ * variable. Los costos fijos de junio quedaron en S/3,795 cuando
+ * pasaban de S/14,000, y el punto de equilibrio salía irrealmente bajo.
+ * Probado: ordenando A→Z daba "variable", ordenando Z→A daba "fijo".
+ *
+ * ─── La regla ───
+ *
+ *   no_operativo  >  fijo  >  variable  >  sin_clasificar
+ *
+ * `fijo` gana sobre `variable` a propósito: de los dos errores posibles,
+ * tratar un costo fijo como variable es el caro. Hunde el margen de
+ * contribución y produce un punto de equilibrio más bajo que el real —
+ * o sea, dice que el negocio se sostiene vendiendo menos de lo que
+ * necesita. La otra dirección solo exige de más, que es el lado seguro.
+ *
+ * Esto es una RED, no la solución: dos variantes del mismo nombre con
+ * clasificaciones distintas siguen siendo un dato que hay que limpiar en
+ * Configuración. La red evita que mientras tanto el número mienta.
+ */
+const PRIORIDAD: Record<EffectiveCostGroup, number> = {
+  no_operativo: 3,
+  fijo: 2,
+  variable: 1,
+  sin_clasificar: 0,
+};
+
 export function buildGroupMap(categories: FVCategoryMeta[]): Map<string, EffectiveCostGroup> {
   const map = new Map<string, EffectiveCostGroup>();
   for (const c of categories) {
     const key = normalizeCategory(c.name);
     const group = effectiveCostGroup({ excludeFromEbitda: c.excludeFromEbitda, costGroup: c.costGroup });
     const prev = map.get(key);
-    // Prioridad al fusionar variantes: no_operativo (canónica) > clasificado > sin clasificar
-    if (prev === "no_operativo" || group === "no_operativo") {
-      map.set(key, "no_operativo");
-    } else if (prev === "fijo" || prev === "variable") {
-      // mantener la clasificación ya vista
-    } else {
+    if (prev === undefined || PRIORIDAD[group] > PRIORIDAD[prev]) {
       map.set(key, group);
     }
   }
