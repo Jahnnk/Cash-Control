@@ -18,7 +18,7 @@
  */
 
 import * as XLSX from "xlsx";
-import { categoriaCanonica } from "./categoria-alias";
+import { resolverCategoria, type ResolucionCategoria } from "./categoria-resolver";
 import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
 import { leerSaldoBancoExcel, type SaldoBancoExcel } from "./saldo-banco-excel";
 
@@ -103,6 +103,12 @@ export type ParseResult = {
   parseWarnings: ParseWarning[];
   rangoFechas: { start: string | null; end: string | null };
   categoriasUnicas: string[];
+  /**
+   * Cómo se resolvió cada categoría del archivo: si ya era del
+   * catálogo, si se tradujo, si se corrigió un typo, o si es
+   * desconocida y necesita que dirección la clasifique.
+   */
+  resolucionCategorias: ResolucionCategoria[];
   totales: {
     ingresosEfectivo: number;
     ingresosBcp: number;
@@ -292,6 +298,8 @@ export function parseExcelFile(
 
   const movimientos: ParsedMovement[] = [];
   const categorias = new Set<string>();
+  /** Cómo se resolvió cada categoría final — una entrada por categoría. */
+  const resoluciones = new Map<string, ResolucionCategoria>();
   const distMethod: Record<string, number> = { transferencia: 0, efectivo: 0, yape_plin: 0, pos: 0 };
   const parseWarnings: ParseWarning[] = [];
 
@@ -627,12 +635,17 @@ export function parseExcelFile(
     let note = buildNote(proveedor, concepto, cp, ncp);
     if (isRefund) note = `[DEVOLUCION] ${note}`;
 
-    // Se corrige la variante mal escrita ANTES de guardar: si entra
-    // "PACKAGIN", el sistema crearía una categoría nueva y el gasto
-    // quedaría partido en dos líneas que deberían ser una. El mapa solo
-    // traduce variantes conocidas — ver lib/categoria-alias.ts.
-    const cat = categoriaCanonica(grupoRaw) || "OTROS";
+    // La categoría se resuelve ANTES de guardar: si entra "PACKAGIN", el
+    // sistema crearía una categoría nueva y el gasto quedaría partido en
+    // dos líneas que deberían ser una. El resolvedor corrige tildes,
+    // MAYÚSCULAS, equivalencias conocidas y errores de tipeo, y marca como
+    // "desconocida" lo que no puede resolver sin adivinar — para que
+    // dirección lo decida al importar, en vez de que quede suelto.
+    // Ver lib/categoria-resolver.ts.
+    const resolucion = resolverCategoria(grupoRaw);
+    const cat = resolucion.canonica || "OTROS";
     categorias.add(cat);
+    if (!resoluciones.has(cat)) resoluciones.set(cat, resolucion);
 
     // OJO: sobre el grupo CRUDO, no sobre el corregido. "VENTAS" no está
     // en el mapa de variantes, pero si algún día se agregara, esta
@@ -704,6 +717,8 @@ export function parseExcelFile(
     parseWarnings,
     rangoFechas: { start, end },
     categoriasUnicas: Array.from(categorias).sort(),
+    resolucionCategorias: Array.from(resoluciones.values())
+      .sort((a, b) => a.canonica.localeCompare(b.canonica)),
     totales: {
       ingresosEfectivo: inEfR,
       ingresosBcp: inBcR,
@@ -731,6 +746,7 @@ function emptyResult(errores: string[], warnings: string[]): ParseResult {
     parseWarnings: [],
     rangoFechas: { start: null, end: null },
     categoriasUnicas: [],
+    resolucionCategorias: [],
     totales: {
       ingresosEfectivo: 0, ingresosBcp: 0,
       egresosEfectivo: 0, egresosBcp: 0,

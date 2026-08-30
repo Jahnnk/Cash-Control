@@ -33,6 +33,11 @@ import {
 } from "@/lib/control-vtas-parser";
 import { sheetMonthKey, monthRange } from "@/lib/excel-month-pairing";
 import {
+  grupoDelCatalogo,
+  grupoAColumnas,
+  type GrupoCategoria,
+} from "@/lib/catalogo-categorias";
+import {
   revisarFechasDelMes, mensajeFechasFueraDelMes, type RevisionFechas,
 } from "@/lib/filas-fuera-del-mes";
 import {
@@ -117,6 +122,20 @@ export type ImportPreview = {
   tipsPendingEnRango: number;
   roundingAlertsEnRango: number;
   categoriasNuevas: string[];
+  /**
+   * Las categorías que el sistema NO supo clasificar solo y que hoy
+   * quedarían sueltas (nuevas, o ya existentes pero sin grupo). Es
+   * la lista que la pantalla de importación le pone a dirección
+   * para decidir de una vez, antes de que el gasto entre.
+   */
+  categoriasPorClasificar: {
+    nombre: string;
+    motivo: string;
+    /** Sugerencia por defecto — se aplica si nadie la cambia. */
+    sugerencia: GrupoCategoria;
+    /** Cuánta plata trae en este archivo, para dimensionar. */
+    monto: number;
+  }[];
   saldosAntes: Record<number, { cash: number; bcp: number; code: string }>;
   fileName: string;
   ingGtosSheet: string | null;
@@ -141,6 +160,16 @@ export type ImportOptions = {
   aplicarSaldoInicial: boolean;
   archivarManualesExistentes: boolean;
   crearCategoriasNuevas: boolean;
+  /**
+   * Qué grupo darle a las categorías que el resolvedor no supo clasificar.
+   * Lo llena dirección en la pantalla de importación, una vez por
+   * categoría nueva; de ahí en adelante ya queda guardada.
+   *
+   * Clave = nombre de la categoría, valor = 'fijo' | 'variable' |
+   * 'financiamiento' | 'fuera'. Lo que no venga acá se crea sin grupo,
+   * como antes.
+   */
+  clasificacionesNuevas?: Record<string, GrupoCategoria>;
 };
 
 export type ImportResult = {
@@ -217,6 +246,16 @@ async function getSaldosTodosNegocios(): Promise<
 async function existingCategoryNames(bId: number): Promise<Set<string>> {
   const r = await db.execute(sql`
     SELECT name FROM expense_categories WHERE business_id = ${bId}
+  `);
+  return new Set((r.rows as { name: string }[]).map((x) => x.name.toUpperCase()));
+}
+
+/** Las que ya existen Y ya tienen grupo: esas no hay que preguntarlas. */
+async function categoriasYaClasificadas(bId: number): Promise<Set<string>> {
+  const r = await db.execute(sql`
+    SELECT name FROM expense_categories
+    WHERE business_id = ${bId}
+      AND (cost_group IS NOT NULL OR exclude_from_ebitda = true)
   `);
   return new Set((r.rows as { name: string }[]).map((x) => x.name.toUpperCase()));
 }
@@ -394,6 +433,29 @@ export async function previewExcelImport(
     ? parseResult.categoriasUnicas.filter((c) => !existing.has(c.toUpperCase()))
     : [];
 
+  // Las que van a quedar sueltas si nadie decide: el resolvedor no las
+  // reconoció Y la sede tampoco las tiene clasificadas de antes.
+  // SUGERENCIA por defecto: 'fijo'. De los dos errores posibles es el
+  // barato — un costo fijo tratado como variable hunde el margen y baja
+  // el punto de equilibrio, o sea dice que el negocio se sostiene
+  // vendiendo menos de lo que necesita. Al revés solo exige de más.
+  const yaClasificadas = await categoriasYaClasificadas(bId);
+  const montoPorCategoria = new Map<string, number>();
+  for (const m of parseResult?.movimientos ?? []) {
+    if (m.type !== "expense") continue;
+    montoPorCategoria.set(m.category, (montoPorCategoria.get(m.category) ?? 0) + m.amount);
+  }
+  const categoriasPorClasificar = (parseResult?.resolucionCategorias ?? [])
+    .filter((r) => r.confianza === "desconocida")
+    .filter((r) => !yaClasificadas.has(r.canonica.toUpperCase()))
+    .map((r) => ({
+      nombre: r.canonica,
+      motivo: r.motivo,
+      sugerencia: "fijo" as GrupoCategoria,
+      monto: Math.round((montoPorCategoria.get(r.canonica) ?? 0) * 100) / 100,
+    }))
+    .sort((a, b) => b.monto - a.monto);
+
   const saldosAntes = await getSaldosTodosNegocios();
 
   return {
@@ -405,6 +467,7 @@ export async function previewExcelImport(
     tipsPendingEnRango: tipsPending.n,
     roundingAlertsEnRango: roundingAlerts.n,
     categoriasNuevas,
+    categoriasPorClasificar,
     saldosAntes,
     fileName,
     ingGtosSheet: ingGtosSheet ?? null,
@@ -569,9 +632,28 @@ export async function executeExcelImport(
     q.push(txSql`DELETE FROM bank_income_items WHERE business_id = ${bId} AND date BETWEEN ${delStart} AND ${delEnd} AND imported_from_excel = true`);
     q.push(txSql`DELETE FROM expenses WHERE business_id = ${bId} AND date BETWEEN ${delStart} AND ${delEnd} AND imported_from_excel = true`);
     // Categorías nuevas (ON CONFLICT DO NOTHING = idempotente).
+    //
+    // Nacen YA clasificadas. Antes se creaban vacías y el gasto quedaba
+    // fuera del punto de equilibrio sin que nadie lo notara: así se
+    // perdían S/34,549 en Atelier y S/11,568 en Fonavi (ago-2026). El
+    // grupo sale del catálogo, y si el resolvedor no la reconoció, de lo
+    // que dirección eligió en la pantalla de importación.
     if (options.crearCategoriasNuevas) {
       for (const cat of parseResult.categoriasUnicas) {
-        q.push(txSql`INSERT INTO expense_categories (business_id, name, is_active) VALUES (${bId}, ${cat}, true) ON CONFLICT (business_id, name) DO NOTHING`);
+        const grupo = grupoDelCatalogo(cat) ?? options.clasificacionesNuevas?.[cat] ?? null;
+        const cols = grupo ? grupoAColumnas(grupo) : null;
+        q.push(txSql`INSERT INTO expense_categories (business_id, name, is_active, cost_group, exclude_from_ebitda)
+          VALUES (${bId}, ${cat}, true, ${cols?.costGroup ?? null}, ${cols?.excludeFromEbitda ?? false})
+          ON CONFLICT (business_id, name) DO NOTHING`);
+        // Y si la categoría YA existía pero seguía suelta, se le rellena
+        // el grupo. Rellenar un hueco nunca pisa una decisión: solo toca
+        // las filas que no tienen ninguna.
+        if (cols) {
+          q.push(txSql`UPDATE expense_categories
+            SET cost_group = ${cols.costGroup}, exclude_from_ebitda = ${cols.excludeFromEbitda}
+            WHERE business_id = ${bId} AND name = ${cat}
+              AND cost_group IS NULL AND exclude_from_ebitda = false`);
+        }
       }
     }
     for (const m of parseResult.movimientos) {

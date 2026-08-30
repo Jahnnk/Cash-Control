@@ -62,7 +62,7 @@ describe("lo que NO se toca", () => {
   it("una categoría nueva entra tal cual, no se adivina por parecido", () => {
     // Si mañana Kelly inventa una categoría, aparece en Configuración
     // para decidirla — no se mete a la fuerza en la más parecida.
-    expect(categoriaCanonica("CAPACITACIONES")).toBe("CAPACITACIONES");
+    expect(categoriaCanonica("DONACIONES")).toBe("DONACIONES");
     expect(categoriaCanonica("PACKAGING PREMIUM")).toBe("PACKAGING PREMIUM");
   });
 

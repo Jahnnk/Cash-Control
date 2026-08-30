@@ -39,6 +39,12 @@ export type FixedVariableReport = {
   sinClasificar: FVGroup;
   /** Excluidos del EBITDA — fuera del análisis; % no aplica (queda en 0). */
   noOperativo: FVGroup;
+  /**
+   * Cuotas de préstamos y tarjetas. Fuera del análisis operativo igual que
+   * noOperativo, pero con línea propia: no es lo que cuesta operar el
+   * negocio, es cómo se financia.
+   */
+  financiamiento: FVGroup;
   operativeTotal: number;
 };
 
@@ -77,6 +83,7 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
  * Configuración. La red evita que mientras tanto el número mienta.
  */
 const PRIORIDAD: Record<EffectiveCostGroup, number> = {
+  financiamiento: 4,
   no_operativo: 3,
   fijo: 2,
   variable: 1,
@@ -107,6 +114,7 @@ export function buildFixedVariable(
     variable: new Map(),
     sin_clasificar: new Map(),
     no_operativo: new Map(),
+    financiamiento: new Map(),
   };
 
   for (const row of rows) {
@@ -137,6 +145,7 @@ export function buildFixedVariable(
     variable: toGroup(buckets.variable, operativeTotal, true),
     sinClasificar: toGroup(buckets.sin_clasificar, operativeTotal, true),
     noOperativo: toGroup(buckets.no_operativo, operativeTotal, false),
+    financiamiento: toGroup(buckets.financiamiento, operativeTotal, false),
     operativeTotal,
   };
 }

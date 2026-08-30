@@ -73,6 +73,52 @@ const ALIAS: Record<string, string> = {
   // Filas que Kelly dejó sin grupo.
   "sin categoria": "OTROS",
   desconocido: "OTROS",
+
+  // ─── Ampliación del 30-ago-2026: Atelier y Fonavi ───────────────
+  //
+  // Hasta acá el diccionario solo cubría lo visto en Centro. Al abrirlo a
+  // las tres sedes aparecieron estas.
+
+  // Financiamiento. Jahnn (30-ago-2026): las cuotas de préstamos y
+  // tarjetas no son costo de operar, son cómo se financia el negocio —
+  // van a su propio grupo y no ensucian el punto de equilibrio.
+  // OJO: "PRESTAMO ATELIER" NO entra acá. Eso es una sede prestándole a
+  // otra, no financiamiento del negocio, y tiene su propia categoría.
+  prestamo: "FINANCIAMIENTO",
+  prestamos: "FINANCIAMIENTO",
+
+  // Mismo concepto, otro nombre.
+  "utiles escritorio": "OFICINA",
+  "utiles de escritorio": "OFICINA",
+  enseres: "VAJILLA",
+  sunat: "IMPUESTOS",
+  ahorros: "AHORRO",
+
+  // La caja chica de Luis (administrador de Atelier) es caja chica.
+  "caja chica - luis": "CAJA CHICA",
+
+  // El mismo nombre, escrito largo o corto.
+  "servicios generales": "SS GENERALES",
+  "servicios bancarios": "SS BANCARIOS",
+  "servicios contables": "SS CONTABLES",
+
+  // Lo que ya describe la categoría del catálogo: SS GENERALES incluye
+  // uniformes, PERSONAL incluye capacitación, VAJILLA incluye utensilios.
+  uniformes: "SS GENERALES",
+  publicidad: "MARKETING",
+  utencillos: "VAJILLA",
+  utensilios: "VAJILLA",
+  capacitaciones: "PERSONAL",
+  capacitacion: "PERSONAL",
+  "reclutamiento y seleccion": "PERSONAL",
+  "equipos y utensilios de produccion": "EQUIPOS",
+  "software y suscripciones": "SOFTWARE",
+  suscripciones: "SOFTWARE",
+
+  // Ya tienen su propio mecanismo en el sistema; el catálogo solo se
+  // pone de acuerdo con los flags.
+  "prestamos del socio": "PRESTAMOS SOCIO",
+  "prestamo del socio": "PRESTAMOS SOCIO",
 };
 
 /** Quita tildes y baja a minúscula, para que "REMODELACIÒN" y "Remodelación" lleguen igual. */

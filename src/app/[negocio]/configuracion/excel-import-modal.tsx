@@ -4,6 +4,7 @@ import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileSpreadsheet, Upload, X, AlertTriangle, CheckCircle2, Loader2, Shield } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
+import type { GrupoCategoria } from "@/lib/catalogo-categorias";
 import {
   listExcelSheets,
   previewExcelImport,
@@ -59,6 +60,18 @@ export function ExcelImportModal({
   const [aplicarSaldoInicial, setAplicarSaldoInicial] = useState(true);
   const [archivarManualesExistentes, setArchivarManualesExistentes] = useState(true);
   const [crearCategoriasNuevas, setCrearCategoriasNuevas] = useState(true);
+  // Grupo elegido para cada categoría que el sistema no supo clasificar.
+  // Arranca vacío: si Jahnn no toca nada, manda la sugerencia del preview.
+  const [clasificaciones, setClasificaciones] = useState<Record<string, string>>({});
+  // Lo que finalmente se manda: la sugerencia de cada categoría sin
+  // clasificar, pisada por lo que Jahnn haya elegido. Así "no tocar nada"
+  // sigue siendo una decisión válida y explícita, no un olvido.
+  const decisionesDeCategorias: Record<string, GrupoCategoria> = Object.fromEntries(
+    (preview?.categoriasPorClasificar ?? []).map((c) => [
+      c.nombre,
+      (clasificaciones[c.nombre] ?? c.sugerencia) as GrupoCategoria,
+    ]),
+  );
 
   // Multi-mes
   const [monthPairs, setMonthPairs] = useState<MonthPair[]>([]);
@@ -176,6 +189,7 @@ export function ExcelImportModal({
           aplicarSaldoInicial,
           archivarManualesExistentes,
           crearCategoriasNuevas,
+          clasificacionesNuevas: decisionesDeCategorias,
         }, sedeCentral);
         setMultiResult(r);
         setStep("multiresult");
@@ -222,6 +236,7 @@ export function ExcelImportModal({
           aplicarSaldoInicial,
           archivarManualesExistentes,
           crearCategoriasNuevas,
+          clasificacionesNuevas: decisionesDeCategorias,
         }, sedeCentral);
         if (!r.success) {
           setError(r.error);
@@ -319,6 +334,8 @@ export function ExcelImportModal({
               archivarManualesExistentes={archivarManualesExistentes}
               setArchivarManualesExistentes={setArchivarManualesExistentes}
               crearCategoriasNuevas={crearCategoriasNuevas}
+              clasificaciones={clasificaciones}
+              setClasificaciones={setClasificaciones}
               setCrearCategoriasNuevas={setCrearCategoriasNuevas}
               onBack={() => setStep("sheets")}
               onContinue={() => setStep("confirm")}
@@ -556,6 +573,7 @@ function PreviewStep({
   aplicarSaldoInicial, setAplicarSaldoInicial,
   archivarManualesExistentes, setArchivarManualesExistentes,
   crearCategoriasNuevas, setCrearCategoriasNuevas,
+  clasificaciones, setClasificaciones,
   onBack, onContinue, onCancel,
 }: {
   preview: ImportPreview;
@@ -566,6 +584,8 @@ function PreviewStep({
   setArchivarManualesExistentes: (v: boolean) => void;
   crearCategoriasNuevas: boolean;
   setCrearCategoriasNuevas: (v: boolean) => void;
+  clasificaciones: Record<string, string>;
+  setClasificaciones: React.Dispatch<React.SetStateAction<Record<string, string>>>;
   onBack: () => void;
   onContinue: () => void;
   onCancel: () => void;
@@ -804,6 +824,48 @@ function PreviewStep({
               ⚠ Existen registros previos en el rango ({preview.byteSalesDailyEnRango} ventas Byte, {preview.tipsPendingEnRango} propinas pending, {preview.roundingAlertsEnRango} alertas pending) que serán reemplazados.
             </p>
           )}
+        </Section>
+      )}
+
+      {p && preview.categoriasPorClasificar.length > 0 && (
+        <Section
+          icon="❓"
+          title={`Categorías por clasificar: ${preview.categoriasPorClasificar.length}`}
+          variant="warning"
+        >
+          <p className="text-xs text-gray-700 mb-2.5">
+            Estas no se parecen a ninguna categoría conocida y el sistema no las va a
+            adivinar: meter un gasto en la categoría equivocada es peor que preguntarte.
+            Elige el grupo de cada una — queda guardado y no se vuelve a preguntar.
+          </p>
+          <div className="space-y-2">
+            {preview.categoriasPorClasificar.map((c) => (
+              <div key={c.nombre} className="flex items-center justify-between gap-3">
+                <div className="min-w-0">
+                  <div className="text-xs font-medium text-gray-900 truncate">{c.nombre}</div>
+                  <div className="text-[11px] text-gray-500">
+                    {formatCurrency(c.monto)} en este archivo
+                  </div>
+                </div>
+                <select
+                  value={clasificaciones[c.nombre] ?? c.sugerencia}
+                  onChange={(e) =>
+                    setClasificaciones((prev) => ({ ...prev, [c.nombre]: e.target.value }))
+                  }
+                  className="text-[11px] border border-gray-300 rounded-md px-1.5 py-1 bg-white shrink-0"
+                >
+                  <option value="fijo">Fijo</option>
+                  <option value="variable">Variable</option>
+                  <option value="financiamiento">Financiamiento</option>
+                  <option value="fuera">Fuera del operativo</option>
+                </select>
+              </div>
+            ))}
+          </div>
+          <p className="text-[11px] text-gray-500 mt-2.5">
+            Viene marcado <strong>Fijo</strong> por precaución: si un costo fijo se cuenta
+            como variable, el punto de equilibrio sale más bajo de lo real.
+          </p>
         </Section>
       )}
 

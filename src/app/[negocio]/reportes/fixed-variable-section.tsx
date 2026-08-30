@@ -121,10 +121,20 @@ export function FixedVariableSection({ month }: { month: string }) {
           </div>
         )}
 
+        {/* Financiamiento: fuera del operativo, pero con línea propia.
+            No es lo que cuesta operar, es cómo se financia el negocio. */}
+        {data.financiamiento.total > 0 && (
+          <div className="text-[11px] text-gray-500 border-t border-gray-100 pt-3">
+            Fuera del análisis — <strong>Financiamiento</strong> (cuotas de préstamos y tarjetas):{" "}
+            {data.financiamiento.detail.map((d) => `${d.category} ${formatCurrency(d.total)}`).join(" · ")}{" "}
+            = <strong className="text-gray-700">{formatCurrency(data.financiamiento.total)}</strong>
+          </div>
+        )}
+
         {/* No-operativo aparte (exclusión canónica del EBITDA) */}
         {data.noOperativo.total > 0 && (
           <div className="text-[11px] text-gray-500 border-t border-gray-100 pt-3">
-            Fuera del análisis — <strong>No operativo / financiero</strong> (excluido del EBITDA):{" "}
+            Fuera del análisis — <strong>No operativo</strong> (excluido del EBITDA):{" "}
             {data.noOperativo.detail.map((d) => `${d.category} ${formatCurrency(d.total)}`).join(" · ")}{" "}
             = <strong className="text-gray-700">{formatCurrency(data.noOperativo.total)}</strong>
           </div>

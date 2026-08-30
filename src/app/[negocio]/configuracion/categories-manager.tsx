@@ -152,7 +152,10 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                     )}
                   </div>
                   <div className="flex items-center gap-2">
-                    {(cat.exclude_from_ebitda as boolean) ? (
+                    {/* Financiamiento también está excluido del EBITDA, pero
+                        sigue mostrando el selector: es una clasificación que
+                        se elige, no una consecuencia de tildar la casilla. */}
+                    {(cat.exclude_from_ebitda as boolean) && (cat.cost_group as string) !== "financiamiento" ? (
                       <span className="text-[11px] text-gray-400 px-1.5" title="Las categorías excluidas del EBITDA son No-operativas: quedan fuera del análisis Fijo/Variable">
                         No operativo
                       </span>
@@ -165,13 +168,16 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
                             ? "border-sky-200 text-sky-700"
                             : (cat.cost_group as string) === "variable"
                               ? "border-emerald-200 text-emerald-700"
-                              : "border-amber-300 text-amber-700 bg-amber-50"
+                              : (cat.cost_group as string) === "financiamiento"
+                                ? "border-violet-200 text-violet-700"
+                                : "border-amber-300 text-amber-700 bg-amber-50"
                         }`}
                         title="Grupo de costo para el análisis Fijo/Variable"
                       >
                         <option value="">Sin clasificar</option>
                         <option value="fijo">Fijo</option>
                         <option value="variable">Variable</option>
+                        <option value="financiamiento">Financiamiento</option>
                       </select>
                     )}
                     <label className="text-[11px] text-gray-500 flex items-center gap-1 cursor-pointer" title="Si está marcada, no se considera operativa para el EBITDA">
