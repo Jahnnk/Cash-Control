@@ -38,6 +38,13 @@ import {
   type GrupoCategoria,
 } from "@/lib/catalogo-categorias";
 import {
+  detectarDuplicadosCompartidos,
+  filasADescartar,
+  type DuplicadoDetectado,
+  type GastoProtegido,
+  type EgresoDelExcel,
+} from "@/lib/duplicados-compartidos";
+import {
   revisarFechasDelMes, mensajeFechasFueraDelMes, type RevisionFechas,
 } from "@/lib/filas-fuera-del-mes";
 import {
@@ -121,6 +128,13 @@ export type ImportPreview = {
   byteSalesDailyEnRango: number;
   tipsPendingEnRango: number;
   roundingAlertsEnRango: number;
+  /**
+   * Filas del Excel que traen un pago que el sistema YA tiene registrado
+   * a mano de una forma que el Excel no sabe expresar — típicamente un
+   * gasto compartido entre sedes. Si se importan, el gasto queda doble.
+   * Se descartan por defecto, pero se muestran para que Jahnn lo vea.
+   */
+  duplicadosCompartidos: DuplicadoDetectado[];
   categoriasNuevas: string[];
   /**
    * Las categorías que el sistema NO supo clasificar solo y que hoy
@@ -161,6 +175,11 @@ export type ImportOptions = {
   archivarManualesExistentes: boolean;
   crearCategoriasNuevas: boolean;
   /**
+   * false = importar igual las filas que duplican un gasto compartido ya
+   * registrado. Por defecto se descartan (ver lib/duplicados-compartidos).
+   */
+  omitirDuplicadosCompartidos?: boolean;
+  /**
    * Qué grupo darle a las categorías que el resolvedor no supo clasificar.
    * Lo llena dirección en la pantalla de importación, una vez por
    * categoría nueva; de ahí en adelante ya queda guardada.
@@ -177,6 +196,8 @@ export type ImportResult = {
   batchId: string;
   movementsCount: number;
   archivedCount: number;
+  /** Filas que no se importaron por duplicar un gasto compartido. */
+  duplicadosOmitidos: number;
   saldosDespues: Record<number, { cash: number; bcp: number; code: string }>;
 } | {
   success: false;
@@ -248,6 +269,49 @@ async function existingCategoryNames(bId: number): Promise<Set<string>> {
     SELECT name FROM expense_categories WHERE business_id = ${bId}
   `);
   return new Set((r.rows as { name: string }[]).map((x) => x.name.toUpperCase()));
+}
+
+/**
+ * Los gastos compartidos que el sistema ya tiene y el import NO archiva.
+ *
+ * Se mira SOLO `is_shared`, no todo lo protegido. Es el caso donde el
+ * registro manual guarda algo que el Excel no puede expresar —el reparto
+ * entre sedes— y por eso la fila del Excel sobra. Los pagos del socio y
+ * las transferencias internas también están protegidos, pero ahí una
+ * coincidencia de monto y fecha puede ser un pago distinto de verdad, y
+ * descartar un gasto real es peor que dejar uno repetido a la vista.
+ */
+async function gastosCompartidosDelRango(
+  bId: number,
+  start: string,
+  end: string,
+): Promise<GastoProtegido[]> {
+  const r = await db.execute(sql`
+    SELECT date::text AS fecha, amount::float AS monto, category AS categoria, concept AS concepto
+    FROM expenses
+    WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
+      AND archived = false AND imported_from_excel = false AND is_shared = true
+  `);
+  return (r.rows as Record<string, unknown>[]).map((x) => ({
+    fecha: String(x.fecha),
+    monto: Number(x.monto) || 0,
+    categoria: String(x.categoria ?? ""),
+    concepto: (x.concepto as string | null) ?? null,
+    motivo: "gasto compartido entre sedes",
+  }));
+}
+
+/** Las filas de egreso del Excel, en el formato que espera el detector. */
+function egresosDelExcel(parseResult: ParseResult | null): EgresoDelExcel[] {
+  return (parseResult?.movimientos ?? [])
+    .filter((m) => m.type === "expense")
+    .map((m) => ({
+      excelRow: m.excelRow,
+      fecha: m.date,
+      monto: m.amount,
+      categoria: m.category,
+      nota: m.note,
+    }));
 }
 
 /** Las que ya existen Y ya tienen grupo: esas no hay que preguntarlas. */
@@ -439,6 +503,14 @@ export async function previewExcelImport(
   // barato — un costo fijo tratado como variable hunde el margen y baja
   // el punto de equilibrio, o sea dice que el negocio se sostiene
   // vendiendo menos de lo que necesita. Al revés solo exige de más.
+  // Filas que traen un pago ya registrado como gasto compartido: si
+  // entran, el gasto queda doble (le pasó al alquiler de Atelier en
+  // agosto 2026, S/2,700 contados dos veces).
+  const duplicadosCompartidos = detectarDuplicadosCompartidos(
+    egresosDelExcel(parseResult),
+    await gastosCompartidosDelRango(bId, start, end),
+  );
+
   const yaClasificadas = await categoriasYaClasificadas(bId);
   const montoPorCategoria = new Map<string, number>();
   for (const m of parseResult?.movimientos ?? []) {
@@ -468,6 +540,7 @@ export async function previewExcelImport(
     roundingAlertsEnRango: roundingAlerts.n,
     categoriasNuevas,
     categoriasPorClasificar,
+    duplicadosCompartidos,
     saldosAntes,
     fileName,
     ingGtosSheet: ingGtosSheet ?? null,
@@ -614,6 +687,20 @@ export async function executeExcelImport(
     archivedCount = Number(c.n);
   }
 
+  // ─── FILAS QUE NO SE IMPORTAN ────────────────────────────────────
+  // El Excel trae el pago entero de un gasto que el sistema ya tiene
+  // registrado como compartido (con su reparto entre sedes). Si entra,
+  // el gasto queda doble. Se recalcula ACÁ y no se confía en lo que
+  // mandó la pantalla: el que decide qué se escribe es el servidor.
+  const omitirDup = options.omitirDuplicadosCompartidos !== false;
+  const duplicados = omitirDup
+    ? detectarDuplicadosCompartidos(
+        egresosDelExcel(parseResult),
+        await gastosCompartidosDelRango(bId, delStart, delEnd),
+      )
+    : [];
+  const filasOmitidas = filasADescartar(duplicados);
+
   // ─── ESCRITURA ATÓMICA DEL MES ───────────────────────────────────
   // Todo el reemplazo del mes — archivar manuales + DELETE de importados del
   // MES COMPLETO + INSERT del archivo nuevo (Ing&Gtos y Control de VTAS) — va
@@ -657,6 +744,7 @@ export async function executeExcelImport(
       }
     }
     for (const m of parseResult.movimientos) {
+      if (m.type === "expense" && filasOmitidas.has(m.excelRow)) continue;
       if (m.type === "income") {
         q.push(txSql`INSERT INTO bank_income_items (business_id, date, amount, payment_method, note, is_byte_sale, is_refund, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, ${m.note}, ${m.isByteSale}, ${m.isRefund}, true, ${batchId}::uuid)`);
       } else {
@@ -762,8 +850,9 @@ export async function executeExcelImport(
   return {
     success: true,
     batchId,
-    movementsCount: parseResult?.movimientos.length ?? 0,
+    movementsCount: (parseResult?.movimientos.length ?? 0) - filasOmitidas.size,
     archivedCount,
+    duplicadosOmitidos: filasOmitidas.size,
     saldosDespues,
     byteSalesDays,
     tipsCount,

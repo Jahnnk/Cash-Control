@@ -827,6 +827,36 @@ function PreviewStep({
         </Section>
       )}
 
+      {p && preview.duplicadosCompartidos.length > 0 && (
+        <Section
+          icon="👥"
+          title={`Ya registrados como gasto compartido: ${preview.duplicadosCompartidos.length}`}
+        >
+          <p className="text-xs text-gray-700 mb-2.5">
+            Estas filas del Excel son pagos que ya tienes registrados a mano con su
+            reparto entre sedes. <strong>No se van a importar</strong>: si entraran, el
+            gasto quedaría contado dos veces.
+          </p>
+          <div className="space-y-2">
+            {preview.duplicadosCompartidos.map((d) => (
+              <div key={d.excelRow} className="text-[11px] border-l-2 border-violet-300 pl-2.5 py-0.5">
+                <div className="text-gray-500">
+                  Excel, fila {d.excelRow} · {formatDate(d.fecha)} ·{" "}
+                  <span className="text-gray-700">{d.nota}</span>
+                </div>
+                <div className="text-gray-900 font-medium">
+                  {formatCurrency(d.monto)} en {d.categoria}
+                </div>
+                <div className="text-gray-500">
+                  Ya está el {formatDate(d.contra.fecha)} como &ldquo;{d.contra.concepto}&rdquo; —{" "}
+                  {d.contra.motivo}
+                </div>
+              </div>
+            ))}
+          </div>
+        </Section>
+      )}
+
       {p && preview.categoriasPorClasificar.length > 0 && (
         <Section
           icon="❓"
