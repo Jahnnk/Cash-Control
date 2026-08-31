@@ -716,7 +716,11 @@ function FlagsSection({
         Banderas de control ({active.length})
       </div>
       <div className="text-[11px] text-gray-400 mb-2">
-        Eventos del mes: {eventCounts.cortesias} cortesías · {eventCounts.cambiosPrecio} cambios de precio
+        {/* Cambios de precio y anulaciones solo se nombran si los hay: son
+            reportes que salieron de la rutina semanal, y un "0 cambios de
+            precio" fijo hace ruido sin decir nada. */}
+        Eventos del mes: {eventCounts.cortesias} cortesías
+        {eventCounts.cambiosPrecio > 0 ? ` · ${eventCounts.cambiosPrecio} cambios de precio` : ""}
         {eventCounts.anulaciones > 0 ? ` · ${eventCounts.anulaciones} anulaciones (histórico)` : ""}
       </div>
       {active.length === 0 ? (

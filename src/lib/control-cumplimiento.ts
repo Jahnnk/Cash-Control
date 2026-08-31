@@ -3,16 +3,16 @@
  *
  * Pedido de Jahnn (19-ago-2026): "para mí es muy importante corroborar
  * que los administradores están al día subiendo su información, los
- * KPIs diarios y los 4 archivos que da Byte todos los sábados".
+ * KPIs diarios y los archivos que da Byte todos los sábados".
  *
  * ─── El hueco que tenía ───
  *
  * Las DOS mitades ya existían, pero repartidas y desparejas:
  *
  *   · KPIs diarios  → Grupo → Reportes las mostraba bien, 3 sedes × 7 días.
- *   · Los 4 archivos → cada admin los veía en SU panel; dirección solo
+ *   · Los archivos → cada admin los veía en SU panel; dirección solo
  *     veía el de rotación, en otra pantalla. Los otros tres (Cortesías,
- *     Cambios de Precio, Ventas por Trabajador) no llegaban a Jahnn.
+ *     Ventas por Trabajador) no llegaban a Jahnn.
  *
  * Así que para saber si el equipo estaba al día había que entrar a tres
  * paneles y cruzarlo de memoria. Esto lo junta en una sola respuesta.
@@ -25,10 +25,10 @@
  *   1. Días de KPI sin registrar — el dato no vuelve. Si nadie lo carga,
  *      ese día queda sin venta, sin NPS y sin mermas para siempre.
  *   2. Un archivo que NUNCA se subió — no es un olvido de la semana, es
- *      una rutina que no arrancó (Cambios de Precio, en las 3 sedes).
+ *      una rutina que no arrancó.
  *   3. Archivos que faltan de ESTA semana — se recuperan el sábado.
  *
- * Y "al día" exige las dos cosas a la vez: KPIs sin huecos Y los cuatro
+ * Y "al día" exige las dos cosas a la vez: KPIs sin huecos Y todos los
  * archivos de la semana. Un verde que se enciende con la mitad hecha es
  * peor que no tener semáforo.
  */
@@ -91,9 +91,9 @@ export function evaluarSede(s: SedeCumplimiento): SedeEvaluada {
   }
   if (hayArchivos) {
     // Cuántos le tocan a ESTA sede, no "4" a secas: a Atelier solo le
-    // corresponde el de rotación, y decirle "falta 1 de los 4" sería
+    // corresponde el de rotación, y decirle "falta 1 de los 3" sería
     // reclamarle tres archivos que su operación no produce.
-    const total = s.semanal?.reportes.length || 4;
+    const total = s.semanal?.reportes.length || 3;
     partes.push(
       archivosFaltantes.length === 1
         ? `falta 1 de los ${total} reportes`

@@ -1,9 +1,23 @@
 /**
- * Los CUATRO reportes de Byte que se suben cada sábado.
+ * Los TRES reportes de Byte que se suben cada sábado.
  *
  * Pedido de Jahnn (18-ago-2026): "quiero que el sistema cada sábado
- * avise a los administradores en su panel que tienen que subir los 4
+ * avise a los administradores en su panel que tienen que subir los
  * archivos semanales".
+ *
+ * ─── Eran cuatro hasta el 31-ago-2026 ───
+ *
+ * "Cambios de Precio" salió de la rutina porque desapareció el problema
+ * que vigilaba: Jahnn le quitó a los asesores de venta y a caja la
+ * opción de cambiar precios, y ahora solo un administrador puede
+ * hacerlo. Un reporte que vigila a quien ya no puede hacer la acción no
+ * controla nada; solo entrena a ignorar avisos.
+ *
+ * Es el mismo camino que ya recorrió "Pedidos Anulados" en jul-2026.
+ * Nada se borra: el parser sigue leyendo el archivo si alguien lo sube,
+ * la alerta de concentración por usuario sigue viva en el motor de
+ * incentivos, y las subidas históricas se siguen reconociendo. Lo único
+ * que cambia es que ya no se PIDE cada sábado.
  *
  * ─── Por qué hacía falta mirar los cuatro, y no uno ───
  *
@@ -32,6 +46,12 @@
  * cortesías" y "no subiste el archivo" dejan de confundirse.
  */
 
+/**
+ * `cambios_precio` sigue existiendo aunque ya no se pida cada sábado:
+ * hay subidas históricas en `import_batches` que hay que poder
+ * clasificar, y el archivo se sigue aceptando si un administrador lo
+ * sube por su cuenta.
+ */
 export type ClaveReporte = "rotacion" | "cortesias" | "cambios_precio" | "ventas_trabajador";
 
 export const REPORTES_SEMANALES: {
@@ -51,11 +71,6 @@ export const REPORTES_SEMANALES: {
     porQue: "separa lo regalado de la venta real",
   },
   {
-    clave: "cambios_precio",
-    nombre: "Cambios de Precio",
-    porQue: "un precio bajado a mano no puede contar como upselling",
-  },
-  {
     clave: "ventas_trabajador",
     nombre: "Ventas por Trabajador",
     porQue: "el ranking de mejor vendedor",
@@ -70,13 +85,12 @@ export const REPORTES_SEMANALES: {
  * 24-ago-2026):
  *
  *   · Cortesías — no atiende público, no regala nada en mostrador.
- *   · Cambios de Precio — no hay caja que baje un precio a mano.
  *   · Ventas por Trabajador — su único "vendedor" es Luis, el propio
  *     administrador. Un ranking de una persona no es un ranking.
  *
- * Los tres existen para sostener el bono por ticket promedio, y ese
- * bono hoy solo corre en Fonavi y Centro. Pedirle a Luis que suba tres
- * archivos vacíos no controla nada: enseña a ignorar los avisos.
+ * Los dos existen para sostener el bono por ticket promedio, y ese bono
+ * hoy solo corre en Fonavi y Centro. Pedirle a Luis que suba archivos
+ * vacíos no controla nada: enseña a ignorar los avisos.
  *
  * Si mañana Atelier entra al bono, se le agregan las claves acá y todo
  * lo demás sigue funcionando igual.
@@ -180,7 +194,7 @@ export function evaluarReportesSemanales(
   };
 }
 
-/** "Cortesías y Cambios de Precio" — para nombrarlos en una frase. */
+/** "Cortesías y Ventas por Trabajador" — para nombrarlos en una frase. */
 export function nombrarFaltantes(faltan: EstadoReporte[]): string {
   const n = faltan.map((f) => f.nombre);
   if (n.length === 0) return "";

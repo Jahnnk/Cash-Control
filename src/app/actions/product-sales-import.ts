@@ -460,7 +460,7 @@ export async function getEstadoCargasProductos(): Promise<EstadoCargasProductos>
  * ───────────────────────────────────────────────────────────────────── */
 
 export type CargaSedePropia = {
-  /** Los 4 reportes del sábado y cuáles faltan esta semana. */
+  /** Los reportes del sábado y cuáles faltan esta semana. */
   semanal: EstadoSemanal | null;
   visible: boolean;
   hoy: string;
@@ -471,11 +471,11 @@ export type CargaSedePropia = {
    * El rango que hay que exportar de Byte: del 1 del mes hasta hoy.
    *
    * Es acumulado y NO semanal a propósito. La rutina del sábado son
-   * CUATRO reportes (rotación, cortesías, cambios de precio, ventas por
+   * TRES reportes (rotación, cortesías, ventas por
    * trabajador) y los otros tres son el candado de los bonos de ticket
    * promedio: si se suben por semanas sueltas, un cambio de precio o
    * una cortesía registrada tarde se queda fuera del control. Un solo
-   * rango para los cuatro es una sola instrucción y una sola forma de
+   * rango para los tres es una sola instrucción y una sola forma de
    * equivocarse.
    */
   rangoQueToca: Periodo;
@@ -551,7 +551,7 @@ export async function getCargaProductosSede(): Promise<CargaSedePropia> {
     `) as { inicio: string; fin: string }[];
     const cobertura = coberturaDelMes(periodos, mes, hoy);
 
-    // Los 4 reportes del sábado. Se leen de import_batches y no de los
+    // Los reportes del sábado. Se leen de import_batches y no de los
     // datos: Cortesías y Cambios de Precio pueden venir legítimamente
     // vacíos, y "no hubo" no es lo mismo que "no lo subiste".
     let semanal: EstadoSemanal | null = null;

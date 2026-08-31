@@ -76,8 +76,8 @@ export function MiRutina({
 
   const e = data.estado;
   const sem = data.semanal;
-  // "Al día" exige los CUATRO. Antes bastaba el de rotación y la
-  // tarjeta se ponía verde con tres archivos sin subir.
+  // "Al día" exige TODOS los que le tocan a la sede. Antes bastaba el
+  // de rotación y la tarjeta se ponía verde con los otros sin subir.
   const alDia = e.estado === "al-dia" && (sem?.completo ?? true);
   const finDeSemana = esFinDeSemana(data.hoy);
   // Solo se levanta la voz el fin de semana o cuando ya se saltaron
@@ -95,10 +95,10 @@ export function MiRutina({
   let titulo: string;
   let detalle: string;
   // Cuántos archivos le tocan a ESTA sede: Atelier solo sube el de
-  // rotación (no da cortesías ni cambios de precio, y su único vendedor
-  // es el propio administrador). Hablar de "los 4" en su panel sería
-  // pedirle tres archivos que no existen.
-  const cuantos = sem?.reportes.length ?? 4;
+  // rotación (no da cortesías y su único vendedor es el propio
+  // administrador). Hablar de "los 3" en su panel sería pedirle
+  // archivos que no existen.
+  const cuantos = sem?.reportes.length ?? 3;
   const nArchivos = cuantos === 1 ? "el reporte de Byte" : `los ${cuantos} reportes de Byte`;
 
   if (e.estado === "incompleto") {
@@ -119,8 +119,8 @@ export function MiRutina({
   } else if (finDeSemana) {
     titulo = cuantos === 1 ? "Hoy toca subir el reporte de Byte" : "Hoy toca subir los reportes de Byte";
     // El rango EXACTO que hay que pedirle a Byte, ya calculado. Es el
-    // mismo para los 4 archivos: una sola instrucción, una sola forma
-    // de equivocarse.
+    // mismo para todos los archivos: una sola instrucción, una sola
+    // forma de equivocarse.
     detalle = cuantos === 1
       ? `Exporta Platos con Mayor Rotación ${describirPeriodo(data.rangoQueToca)}.`
       : `Exporta ${nArchivos} ${describirPeriodo(data.rangoQueToca)} y suéltalos juntos.`;
@@ -154,7 +154,7 @@ export function MiRutina({
 
       {/* Los 4 del sábado, uno por uno. Es el pedido de Jahnn: que vean
           de un vistazo cuál falta, como en el Highlight. Se muestra
-          mientras falte alguno; con los cuatro subidos desaparece para
+          mientras falte alguno; con todos subidos desaparece para
           no ocupar espacio con una lista de ✓. */}
       {sem && !sem.completo && (
         <div className="px-4 pb-2 space-y-1">

@@ -175,7 +175,7 @@ export function parseControlReport(rows: unknown[][]): ControlParseResult {
   return {
     ok: false,
     errors: [
-      "No reconozco este archivo. Reportes aceptados: Cortesías, Cambios de Precio y Ventas por Trabajador (exports de Byte); también Pedidos Anulados antiguos como histórico.",
+      "No reconozco este archivo. Reportes de la rutina semanal: Cortesías y Ventas por Trabajador (exports de Byte). También se aceptan, aunque ya no se piden, Cambios de Precio y Pedidos Anulados antiguos.",
     ],
   };
 }

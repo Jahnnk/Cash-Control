@@ -151,21 +151,21 @@ export function ImportControlModal({
           <p className="text-xs text-gray-500">
             <strong>Rutina semanal (~5 min)</strong> — para banderas de control, ranking y el foco
             de upselling; el avance diario de la meta sale del registro del día, no de estos
-            archivos. Exporta de Byte {soloRotacion ? "el reporte" : "los 4 reportes"} con el rango{" "}
+            archivos. Exporta de Byte {soloRotacion ? "el reporte" : "los 3 reportes"} con el rango{" "}
             <strong>desde el día 1 del mes hasta hoy</strong> y suéltalo{soloRotacion ? "" : "s"} aquí
             {soloRotacion ? " " : " todos juntos: "}
             <strong>
               {soloRotacion
                 ? "Productos con Mayor Rotación"
-                : "Productos con Mayor Rotación · Cortesías · Cambios de Precio · Ventas por Trabajador"}
+                : "Productos con Mayor Rotación · Cortesías · Ventas por Trabajador"}
             </strong>. Cada subida
             <strong> reemplaza</strong> la anterior (no duplica) y el sistema reconoce cada archivo
             solo. Puedes subirlo{soloRotacion ? "" : "s"} más seguido si algo te huele raro.
           </p>
           <p className="text-[11px] text-gray-400">
-            Byte ya no genera el reporte de Pedidos Anulados (los asesores no pueden anular pedidos
-            pagados; las anulaciones de comanda antes del pago no salen en reporte, y las
-            devoluciones las maneja el administrador). Si tienes exports antiguos, también se aceptan.
+            Ya no hace falta subir <strong>Cambios de Precio</strong>: los asesores y caja no pueden
+            cambiar precios, solo un administrador. Tampoco <strong>Pedidos Anulados</strong>, que
+            Byte dejó de generar. Si igual los tienes exportados, el sistema los sigue aceptando.
           </p>
 
           <div

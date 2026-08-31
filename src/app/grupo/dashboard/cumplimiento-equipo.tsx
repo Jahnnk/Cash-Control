@@ -5,13 +5,13 @@
  *
  * Pedido de Jahnn (19-ago-2026): "para mí es muy importante corroborar
  * que los administradores están al día subiendo su información, los
- * KPIs diarios y los 4 archivos que da Byte todos los sábados…
+ * KPIs diarios y los archivos que da Byte todos los sábados…
  * ¿podría tener una mejora visual para saber de manera fácil e
  * intuitiva si está faltando información?".
  *
  * Junta las DOS mitades que antes vivían separadas: los KPIs diarios
- * (que se veían en Reportes) y los 4 archivos del sábado (que solo veía
- * cada admin en su panel — a dirección le llegaba uno de los cuatro).
+ * (que se veían en Reportes) y los archivos del sábado (que solo veía
+ * cada admin en su panel — a dirección le llegaba uno de todos).
  *
  * Tres decisiones:
  *
@@ -170,8 +170,8 @@ export function CumplimientoEquipo() {
 
           <p className="text-[10px] text-gray-400 pt-1">
             KPIs de los últimos 7 días · los reportes de Byte se suben cada sábado (Atelier solo
-            sube rotación: como área de producción no da cortesías ni cambios de precio). Es lo
-            mismo que ve cada administrador en su panel.
+            sube rotación: como área de producción no da cortesías y su único vendedor es el propio
+            administrador). Es lo mismo que ve cada administrador en su panel.
           </p>
         </div>
       )}

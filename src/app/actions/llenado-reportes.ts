@@ -245,7 +245,7 @@ export async function getEstadoKpisSede(): Promise<EstadoKpisSede> {
 }
 
 /* ─────────────────────────────────────────────────────────────────────
- * Control de cumplimiento de dirección: KPIs diarios + los 4 archivos
+ * Control de cumplimiento de dirección: KPIs diarios + los archivos
  * del sábado, las 3 sedes en una sola respuesta.
  *
  * Pedido de Jahnn (19-ago-2026): "para mí es muy importante corroborar
@@ -253,7 +253,7 @@ export async function getEstadoKpisSede(): Promise<EstadoKpisSede> {
  *
  * Las dos mitades ya existían pero repartidas: los KPIs se veían en
  * Grupo → Reportes y los archivos solo en el panel de cada admin (y de
- * los cuatro, a dirección le llegaba uno). Había que entrar a tres
+ * todos, a dirección le llegaba uno). Había que entrar a tres
  * paneles y cruzarlo de memoria.
  *
  * Se reusa `evaluarLlenado` — el MISMO cerebro del cuadro semanal — para
@@ -308,7 +308,7 @@ export async function getCumplimientoEquipo(): Promise<EstadoCumplimiento> {
 
     const llenado = evaluarLlenado({ weekStart: desde, hoy, sedes, filas });
 
-    // ── 2. Los 4 archivos del sábado, por sede ────────────────────────
+    // ── 2. Los archivos del sábado, por sede ──────────────────────────
     // De import_batches y no de los datos: Cortesías y Cambios de Precio
     // pueden venir legítimamente vacíos, y "no hubo" no es lo mismo que
     // "no lo subiste".
