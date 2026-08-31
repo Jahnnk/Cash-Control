@@ -37,6 +37,7 @@ import {
   grupoAColumnas,
   type GrupoCategoria,
 } from "@/lib/catalogo-categorias";
+import { esReembolsoEntreSedes } from "@/lib/reembolsos-entre-sedes";
 import {
   evaluarRepartos,
   partirMonto,
@@ -838,7 +839,11 @@ export async function executeExcelImport(
     for (const m of parseResult.movimientos) {
       if (m.type === "expense" && filasOmitidas.has(m.excelRow)) continue;
       if (m.type === "income") {
-        q.push(txSql`INSERT INTO bank_income_items (business_id, date, amount, payment_method, note, is_byte_sale, is_refund, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, ${m.note}, ${m.isByteSale}, ${m.isRefund}, true, ${batchId}::uuid)`);
+        // Plata que vuelve de otra sede no es una venta: es recuperar un
+        // costo que esta sede adelantó. Sin la marca, "Ingresos en
+        // cuentas" queda inflado — S/3,979 entre may y ago-2026.
+        const entreSedes = esReembolsoEntreSedes(m.note);
+        q.push(txSql`INSERT INTO bank_income_items (business_id, date, amount, payment_method, note, is_byte_sale, is_refund, is_fonavi_reimbursement, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, ${m.note}, ${m.isByteSale}, ${m.isRefund}, ${entreSedes}, true, ${batchId}::uuid)`);
       } else {
         const regla = repartoPorFila.get(m.excelRow);
         if (regla) {
