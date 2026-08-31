@@ -38,6 +38,12 @@ import {
   type GrupoCategoria,
 } from "@/lib/catalogo-categorias";
 import {
+  evaluarRepartos,
+  partirMonto,
+  type EvaluacionReparto,
+  type ReglaReparto,
+} from "@/lib/reparto-compartido";
+import {
   detectarDuplicadosCompartidos,
   filasADescartar,
   type DuplicadoDetectado,
@@ -135,6 +141,13 @@ export type ImportPreview = {
    * Se descartan por defecto, pero se muestran para que Jahnn lo vea.
    */
   duplicadosCompartidos: DuplicadoDetectado[];
+  /**
+   * Egresos que caen bajo una regla de reparto entre sedes. Los de
+   * confianza "clara" se reparten solos al importar; los "dudosa" se le
+   * muestran a dirección para que elija, porque equivocarse acá mueve
+   * plata de un negocio al otro.
+   */
+  repartos: EvaluacionReparto[];
   categoriasNuevas: string[];
   /**
    * Las categorías que el sistema NO supo clasificar solo y que hoy
@@ -180,6 +193,14 @@ export type ImportOptions = {
    */
   omitirDuplicadosCompartidos?: boolean;
   /**
+   * Reglas de reparto que dirección resolvió a mano en la pantalla, para
+   * las filas dudosas. Clave = número de fila del Excel, valor = id de la
+   * regla elegida, o "" para dejar el gasto entero en la sede.
+   */
+  repartosElegidos?: Record<number, string>;
+  /** false = no repartir nada automáticamente (importar literal). */
+  aplicarRepartos?: boolean;
+  /**
    * Qué grupo darle a las categorías que el resolvedor no supo clasificar.
    * Lo llena dirección en la pantalla de importación, una vez por
    * categoría nueva; de ahí en adelante ya queda guardada.
@@ -198,6 +219,8 @@ export type ImportResult = {
   archivedCount: number;
   /** Filas que no se importaron por duplicar un gasto compartido. */
   duplicadosOmitidos: number;
+  /** Filas que se repartieron entre sedes al importar. */
+  repartidos: number;
   saldosDespues: Record<number, { cash: number; bcp: number; code: string }>;
 } | {
   success: false;
@@ -298,6 +321,31 @@ async function gastosCompartidosDelRango(
     categoria: String(x.categoria ?? ""),
     concepto: (x.concepto as string | null) ?? null,
     motivo: "gasto compartido entre sedes",
+  }));
+}
+
+/**
+ * Las reglas de reparto entre sedes que tiene configurada esta sede.
+ *
+ * Solo Atelier las usa hoy: es la que paga la luz, el agua, el gas y el
+ * alquiler del local que comparte con Fonavi, y después le cobra su parte.
+ */
+async function reglasDeRepartoDe(bId: number): Promise<ReglaReparto[]> {
+  const r = await db.execute(sql`
+    SELECT s.id::text AS id, c.name AS categoria, s.concept AS concepto,
+           s.split_mode AS modo,
+           s.atelier_percentage::float AS ap, s.fonavi_percentage::float AS fp,
+           s.centro_percentage::float AS cp, s.atelier_fixed::float AS af,
+           s.fonavi_fixed::float AS ff, s.centro_fixed::float AS cf
+    FROM shared_expense_rules s
+    JOIN expense_categories c ON c.id = s.category_id
+    WHERE s.active = true AND c.business_id = ${bId}
+  `);
+  return (r.rows as Record<string, unknown>[]).map((x) => ({
+    id: String(x.id), categoria: String(x.categoria), concepto: String(x.concepto),
+    modo: String(x.modo), atelierPct: Number(x.ap) || 0, fonaviPct: Number(x.fp) || 0,
+    centroPct: Number(x.cp) || 0, atelierFijo: x.af as number | null,
+    fonaviFijo: x.ff as number | null, centroFijo: x.cf as number | null,
   }));
 }
 
@@ -511,6 +559,17 @@ export async function previewExcelImport(
     await gastosCompartidosDelRango(bId, start, end),
   );
 
+  // Egresos que una regla de reparto entre sedes debería partir. Sin
+  // esto, Atelier absorbe la luz y el agua de Fonavi: en agosto 2026
+  // fueron S/476 que no le tocaban.
+  const repartos = evaluarRepartos(
+    egresosDelExcel(parseResult).map((e) => ({
+      excelRow: e.excelRow, fecha: e.fecha, monto: e.monto,
+      categoria: e.categoria, concepto: e.nota,
+    })),
+    await reglasDeRepartoDe(bId),
+  ).filter((r) => r.confianza !== "ninguna");
+
   const yaClasificadas = await categoriasYaClasificadas(bId);
   const montoPorCategoria = new Map<string, number>();
   for (const m of parseResult?.movimientos ?? []) {
@@ -541,6 +600,7 @@ export async function previewExcelImport(
     categoriasNuevas,
     categoriasPorClasificar,
     duplicadosCompartidos,
+    repartos,
     saldosAntes,
     fileName,
     ingGtosSheet: ingGtosSheet ?? null,
@@ -701,6 +761,38 @@ export async function executeExcelImport(
     : [];
   const filasOmitidas = filasADescartar(duplicados);
 
+  // ─── REPARTO ENTRE SEDES ─────────────────────────────────────────
+  // Atelier paga la luz, el agua, el gas y el alquiler del local que
+  // comparte con Fonavi, y después le cobra su parte. Si el Excel entra
+  // literal, Atelier queda cargando con todo.
+  //
+  // Se recalcula ACÁ, no se confía en lo que mandó la pantalla: de ahí
+  // solo se toman las decisiones de dirección sobre las filas dudosas.
+  const repartoPorFila = new Map<number, ReglaReparto>();
+  if (options.aplicarRepartos !== false && parseResult) {
+    const reglas = await reglasDeRepartoDe(bId);
+    const porId = new Map(reglas.map((r) => [r.id, r]));
+    const evaluados = evaluarRepartos(
+      egresosDelExcel(parseResult).map((e) => ({
+        excelRow: e.excelRow, fecha: e.fecha, monto: e.monto,
+        categoria: e.categoria, concepto: e.nota,
+      })),
+      reglas,
+    );
+    for (const ev of evaluados) {
+      // Lo que eligió dirección manda sobre lo que dedujo el sistema;
+      // "" significa "no repartir, déjalo entero en esta sede".
+      const elegido = options.repartosElegidos?.[ev.excelRow];
+      if (elegido !== undefined) {
+        const r = porId.get(elegido);
+        if (r) repartoPorFila.set(ev.excelRow, r);
+        continue;
+      }
+      // Sin decisión explícita solo se aplica lo que no admite duda.
+      if (ev.confianza === "clara" && ev.regla) repartoPorFila.set(ev.excelRow, ev.regla);
+    }
+  }
+
   // ─── ESCRITURA ATÓMICA DEL MES ───────────────────────────────────
   // Todo el reemplazo del mes — archivar manuales + DELETE de importados del
   // MES COMPLETO + INSERT del archivo nuevo (Ing&Gtos y Control de VTAS) — va
@@ -748,7 +840,13 @@ export async function executeExcelImport(
       if (m.type === "income") {
         q.push(txSql`INSERT INTO bank_income_items (business_id, date, amount, payment_method, note, is_byte_sale, is_refund, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, ${m.note}, ${m.isByteSale}, ${m.isRefund}, true, ${batchId}::uuid)`);
       } else {
-        q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid)`);
+        const regla = repartoPorFila.get(m.excelRow);
+        if (regla) {
+          const parte = partirMonto(m.amount, regla);
+          q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id, is_shared, atelier_amount, fonavi_amount, centro_amount) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid, true, ${parte.atelier.toFixed(2)}, ${parte.fonavi.toFixed(2)}, ${parte.centro.toFixed(2)})`);
+        } else {
+          q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid)`);
+        }
       }
     }
     if (options.aplicarSaldoInicial && parseResult.saldoInicial.fechaCierre) {
@@ -853,6 +951,7 @@ export async function executeExcelImport(
     movementsCount: (parseResult?.movimientos.length ?? 0) - filasOmitidas.size,
     archivedCount,
     duplicadosOmitidos: filasOmitidas.size,
+    repartidos: repartoPorFila.size,
     saldosDespues,
     byteSalesDays,
     tipsCount,

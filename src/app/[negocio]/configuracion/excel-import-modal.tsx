@@ -63,6 +63,9 @@ export function ExcelImportModal({
   // Grupo elegido para cada categoría que el sistema no supo clasificar.
   // Arranca vacío: si Jahnn no toca nada, manda la sugerencia del preview.
   const [clasificaciones, setClasificaciones] = useState<Record<string, string>>({});
+  // Regla elegida para cada fila dudosa de reparto entre sedes.
+  // Clave = fila del Excel, valor = id de la regla, o "" para no repartir.
+  const [repartos, setRepartos] = useState<Record<number, string>>({});
   // Lo que finalmente se manda: la sugerencia de cada categoría sin
   // clasificar, pisada por lo que Jahnn haya elegido. Así "no tocar nada"
   // sigue siendo una decisión válida y explícita, no un olvido.
@@ -190,6 +193,7 @@ export function ExcelImportModal({
           archivarManualesExistentes,
           crearCategoriasNuevas,
           clasificacionesNuevas: decisionesDeCategorias,
+          repartosElegidos: repartos,
         }, sedeCentral);
         setMultiResult(r);
         setStep("multiresult");
@@ -237,6 +241,7 @@ export function ExcelImportModal({
           archivarManualesExistentes,
           crearCategoriasNuevas,
           clasificacionesNuevas: decisionesDeCategorias,
+          repartosElegidos: repartos,
         }, sedeCentral);
         if (!r.success) {
           setError(r.error);
@@ -336,6 +341,8 @@ export function ExcelImportModal({
               crearCategoriasNuevas={crearCategoriasNuevas}
               clasificaciones={clasificaciones}
               setClasificaciones={setClasificaciones}
+              repartos={repartos}
+              setRepartos={setRepartos}
               setCrearCategoriasNuevas={setCrearCategoriasNuevas}
               onBack={() => setStep("sheets")}
               onContinue={() => setStep("confirm")}
@@ -574,6 +581,7 @@ function PreviewStep({
   archivarManualesExistentes, setArchivarManualesExistentes,
   crearCategoriasNuevas, setCrearCategoriasNuevas,
   clasificaciones, setClasificaciones,
+  repartos, setRepartos,
   onBack, onContinue, onCancel,
 }: {
   preview: ImportPreview;
@@ -586,6 +594,8 @@ function PreviewStep({
   setCrearCategoriasNuevas: (v: boolean) => void;
   clasificaciones: Record<string, string>;
   setClasificaciones: React.Dispatch<React.SetStateAction<Record<string, string>>>;
+  repartos: Record<number, string>;
+  setRepartos: React.Dispatch<React.SetStateAction<Record<number, string>>>;
   onBack: () => void;
   onContinue: () => void;
   onCancel: () => void;
@@ -826,6 +836,76 @@ function PreviewStep({
           )}
         </Section>
       )}
+
+      {p && preview.repartos.length > 0 && (() => {
+        const claras = preview.repartos.filter((r) => r.confianza === "clara");
+        const dudosas = preview.repartos.filter((r) => r.confianza === "dudosa");
+        return (
+          <>
+            {claras.length > 0 && (
+              <Section icon="🤝" title={`Se reparten con Fonavi: ${claras.length}`}>
+                <p className="text-xs text-gray-700 mb-2.5">
+                  Estos gastos los paga Atelier pero se comparten. El sistema aplica la
+                  regla solo — no tienes que marcar nada.
+                </p>
+                <div className="space-y-1.5">
+                  {claras.map((r) => (
+                    <div key={r.excelRow} className="flex justify-between items-baseline gap-3 text-[11px]">
+                      <span className="text-gray-700 truncate">{r.concepto}</span>
+                      <span className="text-gray-900 whitespace-nowrap">
+                        {formatCurrency(r.monto)} ·{" "}
+                        <span className="text-gray-500">
+                          {r.regla?.atelierPct}/{r.regla?.fonaviPct}
+                        </span>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+
+            {dudosas.length > 0 && (
+              <Section
+                icon="🤔"
+                title={`Reparto por decidir: ${dudosas.length}`}
+                variant="warning"
+              >
+                <p className="text-xs text-gray-700 mb-2.5">
+                  Estos se parecen a una regla de reparto pero no lo suficiente. Equivocarse
+                  acá mueve plata entre Atelier y Fonavi, así que lo decides tú. Si no eliges
+                  nada, el gasto queda entero en esta sede.
+                </p>
+                <div className="space-y-2">
+                  {dudosas.map((r) => (
+                    <div key={r.excelRow} className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <div className="text-xs font-medium text-gray-900 truncate">{r.concepto}</div>
+                        <div className="text-[11px] text-gray-500">
+                          {formatCurrency(r.monto)} · {formatDate(r.fecha)}
+                        </div>
+                      </div>
+                      <select
+                        value={repartos[r.excelRow] ?? ""}
+                        onChange={(e) =>
+                          setRepartos((prev) => ({ ...prev, [r.excelRow]: e.target.value }))
+                        }
+                        className="text-[11px] border border-gray-300 rounded-md px-1.5 py-1 bg-white shrink-0 max-w-[13rem]"
+                      >
+                        <option value="">No repartir</option>
+                        {r.candidatas.map((c) => (
+                          <option key={c.id} value={c.id}>
+                            {c.concepto} · {c.atelierPct}/{c.fonaviPct}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ))}
+                </div>
+              </Section>
+            )}
+          </>
+        );
+      })()}
 
       {p && preview.duplicadosCompartidos.length > 0 && (
         <Section
