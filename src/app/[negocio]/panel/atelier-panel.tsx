@@ -15,6 +15,7 @@ import { ClientSalesImportModal } from "./client-sales-import-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
 import { ReceivablesImportModal } from "./receivables-import-modal";
+import { MermaDetailModal } from "./merma-detail-modal";
 import { ReceivablesSection } from "./receivables-section";
 import { getReceivables, type ReceivablesData } from "@/app/actions/receivables";
 
@@ -42,6 +43,10 @@ export function AtelierPanel() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [showImport, setShowImport] = useState(false);
+  // Detalle de mermas: Atelier solo podía anotar el importe total, y
+  // en producción es donde MÁS interesa saber QUÉ se mermó (Jahnn,
+  // 31-ago-2026). Mismo modal y misma tabla que Fonavi y Centro.
+  const [showMermaDetail, setShowMermaDetail] = useState(false);
   // Atelier NO tenía forma de subir el reporte de rotación desde su
   // panel: por eso su última carga era del 3-jul, hecha desde Grupo.
   const [showRotacion, setShowRotacion] = useState(false);
@@ -277,10 +282,21 @@ export function AtelierPanel() {
               </div>
               <div>
                 <label className="text-[11px] uppercase text-gray-500">Mermas (S/)</label>
-                <input type="number" step="0.01" min="0" value={mermas}
-                  onChange={(e) => setMermas(e.target.value)} placeholder="0.00"
-                  onKeyDown={(e) => { if (e.key === "Enter" && !saving) handleSave(); }}
-                  className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                <div className="flex gap-1 mt-1">
+                  <input type="number" step="0.01" min="0" value={mermas}
+                    onChange={(e) => setMermas(e.target.value)} placeholder="0.00"
+                    onKeyDown={(e) => { if (e.key === "Enter" && !saving) handleSave(); }}
+                    className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm" />
+                  <button
+                    type="button"
+                    onClick={() => setShowMermaDetail(true)}
+                    className="shrink-0 inline-flex items-center gap-1 px-2 py-2 text-[11px] font-medium text-gray-700 border border-gray-200 bg-white hover:bg-gray-50 rounded-lg"
+                    title="Detallar qué se mermó (producto, cantidad, costo, motivo y acción)"
+                  >
+                    <ClipboardList className="w-3.5 h-3.5" />
+                    Detallar
+                  </button>
+                </div>
               </div>
               <div className="flex gap-2">
                 <button onClick={handleSave} disabled={saving}
@@ -410,6 +426,18 @@ export function AtelierPanel() {
         <ReceivablesImportModal
           onClose={() => setShowCobranzaImport(false)}
           onImported={loadCobranza}
+        />
+      )}
+      {showMermaDetail && (
+        <MermaDetailModal
+          date={fecha}
+          onClose={() => setShowMermaDetail(false)}
+          onSaved={(total) => {
+            // El detalle manda: el importe del día pasa a ser su suma.
+            setMermas(String(total));
+            setShowMermaDetail(false);
+            void load(month);
+          }}
         />
       )}
     </div>
