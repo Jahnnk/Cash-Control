@@ -96,12 +96,30 @@ export async function getKellyLoadStatus(): Promise<KellyLoadStatus[]> {
       (SELECT MAX(ib.imported_at AT TIME ZONE 'America/Lima')::date::text
          FROM import_batches ib
         WHERE ib.business_id = b.id AND ib.status = 'completed') AS last_import,
-      -- "Cubre hasta" = último DÍA CON DATOS reales del Excel
-      -- (byte_sales_daily), no el fin del rango de la pestaña — una
-      -- pestaña "Julio" dice 31/07 aunque los datos lleguen al 22.
+      -- "Cubre hasta" = último DÍA CON DATOS reales del Excel, no el fin
+      -- del rango de la pestaña: una pestaña "Julio" dice 31/07 aunque
+      -- los datos lleguen al 22.
+      --
+      -- Se mira el MOVIMIENTO más reciente que trajo el Excel, no solo
+      -- la venta diaria. Atelier es centro de producción: su pestaña
+      -- "Control de VTAS" llega vacía porque no tiene ventas de
+      -- mostrador, y mirando solo esa tabla el panel decía "datos hasta
+      -- el 19/08" cuando su Excel estaba cargado hasta el 03/09 igual
+      -- que las otras dos sedes. Una alarma falsa en el tablero de
+      -- dirección es peor que no tener alarma: enseña a ignorarlas.
+      --
+      -- GREATEST ignora los NULL, así que cada sede aporta las fuentes
+      -- que su operación produce y ninguna queda castigada por las que
+      -- no le corresponden.
       COALESCE(
-        (SELECT MAX(bs.date)::text FROM byte_sales_daily bs
-          WHERE bs.business_id = b.id AND COALESCE(bs.total, 0) > 0),
+        GREATEST(
+          (SELECT MAX(bs.date) FROM byte_sales_daily bs
+            WHERE bs.business_id = b.id AND COALESCE(bs.total, 0) > 0),
+          (SELECT MAX(bi.date) FROM bank_income_items bi
+            WHERE bi.business_id = b.id AND bi.imported_from_excel = true AND bi.archived = false),
+          (SELECT MAX(e.date) FROM expenses e
+            WHERE e.business_id = b.id AND e.imported_from_excel = true AND e.archived = false)
+        )::text,
         (SELECT MAX(ib.date_range_end)::text FROM import_batches ib
           WHERE ib.business_id = b.id AND ib.status = 'completed')
       ) AS covers

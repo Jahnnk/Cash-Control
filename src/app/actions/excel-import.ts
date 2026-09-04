@@ -708,6 +708,30 @@ export async function executeExcelImport(
   const saldosAntes = await getSaldosTodosNegocios();
   const otrosBids = VALID_BIDS.filter((x) => x !== bId);
 
+  // El rango de borrado y las filas a descartar se resuelven ANTES de
+  // crear el lote: así `movements_count` guarda lo que de verdad entró y
+  // no lo que traía el archivo. Un registro de auditoría que dice 254
+  // cuando se escribieron 253 obliga a re-investigar cada vez.
+  //
+  // Rango de borrado = MES CALENDARIO COMPLETO (no solo las fechas del
+  // archivo nuevo), para que un reemplazo no deje huérfanos del archivo
+  // anterior cuyas fechas no vengan en el nuevo.
+  const { delStart, delEnd } = fullMonthDeleteRange(ingGtosSheet, controlVtasSheet, start, end);
+
+  // ─── FILAS QUE NO SE IMPORTAN ────────────────────────────────────
+  // El Excel trae el pago entero de un gasto que el sistema ya tiene
+  // registrado como compartido (con su reparto entre sedes). Si entra,
+  // el gasto queda doble. Se recalcula ACÁ y no se confía en lo que
+  // mandó la pantalla: el que decide qué se escribe es el servidor.
+  const omitirDup = options.omitirDuplicadosCompartidos !== false;
+  const duplicados = omitirDup
+    ? detectarDuplicadosCompartidos(
+        egresosDelExcel(parseResult),
+        await gastosCompartidosDelRango(bId, delStart, delEnd),
+      )
+    : [];
+  const filasOmitidas = filasADescartar(duplicados);
+
   // 1. Crear batch
   const sheetLabel = [ingGtosSheet, controlVtasSheet].filter(Boolean).join(" + ");
   // Persistencia de warnings estructurados (Prompt 18). null si no hay
@@ -722,7 +746,7 @@ export async function executeExcelImport(
       movements_count, ingresos_count, egresos_count, warnings_json
     ) VALUES (
       ${bId}, ${fileName}, ${sheetLabel}, ${start}, ${end},
-      ${parseResult?.movimientos.length ?? 0},
+      ${(parseResult?.movimientos.length ?? 0) - filasOmitidas.size},
       ${parseResult?.ingresos ?? 0},
       ${parseResult?.egresos ?? 0},
       ${warningsJson}::jsonb
@@ -732,10 +756,6 @@ export async function executeExcelImport(
   const batchId = (batchRes.rows[0] as { id: string }).id;
 
   // Rango de borrado = MES CALENDARIO COMPLETO (no solo las fechas del
-  // archivo nuevo), para que un reemplazo no deje huérfanos del archivo
-  // anterior cuyas fechas no vengan en el nuevo.
-  const { delStart, delEnd } = fullMonthDeleteRange(ingGtosSheet, controlVtasSheet, start, end);
-
   let archivedCount = 0;
   let initialCashApplied: number | null = null;
   let initialBcpApplied: number | null = null;
@@ -753,20 +773,6 @@ export async function executeExcelImport(
     `)).rows[0] as { n: number };
     archivedCount = Number(c.n);
   }
-
-  // ─── FILAS QUE NO SE IMPORTAN ────────────────────────────────────
-  // El Excel trae el pago entero de un gasto que el sistema ya tiene
-  // registrado como compartido (con su reparto entre sedes). Si entra,
-  // el gasto queda doble. Se recalcula ACÁ y no se confía en lo que
-  // mandó la pantalla: el que decide qué se escribe es el servidor.
-  const omitirDup = options.omitirDuplicadosCompartidos !== false;
-  const duplicados = omitirDup
-    ? detectarDuplicadosCompartidos(
-        egresosDelExcel(parseResult),
-        await gastosCompartidosDelRango(bId, delStart, delEnd),
-      )
-    : [];
-  const filasOmitidas = filasADescartar(duplicados);
 
   // ─── REPARTO ENTRE SEDES ─────────────────────────────────────────
   // Atelier paga la luz, el agua, el gas y el alquiler del local que
