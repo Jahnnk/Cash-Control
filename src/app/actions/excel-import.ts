@@ -577,9 +577,15 @@ export async function previewExcelImport(
     if (m.type !== "expense") continue;
     montoPorCategoria.set(m.category, (montoPorCategoria.get(m.category) ?? 0) + m.amount);
   }
+  // Solo se pregunta por categorías que llevan EGRESOS. El grupo del
+  // Excel también viaja en las filas de ingreso ("Ventas" son 124 filas
+  // en marzo), pero un ingreso no tiene categoría de gasto: pedirle a
+  // dirección que clasifique "Ventas" como fijo o variable no significa
+  // nada y entrena a contestar sin leer.
   const categoriasPorClasificar = (parseResult?.resolucionCategorias ?? [])
     .filter((r) => r.confianza === "desconocida")
     .filter((r) => !yaClasificadas.has(r.canonica.toUpperCase()))
+    .filter((r) => (montoPorCategoria.get(r.canonica) ?? 0) > 0)
     .map((r) => ({
       nombre: r.canonica,
       motivo: r.motivo,

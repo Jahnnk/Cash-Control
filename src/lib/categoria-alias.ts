@@ -134,6 +134,11 @@ const ALIAS: Record<string, string> = {
   "devoluciones fonavi, centro": "VUELTOS Y DEVOLUCIONES",
   "devoluciones fonavi centro": "VUELTOS Y DEVOLUCIONES",
   "falta rendir": "CAJA CHICA",
+
+  // Marzo 2026 de Centro: "IR FEBRERO 2026 (SUNAT)" — Impuesto a la
+  // Renta. La clave es exacta, así que solo traduce una categoría que se
+  // llame literalmente "IR"; no toca ninguna palabra que la contenga.
+  ir: "IMPUESTOS",
 };
 
 /** Quita tildes y baja a minúscula, para que "REMODELACIÒN" y "Remodelación" lleguen igual. */
