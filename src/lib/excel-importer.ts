@@ -324,17 +324,59 @@ export function parseExcelFile(
     const ge = toNumber(row[10]);
     const gc = toNumber(row[11]);
 
-    // Detección de saldo inicial: Grupo='SALDO' y Concepto contiene 'Saldo al'
-    if (grupoRaw.toUpperCase() === "SALDO" && /saldo\s+al/i.test(concepto)) {
-      if (saldoInicialEfectivo === null) saldoInicialEfectivo = ie || 0;
-      if (saldoInicialBcp === null) saldoInicialBcp = ic || 0;
-      // Fecha de cierre: extraer del concepto "Saldo al [fecha]"
-      const m = concepto.match(/saldo\s+al\s+([\d/.\-]+)/i);
-      if (m) fechaCierre = toDateStr(m[1]);
-      // Si no se encontró en el texto, usar la fecha de la fila si la hay
-      if (!fechaCierre) {
-        const fd = toDateStr(fechaRaw);
-        if (fd) fechaCierre = fd;
+    // ─── FILAS DE SALDO ─────────────────────────────────────────────
+    //
+    // Kelly abre cada pestaña con el arrastre del mes anterior y lo
+    // marca con Grupo='SALDO'. No es un movimiento del mes: es el punto
+    // de partida, la plata que ya estaba.
+    //
+    // Antes solo se reconocía cuando el concepto decía "Saldo al …", y
+    // ahí estaba el hueco: Kelly escribe "SALDOS DE MESES ANTERIORS" o
+    // "SALDOS 31/08/2026", que no calzan con esa frase. Esas filas se
+    // colaban como INGRESO. Ya pasó dos veces en Centro —S/2,491.87 en
+    // junio y otra vez en julio, S/4,983.74 de venta que nunca existió.
+    //
+    // La marca de Kelly es el Grupo, no la redacción del concepto. Se
+    // confía en el Grupo: cualquier fila marcada SALDO se descarta, se
+    // redacte como se redacte.
+    //
+    // Además esto destraba el import: la fila de saldo lleva la fecha
+    // del último día del MES ANTERIOR (31/07 en la pestaña de agosto),
+    // y el candado de "filas fuera del mes" la leía como una fecha mal
+    // puesta y bloqueaba todo el archivo. Al dejar de ser un movimiento,
+    // el candado ya no la ve — y sigue protegiendo contra las fechas
+    // que SÍ están equivocadas.
+    if (grupoRaw.toUpperCase() === "SALDO") {
+      // El saldo inicial declarado ("Saldo al 31/07/2026") se sigue
+      // capturando igual: es el único que se puede aplicar sin adivinar
+      // a qué fecha corresponde el corte.
+      if (/saldo\s+al/i.test(concepto)) {
+        if (saldoInicialEfectivo === null) saldoInicialEfectivo = ie || 0;
+        if (saldoInicialBcp === null) saldoInicialBcp = ic || 0;
+        const m = concepto.match(/saldo\s+al\s+([\d/.\-]+)/i);
+        if (m) fechaCierre = toDateStr(m[1]);
+        if (!fechaCierre) {
+          const fd = toDateStr(fechaRaw);
+          if (fd) fechaCierre = fd;
+        }
+      }
+
+      // Con monto, se deja rastro: descartar plata en silencio es
+      // exactamente igual de peligroso que importarla de más.
+      const montoSaldo = ie > 0 ? ie : ic > 0 ? ic : ge > 0 ? ge : gc > 0 ? gc : 0;
+      if (montoSaldo > 0) {
+        parseWarnings.push({
+          rowNumber: excelRow,
+          date: toDateStr(fechaRaw) ?? ultimaFechaValida ?? lastDayOfSheetMonth,
+          amount: montoSaldo,
+          column: ie > 0 ? "ie" : ic > 0 ? "ic" : ge > 0 ? "ge" : "gc",
+          description: clean(concepto),
+          reason: "balance_row",
+          message:
+            "Fila de saldo del mes anterior (Grupo 'SALDO') — no se importa: " +
+            "es el punto de partida del mes, no un movimiento.",
+          severity: "silenced",
+        });
       }
       continue;
     }
