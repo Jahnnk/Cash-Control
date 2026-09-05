@@ -11,6 +11,7 @@ import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
+import { refrescarRosterSiHaceFalta } from "./roster-sync";
 import {
   computeLiquidation,
   type IncentiveConfigT,
@@ -23,6 +24,11 @@ const sql = neon(process.env.DATABASE_URL!);
 type LevelRow = { nombre: string; delta: number; bono_tc: number; bono_mt: number; bono_admin: number; premio_mv: number };
 
 async function collectForLiquidation(bId: number, month: string, mejorVendedor: string | null): Promise<LiquidationResult> {
+  // Antes de calcular un pago, el roster tiene que ser el real. Si la
+  // copia de Planilla está vieja se refresca sola; si Planilla no
+  // responde, se sigue con lo que hay (nunca rompe la liquidación).
+  await refrescarRosterSiHaceFalta(bId);
+
   const cfgRows = (await sql`
     SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels
     FROM incentive_config WHERE business_id = ${bId} AND effective_month <= ${month}

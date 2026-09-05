@@ -13,6 +13,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { refrescarRosterSiHaceFalta } from "./roster-sync";
 import { getTodosLosDiasPausados } from "./dias-no-operativos";
 import {
   indicePausados, sinDiasPausados, diasOperativosDelMes,
@@ -93,6 +94,11 @@ export async function getIncentiveDashboard(
   const bId = await activeBusinessId();
   const access = await requireIncentivesAccess(bId);
   if (!access.ok) return access;
+
+  // El panel muestra el equipo REAL: si la copia del roster de Planilla
+  // quedó vieja, se refresca antes de proyectar los bonos. Va después
+  // de validar el permiso, nunca antes.
+  await refrescarRosterSiHaceFalta(bId);
   if (bId !== 2 && bId !== 3) {
     return { ok: false, error: "El programa de incentivos aplica a las cafeterías (Fonavi y Centro)." };
   }
