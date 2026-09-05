@@ -223,8 +223,9 @@ async function loadDeckIncentives(bId: number, month: string): Promise<DeckIncen
       levels: cfgRows[0].levels,
     };
     const staff = (await sql`
-      SELECT name, jornada, area FROM staff WHERE business_id = ${bId} AND active = true
-    `) as { name: string; jornada: StaffMember["jornada"]; area: string }[];
+      SELECT name, jornada, area, horas_semanales::float AS "horasSemanales"
+        FROM staff WHERE business_id = ${bId} AND active = true
+    `) as { name: string; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
     const [y, m] = month.split("-").map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
     type DeckDaily = { date: string; personas: number | null; revenue: number | null; items: number | null; deliveryPedidos?: number | null; deliveryVenta?: number | null; personalPedidos?: number | null; personalVenta?: number | null };

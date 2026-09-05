@@ -38,8 +38,9 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   };
 
   const staff = (await sql`
-    SELECT name, jornada, area FROM staff WHERE business_id = ${bId} AND active = true ORDER BY jornada, name
-  `) as { name: string; jornada: StaffMember["jornada"]; area: string }[];
+    SELECT name, jornada, area, horas_semanales::float AS "horasSemanales"
+      FROM staff WHERE business_id = ${bId} AND active = true ORDER BY jornada, name
+  `) as { name: string; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
 
   const [y, m] = month.split("-").map(Number);
   const monthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;

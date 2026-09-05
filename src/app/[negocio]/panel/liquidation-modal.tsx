@@ -155,6 +155,7 @@ export function LiquidationModal({
                     <tr className="text-[10px] uppercase text-gray-500 bg-gray-50">
                       <th className="text-left px-3 py-2 font-medium">Colaborador</th>
                       <th className="text-left px-3 py-2 font-medium">Jornada</th>
+                      <th className="text-right px-3 py-2 font-medium">Horas/sem</th>
                       <th className="text-right px-3 py-2 font-medium">Bono</th>
                       <th className="text-right px-3 py-2 font-medium">Premio MV</th>
                       <th className="text-right px-3 py-2 font-medium">Total</th>
@@ -165,6 +166,11 @@ export function LiquidationModal({
                       <tr key={l.name} className="border-t border-gray-50">
                         <td className="px-3 py-1.5 font-medium text-gray-900">{l.name}</td>
                         <td className="px-3 py-1.5 text-gray-600">{JORNADA[l.jornada]}</td>
+                        {/* Las horas explican el monto: sin ellas, quien cobra
+                            menos que su compañero no tiene cómo entender por qué. */}
+                        <td className="px-3 py-1.5 text-right text-gray-600">
+                          {l.horasSemanales !== null ? `${l.horasSemanales} h` : "—"}
+                        </td>
                         <td className="px-3 py-1.5 text-right">{formatCurrency(l.bono)}</td>
                         <td className="px-3 py-1.5 text-right">{l.premioMv > 0 ? formatCurrency(l.premioMv) : "—"}</td>
                         <td className="px-3 py-1.5 text-right font-semibold">{formatCurrency(Math.round((l.bono + l.premioMv) * 100) / 100)}</td>
@@ -173,7 +179,7 @@ export function LiquidationModal({
                   </tbody>
                   <tfoot>
                     <tr className="border-t-2 border-gray-200 bg-gray-50 font-bold">
-                      <td className="px-3 py-2" colSpan={4}>TOTAL</td>
+                      <td className="px-3 py-2" colSpan={5}>TOTAL</td>
                       <td className="px-3 py-2 text-right">{formatCurrency(r.totalBonos)}</td>
                     </tr>
                   </tfoot>

@@ -32,6 +32,16 @@ export type StaffMember = {
   jornada: "tiempo_completo" | "medio_turno" | "administrador";
   area: string;
   active: boolean;
+  /**
+   * Horas semanales del CONTRATO (la columna de Kelly en Planilla:
+   * 48 tiempo completo, 23.5 medio turno estándar, y los casos propios
+   * como Piero 20 o Diego 13 por estudios).
+   *
+   * null = sin dato: se cae a la tabla fija de siempre. Nunca se asume
+   * un contrato: pagar de menos por un dato que falta es peor que pagar
+   * el estándar.
+   */
+  horasSemanales?: number | null;
 };
 
 export type DailyEntry = {
@@ -68,13 +78,58 @@ export type WorkerSales = { nombre: string; mesas: number; total: number };
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
+/**
+ * Horas al mes de un medio turno ESTÁNDAR: 23.5 h/semana × 4.
+ *
+ * Es el ancla de la tarifa. Se elige el medio turno y no el tiempo
+ * completo porque es la jornada más común del salón, y porque con este
+ * ancla el colaborador de 23.5 h **cobra exactamente lo de siempre**:
+ * la regla nueva no le mueve el bono a nadie que esté en el estándar.
+ */
+export const HORAS_MES_MEDIO_TURNO = 23.5 * 4;
+
+/**
+ * Lo que vale una hora de bono en un nivel.
+ *
+ * ─── Por qué esto no es una regla nueva ───
+ *
+ * La tabla vigente ya pagaba por hora sin que nadie lo notara:
+ *   medio turno    S/48 ÷ 94 h  = S/0.5106 la hora
+ *   tiempo completo S/97 ÷ 192 h = S/0.5052 la hora
+ *
+ * Prácticamente la misma tarifa. Lo que la tabla NO hacía era ajustarse
+ * cuando el contrato de alguien se sale del estándar: Diego (13 h/sem
+ * por estudios) cobraba lo mismo que Teresa (23.5 h/sem), y el equipo lo
+ * notó. Decisión de Jahnn (5-sep-2026): aplicar la MISMA tarifa a las
+ * horas de cada contrato, sin piso.
+ */
+export function tarifaHoraBono(level: IncentiveLevel): number {
+  return level.bono_mt / HORAS_MES_MEDIO_TURNO;
+}
+
+/**
+ * El bono de UNA persona en un nivel. Único lugar donde se decide, para
+ * que la liquidación y la proyección no puedan contradecirse.
+ *
+ * - Administrador: monto fijo del nivel (su trabajo no escala con las
+ *   horas de salón, y su tarifa por hora es otra por diseño).
+ * - Resto: horas del contrato × tarifa del nivel.
+ * - Sin horas cargadas: la tabla fija de siempre, para no castigar a
+ *   nadie por un dato que todavía no se sincronizó.
+ */
+export function bonoDeColaborador(s: StaffMember, level: IncentiveLevel): number {
+  if (s.jornada === "administrador") return level.bono_admin;
+  const horasMes = s.horasSemanales != null ? s.horasSemanales * 4 : null;
+  if (horasMes === null || !Number.isFinite(horasMes) || horasMes <= 0) {
+    return s.jornada === "tiempo_completo" ? level.bono_tc : level.bono_mt;
+  }
+  return Math.round(horasMes * tarifaHoraBono(level));
+}
+
 /** Suma de la tabla de bonos para un nivel, según el roster activo. */
 export function bonusTableSum(staff: StaffMember[], level: IncentiveLevel): number {
   const active = staff.filter((s) => s.active);
-  const tc = active.filter((s) => s.jornada === "tiempo_completo").length;
-  const mt = active.filter((s) => s.jornada === "medio_turno").length;
-  const admin = active.filter((s) => s.jornada === "administrador").length;
-  return r2(tc * level.bono_tc + mt * level.bono_mt + admin * level.bono_admin + level.premio_mv);
+  return r2(active.reduce((t, s) => t + bonoDeColaborador(s, level), 0) + level.premio_mv);
 }
 
 export type IncentiveProgress = {
@@ -249,7 +304,19 @@ export function pickDailyFocus<T>(pool: T[], size: number, dateISO: string): T[]
   return Array.from({ length: size }, (_, i) => pool[(offset + i) % pool.length]);
 }
 
-export type LiquidationLine = { name: string; jornada: StaffMember["jornada"]; bono: number; premioMv: number };
+export type LiquidationLine = {
+  name: string;
+  jornada: StaffMember["jornada"];
+  bono: number;
+  premioMv: number;
+  /**
+   * Horas de contrato con las que se calculó el bono. Va en el acta
+   * porque es la explicación del monto: sin ella, quien reciba S/27
+   * cuando su compañero recibe S/48 no tiene cómo entender por qué.
+   * null = se pagó con la tabla fija (sin horas cargadas).
+   */
+  horasSemanales: number | null;
+};
 
 export type LiquidationResult = {
   month: string;
@@ -311,16 +378,15 @@ export function computeLiquidation(input: {
 
   const active = staff.filter((s) => s.active);
   const lines: LiquidationLine[] = active.map((s) => {
-    const bono = nivel
-      ? s.jornada === "tiempo_completo" ? nivel.bono_tc
-        : s.jornada === "medio_turno" ? nivel.bono_mt
-        : nivel.bono_admin
-      : 0;
+    const bono = nivel ? bonoDeColaborador(s, nivel) : 0;
     const premioMv =
       nivel && input.mejorVendedor && s.name.trim().toUpperCase() === input.mejorVendedor.trim().toUpperCase()
         ? nivel.premio_mv
         : 0;
-    return { name: s.name, jornada: s.jornada, bono, premioMv };
+    return {
+      name: s.name, jornada: s.jornada, bono, premioMv,
+      horasSemanales: s.horasSemanales ?? null,
+    };
   });
   const totalBonos = r2(lines.reduce((s, l) => s + l.bono + l.premioMv, 0));
 

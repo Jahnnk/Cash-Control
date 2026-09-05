@@ -132,8 +132,9 @@ export async function getGroupIncentives(
         ticketBase = config.ticketBase;
 
         const staff = (await sql`
-          SELECT name, jornada, area FROM staff WHERE business_id = ${bId} AND active = true
-        `) as { name: string; jornada: StaffMember["jornada"]; area: string }[];
+          SELECT name, jornada, area, horas_semanales::float AS "horasSemanales"
+            FROM staff WHERE business_id = ${bId} AND active = true
+        `) as { name: string; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
 
         try {
           dailies = (await sql`
