@@ -47,15 +47,24 @@ export type ResultadoSync =
   | { ok: false; error: string; motivo: "sin-configurar" | "planilla-caida" | "sin-acceso" };
 
 async function leerPlanilla(bId: number): Promise<TrabajadorPlanilla[] | null> {
-  const url = process.env.PLANILLA_DATABASE_URL;
-  if (!url) return null;
+  const url = process.env.PLANILLA_DATABASE_URL?.trim().replace(/^["']|["']$/g, "");
+  if (!url) {
+    console.error("[roster-sync] PLANILLA_DATABASE_URL no está definida");
+    return null;
+  }
   const patron = PATRON_EMPRESA[bId];
-  if (!patron) return null;
+  if (!patron) {
+    console.error(`[roster-sync] sede ${bId} sin patrón de empresa`);
+    return null;
+  }
 
   const planilla = neon(url);
   const empresas = (await planilla`SELECT id, nombre FROM empresas`) as { id: string; nombre: string }[];
   const emp = empresas.find((e) => patron.test(e.nombre));
-  if (!emp) return [];
+  if (!emp) {
+    console.error(`[roster-sync] sede ${bId}: ninguna empresa de Planilla calza con ${patron}`);
+    return [];
+  }
 
   const rows = (await planilla`
     SELECT t.dni, t.nombre_completo AS nombre, a.nombre AS area,
@@ -125,7 +134,10 @@ export async function sincronizarRoster(bId: number, aplicarCambios = true): Pro
   let enPlanilla: TrabajadorPlanilla[] | null;
   try {
     enPlanilla = await leerPlanilla(bId);
-  } catch {
+  } catch (err) {
+    // Un fallo silencioso para siempre es peor que uno ruidoso una vez:
+    // queda en los logs de Vercel para poder diagnosticarlo.
+    console.error(`[roster-sync] sede ${bId}: no pude leer Planilla —`, err);
     return {
       ok: false,
       motivo: "planilla-caida",
@@ -158,7 +170,10 @@ export async function sincronizarRoster(bId: number, aplicarCambios = true): Pro
  * Nunca lanza: si Planilla no está disponible, se sigue con lo que hay.
  */
 export async function refrescarRosterSiHaceFalta(bId: number): Promise<void> {
-  if (!process.env.PLANILLA_DATABASE_URL) return;
+  if (!process.env.PLANILLA_DATABASE_URL) {
+    console.error("[roster-sync] refresco omitido: falta PLANILLA_DATABASE_URL");
+    return;
+  }
   try {
     const r = (await sql`
       SELECT MAX(sincronizado_en) AS ultima FROM staff
@@ -167,10 +182,13 @@ export async function refrescarRosterSiHaceFalta(bId: number): Promise<void> {
     const ultima = r[0]?.ultima ? new Date(r[0].ultima).getTime() : 0;
     const horas = (Date.now() - ultima) / 3_600_000;
     if (horas < HORAS_FRESCURA) return;
-    await sincronizarRoster(bId, true);
-  } catch {
-    // Silencio a propósito: el bono no puede caerse porque el otro
-    // sistema esté dormido. Se calcula con el roster que ya estaba.
+    const res = await sincronizarRoster(bId, true);
+    if (!res.ok) console.error(`[roster-sync] sede ${bId}: ${res.motivo} — ${res.error}`);
+    else console.log(`[roster-sync] sede ${bId}: sincronizada (${res.plan.altas.length} altas, ${res.plan.bajas.length} bajas, ${res.plan.cambios.length} cambios)`);
+  } catch (err) {
+    // Se registra pero NO se propaga: el bono no puede caerse porque el
+    // otro sistema esté dormido. Se calcula con el roster que ya estaba.
+    console.error(`[roster-sync] sede ${bId}: excepción en el refresco —`, err);
   }
 }
 
