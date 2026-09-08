@@ -138,3 +138,57 @@ describe("el equipo real de Centro, agosto 2026", () => {
     expect(bonusTableSum(CENTRO, NIVEL2)).toBeLessThan(1263.82);
   });
 });
+
+describe("desde cuándo rige: agosto ya se pagó y no se toca", () => {
+  // Jahnn cerró agosto con la tabla fija y pagó S/891 en Centro. La
+  // pantalla de liquidación RECALCULA en vivo cada vez que se abre, así
+  // que sin candado de vigencia agosto cambiaba solo a S/865 y el acta
+  // dejaba de coincidir con lo que la gente recibió en la mano.
+  const EQUIPO_CENTRO: StaffMember[] = [
+    persona("Diego", "medio_turno", 13),
+    persona("Piero", "medio_turno", 20),
+    persona("Teresa", "medio_turno", 23.5),
+    persona("Annika", "medio_turno", 23.5),
+    persona("Renzo", "medio_turno", 23.5),
+    persona("Raúl", "medio_turno", 23.5),
+    persona("Milagros", "medio_turno", 23.5),
+    persona("Mathias", "medio_turno", 23.5),
+    persona("Junior", "tiempo_completo", 48),
+    persona("Verónica", "tiempo_completo", 48),
+    persona("Chari", "administrador", 48),
+  ];
+
+  it("agosto paga la TABLA FIJA: Diego cobra lo mismo que Teresa", () => {
+    expect(bonoDeColaborador(persona("Diego", "medio_turno", 13), NIVEL2, "2026-08")).toBe(48);
+    expect(bonoDeColaborador(persona("Teresa", "medio_turno", 23.5), NIVEL2, "2026-08")).toBe(48);
+  });
+
+  it("setiembre paga POR HORAS: Diego cobra menos que Teresa", () => {
+    expect(bonoDeColaborador(persona("Diego", "medio_turno", 13), NIVEL2, "2026-09")).toBe(27);
+    expect(bonoDeColaborador(persona("Teresa", "medio_turno", 23.5), NIVEL2, "2026-09")).toBe(48);
+  });
+
+  it("el total de agosto sigue siendo los S/891 que ya se pagaron", () => {
+    expect(bonusTableSum(EQUIPO_CENTRO, NIVEL2, "2026-08")).toBe(891);
+  });
+
+  it("con la regla nueva ese mismo equipo costaría S/865", () => {
+    // 26 soles menos, todos de Diego (−21) y Piero (−7), compensados en
+    // +1 por cada tiempo completo. Es el efecto que Jahnn pidió.
+    expect(bonusTableSum(EQUIPO_CENTRO, NIVEL2, "2026-09")).toBe(865);
+  });
+
+  it("sin mes se asume el régimen VIGENTE (por horas)", () => {
+    // Las proyecciones del panel miran el mes en curso y los que vienen.
+    expect(bonoDeColaborador(persona("Diego", "medio_turno", 13), NIVEL2)).toBe(27);
+  });
+
+  it("meses futuros siguen por horas", () => {
+    expect(bonoDeColaborador(persona("Diego", "medio_turno", 13), NIVEL2, "2027-01")).toBe(27);
+  });
+
+  it("julio y antes, tabla fija", () => {
+    expect(bonoDeColaborador(persona("Diego", "medio_turno", 13), NIVEL2, "2026-07")).toBe(48);
+    expect(bonoDeColaborador(persona("Diego", "medio_turno", 13), NIVEL2, "2026-06")).toBe(48);
+  });
+});

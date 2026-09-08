@@ -89,6 +89,27 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 export const HORAS_MES_MEDIO_TURNO = 23.5 * 4;
 
 /**
+ * Desde qué mes se paga el bono POR HORAS. Antes de esta fecha manda la
+ * tabla fija.
+ *
+ * Jahnn cerró agosto con la tabla fija y ya pagó (Centro, Nivel 2:
+ * S/891). La regla por horas se acordó el 5-sep-2026 "vigente desde
+ * setiembre, avisando antes" — cambiar el pasado sería recalcularle el
+ * bono a gente que ya lo cobró, y dejaría el acta de agosto diciendo
+ * S/865 cuando en la mano recibieron S/891.
+ *
+ * No es una fecha decorativa: la pantalla de liquidación recalcula en
+ * vivo cada vez que se abre, así que sin este candado agosto cambiaba
+ * solo. Por eso la regla se pregunta el MES, no la fecha de hoy.
+ */
+export const BONO_POR_HORA_DESDE = "2026-09";
+
+/** true si a ese mes (YYYY-MM) le toca la regla por horas. */
+export function pagaPorHoras(month: string | undefined): boolean {
+  return month === undefined || month >= BONO_POR_HORA_DESDE;
+}
+
+/**
  * Lo que vale una hora de bono en un nivel.
  *
  * ─── Por qué esto no es una regla nueva ───
@@ -116,20 +137,30 @@ export function tarifaHoraBono(level: IncentiveLevel): number {
  * - Resto: horas del contrato × tarifa del nivel.
  * - Sin horas cargadas: la tabla fija de siempre, para no castigar a
  *   nadie por un dato que todavía no se sincronizó.
+ * - Meses anteriores a `BONO_POR_HORA_DESDE`: la tabla fija, porque así
+ *   se pagaron. Sin `month` se asume el régimen vigente (por horas).
  */
-export function bonoDeColaborador(s: StaffMember, level: IncentiveLevel): number {
+export function bonoDeColaborador(
+  s: StaffMember,
+  level: IncentiveLevel,
+  month?: string,
+): number {
   if (s.jornada === "administrador") return level.bono_admin;
+  const tablaFija = s.jornada === "tiempo_completo" ? level.bono_tc : level.bono_mt;
+  if (!pagaPorHoras(month)) return tablaFija;
   const horasMes = s.horasSemanales != null ? s.horasSemanales * 4 : null;
-  if (horasMes === null || !Number.isFinite(horasMes) || horasMes <= 0) {
-    return s.jornada === "tiempo_completo" ? level.bono_tc : level.bono_mt;
-  }
+  if (horasMes === null || !Number.isFinite(horasMes) || horasMes <= 0) return tablaFija;
   return Math.round(horasMes * tarifaHoraBono(level));
 }
 
 /** Suma de la tabla de bonos para un nivel, según el roster activo. */
-export function bonusTableSum(staff: StaffMember[], level: IncentiveLevel): number {
+export function bonusTableSum(
+  staff: StaffMember[],
+  level: IncentiveLevel,
+  month?: string,
+): number {
   const active = staff.filter((s) => s.active);
-  return r2(active.reduce((t, s) => t + bonoDeColaborador(s, level), 0) + level.premio_mv);
+  return r2(active.reduce((t, s) => t + bonoDeColaborador(s, level, month), 0) + level.premio_mv);
 }
 
 export type IncentiveProgress = {
@@ -378,14 +409,17 @@ export function computeLiquidation(input: {
 
   const active = staff.filter((s) => s.active);
   const lines: LiquidationLine[] = active.map((s) => {
-    const bono = nivel ? bonoDeColaborador(s, nivel) : 0;
+    const bono = nivel ? bonoDeColaborador(s, nivel, input.month) : 0;
     const premioMv =
       nivel && input.mejorVendedor && s.name.trim().toUpperCase() === input.mejorVendedor.trim().toUpperCase()
         ? nivel.premio_mv
         : 0;
     return {
       name: s.name, jornada: s.jornada, bono, premioMv,
-      horasSemanales: s.horasSemanales ?? null,
+      // Solo se informan las horas cuando fueron LA RAZÓN del monto. En
+      // un mes de tabla fija, poner "13 h/sem" al lado de un bono de
+      // S/48 hace pensar que el cálculo salió mal.
+      horasSemanales: pagaPorHoras(input.month) ? s.horasSemanales ?? null : null,
     };
   });
   const totalBonos = r2(lines.reduce((s, l) => s + l.bono + l.premioMv, 0));
@@ -403,6 +437,16 @@ export function computeLiquidation(input: {
   if (withData.length === 0) blockers.push("Sin registros diarios en el mes.");
   if (input.unverifiedDays > 0) {
     warnings.push(`${input.unverifiedDays} día(s) con registro sin la segunda firma del verificador.`);
+  }
+  // Qué régimen pagó este mes queda ESCRITO en el acta. Un mes viejo
+  // reabierto tiene que poder explicar por qué Diego cobró lo mismo que
+  // Teresa, y uno nuevo por qué no.
+  if (nivel) {
+    warnings.push(
+      pagaPorHoras(input.month)
+        ? `Bonos calculados POR HORAS de contrato (tarifa del nivel ÷ ${HORAS_MES_MEDIO_TURNO} h de un medio turno estándar). Quien tiene más horas cobra más.`
+        : `Bonos calculados con la TABLA FIJA por jornada: la regla por horas rige desde ${BONO_POR_HORA_DESDE}, y así se pagó este mes.`,
+    );
   }
   if (!trafficOk && personasPorDia !== null) {
     warnings.push(
