@@ -42,6 +42,12 @@ export type StaffMember = {
    * el estándar.
    */
   horasSemanales?: number | null;
+  /**
+   * Horas REALMENTE trabajadas en el mes, de Planilla. Manda sobre las
+   * de contrato cuando está: es lo que la persona hizo, no lo que le
+   * tocaba hacer. null = no hay dato y se cae a las de contrato.
+   */
+  horasMesTrabajadas?: number | null;
 };
 
 export type DailyEntry = {
@@ -129,6 +135,28 @@ export function tarifaHoraBono(level: IncentiveLevel): number {
 }
 
 /**
+ * Las horas del mes de una persona: las TRABAJADAS si Planilla las
+ * tiene, y si no las de su contrato.
+ *
+ * El orden no es un detalle. Quien hizo turnos de más debe cobrar por
+ * ellos —Annika trabajó 110 h contra un contrato de 94 en agosto— y
+ * quien faltó no debe cobrar como si hubiera venido. El contrato queda
+ * de red: es lo que había antes y nunca deja a nadie sin bono por un
+ * dato que todavía no se cargó.
+ *
+ * Quién decide si las trabajadas están COMPLETAS no es asunto de acá:
+ * eso lo resuelve `resolverHorasDelMes` (regla del todo-o-nada) antes
+ * de armar el StaffMember.
+ */
+export function horasDelMes(s: StaffMember): number | null {
+  const trabajadas = s.horasMesTrabajadas;
+  if (trabajadas != null && Number.isFinite(trabajadas) && trabajadas > 0) return trabajadas;
+  const contrato = s.horasSemanales != null ? s.horasSemanales * 4 : null;
+  if (contrato === null || !Number.isFinite(contrato) || contrato <= 0) return null;
+  return contrato;
+}
+
+/**
  * El bono de UNA persona en un nivel. Único lugar donde se decide, para
  * que la liquidación y la proyección no puedan contradecirse.
  *
@@ -148,8 +176,8 @@ export function bonoDeColaborador(
   if (s.jornada === "administrador") return level.bono_admin;
   const tablaFija = s.jornada === "tiempo_completo" ? level.bono_tc : level.bono_mt;
   if (!pagaPorHoras(month)) return tablaFija;
-  const horasMes = s.horasSemanales != null ? s.horasSemanales * 4 : null;
-  if (horasMes === null || !Number.isFinite(horasMes) || horasMes <= 0) return tablaFija;
+  const horasMes = horasDelMes(s);
+  if (horasMes === null) return tablaFija;
   return Math.round(horasMes * tarifaHoraBono(level));
 }
 
@@ -341,12 +369,20 @@ export type LiquidationLine = {
   bono: number;
   premioMv: number;
   /**
-   * Horas de contrato con las que se calculó el bono. Va en el acta
-   * porque es la explicación del monto: sin ella, quien reciba S/27
-   * cuando su compañero recibe S/48 no tiene cómo entender por qué.
+   * Horas del MES con las que se calculó el bono. Va en el acta porque
+   * es la explicación del monto: sin ella, quien reciba S/27 cuando su
+   * compañero recibe S/48 no tiene cómo entender por qué.
    * null = se pagó con la tabla fija (sin horas cargadas).
    */
-  horasSemanales: number | null;
+  horasMes: number | null;
+  /**
+   * true = son las horas que la persona TRABAJÓ (Planilla).
+   * false = son las de su contrato, porque Planilla no las tenía.
+   * El acta lo dice: no es lo mismo cobrar por lo que hiciste que por
+   * lo que te tocaba hacer, y quien reclame tiene derecho a saber cuál
+   * de las dos se usó.
+   */
+  horasReales: boolean;
 };
 
 export type LiquidationResult = {
@@ -417,9 +453,10 @@ export function computeLiquidation(input: {
     return {
       name: s.name, jornada: s.jornada, bono, premioMv,
       // Solo se informan las horas cuando fueron LA RAZÓN del monto. En
-      // un mes de tabla fija, poner "13 h/sem" al lado de un bono de
-      // S/48 hace pensar que el cálculo salió mal.
-      horasSemanales: pagaPorHoras(input.month) ? s.horasSemanales ?? null : null,
+      // un mes de tabla fija, poner "52 h" al lado de un bono de S/48
+      // hace pensar que el cálculo salió mal.
+      horasMes: pagaPorHoras(input.month) ? horasDelMes(s) : null,
+      horasReales: pagaPorHoras(input.month) && s.horasMesTrabajadas != null && s.horasMesTrabajadas > 0,
     };
   });
   const totalBonos = r2(lines.reduce((s, l) => s + l.bono + l.premioMv, 0));
@@ -444,7 +481,7 @@ export function computeLiquidation(input: {
   if (nivel) {
     warnings.push(
       pagaPorHoras(input.month)
-        ? `Bonos calculados POR HORAS de contrato (tarifa del nivel ÷ ${HORAS_MES_MEDIO_TURNO} h de un medio turno estándar). Quien tiene más horas cobra más.`
+        ? `Bonos calculados POR HORAS ${lines.some((l) => l.horasReales) ? "TRABAJADAS (Planilla)" : "de contrato"} (tarifa del nivel ÷ ${HORAS_MES_MEDIO_TURNO} h de un medio turno estándar). Quien tiene más horas cobra más.`
         : `Bonos calculados con la TABLA FIJA por jornada: la regla por horas rige desde ${BONO_POR_HORA_DESDE}, y así se pagó este mes.`,
     );
   }

@@ -155,7 +155,7 @@ export function LiquidationModal({
                     <tr className="text-[10px] uppercase text-gray-500 bg-gray-50">
                       <th className="text-left px-3 py-2 font-medium">Colaborador</th>
                       <th className="text-left px-3 py-2 font-medium">Jornada</th>
-                      <th className="text-right px-3 py-2 font-medium">Horas/sem</th>
+                      <th className="text-right px-3 py-2 font-medium">Horas mes</th>
                       <th className="text-right px-3 py-2 font-medium">Bono</th>
                       <th className="text-right px-3 py-2 font-medium">Premio MV</th>
                       <th className="text-right px-3 py-2 font-medium">Total</th>
@@ -167,9 +167,15 @@ export function LiquidationModal({
                         <td className="px-3 py-1.5 font-medium text-gray-900">{l.name}</td>
                         <td className="px-3 py-1.5 text-gray-600">{JORNADA[l.jornada]}</td>
                         {/* Las horas explican el monto: sin ellas, quien cobra
-                            menos que su compañero no tiene cómo entender por qué. */}
+                            menos que su compañero no tiene cómo entender por qué.
+                            El punto avisa cuándo son de contrato y no las
+                            realmente trabajadas. */}
                         <td className="px-3 py-1.5 text-right text-gray-600">
-                          {l.horasSemanales !== null ? `${l.horasSemanales} h` : "—"}
+                          {l.horasMes !== null ? (
+                            <span title={l.horasReales ? "Horas trabajadas (Planilla)" : "Horas de contrato: Planilla no tenía las trabajadas"}>
+                              {l.horasMes} h{l.horasReales ? "" : "*"}
+                            </span>
+                          ) : "—"}
                         </td>
                         <td className="px-3 py-1.5 text-right">{formatCurrency(l.bono)}</td>
                         <td className="px-3 py-1.5 text-right">{l.premioMv > 0 ? formatCurrency(l.premioMv) : "—"}</td>

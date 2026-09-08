@@ -11,13 +11,15 @@ import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
-import { refrescarRosterSiHaceFalta } from "./roster-sync";
+import { refrescarRosterSiHaceFalta, sincronizarHorasDelMes, horasCopiadasDelMes } from "./roster-sync";
 import {
   computeLiquidation,
+  BONO_POR_HORA_DESDE,
   type IncentiveConfigT,
   type StaffMember,
   type LiquidationResult,
 } from "@/lib/incentives/engine";
+import { resolverHorasDelMes, avisoHorasIncompletas } from "@/lib/incentives/horas-trabajadas";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -43,10 +45,14 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
     levels: cfgRows[0].levels,
   };
 
+  // Las horas TRABAJADAS del mes se refrescan desde Planilla antes de
+  // calcular: es el dato que decide el monto de cada quien.
+  await sincronizarHorasDelMes(bId, month);
+
   const staff = (await sql`
-    SELECT name, jornada, area, horas_semanales::float AS "horasSemanales"
+    SELECT name, dni, jornada, area, horas_semanales::float AS "horasSemanales"
       FROM staff WHERE business_id = ${bId} AND active = true ORDER BY jornada, name
-  `) as { name: string; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
+  `) as { name: string; dni: string | null; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
 
   const [y, m] = month.split("-").map(Number);
   const monthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
@@ -84,12 +90,26 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
     // tabla de verificaciones pendiente: se liquida sin ese candado, avisado
   }
 
+  // Todo-o-nada: si a alguien del equipo le faltan horas en Planilla,
+  // TODOS se calculan con las de contrato. Ver horas-trabajadas.ts.
+  const resuelto = resolverHorasDelMes(
+    staff.map((s) => ({ ...s, active: true })),
+    await horasCopiadasDelMes(bId, month),
+  );
+
   const todayISO = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-  return computeLiquidation({
+  const r = computeLiquidation({
     month, todayISO, config,
-    staff: staff.map((s) => ({ ...s, active: true })),
+    staff: resuelto.staff,
     dailies, unverifiedDays, observedDays, mejorVendedor,
   });
+  // El aviso solo tiene sentido si de verdad se pagaron bonos y si al
+  // mes le toca la regla por horas; en un mes de tabla fija las horas
+  // no cambian nada y el aviso sería ruido.
+  if (r.nivel && !resuelto.usaTrabajadas && resuelto.faltantes.length > 0 && month >= BONO_POR_HORA_DESDE) {
+    r.warnings.push(avisoHorasIncompletas(resuelto.faltantes));
+  }
+  return r;
 }
 
 export type StoredLiquidation = {

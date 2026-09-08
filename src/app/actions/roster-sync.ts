@@ -206,3 +206,108 @@ export async function ultimaSincronizacion(bId: number): Promise<string | null> 
   `) as { ultima: string | null }[];
   return r[0]?.ultima ?? null;
 }
+
+
+/* ─────────────────────────────────────────────────────────────────────
+   Horas TRABAJADAS del mes
+   ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * Las horas que cada persona trabajó en un mes, según Planilla.
+ *
+ * Salen de `resumen_dia`, que es donde Planilla deja el resultado del
+ * día ya calculado (horas trabajadas + extras). Se suma por MES
+ * CALENDARIO y no por ciclo de planilla —que cierra el 29— porque el
+ * bono se mide sobre el mes calendario: el ticket promedio de agosto
+ * son las ventas del 1 al 31, y pagar esas ventas con horas del 30 de
+ * julio al 29 de agosto compararía dos periodos distintos.
+ *
+ * Devuelve null si Planilla no está configurada o no responde: el
+ * llamador se queda con lo que ya tenía, nunca rompe una liquidación.
+ */
+async function leerHorasTrabajadas(
+  bId: number,
+  month: string,
+): Promise<{ dni: string; horas: number; extra: number }[] | null> {
+  const url = process.env.PLANILLA_DATABASE_URL?.trim().replace(/^["']|["']$/g, "");
+  if (!url) {
+    console.error("[horas-sync] PLANILLA_DATABASE_URL no está definida");
+    return null;
+  }
+  const patron = PATRON_EMPRESA[bId];
+  if (!patron) return null;
+
+  const planilla = neon(url);
+  const empresas = (await planilla`SELECT id, nombre FROM empresas`) as { id: string; nombre: string }[];
+  const emp = empresas.find((e) => patron.test(e.nombre));
+  if (!emp) {
+    console.error(`[horas-sync] sede ${bId}: ninguna empresa de Planilla calza con ${patron}`);
+    return [];
+  }
+
+  const rows = (await planilla`
+    SELECT t.dni,
+           COALESCE(SUM(r.horas_trabajadas), 0)::float AS horas,
+           COALESCE(SUM(r.horas_extra_25 + r.horas_extra_35 + r.horas_extra_dominical), 0)::float AS extra
+    FROM resumen_dia r
+    JOIN trabajadores t ON t.id = r.trabajador_id
+    WHERE t.empresa_id = ${emp.id}
+      AND t.dni IS NOT NULL
+      AND to_char(r.fecha, 'YYYY-MM') = ${month}
+    GROUP BY t.dni
+    HAVING COALESCE(SUM(r.horas_trabajadas), 0) > 0
+  `) as { dni: string; horas: number; extra: number }[];
+
+  return rows.map((r) => ({ dni: String(r.dni).trim(), horas: r.horas, extra: r.extra }));
+}
+
+/**
+ * Copia a Cash Control las horas trabajadas del mes. Idempotente: se
+ * puede correr las veces que haga falta y siempre deja lo último que
+ * dice Planilla.
+ *
+ * Nunca lanza. Si Planilla no responde, la liquidación sigue con las
+ * horas que ya estaban copiadas (o con las de contrato).
+ */
+export async function sincronizarHorasDelMes(
+  bId: number,
+  month: string,
+): Promise<{ ok: true; personas: number } | { ok: false; error: string }> {
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return { ok: false, error: "Mes inválido." };
+  let filas: { dni: string; horas: number; extra: number }[] | null;
+  try {
+    filas = await leerHorasTrabajadas(bId, month);
+  } catch (err) {
+    console.error(`[horas-sync] sede ${bId} ${month}: no pude leer Planilla —`, err);
+    return { ok: false, error: "No pude leer las horas del sistema de Planilla." };
+  }
+  if (filas === null) {
+    return { ok: false, error: "Falta configurar el acceso al sistema de Planilla." };
+  }
+  for (const f of filas) {
+    await sql`
+      INSERT INTO staff_month_hours (business_id, dni, month, horas, horas_extra, sincronizado_en)
+      VALUES (${bId}, ${f.dni}, ${month}, ${f.horas.toFixed(2)}, ${f.extra.toFixed(2)}, now())
+      ON CONFLICT (business_id, dni, month) DO UPDATE
+        SET horas = EXCLUDED.horas,
+            horas_extra = EXCLUDED.horas_extra,
+            sincronizado_en = now()
+    `;
+  }
+  return { ok: true, personas: filas.length };
+}
+
+/** Las horas ya copiadas de un mes, por DNI. Nunca lanza. */
+export async function horasCopiadasDelMes(bId: number, month: string): Promise<Map<string, number>> {
+  try {
+    const rows = (await sql`
+      SELECT dni, horas::float AS horas FROM staff_month_hours
+      WHERE business_id = ${bId} AND month = ${month}
+    `) as { dni: string; horas: number }[];
+    return new Map(rows.map((r) => [String(r.dni).trim(), r.horas]));
+  } catch (err) {
+    // La migración puede no haber corrido todavía: se cae a contrato.
+    console.error(`[horas-sync] sede ${bId} ${month}: no pude leer las horas copiadas —`, err);
+    return new Map();
+  }
+}
