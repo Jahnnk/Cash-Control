@@ -29,6 +29,16 @@ import { normalizeProductName } from "@/lib/product-matching";
 import { monthLabel } from "@/lib/utils";
 import type { PortfolioFacts, ProductFacts } from "./types";
 
+/**
+ * El cliente de Neon, visto solo como una plantilla etiquetada. Se pide
+ * por parámetro (no se importa) para que este archivo no abra conexiones
+ * y siga siendo probable sin base de datos.
+ */
+type SqlTag = (
+  strings: TemplateStringsArray,
+  ...values: unknown[]
+) => Promise<Record<string, unknown>[]>;
+
 /** La forma de una fila de venta con su costo resuelto. */
 export type FilaVenta = {
   product_id: string | null;
@@ -52,6 +62,66 @@ export type FilaHistoria = {
   units: number;
   revenue: number;
 };
+
+/**
+ * La consulta de ventas del mes con su costo. UNA sola copia.
+ *
+ * Existía dos veces —en `portfolio-story.ts` (pantalla de Productos) y
+ * en `board-portfolio.ts` (Deck de la reunión)— y las dos copias se
+ * separaron: el 05-sep-2026 se agregó `es_acompanamiento` solo a la
+ * primera. Resultado: la pantalla de Productos respetaba la marca de
+ * acompañamiento y el Deck la ignoraba, así que el huevo revuelto y la
+ * humita volvían a aparecer en "qué mantener, promocionar o reemplazar"
+ * aunque Jahnn los había marcado. La misma pregunta con dos respuestas
+ * según la pantalla, que es justo lo que este archivo existe para
+ * evitar.
+ *
+ * El cast `as FilaVenta[]` no protegía nada: TypeScript no ve adentro
+ * del SQL, así que la columna faltante llegaba como `undefined` y
+ * `es_acompanamiento === true` daba false para TODO el catálogo, en
+ * silencio. Por eso ahora la consulta vive acá y las dos pantallas la
+ * llaman; agregar una columna es un cambio en un solo lugar.
+ *
+ * El cliente `sql` entra por parámetro para que este archivo siga sin
+ * abrir conexiones: se puede probar sin base de datos.
+ */
+export async function consultarVentasDelMes(
+  sql: SqlTag,
+  businessId: number,
+  month: string,
+): Promise<FilaVenta[]> {
+  // Costo: snapshot más reciente ≤ mes de la venta; si la venta es
+  // ANTERIOR al primer snapshot (historia pre-jul-2026, cuando no
+  // existía el pricing engine), cae al más antiguo y queda marcada como
+  // aproximada. El pasado no se reescribe con precios de hoy.
+  const filas = await sql`
+    SELECT s.product_id::text AS product_id,
+           s.product_name_raw,
+           s.units::float AS units,
+           s.revenue::float AS revenue,
+           p.name AS catalog_name,
+           p.category,
+           c.unit_cogs::float AS unit_cogs,
+           c.list_price::float AS list_price,
+           c.target_margin_pct::float AS target_margin_pct,
+           c.month AS cost_month,
+           COALESCE(p.es_acompanamiento, false) AS es_acompanamiento
+    FROM product_month_sales s
+    LEFT JOIN products p ON p.id = s.product_id
+    LEFT JOIN LATERAL (
+      SELECT unit_cogs, list_price, target_margin_pct, month
+      FROM product_cost_snapshots cs
+      WHERE cs.product_id = s.product_id
+      ORDER BY (cs.month <= s.month) DESC,
+               (CASE WHEN cs.month <= s.month THEN cs.month END) DESC NULLS LAST,
+               cs.month ASC
+      LIMIT 1
+    ) c ON true
+    WHERE s.business_id = ${businessId} AND s.month = ${month} AND s.source = 'byte'
+    ORDER BY s.revenue DESC
+  `;
+  return filas as FilaVenta[];
+}
 
 /** Clave estable: el producto del catálogo, o su nombre normalizado. */
 export const keyDeProducto = (pid: string | null, raw: string): string =>

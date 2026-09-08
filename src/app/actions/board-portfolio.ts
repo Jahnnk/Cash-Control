@@ -49,7 +49,7 @@ import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
 import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
 import {
-  armarFacts, keyDeProducto, estaEliminadoEnByte,
+  armarFacts, keyDeProducto, estaEliminadoEnByte, consultarVentasDelMes,
   type FilaVenta, type FilaHistoria,
 } from "@/lib/portfolio/facts-sql";
 import { computeMovers, projectNextMonth, type MonthSummary } from "@/lib/portfolio/history";
@@ -68,39 +68,13 @@ const mesActualLima = () =>
   new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
 
 /**
- * Ventas del mes con su costo resuelto.
- *
- * El LATERAL del costo es el mismo de siempre (snapshot más reciente
- * ≤ mes; si no hay, el más antiguo, marcado como aproximado). No
- * duplicar esta consulta: ver el comentario de facts-sql.ts.
+ * Ventas del mes con su costo resuelto. La consulta vive en facts-sql.ts
+ * —una sola copia para el Deck y para la pantalla de Productos— porque
+ * cuando estaban duplicadas se separaron y el Deck perdió la marca de
+ * acompañamiento. Ver el comentario de `consultarVentasDelMes`.
  */
-async function ventasDelMes(bId: number, month: string): Promise<FilaVenta[]> {
-  return (await sql`
-    SELECT s.product_id::text AS product_id,
-           s.product_name_raw,
-           s.units::float AS units,
-           s.revenue::float AS revenue,
-           p.name AS catalog_name,
-           p.category,
-           c.unit_cogs::float AS unit_cogs,
-           c.list_price::float AS list_price,
-           c.target_margin_pct::float AS target_margin_pct,
-           c.month AS cost_month
-    FROM product_month_sales s
-    LEFT JOIN products p ON p.id = s.product_id
-    LEFT JOIN LATERAL (
-      SELECT unit_cogs, list_price, target_margin_pct, month
-      FROM product_cost_snapshots cs
-      WHERE cs.product_id = s.product_id
-      ORDER BY (cs.month <= s.month) DESC,
-               (CASE WHEN cs.month <= s.month THEN cs.month END) DESC NULLS LAST,
-               cs.month ASC
-      LIMIT 1
-    ) c ON true
-    WHERE s.business_id = ${bId} AND s.month = ${month} AND s.source = 'byte'
-    ORDER BY s.revenue DESC
-  `) as FilaVenta[];
-}
+const ventasDelMes = (bId: number, month: string): Promise<FilaVenta[]> =>
+  consultarVentasDelMes(sql, bId, month);
 
 async function historiaHasta(bId: number, month: string): Promise<FilaHistoria[]> {
   return (await sql`

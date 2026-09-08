@@ -14,6 +14,7 @@ import { requireFullSession, getSessionRole } from "@/lib/session-access";
 import { compilePortfolioStory } from "@/lib/portfolio/story-compiler";
 import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
 import { normalizeProductName } from "@/lib/product-matching";
+import { consultarVentasDelMes } from "@/lib/portfolio/facts-sql";
 import { monthLabel } from "@/lib/utils";
 import {
   projectNextMonth,
@@ -34,36 +35,9 @@ const BUSINESS_NAMES: Record<number, string> = {
 
 /** Colector interno reutilizable (getPortfolioStory y la vista histórica). */
 async function collectFacts(bId: number, month: string): Promise<PortfolioFacts | null> {
-    // Costo: snapshot más reciente ≤ mes; si el mes es ANTERIOR al primer
-    // snapshot (historia pre-jul-2026), cae al snapshot más antiguo
-    // disponible y se marca como APROXIMADO (no existe historial de
-    // costos — se dice, no se esconde).
-    const rows = (await sql`
-      SELECT s.product_id::text AS product_id,
-             s.product_name_raw,
-             s.units::float AS units,
-             s.revenue::float AS revenue,
-             p.name AS catalog_name,
-             p.category,
-             c.unit_cogs::float AS unit_cogs,
-             c.list_price::float AS list_price,
-             c.target_margin_pct::float AS target_margin_pct,
-             c.month AS cost_month,
-             COALESCE(p.es_acompanamiento, false) AS es_acompanamiento
-      FROM product_month_sales s
-      LEFT JOIN products p ON p.id = s.product_id
-      LEFT JOIN LATERAL (
-        SELECT unit_cogs, list_price, target_margin_pct, month
-        FROM product_cost_snapshots cs
-        WHERE cs.product_id = s.product_id
-        ORDER BY (cs.month <= s.month) DESC,
-                 (CASE WHEN cs.month <= s.month THEN cs.month END) DESC NULLS LAST,
-                 cs.month ASC
-        LIMIT 1
-      ) c ON true
-      WHERE s.business_id = ${bId} AND s.month = ${month} AND s.source = 'byte'
-      ORDER BY s.revenue DESC
-    `) as Record<string, unknown>[];
+    // La consulta (con su regla de costo) vive en facts-sql.ts: una
+    // sola copia para esta pantalla y para el Deck de la reunión.
+    const rows = await consultarVentasDelMes(sql, bId, month);
 
     if (rows.length === 0) return null;
 
