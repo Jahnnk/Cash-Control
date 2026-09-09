@@ -19,6 +19,7 @@ import { sql } from "drizzle-orm";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
 import { salesInRange, opExpensesInRange } from "./command-center";
+import { evaluarCobertura } from "@/lib/report/cobertura";
 import type {
   ReportFacts,
   ReportScope,
@@ -99,6 +100,42 @@ async function monthlyBasics(bId: number, month: string): Promise<MonthlyBasics>
     grossExpenses,
     ebitda: r2(sales - opExpenses),
     liquidityEnd: liq ? r2(liq.bank + liq.cash) : null,
+  };
+}
+
+/**
+ * Días de venta cargados y hasta cuándo llegan los gastos, de UNA unidad.
+ *
+ * Los días de venta se cuentan sobre la MEJOR fuente disponible (la que
+ * más días cubre), no sobre una fija: si se contaran solo los de
+ * `byte_sales_daily`, Atelier saldría con 2 días en agosto cuando su
+ * administrador registró 25 — el mismo error que rompía las ventas.
+ */
+async function coberturaDeUnidad(unit: BusinessUnitRef, month: string): Promise<{
+  unitId: number; unitName: string; diasConVenta: number; ultimoGasto: string | null;
+}> {
+  const { start, end } = monthBounds(month);
+  const r = (await db.execute(sql`
+    SELECT GREATEST(
+      COALESCE((SELECT COUNT(*) FROM byte_sales_daily
+        WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end}
+          AND (efectivo + yape_plin + pos) > 0), 0),
+      COALESCE((SELECT COUNT(*) FROM daily_records
+        WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end}
+          AND archived = false AND byte_total > 0), 0),
+      COALESCE((SELECT COUNT(*) FROM upselling_daily
+        WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end}
+          AND revenue > 0), 0)
+    )::int AS dias,
+    (SELECT MAX(date)::text FROM expenses
+      WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end}
+        AND archived = false) AS ultimo_gasto
+  `)).rows[0] as { dias: number; ultimo_gasto: string | null };
+  return {
+    unitId: unit.id,
+    unitName: unit.name,
+    diasConVenta: Number(r.dias),
+    ultimoGasto: r.ultimo_gasto,
   };
 }
 
@@ -332,11 +369,22 @@ export async function getReportFacts(input: {
 
   const units = await Promise.all(unitRefs.map((u) => collectUnitFacts(u, input.month)));
 
+  // La cobertura va ANTES que cualquier conclusión: mide si el mes está
+  // cargado entero. Un mes con ventas a medias y gastos completos
+  // muestra una pérdida que no existe, y ese fue exactamente el reporte
+  // de agosto que hizo dudar a Kelly de todo el sistema.
+  const cobertura = evaluarCobertura({
+    month: input.month,
+    todayISO: new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }),
+    sedes: await Promise.all(unitRefs.map((u) => coberturaDeUnidad(u, input.month))),
+  });
+
   return {
     scope,
     month: input.month,
     monthLabel: monthLabelOf(input.month),
     generatedAt: new Date().toISOString(),
     units,
+    cobertura,
   };
 }

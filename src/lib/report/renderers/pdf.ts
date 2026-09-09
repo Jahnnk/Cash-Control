@@ -60,13 +60,35 @@ function coverPage(doc: Doc, story: ReportStory, intel: UnitIntelligence): void 
   doc.setFont("helvetica", "normal");
   doc.text(`Reporte Ejecutivo · ${story.meta.monthLabel}`, w / 2, 92, { align: "center" });
 
-  // Score central
+  // Score central. Si los datos del mes NO están completos, el número
+  // se muestra igual pero MARCADO: un "32/100 · estado crítico" sobre un
+  // mes a medio cargar es exactamente lo que hizo a Kelly desconfiar del
+  // sistema entero. La cifra no se esconde; se le pone su condición al
+  // lado, que es lo que un reporte serio hace.
+  const cob = story.facts.cobertura;
   doc.setFontSize(52).setFont("helvetica", "bold");
   doc.text(String(intel.healthScore.total), w / 2, 140, { align: "center" });
   doc.setFontSize(11).setFont("helvetica", "normal");
-  doc.text("Salud del negocio / 100", w / 2, 150, { align: "center" });
+  doc.text(
+    cob && !cob.confiable ? "Salud del negocio / 100 — PRELIMINAR" : "Salud del negocio / 100",
+    w / 2, 150, { align: "center" },
+  );
   doc.setFontSize(12);
   doc.text(story.narrative.cover.statusLine, w / 2, 164, { align: "center" });
+
+  // El aviso de cobertura va en la PORTADA y en grande: es lo primero
+  // que Jahnn pidió ver, antes que cualquier cifra.
+  if (cob) {
+    const banda = cob.confiable ? BRAND.traffic.verde : BRAND.traffic.ambar;
+    doc.setFillColor(banda);
+    doc.rect(0, 182, w, 30, "F");
+    doc.setFont("helvetica", "bold").setFontSize(9).setTextColor("#FFFFFF");
+    doc.text(cob.confiable ? "DATOS COMPLETOS" : "ATENCIÓN: DATOS INCOMPLETOS", w / 2, 191, { align: "center" });
+    doc.setFont("helvetica", "normal").setFontSize(8);
+    const lineas = doc.splitTextToSize(cob.titular, w - 60) as string[];
+    doc.text(lineas.slice(0, 3), w / 2, 197, { align: "center" });
+    doc.setTextColor("#FFFFFF");
+  }
 
   doc.setFontSize(9);
   const gen = new Date(story.meta.generatedAt).toLocaleString("es-PE", { dateStyle: "long", timeStyle: "short" });

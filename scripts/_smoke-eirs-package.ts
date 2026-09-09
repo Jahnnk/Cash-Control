@@ -34,6 +34,7 @@ async function main() {
     monthLabel: month,
     generatedAt: new Date().toISOString(),
     units: [facts],
+    cobertura: { month: "2026-08", cerrado: true, sedes: [], estado: "completo", confiable: true, titular: "Datos completos." },
   });
 
   const out = join(homedir(), "Downloads");

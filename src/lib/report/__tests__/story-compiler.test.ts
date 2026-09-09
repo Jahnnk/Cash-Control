@@ -231,6 +231,7 @@ describe("compilador — unidad y grupo", () => {
       scope: { kind: "unit", unit: { id: 1, code: "atelier", name: "Yayi's Atelier" } },
       month: "2026-06", monthLabel: "Junio 2026", generatedAt: "2026-07-01T12:00:00Z",
       units: [mkUnit()],
+      cobertura: { month: "2026-08", cerrado: true, sedes: [], estado: "completo", confiable: true, titular: "Datos completos." },
     };
     const story = compileStory(facts);
     expect(story.meta.confidential).toBe(true);
@@ -251,6 +252,7 @@ describe("compilador — unidad y grupo", () => {
       scope: { kind: "group", units: [u1.unit, u2.unit] },
       month: "2026-06", monthLabel: "Junio 2026", generatedAt: "2026-07-01T12:00:00Z",
       units: [u1, u2],
+      cobertura: { month: "2026-08", cerrado: true, sedes: [], estado: "completo", confiable: true, titular: "Datos completos." },
     };
     const story = compileStory(facts);
     expect(story.meta.title).toBe("Grupo Yayi's");

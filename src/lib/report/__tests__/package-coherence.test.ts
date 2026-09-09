@@ -56,6 +56,7 @@ const FACTS: ReportFacts = {
   scope: { kind: "unit", unit: { id: 1, code: "atelier", name: "Yayi's Atelier" } },
   month: "2026-06", monthLabel: "Junio 2026", generatedAt: "2026-07-02T12:00:00Z",
   units: [mkUnit()],
+  cobertura: { month: "2026-08", cerrado: true, sedes: [], estado: "completo", confiable: true, titular: "Datos completos." },
 };
 
 /** Busca en una hoja la fila cuya primera columna coincide y devuelve la fila. */
@@ -136,6 +137,7 @@ describe("Board Meeting Package — coherencia entre formatos", () => {
       scope: { kind: "group", units: [FACTS.units[0].unit, u2.unit] },
       month: "2026-06", monthLabel: "Junio 2026", generatedAt: "2026-07-02T12:00:00Z",
       units: [mkUnit(), u2],
+      cobertura: { month: "2026-08", cerrado: true, sedes: [], estado: "completo", confiable: true, titular: "Datos completos." },
     });
     expect(renderPdf(groupStory).blob.size).toBeGreaterThan(20_000);
     expect((await renderPptx(groupStory)).blob.size).toBeGreaterThan(10_000);

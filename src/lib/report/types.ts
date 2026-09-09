@@ -17,6 +17,10 @@
  * detectadas por datos (una unidad "tiene CxC" si existen; no "si es Atelier").
  */
 
+import type { CoberturaMes } from "./cobertura";
+
+export type { CoberturaMes };
+
 // ─────────────────────────────────────────────────────────────────
 // Unidades de negocio y alcance
 // ─────────────────────────────────────────────────────────────────
@@ -107,6 +111,12 @@ export type ReportFacts = {
   monthLabel: string;
   generatedAt: string;
   units: UnitFacts[];   // 1 para unidad; N para grupo
+  /**
+   * ¿Están completos los datos del mes? Va en los HECHOS y no en la
+   * inteligencia porque no es una conclusión: es la condición para que
+   * las demás cifras signifiquen algo. Ver lib/report/cobertura.ts.
+   */
+  cobertura: CoberturaMes;
 };
 
 // ─────────────────────────────────────────────────────────────────
