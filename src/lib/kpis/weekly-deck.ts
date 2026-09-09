@@ -18,6 +18,8 @@ import type { BoardPortfolio } from "@/lib/portfolio/board-view";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { portfolioSlides } from "./portfolio-slides";
 import { breakevenSlide } from "./breakeven-slide";
+import { impactoIncentivosSlide } from "./impacto-incentivos-slide";
+import type { ImpactoIncentivos } from "@/lib/incentives/impacto";
 
 const PRIMARY = BRAND.primary.replace("#", "");
 const INK = BRAND.ink.replace("#", "");
@@ -295,6 +297,12 @@ export async function renderWeeklyKpiDeck(
   portafolio?: { sede: string; portafolio: BoardPortfolio }[] | null,
   /** Punto de equilibrio por sede. Opcional por la misma razón. */
   breakeven?: GroupBreakeven | null,
+  /**
+   * Impacto del programa de incentivos, una lámina por cafetería.
+   * Opcional igual que las demás: sin datos del mes anterior el deck
+   * sale sin ella en vez de caerse.
+   */
+  impactoIncentivos?: ImpactoIncentivos[] | null,
 ): Promise<{ blob: Blob; filename: string }> {
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "WIDE", width: 10, height: 5.625 });
@@ -395,6 +403,14 @@ export async function renderWeeklyKpiDeck(
   // Va antes del detalle de productos porque es la pregunta más grande:
   // primero si el mes se sostiene, después qué producto lo sostiene.
   if (breakeven) breakevenSlide((t, sb) => baseSlide(pptx, t, sb), sub, breakeven);
+
+  // 6b-bis · ¿El bono por ticket se paga solo? Va PEGADA a la lámina de
+  // incentivos: primero cuánto se reparte, inmediatamente después qué
+  // trajo ese reparto. Separadas, la primera parece un gasto suelto —
+  // que fue exactamente la lectura de Kelly en la reunión del 8-sep-2026.
+  if (impactoIncentivos && impactoIncentivos.length > 0) {
+    impactoIncentivosSlide((t, sb) => baseSlide(pptx, t, sb), sub, impactoIncentivos);
+  }
 
   // 6c · Portafolio de productos por sede: qué mantener, promocionar o
   // reemplazar. Después de los KPIs y antes de las conclusiones:

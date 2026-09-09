@@ -5,6 +5,7 @@ import { FileDown, Loader2, X, CalendarRange } from "lucide-react";
 import { getBoardDeckData } from "@/app/actions/kpis";
 import { getBoardPortfolio } from "@/app/actions/board-portfolio";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
+import { getImpactoIncentivos } from "@/app/actions/impacto-incentivos";
 import { getToday } from "@/lib/utils";
 import { useToast } from "@/components/toast-provider";
 
@@ -30,10 +31,11 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
       // fallo no tumba el deck: si faltan datos salen las láminas de
       // siempre (decisión de diseño, 24-ago-2026).
       const mes = end.slice(0, 7);
-      const [r, port, be] = await Promise.all([
+      const [r, port, be, imp] = await Promise.all([
         getBoardDeckData(start, end),
         getBoardPortfolio(mes),
         getGroupBreakeven(mes),
+        getImpactoIncentivos(mes),
       ]);
       if (!r.ok) { showToast(r.error, "error"); return; }
       const { renderWeeklyKpiDeck } = await import("@/lib/kpis/weekly-deck");
@@ -41,6 +43,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
         r.data,
         port.ok ? port.sedes : null,
         be.ok ? be.data : null,
+        imp.ok ? imp.data : null,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -53,6 +56,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
       const faltaron = [
         port.ok ? null : `portafolio (${port.error})`,
         be.ok ? null : `punto de equilibrio (${be.error})`,
+        imp.ok ? null : `impacto de incentivos (${imp.error})`,
       ].filter(Boolean);
       showToast(
         faltaron.length === 0
