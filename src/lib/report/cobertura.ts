@@ -52,6 +52,13 @@ export type CoberturaSede = {
   ultimoGasto: string | null;
   /** Cuántos días del final del mes quedaron sin gastos. */
   diasSinGasto: number;
+  /**
+   * Los días SIN NINGÚN dato de venta, en ISO. Se listan y no solo se
+   * cuentan: "faltan 6 días" no le dice nada a nadie, pero "sáb 1 y los
+   * 5 domingos" se lee en un segundo y revela si es un hueco de carga o
+   * una sede que cerró. Pedido de Jahnn, 9-sep-2026.
+   */
+  diasFaltantes: string[];
   estado: EstadoCobertura;
   /** Qué falta, dicho para que alguien pueda arreglarlo. */
   faltante: string | null;
@@ -107,7 +114,16 @@ export function evaluarCobertura(input: {
   sedes: {
     unitId: number;
     unitName: string;
+    /**
+     * Días con venta en CUALQUIERA de las fuentes (la unión, no el
+     * máximo de una sola). Antes se tomaba el máximo, y eso perdía los
+     * días que Jahnn había registrado a mano antes de que Kelly tomara
+     * las finanzas: si él cubrió el 1 al 5 y el administrador del 6 en
+     * adelante, el máximo contaba una de las dos rachas, nunca las dos.
+     */
     diasConVenta: number;
+    /** Los días sin dato en NINGUNA fuente, en ISO. */
+    diasFaltantes?: string[];
     ultimoGasto: string | null;
   }[];
 }): CoberturaMes {
@@ -132,10 +148,19 @@ export function evaluarCobertura(input: {
     // se reclamara CUALQUIER día faltante, un mes con dos domingos
     // cerrados saldría "incompleto" — y un aviso que salta todos los
     // meses es un aviso que nadie lee.
+    const faltantes = s.diasFaltantes ?? [];
     if (s.diasConVenta === 0) {
       faltas.push("no hay ni un día de venta registrado");
     } else if (faltanDias > 0 && !enCurso && pct < UMBRAL_COMPLETO) {
-      faltas.push(`faltan ${faltanDias} día(s) de venta`);
+      // Dos puntos y no paréntesis: el titular ya envuelve esto entre
+      // paréntesis, y anidarlos hace ilegible justo la parte que hay
+      // que leer.
+      const n = faltantes.length > 0 ? faltantes.length : faltanDias;
+      faltas.push(
+        faltantes.length > 0
+          ? `falta${n === 1 ? "" : "n"} ${n} día${n === 1 ? "" : "s"} de venta: ${listaDeDias(faltantes)}`
+          : `falta${n === 1 ? "" : "n"} ${n} día${n === 1 ? "" : "s"} de venta`,
+      );
     }
     // 5 días es una semana laboral: por debajo puede ser el cierre
     // normal del mes; por encima, el Excel de gastos no se subió.
@@ -159,6 +184,7 @@ export function evaluarCobertura(input: {
       diasConVenta: s.diasConVenta, diasEsperados,
       pctVentas: Math.min(100, pct),
       ultimoGasto: s.ultimoGasto, diasSinGasto,
+      diasFaltantes: faltantes,
       estado: estadoFinal,
       faltante: faltas.length > 0 ? faltas.join(" y ") : null,
     };
@@ -188,6 +214,25 @@ export function evaluarCobertura(input: {
             `Con ventas a medias y gastos completos, el resultado sale peor de lo real — súbelos antes de tomar decisiones con estas cifras.`;
 
   return { month, cerrado, sedes, estado, confiable, titular };
+}
+
+/**
+ * "sáb 1, dom 2, dom 9, dom 16, dom 23, dom 30".
+ *
+ * El día de la semana va a propósito: cinco domingos seguidos se leen de
+ * un vistazo como "la sede no abrió", mientras que "faltan 6 días" haría
+ * pensar en un problema de carga. El dato tiene que dejar ver el patrón.
+ */
+export function listaDeDias(isos: string[]): string {
+  const DIA = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
+  const MAX = 8;
+  const nombres = isos.map((d) => {
+    const dow = new Date(d + "T12:00:00Z").getUTCDay();
+    return `${DIA[dow]} ${Number(d.slice(8, 10))}`;
+  });
+  return nombres.length <= MAX
+    ? nombres.join(", ")
+    : `${nombres.slice(0, MAX).join(", ")} y ${nombres.length - MAX} más`;
 }
 
 function etiquetaMes(month: string): string {

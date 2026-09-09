@@ -8,8 +8,9 @@
 import { describe, it, expect } from "vitest";
 import { evaluarCobertura, UMBRAL_COMPLETO } from "../cobertura";
 
-const sede = (unitId: number, unitName: string, diasConVenta: number, ultimoGasto: string | null) =>
-  ({ unitId, unitName, diasConVenta, ultimoGasto });
+const sede = (unitId: number, unitName: string, diasConVenta: number, ultimoGasto: string | null,
+  diasFaltantes: string[] = []) =>
+  ({ unitId, unitName, diasConVenta, ultimoGasto, diasFaltantes });
 
 describe("agosto 2026, mirado el 9 de setiembre", () => {
   const agosto = (dias = { at: 25, fo: 31, ce: 31 }) =>
@@ -27,7 +28,7 @@ describe("agosto 2026, mirado el 9 de setiembre", () => {
     const at = r.sedes.find((s) => s.unitName === "Atelier")!;
     expect(at.diasConVenta).toBe(25);
     expect(at.diasEsperados).toBe(31);
-    expect(at.faltante).toContain("faltan 6 día(s) de venta");
+    expect(at.faltante).toContain("faltan 6 días de venta");
   });
 
   it("el peor caso manda: el grupo NO es confiable por una sola sede", () => {
@@ -137,5 +138,85 @@ describe("sin datos no se inventa un reporte", () => {
     expect(r.estado).toBe("vacio");
     expect(r.confiable).toBe(false);
     expect(r.titular).toContain("No hay datos suficientes");
+  });
+});
+
+describe("qué días faltan, no solo cuántos", () => {
+  // Jahnn (9-sep-2026): "que me avise que días faltan". El caso real de
+  // Atelier en agosto: el sábado 1 y los cinco domingos del mes.
+  const AGO_ATELIER = ["2026-08-01","2026-08-02","2026-08-09","2026-08-16","2026-08-23","2026-08-30"];
+
+  it("los lista con su día de la semana", () => {
+    const r = evaluarCobertura({
+      month: "2026-08", todayISO: "2026-09-09",
+      sedes: [sede(1, "Atelier", 25, "2026-08-31", AGO_ATELIER)],
+    });
+    expect(r.sedes[0].faltante).toContain("sáb 1");
+    expect(r.sedes[0].faltante).toContain("dom 2");
+    expect(r.sedes[0].faltante).toContain("dom 30");
+  });
+
+  it("el patrón se ve: cinco domingos seguidos no es un hueco de carga", () => {
+    // Es la razón de poner el día de la semana. "Faltan 6 días" haría
+    // pensar en un problema de registro; ver 5 domingos dice otra cosa.
+    const r = evaluarCobertura({
+      month: "2026-08", todayISO: "2026-09-09",
+      sedes: [sede(1, "Atelier", 25, "2026-08-31", AGO_ATELIER)],
+    });
+    const domingos = (r.sedes[0].faltante!.match(/dom /g) ?? []).length;
+    expect(domingos).toBe(5);
+  });
+
+  it("guarda los días crudos para quien los necesite", () => {
+    const r = evaluarCobertura({
+      month: "2026-08", todayISO: "2026-09-09",
+      sedes: [sede(1, "Atelier", 25, "2026-08-31", AGO_ATELIER)],
+    });
+    expect(r.sedes[0].diasFaltantes).toEqual(AGO_ATELIER);
+  });
+
+  it("con muchos días corta la lista pero dice el total", () => {
+    const muchos = Array.from({ length: 12 }, (_, i) => `2026-08-${String(i + 1).padStart(2, "0")}`);
+    const r = evaluarCobertura({
+      month: "2026-08", todayISO: "2026-09-09",
+      sedes: [sede(1, "Atelier", 19, "2026-08-31", muchos)],
+    });
+    expect(r.sedes[0].faltante).toContain("y 4 más");
+  });
+
+  it("sin la lista, sigue diciendo cuántos (no se rompe)", () => {
+    const r = evaluarCobertura({
+      month: "2026-08", todayISO: "2026-09-09",
+      sedes: [sede(1, "Atelier", 25, "2026-08-31")],
+    });
+    expect(r.sedes[0].faltante).toContain("faltan 6 días de venta");
+  });
+});
+
+describe("redacción de los días faltantes", () => {
+  it("un solo día se dice en singular", () => {
+    const r = evaluarCobertura({
+      month: "2026-08", todayISO: "2026-09-09",
+      sedes: [sede(1, "Atelier", 30, "2026-08-31", ["2026-08-01"])],
+    });
+    // 30/31 supera el umbral, así que no reclama. Se fuerza por debajo.
+    const r2 = evaluarCobertura({
+      month: "2026-08", todayISO: "2026-09-09",
+      sedes: [sede(1, "Atelier", 20, "2026-08-31", ["2026-08-01"])],
+    });
+    expect(r.sedes[0].faltante).toBeNull();
+    expect(r2.sedes[0].faltante).toContain("falta 1 día de venta:");
+    expect(r2.sedes[0].faltante).not.toContain("día(s)");
+  });
+
+  it("no anida paréntesis dentro del titular", () => {
+    const r = evaluarCobertura({
+      month: "2026-08", todayISO: "2026-09-09",
+      sedes: [sede(1, "Atelier", 25, "2026-08-31",
+        ["2026-08-01","2026-08-02","2026-08-09","2026-08-16","2026-08-23","2026-08-30"])],
+    });
+    expect(r.titular).toContain("(faltan 6 días de venta: sáb 1");
+    expect(r.titular).not.toContain("((");
+    expect(r.titular).not.toContain("))");
   });
 });

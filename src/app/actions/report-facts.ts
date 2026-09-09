@@ -104,38 +104,63 @@ async function monthlyBasics(bId: number, month: string): Promise<MonthlyBasics>
 }
 
 /**
- * Días de venta cargados y hasta cuándo llegan los gastos, de UNA unidad.
+ * Días de venta cargados, cuáles faltan, y hasta cuándo llegan los
+ * gastos, de UNA unidad.
  *
- * Los días de venta se cuentan sobre la MEJOR fuente disponible (la que
- * más días cubre), no sobre una fija: si se contaran solo los de
- * `byte_sales_daily`, Atelier saldría con 2 días en agosto cuando su
- * administrador registró 25 — el mismo error que rompía las ventas.
+ * ─── La unión, no el máximo ───
+ *
+ * La primera versión tomaba el MÁXIMO de las tres fuentes. Jahnn
+ * (9-sep-2026): "los primeros días de agosto yo estaba llenando estos
+ * datos directamente en el sistema, entonces quisiera que concilies lo
+ * del excel + lo que yo llené".
+ *
+ * Tenía razón: si él cubrió del 1 al 5 en el cierre diario y el
+ * administrador del 6 en adelante en su registro, el máximo se queda con
+ * una de las dos rachas y descarta la otra. Ahora se pregunta día por
+ * día si EXISTE el dato en cualquiera de las tres, que es la pregunta
+ * real: un día está cubierto si alguien lo registró, no importa quién.
+ *
+ * ─── Y se devuelve QUÉ días faltan ───
+ *
+ * "Faltan 6 días" no le sirve a nadie. "sáb 1, dom 2, dom 9, dom 16,
+ * dom 23, dom 30" se lee de un vistazo: cinco domingos seguidos son una
+ * sede que no abrió, no un problema de carga. El dato tiene que dejar
+ * ver el patrón.
  */
 async function coberturaDeUnidad(unit: BusinessUnitRef, month: string): Promise<{
-  unitId: number; unitName: string; diasConVenta: number; ultimoGasto: string | null;
+  unitId: number; unitName: string; diasConVenta: number;
+  diasFaltantes: string[]; ultimoGasto: string | null;
 }> {
   const { start, end } = monthBounds(month);
-  const r = (await db.execute(sql`
-    SELECT GREATEST(
-      COALESCE((SELECT COUNT(*) FROM byte_sales_daily
-        WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end}
-          AND (efectivo + yape_plin + pos) > 0), 0),
-      COALESCE((SELECT COUNT(*) FROM daily_records
-        WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end}
-          AND archived = false AND byte_total > 0), 0),
-      COALESCE((SELECT COUNT(*) FROM upselling_daily
-        WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end}
-          AND revenue > 0), 0)
-    )::int AS dias,
-    (SELECT MAX(date)::text FROM expenses
-      WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end}
-        AND archived = false) AS ultimo_gasto
-  `)).rows[0] as { dias: number; ultimo_gasto: string | null };
+  const dias = (await db.execute(sql`
+    SELECT gs::date::text AS dia,
+           (EXISTS (SELECT 1 FROM upselling_daily u
+                     WHERE u.business_id = ${unit.id} AND u.date = gs::date AND u.revenue > 0)
+         OR EXISTS (SELECT 1 FROM daily_records dr
+                     WHERE dr.business_id = ${unit.id} AND dr.date = gs::date
+                       AND dr.archived = false AND dr.byte_total > 0)
+         OR EXISTS (SELECT 1 FROM byte_sales_daily b
+                     WHERE b.business_id = ${unit.id} AND b.date = gs::date
+                       AND (b.efectivo + b.yape_plin + b.pos) > 0)) AS cubierto
+    FROM generate_series(${start}::date, ${end}::date, '1 day') gs
+    ORDER BY gs
+  `)).rows as { dia: string; cubierto: boolean }[];
+
+  const ultimoGasto = ((await db.execute(sql`
+    SELECT MAX(date)::text AS d FROM expenses
+    WHERE business_id = ${unit.id} AND date >= ${start} AND date <= ${end} AND archived = false
+  `)).rows[0] as { d: string | null }).d;
+
+  // Un día futuro no "falta": todavía no ocurrió.
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const pasados = dias.filter((d) => d.dia <= hoy);
+
   return {
     unitId: unit.id,
     unitName: unit.name,
-    diasConVenta: Number(r.dias),
-    ultimoGasto: r.ultimo_gasto,
+    diasConVenta: pasados.filter((d) => d.cubierto).length,
+    diasFaltantes: pasados.filter((d) => !d.cubierto).map((d) => d.dia),
+    ultimoGasto,
   };
 }
 
