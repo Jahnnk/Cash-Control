@@ -7,17 +7,25 @@ import { formatCurrency } from "@/lib/utils";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import { GroupKpisSection } from "../dashboard/group-kpis-section";
 import { GenerateReportModal } from "@/app/[negocio]/reportes/generate-report-modal";
+import { BandaFrescura } from "@/components/banda-frescura";
+import type { FrescuraGrupo } from "@/lib/frescura-datos";
 
 type Props = {
   selectedMonth: string;
   isCurrentMonth: boolean;
   summaries: BusinessSummary[];
+  frescura: FrescuraGrupo | null;
 };
 
-export function GrupoReportesClient({ selectedMonth, isCurrentMonth, summaries }: Props) {
+export function GrupoReportesClient({ selectedMonth, isCurrentMonth, summaries, frescura }: Props) {
   const [showEirs, setShowEirs] = useState(false);
   return (
     <div className="space-y-6">
+      {/* LO PRIMERO: hasta cuándo tenemos datos. Va antes del título
+          porque un reporte generado sobre datos a medias es peor que no
+          generarlo — es la lección del reporte de agosto. */}
+      {frescura && <BandaFrescura frescura={frescura} />}
+
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reportes del Grupo</h1>

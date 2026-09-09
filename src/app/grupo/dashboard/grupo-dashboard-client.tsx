@@ -12,6 +12,8 @@ import { GroupKpisSection } from "./group-kpis-section";
 import { AtelierB2BCard } from "./atelier-b2b-card";
 import type { AtelierB2BResumen } from "@/app/actions/atelier-b2b";
 import { DataFreshnessCard } from "./data-freshness-card";
+import { BandaFrescura } from "@/components/banda-frescura";
+import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { KellyImportCard } from "./kelly-import-card";
 import { KellyLoadCard } from "./kelly-load-card";
 import { ExecutiveHero, type HeroStats } from "./executive-hero";
@@ -50,6 +52,7 @@ type Props = {
   totals: { bankBalance: number; monthlyIncome: number; monthlyExpenses: number; margin: number };
   breakeven: GroupBreakeven | null;
   freshness: DataFreshness[];
+  frescura: FrescuraGrupo | null;
   ventas: GroupVentasSede[] | null;
   kellyLoads: KellyLoadStatus[];
   cutoffs: SedeCutoff[] | null;
@@ -57,7 +60,7 @@ type Props = {
 };
 
 export function GrupoDashboardClient({
-  selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, ventas, kellyLoads, cutoffs,
+  selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, frescura, ventas, kellyLoads, cutoffs,
   atelierB2B,
 }: Props) {
   const [verDetalle, setVerDetalle] = useState(false);
@@ -174,6 +177,12 @@ export function GrupoDashboardClient({
           </div>
         )}
       </header>
+
+      {/* LO PRIMERO después del título: hasta cuándo tenemos datos.
+          Antes vivía en dos tarjetas plegadas detrás de "Ver detalle
+          operativo" — o sea, no se veía nunca. Jahnn (9-sep-2026): "que
+          sea lo primero que me jale la vista". */}
+      {frescura && <BandaFrescura frescura={frescura} />}
 
       {/* 1 · ¿Cómo estamos?   ·   2 · ¿Qué debo hacer hoy? */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
