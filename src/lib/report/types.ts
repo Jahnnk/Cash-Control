@@ -18,8 +18,9 @@
  */
 
 import type { CoberturaMes } from "./cobertura";
+import type { ResumenSimple } from "./resumen-simple";
 
-export type { CoberturaMes };
+export type { CoberturaMes, ResumenSimple };
 
 // ─────────────────────────────────────────────────────────────────
 // Unidades de negocio y alcance
@@ -303,6 +304,13 @@ export type ReportStory = {
   facts: ReportFacts;           // anexos y tablas salen de aquí
   intelligence: ReportIntelligence;
   narrative: ReportNarrative;
+  /**
+   * Las dos páginas que se leen: cifras del mes contra su promedio de 3
+   * meses, qué mejoró y qué empeoró. Se calcula acá —en el cerebro— y
+   * no en el renderer: el PDF solo pinta lo que recibe (ver el test de
+   * guardia en __tests__/pdf-renderer.test.ts).
+   */
+  resumen: ResumenSimple;
 };
 
 /** Manifiesto del Board Meeting Package: los artefactos derivables del Story. */

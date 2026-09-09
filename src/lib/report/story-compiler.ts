@@ -35,6 +35,7 @@ import { buildProjections } from "./intelligence/projections";
 import { buildDecisions } from "./intelligence/decisions";
 import { buildBoardQuestions } from "./intelligence/board-questions";
 import { buildNarrative } from "./narrative";
+import { construirResumenSimple } from "./resumen-simple";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -281,5 +282,11 @@ export function compileStory(facts: ReportFacts): ReportStory {
     facts,
     intelligence: { units: unitsIntel, consolidated, groupComparison },
     narrative,
+    resumen: construirResumenSimple({
+      month: facts.month,
+      monthLabel: facts.monthLabel,
+      units: facts.units,
+      cobertura: facts.cobertura,
+    }),
   };
 }

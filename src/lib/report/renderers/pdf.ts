@@ -12,7 +12,7 @@
 
 import { jsPDF } from "jspdf";
 import autoTable from "jspdf-autotable";
-import type { ReportStory, Paragraph, UnitIntelligence } from "../types";
+import type { ReportStory, Paragraph, UnitIntelligence, ResumenSimple } from "../types";
 import { BRAND, PDF, fmtSoles, pageHeader, pageFooter, sectionTitle, trafficLabel } from "./design-system";
 import { lineChart, barChart } from "./charts";
 
@@ -207,6 +207,203 @@ function labeledBlock(doc: Doc, story: ReportStory, section: string, y: number, 
   return writeParagraphs(doc, story, section, y, [p], " ") + 2;
 }
 
+/**
+ * ─────────────────────────────────────────────────────────────────────
+ * EL REPORTE EN DOS PÁGINAS
+ * ─────────────────────────────────────────────────────────────────────
+ *
+ * Kelly (9-sep-2026): "hay demasiado texto y sugerencias que no se
+ * entienden". El reporte tenía 12 secciones y quien lo lee todos los
+ * meses no llegaba al final; un reporte que no se lee no informa nada.
+ *
+ * Página 1 responde "¿cómo nos fue?": cobertura de datos arriba del
+ * todo, las cifras del mes junto a su promedio de 3 meses, y una línea
+ * por sede. Página 2 responde "¿qué hacemos?": qué mejoró, qué empeoró
+ * y las decisiones. El detalle fino se queda en el Excel.
+ *
+ * Regla de escritura: cada línea es un número con su nombre, o una
+ * frase que un número obliga a decir. Si una frase no sale de una cifra
+ * concreta, no va.
+ */
+
+/** Página 1 · ¿Cómo nos fue? */
+function paginaDelMes(doc: Doc, story: ReportStory, rs: ResumenSimple): void {
+  const w = doc.internal.pageSize.getWidth();
+  doc.addPage();
+  let y = pageHeader(doc, story, "El mes");
+
+  // ── LO PRIMERO: ¿están completos los datos? ──
+  // Va antes que cualquier cifra, que es literalmente lo que Jahnn pidió.
+  const cob = rs.cobertura;
+  const colorCob = cob.confiable ? BRAND.traffic.verde : BRAND.traffic.ambar;
+  doc.setFillColor(colorCob);
+  doc.rect(PDF.margin, y, w - PDF.margin * 2, 16, "F");
+  doc.setFont("helvetica", "bold").setFontSize(9).setTextColor("#FFFFFF");
+  doc.text(cob.confiable ? "DATOS COMPLETOS" : "ATENCIÓN — DATOS INCOMPLETOS", PDF.margin + 3, y + 5.5);
+  doc.setFont("helvetica", "normal").setFontSize(7.5);
+  doc.text(
+    (doc.splitTextToSize(cob.titular, w - PDF.margin * 2 - 6) as string[]).slice(0, 2),
+    PDF.margin + 3, y + 10.5,
+  );
+  y += 22;
+
+  // ── Las tres cifras, cada una con su promedio de 3 meses ──
+  doc.setTextColor(BRAND.ink);
+  const cajaW = (w - PDF.margin * 2 - 8) / 3;
+  const cifras: { rotulo: string; valor: string; abajo: string; color: string }[] = [
+    {
+      rotulo: "VENTAS DEL MES", valor: fmtSoles(rs.total.ventas),
+      abajo: rs.total.ventas3m !== null ? `prom. 3 meses ${fmtSoles(rs.total.ventas3m)}` : "",
+      color: BRAND.ink,
+    },
+    {
+      rotulo: "GASTO OPERATIVO", valor: fmtSoles(rs.total.gastos),
+      abajo: `${rs.total.ventas > 0 ? ((rs.total.gastos / rs.total.ventas) * 100).toFixed(0) : "—"}% de la venta`,
+      color: BRAND.ink,
+    },
+    {
+      rotulo: "RESULTADO DEL MES", valor: fmtSoles(rs.total.resultado),
+      abajo: rs.total.resultado3m !== null
+        ? `prom. 3 meses ${fmtSoles(rs.total.resultado3m)} (${rs.total.margen3mPct?.toFixed(1)}%)`
+        : "",
+      color: rs.total.resultado >= 0 ? BRAND.traffic.verde : BRAND.traffic.rojo,
+    },
+  ];
+  cifras.forEach((c, i) => {
+    const x = PDF.margin + i * (cajaW + 4);
+    doc.setDrawColor(BRAND.grayLight).setFillColor("#F8FAFC");
+    doc.roundedRect(x, y, cajaW, 24, 1.5, 1.5, "FD");
+    doc.setFont("helvetica", "normal").setFontSize(7).setTextColor(BRAND.gray);
+    doc.text(c.rotulo, x + 3, y + 5);
+    doc.setFont("helvetica", "bold").setFontSize(15).setTextColor(c.color);
+    doc.text(c.valor, x + 3, y + 14);
+    doc.setFont("helvetica", "normal").setFontSize(7).setTextColor(BRAND.gray);
+    doc.text(c.abajo, x + 3, y + 20);
+  });
+  y += 30;
+
+  // ── El titular: UNA línea ──
+  doc.setFont("helvetica", "bold").setFontSize(9.5).setTextColor(BRAND.ink);
+  doc.text(doc.splitTextToSize(rs.titular, w - PDF.margin * 2) as string[], PDF.margin, y);
+  y += 6 + (doc.splitTextToSize(rs.titular, w - PDF.margin * 2) as string[]).length * 4;
+
+  // ── Una línea por sede ──
+  doc.setFont("helvetica", "bold").setFontSize(PDF.body).setTextColor(BRAND.primary);
+  doc.text("POR SEDE", PDF.margin, y);
+  y += 3;
+  autoTable(doc, {
+    startY: y,
+    head: [["Sede", "Días", "Ventas", "Gasto", "Resultado", "Margen", "Prom. 3m"]],
+    body: rs.sedes.map((s) => [
+      s.unitName,
+      s.cobertura ?? "—",
+      fmtSoles(s.ventas),
+      fmtSoles(s.gastos),
+      fmtSoles(s.resultado),
+      s.margenPct !== null ? `${s.margenPct.toFixed(1)}%` : "—",
+      s.margen3mPct !== null ? `${s.margen3mPct.toFixed(1)}%` : "—",
+    ]),
+    theme: "grid",
+    styles: { fontSize: 8, cellPadding: 2 },
+    headStyles: { fillColor: BRAND.primary, fontSize: 7.5 },
+    columnStyles: {
+      2: { halign: "right" }, 3: { halign: "right" }, 4: { halign: "right" },
+      5: { halign: "right" }, 6: { halign: "right" },
+    },
+    margin: { left: PDF.margin, right: PDF.margin },
+  });
+
+  // ── El pie explica la columna que nadie entendería sola ──
+  const yFin = lastY(doc) + 6;
+  doc.setFont("helvetica", "italic").setFontSize(7).setTextColor(BRAND.gray);
+  doc.text(
+    doc.splitTextToSize(
+      "El promedio de 3 meses está porque el Excel registra la compra el día que se paga, no cuando se consume: " +
+      "un mes que se abasteció fuerte parece malo y el siguiente parece bueno sin que el negocio haya cambiado. " +
+      "El mes es el dato; el promedio es la tendencia.",
+      w - PDF.margin * 2,
+    ) as string[],
+    PDF.margin, yFin,
+  );
+}
+
+/** Página 2 · ¿Qué hacemos? */
+function paginaDeAcciones(doc: Doc, story: ReportStory, rs: ResumenSimple, intel: UnitIntelligence): void {
+  const w = doc.internal.pageSize.getWidth();
+  doc.addPage();
+  let y = pageHeader(doc, story, "Qué hacemos");
+
+  const mitad = (w - PDF.margin * 2 - 6) / 2;
+  doc.setFont("helvetica", "bold").setFontSize(PDF.body).setTextColor(BRAND.traffic.verde);
+  doc.text("QUÉ MEJORÓ", PDF.margin, y);
+  doc.setTextColor(BRAND.traffic.rojo);
+  doc.text("QUÉ EMPEORÓ", PDF.margin + mitad + 6, y);
+  y += 6;
+
+  doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(BRAND.ink);
+  const filas = Math.max(rs.mejoro.length, rs.empeoro.length, 1);
+  let yy = y;
+  for (let i = 0; i < filas; i++) {
+    const izq = rs.mejoro[i]?.texto ?? (i === 0 ? "Sin cambios relevantes." : "");
+    const der = rs.empeoro[i]?.texto ?? (i === 0 ? "Sin retrocesos relevantes." : "");
+    const li = doc.splitTextToSize(izq, mitad) as string[];
+    const ld = doc.splitTextToSize(der, mitad) as string[];
+    doc.text(li, PDF.margin, yy);
+    doc.text(ld, PDF.margin + mitad + 6, yy);
+    yy += Math.max(li.length, ld.length) * 4 + 3;
+  }
+  y = yy + 6;
+
+  // ── Las decisiones. Máximo 3, cada una con dueño y plazo. ──
+  doc.setFont("helvetica", "bold").setFontSize(PDF.body).setTextColor(BRAND.primary);
+  doc.text("LAS 3 DECISIONES DEL PRÓXIMO MES", PDF.margin, y);
+  y += 3;
+  const decisiones = intel.decisions.slice(0, 3);
+  if (decisiones.length > 0) {
+    autoTable(doc, {
+      startY: y,
+      head: [["#", "Qué hacer", "Impacto", "Responsable", "Plazo"]],
+      body: decisiones.map((d, i) => [
+        String(i + 1), d.action, fmtSoles(d.impact), d.owner, d.timeframe,
+      ]),
+      theme: "grid",
+      styles: { fontSize: 8, cellPadding: 2, valign: "middle" },
+      headStyles: { fillColor: BRAND.primary, fontSize: 7.5 },
+      columnStyles: { 0: { cellWidth: 8 }, 2: { halign: "right", cellWidth: 24 } },
+      margin: { left: PDF.margin, right: PDF.margin },
+    });
+    y = lastY(doc) + 8;
+  } else {
+    doc.setFont("helvetica", "normal").setFontSize(8).setTextColor(BRAND.gray);
+    doc.text("Sin decisiones pendientes que el sistema pueda sustentar con cifras del mes.", PDF.margin, y + 5);
+    y += 12;
+  }
+
+  // ── El riesgo #1, si lo hay. Uno solo: tres riesgos no se atienden. ──
+  const riesgo = intel.risks[0];
+  if (riesgo) {
+    doc.setFont("helvetica", "bold").setFontSize(PDF.body).setTextColor(BRAND.traffic.rojo);
+    doc.text("LO QUE MÁS PREOCUPA", PDF.margin, y);
+    y += 5;
+    doc.setFont("helvetica", "normal").setFontSize(8.5).setTextColor(BRAND.ink);
+    // El riesgo se dice con su MEDIDA, no con una etiqueta: "Insumos vs
+    // promedio 3m: S/8,500 contra S/5,200" se entiende; "riesgo alto" no.
+    const texto =
+      `${riesgo.metric}: ${fmtSoles(riesgo.valueNow)}` +
+      (riesgo.valueRef !== null ? ` contra ${fmtSoles(riesgo.valueRef)} de referencia` : "") +
+      (riesgo.consequenceSoles !== null ? `. Si no se actúa: ${fmtSoles(riesgo.consequenceSoles)}.` : ".");
+    doc.text(doc.splitTextToSize(texto, w - PDF.margin * 2) as string[], PDF.margin, y);
+  }
+
+  // ── Dónde está el detalle ──
+  const h = doc.internal.pageSize.getHeight();
+  doc.setFont("helvetica", "italic").setFontSize(7).setTextColor(BRAND.gray);
+  doc.text(
+    "El detalle por categoría, los movimientos del mes y la conciliación están en el Excel del mismo reporte.",
+    PDF.margin, h - PDF.footerH - 6,
+  );
+}
+
 export function renderPdf(story: ReportStory): { blob: Blob; filename: string } {
   const intel = story.intelligence.consolidated ?? story.intelligence.units[0];
   const n = story.narrative;
@@ -215,6 +412,16 @@ export function renderPdf(story: ReportStory): { blob: Blob; filename: string } 
 
   // ── Portada ──
   coverPage(doc, story, intel);
+
+  // ── LAS DOS PÁGINAS QUE SE LEEN ──
+  //
+  // Kelly (9-sep-2026): demasiado texto y sugerencias que no se
+  // entienden. Estas dos responden las únicas dos preguntas de la
+  // reunión mensual —cómo nos fue y qué hacemos— con números y sin
+  // prosa generada. Van PRIMERO, antes que cualquier análisis: quien
+  // solo lea hasta acá ya sabe lo que necesita.
+  paginaDelMes(doc, story, story.resumen);
+  paginaDeAcciones(doc, story, story.resumen, intel);
 
   // ── CEO Dashboard: el mes en UNA página ──
   ceoDashboardPage(doc, story, intel);
