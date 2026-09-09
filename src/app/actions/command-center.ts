@@ -7,9 +7,9 @@
  * de Decision Intelligence (src/lib/decision-intelligence.ts).
  *
  * Reglas de cálculo (auditables):
- *  - Ventas: byte_sales_daily si hay datos del mes; si no, fallback legacy
- *    (byte_total de daily_records + is_byte_sale) — mismo criterio que el
- *    reporte mensual.
+ *  - Ventas: la regla multi-fuente de `elegirFuenteVentas` — se descartan
+ *    las fuentes con pocos días y gana la que reporta más. Mismo criterio
+ *    que el punto de equilibrio y el reporte mensual.
  *  - Gastos operativos: porción del negocio (compartidos → atelier_amount),
  *    excluyendo préstamos, transferencias internas, archivados y categorías
  *    marcadas exclude_from_ebitda (la exclusión canónica del EBITDA).
@@ -22,6 +22,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { neon } from "@neondatabase/serverless";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
+import { elegirFuenteVentas, type FuenteVenta } from "@/lib/ventas-mes-sql";
 import { compareMonths } from "@/lib/kpis/month-compare";
 import { activeBusinessId } from "@/lib/active-business";
 import { getUnifiedBankBalance, getCashBalance } from "./bank-balance";
@@ -45,29 +46,71 @@ function todayLima(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 }
 
-/** Suma de ventas del negocio en [start, end] (byte_sales_daily o legacy).
- *  Exportada: el EIRS usa EXACTAMENTE la misma definición de "ventas". */
+/**
+ * Suma de ventas del negocio en [start, end].
+ *
+ * ─── El bug que esto arregla (9-sep-2026) ───
+ *
+ * La versión anterior decía: "si `byte_sales_daily` tiene AL MENOS UNA
+ * fila del rango, usa esa fuente y ninguna otra". Con una fila bastaba.
+ *
+ * A Atelier le entraron 2 filas de agosto por S/133.52 en una carga que
+ * salió mal, mientras su administrador tenía 25 días registrados por
+ * S/41,057. El sistema entero —dashboard, KPIs de dirección y el Reporte
+ * Ejecutivo— dio por bueno que Atelier había vendido S/133 en el mes.
+ * En el reporte del grupo eso se vio como ventas de S/84,758 contra
+ * gastos de S/127,784: un EBITDA de −S/43,026 y "salud 32/100, estado
+ * crítico" que no describía ningún negocio real. Kelly lo leyó y dijo
+ * que el sistema no servía. Tenía razón sobre ese número.
+ *
+ * La regla correcta ya existía en `lib/ventas-mes-sql.ts` desde
+ * agosto —descarta las fuentes con pocos días y entre las que quedan
+ * gana la que reporta más— pero solo la usaba el punto de equilibrio.
+ * Tres lectores con cadenas distintas son tres verdades distintas; esa
+ * es exactamente la advertencia que el repo lleva escrita en
+ * `ventas-loader.ts` y que este archivo no había atendido.
+ *
+ * Exportada: el EIRS y los KPIs de dirección usan EXACTAMENTE esta.
+ */
 export async function salesInRange(bId: number, start: string, end: string): Promise<number> {
-  const hasDaily = (await db.execute(sql`
-    SELECT COUNT(*)::int AS n FROM byte_sales_daily
+  const rows = (await db.execute(sql`
+    SELECT 'byte' AS fuente,
+           COALESCE(SUM(efectivo + yape_plin + pos), 0)::float AS total,
+           COUNT(*) FILTER (WHERE (efectivo + yape_plin + pos) > 0)::int AS dias
+    FROM byte_sales_daily
     WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
-  `)).rows[0] as { n: number };
-  if (hasDaily.n > 0) {
-    const r = (await db.execute(sql`
-      SELECT COALESCE(SUM(efectivo + yape_plin + pos), 0)::float AS t
-      FROM byte_sales_daily WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
-    `)).rows[0] as { t: number };
-    return Number(r.t);
-  }
+    UNION ALL
+    SELECT 'cierre',
+           COALESCE(SUM(byte_total), 0)::float,
+           COUNT(*) FILTER (WHERE byte_total > 0)::int
+    FROM daily_records
+    WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end} AND archived = false
+    UNION ALL
+    SELECT 'registro',
+           COALESCE(SUM(revenue), 0)::float,
+           COUNT(*) FILTER (WHERE revenue > 0)::int
+    FROM upselling_daily
+    WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
+  `)).rows as { fuente: FuenteVenta["fuente"]; total: number; dias: number }[];
+
+  // El orden del UNION ALL no está garantizado y la regla lo necesita.
+  const orden: FuenteVenta["fuente"][] = ["byte", "cierre", "registro"];
+  const fuentes: FuenteVenta[] = orden.map((f) => {
+    const r = rows.find((x) => x.fuente === f);
+    return r
+      ? { fuente: f, total: Number(r.total), dias: Number(r.dias), ultimoDia: null }
+      : { fuente: f, total: 0, dias: 0, ultimoDia: null };
+  });
+
+  const elegida = elegirFuenteVentas(fuentes);
+  if (elegida.total > 0) return elegida.total;
+
+  // Sin ninguna de las tres (historia vieja de Atelier): el legado, que
+  // suma los cobros marcados como venta Byte en el banco.
   const r = (await db.execute(sql`
-    SELECT (
-      COALESCE((SELECT SUM(byte_total) FROM daily_records
-        WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end} AND archived = false), 0)
-      +
-      COALESCE((SELECT SUM(amount) FROM bank_income_items
-        WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
-          AND is_byte_sale = true AND archived = false), 0)
-    )::float AS t
+    SELECT COALESCE(SUM(amount), 0)::float AS t FROM bank_income_items
+    WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
+      AND is_byte_sale = true AND archived = false
   `)).rows[0] as { t: number };
   return Number(r.t);
 }
