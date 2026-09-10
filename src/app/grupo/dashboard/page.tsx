@@ -1,5 +1,6 @@
 import { getGroupDashboard, getDataFreshness, getKellyLoadStatus } from "@/app/actions/grupo";
 import { getFrescuraGrupo } from "@/app/actions/frescura";
+import { getPanelGasto } from "@/app/actions/puedo-gastar";
 import { getGroupVentasComparison } from "@/app/actions/group-ventas";
 import { listDataCutoffs } from "@/app/actions/data-cutoff";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
@@ -10,13 +11,14 @@ export const dynamic = "force-dynamic";
 
 export default async function GrupoDashboardPage() {
   const data = await getGroupDashboard();
-  const [be, freshness, ventas, kellyLoads, atelierB2B, frescura] = await Promise.all([
+  const [be, freshness, ventas, kellyLoads, atelierB2B, frescura, panelGasto] = await Promise.all([
     getGroupBreakeven(data.selectedMonth),
     getDataFreshness(),
     getGroupVentasComparison(),
     getKellyLoadStatus(),
     getAtelierB2BResumen(),
     getFrescuraGrupo(),
+    getPanelGasto(),
   ]);
   const cutoffs = await listDataCutoffs();
   return (
@@ -28,6 +30,7 @@ export default async function GrupoDashboardPage() {
       breakeven={be.ok ? be.data : null}
       freshness={freshness}
       frescura={frescura}
+      panelGasto={panelGasto.ok ? panelGasto.data : null}
       ventas={ventas.ok ? ventas.sedes : null}
       kellyLoads={kellyLoads}
       cutoffs={cutoffs.ok ? cutoffs.sedes : null}
