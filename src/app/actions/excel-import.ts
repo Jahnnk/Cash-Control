@@ -934,6 +934,63 @@ export async function executeExcelImport(
     console.error("[executeExcelImport] data_cutoff_at no aplicado (columna pendiente):", err);
   }
 
+  // ─── El SALDO REAL DEL BANCO que anotó Kelly ────────────────────
+  //
+  // Jahnn (10-sep-2026): "no podemos basarnos en estimados, necesitamos
+  // datos exactos". Tiene razón, y resultó que el dato exacto ya venía
+  // llegando: el Excel de Kelly trae la lectura del banco —la que ella
+  // copia del BCP para cuadrar su libro— y el sistema ya sabía leerla
+  // (lib/saldo-banco-excel.ts, hecho en agosto). Lo que faltaba era
+  // GUARDARLA: se mostraba una vez en la pantalla de importación y se
+  // tiraba.
+  //
+  // Sin esto, la liquidez del grupo se estimaba arrastrando meses de
+  // movimientos desde un ancla vieja: el ancla de Centro era S/0 del 28
+  // de febrero y el arrastre daba un banco NEGATIVO.
+  //
+  // La fecha del saldo es el último día CON MOVIMIENTO del archivo, no
+  // el fin del rango: si el Excel cubre un mes en curso, el saldo vale
+  // hasta donde Kelly llegó, no hasta fin de mes.
+  if (parseResult?.saldoBancoReal) {
+    try {
+      const sb = parseResult.saldoBancoReal;
+      const fechaSaldo = (await db.execute(sql`
+        SELECT MAX(d)::text AS f FROM (
+          SELECT MAX(date) AS d FROM bank_income_items
+            WHERE business_id = ${bId} AND archived = false AND date <= ${end}
+          UNION ALL
+          SELECT MAX(date) FROM expenses
+            WHERE business_id = ${bId} AND archived = false AND date <= ${end}
+        ) t
+      `)).rows[0] as { f: string | null };
+
+      if (fechaSaldo.f) {
+        // La diferencia que Kelly no cuadró se guarda en la nota, no se
+        // esconde: si su libro no cuaja con su banco, quien mire el
+        // saldo tiene derecho a saberlo.
+        const nota =
+          Math.abs(sb.diferencia) < 0.01
+            ? "Saldo del banco leído del Excel de Kelly (cuadrado con su libro)"
+            : `Saldo del banco leído del Excel de Kelly. Su libro da ${sb.saldoLibro.toFixed(2)}: le falta cuadrar ${Math.abs(sb.diferencia).toFixed(2)}`;
+
+        await db.execute(sql`
+          INSERT INTO sede_balances (business_id, fecha, banco, caja, nota, registrado_por)
+          VALUES (${bId}, ${fechaSaldo.f}, ${sb.valor.toFixed(2)},
+                  ${(parseResult.totales.saldoFinalEfectivo ?? 0).toFixed(2)},
+                  ${nota}, 'excel-kelly')
+          ON CONFLICT (business_id, fecha) DO UPDATE
+            SET banco = EXCLUDED.banco, caja = EXCLUDED.caja,
+                nota = EXCLUDED.nota, registrado_por = EXCLUDED.registrado_por,
+                created_at = now()
+        `);
+      }
+    } catch (err) {
+      // Nunca tumbar un import por esto: los movimientos ya están
+      // escritos y valen por sí solos.
+      console.error("[executeExcelImport] no pude guardar el saldo del banco:", err);
+    }
+  }
+
   // ─── Update batch con counts finales ────────────────────────────
   await db.execute(sql`
     UPDATE import_batches

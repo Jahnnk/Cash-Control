@@ -37,6 +37,9 @@
 
 export type OrigenSaldo = "declarado" | "derivado" | "ninguno";
 
+/** Quién puso el saldo declarado. Los dos son exactos: salen del banco. */
+export type Fuente = "excel-kelly" | "dirección" | null;
+
 export type LiquidezSede = {
   businessId: number;
   nombre: string;
@@ -45,6 +48,10 @@ export type LiquidezSede = {
   /** banco + caja. */
   total: number;
   origen: OrigenSaldo;
+  /** De dónde salió el saldo declarado. */
+  fuente: Fuente;
+  /** Lo que Kelly no logró cuadrar contra su banco, si viene de su Excel. */
+  descuadreKelly: number | null;
   /** Fecha del saldo declarado, o del ancla si es derivado. */
   fecha: string | null;
   /** Días desde esa fecha. */
@@ -85,8 +92,15 @@ const diasEntre = (desde: string, hasta: string): number =>
 export type EntradaSede = {
   businessId: number;
   nombre: string;
-  /** Saldo que Jahnn registró: manda sobre todo. null = no hay. */
-  declarado: { banco: number | null; caja: number; fecha: string } | null;
+  /**
+   * Saldo verificado contra el banco: manda sobre todo. Puede venir del
+   * Excel de Kelly (ella copia la lectura del BCP para cuadrar su libro)
+   * o de que Jahnn lo registre a mano. null = no hay.
+   */
+  declarado: {
+    banco: number | null; caja: number; fecha: string;
+    fuente?: Fuente; descuadreKelly?: number | null;
+  } | null;
   /** Estimación por arrastre desde el ancla. */
   derivado: { banco: number; caja: number; fechaAncla: string } | null;
 };
@@ -101,12 +115,21 @@ export function calcularLiquidez(input: {
     const avisos: string[] = [];
     let banco = 0, caja = 0, fecha: string | null = null;
     let origen: OrigenSaldo = "ninguno";
+    let fuente: Fuente = null;
+    let descuadreKelly: number | null = null;
 
     if (s.declarado) {
       origen = "declarado";
       banco = s.declarado.banco ?? 0;
       caja = s.declarado.caja;
       fecha = s.declarado.fecha;
+      fuente = s.declarado.fuente ?? null;
+      descuadreKelly = s.declarado.descuadreKelly ?? null;
+      // El descuadre de Kelly NO se tapa: si su libro no cuaja con su
+      // banco, quien decida sobre este saldo tiene derecho a saberlo.
+      if (descuadreKelly !== null && Math.abs(descuadreKelly) >= 0.01) {
+        avisos.push(`a Kelly le falta cuadrar ${r2(Math.abs(descuadreKelly))} entre su libro y el banco`);
+      }
       const dias = diasEntre(fecha, todayISO);
       if (dias > DIAS_SALDO_FRESCO) {
         avisos.push(`el saldo que registraste es del ${fecha.slice(8)}/${fecha.slice(5, 7)}, hace ${dias} días`);
@@ -135,7 +158,7 @@ export function calcularLiquidez(input: {
     return {
       businessId: s.businessId, nombre: s.nombre,
       banco: r2(banco), caja: r2(caja), total: r2(banco + caja),
-      origen, fecha,
+      origen, fuente, descuadreKelly, fecha,
       antiguedadDias: fecha ? diasEntre(fecha, todayISO) : null,
       avisos,
     };
@@ -143,13 +166,21 @@ export function calcularLiquidez(input: {
 
   const banco = r2(sedes.reduce((t, s) => t + s.banco, 0));
   const caja = r2(sedes.reduce((t, s) => t + s.caja, 0));
+  // Confiable = las tres vienen del banco y ninguna tiene pero. El
+  // descuadre de Kelly cuenta como pero: si su libro no cuaja, el saldo
+  // sirve para mirar pero no para decidir al céntimo.
   const declaradas = sedes.filter((s) => s.origen === "declarado" && s.avisos.length === 0).length;
   const confiable = declaradas === sedes.length && sedes.length > 0;
 
   const derivadas = sedes.filter((s) => s.origen === "derivado").map((s) => s.nombre);
   const sinNada = sedes.filter((s) => s.origen === "ninguno").map((s) => s.nombre);
+  const deKelly = sedes.filter((s) => s.fuente === "excel-kelly").length;
   const procedencia = confiable
-    ? "Saldos verificados contra el banco esta semana."
+    ? deKelly === sedes.length
+      ? "Saldos leídos del banco en el Excel de Kelly."
+      : deKelly > 0
+        ? "Saldos verificados contra el banco (parte del Excel de Kelly, parte registrados por ti)."
+        : "Saldos verificados contra el banco esta semana."
     : sinNada.length > 0
       ? `Sin saldo ni estimación en ${enumerar(sinNada)}: el total está incompleto.`
       : derivadas.length > 0

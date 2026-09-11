@@ -88,13 +88,25 @@ export async function getLiquidezGrupo(): Promise<LiquidezGrupo | null> {
     const sedes: EntradaSede[] = await Promise.all(
       SEDES.map(async ({ id, nombre }) => {
         const dec = (await sql`
-          SELECT fecha::text, banco::float AS banco, caja::float AS caja
+          SELECT fecha::text, banco::float AS banco, caja::float AS caja,
+                 registrado_por, nota
           FROM sede_balances WHERE business_id = ${id} ORDER BY fecha DESC LIMIT 1
-        `) as { fecha: string; banco: number | null; caja: number }[];
+        `) as { fecha: string; banco: number | null; caja: number;
+                registrado_por: string | null; nota: string | null }[];
         return {
           businessId: id, nombre,
           declarado: dec.length > 0
-            ? { banco: dec[0].banco === null ? null : Number(dec[0].banco), caja: Number(dec[0].caja), fecha: dec[0].fecha }
+            ? {
+                banco: dec[0].banco === null ? null : Number(dec[0].banco),
+                caja: Number(dec[0].caja),
+                fecha: dec[0].fecha,
+                fuente: dec[0].registrado_por === "excel-kelly" ? "excel-kelly" as const : "dirección" as const,
+                // El descuadre viaja en la nota que escribió el import.
+                descuadreKelly: (() => {
+                  const m = /cuadrar ([\d.]+)/.exec(dec[0].nota ?? "");
+                  return m ? Number(m[1]) : null;
+                })(),
+              }
             : null,
           derivado: dec.length > 0 ? null : await derivado(id, hoy),
         };

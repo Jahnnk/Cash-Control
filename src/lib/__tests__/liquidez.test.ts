@@ -137,3 +137,51 @@ describe("redacción", () => {
     expect(r.procedencia).not.toContain("y Fonavi y");
   });
 });
+
+describe("el saldo que viene del Excel de Kelly", () => {
+  // Jahnn (10-sep-2026): "no podemos basarnos en estimados, necesitamos
+  // datos exactos". El dato exacto ya llegaba: Kelly copia la lectura
+  // del BCP en su Excel para cuadrar su libro. El sistema sabía leerla
+  // desde agosto y la tiraba después de mostrarla una vez.
+  const conKelly = (descuadre: number | null) =>
+    calcularLiquidez({
+      todayISO: HOY,
+      sedes: [
+        sede(1, "Atelier", { banco: 14345.74, caja: 200, fecha: "2026-09-08", fuente: "excel-kelly", descuadreKelly: descuadre }, null),
+        sede(2, "Fonavi", { banco: 15594.02, caja: 6427.87, fecha: "2026-09-08", fuente: "excel-kelly", descuadreKelly: null }, null),
+        sede(3, "Centro", { banco: 1112.68, caja: 2369.89, fecha: "2026-09-08", fuente: "excel-kelly", descuadreKelly: null }, null),
+      ],
+    });
+
+  it("cuenta como dato exacto, no como estimación", () => {
+    const r = conKelly(null);
+    expect(r.sedes.every((s) => s.origen === "declarado")).toBe(true);
+    expect(r.confiable).toBe(true);
+    expect(r.procedencia).toBe("Saldos leídos del banco en el Excel de Kelly.");
+  });
+
+  it("NO tapa lo que Kelly no logró cuadrar", () => {
+    // Si su libro no cuaja con su banco, el saldo sirve para mirar pero
+    // no para decidir al céntimo. Taparlo sería peor que el estimado.
+    const r = conKelly(1752.3);
+    const at = r.sedes.find((s) => s.nombre === "Atelier")!;
+    expect(at.avisos.some((a) => a.includes("le falta cuadrar 1752.3"))).toBe(true);
+    expect(r.confiable).toBe(false);
+  });
+
+  it("un descuadre de céntimos no molesta", () => {
+    const r = conKelly(0.004);
+    expect(r.confiable).toBe(true);
+  });
+
+  it("mezcla de fuentes: lo dice", () => {
+    const r = calcularLiquidez({
+      todayISO: HOY,
+      sedes: [
+        sede(1, "Atelier", { banco: 14345.74, caja: 200, fecha: "2026-09-08", fuente: "excel-kelly" }, null),
+        sede(2, "Fonavi", { banco: 15594.02, caja: 6427.87, fecha: "2026-09-08", fuente: "dirección" }, null),
+      ],
+    });
+    expect(r.procedencia).toContain("parte del Excel de Kelly, parte registrados por ti");
+  });
+});
