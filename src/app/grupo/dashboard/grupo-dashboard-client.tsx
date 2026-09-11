@@ -13,8 +13,7 @@ import { AtelierB2BCard } from "./atelier-b2b-card";
 import type { AtelierB2BResumen } from "@/app/actions/atelier-b2b";
 import { DataFreshnessCard } from "./data-freshness-card";
 import { BandaFrescura } from "@/components/banda-frescura";
-import { PanelGastoCard } from "./panel-gasto";
-import type { PanelGasto } from "@/app/actions/puedo-gastar";
+import type { LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { KellyImportCard } from "./kelly-import-card";
 import { KellyLoadCard } from "./kelly-load-card";
@@ -55,7 +54,7 @@ type Props = {
   breakeven: GroupBreakeven | null;
   freshness: DataFreshness[];
   frescura: FrescuraGrupo | null;
-  panelGasto: PanelGasto | null;
+  liquidez: LiquidezGrupo | null;
   ventas: GroupVentasSede[] | null;
   kellyLoads: KellyLoadStatus[];
   cutoffs: SedeCutoff[] | null;
@@ -63,7 +62,7 @@ type Props = {
 };
 
 export function GrupoDashboardClient({
-  selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, frescura, panelGasto, ventas, kellyLoads, cutoffs,
+  selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, freshness, frescura, liquidez, ventas, kellyLoads, cutoffs,
   atelierB2B,
 }: Props) {
   const [verDetalle, setVerDetalle] = useState(false);
@@ -91,7 +90,11 @@ export function GrupoDashboardClient({
   const deltaGrupo = cmpPrev > 0 ? Math.round(((cmpCur - cmpPrev) / cmpPrev) * 1000) / 10 : null;
 
   const hero: HeroStats = {
-    liquidez: t.bankBalance,
+    // La liquidez sale de getLiquidezGrupo (única fuente). Si falla, se
+    // cae al total del resumen para no dejar la tarjeta en blanco.
+    liquidez: liquidez ? liquidez.total : t.bankBalance,
+    liquidezProcedencia: liquidez ? liquidez.procedencia : null,
+    liquidezConfiable: liquidez ? liquidez.confiable : false,
     ventasMes: ventasMes > 0 ? ventasMes : t.monthlyIncome,
     ventasDeltaPct: deltaGrupo,
     margen: t.margin,
@@ -186,13 +189,6 @@ export function GrupoDashboardClient({
           operativo" — o sea, no se veía nunca. Jahnn (9-sep-2026): "que
           sea lo primero que me jale la vista". */}
       {frescura && <BandaFrescura frescura={frescura} />}
-
-      {/* "¿Podemos asumir este gasto?" — arriba y siempre visible.
-          El 9-sep-2026 se malogró la refrigeradora de Atelier, Kelly
-          pidió siete cifras por teléfono y Jahnn no las encontró: los
-          datos estaban repartidos en cuatro pantallas y la liquidez no
-          existía. Cuando llega la urgencia no hay tiempo de buscar. */}
-      {panelGasto && <PanelGastoCard inicial={panelGasto} />}
 
       {/* 1 · ¿Cómo estamos?   ·   2 · ¿Qué debo hacer hoy? */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">

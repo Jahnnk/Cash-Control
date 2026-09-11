@@ -15,6 +15,10 @@ import { Sparkline, ProgressBar } from "@/components/ui/Sparkline";
 
 export type HeroStats = {
   liquidez: number;
+  /** De qué está hecho ese número: declarado, estimado, incompleto. */
+  liquidezProcedencia: string | null;
+  /** true = los tres saldos están declarados y frescos. */
+  liquidezConfiable: boolean;
   ventasMes: number;
   ventasDeltaPct: number | null;
   margen: number;
@@ -66,6 +70,14 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
             {formatCurrency(s.liquidez)}
           </div>
           <div className="mt-3 text-sm text-gray-400">Banco + caja de las tres sedes</div>
+          {/* De dónde sale el número. Antes la etiqueta decía "banco +
+              caja" mostrando SOLO el banco, y no había manera de saber
+              que venía arrastrado desde un ancla de hace siete meses. */}
+          {s.liquidezProcedencia && (
+            <div className={`mt-1.5 text-[11px] ${s.liquidezConfiable ? "text-emerald-600" : "text-amber-700"}`}>
+              {s.liquidezConfiable ? "✓ " : "⚠ "}{s.liquidezProcedencia}
+            </div>
+          )}
         </div>
 
         {/* La tendencia, sin ejes ni ruido */}

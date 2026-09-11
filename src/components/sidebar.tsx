@@ -42,7 +42,7 @@ const NAV: NavItem[] = [
   { segment: "direccion",     label: "Sistema de Dirección", icon: Compass,    scopes: ["grupo"] },
   { segment: "highlight",     label: "Highlight",       icon: Target,          scopes: ["grupo"] },
   { segment: "registro",      label: "Registro Diario", icon: PenLine,         scopes: ["atelier", "fonavi", "centro"] },
-  { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro"] },
+  { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },
   { segment: "fonavi",        label: "Por cobrar",      icon: Handshake,       scopes: ["atelier"] },
   { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote,      scopes: ["atelier"] },

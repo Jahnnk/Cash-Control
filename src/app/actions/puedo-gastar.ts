@@ -18,6 +18,7 @@ import { requireFullSession } from "@/lib/session-access";
 import { salesInRange } from "./command-center";
 import { buildFixedVariable } from "@/lib/fixed-variable";
 import { evaluarGasto, type EvaluacionGasto, type SaldoSede } from "@/lib/saldos-sede";
+import { getLiquidezGrupo } from "./liquidez";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -91,54 +92,32 @@ export type PanelGasto = {
   fijoDiarioGrupo: number;
 };
 
+/**
+ * Los saldos que alimentan la evaluación, con su costo fijo diario.
+ *
+ * La liquidez NO se calcula acá: viene de `getLiquidezGrupo`, que es la
+ * única fuente de la app. Este archivo solo le agrega el costo fijo, que
+ * es lo que traduce soles a días de colchón.
+ */
 async function saldosDeSedes(hoy: string): Promise<SaldoSede[]> {
+  const liq = await getLiquidezGrupo();
   const mesPasado = mesAtras(hoy.slice(0, 7), 1);
+  const [y, m] = mesPasado.split("-").map(Number);
+  const diasDelMes = new Date(y, m, 0).getDate();
+
   return Promise.all(
     SEDES.map(async ({ id, nombre }) => {
-      // El saldo declarado más reciente. Si nunca se registró en la tabla
-      // nueva, se cae al último cierre diario (la historia de Atelier).
-      const declarado = (await sql`
-        SELECT fecha::text, banco::float AS banco, caja::float AS caja
-        FROM sede_balances WHERE business_id = ${id} ORDER BY fecha DESC LIMIT 1
-      `) as { fecha: string; banco: number | null; caja: number }[];
-
-      let banco: number | null = null;
-      let caja = 0;
-      let fecha: string | null = null;
-      if (declarado.length > 0) {
-        banco = declarado[0].banco;
-        caja = Number(declarado[0].caja);
-        fecha = declarado[0].fecha;
-      } else {
-        const legado = (await sql`
-          SELECT date::text AS fecha, bank_balance_real::float AS banco
-          FROM daily_records
-          WHERE business_id = ${id} AND bank_balance_real IS NOT NULL AND archived = false
-          ORDER BY date DESC LIMIT 1
-        `) as { fecha: string; banco: number }[];
-        if (legado.length > 0) {
-          banco = legado[0].banco;
-          fecha = legado[0].fecha;
-          const c = (await sql`
-            SELECT (
-              COALESCE((SELECT initial_cash_balance FROM businesses WHERE id = ${id}), 0)
-              + COALESCE((SELECT SUM(amount) FROM bank_income_items
-                  WHERE business_id = ${id} AND payment_method = 'efectivo' AND archived = false AND date <= ${legado[0].fecha}), 0)
-              - COALESCE((SELECT SUM(amount) FROM expenses
-                  WHERE business_id = ${id} AND payment_method = 'efectivo' AND archived = false AND date <= ${legado[0].fecha}), 0)
-            )::float AS c
-          `) as { c: number }[];
-          caja = Number(c[0].c);
-        }
-      }
-
-      // El costo fijo diario sale del último mes CERRADO: el mes en curso
+      const l = liq?.sedes.find((x) => x.businessId === id);
+      // El costo fijo sale del último mes CERRADO: el mes en curso
       // todavía no tiene el alquiler ni la planilla completos.
       const { fijos } = await costosDelMes(id, mesPasado);
-      const [y, m] = mesPasado.split("-").map(Number);
-      const dias = new Date(y, m, 0).getDate();
-
-      return { businessId: id, nombre, banco, caja, fecha, gastoFijoDiario: fijos / dias };
+      return {
+        businessId: id, nombre,
+        banco: l ? l.banco : null,
+        caja: l ? l.caja : 0,
+        fecha: l?.fecha ?? null,
+        gastoFijoDiario: fijos / diasDelMes,
+      };
     }),
   );
 }
