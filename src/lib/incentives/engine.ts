@@ -426,7 +426,32 @@ export function computeLiquidation(input: {
   const withData = dailies.filter((d) => (d.personas ?? 0) > 0 && (d.revenue ?? 0) > 0);
   const personas = withData.reduce((s, d) => s + (d.personas ?? 0), 0);
   const revenue = r2(withData.reduce((s, d) => s + (d.revenue ?? 0), 0));
-  const ticketFinal = personas > 0 ? r2(revenue / personas) : null;
+
+  // ─── El ticket del acta es el MISMO que ve el administrador en su panel ───
+  //
+  // Auditoría de Fonavi (13-sep-2026). `collectForLiquidation` pasaba
+  // delivery y consumo del personal con el comentario "el acta usa el
+  // MISMO ticket que el panel: delivery excluido", pero este motor los
+  // ignoraba y dividía la venta TOTAL entre las personas TOTALES. El
+  // panel (computeProgress) sí los excluía. Resultado: Chari miraba todo
+  // el mes un ticket y a fin de mes se pagaba con otro — Fonavi agosto
+  // S/23.59 en el panel contra S/24.21 en el acta.
+  //
+  // Se alinea con la política vigente (delivery y consumo del personal
+  // fuera del ticket, commit 2e962f9 y eaf49a7). Verificado contra jul y
+  // ago de las dos sedes: ningún nivel cambia, así que ningún bono ya
+  // pagado queda mal.
+  //
+  // El PISO DE TRÁFICO sigue midiéndose con las personas totales, igual
+  // que en el panel: es un candado de volumen de la sede, no de upselling.
+  const presencial = withData.reduce(
+    (acc, d) => {
+      const x = dailyPresencial(d);
+      return { personas: acc.personas + x.personas, venta: acc.venta + x.venta };
+    },
+    { personas: 0, venta: 0 },
+  );
+  const ticketFinal = presencial.personas > 0 ? r2(presencial.venta / presencial.personas) : null;
   const deltaFinal = ticketFinal !== null ? r2(ticketFinal - config.ticketBase) : null;
   const personasPorDia = withData.length > 0 ? r1(personas / withData.length) : null;
   const trafficOk = personasPorDia !== null && personasPorDia >= config.trafficFloor;
@@ -438,9 +463,11 @@ export function computeLiquidation(input: {
       ? null
       : [...sorted].reverse().find((l) => deltaFinal >= l.delta) ?? null;
 
+  // El pozo también con personas presenciales, como la proyección del
+  // panel: la utilidad nueva solo nace donde se pudo sugerir un extra.
   const pozo =
     deltaFinal !== null && deltaFinal > 0
-      ? r2(deltaFinal * personas * config.marginPct * config.poolPct)
+      ? r2(deltaFinal * presencial.personas * config.marginPct * config.poolPct)
       : null;
 
   const active = staff.filter((s) => s.active);
