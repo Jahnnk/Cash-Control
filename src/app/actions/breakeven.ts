@@ -14,7 +14,10 @@
 
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
-import { requireFullSession } from "@/lib/session-access";
+import { requireFullSession, getSessionRole } from "@/lib/session-access";
+import {
+  redondearMeta, tocaCongelar, type EntradaCandadoVentas,
+} from "@/lib/incentives/candado-ventas";
 import { buildFixedVariable } from "@/lib/fixed-variable";
 import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
 import { computeBreakeven, type BreakevenResult, type BreakevenReference } from "@/lib/breakeven";
@@ -335,4 +338,71 @@ export async function getGroupBreakeven(month: string): Promise<
     console.error("[getGroupBreakeven] failed:", err);
     return { ok: false, error: err instanceof Error ? err.message : "Error al calcular el punto de equilibrio del grupo" };
   }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Candado de ventas del bono (desde octubre 2026)
+   ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * La meta de ventas del bono y las ventas del mes a la fecha.
+ *
+ * La meta es el punto de equilibrio de REFERENCIA —el mismo que muestra
+ * la tarjeta de punto de equilibrio: hasta 3 meses cerrados con datos
+ * completos— y vive acá para que el bono y el dashboard no puedan dar dos
+ * números distintos. Se congela el primer lunes del mes (ya llegó el Excel
+ * de Kelly del mes anterior) en `incentive_sales_targets` y no se mueve
+ * después, aunque se re-suban Excels viejos: el equipo conoce su meta
+ * desde el inicio.
+ *
+ * Antes del primer lunes se devuelve PROVISIONAL (no se guarda).
+ *
+ * Solo dirección o el administrador de esa sede. Devuelve null sin
+ * permiso: el motor, sin meta, bloquea el cierre en vez de pagar a ciegas.
+ */
+export async function getEntradaCandadoVentas(
+  bId: number,
+  month: string,
+): Promise<EntradaCandadoVentas | null> {
+  const role = await getSessionRole();
+  const permitido = role?.kind === "full" || (role?.kind === "admin" && role.sede === bId);
+  if (!permitido) return null;
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return null;
+
+  const { start, end } = monthMeta(month);
+  const hoy = todayLima();
+  const ventas = await ventasDelMesConFuente(bId, start, hoy < end ? hoy : end);
+  const base = { ventas: ventas.total, diasConVenta: ventas.dias };
+
+  const congelada = (await sql`
+    SELECT meta::float AS meta, meses_referencia
+    FROM incentive_sales_targets WHERE business_id = ${bId} AND month = ${month}
+  `) as { meta: number; meses_referencia: string[] }[];
+  if (congelada.length > 0) {
+    return { ...base, meta: congelada[0].meta, provisional: false, mesesReferencia: congelada[0].meses_referencia };
+  }
+
+  const ref = await buildReference(bId, month);
+  const exacta = ref && ref.fijos > 0 && ref.varRatio < 1 ? ref.fijos / (1 - ref.varRatio) : null;
+  if (exacta === null) {
+    return { ...base, meta: null, provisional: true, mesesReferencia: ref?.monthsUsed ?? [] };
+  }
+  const meta = redondearMeta(exacta);
+
+  if (tocaCongelar(month, hoy)) {
+    await sql`
+      INSERT INTO incentive_sales_targets (business_id, month, meta, meta_exacta, meses_referencia)
+      VALUES (${bId}, ${month}, ${meta}, ${Math.round(exacta * 100) / 100}, ${ref!.monthsUsed})
+      ON CONFLICT (business_id, month) DO NOTHING
+    `;
+    // Si otro request congeló primero, manda la que quedó guardada.
+    const fila = (await sql`
+      SELECT meta::float AS meta, meses_referencia FROM incentive_sales_targets
+      WHERE business_id = ${bId} AND month = ${month}
+    `) as { meta: number; meses_referencia: string[] }[];
+    if (fila.length > 0) {
+      return { ...base, meta: fila[0].meta, provisional: false, mesesReferencia: fila[0].meses_referencia };
+    }
+  }
+  return { ...base, meta, provisional: true, mesesReferencia: ref!.monthsUsed };
 }

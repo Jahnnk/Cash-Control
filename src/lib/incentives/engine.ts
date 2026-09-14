@@ -10,6 +10,8 @@
  *   del usuario, nunca por conteo bruto.
  */
 
+import { evaluarCandadoVentas, type EntradaCandadoVentas, type EstadoCandadoVentas } from "./candado-ventas";
+
 export type IncentiveLevel = {
   nombre: string;
   delta: number;       // +S/ sobre el ticket base
@@ -22,7 +24,16 @@ export type IncentiveLevel = {
 export type IncentiveConfigT = {
   ticketBase: number;
   marginPct: number;   // 0-1
-  trafficFloor: number; // personas/día mínimas
+  /**
+   * Personas/día mínimas. null = la política ya no tiene piso de tráfico
+   * (desde octubre 2026 lo reemplaza el candado de ventas).
+   */
+  trafficFloor: number | null;
+  /**
+   * true = para cobrar, las ventas del mes deben cubrir el punto de
+   * equilibrio de referencia (candado de ventas, desde octubre 2026).
+   */
+  requiereEquilibrio?: boolean;
   poolPct: number;     // 0-1 (0.40)
   levels: IncentiveLevel[]; // orden ascendente por delta
 };
@@ -208,8 +219,11 @@ export type IncentiveProgress = {
   pozoProyectado: number | null;
   /** Tabla de pago por nivel: suma de bonos y colchón vs pozo. */
   porNivel: { level: IncentiveLevel; sumaBonos: number; pozoNivel: number | null; colchon: number | null }[];
-  /** Piso de tráfico (sin él, la meta no cuenta) — sobre personas TOTALES. */
-  traffic: { personasPorDia: number | null; floor: number; cumple: boolean };
+  /** Piso de tráfico (sin él, la meta no cuenta) — sobre personas TOTALES.
+   * floor null = la política no tiene piso: `cumple` es siempre true. */
+  traffic: { personasPorDia: number | null; floor: number | null; cumple: boolean };
+  /** Candado de ventas del mes. null = la política de ese mes no lo pide. */
+  candadoVentas: EstadoCandadoVentas | null;
   /** Delivery del periodo (informativo — excluido del ticket del
    * programa; mostrador y mesa sí cuentan). null si no se registró. */
   delivery: { pedidos: number; venta: number; ticket: number | null } | null;
@@ -241,6 +255,8 @@ export function computeProgress(
   staff: StaffMember[],
   dailies: DailyEntry[],
   daysInMonth: number,
+  /** Ventas y meta del mes; solo se usa si la config pide el candado. */
+  candadoVentas: EntradaCandadoVentas | null = null,
 ): IncentiveProgress {
   const withData = dailies.filter((d) => (d.personas ?? 0) > 0 && (d.revenue ?? 0) > 0);
   const personas = withData.reduce((s, d) => s + (d.personas ?? 0), 0);
@@ -320,8 +336,10 @@ export function computeProgress(
     traffic: {
       personasPorDia,
       floor: config.trafficFloor,
-      cumple: personasPorDia !== null && personasPorDia >= config.trafficFloor,
+      cumple: config.trafficFloor === null || (personasPorDia !== null && personasPorDia >= config.trafficFloor),
     },
+    candadoVentas:
+      config.requiereEquilibrio && candadoVentas ? evaluarCandadoVentas(candadoVentas, daysInMonth) : null,
     delivery:
       deliveryPedidos > 0
         ? {
@@ -395,6 +413,10 @@ export type LiquidationResult = {
   nivel: IncentiveLevel | null;      // null = sin nivel (o piso incumplido)
   trafficOk: boolean;
   personasPorDia: number | null;
+  /** Piso de tráfico de la política de ese mes. null = no tiene. */
+  trafficFloor: number | null;
+  /** Candado de ventas del mes. null = la política de ese mes no lo pide. */
+  candadoVentas: EstadoCandadoVentas | null;
   /** Pozo REAL del mes: delta × personas reales × margen × pool. */
   pozo: number | null;
   lines: LiquidationLine[];
@@ -417,6 +439,8 @@ export function computeLiquidation(input: {
   observedDays: { date: string; nota: string | null }[];
   /** Mejor vendedor elegido (opcional — Fase B lo automatiza). */
   mejorVendedor: string | null;
+  /** Ventas y meta del mes; obligatorio si la config pide el candado. */
+  candadoVentas?: EntradaCandadoVentas | null;
 }): LiquidationResult {
   const { config, staff, dailies } = input;
   const [y, m] = input.month.split("-").map(Number);
@@ -454,12 +478,24 @@ export function computeLiquidation(input: {
   const ticketFinal = presencial.personas > 0 ? r2(presencial.venta / presencial.personas) : null;
   const deltaFinal = ticketFinal !== null ? r2(ticketFinal - config.ticketBase) : null;
   const personasPorDia = withData.length > 0 ? r1(personas / withData.length) : null;
-  const trafficOk = personasPorDia !== null && personasPorDia >= config.trafficFloor;
+  // Sin piso en la política (desde octubre 2026), el tráfico no bloquea.
+  const trafficOk =
+    config.trafficFloor === null || (personasPorDia !== null && personasPorDia >= config.trafficFloor);
+
+  // ─── Candado de ventas (desde octubre 2026) ───
+  // Todo o nada: si las ventas del mes no cubren el punto de equilibrio
+  // de referencia, no hay bono aunque el ticket haya subido. El bono sale
+  // de la utilidad nueva, y una sede que no cubre sus costos no la tiene.
+  const candadoVentas =
+    config.requiereEquilibrio && input.candadoVentas
+      ? evaluarCandadoVentas(input.candadoVentas, daysInMonth)
+      : null;
+  const ventasOk = !config.requiereEquilibrio || (candadoVentas?.cumple ?? false);
 
   const sorted = [...config.levels].sort((a, b) => a.delta - b.delta);
-  // El piso de tráfico es candado de la POLÍTICA: sin él, la meta no cuenta.
+  // Los candados son de la POLÍTICA: sin ellos, la meta no cuenta.
   const nivel =
-    !trafficOk || deltaFinal === null
+    !trafficOk || !ventasOk || deltaFinal === null
       ? null
       : [...sorted].reverse().find((l) => deltaFinal >= l.delta) ?? null;
 
@@ -517,6 +553,23 @@ export function computeLiquidation(input: {
       `Piso de tráfico incumplido (${personasPorDia} < ${config.trafficFloor} personas/día): por política, la meta NO cuenta — se cierra sin bonos.`,
     );
   }
+  if (config.requiereEquilibrio) {
+    const meta = candadoVentas?.meta ?? null;
+    if (meta === null) {
+      // Nunca se paga a ciegas: sin meta calculable, el mes no se cierra.
+      blockers.push(
+        "No se pudo calcular la meta de ventas (punto de equilibrio de referencia): faltan meses cerrados con ventas y costos. Revisa las cargas de Kelly antes de liquidar.",
+      );
+    } else if (candadoVentas && !candadoVentas.cumple) {
+      warnings.push(
+        `Ventas del mes S/${candadoVentas.ventas.toFixed(2)} no cubren el punto de equilibrio (S/${meta.toFixed(2)}): por política, no hay bono este mes aunque el ticket haya subido.`,
+      );
+    } else if (candadoVentas) {
+      warnings.push(
+        `Candado de ventas cumplido: S/${candadoVentas.ventas.toFixed(2)} vendidos contra un punto de equilibrio de S/${meta.toFixed(2)}.`,
+      );
+    }
+  }
   if (nivel && !input.mejorVendedor) {
     warnings.push("Sin mejor vendedor asignado: el premio no se paga este mes (Fase B lo calculará automático).");
   }
@@ -534,6 +587,8 @@ export function computeLiquidation(input: {
     nivel,
     trafficOk,
     personasPorDia,
+    trafficFloor: config.trafficFloor,
+    candadoVentas,
     pozo,
     lines,
     totalBonos,

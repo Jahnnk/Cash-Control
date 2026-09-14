@@ -257,11 +257,21 @@ function incentivesSlide(pptx: PptxGenJS, sub: string, cafeterias: BoardDeckData
       (inc.proximoNivel ? `   ·   Falta ${fmtS(inc.proximoNivel.faltaSoles)} de ticket para ${inc.proximoNivel.nombre}` : ""),
       { x: x + 0.2, y: BODY_Y + 1.14, w: colW - 0.4, h: 0.3, fontSize: 9.5, color: INK },
     );
-    // Piso de tráfico + pozo
-    s.addText(
-      `Piso de tráfico: ${inc.personasPorDia ?? "—"} pers/día (mín. ${inc.trafficFloor}) ${inc.trafficOk ? "✓ la meta cuenta" : "✗ sin el piso, la meta NO cuenta"}`,
-      { x: x + 0.2, y: BODY_Y + 1.44, w: colW - 0.4, h: 0.3, fontSize: 9.5, bold: !inc.trafficOk, color: inc.trafficOk ? TRAFFIC_HEX.verde : TRAFFIC_HEX.rojo },
-    );
+    // Candado del mes (ventas desde octubre 2026; antes, piso de tráfico) + pozo
+    const cv = inc.candadoVentas;
+    if (cv && cv.meta !== null) {
+      const ok = cv.cumple || cv.enCamino;
+      s.addText(
+        `Meta de ventas${cv.provisional ? " (provisional)" : ""}: ${fmtS(cv.ventas)} de ${fmtS(cv.meta)} · ` +
+          (cv.cumple ? "✓ cubierta" : `al ritmo actual ${fmtS(cv.proyeccion)} ${ok ? "✓" : "✗ sin esta meta no hay bono"}`),
+        { x: x + 0.2, y: BODY_Y + 1.44, w: colW - 0.4, h: 0.3, fontSize: 9.5, bold: !ok, color: ok ? TRAFFIC_HEX.verde : TRAFFIC_HEX.rojo },
+      );
+    } else if (inc.trafficFloor !== null) {
+      s.addText(
+        `Piso de tráfico: ${inc.personasPorDia ?? "—"} pers/día (mín. ${inc.trafficFloor}) ${inc.trafficOk ? "✓ la meta cuenta" : "✗ sin el piso, la meta NO cuenta"}`,
+        { x: x + 0.2, y: BODY_Y + 1.44, w: colW - 0.4, h: 0.3, fontSize: 9.5, bold: !inc.trafficOk, color: inc.trafficOk ? TRAFFIC_HEX.verde : TRAFFIC_HEX.rojo },
+      );
+    }
     s.addText(`Pozo proyectado al cierre: ${fmtS(inc.pozoProyectado)} (techo 40% de la utilidad nueva)`, {
       x: x + 0.2, y: BODY_Y + 1.74, w: colW - 0.4, h: 0.3, fontSize: 9.5, color: GRAY,
     });

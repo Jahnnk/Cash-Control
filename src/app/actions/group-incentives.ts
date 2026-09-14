@@ -17,6 +17,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
+import { getEntradaCandadoVentas } from "./breakeven";
 import { requireFullSession } from "@/lib/session-access";
 import { filasVentasTrabajador } from "@/lib/incentivos/ventas-trabajador-sql";
 import { ventasPorTrabajador, type FilaPeriodo } from "@/lib/incentivos/ventas-trabajador";
@@ -112,11 +113,11 @@ export async function getGroupIncentives(
     for (const [bId, nombre] of [[2, "Fonavi"], [3, "Centro"]] as [number, string][]) {
       // Config vigente del mes (misma consulta que el Panel de Sede).
       const cfgRows = (await sql`
-        SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels
+        SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels, requiere_equilibrio
         FROM incentive_config
         WHERE business_id = ${bId} AND effective_month <= ${month}
         ORDER BY effective_month DESC LIMIT 1
-      `) as { base: number; margin: number; traffic_floor: number; pool: number; levels: LevelRow[] }[];
+      `) as { base: number; margin: number; traffic_floor: number | null; pool: number; levels: LevelRow[]; requiere_equilibrio: boolean }[];
 
       let progress: IncentiveProgress | null = null;
       let ticketBase: number | null = null;
@@ -128,6 +129,7 @@ export async function getGroupIncentives(
           trafficFloor: cfgRows[0].traffic_floor,
           poolPct: cfgRows[0].pool,
           levels: cfgRows[0].levels,
+          requiereEquilibrio: cfgRows[0].requiere_equilibrio === true,
         };
         ticketBase = config.ticketBase;
 
@@ -153,7 +155,10 @@ export async function getGroupIncentives(
             ORDER BY date
           `) as DailyEntry[];
         }
-        progress = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, daysInWindow);
+        // El candado es MENSUAL: con un rango a medida no se evalúa (una meta
+        // de mes contra una semana diría cualquier cosa).
+        const candado = config.requiereEquilibrio && !range ? await getEntradaCandadoVentas(bId, month) : null;
+        progress = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, daysInWindow, candado);
       }
 
       // Mejor vendedor por turno (mismas consultas que el Panel de Sede).

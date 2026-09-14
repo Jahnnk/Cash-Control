@@ -15,9 +15,12 @@ export type SedeShareInput = {
   ticketBase: number;
   nivelAlcanzado: string | null;
   proximoNivel: { nombre: string; faltaSoles: number } | null;
-  trafficFloor: number;
+  /** null = la política del mes no tiene piso de tráfico. */
+  trafficFloor: number | null;
   personasPorDia: number | null;
   trafficCumple: boolean;
+  /** Candado de ventas del mes (desde octubre 2026). null = no aplica. */
+  candadoVentas?: { meta: number | null; ventas: number; proyeccion: number | null; cumple: boolean; enCamino: boolean; provisional: boolean } | null;
   /** Ganador del mejor vendedor (el del desayuno) — null sin ranking. */
   mejorVendedor: string | null;
   /** Fin del periodo del ranking (YYYY-MM-DD) para fechar el podio. */
@@ -40,13 +43,28 @@ export function buildSedeShareLines(s: SedeShareInput): string[] {
   if (s.proximoNivel) {
     lines.push(`• Para ${s.proximoNivel.nombre}: faltan S/${s.proximoNivel.faltaSoles.toFixed(2)} de ticket (¡se puede!)`);
   }
-  lines.push(
-    `• Piso de tráfico (${s.trafficFloor}/día): ${
-      s.trafficCumple
-        ? `✓ cumpliendo (${s.personasPorDia}/día)`
-        : `✗ vamos en ${s.personasPorDia ?? 0}/día — sin el piso, la meta no cuenta`
-    }`,
-  );
+  if (s.trafficFloor !== null) {
+    lines.push(
+      `• Piso de tráfico (${s.trafficFloor}/día): ${
+        s.trafficCumple
+          ? `✓ cumpliendo (${s.personasPorDia}/día)`
+          : `✗ vamos en ${s.personasPorDia ?? 0}/día — sin el piso, la meta no cuenta`
+      }`,
+    );
+  }
+  const cv = s.candadoVentas;
+  if (cv && cv.meta !== null) {
+    const soles = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
+    lines.push(
+      `• Meta de ventas del mes${cv.provisional ? " (provisional)" : ""}: ${soles(cv.meta)} — vamos ${soles(cv.ventas)}${
+        cv.cumple
+          ? " ✓ cubierta"
+          : cv.enCamino
+            ? ` (al ritmo actual cerramos en ${soles(cv.proyeccion ?? 0)} ✓)`
+            : ` (al ritmo actual cerramos en ${soles(cv.proyeccion ?? 0)}: hay que acelerar — sin esta meta no hay bono)`
+      }`,
+    );
+  }
   if (s.mejorVendedor) {
     lines.push(`• ☕ Mejor vendedor (va ganando el desayuno): ${s.mejorVendedor}${s.mvPeriodEnd ? ` (al ${ddmm(s.mvPeriodEnd)})` : ""}`);
   }

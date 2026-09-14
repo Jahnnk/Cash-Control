@@ -58,9 +58,10 @@ function buildShareText(data: GroupIncentives): string {
       ticketBase: s.ticketBase ?? 0,
       nivelAlcanzado: p?.nivelAlcanzado?.nombre ?? null,
       proximoNivel: p?.proximoNivel ? { nombre: p.proximoNivel.level.nombre, faltaSoles: p.proximoNivel.faltaSoles } : null,
-      trafficFloor: p?.traffic.floor ?? 0,
+      trafficFloor: p?.traffic.floor ?? null,
       personasPorDia: p?.traffic.personasPorDia ?? null,
       trafficCumple: p?.traffic.cumple ?? false,
+      candadoVentas: p?.candadoVentas ?? null,
       mejorVendedor: s.mejorVendedor?.ganador ?? null,
       mvPeriodEnd: s.mvPeriodEnd,
     }));
@@ -291,13 +292,23 @@ function SedeCard({ s, isRange }: { s: SedeIncentives; isRange: boolean }) {
                 </div>
               )}
             </div>
-            <div>
-              <div className="text-[11px] uppercase text-gray-500">Piso de tráfico</div>
-              <div className={`text-sm font-bold flex items-center gap-1 ${p.traffic.cumple ? "text-emerald-600" : "text-red-600"}`}>
-                {p.traffic.cumple ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
-                {p.traffic.personasPorDia ?? "—"}/día (mín. {p.traffic.floor})
+            {p.candadoVentas && p.candadoVentas.meta !== null ? (
+              <div>
+                <div className="text-[11px] uppercase text-gray-500">Meta de ventas{p.candadoVentas.provisional ? " (prov.)" : ""}</div>
+                <div className={`text-sm font-bold flex items-center gap-1 ${p.candadoVentas.cumple || p.candadoVentas.enCamino ? "text-emerald-600" : "text-red-600"}`}>
+                  {p.candadoVentas.cumple || p.candadoVentas.enCamino ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                  {formatCurrency(p.candadoVentas.ventas)} de {formatCurrency(p.candadoVentas.meta)}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div>
+                <div className="text-[11px] uppercase text-gray-500">Piso de tráfico</div>
+                <div className={`text-sm font-bold flex items-center gap-1 ${p.traffic.cumple ? "text-emerald-600" : "text-red-600"}`}>
+                  {p.traffic.cumple ? <CheckCircle2 className="w-3.5 h-3.5" /> : <XCircle className="w-3.5 h-3.5" />}
+                  {p.traffic.personasPorDia ?? "—"}/día{p.traffic.floor !== null ? ` (mín. ${p.traffic.floor})` : ""}
+                </div>
+              </div>
+            )}
             {!isRange && (
               <div>
                 <div className="text-[11px] uppercase text-gray-500">Pozo proyectado</div>

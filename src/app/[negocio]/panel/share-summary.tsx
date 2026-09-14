@@ -55,6 +55,7 @@ export function ShareSummary({
       trafficFloor: progress.traffic.floor,
       personasPorDia: progress.traffic.personasPorDia,
       trafficCumple: progress.traffic.cumple,
+      candadoVentas: progress.candadoVentas,
       mejorVendedor: mv.ganador,
       mvPeriodEnd: mv.periodEnd,
     }),

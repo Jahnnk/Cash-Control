@@ -11,6 +11,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
+import { getEntradaCandadoVentas } from "./breakeven";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { refrescarRosterSiHaceFalta } from "./roster-sync";
@@ -106,11 +107,11 @@ export async function getIncentiveDashboard(
 
   try {
     const cfgRows = (await sql`
-      SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels
+      SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels, requiere_equilibrio
       FROM incentive_config
       WHERE business_id = ${bId} AND effective_month <= ${month}
       ORDER BY effective_month DESC LIMIT 1
-    `) as { base: number; margin: number; traffic_floor: number; pool: number; levels: LevelRow[] }[];
+    `) as { base: number; margin: number; traffic_floor: number | null; pool: number; levels: LevelRow[]; requiere_equilibrio: boolean }[];
     if (cfgRows.length === 0) return { ok: false, error: "Sin configuración del programa para esta sede." };
     const cfg = cfgRows[0];
     const config: IncentiveConfigT = {
@@ -119,6 +120,7 @@ export async function getIncentiveDashboard(
       trafficFloor: cfg.traffic_floor,
       poolPct: cfg.pool,
       levels: cfg.levels,
+      requiereEquilibrio: cfg.requiere_equilibrio === true,
     };
 
     const staff = (await sql`
@@ -205,11 +207,14 @@ export async function getIncentiveDashboard(
     const diasQueCuentan = sinDiasPausados(dailies, indice, bId);
     const diasOperativos = diasOperativosDelMes(daysInMonth, month, pausadosMes, bId);
 
+    // Candado de ventas (desde octubre 2026): meta congelada + ventas a la fecha.
+    const candadoVentas = config.requiereEquilibrio ? await getEntradaCandadoVentas(bId, month) : null;
     const progress = computeProgress(
       config,
       staff.map((s) => ({ ...s, active: true })),
       diasQueCuentan,
       diasOperativos,
+      candadoVentas,
     );
     const flags = computeFlags(controlEvents, workerSales);
 
@@ -715,9 +720,9 @@ export async function saveIncentiveBase(input: {
     const rounded = Math.round(base * 100) / 100;
     const done = (await sql`
       INSERT INTO incentive_config
-        (business_id, effective_month, ticket_base, margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller)
+        (business_id, effective_month, ticket_base, margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller, requiere_equilibrio)
       SELECT ${bId}, ${input.effectiveMonth}, ${rounded},
-             margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller
+             margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller, requiere_equilibrio
       FROM incentive_config
       WHERE business_id = ${bId} AND effective_month <= ${input.effectiveMonth}
       ORDER BY effective_month DESC LIMIT 1

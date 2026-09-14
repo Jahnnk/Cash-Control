@@ -39,7 +39,11 @@ export function renderLiquidationPdf(input: {
   const resumen = [
     `Ticket final del mes: ${r.ticketFinal !== null ? fmtSoles(r.ticketFinal) : "—"} (base ${fmtSoles(r.ticketBase)}${r.deltaFinal !== null ? ` · ${r.deltaFinal >= 0 ? "+" : ""}${fmtSoles(r.deltaFinal)}` : ""})`,
     `Personas atendidas: ${r.personas.toLocaleString("es-PE")} · Venta: ${fmtSoles(r.revenue)}`,
-    `Piso de tráfico: ${r.personasPorDia ?? "—"} personas/día — ${r.trafficOk ? "CUMPLIDO ✓" : "INCUMPLIDO (la meta no cuenta)"}`,
+    ...(r.candadoVentas
+      ? [`Meta de ventas (punto de equilibrio): ${r.candadoVentas.meta !== null ? fmtSoles(r.candadoVentas.meta) : "sin meta"} · vendido ${fmtSoles(r.candadoVentas.ventas)} — ${r.candadoVentas.cumple ? "CUMPLIDA ✓" : "NO CUMPLIDA (sin bono este mes)"}`]
+      : r.trafficFloor === null || r.trafficFloor === undefined
+        ? []
+        : [`Piso de tráfico: ${r.personasPorDia ?? "—"} personas/día — ${r.trafficOk ? "CUMPLIDO ✓" : "INCUMPLIDO (la meta no cuenta)"}`]),
     `Nivel alcanzado: ${r.nivel ? `${r.nivel.nombre} (+${fmtSoles(r.nivel.delta)})` : "SIN NIVEL — sin bonos este mes"}`,
     ...(r.pozo !== null ? [`Pozo del mes (techo 40%): ${fmtSoles(r.pozo)} · Total a pagar: ${fmtSoles(r.totalBonos)} · Colchón: ${fmtSoles(Math.round((r.pozo - r.totalBonos) * 100) / 100)}`] : []),
   ];

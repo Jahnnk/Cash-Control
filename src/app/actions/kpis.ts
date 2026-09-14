@@ -12,6 +12,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
+import { getEntradaCandadoVentas } from "./breakeven";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
@@ -176,7 +177,10 @@ export type DeckIncentives = {
   proximoNivel: { nombre: string; faltaSoles: number } | null;
   trafficOk: boolean;
   personasPorDia: number | null;
-  trafficFloor: number;
+  /** null = la política del mes no tiene piso de tráfico. */
+  trafficFloor: number | null;
+  /** Candado de ventas del mes (desde octubre 2026). null = no aplica. */
+  candadoVentas: { meta: number | null; ventas: number; proyeccion: number | null; cumple: boolean; enCamino: boolean; provisional: boolean } | null;
   pozoProyectado: number | null;
   /** Suma de bonos a pagar por nivel (tabla fija del roster activo). */
   niveles: { nombre: string; delta: number; sumaBonos: number }[];
@@ -210,10 +214,10 @@ export type BoardDeckData = {
 async function loadDeckIncentives(bId: number, month: string): Promise<DeckIncentives | null> {
   try {
     const cfgRows = (await sql`
-      SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels
+      SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels, requiere_equilibrio
       FROM incentive_config WHERE business_id = ${bId} AND effective_month <= ${month}
       ORDER BY effective_month DESC LIMIT 1
-    `) as { base: number; margin: number; traffic_floor: number; pool: number; levels: IncentiveConfigT["levels"] }[];
+    `) as { base: number; margin: number; traffic_floor: number | null; pool: number; levels: IncentiveConfigT["levels"]; requiere_equilibrio: boolean }[];
     if (cfgRows.length === 0) return null;
     const config: IncentiveConfigT = {
       ticketBase: cfgRows[0].base,
@@ -221,6 +225,7 @@ async function loadDeckIncentives(bId: number, month: string): Promise<DeckIncen
       trafficFloor: cfgRows[0].traffic_floor,
       poolPct: cfgRows[0].pool,
       levels: cfgRows[0].levels,
+      requiereEquilibrio: cfgRows[0].requiere_equilibrio === true,
     };
     const staff = (await sql`
       SELECT name, jornada, area, horas_semanales::float AS "horasSemanales"
@@ -248,7 +253,8 @@ async function loadDeckIncentives(bId: number, month: string): Promise<DeckIncen
         ORDER BY date
       `) as DeckDaily[];
     }
-    const p = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, daysInMonth);
+    const candado = config.requiereEquilibrio ? await getEntradaCandadoVentas(bId, month) : null;
+    const p = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, daysInMonth, candado);
     return {
       ticketBase: config.ticketBase,
       ticketActual: p.ticketActual,
@@ -258,6 +264,12 @@ async function loadDeckIncentives(bId: number, month: string): Promise<DeckIncen
       trafficOk: p.traffic.cumple,
       personasPorDia: p.traffic.personasPorDia,
       trafficFloor: p.traffic.floor,
+      candadoVentas: p.candadoVentas
+        ? {
+            meta: p.candadoVentas.meta, ventas: p.candadoVentas.ventas, proyeccion: p.candadoVentas.proyeccion,
+            cumple: p.candadoVentas.cumple, enCamino: p.candadoVentas.enCamino, provisional: p.candadoVentas.provisional,
+          }
+        : null,
       pozoProyectado: p.pozoProyectado,
       niveles: p.porNivel.map((n) => ({ nombre: n.level.nombre, delta: n.level.delta, sumaBonos: n.sumaBonos })),
       month,

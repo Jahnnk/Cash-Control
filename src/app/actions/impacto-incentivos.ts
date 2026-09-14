@@ -23,6 +23,8 @@
  */
 
 import { neon } from "@neondatabase/serverless";
+import { getEntradaCandadoVentas } from "./breakeven";
+import { evaluarCandadoVentas } from "@/lib/incentives/candado-ventas";
 import { requireFullSession } from "@/lib/session-access";
 import { buildFixedVariable } from "@/lib/fixed-variable";
 import {
@@ -111,10 +113,10 @@ async function ratioVariable(bId: number, meses: string[]): Promise<number | nul
 async function bonoDelMes(bId: number, month: string): Promise<number> {
   const cfg = (await sql`
     SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor,
-           pool_pct::float AS pool, levels
+           pool_pct::float AS pool, levels, requiere_equilibrio
     FROM incentive_config WHERE business_id = ${bId} AND effective_month <= ${month}
     ORDER BY effective_month DESC LIMIT 1
-  `) as { base: number; margin: number; traffic_floor: number; pool: number; levels: IncentiveLevel[] }[];
+  `) as { base: number; margin: number; traffic_floor: number | null; pool: number; levels: IncentiveLevel[]; requiere_equilibrio: boolean }[];
   if (cfg.length === 0) return 0;
 
   const { mes, dias } = await mesDe(bId, month);
@@ -122,7 +124,13 @@ async function bonoDelMes(bId: number, month: string): Promise<number> {
   const ticket = mes.venta / mes.personas;
   const delta = ticket - cfg[0].base;
   const personasPorDia = mes.personas / dias;
-  if (personasPorDia < cfg[0].traffic_floor) return 0;
+  if (cfg[0].traffic_floor !== null && personasPorDia < cfg[0].traffic_floor) return 0;
+  // Candado de ventas (desde octubre 2026): la misma regla que la liquidación.
+  if (cfg[0].requiere_equilibrio) {
+    const entrada = await getEntradaCandadoVentas(bId, month);
+    const [yy, mm] = month.split("-").map(Number);
+    if (!entrada || !evaluarCandadoVentas(entrada, new Date(yy, mm, 0).getDate()).cumple) return 0;
+  }
 
   const nivel = [...cfg[0].levels]
     .sort((a, b) => a.delta - b.delta)

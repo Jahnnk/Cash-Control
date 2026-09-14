@@ -124,11 +124,25 @@ export function LiquidationModal({
                   <div className="text-[11px] text-gray-500">Nivel oficial</div>
                   <div className={`font-bold ${r.nivel ? "text-emerald-600" : "text-red-600"}`}>{r.nivel?.nombre ?? "Sin nivel"}</div>
                 </div>
-                <div className="bg-gray-50 rounded-lg px-3 py-2">
-                  <div className="text-[11px] text-gray-500">Piso de tráfico</div>
-                  <div className={`font-bold ${r.trafficOk ? "text-emerald-600" : "text-red-600"}`}>{r.trafficOk ? "Cumplido" : "Incumplido"}</div>
-                  <div className="text-[10px] text-gray-400">{r.personasPorDia ?? "—"} personas/día</div>
-                </div>
+                {r.candadoVentas ? (
+                  <div className="bg-gray-50 rounded-lg px-3 py-2">
+                    <div className="text-[11px] text-gray-500">Meta de ventas</div>
+                    <div className={`font-bold ${r.candadoVentas.cumple ? "text-emerald-600" : "text-red-600"}`}>
+                      {r.candadoVentas.meta === null ? "Sin meta" : r.candadoVentas.cumple ? "Cumplida" : "No cumplida"}
+                    </div>
+                    <div className="text-[10px] text-gray-400">
+                      {formatCurrency(r.candadoVentas.ventas)}{r.candadoVentas.meta !== null ? ` de ${formatCurrency(r.candadoVentas.meta)}` : ""}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-gray-50 rounded-lg px-3 py-2">
+                    <div className="text-[11px] text-gray-500">Piso de tráfico</div>
+                    <div className={`font-bold ${r.trafficOk ? "text-emerald-600" : "text-red-600"}`}>
+                      {r.trafficFloor === null ? "No aplica" : r.trafficOk ? "Cumplido" : "Incumplido"}
+                    </div>
+                    <div className="text-[10px] text-gray-400">{r.personasPorDia ?? "—"} personas/día</div>
+                  </div>
+                )}
                 <div className="bg-gray-50 rounded-lg px-3 py-2">
                   <div className="text-[11px] text-gray-500">Total a pagar</div>
                   <div className="font-bold">{formatCurrency(r.totalBonos)}</div>

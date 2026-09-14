@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-explicit-any -- script de auditoría de un solo uso */
 /**
  * EQUIPOS deja de ser gasto fijo: pasa a inversión (fuera del operativo).
  *

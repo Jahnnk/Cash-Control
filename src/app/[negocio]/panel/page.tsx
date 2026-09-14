@@ -310,16 +310,47 @@ function IncentivosPage() {
                 </div>
               )}
             </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500">Piso de tráfico</div>
-              <div className={`text-lg font-bold flex items-center gap-1.5 ${p.traffic.cumple ? "text-emerald-600" : "text-red-600"}`}>
-                {p.traffic.cumple ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                {p.traffic.personasPorDia ?? "—"} personas/día
+            {p.candadoVentas ? (
+              // Desde octubre 2026 el piso de tráfico se reemplaza por el
+              // candado de ventas: sin cubrir el punto de equilibrio, no hay bono.
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <div className="text-[11px] uppercase text-gray-500">
+                  Meta de ventas{p.candadoVentas.provisional ? " (provisional)" : ""}
+                </div>
+                {p.candadoVentas.meta === null ? (
+                  <div className="text-[11px] text-amber-700 mt-1">
+                    Aún no se puede calcular: faltan meses cerrados con ventas y costos.
+                  </div>
+                ) : (
+                  <>
+                    <div className={`text-lg font-bold flex items-center gap-1.5 ${p.candadoVentas.cumple || p.candadoVentas.enCamino ? "text-emerald-600" : "text-red-600"}`}>
+                      {p.candadoVentas.cumple || p.candadoVentas.enCamino ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                      {formatCurrency(p.candadoVentas.ventas)} de {formatCurrency(p.candadoVentas.meta)}
+                    </div>
+                    <div className="text-[11px] text-gray-500">
+                      {p.candadoVentas.cumple
+                        ? "Cubierta: la sede ya cubrió sus costos del mes"
+                        : p.candadoVentas.proyeccion !== null
+                          ? `Al ritmo actual cerramos en ${formatCurrency(p.candadoVentas.proyeccion)}${p.candadoVentas.enCamino ? "" : " — sin esta meta no hay bono"}`
+                          : "Sin días de venta todavía"}
+                    </div>
+                  </>
+                )}
               </div>
-              <div className="text-[11px] text-gray-500">
-                Mínimo {p.traffic.floor}/día — {p.traffic.cumple ? "cumple: la meta cuenta" : "sin el piso, la meta NO cuenta"}
+            ) : (
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <div className="text-[11px] uppercase text-gray-500">Piso de tráfico</div>
+                <div className={`text-lg font-bold flex items-center gap-1.5 ${p.traffic.cumple ? "text-emerald-600" : "text-red-600"}`}>
+                  {p.traffic.cumple ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                  {p.traffic.personasPorDia ?? "—"} personas/día
+                </div>
+                <div className="text-[11px] text-gray-500">
+                  {p.traffic.floor === null
+                    ? "Sin piso de tráfico este mes"
+                    : `Mínimo ${p.traffic.floor}/día — ${p.traffic.cumple ? "cumple: la meta cuenta" : "sin el piso, la meta NO cuenta"}`}
+                </div>
               </div>
-            </div>
+            )}
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="text-[11px] uppercase text-gray-500">Items por persona</div>
               <div className="text-2xl font-black text-gray-900">{p.itemsPorPersona ?? "—"}</div>
