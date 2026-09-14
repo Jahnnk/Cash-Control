@@ -9,7 +9,7 @@ import { describe, it, expect } from "vitest";
 import { evaluarCandadoVentas, primerLunesDelMes, tocaCongelar, redondearMeta, type EntradaCandadoVentas } from "../candado-ventas";
 
 const e = (o: Partial<EntradaCandadoVentas>): EntradaCandadoVentas => ({
-  meta: 31600, provisional: false, mesesReferencia: ["2026-06", "2026-07", "2026-08"],
+  meta: 31600, provisional: false, vinculante: true, mesesReferencia: ["2026-06", "2026-07", "2026-08"],
   ventas: 15166, diasConVenta: 12, ...o,
 });
 

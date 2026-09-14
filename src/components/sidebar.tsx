@@ -24,6 +24,7 @@ import {
   Medal,
   Compass,
   Target,
+  ClipboardCheck,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -41,6 +42,7 @@ const NAV: NavItem[] = [
   { segment: "dashboard",     label: "Dashboard",       icon: LayoutDashboard, scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "direccion",     label: "Sistema de Dirección", icon: Compass,    scopes: ["grupo"] },
   { segment: "highlight",     label: "Highlight",       icon: Target,          scopes: ["grupo"] },
+  { segment: "supervisiones", label: "Supervisiones",   icon: ClipboardCheck,  scopes: ["grupo"] },
   { segment: "registro",      label: "Registro Diario", icon: PenLine,         scopes: ["atelier", "fonavi", "centro"] },
   { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },
@@ -105,13 +107,17 @@ export function Sidebar() {
   const scope = scopeFromPathname(pathname);
   const isScopedAdmin = scopeHint?.startsWith("admin-") ?? false;
   const isScopedVerif = scopeHint?.startsWith("verif-") ?? false;
+  // Juani: el middleware solo le abre Highlight y Supervisiones.
+  const isScopedHighlight = scopeHint === "highlight";
   // useMemo SIEMPRE se llama en el mismo orden — no condicional.
   const items = useMemo(() => {
     if (!scope) return [];
     const base = NAV.filter((item) => item.scopes.includes(scope));
     // Admin de sede: solo su Panel — el resto del menú lo rebotaría.
-    return isScopedAdmin ? base.filter((i) => i.segment === "panel") : base;
-  }, [scope, isScopedAdmin]);
+    if (isScopedAdmin) return base.filter((i) => i.segment === "panel");
+    if (isScopedHighlight) return base.filter((i) => i.segment === "highlight" || i.segment === "supervisiones");
+    return base;
+  }, [scope, isScopedAdmin, isScopedHighlight]);
 
   // Verificador: su única pantalla (/[sede]/verificacion) no está en el
   // menú — un sidebar vacío solo estorba en el celular.

@@ -12,6 +12,8 @@
 
 import { neon } from "@neondatabase/serverless";
 import { getEntradaCandadoVentas } from "./breakeven";
+import { getEntradaSupervision } from "./supervisiones";
+import { evaluarCandadoVentas, type EstadoCandadoVentas } from "@/lib/incentives/candado-ventas";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { refrescarRosterSiHaceFalta } from "./roster-sync";
@@ -83,6 +85,13 @@ export type IncentiveDashboard = {
   /** Segunda firma del conteo por día (verificador de mando medio). */
   verifications: Record<string, { status: "confirmado" | "observado"; nota: string | null }>;
   progress: IncentiveProgress;
+  /**
+   * Punto de equilibrio del mes contra lo vendido a la fecha, SIEMPRE
+   * (no solo cuando es requisito del bono): el administrador ve cómo va
+   * su sede con lo que registra cada día. `vinculante` dice si ese mes
+   * cuenta para el bono. null = no se pudo calcular.
+   */
+  equilibrio: EstadoCandadoVentas | null;
   flags: (ControlFlag & { resolution: FlagResolution | null })[];
   workers: { nombre: string; mesas: number; total: number; ticketMesa: number | null; periodEnd: string | null }[];
   eventCounts: { anulaciones: number; cortesias: number; cambiosPrecio: number };
@@ -107,11 +116,12 @@ export async function getIncentiveDashboard(
 
   try {
     const cfgRows = (await sql`
-      SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels, requiere_equilibrio
+      SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels,
+             requiere_equilibrio, requiere_supervision
       FROM incentive_config
       WHERE business_id = ${bId} AND effective_month <= ${month}
       ORDER BY effective_month DESC LIMIT 1
-    `) as { base: number; margin: number; traffic_floor: number | null; pool: number; levels: LevelRow[]; requiere_equilibrio: boolean }[];
+    `) as { base: number; margin: number; traffic_floor: number | null; pool: number; levels: LevelRow[]; requiere_equilibrio: boolean; requiere_supervision: boolean }[];
     if (cfgRows.length === 0) return { ok: false, error: "Sin configuración del programa para esta sede." };
     const cfg = cfgRows[0];
     const config: IncentiveConfigT = {
@@ -121,6 +131,7 @@ export async function getIncentiveDashboard(
       poolPct: cfg.pool,
       levels: cfg.levels,
       requiereEquilibrio: cfg.requiere_equilibrio === true,
+      requiereSupervision: cfg.requiere_supervision === true,
     };
 
     const staff = (await sql`
@@ -207,15 +218,23 @@ export async function getIncentiveDashboard(
     const diasQueCuentan = sinDiasPausados(dailies, indice, bId);
     const diasOperativos = diasOperativosDelMes(daysInMonth, month, pausadosMes, bId);
 
-    // Candado de ventas (desde octubre 2026): meta congelada + ventas a la fecha.
-    const candadoVentas = config.requiereEquilibrio ? await getEntradaCandadoVentas(bId, month) : null;
+    // Punto de equilibrio: se lee siempre, para que el administrador vea
+    // cómo va su sede. El motor solo lo usa como candado del bono en los
+    // meses cuya política lo pide (desde octubre 2026).
+    const [candadoVentas, supervision] = await Promise.all([
+      getEntradaCandadoVentas(bId, month),
+      config.requiereSupervision ? getEntradaSupervision(bId, month) : Promise.resolve(null),
+    ]);
     const progress = computeProgress(
       config,
       staff.map((s) => ({ ...s, active: true })),
       diasQueCuentan,
       diasOperativos,
       candadoVentas,
+      supervision,
     );
+    const equilibrio =
+      progress.candadoVentas ?? (candadoVentas ? evaluarCandadoVentas(candadoVentas, diasOperativos) : null);
     const flags = computeFlags(controlEvents, workerSales);
 
     // Segunda firma: estado por día + banderas de días observados o sin
@@ -290,6 +309,7 @@ export async function getIncentiveDashboard(
           cambiosPrecio: events.filter((e) => e.kind === "cambio_precio").length,
         },
         isAdminSession: access.isAdmin,
+        equilibrio,
       },
     };
   } catch (err) {
@@ -720,9 +740,9 @@ export async function saveIncentiveBase(input: {
     const rounded = Math.round(base * 100) / 100;
     const done = (await sql`
       INSERT INTO incentive_config
-        (business_id, effective_month, ticket_base, margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller, requiere_equilibrio)
+        (business_id, effective_month, ticket_base, margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller, requiere_equilibrio, requiere_supervision)
       SELECT ${bId}, ${input.effectiveMonth}, ${rounded},
-             margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller, requiere_equilibrio
+             margin_pct, traffic_floor, pool_pct, levels, min_clients_best_seller, requiere_equilibrio, requiere_supervision
       FROM incentive_config
       WHERE business_id = ${bId} AND effective_month <= ${input.effectiveMonth}
       ORDER BY effective_month DESC LIMIT 1

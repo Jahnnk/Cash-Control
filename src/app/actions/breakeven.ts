@@ -461,8 +461,28 @@ export async function getEntradaCandadoVentas(
 
   const { start, end } = monthMeta(month);
   const hoy = todayLima();
-  const ventas = await ventasDelMesConFuente(bId, start, hoy < end ? hoy : end);
-  const base = { ventas: ventas.total, diasConVenta: ventas.dias };
+  const [ventas, politica] = await Promise.all([
+    ventasDelMesConFuente(bId, start, hoy < end ? hoy : end),
+    sql`
+      SELECT requiere_equilibrio FROM incentive_config
+      WHERE business_id = ${bId} AND effective_month <= ${month}
+      ORDER BY effective_month DESC LIMIT 1
+    `,
+  ]);
+  const vinculante = (politica as { requiere_equilibrio: boolean }[])[0]?.requiere_equilibrio === true;
+  const base = { ventas: ventas.total, diasConVenta: ventas.dias, vinculante };
+
+  // Un mes en que la meta NO es requisito se muestra con el cálculo del
+  // día y nunca se congela: congelar solo tiene sentido cuando hay un
+  // bono que depende de ella.
+  if (!vinculante) {
+    const ref = await buildReference(bId, month);
+    const exacta = ref && ref.fijos > 0 && ref.varRatio < 1 ? ref.fijos / (1 - ref.varRatio) : null;
+    return {
+      ...base, meta: exacta === null ? null : redondearMeta(exacta),
+      provisional: false, mesesReferencia: ref?.monthsUsed ?? [],
+    };
+  }
 
   const congelada = (await sql`
     SELECT meta::float AS meta, meses_referencia

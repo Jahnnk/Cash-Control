@@ -32,6 +32,9 @@ import { ProponerHighlight } from "./proponer-highlight";
 import { MiRutina } from "./mi-rutina";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
+import { EquilibrioCard } from "./equilibrio-card";
+import { SupervisionesCard } from "./supervisiones-card";
+import { ETIQUETA_ESTADO_MES } from "@/lib/supervisiones";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -310,32 +313,29 @@ function IncentivosPage() {
                 </div>
               )}
             </div>
-            {p.candadoVentas ? (
-              // Desde octubre 2026 el piso de tráfico se reemplaza por el
-              // candado de ventas: sin cubrir el punto de equilibrio, no hay bono.
+            {p.traffic.floor === null ? (
+              // Desde octubre 2026 el piso de tráfico ya no existe: el bono
+              // pide tres cosas a la vez, y se ven juntas para que nadie
+              // crea que con el ticket basta.
               <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="text-[11px] uppercase text-gray-500">
-                  Meta de ventas{p.candadoVentas.provisional ? " (provisional)" : ""}
-                </div>
-                {p.candadoVentas.meta === null ? (
-                  <div className="text-[11px] text-amber-700 mt-1">
-                    Aún no se puede calcular: faltan meses cerrados con ventas y costos.
-                  </div>
-                ) : (
-                  <>
-                    <div className={`text-lg font-bold flex items-center gap-1.5 ${p.candadoVentas.cumple || p.candadoVentas.enCamino ? "text-emerald-600" : "text-red-600"}`}>
-                      {p.candadoVentas.cumple || p.candadoVentas.enCamino ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                      {formatCurrency(p.candadoVentas.ventas)} de {formatCurrency(p.candadoVentas.meta)}
-                    </div>
-                    <div className="text-[11px] text-gray-500">
-                      {p.candadoVentas.cumple
-                        ? "Cubierta: la sede ya cubrió sus costos del mes"
-                        : p.candadoVentas.proyeccion !== null
-                          ? `Al ritmo actual cerramos en ${formatCurrency(p.candadoVentas.proyeccion)}${p.candadoVentas.enCamino ? "" : " — sin esta meta no hay bono"}`
-                          : "Sin días de venta todavía"}
-                    </div>
-                  </>
-                )}
+                <div className="text-[11px] uppercase text-gray-500 mb-1.5">Requisitos del bono (los 3)</div>
+                <ul className="space-y-1 text-xs">
+                  {([
+                    ["Ticket", p.nivelAlcanzado ? "ok" : "no", p.nivelAlcanzado ? p.nivelAlcanzado.nombre : "Aún sin nivel"],
+                    ["Ventas", !p.candadoVentas || p.candadoVentas.meta === null ? "na" : p.candadoVentas.cumple ? "ok" : p.candadoVentas.enCamino ? "camino" : "no",
+                      !p.candadoVentas || p.candadoVentas.meta === null ? "Sin meta" : p.candadoVentas.cumple ? "Cubiertas" : p.candadoVentas.enCamino ? "En camino" : "No alcanza"],
+                    ["Supervisiones", !p.supervision ? "na" : p.supervision.cumple ? "ok" : p.supervision.estado === "pendiente" ? "camino" : "no",
+                      p.supervision ? ETIQUETA_ESTADO_MES[p.supervision.estado] : "—"],
+                  ] as const).map(([nombre, estado, texto]) => (
+                    <li key={nombre} className="flex items-center justify-between gap-2">
+                      <span className="text-gray-600">{nombre}</span>
+                      <span className={`flex items-center gap-1 font-medium ${estado === "ok" ? "text-emerald-600" : estado === "camino" ? "text-amber-600" : estado === "no" ? "text-red-600" : "text-gray-400"}`}>
+                        {estado === "ok" ? <CheckCircle2 className="w-3.5 h-3.5" /> : estado === "no" ? <XCircle className="w-3.5 h-3.5" /> : null}
+                        {texto}
+                      </span>
+                    </li>
+                  ))}
+                </ul>
               </div>
             ) : (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
@@ -357,6 +357,11 @@ function IncentivosPage() {
               <div className="text-[11px] text-gray-500">El upselling real sube ticket E items</div>
             </div>
           </div>
+
+          {/* 1b · ¿Cubrimos los costos del mes? y las supervisiones de Juani:
+              los otros dos requisitos del bono, pegados al del ticket. */}
+          <EquilibrioCard e={data.equilibrio} month={month} />
+          <SupervisionesCard month={month} onCambio={() => void load(month)} />
 
           {/* 2 · Tabla de niveles y pozo */}
           <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

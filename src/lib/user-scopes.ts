@@ -8,9 +8,10 @@ export const USER_SCOPES = [
   "admin-centro",
   "verif-fonavi",
   "verif-centro",
-  // Dirección compartida SOLO para el Highlight: asigna y supervisa las
-  // tres sedes, sin ver nada financiero. Es de Juani (socia), que
-  // supervisa los locales una o dos veces por semana.
+  // Dirección compartida del Highlight y las supervisiones: asigna el
+  // Highlight de las tres sedes y registra las visitas de supervisión,
+  // sin ver nada financiero. Es de Juani (socia), que supervisa los
+  // locales una o dos veces por semana.
   "highlight",
 ] as const;
 
@@ -27,5 +28,5 @@ export const SCOPE_LABELS: Record<UserScope, string> = {
   "admin-centro": "Administración · Panel de Centro",
   "verif-fonavi": "Verificador de conteo · Fonavi",
   "verif-centro": "Verificador de conteo · Centro",
-  highlight: "Highlight · asigna a las 3 sedes (sin acceso financiero)",
+  highlight: "Highlight y supervisiones · 3 sedes (sin acceso financiero)",
 };

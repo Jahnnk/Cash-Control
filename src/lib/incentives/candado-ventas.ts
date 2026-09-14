@@ -34,6 +34,12 @@ export type EntradaCandadoVentas = {
   meta: number | null;
   /** true = todavía no llega el primer lunes: la meta puede ajustarse. */
   provisional: boolean;
+  /**
+   * true = ese mes la meta ES requisito del bono (y se congela).
+   * false = solo informativa: el administrador ve cómo va su sede contra
+   * el punto de equilibrio, pero el bono no depende de eso ese mes.
+   */
+  vinculante: boolean;
   /** Meses cerrados que alimentan la meta (auditoría). */
   mesesReferencia: string[];
   /** Ventas del mes a la fecha (misma fuente que el punto de equilibrio). */

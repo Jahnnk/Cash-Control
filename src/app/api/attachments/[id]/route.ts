@@ -3,6 +3,7 @@ import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
 import { getPrivateBlobStream } from "@/lib/blob-storage";
 import { puedeSobreHighlight, TIPOS_FOTO_HIGHLIGHT } from "@/lib/highlight-access";
+import { sesionPuede, TIPOS_FOTO_SUPERVISION } from "@/lib/supervision-access";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -17,7 +18,7 @@ export const runtime = "nodejs";
  * MOSTRAR la imagen con URL firmada (<img>) pero no LEERLA con fetch
  * para incrustarla en un PDF. Vía este proxy es same-origin y funciona.
  *
- * EXCEPCIÓN — fotos del Highlight: su permiso se resuelve por ROL y por
+ * EXCEPCIÓN — fotos del Highlight y de las supervisiones: su permiso se resuelve por ROL y por
  * la sede del propio Highlight, no por la cookie de sede activa. Desde
  * /grupo/highlight Jahnn ve las tres sedes a la vez, y la cookie apunta
  * a una sola: filtrar por ella le escondería las fotos de las otras dos.
@@ -44,6 +45,13 @@ export async function GET(
 
   if (TIPOS_FOTO_HIGHLIGHT.includes(rows[0].record_type as never)) {
     if (!(await puedeSobreHighlight(rows[0].business_id, "ver"))) {
+      return NextResponse.json({ error: "Sin acceso a esta foto" }, { status: 403 });
+    }
+  } else if (TIPOS_FOTO_SUPERVISION.includes(rows[0].record_type as never)) {
+    // Fotos de supervisión: mismo criterio que el Highlight — Juani ve las
+    // dos sedes desde /grupo, así que el permiso va por rol y por la sede
+    // de la observación, no por la cookie.
+    if (!(await sesionPuede(rows[0].business_id, "ver")).ok) {
       return NextResponse.json({ error: "Sin acceso a esta foto" }, { status: 403 });
     }
   } else {

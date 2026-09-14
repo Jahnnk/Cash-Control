@@ -9,6 +9,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { getEntradaCandadoVentas } from "./breakeven";
+import { getEntradaSupervision } from "./supervisiones";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
@@ -33,10 +34,11 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   await refrescarRosterSiHaceFalta(bId);
 
   const cfgRows = (await sql`
-    SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels, requiere_equilibrio
+    SELECT ticket_base::float AS base, margin_pct::float AS margin, traffic_floor, pool_pct::float AS pool, levels,
+           requiere_equilibrio, requiere_supervision
     FROM incentive_config WHERE business_id = ${bId} AND effective_month <= ${month}
     ORDER BY effective_month DESC LIMIT 1
-  `) as { base: number; margin: number; traffic_floor: number | null; pool: number; levels: LevelRow[]; requiere_equilibrio: boolean }[];
+  `) as { base: number; margin: number; traffic_floor: number | null; pool: number; levels: LevelRow[]; requiere_equilibrio: boolean; requiere_supervision: boolean }[];
   if (cfgRows.length === 0) throw new Error("Sin configuración del programa para esta sede.");
   const config: IncentiveConfigT = {
     ticketBase: cfgRows[0].base,
@@ -45,6 +47,7 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
     poolPct: cfgRows[0].pool,
     levels: cfgRows[0].levels,
     requiereEquilibrio: cfgRows[0].requiere_equilibrio === true,
+    requiereSupervision: cfgRows[0].requiere_supervision === true,
   };
 
   // Las horas TRABAJADAS del mes se refrescan desde Planilla antes de
@@ -103,8 +106,11 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   // Candado de ventas (desde octubre 2026): la meta congelada del mes y
   // lo vendido. Sin meta, el motor bloquea el cierre: nunca paga a ciegas.
   const candadoVentas = config.requiereEquilibrio ? await getEntradaCandadoVentas(bId, month) : null;
+  // Supervisiones de Juani (desde octubre 2026): sin poder leerlas, el
+  // motor bloquea el cierre.
+  const supervision = config.requiereSupervision ? await getEntradaSupervision(bId, month) : null;
   const r = computeLiquidation({
-    month, todayISO, config, candadoVentas,
+    month, todayISO, config, candadoVentas, supervision,
     staff: resuelto.staff,
     dailies, unverifiedDays, observedDays, mejorVendedor,
   });

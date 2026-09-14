@@ -43,12 +43,14 @@ const PUBLIC_API_PREFIXES = ["/api/keep-alive"];
  * Cada una revalida permisos por su cuenta y no se confía en esta lista
  * como control de acceso:
  *   · /api/highlight-photos  → puedeSobreHighlight(sede del Highlight)
- *   · /api/attachments/[id]  → por rol si es foto de Highlight; por
+ *   · /api/supervision-photos → sesionPuede(sede de la observación)
+ *   · /api/attachments/[id]  → por rol si es foto de Highlight o de
+ *                              supervisión; por
  *                              negocio activo si es constancia de pago
  *                              (y la sede activa la inyecta este mismo
  *                              middleware, así que queda acotado).
  */
-const API_CON_ALCANCE = ["/api/highlight-photos", "/api/attachments"];
+const API_CON_ALCANCE = ["/api/highlight-photos", "/api/supervision-photos", "/api/attachments"];
 
 function esApiConAlcance(pathname: string): boolean {
   return API_CON_ALCANCE.some((p) => pathname === p || pathname.startsWith(p + "/"));
@@ -133,16 +135,16 @@ export async function middleware(request: NextRequest) {
       if (!scopedScope) {
         return NextResponse.redirect(new URL("/login", request.url));
       }
-      // Dirección del Highlight (Juani): no tiene sede propia, cubre las
-      // tres. Se le abre SOLO /grupo/highlight — nada de finanzas,
-      // saldos, reportes ni paneles de sede. El candado es acá, a nivel
-      // de servidor, así que también cubre los POST de las actions.
+      // Dirección del Highlight y las supervisiones (Juani): no tiene
+      // sede propia, cubre las tres. Se le abre SOLO /grupo/highlight y
+      // /grupo/supervisiones — nada de finanzas, saldos, reportes ni
+      // paneles de sede. El candado es acá, a nivel de servidor, así que
+      // también cubre los POST de las actions.
       if (scopedScope === "highlight") {
         const permitido = "/grupo/highlight";
         const ok =
-          pathname === permitido ||
-          pathname.startsWith(permitido + "/") ||
-          esApiConAlcance(pathname); // subir/ver las fotos de indicación
+          [permitido, "/grupo/supervisiones"].some((p) => pathname === p || pathname.startsWith(p + "/")) ||
+          esApiConAlcance(pathname); // subir/ver las fotos de indicación y de supervisión
         if (!ok) return NextResponse.redirect(new URL(permitido, request.url));
         return NextResponse.next();
       }

@@ -21,7 +21,7 @@ import { join } from "node:path";
 const SRC = readFileSync(join(process.cwd(), "src/middleware.ts"), "utf8");
 
 /** Réplica de la función del middleware, para probar el comportamiento. */
-const API_CON_ALCANCE = ["/api/highlight-photos", "/api/attachments"];
+const API_CON_ALCANCE = ["/api/highlight-photos", "/api/supervision-photos", "/api/attachments"];
 const esApiConAlcance = (p: string) =>
   API_CON_ALCANCE.some((x) => p === x || p.startsWith(x + "/"));
 
@@ -29,6 +29,7 @@ describe("el middleware deja pasar las APIs de fotos", () => {
   it("la lista blanca existe en el código (no se borró)", () => {
     expect(SRC).toContain("API_CON_ALCANCE");
     expect(SRC).toContain("/api/highlight-photos");
+    expect(SRC).toContain("/api/supervision-photos");
     expect(SRC).toContain("/api/attachments");
     // Se usa en las DOS ramas: sede (admin/verif) y dirección del Highlight.
     expect(SRC.match(/esApiConAlcance\(pathname\)/g)?.length).toBeGreaterThanOrEqual(2);

@@ -24,7 +24,7 @@ const dias = (mes: string): DailyEntry[] =>
   Array.from({ length: 31 }, (_, i) => ({ date: `${mes}-${String(i + 1).padStart(2, "0")}`, personas: 40, revenue: 960, items: 100 }) as DailyEntry);
 
 const candado = (o: Partial<EntradaCandadoVentas>): EntradaCandadoVentas => ({
-  meta: 29000, provisional: false, mesesReferencia: ["2026-07", "2026-08", "2026-09"], ventas: 29760, diasConVenta: 31, ...o,
+  meta: 29000, provisional: false, vinculante: true, mesesReferencia: ["2026-07", "2026-08", "2026-09"], ventas: 29760, diasConVenta: 31, ...o,
 });
 
 const liquidar = (config: IncentiveConfigT, mes: string, cv: EntradaCandadoVentas | null) =>

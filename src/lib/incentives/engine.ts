@@ -11,6 +11,7 @@
  */
 
 import { evaluarCandadoVentas, type EntradaCandadoVentas, type EstadoCandadoVentas } from "./candado-ventas";
+import { resumirSupervisionMes, type EntradaSupervision, type ResumenSupervisionMes } from "../supervisiones";
 
 export type IncentiveLevel = {
   nombre: string;
@@ -34,6 +35,12 @@ export type IncentiveConfigT = {
    * equilibrio de referencia (candado de ventas, desde octubre 2026).
    */
   requiereEquilibrio?: boolean;
+  /**
+   * true = para cobrar, todas las observaciones CRÍTICAS de las
+   * supervisiones de Juani del mes se corrigieron a tiempo (desde octubre
+   * 2026). Ver src/lib/supervisiones.ts.
+   */
+  requiereSupervision?: boolean;
   poolPct: number;     // 0-1 (0.40)
   levels: IncentiveLevel[]; // orden ascendente por delta
 };
@@ -224,6 +231,8 @@ export type IncentiveProgress = {
   traffic: { personasPorDia: number | null; floor: number | null; cumple: boolean };
   /** Candado de ventas del mes. null = la política de ese mes no lo pide. */
   candadoVentas: EstadoCandadoVentas | null;
+  /** Supervisiones del mes. null = la política de ese mes no las pide. */
+  supervision: ResumenSupervisionMes | null;
   /** Delivery del periodo (informativo — excluido del ticket del
    * programa; mostrador y mesa sí cuentan). null si no se registró. */
   delivery: { pedidos: number; venta: number; ticket: number | null } | null;
@@ -257,6 +266,8 @@ export function computeProgress(
   daysInMonth: number,
   /** Ventas y meta del mes; solo se usa si la config pide el candado. */
   candadoVentas: EntradaCandadoVentas | null = null,
+  /** Visitas y observaciones del mes; solo se usa si la config pide supervisiones. */
+  supervision: EntradaSupervision | null = null,
 ): IncentiveProgress {
   const withData = dailies.filter((d) => (d.personas ?? 0) > 0 && (d.revenue ?? 0) > 0);
   const personas = withData.reduce((s, d) => s + (d.personas ?? 0), 0);
@@ -340,6 +351,10 @@ export function computeProgress(
     },
     candadoVentas:
       config.requiereEquilibrio && candadoVentas ? evaluarCandadoVentas(candadoVentas, daysInMonth) : null,
+    supervision:
+      config.requiereSupervision && supervision
+        ? resumirSupervisionMes(supervision.visitas, supervision.observaciones, supervision.ahoraISO)
+        : null,
     delivery:
       deliveryPedidos > 0
         ? {
@@ -417,6 +432,11 @@ export type LiquidationResult = {
   trafficFloor: number | null;
   /** Candado de ventas del mes. null = la política de ese mes no lo pide. */
   candadoVentas: EstadoCandadoVentas | null;
+  /**
+   * Supervisiones del mes. null = la política de ese mes no las pide.
+   * Opcional porque las actas cerradas antes de octubre 2026 no lo tienen.
+   */
+  supervision?: ResumenSupervisionMes | null;
   /** Pozo REAL del mes: delta × personas reales × margen × pool. */
   pozo: number | null;
   lines: LiquidationLine[];
@@ -441,6 +461,8 @@ export function computeLiquidation(input: {
   mejorVendedor: string | null;
   /** Ventas y meta del mes; obligatorio si la config pide el candado. */
   candadoVentas?: EntradaCandadoVentas | null;
+  /** Visitas y observaciones del mes; obligatorio si la config pide supervisiones. */
+  supervision?: EntradaSupervision | null;
 }): LiquidationResult {
   const { config, staff, dailies } = input;
   const [y, m] = input.month.split("-").map(Number);
@@ -492,10 +514,19 @@ export function computeLiquidation(input: {
       : null;
   const ventasOk = !config.requiereEquilibrio || (candadoVentas?.cumple ?? false);
 
+  // ─── Supervisiones de Juani (desde octubre 2026) ───
+  // Todo o nada, como las ventas: una observación crítica que no se
+  // corrigió a tiempo deja el mes sin bono. Un mes sin visitas cumple.
+  const supervision =
+    config.requiereSupervision && input.supervision
+      ? resumirSupervisionMes(input.supervision.visitas, input.supervision.observaciones, input.supervision.ahoraISO)
+      : null;
+  const supervisionOk = !config.requiereSupervision || (supervision?.cumple ?? false);
+
   const sorted = [...config.levels].sort((a, b) => a.delta - b.delta);
   // Los candados son de la POLÍTICA: sin ellos, la meta no cuenta.
   const nivel =
-    !trafficOk || !ventasOk || deltaFinal === null
+    !trafficOk || !ventasOk || !supervisionOk || deltaFinal === null
       ? null
       : [...sorted].reverse().find((l) => deltaFinal >= l.delta) ?? null;
 
@@ -570,6 +601,26 @@ export function computeLiquidation(input: {
       );
     }
   }
+  if (config.requiereSupervision) {
+    if (!supervision) {
+      blockers.push("No se pudieron leer las supervisiones del mes. Sin ellas no se puede saber si se cumple el requisito: vuelve a intentar antes de liquidar.");
+    } else if (supervision.estado === "pendiente") {
+      const { enPlazo, porConfirmar } = supervision.criticas;
+      blockers.push(
+        `Supervisiones sin cerrar: ${porConfirmar} observación(es) crítica(s) esperan la confirmación de Juani y ${enPlazo} siguen dentro de su plazo. Se liquida cuando estén resueltas.`,
+      );
+    } else if (supervision.estado === "incumplido") {
+      warnings.push(
+        `${supervision.criticas.fueraDePlazo} observación(es) crítica(s) de supervisión no se corrigieron a tiempo: por política, no hay bono este mes aunque el ticket y las ventas hayan cumplido.`,
+      );
+    } else if (supervision.estado === "sin_visitas") {
+      warnings.push("Sin visitas de supervisión este mes: el requisito se da por cumplido (el equipo no tiene la culpa de que no hubiera visita).");
+    } else {
+      warnings.push(
+        `Supervisiones cumplidas: ${supervision.criticas.cumplidas} observación(es) crítica(s) corregidas a tiempo en ${supervision.visitas} visita(s).`,
+      );
+    }
+  }
   if (nivel && !input.mejorVendedor) {
     warnings.push("Sin mejor vendedor asignado: el premio no se paga este mes (Fase B lo calculará automático).");
   }
@@ -589,6 +640,7 @@ export function computeLiquidation(input: {
     personasPorDia,
     trafficFloor: config.trafficFloor,
     candadoVentas,
+    supervision,
     pozo,
     lines,
     totalBonos,
