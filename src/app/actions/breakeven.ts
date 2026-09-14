@@ -19,8 +19,10 @@ import {
   redondearMeta, tocaCongelar, type EntradaCandadoVentas,
 } from "@/lib/incentives/candado-ventas";
 import { buildFixedVariable } from "@/lib/fixed-variable";
+import { ventasInternasDelGrupo, type SedeEnConsolidado } from "@/lib/ventas-internas-grupo";
 import { gastosDevueltos, MARCA_PAGO_ERRADO, DIAS_MAX, type IngresoCandidato } from "@/lib/pagos-devueltos";
 import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
+import { formatCurrency } from "@/lib/utils";
 import { computeBreakeven, type BreakevenResult, type BreakevenReference } from "@/lib/breakeven";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -127,9 +129,17 @@ async function monthCosts(bId: number, start: string, end: string) {
     devueltos = gastosDevueltos(gastos.map((g) => ({ id: g.id, date: g.date, amount: g.bruto, concept: g.concept })), ingresos);
   }
 
+  const categorias = cats as { name: string; exclude_from_ebitda: boolean; cost_group: string | null }[];
+  const cuentan = gastos.filter((r) => !devueltos.has(r.id));
+  // Lo comprado a Atelier, tal como entra en `variables`: el consolidado
+  // del grupo lo descuenta (ver lib/ventas-internas-grupo.ts).
+  const catAtelier = categorias.find((c) => c.name === CATEGORIA_COMPRA_ATELIER);
+  const compraAtelier = catAtelier && catAtelier.cost_group === "variable" && !catAtelier.exclude_from_ebitda
+    ? cuentan.filter((r) => r.category === CATEGORIA_COMPRA_ATELIER).reduce((t, r) => t + Number(r.amount), 0)
+    : 0;
   const report = buildFixedVariable(
-    gastos.filter((r) => !devueltos.has(r.id)).map((r) => ({ category: r.category, amount: Number(r.amount) })),
-    (cats as { name: string; exclude_from_ebitda: boolean; cost_group: string | null }[]).map((c) => ({
+    cuentan.map((r) => ({ category: r.category, amount: Number(r.amount) })),
+    categorias.map((c) => ({
       name: c.name,
       excludeFromEbitda: c.exclude_from_ebitda,
       costGroup: c.cost_group,
@@ -139,9 +149,13 @@ async function monthCosts(bId: number, start: string, end: string) {
     fijos: report.fijo.total,
     variables: report.variable.total,
     sinClasificar: report.sinClasificar.total,
+    compraAtelier,
     ultimoGasto: gastos.reduce<string | null>((max, g) => (max === null || g.date > max ? g.date : max), null),
   };
 }
+
+/** Lo que las cafeterías le compran a Atelier (catálogo único de categorías). */
+const CATEGORIA_COMPRA_ATELIER = "PRODUCTOS ATELIER";
 
 function prevMonths(month: string, n: number): string[] {
   const [y, m] = month.split("-").map(Number);
@@ -188,7 +202,12 @@ const MESES_A_BUSCAR = 9;
 const DIAS_SIN_GASTO_TOLERADOS = 2;
 
 /** Agregado interno de la referencia (permite consolidar el grupo). */
-type RefAgg = BreakevenReference & { sumVariables: number; sumVentas: number };
+type RefAgg = BreakevenReference & {
+  sumVariables: number;
+  sumVentas: number;
+  /** De TODOS los meses revisados, no solo los usados: ver ventas-internas-grupo.ts. */
+  compraAtelierPorMes: Record<string, number>;
+};
 
 /**
  * Referencia histórica para el MES EN CURSO: hasta `MESES_REFERENCIA`
@@ -235,6 +254,7 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
     monthsUsed: usable.map((r) => r.month).sort(),
     sumVariables,
     sumVentas,
+    compraAtelierPorMes: Object.fromEntries(rows.map((r) => [r.month, r.compraAtelier])),
   };
 }
 
@@ -289,7 +309,10 @@ export type GroupBreakeven = {
      */
     ventasHasta: string | null;
   }[];
-  /** Consolidado: Σ fijos / (1 − Σ variables / Σ ventas). */
+  /**
+   * Consolidado: Σ fijos / (1 − Σ variables / Σ ventas), sin las ventas
+   * de Atelier a las cafeterías (ni su compra) — ver ventas-internas-grupo.ts.
+   */
   grupo: BreakevenResult;
 };
 
@@ -344,13 +367,26 @@ export async function getGroupBreakeven(month: string): Promise<
       };
     });
 
+    // Lo que Atelier le vende a las cafeterías se cuenta una sola vez
+    // en el consolidado: ver lib/ventas-internas-grupo.ts.
+    const internoDelMes = (incluidas: typeof perSede) =>
+      ventasInternasDelGrupo(incluidas.map((s): SedeEnConsolidado => ({
+        businessId: s.bId, meses: [month], compraAtelierPorMes: { [month]: s.compraAtelier },
+      })));
+    const avisoInterno = (monto: number) =>
+      `Descuenta ${formatCurrency(monto)} que Atelier le vendió a Fonavi y Centro: es plata que se mueve dentro del grupo, no venta a clientes. Por eso las ventas del grupo son menores que la suma de las tres sedes.`;
+
     let grupo: BreakevenResult;
     if (isCurrent) {
       // Consolidado del mes en curso: SOLO las sedes con referencia
       // histórica (fijos y ventas de las demás quedan fuera — se avisa).
       const withRef = perSede.filter((s) => s.reference);
-      const sumVar = withRef.reduce((t, s) => t + s.reference!.sumVariables, 0);
-      const sumVen = withRef.reduce((t, s) => t + s.reference!.sumVentas, 0);
+      const internoRef = ventasInternasDelGrupo(withRef.map((s): SedeEnConsolidado => ({
+        businessId: s.bId, meses: s.reference!.monthsUsed, compraAtelierPorMes: s.reference!.compraAtelierPorMes,
+      })));
+      const internoMes = internoDelMes(withRef);
+      const sumVar = withRef.reduce((t, s) => t + s.reference!.sumVariables, 0) - internoRef.variables;
+      const sumVen = withRef.reduce((t, s) => t + s.reference!.sumVentas, 0) - internoRef.ventas;
       const groupRef: BreakevenReference | null =
         withRef.length > 0
           ? {
@@ -361,9 +397,9 @@ export async function getGroupBreakeven(month: string): Promise<
           : null;
       grupo = computeBreakeven({
         fijos: 0,
-        variables: withRef.reduce((t, s) => t + s.variables, 0),
+        variables: withRef.reduce((t, s) => t + s.variables, 0) - internoMes.variables,
         sinClasificar: perSede.reduce((t, s) => t + s.sinClasificar, 0),
-        ventas: withRef.reduce((t, s) => t + s.ventas, 0),
+        ventas: withRef.reduce((t, s) => t + s.ventas, 0) - internoMes.ventas,
         daysElapsed,
         daysInMonth,
         reference: groupRef,
@@ -374,15 +410,18 @@ export async function getGroupBreakeven(month: string): Promise<
           `El consolidado solo incluye sedes con referencia histórica — falta: ${sinRef.join(", ")} (clasificar sus categorías fijo/variable y cerrar un mes con ventas).`,
         );
       }
+      if (internoRef.ventas > 0) grupo.warnings.push(avisoInterno(internoMes.ventas));
     } else {
+      const interno = internoDelMes(perSede);
       grupo = computeBreakeven({
         fijos: perSede.reduce((t, s) => t + s.fijos, 0),
-        variables: perSede.reduce((t, s) => t + s.variables, 0),
+        variables: perSede.reduce((t, s) => t + s.variables, 0) - interno.variables,
         sinClasificar: perSede.reduce((t, s) => t + s.sinClasificar, 0),
-        ventas: perSede.reduce((t, s) => t + s.ventas, 0),
+        ventas: perSede.reduce((t, s) => t + s.ventas, 0) - interno.ventas,
         daysElapsed,
         daysInMonth,
       });
+      if (interno.ventas > 0) grupo.warnings.push(avisoInterno(interno.ventas));
     }
     return { ok: true, data: { month, isCurrent, sedes, grupo } };
   } catch (err) {
