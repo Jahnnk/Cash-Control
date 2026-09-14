@@ -53,7 +53,6 @@ export const CATALOGO: CategoriaCanonica[] = [
   { nombre: "CONTABILIDAD", grupo: "fijo", descripcion: "Honorarios del contador" },
   { nombre: "MARKETING", grupo: "fijo", descripcion: "Publicidad y material gráfico (presupuesto mensual)" },
   { nombre: "MANTENIMIENTO", grupo: "fijo", descripcion: "Reparaciones del local y de los equipos" },
-  { nombre: "EQUIPOS", grupo: "fijo", descripcion: "Compra de equipos y herramientas" },
   { nombre: "VAJILLA", grupo: "fijo", descripcion: "Platos, vasos, utensilios, enseres de cocina" },
   { nombre: "OFICINA", grupo: "fijo", descripcion: "Útiles de escritorio, papel de contómetro" },
   { nombre: "PERSONAL", grupo: "fijo", descripcion: "Capacitaciones y bienestar del equipo (no sueldos)" },
@@ -84,6 +83,14 @@ export const CATALOGO: CategoriaCanonica[] = [
   { nombre: "UTILIDADES", grupo: "fuera", descripcion: "Reparto y adelantos de utilidades a los socios" },
   { nombre: "PRESTAMO ATELIER", grupo: "fuera", descripcion: "Préstamos entre sedes — plata que se devuelve" },
   { nombre: "REMODELACIÓN", grupo: "fuera", descripcion: "Obras y mejoras del local — es inversión" },
+  // EQUIPOS pasó de `fijo` a `fuera` el 14-sep-2026 (decisión de Jahnn).
+  // Una congeladora de S/8,000 comprada en junio entraba al promedio de
+  // costos fijos como si Fonavi la comprara todos los meses: subía su punto
+  // de equilibrio de referencia de S/31,523 a S/39,840 y, con el candado de
+  // ventas del bono, habría dejado sin bono al equipo en setiembre por una
+  // compra de junio. Un equipo que dura años es inversión, igual que la
+  // remodelación. Las REPARACIONES siguen siendo gasto (MANTENIMIENTO).
+  { nombre: "EQUIPOS", grupo: "fuera", descripcion: "Compra de equipos que duran años — es inversión, no gasto del mes" },
   { nombre: "VUELTOS Y DEVOLUCIONES", grupo: "fuera", descripcion: "Devoluciones y ajustes de vuelto" },
   // Estas dos ya tienen su propio mecanismo en el sistema (is_special_loan
   // y is_internal_transfer) y por eso nunca entraron al punto de
