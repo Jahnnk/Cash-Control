@@ -19,9 +19,9 @@
  * El punto de equilibrio del propio mes es una lotería: el Excel registra
  * la compra el día que se paga, y Fonavi pasó de S/22,611 (mayo) a S/50,158
  * (junio) vendiendo casi lo mismo. Además, a mitad de mes todavía no se
- * pagaron alquiler ni planilla. Por eso la meta sale de los 3 meses
- * CERRADOS anteriores (la misma referencia del punto de equilibrio del
- * dashboard) y se CONGELA el primer lunes del mes, cuando ya llegó el
+ * pagaron alquiler ni planilla. Por eso la meta sale de hasta 6 meses
+ * CERRADOS y completos anteriores (la misma referencia del punto de
+ * equilibrio del dashboard; ver `buildReference` en actions/breakeven.ts) y se CONGELA el primer lunes del mes, cuando ya llegó el
  * Excel de Kelly del mes anterior. El equipo conoce su meta desde el
  * inicio y nadie se la mueve después.
  *

@@ -19,6 +19,7 @@ import {
   redondearMeta, tocaCongelar, type EntradaCandadoVentas,
 } from "@/lib/incentives/candado-ventas";
 import { buildFixedVariable } from "@/lib/fixed-variable";
+import { gastosDevueltos, MARCA_PAGO_ERRADO, DIAS_MAX, type IngresoCandidato } from "@/lib/pagos-devueltos";
 import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
 import { computeBreakeven, type BreakevenResult, type BreakevenReference } from "@/lib/breakeven";
 
@@ -89,11 +90,17 @@ async function ventasDelMesConFuente(bId: number, start: string, end: string): P
   return elegirFuenteVentas(fuentes);
 }
 
-/** Fijos/variables/sin-clasificar operativos del mes de una sede. */
+/**
+ * Fijos/variables/sin-clasificar operativos del mes de una sede, y hasta
+ * qué día llegan los gastos registrados.
+ *
+ * Los pagos hechos por error y devueltos no cuentan: ver
+ * lib/pagos-devueltos.ts (Fonavi, agosto 2026: S/3,777).
+ */
 async function monthCosts(bId: number, start: string, end: string) {
   const [rows, cats] = await Promise.all([
     sql`
-      SELECT category,
+      SELECT id::text AS id, date::text AS date, category, concept, amount::float AS bruto,
              (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS amount
       FROM expenses
       WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
@@ -105,8 +112,23 @@ async function monthCosts(bId: number, start: string, end: string) {
       FROM expense_categories WHERE business_id = ${bId}
     `,
   ]);
+  const gastos = rows as { id: string; date: string; category: string; concept: string | null; bruto: number; amount: number }[];
+
+  // La devolución puede llegar hasta DIAS_MAX días después, ya en el mes
+  // siguiente. Solo se consulta el banco si hay algún gasto marcado.
+  let devueltos = new Set<string>();
+  if (gastos.some((g) => MARCA_PAGO_ERRADO.test(g.concept ?? ""))) {
+    const ingresos = (await sql`
+      SELECT id::text AS id, date::text AS date, amount::float AS amount, note
+      FROM bank_income_items
+      WHERE business_id = ${bId} AND archived = false
+        AND date >= ${start} AND date <= (${end}::date + ${DIAS_MAX}::int)
+    `) as IngresoCandidato[];
+    devueltos = gastosDevueltos(gastos.map((g) => ({ id: g.id, date: g.date, amount: g.bruto, concept: g.concept })), ingresos);
+  }
+
   const report = buildFixedVariable(
-    (rows as { category: string; amount: number }[]).map((r) => ({ category: r.category, amount: Number(r.amount) })),
+    gastos.filter((r) => !devueltos.has(r.id)).map((r) => ({ category: r.category, amount: Number(r.amount) })),
     (cats as { name: string; exclude_from_ebitda: boolean; cost_group: string | null }[]).map((c) => ({
       name: c.name,
       excludeFromEbitda: c.exclude_from_ebitda,
@@ -117,6 +139,7 @@ async function monthCosts(bId: number, start: string, end: string) {
     fijos: report.fijo.total,
     variables: report.variable.total,
     sinClasificar: report.sinClasificar.total,
+    ultimoGasto: gastos.reduce<string | null>((max, g) => (max === null || g.date > max ? g.date : max), null),
   };
 }
 
@@ -141,18 +164,42 @@ function prevMonths(month: string, n: number): string[] {
  */
 const COBERTURA_MINIMA_REFERENCIA = 0.7;
 
+/**
+ * Cuántos meses completos se promedian, y cuántos se miran hacia atrás
+ * para encontrarlos.
+ *
+ * Eran 3. Con 3, un solo mes con pagos corridos movía la meta miles de
+ * soles: el Excel registra la compra el día que se paga, y en agosto 2026
+ * se pagaron facturas de Atelier de julio. El % de variables de Fonavi
+ * fue 47, 51, 44 y 62% en cuatro meses vendiendo casi lo mismo, mientras
+ * el costo por receta se mantuvo entre 38 y 41%: el salto era de fechas,
+ * no del negocio. Con 6 meses esos corrimientos se compensan (una factura
+ * pagada tarde sale de un mes y cae en otro de la misma ventana). Revisado
+ * con Jahnn el 14-sep-2026.
+ */
+const MESES_REFERENCIA = 6;
+const MESES_A_BUSCAR = 9;
+
+/**
+ * Un mes sirve de referencia solo si sus gastos llegan hasta fin de mes.
+ * La planilla se paga el 30 o 31: un mes cuyo Excel todavía no trae los
+ * últimos días tiene fijos a medias y bajaría la meta sin razón.
+ */
+const DIAS_SIN_GASTO_TOLERADOS = 2;
+
 /** Agregado interno de la referencia (permite consolidar el grupo). */
 type RefAgg = BreakevenReference & { sumVariables: number; sumVentas: number };
 
 /**
- * Referencia histórica para el MES EN CURSO: hasta 3 meses cerrados con
- * fijos clasificados Y ventas (mirando máx. 6 atrás). Fijos = promedio
- * mensual; ratio variable = Σvariables/Σventas de esos meses.
+ * Referencia histórica para el MES EN CURSO: hasta `MESES_REFERENCIA`
+ * meses cerrados y completos (ventas ≥70% de los días, gastos hasta fin
+ * de mes, fijos clasificados). Fijos = promedio mensual; ratio variable =
+ * Σvariables/Σventas de esos meses.
  * Sin la referencia, comparar contra los fijos registrados a la fecha
  * daría un equilibrio falso de bajo (lección del piloto de Jahnn).
  */
 async function buildReference(bId: number, month: string): Promise<RefAgg | null> {
-  const candidates = prevMonths(month, 6);
+  const candidates = prevMonths(month, MESES_A_BUSCAR);
   const rows = await Promise.all(
     candidates.map(async (m) => {
       const { start, end, daysInMonth } = monthMeta(m);
@@ -160,7 +207,10 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
         ventasDelMesConFuente(bId, start, end),
         monthCosts(bId, start, end),
       ]);
-      return { month: m, ventas: v.total, diasVenta: v.dias, daysInMonth, ...costs };
+      const diasSinGasto = costs.ultimoGasto
+        ? daysInMonth - Number(costs.ultimoGasto.slice(8, 10))
+        : daysInMonth;
+      return { month: m, ventas: v.total, diasVenta: v.dias, daysInMonth, diasSinGasto, ...costs };
     }),
   );
 
@@ -174,7 +224,8 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
   const usable = rows
     .filter((r) => r.fijos > 0 && r.ventas > 0)
     .filter((r) => r.diasVenta >= r.daysInMonth * COBERTURA_MINIMA_REFERENCIA)
-    .slice(0, 3);
+    .filter((r) => r.diasSinGasto <= DIAS_SIN_GASTO_TOLERADOS)
+    .slice(0, MESES_REFERENCIA);
   if (usable.length === 0) return null;
   const sumVariables = usable.reduce((s, r) => s + r.variables, 0);
   const sumVentas = usable.reduce((s, r) => s + r.ventas, 0);
@@ -348,7 +399,7 @@ export async function getGroupBreakeven(month: string): Promise<
  * La meta de ventas del bono y las ventas del mes a la fecha.
  *
  * La meta es el punto de equilibrio de REFERENCIA —el mismo que muestra
- * la tarjeta de punto de equilibrio: hasta 3 meses cerrados con datos
+ * la tarjeta de punto de equilibrio: hasta 6 meses cerrados con datos
  * completos— y vive acá para que el bono y el dashboard no puedan dar dos
  * números distintos. Se congela el primer lunes del mes (ya llegó el Excel
  * de Kelly del mes anterior) en `incentive_sales_targets` y no se mueve
