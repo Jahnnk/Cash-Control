@@ -80,3 +80,45 @@ describe("listControlVtasSheets — reconoce la pestaña con o sin el año (repo
     expect(listControlVtasSheets(buf)).toEqual(["Control de VTAS-JUL"]);
   });
 });
+
+describe("propinas: solo lo que sobró y lo que Kelly escribió (Centro, ago–set 2026)", () => {
+  it("separarPropina con los casos reales", async () => {
+    const { separarPropina } = await import("../control-vtas-parser");
+    expect(separarPropina(10, "10 PROPINA")).toEqual({ propina: 10, resto: 0 });
+    // 11-set: POS sin cuadrar (−605) con la nota "20 PROPINA": no es propina.
+    expect(separarPropina(-605, "20 PROPINA")).toEqual({ propina: 0, resto: -605 });
+    // 01-set: Yape −1 con la nota del POS copiada.
+    expect(separarPropina(-1, "10 PROPINA")).toEqual({ propina: 0, resto: -1 });
+    // 26-ago: la venta anulada queda como diferencia a revisar.
+    expect(separarPropina(99, "10 PROPINA + 89 VENTA ANULADA (SE DEVOLCIÒ EL MISMO DIA POR YAPE)")).toEqual({ propina: 10, resto: 89 });
+    expect(separarPropina(28.6, "28.5 PROPINAS")).toEqual({ propina: 28.5, resto: 0.1 });
+    // Sin número pegado a "propina": se toma lo que sobró.
+    expect(separarPropina(7.5, "según pos es 12 de propina")).toEqual({ propina: 7.5, resto: 0 });
+    expect(separarPropina(4, "REVISAR")).toEqual({ propina: 0, resto: 4 });
+  });
+
+  it("en la hoja: la propina va a propinas y el resto a diferencias por revisar", () => {
+    const buffer = buildSheet([
+      HEADER,
+      [null, "2026-07-11", "Sábado", null, null, null, null, null, null, null],
+      [null, null, null, "Efectivo", 389.8, "Efectivo", 0, -389.8, null, "REVISAR"],
+      [null, null, null, "Yape", 335.7, "Yape", 434.7, 99, null, "10 PROPINA + 89 VENTA ANULADA"],
+      [null, null, null, "POS", 605, "POS", 0, -605, null, "20 PROPINA"],
+      [null, null, null, "Total", 1330.5, "Total", 434.7, null, null, null],
+    ]);
+    const r = parseControlVtas(buffer, "Control de VTAS-JUL26");
+    expect(r.propinas.map((p) => [p.source_concept, p.amount])).toEqual([["Yape", 10]]);
+    expect(r.alertasRedondeo.map((a) => [a.payment_method, a.difference])).toEqual([["yape_plin", 89], ["pos", -605]]);
+  });
+
+  it("la explicación de Kelly en la columna siguiente también se lee", () => {
+    const buffer = buildSheet([
+      HEADER,
+      [null, "2026-07-07", "Martes", null, null, null, null, null, null, null],
+      [null, null, null, "POS", 367.8, "POS", 175.2, -192.6, null, "REVISAR", "FALTA VOUCHER"],
+      [null, null, null, "Total", 367.8, "Total", 175.2, null, null, null],
+    ]);
+    const r = parseControlVtas(buffer, "Control de VTAS-JUL26");
+    expect(r.alertasRedondeo[0].note_text).toBe("REVISAR · FALTA VOUCHER");
+  });
+});

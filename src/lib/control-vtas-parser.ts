@@ -74,6 +74,31 @@ export type ControlVtasParseResult = {
 // Helpers
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * Cuánto de la diferencia de un día (Cuentas − POS) es propina.
+ *
+ * Antes, cualquier fila con "PROPINA" en la nota tomaba la diferencia
+ * ENTERA como propina. Centro, setiembre 2026: el 11 el POS aún no estaba
+ * cuadrado (Cuentas 0, POS 605 → diferencia −605) y la nota decía
+ * "20 PROPINA" → se registró una propina de S/605 por repartir. El 26-ago
+ * "10 PROPINA + 89 VENTA ANULADA" dio S/99 de propina.
+ *
+ * La regla ahora:
+ *   · solo hay propina si SOBRÓ plata (diferencia positiva): una propina
+ *     no puede faltar;
+ *   · el monto es el número que Kelly escribió antes de "propina(s)", sin
+ *     pasarse de lo que sobró; si no escribió número, es lo que sobró;
+ *   · lo que queda (el 89 de la venta anulada, el −605 del POS) se
+ *     devuelve para que vaya como diferencia a revisar.
+ */
+export function separarPropina(diferencia: number, nota: string): { propina: number; resto: number } {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  if (!/propina/i.test(nota) || diferencia <= 0) return { propina: 0, resto: r2(diferencia) };
+  const escrito = nota.match(/(\d+(?:[.,]\d+)?)\s*propinas?/i);
+  const monto = escrito ? Math.min(Number(escrito[1].replace(",", ".")), diferencia) : diferencia;
+  return { propina: r2(monto), resto: r2(diferencia - monto) };
+}
+
 function toDateStr(v: unknown): string | null {
   if (v instanceof Date && !isNaN(v.getTime())) {
     const y = v.getUTCFullYear();
@@ -295,8 +320,8 @@ export function parseControlVtas(
     if (!conceptoCuentas) continue;
     if (conceptoCuentas === "Total") continue;
 
-    const upperNote = nota.toUpperCase();
-    const esPropina = upperNote.includes("PROPINA");
+    // Propina y resto de la diferencia del día (ver separarPropina).
+    const { propina, resto } = separarPropina(diferencia, nota);
 
     // Inicializar bucket del día si no existe
     if (!ventasPorDia.has(fecha)) {
@@ -321,44 +346,29 @@ export function parseControlVtas(
       // (Cuentas) da 0 porque ese efectivo se deposita al banco — usarla
       // dejaba "Ventas Byte" del mes sin el efectivo (obs. #1, 27-jul).
       if (montoQuipupos > 0) ventaDia.efectivo = montoQuipupos;
-      // Diferencias en efectivo son raras; si hay y nota='PROPINA', la registramos
-      if (diferencia !== 0 && esPropina) {
+      // Las diferencias de efectivo son de depósito, no se alertan; solo
+      // se registra la propina si Kelly la anotó.
+      if (propina > 0) {
         propinas.push({
-          date: fecha, amount: Math.abs(diferencia),
+          date: fecha, amount: propina,
           source_concept: "Yape", note_text: nota, collaborator_name: null,
         });
       }
-    } else if (conceptoCuentas === "Yape") {
-      if (montoCuentas > 0) ventaDia.yape_plin = montoCuentas;
-      if (diferencia !== 0) {
-        if (esPropina) {
-          propinas.push({
-            date: fecha, amount: Math.abs(diferencia),
-            source_concept: "Yape", note_text: nota, collaborator_name: null,
-          });
-        } else {
-          alertas.push({
-            date: fecha, payment_method: "yape_plin",
-            amount_quipupos: montoQuipupos, amount_cuentas: montoCuentas,
-            difference: diferencia, note_text: nota,
-          });
-        }
+    } else if (conceptoCuentas === "Yape" || conceptoCuentas === "POS") {
+      const metodo = conceptoCuentas === "Yape" ? "yape_plin" : "pos";
+      if (montoCuentas > 0) ventaDia[metodo] = montoCuentas;
+      if (propina > 0) {
+        propinas.push({
+          date: fecha, amount: propina,
+          source_concept: conceptoCuentas, note_text: nota, collaborator_name: null,
+        });
       }
-    } else if (conceptoCuentas === "POS") {
-      if (montoCuentas > 0) ventaDia.pos = montoCuentas;
-      if (diferencia !== 0) {
-        if (esPropina) {
-          propinas.push({
-            date: fecha, amount: Math.abs(diferencia),
-            source_concept: "POS", note_text: nota, collaborator_name: null,
-          });
-        } else {
-          alertas.push({
-            date: fecha, payment_method: "pos",
-            amount_quipupos: montoQuipupos, amount_cuentas: montoCuentas,
-            difference: diferencia, note_text: nota,
-          });
-        }
+      if (Math.abs(resto) >= 0.01) {
+        alertas.push({
+          date: fecha, payment_method: metodo,
+          amount_quipupos: montoQuipupos, amount_cuentas: montoCuentas,
+          difference: resto, note_text: nota,
+        });
       }
     } else if (conceptoCuentas === "Ventas al Crédito" || conceptoCuentas === "Ventas al Credito") {
       // Monto desde col E (QuipuPOS), no col G (obs. #2, 27-jul-2026):

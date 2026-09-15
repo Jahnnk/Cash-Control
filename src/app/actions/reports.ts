@@ -22,8 +22,8 @@ const ATELIER = 1;
  *   · Atelier: crédito/contado de la pestaña CONTROL VENTAS
  *     (ventas_control_diario). Tolerante a que la tabla no exista.
  *   · Fonavi/Centro: Control de VTAS — efectivo, Yape y POS
- *     (byte_sales_daily), crédito (tips_pending) y las notas de Kelly
- *     (rounding_alerts / tips_pending).
+ *     (byte_sales_daily), crédito y propinas (tips_pending) y las notas de
+ *     Kelly (rounding_alerts / tips_pending).
  */
 async function conciliacionVentas(bId: number, startDate: string, endDate: string): Promise<ConciliacionVentasMes | null> {
   const byte = (await db.execute(sql`
@@ -64,6 +64,9 @@ async function conciliacionVentas(bId: number, startDate: string, endDate: strin
              COALESCE((SELECT SUM(t.amount) FROM tips_pending t
                WHERE t.business_id = s.business_id AND t.date = s.date AND t.imported_from_excel = true
                  AND t.source_concept = 'Ventas al Crédito'), 0)::float AS credito,
+             COALESCE((SELECT SUM(t.amount) FROM tips_pending t
+               WHERE t.business_id = s.business_id AND t.date = s.date AND t.imported_from_excel = true
+                 AND t.source_concept <> 'Ventas al Crédito'), 0)::float AS propinas,
              ARRAY(
                SELECT a.note_text FROM rounding_alerts a
                WHERE a.business_id = s.business_id AND a.date = s.date AND a.imported_from_excel = true
@@ -73,10 +76,10 @@ async function conciliacionVentas(bId: number, startDate: string, endDate: strin
              ) AS notas
       FROM byte_sales_daily s
       WHERE s.business_id = ${bId} AND s.date BETWEEN ${startDate} AND ${endDate}
-    `)).rows as { date: string; efectivo: number; yape: number; pos: number; copia: number; credito: number; notas: (string | null)[] }[];
+    `)).rows as { date: string; efectivo: number; yape: number; pos: number; copia: number; credito: number; propinas: number; notas: (string | null)[] }[];
     cuentas = rows.map((r) => ({
       date: r.date, copiaTotalByte: r.copia,
-      montos: { efectivo: r.efectivo, yape: r.yape, pos: r.pos, credito: r.credito },
+      montos: { efectivo: r.efectivo, yape: r.yape, pos: r.pos, credito: r.credito, propinas: -r.propinas },
       notas: [...new Set((r.notas ?? []).map(limpiarNotaKelly).filter((n): n is string => n !== null))],
     }));
   }

@@ -18,7 +18,10 @@
  *     avisa con los tres números, para ver de un vistazo quién copió mal.
  *   · El DESGLOSE es el registro de Kelly, y cambia por sede:
  *       Atelier       → crédito y contado (pestaña CONTROL VENTAS).
- *       Fonavi/Centro → efectivo, Yape, POS y crédito (Control de VTAS).
+ *       Fonavi/Centro → efectivo, Yape, POS y crédito (Control de VTAS),
+ *                       menos las propinas: entran por POS o Yape pero no
+ *                       son venta (Centro, agosto 2026: casi toda la
+ *                       "variación" del mes eran propinas).
  *   · TOTAL = suma del desglose; VARIACIÓN = total vendido − total.
  *
  * Por qué Byte manda en el total: Fonavi, 01-set-2026, Byte vendió
@@ -51,6 +54,8 @@ export const METODOS_CAFETERIA: MetodoCuenta[] = [
   { clave: "yape", etiqueta: "Yape/Plin" },
   { clave: "pos", etiqueta: "POS" },
   { clave: "credito", etiqueta: "Crédito" },
+  // Va en negativo: se resta del total para comparar contra la venta.
+  { clave: "propinas", etiqueta: "(−) Propinas" },
 ];
 
 export type FilaByte = {
