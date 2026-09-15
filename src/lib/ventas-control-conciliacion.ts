@@ -3,10 +3,19 @@
  *
  * Una sola regla para las tres sedes (pedidos de Jahnn, 14-sep-2026):
  *
- *   · TOTAL VENDIDO sale de Byte: el reporte "Ventas de <MES>" que sube
- *     cada sede (tabla byte_ventas_daily). Es la venta oficial y la que
- *     Jahnn compara contra la pantalla de Byte. Si ese día no hay carga
- *     de Byte, se usa la copia que hizo Kelly en su Excel.
+ *   · TOTAL VENDIDO, en este orden:
+ *       1. el archivo de Byte que sube cada sede (byte_ventas_daily),
+ *          si ese día vino completo;
+ *       2. la venta que tecleó el administrador en su registro diario
+ *          (upselling_daily), que copia de Byte al día siguiente;
+ *       3. la copia del total que hizo Kelly en su Excel;
+ *       4. el archivo de Byte incompleto, marcado como tal.
+ *     Por qué el administrador va antes que Kelly: agosto–setiembre 2026,
+ *     su registro coincidió con Byte 41 de 42 días en Fonavi y en Centro
+ *     (el día distinto fue un archivo incompleto), y acertó donde la copia
+ *     de Kelly no (Fonavi 05-ago: Byte 1,187.30 = admin; Kelly 1,071.30).
+ *   · CONTROL CRUZADO: si esas tres fuentes no coinciden en un día, se
+ *     avisa con los tres números, para ver de un vistazo quién copió mal.
  *   · El DESGLOSE es el registro de Kelly, y cambia por sede:
  *       Atelier       → crédito y contado (pestaña CONTROL VENTAS).
  *       Fonavi/Centro → efectivo, Yape, POS y crédito (Control de VTAS).
@@ -22,8 +31,7 @@
  * puede, a veces con el local abierto. Fonavi subió el 13-set a las
  * 8:28 p. m. y ese día quedó en S/400.10 cuando cerró en S/1,000.60 (lo
  * mismo el 30-ago: S/102.10 contra S/899.60). Un día cuya carga se hizo
- * ese mismo día es PARCIAL: si Kelly ya copió el total, manda el de ella;
- * si no, se muestra marcado como parcial.
+ * ese mismo día es PARCIAL y pasa al final de la fila de prioridades.
  *
  * Una variación distinta de cero es plata sin explicar. Los días DESPUÉS
  * del último que Kelly trabajó no tienen variación (null): no se acusa un
@@ -51,6 +59,9 @@ export type FilaByte = {
   parcial?: boolean;
 };
 
+/** La venta del día que tecleó el administrador (registro diario de KPIs). */
+export type FilaRegistro = { date: string; total: number };
+
 export type FilaCuentas = {
   date: string;
   /** El total de Byte que Kelly copió en su Excel (0 si no lo copió). */
@@ -67,30 +78,35 @@ export type DiaConciliado = {
   descuentos: number | null;
   totalVendido: number;
   /** De dónde salió el total vendido. */
-  fuente: "byte" | "kelly";
-  /** Byte se subió antes del cierre y no hay copia de Kelly que lo complete. */
+  fuente: "byte" | "registro" | "kelly";
+  /** El único dato del día es un archivo de Byte subido antes del cierre. */
   parcial: boolean;
   /** null = Kelly todavía no trabajó ese día. */
   montos: Record<string, number> | null;
   total: number | null;
   variacion: number | null;
   notas: string[];
-  /** Kelly copió un total de Byte distinto al de la carga oficial. */
-  copiaDistinta: { byte: number; kelly: number } | null;
+  /**
+   * Las fuentes del total no coinciden. Trae solo las que hay ese día
+   * (el archivo de Byte incompleto no cuenta: ya se sabe que no cuadra).
+   */
+  discrepancia: { byte?: number; registro?: number; kelly?: number } | null;
 };
 
 export type ConciliacionVentasMes = {
   metodos: MetodoCuenta[];
   dias: DiaConciliado[];
   totalVendido: number;
-  /** Último día con venta de Byte cargada. */
+  /** Último día con venta de Byte cargada (completa). */
   byteHasta: string | null;
+  /** Último día que registró el administrador. */
+  registroHasta: string | null;
   /** Último día que Kelly trabajó. */
   kellyHasta: string | null;
   /** Totales de los días que Kelly ya trabajó (lo que se puede conciliar). */
   conciliado: { totalVendido: number; montos: Record<string, number>; total: number; variacion: number };
   diasConVariacion: number;
-  diasCopiaDistinta: number;
+  diasConDiscrepancia: number;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -108,43 +124,60 @@ function ultimoDiaDeKelly(cuentas: FilaCuentas[]): string | null {
   return base.map((c) => c.date).sort().pop() ?? null;
 }
 
-export function conciliarVentasDelMes(byte: FilaByte[], cuentas: FilaCuentas[], metodos: MetodoCuenta[]): ConciliacionVentasMes {
+export function conciliarVentasDelMes(
+  byte: FilaByte[],
+  cuentas: FilaCuentas[],
+  metodos: MetodoCuenta[],
+  registro: FilaRegistro[] = [],
+): ConciliacionVentasMes {
   const porByte = new Map(byte.map((b) => [b.date, b]));
+  const porRegistro = new Map(registro.filter((r) => r.total > 0).map((r) => [r.date, r]));
   const porCuentas = new Map(cuentas.map((c) => [c.date, c]));
   const kellyHasta = ultimoDiaDeKelly(cuentas);
-  const fechas = [...new Set([...porByte.keys(), ...porCuentas.keys()])].sort();
+  const fechas = [...new Set([...porByte.keys(), ...porCuentas.keys(), ...porRegistro.keys()])].sort();
   const vacio = () => Object.fromEntries(metodos.map((m) => [m.clave, 0])) as Record<string, number>;
 
   const dias: DiaConciliado[] = fechas
     .map((date): DiaConciliado | null => {
       const c = porCuentas.get(date);
       const cargado = porByte.get(date);
-      // Carga parcial con copia completa de Kelly: se usa la de Kelly.
-      const b = cargado?.parcial && c && c.copiaTotalByte > 0 ? undefined : cargado;
+      const b = cargado && !cargado.parcial ? cargado : undefined;
+      const reg = porRegistro.get(date);
+      const copia = c && c.copiaTotalByte > 0 ? c.copiaTotalByte : undefined;
+      const [fuente, totalBruto]: [DiaConciliado["fuente"], number] =
+        b ? ["byte", b.total]
+        : reg ? ["registro", reg.total]
+        : copia !== undefined ? ["kelly", copia]
+        : ["byte", cargado?.total ?? 0];
+      const parcial = !b && !reg && copia === undefined && cargado?.parcial === true;
       const trabajado = kellyHasta !== null && date <= kellyHasta;
-      const totalVendido = r2(b ? b.total : c?.copiaTotalByte ?? 0);
-      // Un día sin Byte y sin nada que conciliar no aporta una fila.
-      if (!b && totalVendido === 0 && !(trabajado && c && Object.values(c.montos).some((v) => v !== 0))) return null;
+      const totalVendido = r2(totalBruto);
+      // Un día sin venta en ninguna fuente y sin nada que conciliar no aporta una fila.
+      if (totalVendido === 0 && !cargado && !(trabajado && c && Object.values(c.montos).some((v) => v !== 0))) return null;
       const montos = trabajado
         ? Object.fromEntries(metodos.map((m) => [m.clave, r2(c?.montos[m.clave] ?? 0)]))
         : null;
       const total = montos ? r2(Object.values(montos).reduce((t, v) => t + v, 0)) : null;
-      const copiaDistinta =
-        b && c && c.copiaTotalByte > 0 && Math.abs(b.total - c.copiaTotalByte) >= TOLERANCIA
-          ? { byte: r2(b.total), kelly: r2(c.copiaTotalByte) }
-          : null;
+      const fuentes: { byte?: number; registro?: number; kelly?: number } = {};
+      if (b) fuentes.byte = r2(b.total);
+      if (reg) fuentes.registro = r2(reg.total);
+      if (copia !== undefined) fuentes.kelly = r2(copia);
+      const valores = Object.values(fuentes);
+      const discrepancia =
+        valores.length >= 2 && Math.max(...valores) - Math.min(...valores) >= TOLERANCIA ? fuentes : null;
       return {
         date,
-        pedidos: b ? b.pedidos : c?.pedidos ?? null,
-        descuentos: b ? r2(b.descuentos) : c?.descuentos !== undefined ? r2(c.descuentos) : null,
+        // Pedidos y descuentos de un archivo incompleto también están incompletos.
+        pedidos: b ? b.pedidos : parcial ? cargado!.pedidos : c?.pedidos ?? null,
+        descuentos: b ? r2(b.descuentos) : parcial ? r2(cargado!.descuentos) : c?.descuentos !== undefined ? r2(c.descuentos) : null,
         totalVendido,
-        fuente: b ? "byte" : "kelly",
-        parcial: b?.parcial === true,
+        fuente,
+        parcial,
         montos,
         total,
         variacion: total === null ? null : r2(totalVendido - total),
         notas: c?.notas ?? [],
-        copiaDistinta,
+        discrepancia,
       };
     })
     .filter((d): d is DiaConciliado => d !== null);
@@ -159,6 +192,7 @@ export function conciliarVentasDelMes(byte: FilaByte[], cuentas: FilaCuentas[], 
     dias,
     totalVendido: suma(dias, (d) => d.totalVendido),
     byteHasta: byte.filter((b) => b.total > 0 && !b.parcial).map((b) => b.date).sort().pop() ?? null,
+    registroHasta: [...porRegistro.keys()].sort().pop() ?? null,
     kellyHasta,
     conciliado: {
       totalVendido: suma(trabajados, (d) => d.totalVendido),
@@ -167,7 +201,7 @@ export function conciliarVentasDelMes(byte: FilaByte[], cuentas: FilaCuentas[], 
       variacion: suma(trabajados, (d) => d.variacion!),
     },
     diasConVariacion: trabajados.filter((d) => Math.abs(d.variacion!) >= TOLERANCIA).length,
-    diasCopiaDistinta: dias.filter((d) => d.copiaDistinta).length,
+    diasConDiscrepancia: dias.filter((d) => d.discrepancia).length,
   };
 }
 

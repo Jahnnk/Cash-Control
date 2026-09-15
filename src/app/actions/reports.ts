@@ -5,7 +5,7 @@ import { sql } from "drizzle-orm";
 import { activeBusinessId } from "@/lib/active-business";
 import {
   conciliarVentasDelMes, limpiarNotaKelly, METODOS_ATELIER, METODOS_CAFETERIA,
-  type ConciliacionVentasMes, type FilaByte, type FilaCuentas,
+  type ConciliacionVentasMes, type FilaByte, type FilaCuentas, type FilaRegistro,
 } from "@/lib/ventas-control-conciliacion";
 
 const ATELIER = 1;
@@ -14,6 +14,10 @@ const ATELIER = 1;
  * Venta diaria de Byte (carga de cada sede) conciliada con el registro de
  * Kelly, del mes. Una sola regla para las tres sedes: ver
  * lib/ventas-control-conciliacion.ts. null = no hay nada cargado.
+ *
+ * Fuentes del total: archivo de Byte (byte_ventas_daily), venta que tecleó
+ * el administrador en su registro diario (upselling_daily) y la copia de
+ * Kelly — y se controlan entre sí.
  *
  *   · Atelier: crédito/contado de la pestaña CONTROL VENTAS
  *     (ventas_control_diario). Tolerante a que la tabla no exista.
@@ -30,6 +34,12 @@ async function conciliacionVentas(bId: number, startDate: string, endDate: strin
     WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
     ORDER BY date
   `)).rows as FilaByte[];
+
+  const registro = (await db.execute(sql`
+    SELECT date::text AS date, revenue::float AS total
+    FROM upselling_daily
+    WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate} AND revenue > 0
+  `)).rows as FilaRegistro[];
 
   let cuentas: FilaCuentas[] = [];
   if (bId === ATELIER) {
@@ -71,12 +81,11 @@ async function conciliacionVentas(bId: number, startDate: string, endDate: strin
     }));
   }
 
-  if (byte.length === 0 && cuentas.length === 0) return null;
-  // Meses viejos sin carga de Byte y sin la copia del total en el Excel
-  // (re-import pendiente): no hay contra qué conciliar. Se deja el detalle
-  // anterior en vez de mostrar variaciones inventadas.
-  if (byte.length === 0 && cuentas.every((c) => c.copiaTotalByte === 0)) return null;
-  return conciliarVentasDelMes(byte, cuentas, bId === ATELIER ? METODOS_ATELIER : METODOS_CAFETERIA);
+  // Meses viejos sin ninguna fuente del total (ni archivo de Byte, ni
+  // registro del administrador, ni copia en el Excel): no hay contra qué
+  // conciliar. Se deja el detalle anterior en vez de inventar variaciones.
+  if (byte.length === 0 && registro.length === 0 && cuentas.every((c) => c.copiaTotalByte === 0)) return null;
+  return conciliarVentasDelMes(byte, cuentas, bId === ATELIER ? METODOS_ATELIER : METODOS_CAFETERIA, registro);
 }
 
 export async function getWeeklyReport(startDate: string, endDate: string) {

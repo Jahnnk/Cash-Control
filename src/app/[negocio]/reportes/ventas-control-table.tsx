@@ -12,8 +12,18 @@
  */
 
 import { AlertTriangle } from "lucide-react";
+import type { DiaConciliado } from "@/lib/ventas-control-conciliacion";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import type { ConciliacionVentasMes } from "@/lib/ventas-control-conciliacion";
+
+const NOMBRE_FUENTE = { byte: "Archivo de Byte", registro: "Registro del administrador", kelly: "Excel de Kelly" } as const;
+
+/** "Archivo de Byte S/1,187.30 · Registro del administrador S/1,187.30 · Excel de Kelly S/1,071.30" */
+function textoDiscrepancia(d: DiaConciliado): string {
+  return (Object.entries(d.discrepancia ?? {}) as [keyof typeof NOMBRE_FUENTE, number][])
+    .map(([k, v]) => `${NOMBRE_FUENTE[k]} ${formatCurrency(v)}`)
+    .join(" · ");
+}
 
 export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
   const pendientes = c.dias.filter((d) => d.total === null);
@@ -22,7 +32,8 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
     <div>
       <div className="px-6 py-3 text-xs text-gray-600 bg-gray-50 border-b border-gray-100 space-y-1">
         <div>
-          <strong>Total vendido</strong>: Byte{c.byteHasta && <> (cargado hasta el {formatDateShort(c.byteHasta)})</>}.{" "}
+          <strong>Total vendido</strong>: archivo de Byte{c.byteHasta && <> (hasta el {formatDateShort(c.byteHasta)})</>}; si falta o vino incompleto, la venta que registró el administrador
+          {c.registroHasta && <> (hasta el {formatDateShort(c.registroHasta)})</>}.{" "}
           <strong>{c.metodos.map((m) => m.etiqueta).join(", ")}</strong>: Excel de Kelly
           {c.kellyHasta ? <> (trabajado hasta el {formatDateShort(c.kellyHasta)})</> : <> (todavía no cargado)</>}.{" "}
           <strong>Variación</strong> = total vendido − total.
@@ -32,9 +43,9 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
             {c.diasConVariacion} día(s) con variación, por {formatCurrency(c.conciliado.variacion)} en total: venta de Byte que no aparece en el registro, o un cobro registrado que Byte no tiene. La nota de Kelly, cuando la hay, dice por qué.
           </div>
         )}
-        {c.diasCopiaDistinta > 0 && (
+        {c.diasConDiscrepancia > 0 && (
           <div className="text-red-700">
-            {c.diasCopiaDistinta} día(s) donde el total de Byte que copió Kelly no coincide con el reporte de Byte cargado.
+            {c.diasConDiscrepancia} día(s) donde el archivo de Byte, el registro del administrador y el Excel de Kelly no dicen lo mismo (marcados con ⚠). Alguien copió mal la venta.
           </div>
         )}
       </div>
@@ -62,12 +73,17 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
                 <td className="px-3 py-2 text-right tabular-nums">{d.pedidos ?? "—"}</td>
                 <td className="px-3 py-2 text-right tabular-nums text-gray-500">{d.descuentos === null ? "—" : formatCurrency(d.descuentos)}</td>
                 <td className="px-3 py-2 text-right tabular-nums font-semibold whitespace-nowrap">
-                  {d.copiaDistinta && (
-                    <span title={`Byte cargado: ${formatCurrency(d.copiaDistinta.byte)}; Kelly copió ${formatCurrency(d.copiaDistinta.kelly)}`}>
+                  {d.discrepancia && (
+                    <span title={textoDiscrepancia(d)}>
                       <AlertTriangle className="inline w-3.5 h-3.5 text-red-600 mr-1" />
                     </span>
                   )}
                   {formatCurrency(d.totalVendido)}
+                  {d.fuente !== "byte" && (
+                    <span className="block text-[10px] font-normal text-gray-400">
+                      {d.fuente === "registro" ? "del registro del administrador" : "del Excel de Kelly"}
+                    </span>
+                  )}
                   {d.parcial && (
                     <span className="block text-[10px] font-normal text-amber-700">puede estar incompleto: Byte se subió ese mismo día</span>
                   )}
@@ -85,7 +101,10 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
                     </td>
                   </>
                 )}
-                <td className="px-3 py-2 text-xs text-gray-500">{d.notas.join(" · ")}</td>
+                <td className="px-3 py-2 text-xs text-gray-500">
+                  {d.discrepancia && <span className="block text-red-700">{textoDiscrepancia(d)}</span>}
+                  {d.notas.join(" · ")}
+                </td>
               </tr>
             );
           })}

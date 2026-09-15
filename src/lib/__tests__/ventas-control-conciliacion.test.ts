@@ -54,14 +54,14 @@ describe("conciliación Byte ↔ Kelly (Atelier, setiembre)", () => {
     const x = conciliarVentasDelMes([...BYTE, { date: "2026-09-06", pedidos: 0, descuentos: 0, total: 1 }], KELLY, METODOS_ATELIER);
     const d06 = x.dias.find((d) => d.date === "2026-09-06")!;
     expect(d06.variacion).toBe(1);
-    expect(d06.copiaDistinta).toBeNull();
+    expect(d06.discrepancia).toBeNull();
     expect(x.conciliado.variacion).toBe(116.39);
   });
 
   it("avisa si Kelly copió un total de Byte distinto al que subió Luis", () => {
     const x = conciliarVentasDelMes(BYTE, [{ ...KELLY[0], copiaTotalByte: 1000 }], METODOS_ATELIER);
-    expect(x.dias[0].copiaDistinta).toEqual({ byte: 1016.37, kelly: 1000 });
-    expect(x.diasCopiaDistinta).toBe(1);
+    expect(x.dias[0].discrepancia).toEqual({ byte: 1016.37, kelly: 1000 });
+    expect(x.diasConDiscrepancia).toBe(1);
   });
 
   it("sin carga de Byte, usa el total que copió Kelly", () => {
@@ -113,13 +113,58 @@ describe("día de Byte subido antes del cierre", () => {
 
   it("si Kelly ya copió el total del día, manda el de ella (Fonavi 30-ago: 102.10 → 899.60)", () => {
     const r = conciliarVentasDelMes([{ ...byte13, total: 102.1 }], [{ ...cuentas13(899.6), montos: { efectivo: 138.1, yape: 491, pos: 270.5, credito: 0 } }], METODOS_CAFETERIA);
-    expect(r.dias[0]).toMatchObject({ totalVendido: 899.6, fuente: "kelly", parcial: false, variacion: 0, copiaDistinta: null });
+    expect(r.dias[0]).toMatchObject({ totalVendido: 899.6, fuente: "kelly", parcial: false, variacion: 0, discrepancia: null });
   });
 
   it("sin copia de Kelly se muestra, marcado como parcial, y no cuenta como 'Byte al día'", () => {
     const r = conciliarVentasDelMes([{ ...byte13, date: "2026-09-12", parcial: false, total: 1096 }, byte13], [], METODOS_CAFETERIA);
     expect(r.dias[1]).toMatchObject({ totalVendido: 400.1, parcial: true });
     expect(r.byteHasta).toBe("2026-09-12");
+  });
+});
+
+describe("el registro del administrador como segunda fuente y control", () => {
+  const cuentasVacias = (date: string, copia: number): FilaCuentas => ({ date, copiaTotalByte: copia, montos: { efectivo: 0, yape: 0, pos: 0, credito: 0 }, notas: [] });
+
+  it("Fonavi 13-set: archivo de Byte incompleto (400.10) → manda el registro del administrador (1,000.60), sin esperar a Kelly", () => {
+    const r = conciliarVentasDelMes(
+      [{ date: "2026-09-13", pedidos: 13, descuentos: 9.3, total: 400.1, parcial: true }],
+      [], METODOS_CAFETERIA,
+      [{ date: "2026-09-13", total: 1000.6 }],
+    );
+    expect(r.dias[0]).toMatchObject({ totalVendido: 1000.6, fuente: "registro", parcial: false, discrepancia: null, pedidos: null });
+    expect(r.registroHasta).toBe("2026-09-13");
+  });
+
+  it("el registro va antes que la copia de Kelly", () => {
+    const r = conciliarVentasDelMes(
+      [{ date: "2026-08-30", pedidos: 3, descuentos: 0, total: 102.1, parcial: true }],
+      [cuentasVacias("2026-08-30", 899.6)], METODOS_CAFETERIA,
+      [{ date: "2026-08-30", total: 899.6 }],
+    );
+    expect(r.dias[0]).toMatchObject({ totalVendido: 899.6, fuente: "registro", discrepancia: null });
+  });
+
+  it("Fonavi 05-ago: Byte y el administrador coinciden, Kelly no → aviso con los tres números", () => {
+    const r = conciliarVentasDelMes(
+      [{ date: "2026-08-05", pedidos: 40, descuentos: 0, total: 1187.3 }],
+      [cuentasVacias("2026-08-05", 1071.3)], METODOS_CAFETERIA,
+      [{ date: "2026-08-05", total: 1187.3 }],
+    );
+    expect(r.dias[0].totalVendido).toBe(1187.3);
+    expect(r.dias[0].discrepancia).toEqual({ byte: 1187.3, registro: 1187.3, kelly: 1071.3 });
+    expect(r.diasConDiscrepancia).toBe(1);
+  });
+
+  it("el administrador tecleó distinto que Byte → aviso", () => {
+    const r = conciliarVentasDelMes([{ date: "2026-09-01", pedidos: 45, descuentos: 12.1, total: 1396.7 }], [], METODOS_CAFETERIA, [{ date: "2026-09-01", total: 1369.7 }]);
+    expect(r.dias[0].discrepancia).toEqual({ byte: 1396.7, registro: 1369.7 });
+  });
+
+  it("un día que solo registró el administrador aparece con su venta", () => {
+    const r = conciliarVentasDelMes([], [], METODOS_CAFETERIA, [{ date: "2026-09-14", total: 1614.07 }]);
+    expect(r.dias).toHaveLength(1);
+    expect(r.totalVendido).toBe(1614.07);
   });
 });
 
