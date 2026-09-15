@@ -3,6 +3,44 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { activeBusinessId } from "@/lib/active-business";
+import { conciliarVentasDelMes, type ConciliacionVentasMes, type FilaByte, type FilaKelly } from "@/lib/ventas-control-conciliacion";
+
+/**
+ * Sedes cuyo reporte mensual muestra la venta de Byte conciliada con el
+ * control de crédito/contado de Kelly. Solo Atelier: vende al crédito y
+ * su pestaña "Control de VTAS" deja el detalle diario en cero. Fonavi y
+ * Centro cobran al momento y su Control de VTAS ya sirve.
+ */
+const SEDES_CON_CONTROL_VENTAS = [1];
+
+/**
+ * Venta diaria de Byte (carga de Luis) + crédito/contado de Kelly, del mes.
+ * null = la sede no aplica o no hay nada cargado. Tolerante a que la
+ * tabla de Kelly todavía no exista: sin ella, igual muestra Byte.
+ */
+async function conciliacionVentas(bId: number, startDate: string, endDate: string): Promise<ConciliacionVentasMes | null> {
+  if (!SEDES_CON_CONTROL_VENTAS.includes(bId)) return null;
+  const byte = (await db.execute(sql`
+    SELECT date::text AS date, pedidos::int AS pedidos, COALESCE(descuentos, 0)::float AS descuentos, total::float AS total
+    FROM byte_ventas_daily
+    WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+    ORDER BY date
+  `)).rows as FilaByte[];
+  let kelly: FilaKelly[] = [];
+  try {
+    kelly = (await db.execute(sql`
+      SELECT date::text AS date, pedidos, descuentos::float AS descuentos, total_vendido::float AS "totalVendido",
+             venta_credito::float AS "ventaCredito", venta_contado::float AS "ventaContado", nota
+      FROM ventas_control_diario
+      WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
+      ORDER BY date
+    `)).rows as FilaKelly[];
+  } catch (err) {
+    console.error("[conciliacionVentas] ventas_control_diario no disponible:", err);
+  }
+  if (byte.length === 0 && kelly.length === 0) return null;
+  return conciliarVentasDelMes(byte, kelly);
+}
 
 export async function getWeeklyReport(startDate: string, endDate: string) {
   const bId = await activeBusinessId();
@@ -241,6 +279,9 @@ export async function getMonthlyReport(month: string) {
   }
 
   return {
+    // Atelier: venta de Byte día por día conciliada con el crédito/contado
+    // de Kelly. null en las demás sedes (siguen con Control de VTAS).
+    ventasControl: await conciliacionVentas(bId, startDate, endDate),
     totals: {
       ...totalsRow,
       total_ingresos_del_mes: totalIngresosDelMes,
@@ -275,7 +316,8 @@ export type DailyBreakdownResult =
   | { format: "expense"; rows: Record<string, unknown>[] }
   | { format: "total_income"; rows: Record<string, unknown>[] }
   | { format: "bank_variation"; rows: Record<string, unknown>[] }
-  | { format: "credit_sales"; rows: Record<string, unknown>[] };
+  | { format: "credit_sales"; rows: Record<string, unknown>[] }
+  | { format: "ventas_control"; rows: Record<string, unknown>[]; conciliacion: ConciliacionVentasMes };
 
 export async function getDailyBreakdown(
   month: string,
@@ -288,6 +330,14 @@ export async function getDailyBreakdown(
   const endDate = `${month}-${String(lastDay).padStart(2, "0")}`;
 
   if (type === "byte") {
+    // Atelier: la venta de Byte con el crédito y contado de Kelly (ver
+    // conciliacionVentas). Va antes que Control de VTAS, que para Atelier
+    // deja todos los días en cero porque no mira el crédito.
+    const conciliacion = await conciliacionVentas(bId, startDate, endDate);
+    if (conciliacion) {
+      return { format: "ventas_control", rows: conciliacion.dias as unknown as Record<string, unknown>[], conciliacion };
+    }
+
     // PRIORIDAD 1: byte_sales_daily (Control de VTAS importado)
     const dailyCheck = await db.execute(sql`
       SELECT COUNT(*)::int AS n FROM byte_sales_daily

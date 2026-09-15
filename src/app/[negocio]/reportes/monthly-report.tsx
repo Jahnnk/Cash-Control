@@ -20,6 +20,8 @@ import {
 import { EditRecordModal, type EditTarget } from "./edit-record-modal";
 import { DeleteRecordModal, type DeleteTarget } from "./delete-record-modal";
 import { RoundingAlertsSection } from "./rounding-alerts-section";
+import { VentasControlTable } from "./ventas-control-table";
+import type { ConciliacionVentasMes } from "@/lib/ventas-control-conciliacion";
 
 const PIE_COLORS = [
   "#004C40", "#098B5F", "#22C55E", "#EAB308", "#F97316",
@@ -44,6 +46,8 @@ type MonthlyData = {
   bankVariation?: number;
   byCategory: Record<string, unknown>[];
   byteSalesSource?: "byte_sales_daily" | "legacy";
+  /** Atelier: venta de Byte conciliada con el crédito/contado de Kelly. */
+  ventasControl?: ConciliacionVentasMes | null;
   /** Puente auditable entre "Resultado del mes" y la variación del
    *  banco. Opcional por compatibilidad con respuestas antiguas. */
   bridge?: {
@@ -190,7 +194,53 @@ export function MonthlyReport() {
           {(() => {
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
-                {(() => {
+                {data.ventasControl ? (() => {
+                  // Atelier: lo que vendió Byte (carga de Luis) y cómo lo
+                  // clasificó Kelly. Reemplaza al card de Control de VTAS,
+                  // que para Atelier no ve el crédito (detalle en cero).
+                  const vc = data.ventasControl;
+                  const sinClasificar = Math.round((vc.totalVendido - vc.conciliado.totalVendido) * 100) / 100;
+                  const hayVariacion = Math.abs(vc.conciliado.variacion) >= 0.01;
+                  return (
+                    <KPICard
+                      title="Ventas Byte"
+                      value={formatCurrency(vc.totalVendido)}
+                      valueClassName="text-[#5d3fbe]"
+                      subtitle={vc.byteHasta ? `Byte al ${formatDateShort(vc.byteHasta)}` : "Total vendido según Byte"}
+                      footer={
+                        !vc.kellyHasta ? (
+                          <div className="border-t border-gray-100 pt-2 mt-1 text-slate-400">
+                            Crédito y contado: falta el Excel de Kelly del mes.
+                          </div>
+                        ) : <div className="border-t border-gray-100 pt-2 mt-1 space-y-0.5">
+                          <div className="flex justify-between text-slate-600">
+                            <span>Crédito</span>
+                            <span className="font-medium">{formatCurrency(vc.conciliado.ventaCredito)}</span>
+                          </div>
+                          <div className="flex justify-between text-slate-600">
+                            <span>Contado</span>
+                            <span className="font-medium">{formatCurrency(vc.conciliado.ventaContado)}</span>
+                          </div>
+                          <div className={`flex justify-between ${hayVariacion ? "text-amber-700" : "text-slate-600"}`}>
+                            <span>Variación</span>
+                            <span className="font-medium">{formatCurrency(vc.conciliado.variacion)}</span>
+                          </div>
+                          {sinClasificar >= 0.01 && (
+                            <div className="flex justify-between text-slate-400">
+                              <span>Sin clasificar{vc.kellyHasta ? ` (Kelly al ${formatDateShort(vc.kellyHasta)})` : ""}</span>
+                              <span className="font-medium">{formatCurrency(sinClasificar)}</span>
+                            </div>
+                          )}
+                        </div>
+                      }
+                      variant="default"
+                      withAccentBar={false}
+                      expanded={showDetail === "byte"}
+                      expandedHint={{ open: "Click para cerrar", closed: "Ver detalle diario" }}
+                      onClick={() => handleCardClick("byte")}
+                    />
+                  );
+                })() : (() => {
                   // Card "Ventas Byte". Cuando hay total_byte_pos del Excel
                   // (Centro/Fonavi con Control de VTAS re-importado), el
                   // card muestra el TOTAL reportado por POS (E194) como
@@ -387,7 +437,7 @@ export function MonthlyReport() {
               <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
                 <h3 className="text-sm font-semibold text-gray-900">
                   {showDetail === "byte"
-                    ? "Ventas Byte (cobradas) por día"
+                    ? detailResult?.format === "ventas_control" ? "Ventas Byte por día" : "Ventas Byte (cobradas) por día"
                     : showDetail === "income"
                     ? "Ingresos a Ctas. y Efectivo por día"
                     : showDetail === "total_income"
@@ -405,6 +455,10 @@ export function MonthlyReport() {
               </div>
               {detailLoading ? (
                 <div className="p-8 text-center text-gray-500 text-sm">Cargando detalle...</div>
+              ) : detailResult?.format === "ventas_control" ? (
+                <div className="overflow-x-auto">
+                  <VentasControlTable c={detailResult.conciliacion} />
+                </div>
               ) : detailData && detailData.length > 0 ? (
                 <div className="overflow-x-auto">
                   {showDetail === "byte" && (detailResult?.format === "byte_daily" || detailResult?.format === "byte_b2c") ? (

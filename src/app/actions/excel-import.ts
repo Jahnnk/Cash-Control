@@ -32,6 +32,8 @@ import {
   type ControlVtasParseResult,
 } from "@/lib/control-vtas-parser";
 import { sheetMonthKey, monthRange } from "@/lib/excel-month-pairing";
+import { hojaControlVentasDelMes, parseControlVentasDiario } from "@/lib/control-ventas-diario-parser";
+import * as XLSX from "xlsx";
 import {
   grupoDelCatalogo,
   grupoAColumnas,
@@ -644,7 +646,7 @@ export async function executeExcelImport(
   controlVtasSheet: string | null,
   options: ImportOptions,
   sedeCentral?: string
-): Promise<ImportResult & { byteSalesDays?: number; tipsCount?: number; alertsCount?: number }> {
+): Promise<ImportResult & { byteSalesDays?: number; tipsCount?: number; alertsCount?: number; ventasControlDias?: number }> {
   const bId = await importBusinessId(sedeCentral);
   if (bId === null) return { success: false, error: "El import central es solo para la dirección." };
   if (!VALID_BIDS.includes(bId)) {
@@ -666,6 +668,18 @@ export async function executeExcelImport(
   }
   if (controlVtasResult && controlVtasResult.errores.length > 0) {
     return { success: false, error: "Control de VTAS: " + controlVtasResult.errores.join("; ") };
+  }
+
+  // Pestaña "CONTROL VENTAS <MES><AA>" (crédito y contado del día, al lado
+  // del reporte de Byte). No se elige en la pantalla: si el archivo trae
+  // la del mismo mes, entra sola. Ver lib/control-ventas-diario-parser.ts.
+  const mesDelImport = sheetMonthKey(ingGtosSheet ?? controlVtasSheet ?? "");
+  const hojaControlVentas = mesDelImport
+    ? hojaControlVentasDelMes(XLSX.read(buf, { type: "buffer", bookSheets: true }).SheetNames, mesDelImport)
+    : null;
+  const controlVentas = hojaControlVentas ? parseControlVentasDiario(buf, hojaControlVentas) : null;
+  if (controlVentas && controlVentas.errores.length > 0) {
+    return { success: false, error: `${hojaControlVentas}: ` + controlVentas.errores.join("; ") };
   }
 
   // Bloqueo si hay filas con fecha de otro mes. Va ANTES de tocar nada:
@@ -897,6 +911,25 @@ export async function executeExcelImport(
     alertsCount = controlVtasResult.alertasRedondeo.length;
   }
 
+  let ventasControlDias = 0;
+  // Si la migración 2026-09-14-ventas-control-diario todavía no corrió, la
+  // pestaña se omite en vez de tumbar la transacción de todo el mes.
+  const tablaControlVentas = controlVentas
+    ? ((await db.execute(sql`SELECT to_regclass('public.ventas_control_diario') IS NOT NULL AS existe`)).rows[0] as { existe: boolean }).existe
+    : false;
+  if (controlVentas && controlVentas.mes && tablaControlVentas) {
+    const rango = monthRange(controlVentas.mes)!;
+    q.push(txSql`DELETE FROM ventas_control_diario WHERE business_id = ${bId} AND date BETWEEN ${rango.start} AND ${rango.end} AND imported_from_excel = true`);
+    for (const f of controlVentas.filas) {
+      q.push(txSql`INSERT INTO ventas_control_diario (business_id, date, pedidos, descuentos, total_vendido, venta_credito, venta_contado, nota, imported_from_excel, import_batch_id)
+        VALUES (${bId}, ${f.date}, ${f.pedidos}, ${f.descuentos.toFixed(2)}, ${f.totalVendido.toFixed(2)}, ${f.ventaCredito.toFixed(2)}, ${f.ventaContado.toFixed(2)}, ${f.nota}, true, ${batchId}::uuid)
+        ON CONFLICT (business_id, date) DO UPDATE SET pedidos = EXCLUDED.pedidos, descuentos = EXCLUDED.descuentos, total_vendido = EXCLUDED.total_vendido,
+          venta_credito = EXCLUDED.venta_credito, venta_contado = EXCLUDED.venta_contado, nota = EXCLUDED.nota,
+          imported_from_excel = true, import_batch_id = EXCLUDED.import_batch_id, updated_at = now()`);
+    }
+    ventasControlDias = controlVentas.filas.length;
+  }
+
   // Commit atómico del mes completo.
   if (q.length > 0) {
     await txSql.transaction(q);
@@ -1030,6 +1063,7 @@ export async function executeExcelImport(
     byteSalesDays,
     tipsCount,
     alertsCount,
+    ventasControlDias,
   };
 }
 
