@@ -195,9 +195,10 @@ export function MonthlyReport() {
             return (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5 gap-4">
                 {data.ventasControl ? (() => {
-                  // Atelier: lo que vendió Byte (carga de Luis) y cómo lo
-                  // clasificó Kelly. Reemplaza al card de Control de VTAS,
-                  // que para Atelier no ve el crédito (detalle en cero).
+                  // Lo que vendió Byte (carga de la sede) y cómo lo registró
+                  // Kelly, en las tres sedes. Reemplaza al card de solo
+                  // cobros, que no cuadraba con Byte (dejaba afuera el
+                  // crédito). Sin nada cargado, cae al card anterior.
                   const vc = data.ventasControl;
                   const sinClasificar = Math.round((vc.totalVendido - vc.conciliado.totalVendido) * 100) / 100;
                   const hayVariacion = Math.abs(vc.conciliado.variacion) >= 0.01;
@@ -210,24 +211,22 @@ export function MonthlyReport() {
                       footer={
                         !vc.kellyHasta ? (
                           <div className="border-t border-gray-100 pt-2 mt-1 text-slate-400">
-                            Crédito y contado: falta el Excel de Kelly del mes.
+                            Desglose: falta el Excel de Kelly del mes.
                           </div>
                         ) : <div className="border-t border-gray-100 pt-2 mt-1 space-y-0.5">
-                          <div className="flex justify-between text-slate-600">
-                            <span>Crédito</span>
-                            <span className="font-medium">{formatCurrency(vc.conciliado.ventaCredito)}</span>
-                          </div>
-                          <div className="flex justify-between text-slate-600">
-                            <span>Contado</span>
-                            <span className="font-medium">{formatCurrency(vc.conciliado.ventaContado)}</span>
-                          </div>
+                          {vc.metodos.map((m) => (
+                            <div key={m.clave} className="flex justify-between text-slate-600">
+                              <span>{m.etiqueta.replace(/^Vta\. /, "").replace(/^./, (x) => x.toUpperCase())}</span>
+                              <span className="font-medium">{formatCurrency(vc.conciliado.montos[m.clave])}</span>
+                            </div>
+                          ))}
                           <div className={`flex justify-between ${hayVariacion ? "text-amber-700" : "text-slate-600"}`}>
                             <span>Variación</span>
                             <span className="font-medium">{formatCurrency(vc.conciliado.variacion)}</span>
                           </div>
                           {sinClasificar >= 0.01 && (
                             <div className="flex justify-between text-slate-400">
-                              <span>Sin clasificar{vc.kellyHasta ? ` (Kelly al ${formatDateShort(vc.kellyHasta)})` : ""}</span>
+                              <span>Pendiente de Kelly{vc.kellyHasta ? ` (al ${formatDateShort(vc.kellyHasta)})` : ""}</span>
                               <span className="font-medium">{formatCurrency(sinClasificar)}</span>
                             </div>
                           )}

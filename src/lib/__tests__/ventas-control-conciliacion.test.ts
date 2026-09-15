@@ -4,7 +4,9 @@
  */
 import { describe, it, expect } from "vitest";
 import * as XLSX from "xlsx";
-import { conciliarVentasDelMes, type FilaByte, type FilaKelly } from "../ventas-control-conciliacion";
+import {
+  conciliarVentasDelMes, limpiarNotaKelly, METODOS_ATELIER, METODOS_CAFETERIA, type FilaByte, type FilaCuentas,
+} from "../ventas-control-conciliacion";
 import { parseControlVentasDiario, hojaControlVentasDelMes, esHojaControlVentas } from "../control-ventas-diario-parser";
 
 const BYTE: FilaByte[] = [
@@ -19,12 +21,12 @@ const KELLY_TABLA: [string, number, number, number, number][] = [
   ["08", 7, 779.8, 779.8, 27.2], ["09", 7, 1640.72, 1640.72, 0], ["10", 4, 722.47, 722.47, 48],
   ["11", 12, 1432.38, 1432.38, 0],
 ];
-const KELLY: FilaKelly[] = KELLY_TABLA.map(([d, p, t, cr, co]) => ({
-  date: `2026-09-${d}`, pedidos: p, descuentos: 0, totalVendido: t, ventaCredito: cr, ventaContado: co, nota: null,
+const KELLY: FilaCuentas[] = KELLY_TABLA.map(([d, p, t, cr, co]) => ({
+  date: `2026-09-${d}`, pedidos: p, descuentos: 0, copiaTotalByte: t, montos: { credito: cr, contado: co }, notas: [],
 }));
 
 describe("conciliación Byte ↔ Kelly (Atelier, setiembre)", () => {
-  const r = conciliarVentasDelMes(BYTE, KELLY);
+  const r = conciliarVentasDelMes(BYTE, KELLY, METODOS_ATELIER);
 
   it("total vendido = Byte al 12 (lo oficial y más al día)", () => {
     expect(r.totalVendido).toBe(14290.56);
@@ -33,7 +35,7 @@ describe("conciliación Byte ↔ Kelly (Atelier, setiembre)", () => {
   });
 
   it("al 11, igual que el Excel de Kelly: crédito 13,020.40 + contado 488 = 13,508.40, variación 115.39", () => {
-    expect(r.conciliado).toEqual({ totalVendido: 13623.79, ventaCredito: 13020.4, ventaContado: 488, total: 13508.4, variacion: 115.39 });
+    expect(r.conciliado).toEqual({ totalVendido: 13623.79, montos: { credito: 13020.4, contado: 488 }, total: 13508.4, variacion: 115.39 });
     expect(r.diasConVariacion).toBe(4);
   });
 
@@ -45,11 +47,11 @@ describe("conciliación Byte ↔ Kelly (Atelier, setiembre)", () => {
   it("el día que Kelly aún no clasificó no tiene variación (no se acusa)", () => {
     const d12 = r.dias.find((d) => d.date === "2026-09-12")!;
     expect(d12.variacion).toBeNull();
-    expect(d12.ventaCredito).toBeNull();
+    expect(d12.montos).toBeNull();
   });
 
   it("un día que Kelly ya revisó y dejó en cero, con venta en Byte, es variación", () => {
-    const x = conciliarVentasDelMes([...BYTE, { date: "2026-09-06", pedidos: 0, descuentos: 0, total: 1 }], KELLY);
+    const x = conciliarVentasDelMes([...BYTE, { date: "2026-09-06", pedidos: 0, descuentos: 0, total: 1 }], KELLY, METODOS_ATELIER);
     const d06 = x.dias.find((d) => d.date === "2026-09-06")!;
     expect(d06.variacion).toBe(1);
     expect(d06.copiaDistinta).toBeNull();
@@ -57,15 +59,75 @@ describe("conciliación Byte ↔ Kelly (Atelier, setiembre)", () => {
   });
 
   it("avisa si Kelly copió un total de Byte distinto al que subió Luis", () => {
-    const x = conciliarVentasDelMes(BYTE, [{ ...KELLY[0], totalVendido: 1000 }]);
+    const x = conciliarVentasDelMes(BYTE, [{ ...KELLY[0], copiaTotalByte: 1000 }], METODOS_ATELIER);
     expect(x.dias[0].copiaDistinta).toEqual({ byte: 1016.37, kelly: 1000 });
     expect(x.diasCopiaDistinta).toBe(1);
   });
 
   it("sin carga de Byte, usa el total que copió Kelly", () => {
-    const x = conciliarVentasDelMes([], KELLY);
+    const x = conciliarVentasDelMes([], KELLY, METODOS_ATELIER);
     expect(x.totalVendido).toBe(13623.79);
     expect(x.dias[0].fuente).toBe("kelly");
+  });
+});
+
+describe("conciliación Byte ↔ Kelly (Fonavi, setiembre: el caso que reportó Jahnn)", () => {
+  // Byte (carga de la sede) y Control de VTAS de Kelly: efectivo, Yape y
+  // POS del lado Cuentas, crédito, y la copia del total de Byte.
+  const byte: FilaByte[] = [
+    ["01", 45, 12.1, 1396.7], ["02", 44, 7.6, 1481], ["07", 55, 26.1, 1519], ["10", 57, 19.7, 1212.9], ["12", 29, 8.7, 1096],
+  ].map(([d, p, de, t]) => ({ date: `2026-09-${d}`, pedidos: p as number, descuentos: de as number, total: t as number }));
+  const cuentas: FilaCuentas[] = [
+    { date: "2026-09-01", copiaTotalByte: 1396.7, montos: { efectivo: 240, yape: 882.7, pos: 248, credito: 26 }, notas: [] },
+    { date: "2026-09-02", copiaTotalByte: 1481, montos: { efectivo: 210.5, yape: 891.1, pos: 361, credito: 22.4 }, notas: ["VENTA NO REGISTRADA"] },
+    { date: "2026-09-07", copiaTotalByte: 1519, montos: { efectivo: 348.5, yape: 778.3, pos: 175.2, credito: 34.4 }, notas: ["FALTA VOUCHER, CUADRE CON IMAGENES DE WP"] },
+    { date: "2026-09-10", copiaTotalByte: 1212.9, montos: { efectivo: 199.5, yape: 705, pos: 0, credito: 43.6 }, notas: [] },
+    { date: "2026-09-12", copiaTotalByte: 0, montos: { efectivo: 0, yape: 99.4, pos: 0, credito: 0 }, notas: [] },
+  ];
+  const r = conciliarVentasDelMes(byte, cuentas, METODOS_CAFETERIA);
+  const dia = (d: string) => r.dias.find((x) => x.date === `2026-09-${d}`)!;
+
+  it("el 01: total vendido S/1,396.70 (Byte), y el crédito de S/26 completa el desglose", () => {
+    expect(dia("01").totalVendido).toBe(1396.7);
+    expect(dia("01").total).toBe(1396.7);
+    expect(dia("01").variacion).toBe(0);
+  });
+
+  it("los días que no cuadran muestran cuánto y por qué", () => {
+    expect(dia("02").variacion).toBe(-4);
+    expect(dia("07").variacion).toBe(182.6);
+    expect(dia("07").notas[0]).toContain("FALTA VOUCHER");
+    expect(dia("10").variacion).toBe(264.8);
+  });
+
+  it("el 12 (Yape suelto, sin total copiado) todavía no está trabajado por Kelly", () => {
+    expect(r.kellyHasta).toBe("2026-09-10");
+    expect(dia("12").variacion).toBeNull();
+    expect(dia("12").totalVendido).toBe(1096);
+  });
+});
+
+describe("día de Byte subido antes del cierre", () => {
+  const cuentas13 = (copia: number): FilaCuentas => ({ date: "2026-09-13", copiaTotalByte: copia, montos: { efectivo: 0, yape: 0, pos: 0, credito: 0 }, notas: [] });
+  const byte13 = { date: "2026-09-13", pedidos: 13, descuentos: 9.3, total: 400.1, parcial: true };
+
+  it("si Kelly ya copió el total del día, manda el de ella (Fonavi 30-ago: 102.10 → 899.60)", () => {
+    const r = conciliarVentasDelMes([{ ...byte13, total: 102.1 }], [{ ...cuentas13(899.6), montos: { efectivo: 138.1, yape: 491, pos: 270.5, credito: 0 } }], METODOS_CAFETERIA);
+    expect(r.dias[0]).toMatchObject({ totalVendido: 899.6, fuente: "kelly", parcial: false, variacion: 0, copiaDistinta: null });
+  });
+
+  it("sin copia de Kelly se muestra, marcado como parcial, y no cuenta como 'Byte al día'", () => {
+    const r = conciliarVentasDelMes([{ ...byte13, date: "2026-09-12", parcial: false, total: 1096 }, byte13], [], METODOS_CAFETERIA);
+    expect(r.dias[1]).toMatchObject({ totalVendido: 400.1, parcial: true });
+    expect(r.byteHasta).toBe("2026-09-12");
+  });
+});
+
+describe("notas de Kelly", () => {
+  it("quita el estado que calcula su fórmula y deja la explicación", () => {
+    expect(limpiarNotaKelly("REVISAR · FALTA VOUCHER")).toBe("FALTA VOUCHER");
+    expect(limpiarNotaKelly("OK")).toBeNull();
+    expect(limpiarNotaKelly("6 PROPINA")).toBe("6 PROPINA");
   });
 });
 

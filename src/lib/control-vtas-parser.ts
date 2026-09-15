@@ -187,7 +187,9 @@ export function parseControlVtas(
   //   +5 Monto Cuentas       ← el que importamos
   //   +6 Diferencia (Comparativo)
   //   +7 Referencia "(1)" "(2)" ...
-  //   +8 Nota descriptiva
+  //   +8 Nota descriptiva (o el estado "OK"/"REVISAR" que calcula Kelly)
+  //   +9 Nota descriptiva cuando +8 trae el estado (setiembre 2026 en
+  //      adelante: "FALTA VOUCHER", "VENTA NO REGISTRADA"…)
   const idxFecha = dateColIdx;
   const idxDiaSemana = dateColIdx + 1;   // "Viernes" — la prueba del mes
   const idxConceptoQuipu = dateColIdx + 2;
@@ -196,6 +198,7 @@ export function parseControlVtas(
   const idxMontoCuentas = dateColIdx + 5;
   const idxDiferencia = dateColIdx + 6;
   const idxNota = dateColIdx + 8;
+  const idxNotaExtra = dateColIdx + 9;
 
   // Mes/año esperado según el nombre de la hoja. Filas con fechas
   // fuera de este mes son ruido (totales generales, validaciones,
@@ -285,7 +288,9 @@ export function parseControlVtas(
     const montoQuipupos = toNum(row[idxMontoQuipu]);
     const montoCuentas = toNum(row[idxMontoCuentas]);
     const diferencia = toNum(row[idxDiferencia]);
-    const nota = clean(row[idxNota]);
+    // Las dos celdas juntas: sin la segunda, la nota de setiembre llegaba
+    // como "REVISAR" y la explicación de Kelly se perdía.
+    const nota = [clean(row[idxNota]), clean(row[idxNotaExtra])].filter(Boolean).join(" · ");
 
     if (!conceptoCuentas) continue;
     if (conceptoCuentas === "Total") continue;
