@@ -1114,6 +1114,26 @@ function ConfirmStep({
   );
 }
 
+/**
+ * Lo que el Excel trajo raro o distinto a lo que ya sabe el sistema quedó en
+ * la bandeja "Por definir". La importación no se frena por eso (decisión de
+ * Jahnn, 16-sep-2026): se avisa acá y se resuelve cuando se pueda.
+ */
+function AvisoPorDefinir({ pendientes, nuevas }: { pendientes?: number | null; nuevas?: number }) {
+  if (!pendientes) return null;
+  return (
+    <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 flex items-start gap-2 text-xs text-amber-900">
+      <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
+      <div>
+        Hay <strong>{pendientes}</strong> cosa(s) por definir en la clasificación de gastos
+        {nuevas ? <> ({nuevas} nueva(s) con este Excel)</> : null}: grupos que Kelly y el sistema clasifican distinto
+        o gastos que no se entienden.{" "}
+        <a href="/grupo/por-definir" className="font-semibold underline">Revisar ahora</a>
+      </div>
+    </div>
+  );
+}
+
 function ResultStep({
   result, onClose,
 }: {
@@ -1131,6 +1151,11 @@ function ResultStep({
           </p>
         </div>
       </div>
+
+      <AvisoPorDefinir
+        pendientes={(result as { revisionesPendientes?: number }).revisionesPendientes}
+        nuevas={(result as { revisionesNuevas?: number }).revisionesNuevas}
+      />
 
       <div className="space-y-2 text-sm">
         <div className="flex items-center gap-2 text-xs text-gray-500">
@@ -1550,6 +1575,7 @@ function MultiResultStep({ result, onClose }: { result: MultiMonthResult; onClos
           </div>
         ))}
       </div>
+      <AvisoPorDefinir pendientes={result.revisionesPendientes} nuevas={result.revisionesNuevas} />
       <div className="flex justify-end pt-2">
         <button onClick={onClose} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-light">
           Cerrar

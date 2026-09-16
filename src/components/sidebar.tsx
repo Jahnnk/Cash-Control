@@ -25,6 +25,7 @@ import {
   Compass,
   Target,
   ClipboardCheck,
+  ListChecks,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -43,6 +44,7 @@ const NAV: NavItem[] = [
   { segment: "direccion",     label: "Sistema de Dirección", icon: Compass,    scopes: ["grupo"] },
   { segment: "highlight",     label: "Highlight",       icon: Target,          scopes: ["grupo"] },
   { segment: "supervisiones", label: "Supervisiones",   icon: ClipboardCheck,  scopes: ["grupo"] },
+  { segment: "por-definir",   label: "Por definir",     icon: ListChecks,      scopes: ["grupo"] },
   { segment: "registro",      label: "Registro Diario", icon: PenLine,         scopes: ["atelier", "fonavi", "centro"] },
   { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },

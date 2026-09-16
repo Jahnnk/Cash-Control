@@ -20,7 +20,8 @@ import {
 } from "@/lib/incentives/candado-ventas";
 import { buildFixedVariable } from "@/lib/fixed-variable";
 import { ventasInternasDelGrupo, type SedeEnConsolidado } from "@/lib/ventas-internas-grupo";
-import { clasificarGastosPE, normGrupoPE, type CategoriaPE } from "@/lib/pe-kelly";
+import { clasificarGastosPE, normGrupoPE, type CategoriaPE, type TipoPE } from "@/lib/pe-kelly";
+import { tiposDecididosPorGrupo } from "@/lib/revision-clasificacion-sql";
 import { gastosDevueltos, MARCA_PAGO_ERRADO, DIAS_MAX, type IngresoCandidato } from "@/lib/pagos-devueltos";
 import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
 import { formatCurrency } from "@/lib/utils";
@@ -133,27 +134,43 @@ const GRUPOS_COMPRA_ATELIER = new Set(["PRODUCTOS ATELIER", "PRODUCTOS"]);
  * pestaña "PE <MES>".
  */
 async function costosSegunKelly(bId: number, start: string, end: string, cats: CategoriaPE[]) {
-  const rows = (await sql`
-    SELECT COALESCE(NULLIF(btrim(grupo_excel), ''), category) AS grupo,
-           SUM(amount)::float AS monto, MAX(date)::text AS ultimo
-    FROM expenses
-    WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
-      AND archived = false AND payment_method <> 'pendiente_atelier'
-    GROUP BY 1
-  `) as { grupo: string; monto: number; ultimo: string }[];
-  const c = clasificarGastosPE(rows, cats);
+  const [rows, decididos] = await Promise.all([
+    sql`
+      SELECT COALESCE(NULLIF(btrim(grupo_excel), ''), category) AS grupo, category, tipo_pe,
+             SUM(amount)::float AS monto, MAX(date)::text AS ultimo
+      FROM expenses
+      WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
+        AND archived = false AND payment_method <> 'pendiente_atelier'
+      GROUP BY 1, 2, 3
+    ` as unknown as Promise<{ grupo: string; category: string; tipo_pe: TipoPE | null; monto: number; ultimo: string }[]>,
+    tiposDecididosPorGrupo(bId),
+  ]);
+  // Lo que decidió Jahnn en "Por definir" manda sobre la lista de Kelly:
+  // primero el gasto puntual (tipo_pe), después el grupo, y recién ahí la
+  // lista. Ver lib/revision-clasificacion.ts.
+  const forzados = { Fijo: 0, Variable: 0, Excluido: 0 };
+  const segunLista: { grupo: string; monto: number }[] = [];
+  for (const r of rows) {
+    const t = r.tipo_pe ?? decididos.get(`${normGrupoPE(r.grupo)}|${r.category}`) ?? null;
+    if (t) forzados[t] += r.monto;
+    else segunLista.push({ grupo: r.grupo, monto: r.monto });
+  }
+  const c = clasificarGastosPE(segunLista, cats);
   const tipoDe = new Map(cats.map((x) => [x.grupoNorm, x.tipo]));
   const compraAtelier = rows
-    .filter((r) => GRUPOS_COMPRA_ATELIER.has(normGrupoPE(r.grupo)) && tipoDe.get(normGrupoPE(r.grupo)) === "Variable")
+    .filter((r) => GRUPOS_COMPRA_ATELIER.has(normGrupoPE(r.grupo)) && (r.tipo_pe ?? tipoDe.get(normGrupoPE(r.grupo))) === "Variable")
     .reduce((t, r) => t + r.monto, 0);
+  const r2 = (n: number) => Math.round(n * 100) / 100;
   return {
-    fijos: c.fijos,
-    variables: c.variables,
+    fijos: r2(c.fijos + forzados.Fijo),
+    variables: r2(c.variables + forzados.Variable),
     sinClasificar: c.sinTipo.reduce((t, x) => t + x.monto, 0),
     compraAtelier,
     ultimoGasto: rows.reduce<string | null>((max, r) => (max === null || r.ultimo > max ? r.ultimo : max), null),
     sinTipoPE: c.sinTipo,
     segunKelly: true as const,
+    /** Hay decisiones propias aplicadas: el número puede no coincidir con el Excel. */
+    conDecisiones: rows.some((r) => r.tipo_pe !== null || decididos.has(`${normGrupoPE(r.grupo)}|${r.category}`)),
   };
 }
 
@@ -189,7 +206,7 @@ async function peDelExcel(bId: number, month: string): Promise<number | null> {
 }
 
 /** Avisos propios del cálculo con la lista de Kelly. */
-function avisosKelly(r: BreakevenResult, costs: { sinTipoPE?: { grupo: string; monto: number }[] }, excel: number | null) {
+function avisosKelly(r: BreakevenResult, costs: { sinTipoPE?: { grupo: string; monto: number }[]; conDecisiones?: boolean }, excel: number | null) {
   const sinTipo = costs.sinTipoPE ?? [];
   if (sinTipo.length > 0) {
     r.warnings = r.warnings.filter((w) => !w.includes("sin clasificar como fijo/variable"));
@@ -199,7 +216,9 @@ function avisosKelly(r: BreakevenResult, costs: { sinTipoPE?: { grupo: string; m
   }
   if (excel !== null && r.breakEven !== null && Math.abs(excel - r.breakEven) >= 1) {
     r.warnings.push(
-      `El Excel de Kelly calcula S/${excel.toFixed(2)} para este mes y el sistema S/${r.breakEven.toFixed(2)}: sus datos no coinciden (¿se subió el último Excel?).`,
+      costs.conDecisiones
+        ? `El Excel de Kelly calcula S/${excel.toFixed(2)} para este mes y el sistema S/${r.breakEven.toFixed(2)}: la diferencia viene de decisiones de "Por definir" que Kelly todavía no pasó a su Excel.`
+        : `El Excel de Kelly calcula S/${excel.toFixed(2)} para este mes y el sistema S/${r.breakEven.toFixed(2)}: sus datos no coinciden (¿se subió el último Excel?).`,
     );
   }
   return r;

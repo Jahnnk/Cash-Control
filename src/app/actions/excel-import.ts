@@ -34,6 +34,7 @@ import {
 import { sheetMonthKey, monthRange } from "@/lib/excel-month-pairing";
 import { hojaControlVentasDelMes, parseControlVentasDiario } from "@/lib/control-ventas-diario-parser";
 import { parseCategoriasPE, parsePEMensualExcel } from "@/lib/pe-kelly";
+import { reaplicarDecisionesSQL, sincronizarRevisiones } from "@/lib/revision-clasificacion-sql";
 import * as XLSX from "xlsx";
 import {
   grupoDelCatalogo,
@@ -647,7 +648,7 @@ export async function executeExcelImport(
   controlVtasSheet: string | null,
   options: ImportOptions,
   sedeCentral?: string
-): Promise<ImportResult & { byteSalesDays?: number; tipsCount?: number; alertsCount?: number; ventasControlDias?: number }> {
+): Promise<ImportResult & { byteSalesDays?: number; tipsCount?: number; alertsCount?: number; ventasControlDias?: number; revisionesNuevas?: number; revisionesPendientes?: number }> {
   const bId = await importBusinessId(sedeCentral);
   if (bId === null) return { success: false, error: "El import central es solo para la dirección." };
   if (!VALID_BIDS.includes(bId)) {
@@ -890,6 +891,9 @@ export async function executeExcelImport(
         }
       }
     }
+    // Las decisiones de "Por definir" sobre gastos de este mes se vuelven a
+    // aplicar: el Excel acaba de reemplazar las filas con ids nuevos.
+    q.push(...reaplicarDecisionesSQL(txSql, bId, delStart, delEnd));
     if (options.aplicarSaldoInicial && parseResult.saldoInicial.fechaCierre) {
       const cierre = parseResult.saldoInicial.fechaCierre;
       const ef = parseResult.saldoInicial.efectivo ?? 0;
@@ -1077,9 +1081,23 @@ export async function executeExcelImport(
     }
   }
 
+  // Lo que el Excel trajo raro o distinto a lo que ya sabe el sistema va a
+  // la bandeja "Por definir". No frena la importación (decisión de Jahnn).
+  let revisionesNuevas = 0;
+  let revisionesPendientes = 0;
+  try {
+    const rev = await sincronizarRevisiones(bId);
+    revisionesNuevas = rev.nuevas;
+    revisionesPendientes = rev.pendientes;
+  } catch (err) {
+    console.error("[executeExcelImport] revisión de clasificación no disponible:", err);
+  }
+
   revalidatePath("/", "layout");
   return {
     success: true,
+    revisionesNuevas,
+    revisionesPendientes,
     batchId,
     movementsCount: (parseResult?.movimientos.length ?? 0) - filasOmitidas.size,
     archivedCount,
@@ -1161,6 +1179,9 @@ export type MultiMonthResult = {
     error?: string;
   }>;
   importedMonths: number;
+  /** Cosas por definir que quedaron en la bandeja después de importar (null = no se pudo contar). */
+  revisionesPendientes?: number | null;
+  revisionesNuevas?: number;
   skippedMonths: number;
   errorMonths: number;
 };
@@ -1201,6 +1222,8 @@ export async function executeMultiMonthImport(
   // Orden cronológico ascendente para que el recálculo de saldos en cadena
   // procese los meses de más antiguo a más reciente.
   const ordered = [...plan].sort((a, b) => a.monthKey.localeCompare(b.monthKey));
+  let revisionesPendientes: number | null = null;
+  let revisionesNuevas = 0;
 
   for (const item of ordered) {
     if (item.action === "skip") {
@@ -1231,11 +1254,13 @@ export async function executeMultiMonthImport(
         byteSalesDays: r.byteSalesDays,
       });
       importedMonths++;
+      if (r.revisionesPendientes !== undefined) revisionesPendientes = r.revisionesPendientes;
+      revisionesNuevas += r.revisionesNuevas ?? 0;
     } else {
       perMonth.push({ monthKey: item.monthKey, status: "error", error: r.error });
       errorMonths++;
     }
   }
 
-  return { perMonth, importedMonths, skippedMonths, errorMonths };
+  return { perMonth, importedMonths, skippedMonths, errorMonths, revisionesPendientes, revisionesNuevas };
 }
