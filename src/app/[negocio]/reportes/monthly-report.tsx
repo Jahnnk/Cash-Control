@@ -7,6 +7,7 @@ import { deleteByteRecord } from "@/app/actions/byte-sales";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { getCategories } from "@/app/actions/categories";
 import { FixedVariableSection } from "./fixed-variable-section";
+import { EquilibrioResumenSection } from "./equilibrio-resumen-section";
 import { getClients } from "@/app/actions/clients";
 import { getAvailableMonthRange } from "@/app/actions/month-range";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
@@ -926,6 +927,7 @@ export function MonthlyReport() {
             </div>
 
             {/* Análisis Fijo vs Variable (clasificación configurable de categorías) */}
+            <EquilibrioResumenSection month={month} />
             <FixedVariableSection month={month} />
           </div>
         </>

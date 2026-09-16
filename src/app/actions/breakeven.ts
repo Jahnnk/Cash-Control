@@ -20,6 +20,7 @@ import {
 } from "@/lib/incentives/candado-ventas";
 import { buildFixedVariable } from "@/lib/fixed-variable";
 import { ventasInternasDelGrupo, type SedeEnConsolidado } from "@/lib/ventas-internas-grupo";
+import { clasificarGastosPE, normGrupoPE, type CategoriaPE } from "@/lib/pe-kelly";
 import { gastosDevueltos, MARCA_PAGO_ERRADO, DIAS_MAX, type IngresoCandidato } from "@/lib/pagos-devueltos";
 import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
 import { formatCurrency } from "@/lib/utils";
@@ -92,6 +93,118 @@ async function ventasDelMesConFuente(bId: number, start: string, end: string): P
   return elegirFuenteVentas(fuentes);
 }
 
+/* ─────────────────────────────────────────────────────────────────────
+   Punto de equilibrio con la clasificación de Kelly
+   ───────────────────────────────────────────────────────────────────── */
+
+/**
+ * La lista "Categorías PE" de la sede, si su Excel ya la trae. Con ella el
+ * punto de equilibrio se calcula EXACTAMENTE como el Excel de Kelly
+ * (verificado: Fonavi agosto 2026, S/37,493.20 en los dos). Sin ella, la
+ * sede sigue con la clasificación del sistema. Ver lib/pe-kelly.ts.
+ *
+ * Memoria de 30 s por sede: la referencia consulta hasta 9 meses por sede
+ * y la lista no cambia entre esas consultas.
+ */
+const memoCategoriasPE = new Map<number, { hasta: number; valor: CategoriaPE[] | null }>();
+async function categoriasPE(bId: number): Promise<CategoriaPE[] | null> {
+  const m = memoCategoriasPE.get(bId);
+  if (m && m.hasta > Date.now()) return m.valor;
+  let valor: CategoriaPE[] | null = null;
+  try {
+    const rows = (await sql`
+      SELECT grupo, grupo_norm AS "grupoNorm", tipo, nota FROM pe_categorias WHERE business_id = ${bId}
+    `) as CategoriaPE[];
+    valor = rows.length > 0 ? rows : null;
+  } catch {
+    valor = null; // tabla sin migrar: clasificación del sistema
+  }
+  memoCategoriasPE.set(bId, { hasta: Date.now() + 30_000, valor });
+  return valor;
+}
+
+/** Grupos de Kelly que son compra a Atelier (para el consolidado del grupo). */
+const GRUPOS_COMPRA_ATELIER = new Set(["PRODUCTOS ATELIER", "PRODUCTOS"]);
+
+/**
+ * Costos del mes clasificados como en el Excel de Kelly: todos los gastos
+ * del mes por su texto de Grupo original (o la categoría, en los que no
+ * vinieron del Excel), con el monto completo — igual que las sumas de su
+ * pestaña "PE <MES>".
+ */
+async function costosSegunKelly(bId: number, start: string, end: string, cats: CategoriaPE[]) {
+  const rows = (await sql`
+    SELECT COALESCE(NULLIF(btrim(grupo_excel), ''), category) AS grupo,
+           SUM(amount)::float AS monto, MAX(date)::text AS ultimo
+    FROM expenses
+    WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
+      AND archived = false AND payment_method <> 'pendiente_atelier'
+    GROUP BY 1
+  `) as { grupo: string; monto: number; ultimo: string }[];
+  const c = clasificarGastosPE(rows, cats);
+  const tipoDe = new Map(cats.map((x) => [x.grupoNorm, x.tipo]));
+  const compraAtelier = rows
+    .filter((r) => GRUPOS_COMPRA_ATELIER.has(normGrupoPE(r.grupo)) && tipoDe.get(normGrupoPE(r.grupo)) === "Variable")
+    .reduce((t, r) => t + r.monto, 0);
+  return {
+    fijos: c.fijos,
+    variables: c.variables,
+    sinClasificar: c.sinTipo.reduce((t, x) => t + x.monto, 0),
+    compraAtelier,
+    ultimoGasto: rows.reduce<string | null>((max, r) => (max === null || r.ultimo > max ? r.ultimo : max), null),
+    sinTipoPE: c.sinTipo,
+    segunKelly: true as const,
+  };
+}
+
+/**
+ * Ventas del mes para el punto de equilibrio. Con la clasificación de
+ * Kelly, las mismas que usa su Excel: el total de Byte de su Control de
+ * VTAS (celda E194, que el sistema guarda día por día). Si ese mes no la
+ * tiene, las de siempre.
+ */
+async function ventasParaEquilibrio(bId: number, start: string, end: string): Promise<{ total: number; dias: number }> {
+  if (await categoriasPE(bId)) {
+    const r = (await sql`
+      SELECT COALESCE(SUM(total_pos_excel), 0)::float AS total,
+             COUNT(*) FILTER (WHERE total_pos_excel > 0)::int AS dias
+      FROM byte_sales_daily WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
+    `) as { total: number; dias: number }[];
+    if (r[0] && r[0].total > 0) return { total: Math.round(r[0].total * 100) / 100, dias: r[0].dias };
+  }
+  const v = await ventasDelMesConFuente(bId, start, end);
+  return { total: v.total, dias: v.dias };
+}
+
+/** Lo que calculó el Excel de Kelly para ese mes (el control). */
+async function peDelExcel(bId: number, month: string): Promise<number | null> {
+  try {
+    const r = (await sql`
+      SELECT punto_equilibrio::float AS pe FROM pe_mensual_excel WHERE business_id = ${bId} AND month = ${month}
+    `) as { pe: number | null }[];
+    return r[0]?.pe ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/** Avisos propios del cálculo con la lista de Kelly. */
+function avisosKelly(r: BreakevenResult, costs: { sinTipoPE?: { grupo: string; monto: number }[] }, excel: number | null) {
+  const sinTipo = costs.sinTipoPE ?? [];
+  if (sinTipo.length > 0) {
+    r.warnings = r.warnings.filter((w) => !w.includes("sin clasificar como fijo/variable"));
+    r.warnings.push(
+      `Hay gastos con un Grupo que no está en la lista "Categorías PE" de Kelly y no entran al cálculo: ${sinTipo.map((x) => `${x.grupo} (S/${x.monto.toFixed(2)})`).join(", ")}. Hay que agregarlos a la lista en su Excel.`,
+    );
+  }
+  if (excel !== null && r.breakEven !== null && Math.abs(excel - r.breakEven) >= 1) {
+    r.warnings.push(
+      `El Excel de Kelly calcula S/${excel.toFixed(2)} para este mes y el sistema S/${r.breakEven.toFixed(2)}: sus datos no coinciden (¿se subió el último Excel?).`,
+    );
+  }
+  return r;
+}
+
 /**
  * Fijos/variables/sin-clasificar operativos del mes de una sede, y hasta
  * qué día llegan los gastos registrados.
@@ -100,6 +213,10 @@ async function ventasDelMesConFuente(bId: number, start: string, end: string): P
  * lib/pagos-devueltos.ts (Fonavi, agosto 2026: S/3,777).
  */
 async function monthCosts(bId: number, start: string, end: string) {
+  // Si la sede ya tiene la lista de Kelly, manda la de Kelly.
+  const pe = await categoriasPE(bId);
+  if (pe) return costosSegunKelly(bId, start, end, pe);
+
   const [rows, cats] = await Promise.all([
     sql`
       SELECT id::text AS id, date::text AS date, category, concept, amount::float AS bruto,
@@ -151,6 +268,8 @@ async function monthCosts(bId: number, start: string, end: string) {
     sinClasificar: report.sinClasificar.total,
     compraAtelier,
     ultimoGasto: gastos.reduce<string | null>((max, g) => (max === null || g.date > max ? g.date : max), null),
+    sinTipoPE: undefined as { grupo: string; monto: number }[] | undefined,
+    segunKelly: false as boolean,
   };
 }
 
@@ -223,7 +342,7 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
     candidates.map(async (m) => {
       const { start, end, daysInMonth } = monthMeta(m);
       const [v, costs] = await Promise.all([
-        ventasDelMesConFuente(bId, start, end),
+        ventasParaEquilibrio(bId, start, end),
         monthCosts(bId, start, end),
       ]);
       const diasSinGasto = costs.ultimoGasto
@@ -261,7 +380,9 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
 async function breakevenOf(bId: number, month: string): Promise<BreakevenResult> {
   const { start, end, daysInMonth, daysElapsed, isCurrent } = monthMeta(month);
   const [ventas, costs, reference] = await Promise.all([
-    monthSales(bId, start, end),
+    // Mes en curso: lo vendido a la fecha (la fuente más al día). Mes
+    // cerrado: las mismas ventas que usa el Excel de Kelly.
+    isCurrent ? monthSales(bId, start, end) : ventasParaEquilibrio(bId, start, end).then((v) => v.total),
     monthCosts(bId, start, end),
     isCurrent ? buildReference(bId, month) : Promise.resolve(null),
   ]);
@@ -275,7 +396,11 @@ async function breakevenOf(bId: number, month: string): Promise<BreakevenResult>
     ];
     return r;
   }
-  return computeBreakeven({ ...costs, ventas, daysElapsed, daysInMonth, reference });
+  const r = computeBreakeven({ ...costs, ventas, daysElapsed, daysInMonth, reference });
+  if (!costs.segunKelly) return r;
+  // El control contra el Excel solo tiene sentido en un mes cerrado: el
+  // mes en curso usa la referencia, no los gastos del propio mes.
+  return avisosKelly(r, costs, isCurrent ? null : await peDelExcel(bId, month));
 }
 
 /** Punto de equilibrio del mes para la sede activa (dashboard de sede). */
@@ -328,12 +453,14 @@ export async function getGroupBreakeven(month: string): Promise<
     const ids = [1, 2, 3];
     const perSede = await Promise.all(
       ids.map(async (bId) => {
-        const [v, costs, reference] = await Promise.all([
+        const [v, costs, reference, cerrado] = await Promise.all([
           ventasDelMesConFuente(bId, start, end),
           monthCosts(bId, start, end),
           isCurrent ? buildReference(bId, month) : Promise.resolve(null),
+          // Mes cerrado: las mismas ventas que el punto de equilibrio de la sede.
+          isCurrent ? Promise.resolve(null) : ventasParaEquilibrio(bId, start, end),
         ]);
-        return { bId, ventas: v.total, ventasHasta: v.ultimoDia, reference, ...costs };
+        return { bId, ventas: cerrado?.total ?? v.total, ventasHasta: v.ultimoDia, reference, ...costs };
       }),
     );
     const sedes = perSede.map((s) => {
@@ -515,4 +642,67 @@ export async function getEntradaCandadoVentas(
     }
   }
   return { ...base, meta, provisional: true, mesesReferencia: ref!.monthsUsed };
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Resumen mensual del punto de equilibrio (la pestaña "PE Resumen")
+   ───────────────────────────────────────────────────────────────────── */
+
+export type FilaResumenEquilibrio = {
+  month: string;
+  ventas: number;
+  variables: number;
+  fijos: number;
+  puntoEquilibrio: number | null;
+  /** Ventas − variables − fijos. */
+  utilidadOperativa: number;
+  /** null = el mes todavía no terminó. */
+  sobreEquilibrio: boolean | null;
+  enCurso: boolean;
+  /** Lo que calculó el Excel de Kelly para ese mes (null si no lo trae). */
+  excel: number | null;
+  /** Gastos con un Grupo que no está en la lista de Kelly. */
+  sinTipo: number;
+};
+
+/**
+ * El punto de equilibrio de cada mes, calculado solo con los datos de ese
+ * mes — igual que la pestaña "PE Resumen" del Excel de Kelly. Sirve para
+ * ver la tendencia y controlar contra el Excel. La META del bono no sale
+ * de acá: sale de juntar los meses completos (ver buildReference), porque
+ * un mes solo salta mucho (Fonavi 2026: mayo S/21,384, agosto S/37,493).
+ */
+export async function getResumenEquilibrio(hastaMonth: string, meses = 6): Promise<
+  | { ok: true; segunKelly: boolean; filas: FilaResumenEquilibrio[] }
+  | { ok: false; error: string }
+> {
+  if (!(await requireFullSession())) return { ok: false, error: "Sin acceso." };
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(hastaMonth)) return { ok: false, error: "Mes inválido." };
+  try {
+    const bId = await activeBusinessId();
+    const lista = [hastaMonth, ...prevMonths(hastaMonth, meses - 1)].reverse();
+    const filas = await Promise.all(lista.map(async (m): Promise<FilaResumenEquilibrio | null> => {
+      const { start, end, isCurrent } = monthMeta(m);
+      const [v, c, excel] = await Promise.all([ventasParaEquilibrio(bId, start, end), monthCosts(bId, start, end), peDelExcel(bId, m)]);
+      if (v.total === 0 && c.fijos === 0 && c.variables === 0) return null;
+      const margen = v.total > 0 ? (v.total - c.variables) / v.total : 0;
+      const pe = margen > 0 ? Math.round((c.fijos / margen) * 100) / 100 : null;
+      return {
+        month: m,
+        ventas: v.total,
+        variables: Math.round(c.variables * 100) / 100,
+        fijos: Math.round(c.fijos * 100) / 100,
+        puntoEquilibrio: pe,
+        utilidadOperativa: Math.round((v.total - c.variables - c.fijos) * 100) / 100,
+        sobreEquilibrio: isCurrent || pe === null ? null : v.total >= pe,
+        enCurso: isCurrent,
+        excel,
+        sinTipo: Math.round(c.sinClasificar * 100) / 100,
+      };
+    }));
+    return { ok: true, segunKelly: (await categoriasPE(bId)) !== null, filas: filas.filter((f): f is FilaResumenEquilibrio => f !== null) };
+  } catch (err) {
+    console.error("[getResumenEquilibrio] failed:", err);
+    return { ok: false, error: "No se pudo calcular el resumen del punto de equilibrio." };
+  }
 }

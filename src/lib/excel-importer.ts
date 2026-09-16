@@ -31,6 +31,12 @@ export type ParsedMovement = {
   date: string;                            // YYYY-MM-DD
   type: "income" | "expense";
   category: string;
+  /**
+   * El texto de "Grupo" tal como lo escribió Kelly, antes de normalizarlo
+   * a la categoría canónica. Lo necesita el punto de equilibrio: la lista
+   * "Categorías PE" clasifica por este texto (ver lib/pe-kelly.ts).
+   */
+  grupoExcel: string;
   paymentMethod: "efectivo" | "transferencia" | "yape_plin" | "pos";
   destination: "cash" | "bank";
   amount: number;
@@ -699,6 +705,7 @@ export function parseExcelFile(
       date: fecha,
       type: effectiveType,
       category: cat,
+      grupoExcel: grupoRaw,
       paymentMethod,
       destination,
       amount: Math.round(amount * 100) / 100,

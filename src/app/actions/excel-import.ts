@@ -33,6 +33,7 @@ import {
 } from "@/lib/control-vtas-parser";
 import { sheetMonthKey, monthRange } from "@/lib/excel-month-pairing";
 import { hojaControlVentasDelMes, parseControlVentasDiario } from "@/lib/control-ventas-diario-parser";
+import { parseCategoriasPE, parsePEMensualExcel } from "@/lib/pe-kelly";
 import * as XLSX from "xlsx";
 import {
   grupoDelCatalogo,
@@ -682,6 +683,15 @@ export async function executeExcelImport(
     return { success: false, error: `${hojaControlVentas}: ` + controlVentas.errores.join("; ") };
   }
 
+  // Punto de equilibrio de Kelly: su lista "Categorías PE" y lo que calculó
+  // cada pestaña "PE <MES>". Un error en la lista bloquea: con una
+  // clasificación contradictoria la meta del bono saldría mal sin avisar.
+  const categoriasPE = parseCategoriasPE(buf);
+  if (categoriasPE && categoriasPE.errores.length > 0) {
+    return { success: false, error: "Categorías PE: " + categoriasPE.errores.join("; ") };
+  }
+  const peMensualExcel = categoriasPE ? parsePEMensualExcel(buf, Number((mesDelImport ?? "2026").slice(0, 4))) : [];
+
   // Bloqueo si hay filas con fecha de otro mes. Va ANTES de tocar nada:
   // esas filas caen fuera del rango de limpieza y se acumulan una copia
   // por importación — así se juntaron S/4,613 de harina repetida en
@@ -874,9 +884,9 @@ export async function executeExcelImport(
         const regla = repartoPorFila.get(m.excelRow);
         if (regla) {
           const parte = partirMonto(m.amount, regla);
-          q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id, is_shared, atelier_amount, fonavi_amount, centro_amount) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid, true, ${parte.atelier.toFixed(2)}, ${parte.fonavi.toFixed(2)}, ${parte.centro.toFixed(2)})`);
+          q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id, is_shared, atelier_amount, fonavi_amount, centro_amount, grupo_excel) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid, true, ${parte.atelier.toFixed(2)}, ${parte.fonavi.toFixed(2)}, ${parte.centro.toFixed(2)}, ${m.grupoExcel})`);
         } else {
-          q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid)`);
+          q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id, grupo_excel) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid, ${m.grupoExcel})`);
         }
       }
     }
@@ -909,6 +919,22 @@ export async function executeExcelImport(
       q.push(txSql`INSERT INTO rounding_alerts (business_id, date, payment_method, amount_quipupos, amount_cuentas, difference, note_text, imported_from_excel, import_batch_id) VALUES (${bId}, ${a.date}, ${a.payment_method}, ${a.amount_quipupos.toFixed(2)}, ${a.amount_cuentas.toFixed(2)}, ${a.difference.toFixed(2)}, ${a.note_text}, true, ${batchId}::uuid)`);
     }
     alertsCount = controlVtasResult.alertasRedondeo.length;
+  }
+
+  // La lista de Kelly reemplaza entera la de la sede (si borró una
+  // variante, deja de existir), y cada "PE <MES>" se guarda como control.
+  if (categoriasPE && categoriasPE.categorias.length > 0) {
+    q.push(txSql`DELETE FROM pe_categorias WHERE business_id = ${bId}`);
+    for (const c of categoriasPE.categorias) {
+      q.push(txSql`INSERT INTO pe_categorias (business_id, grupo_norm, grupo, tipo, nota) VALUES (${bId}, ${c.grupoNorm}, ${c.grupo}, ${c.tipo}, ${c.nota})`);
+    }
+    for (const pe of peMensualExcel) {
+      q.push(txSql`INSERT INTO pe_mensual_excel (business_id, month, ventas, costos_variables, costos_fijos, excluido, punto_equilibrio, conciliacion, hoja)
+        VALUES (${bId}, ${pe.month}, ${pe.ventas}, ${pe.costosVariables}, ${pe.costosFijos}, ${pe.excluido}, ${pe.puntoEquilibrio}, ${pe.conciliacion}, ${pe.hoja})
+        ON CONFLICT (business_id, month) DO UPDATE SET ventas = EXCLUDED.ventas, costos_variables = EXCLUDED.costos_variables,
+          costos_fijos = EXCLUDED.costos_fijos, excluido = EXCLUDED.excluido, punto_equilibrio = EXCLUDED.punto_equilibrio,
+          conciliacion = EXCLUDED.conciliacion, hoja = EXCLUDED.hoja, importado_en = now()`);
+    }
   }
 
   let ventasControlDias = 0;
