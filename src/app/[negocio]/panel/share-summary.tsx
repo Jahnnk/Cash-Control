@@ -4,6 +4,8 @@ import { useEffect, useState } from "react";
 import { Copy, Check } from "lucide-react";
 import { monthLabel } from "@/lib/utils";
 import type { IncentiveProgress } from "@/lib/incentives/engine";
+import type { EstadoCandadoVentas } from "@/lib/incentives/candado-ventas";
+import type { ResumenSupervisionMes } from "@/lib/supervisiones";
 import { getMejorVendedor } from "@/app/actions/mejor-vendedor";
 import { buildSedeShareLines, buildShareHeader, SHARE_FOOTER } from "@/lib/incentives/share-text";
 
@@ -24,11 +26,18 @@ export function ShareSummary({
   month,
   progress,
   ticketBase,
+  ventas,
+  supervision,
+  practica,
 }: {
   sedeLabel: string;
   month: string;
   progress: IncentiveProgress;
   ticketBase: number;
+  /** Meta de ventas del mes (siempre, aunque sea práctica). */
+  ventas: EstadoCandadoVentas | null;
+  supervision: ResumenSupervisionMes | null;
+  practica: boolean;
 }) {
   const [copied, setCopied] = useState(false);
   const [mv, setMv] = useState<{ ganador: string | null; periodEnd: string | null }>({ ganador: null, periodEnd: null });
@@ -55,7 +64,11 @@ export function ShareSummary({
       trafficFloor: progress.traffic.floor,
       personasPorDia: progress.traffic.personasPorDia,
       trafficCumple: progress.traffic.cumple,
-      candadoVentas: progress.candadoVentas,
+      candadoVentas: ventas,
+      supervision: supervision
+        ? { estado: supervision.estado, visitas: supervision.visitas, enPlazo: supervision.criticas.enPlazo, porConfirmar: supervision.criticas.porConfirmar, fueraDePlazo: supervision.criticas.fueraDePlazo }
+        : null,
+      practica,
       mejorVendedor: mv.ganador,
       mvPeriodEnd: mv.periodEnd,
     }),

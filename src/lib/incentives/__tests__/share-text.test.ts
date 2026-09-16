@@ -92,3 +92,28 @@ describe("mejor vendedor: un solo umbral en todo el sistema", () => {
     expect(contarNoElegibles([{ mesas: 99 }, { mesas: 97 }, { mesas: 59 }, { mesas: 55 }, { mesas: 33 }])).toBe(3);
   });
 });
+
+describe("resumen para el equipo con los 3 activadores", () => {
+  const base = {
+    sede: "Fonavi", daysLoaded: 15, ticketActual: 23.5, ticketBase: 22.11, nivelAlcanzado: null,
+    proximoNivel: { nombre: "Nivel 1", faltaSoles: 0.11 }, trafficFloor: null, personasPorDia: 50, trafficCumple: true,
+    candadoVentas: { meta: 27600, ventas: 16166, proyeccion: 33400, cumple: false, enCamino: true, provisional: false },
+    mejorVendedor: null, mvPeriodEnd: null,
+  };
+
+  it("incluye la supervisión y, en setiembre, marca la práctica", async () => {
+    const { buildSedeShareLines } = await import("../share-text");
+    const lineas = buildSedeShareLines({
+      ...base, practica: true,
+      supervision: { estado: "pendiente", visitas: 1, enPlazo: 1, porConfirmar: 0, fueraDePlazo: 0 },
+    });
+    expect(lineas.some((l) => l.startsWith("• Meta de ventas del mes") && l.endsWith("práctica: cuenta desde octubre"))).toBe(true);
+    expect(lineas).toContain("• Supervisiones de Juani: 1 crítica(s) por corregir en 24 h · práctica: cuenta desde octubre");
+  });
+
+  it("desde octubre, una crítica tarde avisa que no hay bono", async () => {
+    const { buildSedeShareLines } = await import("../share-text");
+    const lineas = buildSedeShareLines({ ...base, supervision: { estado: "incumplido", visitas: 2, enPlazo: 0, porConfirmar: 0, fueraDePlazo: 1 } });
+    expect(lineas).toContain("• Supervisiones de Juani: ✗ 1 crítica(s) no se corrigieron a tiempo — este mes no hay bono");
+  });
+});

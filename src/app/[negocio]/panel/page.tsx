@@ -32,9 +32,8 @@ import { ProponerHighlight } from "./proponer-highlight";
 import { MiRutina } from "./mi-rutina";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
-import { EquilibrioCard } from "./equilibrio-card";
+import { BonoDelMesCard } from "./bono-del-mes-card";
 import { SupervisionesCard } from "./supervisiones-card";
-import { ETIQUETA_ESTADO_MES } from "@/lib/supervisiones";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -206,6 +205,10 @@ function IncentivosPage() {
           compitiera con los KPIs, dejaría de ser lo más importante. */}
       <HighlightSlot />
 
+      {/* Tu bono de este mes: los 3 activadores (ticket, ventas,
+          supervisiones). Justo después de lo más importante del día. */}
+      {data && <BonoDelMesCard data={data} month={month} />}
+
       {/* ¿Ya registré los KPIs de hoy? Va debajo del Highlight y arriba
           de todo lo demás: es lo que no se les puede pasar. */}
       <EstadoKpisCard refrescar={weekRefresh} onRegistrar={irAlRegistro} />
@@ -276,7 +279,7 @@ function IncentivosPage() {
       ) : (
         <>
           {/* 1 · Avance del ticket */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+          <div className={`grid grid-cols-1 gap-4 ${p.traffic.floor !== null ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
             <div className="bg-white rounded-xl border border-gray-200 p-4">
               <div className="text-[11px] uppercase text-gray-500">Ticket promedio del programa ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
               <div className="text-2xl font-black text-gray-900">
@@ -313,31 +316,7 @@ function IncentivosPage() {
                 </div>
               )}
             </div>
-            {p.traffic.floor === null ? (
-              // Desde octubre 2026 el piso de tráfico ya no existe: el bono
-              // pide tres cosas a la vez, y se ven juntas para que nadie
-              // crea que con el ticket basta.
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="text-[11px] uppercase text-gray-500 mb-1.5">Requisitos del bono (los 3)</div>
-                <ul className="space-y-1 text-xs">
-                  {([
-                    ["Ticket", p.nivelAlcanzado ? "ok" : "no", p.nivelAlcanzado ? p.nivelAlcanzado.nombre : "Aún sin nivel"],
-                    ["Ventas", !p.candadoVentas || p.candadoVentas.meta === null ? "na" : p.candadoVentas.cumple ? "ok" : p.candadoVentas.enCamino ? "camino" : "no",
-                      !p.candadoVentas || p.candadoVentas.meta === null ? "Sin meta" : p.candadoVentas.cumple ? "Cubiertas" : p.candadoVentas.enCamino ? "En camino" : "No alcanza"],
-                    ["Supervisiones", !p.supervision ? "na" : p.supervision.cumple ? "ok" : p.supervision.estado === "pendiente" ? "camino" : "no",
-                      p.supervision ? ETIQUETA_ESTADO_MES[p.supervision.estado] : "—"],
-                  ] as const).map(([nombre, estado, texto]) => (
-                    <li key={nombre} className="flex items-center justify-between gap-2">
-                      <span className="text-gray-600">{nombre}</span>
-                      <span className={`flex items-center gap-1 font-medium ${estado === "ok" ? "text-emerald-600" : estado === "camino" ? "text-amber-600" : estado === "no" ? "text-red-600" : "text-gray-400"}`}>
-                        {estado === "ok" ? <CheckCircle2 className="w-3.5 h-3.5" /> : estado === "no" ? <XCircle className="w-3.5 h-3.5" /> : null}
-                        {texto}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ) : (
+            {p.traffic.floor !== null && (
               <div className="bg-white rounded-xl border border-gray-200 p-4">
                 <div className="text-[11px] uppercase text-gray-500">Piso de tráfico</div>
                 <div className={`text-lg font-bold flex items-center gap-1.5 ${p.traffic.cumple ? "text-emerald-600" : "text-red-600"}`}>
@@ -358,9 +337,9 @@ function IncentivosPage() {
             </div>
           </div>
 
-          {/* 1b · ¿Cubrimos los costos del mes? y las supervisiones de Juani:
-              los otros dos requisitos del bono, pegados al del ticket. */}
-          <EquilibrioCard e={data.equilibrio} month={month} />
+          {/* 1b · Las observaciones de Juani con su plazo y la foto de la
+              corrección (el resumen de ventas y supervisiones está arriba,
+              en "Tu bono de este mes"). */}
           <SupervisionesCard month={month} onCambio={() => void load(month)} />
 
           {/* 2 · Tabla de niveles y pozo */}
@@ -421,6 +400,9 @@ function IncentivosPage() {
             month={month}
             progress={p}
             ticketBase={data.config.ticketBase}
+            ventas={data.equilibrio}
+            supervision={data.supervisionMes}
+            practica={!data.tresActivadores}
           />
 
           {/* 2b · Foco de upselling sugerido (datos del PIC de esta sede) */}

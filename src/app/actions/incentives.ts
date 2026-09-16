@@ -14,6 +14,7 @@ import { neon } from "@neondatabase/serverless";
 import { getEntradaCandadoVentas } from "./breakeven";
 import { getEntradaSupervision } from "./supervisiones";
 import { evaluarCandadoVentas, type EstadoCandadoVentas } from "@/lib/incentives/candado-ventas";
+import { resumirSupervisionMes, situacionObservacion, type ResumenSupervisionMes } from "@/lib/supervisiones";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { refrescarRosterSiHaceFalta } from "./roster-sync";
@@ -92,6 +93,15 @@ export type IncentiveDashboard = {
    * cuenta para el bono. null = no se pudo calcular.
    */
   equilibrio: EstadoCandadoVentas | null;
+  /**
+   * Supervisiones del mes, SIEMPRE (no solo cuando son requisito), para el
+   * bloque "Tu bono de este mes" — en setiembre 2026 se muestra como práctica.
+   */
+  supervisionMes: ResumenSupervisionMes | null;
+  /** Plazo más cercano de una crítica todavía en plazo (ISO). */
+  proximoVencimientoCritica: string | null;
+  /** La política del mes exige ventas y supervisiones (desde octubre 2026). */
+  tresActivadores: boolean;
   flags: (ControlFlag & { resolution: FlagResolution | null })[];
   workers: { nombre: string; mesas: number; total: number; ticketMesa: number | null; periodEnd: string | null }[];
   eventCounts: { anulaciones: number; cortesias: number; cambiosPrecio: number };
@@ -223,7 +233,9 @@ export async function getIncentiveDashboard(
     // meses cuya política lo pide (desde octubre 2026).
     const [candadoVentas, supervision] = await Promise.all([
       getEntradaCandadoVentas(bId, month),
-      config.requiereSupervision ? getEntradaSupervision(bId, month) : Promise.resolve(null),
+      // Se lee siempre: el panel lo muestra como práctica aunque este mes
+      // todavía no sea requisito (el motor solo lo usa si la política lo pide).
+      getEntradaSupervision(bId, month),
     ]);
     const progress = computeProgress(
       config,
@@ -235,6 +247,14 @@ export async function getIncentiveDashboard(
     );
     const equilibrio =
       progress.candadoVentas ?? (candadoVentas ? evaluarCandadoVentas(candadoVentas, diasOperativos) : null);
+    const supervisionMes = supervision
+      ? resumirSupervisionMes(supervision.visitas, supervision.observaciones, supervision.ahoraISO)
+      : null;
+    const proximoVencimientoCritica = supervision
+      ? supervision.observaciones
+          .filter((o) => o.gravedad === "critica" && situacionObservacion(o, supervision.ahoraISO) === "en_plazo")
+          .map((o) => o.plazoHasta).sort()[0] ?? null
+      : null;
     const flags = computeFlags(controlEvents, workerSales);
 
     // Segunda firma: estado por día + banderas de días observados o sin
@@ -310,6 +330,9 @@ export async function getIncentiveDashboard(
         },
         isAdminSession: access.isAdmin,
         equilibrio,
+        supervisionMes,
+        proximoVencimientoCritica,
+        tresActivadores: config.requiereEquilibrio === true && config.requiereSupervision === true,
       },
     };
   } catch (err) {

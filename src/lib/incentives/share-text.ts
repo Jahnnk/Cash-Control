@@ -20,7 +20,17 @@ export type SedeShareInput = {
   personasPorDia: number | null;
   trafficCumple: boolean;
   /** Candado de ventas del mes (desde octubre 2026). null = no aplica. */
-  candadoVentas?: { meta: number | null; ventas: number; proyeccion: number | null; cumple: boolean; enCamino: boolean; provisional: boolean } | null;
+  candadoVentas?: { meta: number | null; ventas: number; proyeccion: number | null; cumple: boolean; enCamino: boolean; provisional: boolean; vinculante?: boolean } | null;
+  /**
+   * Supervisiones de Juani del mes (tercer activador desde octubre 2026).
+   * null = no aplica / sin datos.
+   */
+  supervision?: { estado: "sin_visitas" | "al_dia" | "pendiente" | "incumplido"; visitas: number; enPlazo: number; porConfirmar: number; fueraDePlazo: number } | null;
+  /**
+   * true = el mes todavía se paga con las reglas anteriores y ventas y
+   * supervisiones se muestran como práctica (setiembre 2026).
+   */
+  practica?: boolean;
   /** Ganador del mejor vendedor (el del desayuno) — null sin ranking. */
   mejorVendedor: string | null;
   /** Fin del periodo del ranking (YYYY-MM-DD) para fechar el podio. */
@@ -61,9 +71,20 @@ export function buildSedeShareLines(s: SedeShareInput): string[] {
           ? " ✓ cubierta"
           : cv.enCamino
             ? ` (al ritmo actual cerramos en ${soles(cv.proyeccion ?? 0)} ✓)`
-            : ` (al ritmo actual cerramos en ${soles(cv.proyeccion ?? 0)}: hay que acelerar — sin esta meta no hay bono)`
-      }`,
+            : ` (al ritmo actual cerramos en ${soles(cv.proyeccion ?? 0)}: hay que acelerar${s.practica ? "" : " — sin esta meta no hay bono"})`
+      }${s.practica ? " · práctica: cuenta desde octubre" : ""}`,
     );
+  }
+  const sup = s.supervision;
+  if (sup) {
+    const practica = s.practica ? " · práctica: cuenta desde octubre" : "";
+    const texto =
+      sup.estado === "sin_visitas" ? "sin visitas este mes ✓"
+      : sup.estado === "al_dia" ? `al día ✓ (${sup.visitas} visita${sup.visitas === 1 ? "" : "s"})`
+      : sup.estado === "pendiente"
+        ? [sup.enPlazo > 0 ? `${sup.enPlazo} crítica(s) por corregir en 24 h` : null, sup.porConfirmar > 0 ? `${sup.porConfirmar} esperando confirmación de Juani` : null].filter(Boolean).join(" · ")
+        : `✗ ${sup.fueraDePlazo} crítica(s) no se corrigieron a tiempo${s.practica ? "" : " — este mes no hay bono"}`;
+    lines.push(`• Supervisiones de Juani: ${texto}${practica}`);
   }
   if (s.mejorVendedor) {
     lines.push(`• ☕ Mejor vendedor (va ganando el desayuno): ${s.mejorVendedor}${s.mvPeriodEnd ? ` (al ${ddmm(s.mvPeriodEnd)})` : ""}`);
