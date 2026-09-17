@@ -74,4 +74,19 @@ describe("pestañas PE <MES> (lo que calculó el Excel)", () => {
       excluido: 10940.62, puntoEquilibrio: 37493.2, conciliacion: 0,
     }]);
   });
+  it("con ajustes del mes toma los totales finales, no los brutos (Atelier ago-2026)", () => {
+    const hoja: unknown[][] = [
+      ["PUNTO DE EQUILIBRIO — AGO26 · YAYI'S ATELIER"],
+      ["Ventas totales BITE", null, 40905.24],
+      ["Total Costos Fijos (bruto, antes de ajustes de este mes)", null, 28189.83],
+      ["Total Excluido (bruto, antes de ajustes de este mes)", null, 5050.63],
+      ["(–) Devolución de préstamo intercompañía a Fonavi (fila 257)", null, 1000],
+      ["Total Costos Variables", null, 19236.14],
+      ["Total Costos Fijos", null, 25989.83],
+      ["Total Excluido (financiamiento / inversión / no recurrente)", null, 7250.63],
+      ["PUNTO DE EQUILIBRIO MENSUAL (S/)", null, 49061.5777],
+    ];
+    const [r] = parsePEMensualExcel(libro({ "PE AGO26": hoja }), 2026);
+    expect(r).toMatchObject({ costosFijos: 25989.83, excluido: 7250.63, costosVariables: 19236.14, puntoEquilibrio: 49061.58 });
+  });
 });

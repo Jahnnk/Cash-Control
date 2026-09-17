@@ -99,8 +99,13 @@ export function parsePEMensualExcel(buffer: Buffer | ArrayBuffer, fallbackYear: 
     if (!p) continue;
     const rows = XLSX.utils.sheet_to_json<unknown[]>(wb.Sheets[hoja], { header: 1, defval: null });
     // Cada valor está en la fila cuya primera celda con texto empieza con la etiqueta.
+    // Si el mes tiene "Ajustes específicos" (Atelier, ago-2026), hay además
+    // una fila "Total Costos Fijos (bruto, antes de ajustes…)" más arriba:
+    // manda la fila final, la que ya descontó los ajustes.
     const valor = (inicio: string): number | null => {
-      const fila = rows.find((r) => normGrupoPE(String(r.find((c) => typeof c === "string") ?? "")).startsWith(inicio));
+      const etiqueta = (r: unknown[]) => normGrupoPE(String(r.find((c) => typeof c === "string") ?? ""));
+      const fila = rows.find((r) => etiqueta(r).startsWith(inicio) && !etiqueta(r).includes("BRUTO"))
+        ?? rows.find((r) => etiqueta(r).startsWith(inicio));
       const n = fila?.find((c) => typeof c === "number");
       return typeof n === "number" ? Math.round(n * 100) / 100 : null;
     };
