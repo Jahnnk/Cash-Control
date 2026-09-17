@@ -16,8 +16,9 @@ import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession, getSessionRole } from "@/lib/session-access";
 import {
-  redondearMeta, tocaCongelar, type EntradaCandadoVentas,
+  tocaCongelar, metaPorPromedioDeVentas, MESES_A_BUSCAR_META, type EntradaCandadoVentas,
 } from "@/lib/incentives/candado-ventas";
+import { conciliacionVentas } from "@/lib/ventas-conciliadas-sql";
 import { buildFixedVariable } from "@/lib/fixed-variable";
 import { ventasInternasDelGrupo, type SedeEnConsolidado } from "@/lib/ventas-internas-grupo";
 import { clasificarGastosPE, normGrupoPE, type CategoriaPE, type TipoPE } from "@/lib/pe-kelly";
@@ -583,11 +584,12 @@ export async function getGroupBreakeven(month: string): Promise<
 /**
  * La meta de ventas del bono y las ventas del mes a la fecha.
  *
- * La meta es el punto de equilibrio de REFERENCIA —el mismo que muestra
- * la tarjeta de punto de equilibrio: hasta 6 meses cerrados con datos
- * completos— y vive acá para que el bono y el dashboard no puedan dar dos
- * números distintos. Se congela el primer lunes del mes (ya llegó el Excel
- * de Kelly del mes anterior) en `incentive_sales_targets` y no se mueve
+ * La meta es el PROMEDIO del total vendido de los últimos 3 meses cerrados
+ * y completos (decisión de Jahnn y Kelly, 17-sep-2026: el punto de
+ * equilibrio quedaba unos S/10,000 debajo de lo que ya vende cada sede;
+ * ver lib/incentives/candado-ventas.ts). Las ventas del mes se miden con
+ * el mismo total, para comparar lo mismo con lo mismo. Se congela el
+ * primer lunes del mes en `incentive_sales_targets` y no se mueve
  * después, aunque se re-suban Excels viejos: el equipo conoce su meta
  * desde el inicio.
  *
@@ -608,7 +610,7 @@ export async function getEntradaCandadoVentas(
   const { start, end } = monthMeta(month);
   const hoy = todayLima();
   const [ventas, politica] = await Promise.all([
-    ventasDelMesConFuente(bId, start, hoy < end ? hoy : end),
+    ventasTotalesDelMes(bId, start, hoy < end ? hoy : end),
     sql`
       SELECT requiere_equilibrio FROM incentive_config
       WHERE business_id = ${bId} AND effective_month <= ${month}
@@ -622,12 +624,8 @@ export async function getEntradaCandadoVentas(
   // día y nunca se congela: congelar solo tiene sentido cuando hay un
   // bono que depende de ella.
   if (!vinculante) {
-    const ref = await buildReference(bId, month);
-    const exacta = ref && ref.fijos > 0 && ref.varRatio < 1 ? ref.fijos / (1 - ref.varRatio) : null;
-    return {
-      ...base, meta: exacta === null ? null : redondearMeta(exacta),
-      provisional: false, mesesReferencia: ref?.monthsUsed ?? [],
-    };
+    const calc = await metaDeVentas(bId, month);
+    return { ...base, meta: calc?.meta ?? null, provisional: false, mesesReferencia: calc?.mesesReferencia ?? [] };
   }
 
   const congelada = (await sql`
@@ -638,17 +636,15 @@ export async function getEntradaCandadoVentas(
     return { ...base, meta: congelada[0].meta, provisional: false, mesesReferencia: congelada[0].meses_referencia };
   }
 
-  const ref = await buildReference(bId, month);
-  const exacta = ref && ref.fijos > 0 && ref.varRatio < 1 ? ref.fijos / (1 - ref.varRatio) : null;
-  if (exacta === null) {
-    return { ...base, meta: null, provisional: true, mesesReferencia: ref?.monthsUsed ?? [] };
+  const calc = await metaDeVentas(bId, month);
+  if (calc === null) {
+    return { ...base, meta: null, provisional: true, mesesReferencia: [] };
   }
-  const meta = redondearMeta(exacta);
 
   if (tocaCongelar(month, hoy)) {
     await sql`
       INSERT INTO incentive_sales_targets (business_id, month, meta, meta_exacta, meses_referencia)
-      VALUES (${bId}, ${month}, ${meta}, ${Math.round(exacta * 100) / 100}, ${ref!.monthsUsed})
+      VALUES (${bId}, ${month}, ${calc.meta}, ${calc.exacta}, ${calc.mesesReferencia})
       ON CONFLICT (business_id, month) DO NOTHING
     `;
     // Si otro request congeló primero, manda la que quedó guardada.
@@ -660,7 +656,34 @@ export async function getEntradaCandadoVentas(
       return { ...base, meta: fila[0].meta, provisional: false, mesesReferencia: fila[0].meses_referencia };
     }
   }
-  return { ...base, meta, provisional: true, mesesReferencia: ref!.monthsUsed };
+  return { ...base, meta: calc.meta, provisional: true, mesesReferencia: calc.mesesReferencia };
+}
+
+/**
+ * Total vendido del rango: la venta de Byte conciliada, la misma que ve
+ * dirección en Reportes (archivo de Byte → registro del administrador →
+ * copia de Kelly, día por día). Es la cifra de los reportes mensuales de
+ * Byte que usa Kelly. Sin nada conciliable, las fuentes de siempre.
+ */
+async function ventasTotalesDelMes(bId: number, start: string, end: string): Promise<{ total: number; dias: number }> {
+  const c = await conciliacionVentas(bId, start, end);
+  if (c && c.totalVendido > 0) {
+    return { total: c.totalVendido, dias: c.dias.filter((d) => d.totalVendido > 0).length };
+  }
+  const v = await ventasDelMesConFuente(bId, start, end);
+  return { total: v.total, dias: v.dias };
+}
+
+/** Meta de ventas del mes: promedio de los últimos 3 meses cerrados y completos. Ver lib/incentives/candado-ventas.ts. */
+async function metaDeVentas(bId: number, month: string) {
+  const meses = await Promise.all(
+    prevMonths(month, MESES_A_BUSCAR_META).map(async (m) => {
+      const { start, end, daysInMonth } = monthMeta(m);
+      const v = await ventasTotalesDelMes(bId, start, end);
+      return { month: m, total: v.total, diasConVenta: v.dias, diasDelMes: daysInMonth };
+    }),
+  );
+  return metaPorPromedioDeVentas(meses);
 }
 
 /* ─────────────────────────────────────────────────────────────────────

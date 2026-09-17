@@ -31,8 +31,8 @@ export type IncentiveConfigT = {
    */
   trafficFloor: number | null;
   /**
-   * true = para cobrar, las ventas del mes deben cubrir el punto de
-   * equilibrio de referencia (candado de ventas, desde octubre 2026).
+   * true = para cobrar, las ventas del mes deben llegar a la
+   * meta de ventas del mes (promedio de 3 meses, desde octubre 2026).
    */
   requiereEquilibrio?: boolean;
   /**
@@ -505,9 +505,8 @@ export function computeLiquidation(input: {
     config.trafficFloor === null || (personasPorDia !== null && personasPorDia >= config.trafficFloor);
 
   // ─── Candado de ventas (desde octubre 2026) ───
-  // Todo o nada: si las ventas del mes no cubren el punto de equilibrio
-  // de referencia, no hay bono aunque el ticket haya subido. El bono sale
-  // de la utilidad nueva, y una sede que no cubre sus costos no la tiene.
+  // Todo o nada: si las ventas del mes no llegan a la meta (promedio de
+  // los últimos 3 meses), no hay bono aunque el ticket haya subido.
   const candadoVentas =
     config.requiereEquilibrio && input.candadoVentas
       ? evaluarCandadoVentas(input.candadoVentas, daysInMonth)
@@ -589,15 +588,15 @@ export function computeLiquidation(input: {
     if (meta === null) {
       // Nunca se paga a ciegas: sin meta calculable, el mes no se cierra.
       blockers.push(
-        "No se pudo calcular la meta de ventas (punto de equilibrio de referencia): faltan meses cerrados con ventas y costos. Revisa las cargas de Kelly antes de liquidar.",
+        "No se pudo calcular la meta de ventas: faltan meses cerrados con las ventas completas (promedio de los últimos 3). Revisa las cargas de ventas antes de liquidar.",
       );
     } else if (candadoVentas && !candadoVentas.cumple) {
       warnings.push(
-        `Ventas del mes S/${candadoVentas.ventas.toFixed(2)} no cubren el punto de equilibrio (S/${meta.toFixed(2)}): por política, no hay bono este mes aunque el ticket haya subido.`,
+        `Ventas del mes S/${candadoVentas.ventas.toFixed(2)} no llegan a la meta de ventas (S/${meta.toFixed(2)}): por política, no hay bono este mes aunque el ticket haya subido.`,
       );
     } else if (candadoVentas) {
       warnings.push(
-        `Candado de ventas cumplido: S/${candadoVentas.ventas.toFixed(2)} vendidos contra un punto de equilibrio de S/${meta.toFixed(2)}.`,
+        `Meta de ventas cumplida: S/${candadoVentas.ventas.toFixed(2)} vendidos contra una meta de S/${meta.toFixed(2)}.`,
       );
     }
   }

@@ -40,7 +40,7 @@ export function renderLiquidationPdf(input: {
     `Ticket final del mes: ${r.ticketFinal !== null ? fmtSoles(r.ticketFinal) : "—"} (base ${fmtSoles(r.ticketBase)}${r.deltaFinal !== null ? ` · ${r.deltaFinal >= 0 ? "+" : ""}${fmtSoles(r.deltaFinal)}` : ""})`,
     `Personas atendidas: ${r.personas.toLocaleString("es-PE")} · Venta: ${fmtSoles(r.revenue)}`,
     ...(r.candadoVentas
-      ? [`Meta de ventas (punto de equilibrio): ${r.candadoVentas.meta !== null ? fmtSoles(r.candadoVentas.meta) : "sin meta"} · vendido ${fmtSoles(r.candadoVentas.ventas)} — ${r.candadoVentas.cumple ? "CUMPLIDA ✓" : "NO CUMPLIDA (sin bono este mes)"}`]
+      ? [`Meta de ventas (promedio de 3 meses): ${r.candadoVentas.meta !== null ? fmtSoles(r.candadoVentas.meta) : "sin meta"} · vendido ${fmtSoles(r.candadoVentas.ventas)} — ${r.candadoVentas.cumple ? "CUMPLIDA ✓" : "NO CUMPLIDA (sin bono este mes)"}`]
       : r.trafficFloor === null || r.trafficFloor === undefined
         ? []
         : [`Piso de tráfico: ${r.personasPorDia ?? "—"} personas/día — ${r.trafficOk ? "CUMPLIDO ✓" : "INCUMPLIDO (la meta no cuenta)"}`]),

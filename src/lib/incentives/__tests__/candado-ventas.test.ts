@@ -6,7 +6,7 @@
  * Centro S/16,581 contra S/32,656.
  */
 import { describe, it, expect } from "vitest";
-import { evaluarCandadoVentas, primerLunesDelMes, tocaCongelar, redondearMeta, type EntradaCandadoVentas } from "../candado-ventas";
+import { evaluarCandadoVentas, primerLunesDelMes, tocaCongelar, redondearMeta, metaPorPromedioDeVentas, type EntradaCandadoVentas } from "../candado-ventas";
 
 const e = (o: Partial<EntradaCandadoVentas>): EntradaCandadoVentas => ({
   meta: 31600, provisional: false, vinculante: true, mesesReferencia: ["2026-06", "2026-07", "2026-08"],
@@ -64,5 +64,32 @@ describe("cuándo se congela la meta", () => {
   it("la meta se redondea hacia arriba a los S/100", () => {
     expect(redondearMeta(31523.47)).toBe(31600);
     expect(redondearMeta(32600)).toBe(32600);
+  });
+});
+
+describe("meta = promedio de los últimos 3 meses cerrados (decisión 17-sep-2026)", () => {
+  // Totales de Byte que pasó Kelly.
+  const fonavi = [
+    { month: "2026-06", total: 37221.95, diasConVenta: 30, diasDelMes: 30 },
+    { month: "2026-07", total: 35410.27, diasConVenta: 31, diasDelMes: 31 },
+    { month: "2026-08", total: 38979.45, diasConVenta: 31, diasDelMes: 31 },
+    { month: "2026-05", total: 39608.81, diasConVenta: 31, diasDelMes: 31 },
+  ];
+
+  it("Fonavi jun–ago: promedio S/37,203.89 → meta S/37,300", () => {
+    expect(metaPorPromedioDeVentas(fonavi)).toEqual({ meta: 37300, exacta: 37203.89, mesesReferencia: ["2026-06", "2026-07", "2026-08"] });
+  });
+
+  it("un mes con la carga incompleta no entra: se toma el anterior", () => {
+    const r = metaPorPromedioDeVentas([...fonavi, { month: "2026-09", total: 20270.59, diasConVenta: 16, diasDelMes: 30 }]);
+    expect(r?.mesesReferencia).toEqual(["2026-06", "2026-07", "2026-08"]);
+  });
+
+  it("con menos de 3 meses completos promedia los que hay", () => {
+    expect(metaPorPromedioDeVentas([fonavi[2]])).toEqual({ meta: 39000, exacta: 38979.45, mesesReferencia: ["2026-08"] });
+  });
+
+  it("sin meses completos no hay meta", () => {
+    expect(metaPorPromedioDeVentas([])).toBeNull();
   });
 });

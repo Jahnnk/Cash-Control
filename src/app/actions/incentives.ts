@@ -87,7 +87,7 @@ export type IncentiveDashboard = {
   verifications: Record<string, { status: "confirmado" | "observado"; nota: string | null }>;
   progress: IncentiveProgress;
   /**
-   * Punto de equilibrio del mes contra lo vendido a la fecha, SIEMPRE
+   * Meta de ventas del mes contra lo vendido a la fecha, SIEMPRE
    * (no solo cuando es requisito del bono): el administrador ve cómo va
    * su sede con lo que registra cada día. `vinculante` dice si ese mes
    * cuenta para el bono. null = no se pudo calcular.
@@ -228,7 +228,7 @@ export async function getIncentiveDashboard(
     const diasQueCuentan = sinDiasPausados(dailies, indice, bId);
     const diasOperativos = diasOperativosDelMes(daysInMonth, month, pausadosMes, bId);
 
-    // Punto de equilibrio: se lee siempre, para que el administrador vea
+    // Meta de ventas: se lee siempre, para que el administrador vea
     // cómo va su sede. El motor solo lo usa como candado del bono en los
     // meses cuya política lo pide (desde octubre 2026).
     const [candadoVentas, supervision] = await Promise.all([

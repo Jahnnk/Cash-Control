@@ -1,7 +1,7 @@
 /**
  * La liquidación con las reglas desde octubre 2026:
  *   · sin piso de tráfico,
- *   · candado de ventas todo o nada contra el punto de equilibrio.
+ *   · candado de ventas todo o nada contra la meta de ventas.
  *
  * Y la garantía para los meses anteriores: sin `requiereEquilibrio`, la
  * liquidación se comporta exactamente como antes.
@@ -44,19 +44,19 @@ describe("octubre en adelante: sin piso de tráfico", () => {
 });
 
 describe("candado de ventas: todo o nada", () => {
-  it("ventas cubren el punto de equilibrio → se paga el nivel del ticket", () => {
+  it("ventas llegan a la meta → se paga el nivel del ticket", () => {
     const r = liquidar(OCTUBRE, "2026-10", candado({ ventas: 29760 }));
     expect(r.candadoVentas?.cumple).toBe(true);
     expect(r.nivel?.nombre).toBe("Nivel 1");
     expect(r.totalBonos).toBeGreaterThan(0);
   });
 
-  it("ticket en Nivel 1 pero ventas debajo del punto de equilibrio → sin bono", () => {
+  it("ticket en Nivel 1 pero ventas debajo de la meta → sin bono", () => {
     const r = liquidar(OCTUBRE, "2026-10", candado({ ventas: 28999 }));
     expect(r.candadoVentas?.cumple).toBe(false);
     expect(r.nivel).toBeNull();
     expect(r.totalBonos).toBe(0);
-    expect(r.warnings.some((w) => w.includes("no cubren el punto de equilibrio"))).toBe(true);
+    expect(r.warnings.some((w) => w.includes("no llegan a la meta de ventas"))).toBe(true);
     expect(r.blockers).toEqual([]); // se puede cerrar: el mes simplemente no paga
   });
 
