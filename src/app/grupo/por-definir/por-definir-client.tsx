@@ -13,15 +13,17 @@
  */
 
 import { useMemo, useState, useTransition } from "react";
-import { ListChecks, Copy, Loader2, Check, HelpCircle } from "lucide-react";
+import { ListChecks, Copy, Loader2, Check, HelpCircle, Scissors, ChevronDown, ChevronUp, Undo2 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { formatCurrency } from "@/lib/utils";
 import {
   getPorDefinir, resolverCategoria, resolverGasto, marcarCorregidoPorKelly,
-  type BandejaPorDefinir, type ItemPorDefinir,
+  getGastosDeGrupo, separarGastos, deshacerSeparacion,
+  type BandejaPorDefinir, type ItemPorDefinir, type GastoDelGrupo, type SeparacionDelGrupo,
 } from "@/app/actions/por-definir";
 import type { TipoPE } from "@/lib/pe-kelly";
 import type { GrupoCategoria } from "@/lib/catalogo-categorias";
+import { coincideRegla, textoSugeridoParaRegla } from "@/lib/texto-regla";
 
 const MOTIVO: Record<string, string> = {
   difiere: "Kelly y el sistema lo clasifican distinto",
@@ -30,6 +32,7 @@ const MOTIVO: Record<string, string> = {
   sin_sistema: "La categoría no tiene grupo en el sistema",
   bolson: "Gasto en el bolsón OTROS / PENDIENTE",
   atipico: "Monto fuera de lo normal para su categoría",
+  separado: "Separado de su grupo",
 };
 const GRUPO_LABEL: Record<GrupoCategoria, string> = {
   fijo: "Fijo", variable: "Variable", financiamiento: "Financiamiento (fuera del EBITDA)", fuera: "Fuera de la operación (inversión / no recurrente)",
@@ -51,6 +54,192 @@ function SelectorTipo({ valor, onChange }: { valor: TipoPE | null; onChange: (t:
           {t}
         </button>
       ))}
+    </div>
+  );
+}
+
+const NUEVA = "__nueva__";
+
+/**
+ * Elegir la categoría destino: una de la sede o una NUEVA (con cómo cuenta
+ * en el sistema). "" = dejarla donde está.
+ */
+function SelectorCategoria({ categorias, valor, onChange, actual, grupoNueva, onGrupoNueva, mostrarGrupoNueva = true }: {
+  categorias: string[]; valor: string; onChange: (v: string) => void; actual: string;
+  grupoNueva?: GrupoCategoria | null; onGrupoNueva?: (g: GrupoCategoria) => void; mostrarGrupoNueva?: boolean;
+}) {
+  const [creando, setCreando] = useState(false);
+  const existe = categorias.includes(valor);
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <select
+        value={creando ? NUEVA : existe ? valor : ""}
+        onChange={(e) => {
+          if (e.target.value === NUEVA) { setCreando(true); onChange(""); }
+          else { setCreando(false); onChange(e.target.value); }
+        }}
+        className="border border-gray-300 rounded-lg px-2 py-1.5 max-w-[16rem]">
+        <option value="">(dejar en {actual})</option>
+        {categorias.filter((c) => c !== actual).map((c) => <option key={c} value={c}>{c}</option>)}
+        <option value={NUEVA}>＋ Crear categoría nueva…</option>
+      </select>
+      {creando && (
+        <>
+          <input autoFocus value={valor} onChange={(e) => onChange(e.target.value.toUpperCase())}
+            placeholder="Nombre de la categoría" className="border border-gray-300 rounded-lg px-2 py-1.5 w-52" />
+          {mostrarGrupoNueva && onGrupoNueva && (
+            <select value={grupoNueva ?? ""} onChange={(e) => onGrupoNueva(e.target.value as GrupoCategoria)} className="border border-gray-300 rounded-lg px-2 py-1.5">
+              <option value="" disabled>Cuenta en el sistema como…</option>
+              {(Object.keys(GRUPO_LABEL) as GrupoCategoria[]).map((g) => <option key={g} value={g}>{GRUPO_LABEL[g]}</option>)}
+            </select>
+          )}
+        </>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Los gastos del grupo uno por uno, para sacar los que no pertenecen
+ * (ej. "PRESTAMO VEHICULAR" en FINANCIAMIENTO = sueldos → PLANILLA). Se
+ * separa un solo pago o todos los que dicen un texto; la regla queda
+ * guardada y se aplica sola en cada Excel que se suba.
+ */
+function GastosDelGrupo({ item, categorias, onCambio }: { item: ItemPorDefinir; categorias: string[]; onCambio: () => void }) {
+  const { showToast } = useToast();
+  const d = item.datos as { categoria: string; tipoKelly: TipoPE | null };
+  const [lista, setLista] = useState<{ gastos: GastoDelGrupo[]; separados: SeparacionDelGrupo[] } | null>(null);
+  const [cargando, startCarga] = useTransition();
+  const [guardando, startGuardar] = useTransition();
+  const [abierto, setAbierto] = useState<string | null>(null);
+  const [todos, setTodos] = useState(true);
+  const [texto, setTexto] = useState("");
+  const [tipo, setTipo] = useState<TipoPE | null>(null);
+  const [destino, setDestino] = useState("");
+  const [grupoNueva, setGrupoNueva] = useState<GrupoCategoria | null>(null);
+
+  function cargar() {
+    startCarga(async () => {
+      const r = await getGastosDeGrupo(item.id);
+      if (r.ok) setLista({ gastos: r.gastos, separados: r.separados }); else showToast(r.error, "error");
+    });
+  }
+
+  function abrir(g: GastoDelGrupo) {
+    setAbierto(g.huella); setTodos(true); setTexto(textoSugeridoParaRegla(g.concepto));
+    setTipo(null); setDestino(""); setGrupoNueva(null);
+  }
+
+  const coinciden = lista && abierto && todos && texto.trim().length >= 4
+    ? lista.gastos.filter((g) => coincideRegla(g.concepto, texto))
+    : [];
+
+  function guardar(g: GastoDelGrupo) {
+    if (!tipo) { showToast("Elige cómo cuenta en el punto de equilibrio.", "error"); return; }
+    if (!destino.trim()) { showToast("Elige a qué categoría van.", "error"); return; }
+    startGuardar(async () => {
+      const r = await separarGastos(item.id, {
+        huella: todos ? null : g.huella, texto: todos ? texto : null,
+        tipoPE: tipo, categoriaDestino: destino, grupoSistema: grupoNueva,
+      });
+      if (!r.ok) { showToast(r.error, "error"); return; }
+      showToast(`${r.pagos} pago(s) separados a ${destino.trim().toUpperCase()}`, "success");
+      setAbierto(null);
+      cargar();
+      onCambio();
+    });
+  }
+
+  function deshacer(id: string) {
+    startGuardar(async () => {
+      const r = await deshacerSeparacion(id);
+      if (!r.ok) { showToast(r.error, "error"); return; }
+      showToast("Separación deshecha", "success");
+      cargar();
+      onCambio();
+    });
+  }
+
+  if (!lista) {
+    return (
+      <button type="button" onClick={cargar} disabled={cargando} className="text-xs text-primary flex items-center gap-1">
+        {cargando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ChevronDown className="w-3.5 h-3.5" />}
+        Ver todos los gastos y separar los que van en otra categoría
+      </button>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-gray-200 text-xs">
+      <div className="flex items-center justify-between px-3 py-2 border-b border-gray-100 bg-gray-50 rounded-t-lg">
+        <span className="font-medium text-gray-700">Gastos del grupo ({lista.gastos.length}) {cargando && <Loader2 className="inline w-3 h-3 animate-spin" />}</span>
+        <button type="button" onClick={() => setLista(null)} className="text-gray-500 flex items-center gap-1"><ChevronUp className="w-3.5 h-3.5" /> Ocultar</button>
+      </div>
+
+      {lista.separados.length > 0 && (
+        <ul className="px-3 py-2 space-y-1 border-b border-gray-100 bg-emerald-50/40">
+          {lista.separados.map((sp) => (
+            <li key={sp.id} className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-emerald-900">
+                <Scissors className="inline w-3.5 h-3.5 mr-1" />
+                {sp.texto ? <>Todos los que dicen «{sp.texto}»</> : <>«{sp.concepto ?? "sin concepto"}»</>} → <strong>{sp.categoriaDestino}</strong> ({sp.tipoPE}) · {sp.pagos} pago(s) · {formatCurrency(sp.monto)}
+                {sp.texto && <span className="text-emerald-700"> · también los meses que vengan</span>}
+              </span>
+              <button type="button" disabled={guardando} onClick={() => deshacer(sp.id)} className="text-gray-500 hover:text-gray-800 flex items-center gap-1"><Undo2 className="w-3.5 h-3.5" /> Deshacer</button>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <ul className="divide-y divide-gray-100 max-h-96 overflow-y-auto">
+        {lista.gastos.map((g) => {
+          const marcado = abierto !== null && (g.huella === abierto || coinciden.some((c) => c.huella === g.huella));
+          return (
+            <li key={g.huella + g.fecha} className={`px-3 py-2 ${marcado ? "bg-amber-50" : ""}`}>
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-gray-700 min-w-0">{g.fecha} · <strong>{formatCurrency(g.monto)}</strong> · {g.concepto ?? "—"}</span>
+                {abierto !== g.huella && (
+                  <button type="button" onClick={() => abrir(g)} className="shrink-0 px-2 py-1 rounded-md border border-gray-300 hover:bg-white flex items-center gap-1">
+                    <Scissors className="w-3.5 h-3.5" /> Separar
+                  </button>
+                )}
+              </div>
+              {abierto === g.huella && (
+                <div className="mt-2 space-y-2 rounded-lg border border-gray-200 bg-white p-3">
+                  <div className="space-y-1">
+                    <label className="flex items-center gap-2">
+                      <input type="radio" checked={todos} onChange={() => setTodos(true)} />
+                      <span>Todos los pagos de «{d.categoria}» que dicen</span>
+                      <input value={texto} onChange={(e) => setTexto(e.target.value.toUpperCase())} disabled={!todos} className="border border-gray-300 rounded-md px-2 py-1 w-56" />
+                    </label>
+                    {todos && (
+                      <div className="pl-6 text-gray-500">
+                        {texto.trim().length < 4 ? "Escribe al menos 4 letras." : `Aquí coinciden ${coinciden.length} pago(s). Recomendado si se repite cada mes: se aplica solo en los próximos Excels.`}
+                      </div>
+                    )}
+                    <label className="flex items-center gap-2">
+                      <input type="radio" checked={!todos} onChange={() => setTodos(false)} />
+                      <span>Solo este pago</span>
+                    </label>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2"><span className="w-36 text-gray-600">Mover a:</span>
+                    <SelectorCategoria categorias={categorias} valor={destino} onChange={setDestino} actual={d.categoria}
+                      grupoNueva={grupoNueva ?? (tipo ? GRUPO_POR_TIPO[tipo] : null)} onGrupoNueva={setGrupoNueva} />
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2"><span className="w-36 text-gray-600">Punto de equilibrio:</span><SelectorTipo valor={tipo} onChange={setTipo} /></div>
+                  <div className="flex justify-end gap-2">
+                    <button type="button" onClick={() => setAbierto(null)} className="px-3 py-1.5 text-gray-600">Cancelar</button>
+                    <button type="button" disabled={guardando} onClick={() => guardar(g)} className="px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-60 flex items-center gap-1">
+                      {guardando ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Scissors className="w-3.5 h-3.5" />} Separar
+                    </button>
+                  </div>
+                </div>
+              )}
+            </li>
+          );
+        })}
+        {lista.gastos.length === 0 && <li className="px-3 py-2 text-gray-500">No quedan gastos en este grupo.</li>}
+      </ul>
     </div>
   );
 }
@@ -102,6 +291,7 @@ function TarjetaCategoria({ item, categorias, onHecho }: { item: ItemPorDefinir;
           {d.ejemplos.map((e, i) => <li key={i}>{e.fecha} · {formatCurrency(e.monto)} · {e.concepto ?? "—"}</li>)}
         </ul>
       )}
+      <GastosDelGrupo item={item} categorias={categorias} onCambio={onHecho} />
       {d.otrosGruposEnCategoria?.length > 0 && (
         <div className="text-[11px] text-gray-500">
           En «{d.categoria}» también hay: {d.otrosGruposEnCategoria.map((o) => `${o.grupo} (${o.tipoKelly ?? "sin tipo"})`).join(", ")}. Cambiar el grupo de la categoría los afecta a todos; si este grupo es distinto, muévelo a otra categoría.
@@ -127,9 +317,8 @@ function TarjetaCategoria({ item, categorias, onHecho }: { item: ItemPorDefinir;
         </div>
         <div className="flex flex-wrap items-center gap-2">
           <span className="w-44 text-gray-600">Mover a otra categoría:</span>
-          <input list={`cats-${item.businessId}`} value={destino} onChange={(e) => setDestino(e.target.value.toUpperCase())}
-            placeholder={`(dejar en ${d.categoria})`} className="border border-gray-300 rounded-lg px-2 py-1.5 w-60" />
-          <datalist id={`cats-${item.businessId}`}>{categorias.map((c) => <option key={c} value={c} />)}</datalist>
+          <SelectorCategoria categorias={categorias} valor={destino} onChange={setDestino} actual={d.categoria} mostrarGrupoNueva={false} />
+          {destino && !categorias.includes(destino) && <span className="text-gray-500">Se crea como «{grupoSis ? GRUPO_LABEL[grupoSis] : "…"}»</span>}
         </div>
       </div>
 
@@ -150,6 +339,7 @@ function TarjetaGasto({ item, categorias, conListaKelly, onHecho }: { item: Item
   const [tipo, setTipo] = useState<TipoPE | null>(null);
   const [destino, setDestino] = useState("");
   const [pregunta, setPregunta] = useState("");
+  const [grupoNueva, setGrupoNueva] = useState<GrupoCategoria | null>(null);
   const [guardando, start] = useTransition();
 
   function enviar(decision: Parameters<typeof resolverGasto>[1], ok: string) {
@@ -191,12 +381,12 @@ function TarjetaGasto({ item, categorias, conListaKelly, onHecho }: { item: Item
           <div className="flex flex-wrap items-center gap-2"><span className="w-40 text-gray-600">Punto de equilibrio:</span><SelectorTipo valor={tipo} onChange={setTipo} /></div>
           <div className="flex flex-wrap items-center gap-2">
             <span className="w-40 text-gray-600">Categoría {conListaKelly ? "(opcional)" : ""}:</span>
-            <input list={`catsg-${item.id}`} value={destino} onChange={(e) => setDestino(e.target.value.toUpperCase())} placeholder={`(dejar en ${d.categoria})`} className="border border-gray-300 rounded-lg px-2 py-1.5 w-60" />
-            <datalist id={`catsg-${item.id}`}>{categorias.map((c) => <option key={c} value={c} />)}</datalist>
+            <SelectorCategoria categorias={categorias} valor={destino} onChange={setDestino} actual={d.categoria}
+              grupoNueva={grupoNueva ?? (tipo ? GRUPO_POR_TIPO[tipo] : null)} onGrupoNueva={setGrupoNueva} />
           </div>
           <div className="flex gap-2 justify-end">
             <button onClick={() => setModo("nada")} className="px-3 py-1.5 text-gray-600">Cancelar</button>
-            <button disabled={guardando || !tipo} onClick={() => enviar({ accion: "reclasificar", tipoPE: tipo!, categoriaDestino: destino || null }, "Gasto reclasificado")} className="px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-60">Guardar</button>
+            <button disabled={guardando || !tipo} onClick={() => enviar({ accion: "reclasificar", tipoPE: tipo!, categoriaDestino: destino || null, grupoSistema: grupoNueva }, "Gasto reclasificado")} className="px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-60">Guardar</button>
           </div>
         </div>
       )}
@@ -284,12 +474,12 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
           <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-900">Decidido en los últimos 30 días</div>
           <ul className="divide-y divide-gray-100">
             {data.resueltasRecientes.map((i) => {
-              const d = i.datos as { grupo?: string; concepto?: string; categoria?: string; monto?: number };
+              const d = i.datos as { grupo?: string; concepto?: string; categoria?: string; monto?: number; texto?: string };
               const dec = i.decision as { tipoPE?: TipoPE; accion?: string; categoriaDestino?: string | null } | null;
               return (
                 <li key={i.id} className="px-4 py-2 text-xs flex flex-wrap items-center justify-between gap-2">
                   <span className="text-gray-700">
-                    {i.sede} · {i.alcance === "categoria" ? `Grupo «${d.grupo}»` : d.concepto} →{" "}
+                    {i.sede} · {i.alcance === "categoria" ? `Grupo «${d.grupo}»` : i.alcance === "concepto" ? `Pagos que dicen «${d.texto}»` : d.concepto} →{" "}
                     <strong>{dec?.accion === "ok" ? "está bien" : dec?.tipoPE ?? "—"}</strong>
                     {dec?.categoriaDestino ? ` (${dec.categoriaDestino})` : ""} · {i.decididoPor}
                   </span>

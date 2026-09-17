@@ -2,6 +2,7 @@
 import { describe, it, expect } from "vitest";
 import {
   detectarRevisiones, tipoPEDelSistema, kellyDebeCorregir, lineaParaKelly,
+  textoDeRegla, coincideRegla, textoSugeridoParaRegla, claveConcepto,
   type FilaGastoRevision, type CategoriaSistema,
 } from "../revision-clasificacion";
 import { normGrupoPE, type CategoriaPE } from "../pe-kelly";
@@ -109,5 +110,37 @@ describe("decisiones y la lista para Kelly", () => {
       alcance: "gasto", datos: { grupo: "OTROS", fecha: "2026-08-31", monto: 430.38, concepto: "CONVOCATORIA" },
       decision: { accion: "reclasificar", tipoPE: "Fijo", categoriaDestino: "PERSONAL" },
     })).toBe("• \"CONVOCATORIA\" del 2026-08-31 (S/430.38): moverlo del grupo \"OTROS\" a uno de tipo Fijo (PERSONAL).");
+  });
+});
+
+describe("separar gastos de un grupo (17-sep-2026)", () => {
+  it("la regla ignora la fecha que escribe el lector del Excel, tildes y mayúsculas", () => {
+    expect(textoDeRegla("PRÉSTAMO  vehicular [Tue Sep 01 2026 00:00:36 GMT-0500 (Peru Standard Time)]")).toBe("PRESTAMO VEHICULAR");
+    expect(coincideRegla("PRESTAMO VEHICULAR [Tue Sep 01 2026 00:00:00 GMT+0000 (Coordinated Universal Time)]", "préstamo vehicular")).toBe(true);
+    expect(coincideRegla("PAGO PRÉSTAMO DINERS (KELLY TERRONES)", "PRESTAMO VEHICULAR")).toBe(false);
+    expect(coincideRegla("lo que sea", "")).toBe(false);
+  });
+
+  it("propone el texto sin lo que va entre paréntesis", () => {
+    expect(textoSugeridoParaRegla("PAGO PRÉSTAMO DINERS (KELLY TERRONES) [Tue Sep 01 2026 00:00:00 GMT+0000 (UTC)]")).toBe("PAGO PRESTAMO DINERS");
+  });
+
+  it("clave de la regla: categoría de origen + texto normalizado", () => {
+    expect(claveConcepto("FINANCIAMIENTO", "préstamo vehicular")).toBe("FINANCIAMIENTO|PRESTAMO VEHICULAR");
+  });
+
+  it("un gasto ya separado (con tipo propio) no vuelve a entrar en ninguna pregunta", () => {
+    const gastos = [
+      { huella: "a", date: "2026-08-22", amount: 4470.2, concept: "PRESTAMO VEHICULAR", category: "PLANILLA", grupo: "FINANCIAMIENTO", tipoPE: "Fijo" as const },
+      { huella: "b", date: "2026-08-08", amount: 1600.69, concept: "PAGO PRÉSTAMO DINERS", category: "FINANCIAMIENTO", grupo: "FINANCIAMIENTO" },
+    ];
+    const r = detectarRevisiones({ gastos, categoriasSistema: [{ name: "FINANCIAMIENTO", costGroup: "financiamiento", excludeFromEbitda: false }, { name: "PLANILLA", costGroup: "fijo", excludeFromEbitda: false }], categoriasKelly: [] });
+    expect(r.map((c) => c.clave)).toEqual(["FINANCIAMIENTO|FINANCIAMIENTO"]);
+    expect(r[0].datos).toMatchObject({ filas: 1, monto: 1600.69 });
+  });
+
+  it("la lista para Kelly explica la regla", () => {
+    expect(lineaParaKelly({ alcance: "concepto", datos: { texto: "PRESTAMO VEHICULAR", grupo: "PRESTAMOS" }, decision: { accion: "reclasificar", tipoPE: "Fijo", categoriaDestino: "PLANILLA" } }))
+      .toBe('• Los pagos que dicen "PRESTAMO VEHICULAR" (hoy en el grupo "PRESTAMOS"): van en un grupo de tipo Fijo (PLANILLA).');
   });
 });

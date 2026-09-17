@@ -36,8 +36,10 @@ import type { GrupoCategoria } from "./catalogo-categorias";
 
 export type { TipoPE };
 
-export type AlcanceRevision = "categoria" | "gasto";
-export type MotivoRevision = "difiere" | "no_calza" | "sin_kelly" | "sin_sistema" | "bolson" | "atipico";
+/** 'concepto' = regla "todos los gastos de una categoría cuyo concepto dice X" (ver separarGastos). */
+export type AlcanceRevision = "categoria" | "gasto" | "concepto";
+/** 'separado' = Jahnn sacó gastos de un grupo desde su tarjeta (no lo detectó el sistema). */
+export type MotivoRevision = "difiere" | "no_calza" | "sin_kelly" | "sin_sistema" | "bolson" | "atipico" | "separado";
 
 export type FilaGastoRevision = {
   huella: string;
@@ -47,6 +49,8 @@ export type FilaGastoRevision = {
   category: string;
   /** El texto de Grupo del Excel (o la categoría, si no vino del Excel). */
   grupo: string;
+  /** Tipo decidido para este gasto en particular (separado o reclasificado): ya no se pregunta. */
+  tipoPE?: TipoPE | null;
 };
 
 export type CategoriaSistema = { name: string; costGroup: string | null; excludeFromEbitda: boolean };
@@ -104,7 +108,10 @@ export function detectarRevisiones(input: {
   /** null = la sede todavía no tiene la lista de Kelly. */
   categoriasKelly: CategoriaPE[] | null;
 }): CandidatoRevision[] {
-  const { gastos, categoriasKelly } = input;
+  const { categoriasKelly } = input;
+  // Un gasto con tipo propio ya fue decidido uno por uno (separado de su
+  // grupo o reclasificado): no vuelve a entrar en ninguna pregunta.
+  const gastos = input.gastos.filter((g) => !g.tipoPE);
   const sistema = new Map(input.categoriasSistema.map((c) => [c.name, c]));
   const kelly = categoriasKelly ? new Map(categoriasKelly.map((c) => [c.grupoNorm, c.tipo])) : null;
   const out: CandidatoRevision[] = [];
@@ -163,8 +170,9 @@ export function detectarRevisiones(input: {
   }
 
   // ─── Por gasto ───
+  // "Lo normal" de una categoría se mide con todos sus gastos, decididos o no.
   const porCategoria = new Map<string, number[]>();
-  for (const g of gastos) {
+  for (const g of input.gastos) {
     if (!porCategoria.has(g.category)) porCategoria.set(g.category, []);
     porCategoria.get(g.category)!.push(g.amount);
   }
@@ -195,6 +203,10 @@ export function detectarRevisiones(input: {
   return out;
 }
 
+/* ─────────────────────────── Separar gastos de un grupo ─────────────────────────── */
+
+export { textoDeRegla, textoSugeridoParaRegla, coincideRegla, claveConcepto } from "./texto-regla";
+
 /* ─────────────────────────── Decisiones ─────────────────────────── */
 
 export type DecisionCategoria = {
@@ -209,7 +221,11 @@ export type DecisionCategoria = {
 
 export type DecisionGasto =
   | { accion: "ok"; nota?: string | null }
-  | { accion: "reclasificar"; tipoPE: TipoPE; categoriaDestino?: string | null; nota?: string | null }
+  | {
+      accion: "reclasificar"; tipoPE: TipoPE; categoriaDestino?: string | null; nota?: string | null;
+      /** Solo si la categoría destino es NUEVA: cómo cuenta en el sistema. Por defecto, según el tipo. */
+      grupoSistema?: GrupoCategoria | null;
+    }
   | { accion: "consultar"; pregunta: string };
 
 /**
@@ -226,7 +242,13 @@ export function lineaParaKelly(item: {
   datos: Record<string, unknown>;
   decision: DecisionCategoria | DecisionGasto;
 }): string {
-  const d = item.datos as { grupo?: string; fecha?: string; monto?: number; concepto?: string | null; tipoKelly?: TipoPE | null };
+  const d = item.datos as { grupo?: string; fecha?: string; monto?: number; concepto?: string | null; tipoKelly?: TipoPE | null; texto?: string };
+  if (item.alcance === "concepto") {
+    const dec = item.decision as DecisionGasto;
+    return dec.accion === "reclasificar"
+      ? `• Los pagos que dicen "${d.texto}" (hoy en el grupo "${d.grupo}"): van en un grupo de tipo ${dec.tipoPE}${dec.categoriaDestino ? ` (${dec.categoriaDestino})` : ""}.`
+      : `• Los pagos que dicen "${d.texto}": están bien donde están.`;
+  }
   if (item.alcance === "categoria") {
     const dec = item.decision as DecisionCategoria;
     return d.tipoKelly

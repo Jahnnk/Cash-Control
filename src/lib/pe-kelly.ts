@@ -32,6 +32,7 @@
 
 import * as XLSX from "xlsx";
 import { parseSheetMonthYear } from "./sheet-month";
+import { normGrupoPE } from "./norm-texto";
 
 export type TipoPE = "Fijo" | "Variable" | "Excluido";
 
@@ -48,9 +49,8 @@ export type PEMensualExcel = {
   conciliacion: number | null;
 };
 
-export function normGrupoPE(texto: string): string {
-  return texto.normalize("NFD").replace(/[̀-ͯ]/g, "").replace(/\s+/g, " ").trim().toUpperCase();
-}
+// Vive aparte (sin xlsx) para poder usarla también en el navegador.
+export { normGrupoPE } from "./norm-texto";
 
 const TIPOS: Record<string, TipoPE> = { FIJO: "Fijo", VARIABLE: "Variable", EXCLUIDO: "Excluido" };
 
