@@ -31,115 +31,73 @@
 
 /** Variante (en minúscula, sin tildes) → nombre correcto. */
 const ALIAS: Record<string, string> = {
-  // Errores de tipeo vistos en los Excels de Centro y Fonavi
-  packagin: "PACKAGING",
-  // La tilde invertida: "REMODELACIÒN" en vez de "REMODELACIÓN". Se ve
-  // casi igual pero son nombres distintos. `clave()` quita las tildes,
-  // así que esta entrada captura las dos formas y las deja en una.
+  // ─── Lista única del 19-sep-2026 (lib/reglas-gasto.ts) ───────────
+  // Los nombres de la lista anterior y los que Kelly escribía, llevados a
+  // la lista nueva. Los BOLSONES (OTROS, SS GENERALES, FONDOS MUTUOS,
+  // PENDIENTE…) NO están acá a propósito: ahí adentro hay de todo, así que
+  // cada gasto se clasifica por su concepto (ver `esGrupoBolson`).
+
+  // Errores de tipeo y singulares/plurales vistos en los Excels
+  packagin: "PACKAGING", packagins: "PACKAGING",
   remodelacion: "REMODELACIÓN",
-  mantieniento: "MANTENIMIENTO",
-  manteniento: "MANTENIMIENTO",
-  mantenimientos: "MANTENIMIENTO",
+  mantieniento: "MANTENIMIENTO", manteniento: "MANTENIMIENTO", mantenimientos: "MANTENIMIENTO",
   limipeza: "LIMPIEZA",
   marketink: "MARKETING",
-
-  // Singular / plural del mismo concepto
   servicio: "SERVICIOS",
-  auspicio: "AUSPICIOS",
-  flete: "SS GENERALES",
-  fletes: "SS GENERALES",
-  delivers: "DELIVERY",
-  deliverys: "DELIVERY",
+  delivery: "DELIVERY Y FLETES", delivers: "DELIVERY Y FLETES", deliverys: "DELIVERY Y FLETES",
+  flete: "DELIVERY Y FLETES", fletes: "DELIVERY Y FLETES",
 
-  // Decisión de Jahnn (27-ago-2026): son la misma compra a Atelier.
+  // Compras a Atelier (decisión de Jahnn, 27-ago-2026)
   productos: "PRODUCTOS ATELIER",
 
-  // Absorciones aprobadas: categorías de un solo uso que no merecen
-  // línea propia en el reporte.
-  cocina: "VAJILLA",
-  proveedor: "CAJA CHICA",
-  medicina: "OTROS",
+  // Juntas en una sola (19-sep-2026)
+  vajilla: "MENAJE Y UTENSILIOS", cocina: "MENAJE Y UTENSILIOS", utencillos: "MENAJE Y UTENSILIOS",
+  utensilios: "MENAJE Y UTENSILIOS", enseres: "MENAJE Y UTENSILIOS", "accesorios atelier": "MENAJE Y UTENSILIOS",
+  auspicio: "MARKETING", auspicios: "MARKETING", publicidad: "MARKETING", decoracion: "MARKETING",
+  oficina: "OFICINA Y SISTEMAS", software: "OFICINA Y SISTEMAS", sistemas: "OFICINA Y SISTEMAS",
+  "utiles escritorio": "OFICINA Y SISTEMAS", "utiles de escritorio": "OFICINA Y SISTEMAS",
+  "software y suscripciones": "OFICINA Y SISTEMAS", suscripciones: "OFICINA Y SISTEMAS",
+  contabilidad: "CONTABILIDAD Y ASESORÍAS", "ss contables": "CONTABILIDAD Y ASESORÍAS", "servicios contables": "CONTABILIDAD Y ASESORÍAS",
+  consultoria: "CONTABILIDAD Y ASESORÍAS", asesoria: "CONTABILIDAD Y ASESORÍAS",
+  personal: "PERSONAL", uniformes: "PERSONAL", capacitacion: "PERSONAL", capacitaciones: "PERSONAL", entrenamiento: "PERSONAL",
+  "reclutamiento y seleccion": "PERSONAL", medicina: "PERSONAL", "beneficios al personal": "PERSONAL",
   bono: "PLANILLA",
-
-  // "FONDOS MUTUOS" contenía un flete de bases de torta — nada que ver
-  // con fondos mutuos, y estaba marcada como no operativa, así que ese
-  // gasto real no contaba. Va a DELIVERY, que es lo que era.
-  "fondos mutuos": "DELIVERY",
-
-  // Basura del Excel: la letra de la columna "Ing./Gsto." se coló en la
-  // columna de categoría. Su concepto decía "(PRODUCTOS)".
-  g: "PRODUCTOS ATELIER",
-
-  // Filas que Kelly dejó sin grupo.
-  "sin categoria": "OTROS",
-  desconocido: "OTROS",
-
-  // ─── Ampliación del 30-ago-2026: Atelier y Fonavi ───────────────
-  //
-  // Hasta acá el diccionario solo cubría lo visto en Centro. Al abrirlo a
-  // las tres sedes aparecieron estas.
-
-  // Financiamiento. Jahnn (30-ago-2026): las cuotas de préstamos y
-  // tarjetas no son costo de operar, son cómo se financia el negocio —
-  // van a su propio grupo y no ensucian el punto de equilibrio.
-  // OJO: "PRESTAMO ATELIER" NO entra acá. Eso es una sede prestándole a
-  // otra, no financiamiento del negocio, y tiene su propia categoría.
-  prestamo: "FINANCIAMIENTO",
-  prestamos: "FINANCIAMIENTO",
-
-  // Mismo concepto, otro nombre.
-  "utiles escritorio": "OFICINA",
-  "utiles de escritorio": "OFICINA",
-  enseres: "VAJILLA",
-  sunat: "IMPUESTOS",
-  ahorros: "AHORRO",
-
-  // La caja chica de Luis (administrador de Atelier) es caja chica.
-  "caja chica - luis": "CAJA CHICA",
-
-  // El mismo nombre, escrito largo o corto.
-  "servicios generales": "SS GENERALES",
   "servicios bancarios": "SS BANCARIOS",
-  "servicios contables": "SS CONTABLES",
+  sunat: "IMPUESTOS", ir: "IMPUESTOS",
+  equipo: "EQUIPOS", "equipos y utensilios de produccion": "EQUIPOS",
+  seguros: "SERVICIOS",
+  "caja chica - luis": "CAJA CHICA", "falta rendir": "CAJA CHICA", proveedor: "CAJA CHICA",
 
-  // Lo que ya describe la categoría del catálogo: SS GENERALES incluye
-  // uniformes, PERSONAL incluye capacitación, VAJILLA incluye utensilios.
-  uniformes: "SS GENERALES",
-  publicidad: "MARKETING",
-  utencillos: "VAJILLA",
-  utensilios: "VAJILLA",
-  capacitaciones: "PERSONAL",
-  capacitacion: "PERSONAL",
-  "reclutamiento y seleccion": "PERSONAL",
-  "equipos y utensilios de produccion": "EQUIPOS",
-  "software y suscripciones": "SOFTWARE",
-  suscripciones: "SOFTWARE",
+  // Plata que no es costo de operar
+  financiamiento: "PRÉSTAMOS Y TARJETAS", prestamo: "PRÉSTAMOS Y TARJETAS", prestamos: "PRÉSTAMOS Y TARJETAS",
+  "prestamo diners": "PRÉSTAMOS Y TARJETAS",
+  // "DEUDA" queda fuera a propósito (ago-2026 fue una devolución): si
+  // vuelve, se clasifica por el concepto o se pregunta.
+  "prestamo atelier": "PRÉSTAMOS ENTRE SEDES",
+  utilidades: "UTILIDADES A SOCIOS", "utilidades 2025": "UTILIDADES A SOCIOS", socios: "UTILIDADES A SOCIOS",
+  ahorros: "AHORRO",
+  "vueltos y devoluciones": "DEVOLUCIONES", "devoluciones / regularizaciones": "DEVOLUCIONES", "devoluciones fonavi, centro": "DEVOLUCIONES", "devoluciones fonavi centro": "DEVOLUCIONES",
 
-  // Ya tienen su propio mecanismo en el sistema; el catálogo solo se
-  // pone de acuerdo con los flags.
-  "prestamos del socio": "PRESTAMOS SOCIO",
-  "prestamo del socio": "PRESTAMOS SOCIO",
-
-  // Aprobadas por Jahnn el 30-ago-2026, de las que el resolvedor dejó
-  // pendientes. Solo entran acá las que son verdad SIEMPRE, no las que
-  // resultaron ser una cosa esta vez:
-  //   · "Accesorios Atelier" eran tápers, moldes y tartaletas.
-  //   · Las devoluciones a Fonavi/Centro son plata que vuelve.
-  //   · Lo que falta rendir es caja chica que todavía no se rindió.
-  // "PENDIENTE" y "DEUDA" quedaron FUERA a propósito: esta vez fueron el
-  // SIS del personal y una devolución, pero son palabras que mañana
-  // pueden significar cualquier cosa. Se corrigieron en los datos ya
-  // cargados; si vuelven a aparecer, el sistema las pregunta de nuevo.
-  "accesorios atelier": "VAJILLA",
-  "devoluciones fonavi, centro": "VUELTOS Y DEVOLUCIONES",
-  "devoluciones fonavi centro": "VUELTOS Y DEVOLUCIONES",
-  "falta rendir": "CAJA CHICA",
-
-  // Marzo 2026 de Centro: "IR FEBRERO 2026 (SUNAT)" — Impuesto a la
-  // Renta. La clave es exacta, así que solo traduce una categoría que se
-  // llame literalmente "IR"; no toca ninguna palabra que la contenga.
-  ir: "IMPUESTOS",
+  // Ya tienen su propio mecanismo en el sistema
+  "prestamos del socio": "PRESTAMOS SOCIO", "prestamo del socio": "PRESTAMOS SOCIO",
+  "transferencias internas": "TRANSFERENCIA INTERNA",
 };
+
+/**
+ * Grupos que son BOLSONES: ahí Kelly metió cosas de todo tipo (en FONDOS
+ * MUTUOS había azúcar y bases para torta; en SS GENERALES uniformes,
+ * extintores y cartas). Un gasto con uno de estos grupos se clasifica por su
+ * concepto con las reglas de lib/reglas-gasto.ts, no por el grupo.
+ */
+const BOLSONES = new Set([
+  "otros", "ss generales", "servicios generales", "fondos mutuos", "pendiente", "grupo", "g", "dcto",
+  "adminitrativo", "administrativo", "gtos operativos", "sin categoria", "desconocido", "por aclarar", "prestamos socio",
+]);
+
+export function esGrupoBolson(nombre: string | null | undefined): boolean {
+  const k = clave(String(nombre ?? ""));
+  return k === "" || BOLSONES.has(k);
+}
 
 /** Quita tildes y baja a minúscula, para que "REMODELACIÒN" y "Remodelación" lleguen igual. */
 function clave(nombre: string): string {

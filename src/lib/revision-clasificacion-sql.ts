@@ -30,13 +30,14 @@ function desde(hoy: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-async function categoriasKelly(bId: number): Promise<CategoriaPE[] | null> {
-  try {
-    const rows = (await sql`SELECT grupo, grupo_norm AS "grupoNorm", tipo, nota FROM pe_categorias WHERE business_id = ${bId}`) as CategoriaPE[];
-    return rows.length > 0 ? rows : null;
-  } catch {
-    return null;
-  }
+/**
+ * Desde la lista única (19-sep-2026) el Excel de Kelly y el sistema usan las
+ * mismas categorías: ya no hay una lista de Kelly contra la cual comparar.
+ * La bandeja pregunta solo lo que el sistema no puede decidir: categorías
+ * sin grupo, gastos POR ACLARAR / en bolsones y montos fuera de lo normal.
+ */
+async function categoriasKelly(): Promise<CategoriaPE[] | null> {
+  return null;
 }
 
 /**
@@ -60,7 +61,7 @@ export async function sincronizarRevisiones(bId: number): Promise<{ nuevas: numb
         AND date >= ${desde(hoy)}
     `,
     sql`SELECT name, cost_group AS "costGroup", exclude_from_ebitda AS "excludeFromEbitda" FROM expense_categories WHERE business_id = ${bId}`,
-    categoriasKelly(bId),
+    categoriasKelly(),
   ]);
   const gastos = gastosRaw as FilaGastoRevision[];
   const cats = catsRaw as CategoriaSistema[];

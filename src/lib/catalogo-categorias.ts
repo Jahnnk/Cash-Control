@@ -36,6 +36,8 @@
  * contradecir el catálogo en una categoría que sí está.
  */
 
+import { CATEGORIAS_GASTO, type TipoCategoria } from "./reglas-gasto";
+
 export type GrupoCategoria = "fijo" | "variable" | "financiamiento" | "fuera";
 
 export type CategoriaCanonica = {
@@ -45,57 +47,34 @@ export type CategoriaCanonica = {
   descripcion: string;
 };
 
+/**
+ * Desde el 19-sep-2026 la lista vive en lib/reglas-gasto.ts (la misma que
+ * la pestaña CATÁLOGO del Excel de Kelly): acá solo se traduce su Tipo a
+ * los cuatro grupos del sistema. Inversión y "No es gasto" van a `fuera`:
+ * ninguno de los dos es costo de operar el mes.
+ *
+ * Cambios contra la lista anterior (aprobados por Jahnn el 19-sep-2026):
+ *   · VAJILLA + COCINA + UTENSILIOS → MENAJE Y UTENSILIOS (fijo).
+ *   · AUSPICIOS, PUBLICIDAD y DECORACIÓN → MARKETING.
+ *   · OFICINA + SOFTWARE → OFICINA Y SISTEMAS.
+ *   · CONTABILIDAD + SS CONTABLES + CONSULTORÍA → CONTABILIDAD Y ASESORÍAS.
+ *   · FINANCIAMIENTO → PRÉSTAMOS Y TARJETAS; UTILIDADES → UTILIDADES A
+ *     SOCIOS; PRESTAMO ATELIER → PRÉSTAMOS ENTRE SEDES; VUELTOS Y
+ *     DEVOLUCIONES → DEVOLUCIONES.
+ *   · CAJA CHICA y LIMPIEZA pasan a fijo; IMPUESTOS sigue variable (el IR
+ *     mensual de la MYPE es un % de las ventas).
+ *   · OTROS y SS GENERALES desaparecen: eran bolsones. Lo que ninguna
+ *     regla reconoce queda POR ACLARAR (fuera del punto de equilibrio).
+ */
+const GRUPO_POR_TIPO: Record<TipoCategoria, GrupoCategoria> = {
+  Fijo: "fijo", Variable: "variable", Financiamiento: "financiamiento", "Inversión": "fuera", "No es gasto": "fuera",
+};
+
 export const CATALOGO: CategoriaCanonica[] = [
-  // ─── FIJOS ────────────────────────────────────────────────────────
-  { nombre: "PLANILLA", grupo: "fijo", descripcion: "Sueldos, bonos, gratificaciones y seguros del equipo" },
-  { nombre: "ALQUILER", grupo: "fijo", descripcion: "Alquiler del local" },
-  { nombre: "SERVICIOS", grupo: "fijo", descripcion: "Luz, agua, internet, teléfono" },
-  { nombre: "CONTABILIDAD", grupo: "fijo", descripcion: "Honorarios del contador" },
-  { nombre: "MARKETING", grupo: "fijo", descripcion: "Publicidad y material gráfico (presupuesto mensual)" },
-  { nombre: "MANTENIMIENTO", grupo: "fijo", descripcion: "Reparaciones del local y de los equipos" },
-  { nombre: "VAJILLA", grupo: "fijo", descripcion: "Platos, vasos, utensilios, enseres de cocina" },
-  { nombre: "OFICINA", grupo: "fijo", descripcion: "Útiles de escritorio, papel de contómetro" },
-  { nombre: "PERSONAL", grupo: "fijo", descripcion: "Capacitaciones y bienestar del equipo (no sueldos)" },
-  { nombre: "SS GENERALES", grupo: "fijo", descripcion: "Uniformes, cartas, señalética, fletes" },
-  { nombre: "AUSPICIOS", grupo: "fijo", descripcion: "Auspicios y patrocinios" },
-  { nombre: "DECORACIÓN", grupo: "fijo", descripcion: "Decoración del local" },
-  { nombre: "CONSULTORÍA", grupo: "fijo", descripcion: "Consultorías y asesorías externas" },
-  { nombre: "SS CONTABLES", grupo: "fijo", descripcion: "Servicios contables adicionales" },
-  { nombre: "SEGUROS", grupo: "fijo", descripcion: "Pólizas del local y de los equipos" },
-  { nombre: "SOFTWARE", grupo: "fijo", descripcion: "Suscripciones y licencias de software" },
-
-  // ─── VARIABLES ────────────────────────────────────────────────────
-  { nombre: "PRODUCTOS ATELIER", grupo: "variable", descripcion: "Mercadería comprada a Atelier" },
-  { nombre: "INSUMOS", grupo: "variable", descripcion: "Insumos de cocina y barra" },
-  { nombre: "PACKAGING", grupo: "variable", descripcion: "Empaques, bolsas, vasos descartables" },
-  { nombre: "DELIVERY", grupo: "variable", descripcion: "Movilidad de compras y repartos" },
-  { nombre: "CAJA CHICA", grupo: "variable", descripcion: "Gastos menores del día a día" },
-  { nombre: "LIMPIEZA", grupo: "variable", descripcion: "Productos e implementos de limpieza" },
-  { nombre: "IMPUESTOS", grupo: "variable", descripcion: "Tributos y pagos a SUNAT" },
-  { nombre: "SS BANCARIOS", grupo: "variable", descripcion: "Comisiones bancarias e ITF" },
-  { nombre: "OTROS", grupo: "variable", descripcion: "Lo que no encaja en ninguna otra" },
-
-  // ─── FINANCIAMIENTO ───────────────────────────────────────────────
-  { nombre: "FINANCIAMIENTO", grupo: "financiamiento", descripcion: "Cuotas de préstamos y tarjetas de crédito" },
-
-  // ─── FUERA DEL RESULTADO OPERATIVO ────────────────────────────────
-  { nombre: "AHORRO", grupo: "fuera", descripcion: "Traslados a fondos de ahorro — no es gasto" },
-  { nombre: "UTILIDADES", grupo: "fuera", descripcion: "Reparto y adelantos de utilidades a los socios" },
-  { nombre: "PRESTAMO ATELIER", grupo: "fuera", descripcion: "Préstamos entre sedes — plata que se devuelve" },
-  { nombre: "REMODELACIÓN", grupo: "fuera", descripcion: "Obras y mejoras del local — es inversión" },
-  // EQUIPOS pasó de `fijo` a `fuera` el 14-sep-2026 (decisión de Jahnn).
-  // Una congeladora de S/8,000 comprada en junio entraba al promedio de
-  // costos fijos como si Fonavi la comprara todos los meses: subía su punto
-  // de equilibrio de referencia de S/31,523 a S/39,840 y, con el candado de
-  // ventas del bono, habría dejado sin bono al equipo en setiembre por una
-  // compra de junio. Un equipo que dura años es inversión, igual que la
-  // remodelación. Las REPARACIONES siguen siendo gasto (MANTENIMIENTO).
-  { nombre: "EQUIPOS", grupo: "fuera", descripcion: "Compra de equipos que duran años — es inversión, no gasto del mes" },
-  { nombre: "VUELTOS Y DEVOLUCIONES", grupo: "fuera", descripcion: "Devoluciones y ajustes de vuelto" },
-  // Estas dos ya tienen su propio mecanismo en el sistema (is_special_loan
-  // y is_internal_transfer) y por eso nunca entraron al punto de
-  // equilibrio. Están acá para que el catálogo diga lo mismo que los
-  // flags, en vez de dejarlas apareciendo como "sin clasificar".
+  ...CATEGORIAS_GASTO.map((c) => ({ nombre: c.nombre, grupo: GRUPO_POR_TIPO[c.tipo], descripcion: c.descripcion })),
+  // Solo del sistema: tienen su propio mecanismo (is_special_loan e
+  // is_internal_transfer) y nunca entran al punto de equilibrio. No van en
+  // el Excel de Kelly.
   { nombre: "PRESTAMOS SOCIO", grupo: "fuera", descripcion: "Gastos pagados por el socio — tienen su propio módulo" },
   { nombre: "TRANSFERENCIA INTERNA", grupo: "fuera", descripcion: "Plata moviéndose entre cuentas propias" },
 ];

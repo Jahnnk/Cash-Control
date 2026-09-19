@@ -63,7 +63,7 @@ export type CandidatoRevision = {
 };
 
 /** Grupos que funcionan como bolsón de "lo que no se sabe dónde va". */
-export const GRUPOS_BOLSON = new Set(["OTROS", "PENDIENTE"]);
+export const GRUPOS_BOLSON = new Set(["OTROS", "PENDIENTE", "POR ACLARAR"]);
 export const BOLSON_DESDE = 100;
 export const ATIPICO_DESDE = 300;
 export const ATIPICO_VECES = 5;

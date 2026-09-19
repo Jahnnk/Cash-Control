@@ -6,7 +6,7 @@
  * Excels de Centro y Fonavi entre febrero y agosto de 2026.
  */
 import { describe, it, expect } from "vitest";
-import { categoriaCanonica, esVarianteConocida, listaDeAlias } from "../categoria-alias";
+import { categoriaCanonica, esVarianteConocida, listaDeAlias, esGrupoBolson } from "../categoria-alias";
 
 describe("errores de tipeo reales", () => {
   it("corrige las seis variantes que Kelly alterna entre meses", () => {
@@ -15,7 +15,7 @@ describe("errores de tipeo reales", () => {
     expect(categoriaCanonica("LIMIPEZA")).toBe("LIMPIEZA");
     expect(categoriaCanonica("MARKETINK")).toBe("MARKETING");
     expect(categoriaCanonica("SERVICIO")).toBe("SERVICIOS");
-    expect(categoriaCanonica("AUSPICIO")).toBe("AUSPICIOS");
+    expect(categoriaCanonica("AUSPICIO")).toBe("MARKETING");
   });
 
   it("la tilde invertida de REMODELACIÒN cae en la forma correcta", () => {
@@ -33,22 +33,24 @@ describe("absorciones aprobadas por Jahnn", () => {
     expect(categoriaCanonica("PRODUCTOS ATELIER")).toBe("PRODUCTOS ATELIER");
   });
 
-  it("las categorías de un solo uso caen donde corresponde", () => {
-    expect(categoriaCanonica("COCINA")).toBe("VAJILLA");
+  it("la lista única del 19-sep-2026 junta las que eran lo mismo", () => {
+    expect(categoriaCanonica("COCINA")).toBe("MENAJE Y UTENSILIOS");
+    expect(categoriaCanonica("VAJILLA")).toBe("MENAJE Y UTENSILIOS");
     expect(categoriaCanonica("PROVEEDOR")).toBe("CAJA CHICA");
-    expect(categoriaCanonica("MEDICINA")).toBe("OTROS");
+    expect(categoriaCanonica("MEDICINA")).toBe("PERSONAL");
     expect(categoriaCanonica("BONO")).toBe("PLANILLA");
-    expect(categoriaCanonica("FLETE")).toBe("SS GENERALES");
+    expect(categoriaCanonica("FLETE")).toBe("DELIVERY Y FLETES");
+    expect(categoriaCanonica("SOFTWARE")).toBe("OFICINA Y SISTEMAS");
+    expect(categoriaCanonica("SS CONTABLES")).toBe("CONTABILIDAD Y ASESORÍAS");
+    expect(categoriaCanonica("FINANCIAMIENTO")).toBe("PRÉSTAMOS Y TARJETAS");
   });
 
-  it("FONDOS MUTUOS era un flete mal categorizado, no un ahorro", () => {
-    expect(categoriaCanonica("FONDOS MUTUOS")).toBe("DELIVERY");
-  });
-
-  it("la basura del Excel se reasigna en vez de quedar suelta", () => {
-    expect(categoriaCanonica("G")).toBe("PRODUCTOS ATELIER");
-    expect(categoriaCanonica("Sin categoría")).toBe("OTROS");
-    expect(categoriaCanonica("Desconocido")).toBe("OTROS");
+  it("los bolsones NO se traducen: cada gasto se clasifica por su concepto", () => {
+    for (const b of ["FONDOS MUTUOS", "OTROS", "SS GENERALES", "G", "Sin categoría"]) {
+      expect(esGrupoBolson(b)).toBe(true);
+      expect(categoriaCanonica(b)).toBe(b.trim());
+    }
+    expect(esGrupoBolson("INSUMOS")).toBe(false);
   });
 });
 

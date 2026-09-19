@@ -19,6 +19,36 @@
 
 import * as XLSX from "xlsx";
 import { resolverCategoria, type ResolucionCategoria } from "./categoria-resolver";
+import { esGrupoBolson } from "./categoria-alias";
+import { clasificarGasto, POR_ACLARAR } from "./reglas-gasto";
+import { grupoDelCatalogo } from "./catalogo-categorias";
+
+/**
+ * La categoría de un gasto a partir de lo que escribió Kelly en Grupo.
+ *
+ * Desde el 19-sep-2026 (lista única, lib/reglas-gasto.ts): si el Grupo es
+ * un bolsón (OTROS, SS GENERALES, FONDOS MUTUOS…) o no se reconoce, manda
+ * el CONCEPTO (y el proveedor), con las mismas reglas que usa el Excel. Si
+ * tampoco el concepto dice nada, queda POR ACLARAR — nunca se adivina.
+ */
+export function resolverGrupoDelGasto(
+  grupoRaw: string, concepto: string, proveedor: string, tipo: "income" | "expense",
+): ResolucionCategoria {
+  const porConcepto = (motivo: string): ResolucionCategoria | null => {
+    const cat = clasificarGasto(concepto, proveedor);
+    if (cat === POR_ACLARAR) return null;
+    return { entrada: grupoRaw, canonica: cat, grupo: grupoDelCatalogo(cat), confianza: "alias", motivo };
+  };
+  if (tipo === "expense" && esGrupoBolson(grupoRaw)) {
+    return porConcepto(`"${grupoRaw || "sin grupo"}" es un bolsón: se clasificó por el concepto.`)
+      ?? { entrada: grupoRaw, canonica: POR_ACLARAR, grupo: grupoDelCatalogo(POR_ACLARAR), confianza: "alias", motivo: "Ni el grupo ni el concepto dicen qué es: queda POR ACLARAR." };
+  }
+  const r = resolverCategoria(grupoRaw);
+  if (tipo === "expense" && r.confianza === "desconocida") {
+    return porConcepto(`"${grupoRaw}" no está en el catálogo: se clasificó por el concepto.`) ?? r;
+  }
+  return r;
+}
 import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
 import { leerSaldoBancoExcel, type SaldoBancoExcel } from "./saldo-banco-excel";
 
@@ -690,8 +720,8 @@ export function parseExcelFile(
     // "desconocida" lo que no puede resolver sin adivinar — para que
     // dirección lo decida al importar, en vez de que quede suelto.
     // Ver lib/categoria-resolver.ts.
-    const resolucion = resolverCategoria(grupoRaw);
-    const cat = resolucion.canonica || "OTROS";
+    const resolucion = resolverGrupoDelGasto(grupoRaw, concepto, proveedor, effectiveType);
+    const cat = resolucion.canonica || POR_ACLARAR;
     categorias.add(cat);
     if (!resoluciones.has(cat)) resoluciones.set(cat, resolucion);
 

@@ -153,13 +153,13 @@ export function resolverCategoria(nombre: string | null | undefined): Resolucion
   const entrada = String(nombre ?? "").trim();
 
   if (!entrada) {
-    const cat = categoriaDelCatalogo("OTROS");
+    const cat = categoriaDelCatalogo("POR ACLARAR");
     return {
       entrada,
-      canonica: "OTROS",
-      grupo: cat?.grupo ?? "variable",
+      canonica: "POR ACLARAR",
+      grupo: cat?.grupo ?? "fuera",
       confianza: "alias",
-      motivo: "La fila vino sin categoría — va a OTROS.",
+      motivo: "La fila vino sin categoría — queda POR ACLARAR.",
     };
   }
 

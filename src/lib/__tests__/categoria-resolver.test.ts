@@ -22,26 +22,27 @@ describe("resolverCategoria · lo que ya está bien escrito", () => {
   it("ignora la tilde, incluso invertida", () => {
     // El caso real: Fonavi tenía DECORACIÒN y DECORACIÓN como dos
     // categorías distintas. Se leen igual, el sistema las veía distintas.
-    expect(resolverCategoria("DECORACIÒN").canonica).toBe("DECORACIÓN");
-    expect(resolverCategoria("DECORACIÓN").canonica).toBe("DECORACIÓN");
-    expect(resolverCategoria("decoracion").canonica).toBe("DECORACIÓN");
+    expect(resolverCategoria("DECORACIÒN").canonica).toBe("MARKETING");
+    expect(resolverCategoria("DECORACIÓN").canonica).toBe("MARKETING");
+    expect(resolverCategoria("decoracion").canonica).toBe("MARKETING");
+    expect(resolverCategoria("Contabilidad y Asesorias").canonica).toBe("CONTABILIDAD Y ASESORÍAS");
     expect(resolverCategoria("REMODELACIÒN").canonica).toBe("REMODELACIÓN");
   });
 });
 
 describe("resolverCategoria · el diccionario de equivalencias", () => {
   it("traduce las equivalencias decididas a mano", () => {
-    expect(resolverCategoria("COCINA").canonica).toBe("VAJILLA");
-    expect(resolverCategoria("FLETE").canonica).toBe("SS GENERALES");
+    expect(resolverCategoria("COCINA").canonica).toBe("MENAJE Y UTENSILIOS");
+    expect(resolverCategoria("FLETE").canonica).toBe("DELIVERY Y FLETES");
     expect(resolverCategoria("PRODUCTOS").canonica).toBe("PRODUCTOS ATELIER");
-    expect(resolverCategoria("UTILES ESCRITORIO").canonica).toBe("OFICINA");
+    expect(resolverCategoria("UTILES ESCRITORIO").canonica).toBe("OFICINA Y SISTEMAS");
     expect(resolverCategoria("SUNAT").canonica).toBe("IMPUESTOS");
   });
 
-  it("manda los pagos de préstamos a FINANCIAMIENTO", () => {
-    for (const n of ["PRESTAMO", "PRESTAMOS", "Préstamos"]) {
+  it("manda los pagos de préstamos a PRÉSTAMOS Y TARJETAS (financiamiento)", () => {
+    for (const n of ["PRESTAMO", "PRESTAMOS", "Préstamos", "FINANCIAMIENTO"]) {
       const r = resolverCategoria(n);
-      expect(r.canonica).toBe("FINANCIAMIENTO");
+      expect(r.canonica).toBe("PRÉSTAMOS Y TARJETAS");
       expect(r.grupo).toBe("financiamiento");
     }
   });
@@ -50,15 +51,15 @@ describe("resolverCategoria · el diccionario de equivalencias", () => {
     // "PRESTAMO A ATELIER" desde Fonavi/Centro es una sede prestándole a
     // otra: plata que vuelve, no una obligación con un banco.
     const r = resolverCategoria("PRESTAMO ATELIER");
-    expect(r.canonica).toBe("PRESTAMO ATELIER");
+    expect(r.canonica).toBe("PRÉSTAMOS ENTRE SEDES");
     expect(r.grupo).toBe("fuera");
   });
 
-  it("una fila sin categoría cae en OTROS, no queda vacía", () => {
+  it("una fila sin categoría queda POR ACLARAR (fuera del punto de equilibrio), no vacía", () => {
     for (const n of ["", "   ", null, undefined]) {
       const r = resolverCategoria(n);
-      expect(r.canonica).toBe("OTROS");
-      expect(r.grupo).toBe("variable");
+      expect(r.canonica).toBe("POR ACLARAR");
+      expect(r.grupo).toBe("fuera");
     }
   });
 });
@@ -106,7 +107,7 @@ describe("resolverCategoria · lo que NO se debe adivinar", () => {
     // Estas también salieron de la misma revisión, pero son verdad
     // independientemente de la fila: lo que falta rendir es caja chica.
     expect(resolverCategoria("FALTA RENDIR").canonica).toBe("CAJA CHICA");
-    expect(resolverCategoria("Accesorios Atelier").canonica).toBe("VAJILLA");
+    expect(resolverCategoria("Accesorios Atelier").canonica).toBe("MENAJE Y UTENSILIOS");
   });
 
   it("nunca corrige nombres cortos por parecido", () => {
@@ -143,11 +144,11 @@ describe("categoriasQueNecesitanDecision", () => {
       "INSUMOS",      // exacta
       "COCINA",       // alias
       "INSUMSO",      // parecido
-      "PENDIENTE",    // desconocida
-      "PENDIENTE",    // repetida
       "DEUDA",        // desconocida
+      "DEUDA",        // repetida
+      "DONACIONES",   // desconocida
     ]);
-    expect(pendientes.map((p) => p.canonica)).toEqual(["PENDIENTE", "DEUDA"]);
+    expect(pendientes.map((p) => p.canonica)).toEqual(["DEUDA", "DONACIONES"]);
   });
 
   it("no pide decisión cuando el Excel viene limpio", () => {
