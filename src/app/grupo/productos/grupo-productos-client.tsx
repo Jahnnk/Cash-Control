@@ -94,29 +94,22 @@ export function GrupoProductosClient() {
         />
       </div>
 
-      {/* ¿Se está subiendo el reporte que alimenta todo esto? Va arriba
-          porque un análisis con datos viejos es peor que no tenerlo:
-          parece actual y no lo es. */}
-      {/* Qué se vendió este mes, sede por sede (mismo bloque que ven los administradores) */}
-      <PanoramaProductosGrupo month={month} />
-
-      {/* Informe trimestral (el Excel de dirección dentro del sistema) */}
-      <InformeTrimestralGrupo hastaMes={month} />
-
-      <ControlCargasProductos />
-
-      {/* Carga semanal del reporte de Byte */}
-      <section className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h2 className="text-sm font-semibold text-gray-900">📥 Carga semanal del reporte de Byte</h2>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              Exporta de Byte <strong>&ldquo;Platos con mayor rotación&rdquo;</strong> con rango
-              <strong> del 01 del mes hasta hoy</strong> (acumulado) y súbelo aquí eligiendo la sede.
-              Re-subir el mismo mes lo reemplaza con la foto más completa — nunca duplica.
+      {/* LO PRIMERO: subir el reporte. Estaba al final y Jahnn no lo
+          encontraba (22-sep-2026); un análisis sin datos frescos no sirve. */}
+      <section className="bg-white rounded-xl border-2 border-primary/30 p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+              <Upload className="w-4 h-4 text-primary" /> Subir reporte de Byte · cualquier mes
+            </h2>
+            <p className="text-[11px] text-gray-500 mt-0.5 max-w-3xl">
+              Exporta de Byte <strong>&ldquo;Platos con mayor rotación&rdquo;</strong> del rango que quieras —el mes completo
+              (junio, julio, agosto…) o la semana— y súbelo eligiendo la sede. El mes y el rango salen del título del
+              archivo, así que no hay que elegirlos. <strong>Tu carga manda</strong> sobre la del administrador y la suya
+              se conserva: si no coinciden, el informe de abajo lo avisa.
             </p>
           </div>
-          <div className="flex gap-2">
+          <div className="flex gap-2 shrink-0">
             {SEDES.map((s) => (
               <button
                 key={s.id}
@@ -129,6 +122,16 @@ export function GrupoProductosClient() {
           </div>
         </div>
       </section>
+
+      {/* ¿Está entrando el reporte que alimenta todo esto? Un análisis con
+          datos viejos es peor que no tenerlo: parece actual y no lo es. */}
+      <ControlCargasProductos />
+
+      {/* Qué se vendió este mes, sede por sede (mismo bloque que ven los administradores) */}
+      <PanoramaProductosGrupo month={month} />
+
+      {/* Informe trimestral (el Excel de dirección dentro del sistema) */}
+      <InformeTrimestralGrupo hastaMes={month} />
 
       {loading || !stories ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Analizando…</div>

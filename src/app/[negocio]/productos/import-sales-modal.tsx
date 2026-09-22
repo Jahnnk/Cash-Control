@@ -73,6 +73,12 @@ export function ImportSalesModal({
       items: parsed.items,
       declaredTotal: parsed.declaredTotal,
       parseWarnings: parsed.warnings,
+      // El RANGO del título del archivo viaja siempre. Sin él, el import
+      // asumía el mes entero y una semana suelta quedaba registrada como
+      // "1 al 31" — así julio 2026 de Fonavi pareció completo con S/6,996
+      // de S/36,329 (22-sep-2026).
+      periodStart: parsed.periodStart,
+      periodEnd: parsed.periodEnd,
     };
     const r = sede ? await importProductSalesForSede(sede.id, input) : await importProductSales(input);
     setSaving(false);
@@ -167,6 +173,14 @@ export function ImportSalesModal({
                       <div className="font-semibold">{parsed.format === "rotacion" ? "Rotación ✓" : "Rentabilidad"}</div>
                     </div>
                     <div><span className="text-gray-500 text-xs">Mes</span><div className="font-semibold">{parsed.month ?? "—"}</div></div>
+                    <div>
+                      <span className="text-gray-500 text-xs">Días que cubre</span>
+                      <div className="font-semibold">
+                        {parsed.periodStart && parsed.periodEnd
+                          ? `${parsed.periodStart.slice(8)}/${parsed.periodStart.slice(5, 7)} → ${parsed.periodEnd.slice(8)}/${parsed.periodEnd.slice(5, 7)}`
+                          : "el mes entero"}
+                      </div>
+                    </div>
                     <div><span className="text-gray-500 text-xs">Productos</span><div className="font-semibold">{parsed.items.length}</div></div>
                     <div><span className="text-gray-500 text-xs">Total del archivo</span><div className="font-semibold">{formatCurrency(parsedTotal)}</div></div>
                     {parsed.declaredTotal !== null && (
