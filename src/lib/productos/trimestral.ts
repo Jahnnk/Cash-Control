@@ -53,6 +53,12 @@ export type MesResumen = {
   hasta: string;
   /** true = el período cargado no cubre el mes entero. */
   incompleto: boolean;
+  /**
+   * true = el mes declara cubrir todo pero vendió muchísimo menos que los
+   * otros. Es el caso de julio 2026 en Fonavi: la carga decía "1 al 31" y
+   * traía S/6,996 de S/36,329 (un export parcial subido como mes entero).
+   */
+  sospechoso: boolean;
 };
 
 export type ProductoTrimestre = {
@@ -139,6 +145,11 @@ export function armarTrimestral(meses: MesDeRotacion[]): InformeTrimestral {
   const panoramas = meses.map((m) => ({ ...m, p: armarPanorama(m.filas, m.desde, m.hasta, 10) }));
   const mesesKeys = meses.map((m) => m.month);
 
+  const ventasPorMes = panoramas.map((x) => x.p.ventas).filter((v) => v > 0).sort((a, b) => a - b);
+  const mediana = ventasPorMes.length > 0
+    ? (ventasPorMes.length % 2 ? ventasPorMes[(ventasPorMes.length - 1) / 2] : (ventasPorMes[ventasPorMes.length / 2 - 1] + ventasPorMes[ventasPorMes.length / 2]) / 2)
+    : 0;
+
   const resumen: MesResumen[] = panoramas.map(({ month, p, desde, hasta }) => {
     const [y, mm] = month.split("-").map(Number);
     const ultimoDia = `${month}-${String(new Date(y, mm, 0).getDate()).padStart(2, "0")}`;
@@ -146,6 +157,7 @@ export function armarTrimestral(meses: MesDeRotacion[]): InformeTrimestral {
       month, dias: p.dias, ventas: p.ventas, unidades: p.unidades, ventaPorDia: p.ventaPorDia,
       productos: p.productos, fueraDeCarta: p.fueraDeCarta.ventas, desde, hasta,
       incompleto: desde > `${month}-01` || hasta < ultimoDia,
+      sospechoso: ventasPorMes.length > 1 && p.ventas > 0 && mediana > 0 && p.ventas < mediana * 0.5,
     };
   });
 

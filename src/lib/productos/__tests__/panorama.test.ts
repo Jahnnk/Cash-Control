@@ -134,6 +134,7 @@ describe("informe trimestral (método del Excel de Jahnn)", () => {
     expect(t.meses.map((m) => m.ventas)).toEqual([4044, 4130, 3610]);
     expect(t.meses[2].incompleto).toBe(true);
     expect(t.meses[0].incompleto).toBe(false);
+    expect(t.meses.every((m) => !m.sospechoso)).toBe(true);
     expect(t.ventas).toBe(11784);
   });
 
@@ -157,6 +158,16 @@ describe("informe trimestral (método del Excel de Jahnn)", () => {
     expect(recomendacionDe("C", "Dejó de venderse", 2, 3)).toContain("quiebre");
     expect(recomendacionDe("C", "Estable", 3, 3)).toContain("Vende poco");
     expect(recomendacionDe("A", "Creciendo", 3, 3)).toContain("Impulsar");
+  });
+
+  it("marca el mes que vendió muchísimo menos (carga parcial, caso julio de Fonavi)", () => {
+    const conJulioRoto = armarTrimestral([
+      mes("2026-06", "2026-06-01", "2026-06-30", [{ nombre: "EMPANADA MIXTA", unidades: 278, ingresos: 2224 }]),
+      mes("2026-07", "2026-07-01", "2026-07-31", [{ nombre: "EMPANADA MIXTA", unidades: 50, ingresos: 400 }]),
+      mes("2026-08", "2026-08-01", "2026-08-31", [{ nombre: "EMPANADA MIXTA", unidades: 227, ingresos: 1816 }]),
+    ]);
+    expect(conJulioRoto.meses.map((m) => m.sospechoso)).toEqual([false, true, false]);
+    expect(conJulioRoto.meses[1].incompleto).toBe(false);
   });
 
   it("lo que no es carta va aparte, no al ranking", () => {

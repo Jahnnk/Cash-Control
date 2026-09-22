@@ -53,6 +53,7 @@ export function TrimestreCard({ month }: { month: string }) {
             <div className="text-[11px] text-gray-500">{monthLabel(m.month)}</div>
             <div className="text-base font-bold text-gray-900 tabular-nums">{formatCurrency(m.ventas)}</div>
             <div className="text-[10px] text-gray-500">{m.unidades} unidades{m.incompleto ? " · mes incompleto" : ""}</div>
+            {m.sospechoso && <div className="text-[10px] text-red-700">falta subir reportes de este mes</div>}
           </div>
         ))}
       </div>

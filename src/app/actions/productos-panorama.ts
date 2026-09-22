@@ -249,7 +249,7 @@ export async function getCruceFuentes(month: string): Promise<Res<{ sedes: Cruce
 
 export type TrimestreSede = {
   sede: string;
-  meses: { month: string; ventas: number; unidades: number; incompleto: boolean }[];
+  meses: { month: string; ventas: number; unidades: number; incompleto: boolean; sospechoso: boolean }[];
   familias: { familia: string; porMes: { month: string; ventas: number }[]; ventas: number; pct: number; variacionPct: number | null }[];
   top: { nombre: string; familia: string; unidades: number; ingresos: number; pctTrimestre: number }[];
   suben: { nombre: string; variacionPct: number | null; ingresos: number }[];
@@ -284,11 +284,13 @@ export async function getTrimestreSede(hastaMes: string): Promise<Res<{ data: Tr
       data: {
         sede: SEDES.find((s) => s.id === bId)?.nombre ?? `Sede ${bId}`,
         ventas: t.ventas,
-        meses: t.meses.map((m) => ({ month: m.month, ventas: m.ventas, unidades: m.unidades, incompleto: m.incompleto })),
+        meses: t.meses.map((m) => ({ month: m.month, ventas: m.ventas, unidades: m.unidades, incompleto: m.incompleto, sospechoso: m.sospechoso })),
         familias: t.familias.map((f) => ({ familia: f.familia as string, porMes: f.porMes.map((x) => ({ month: x.month, ventas: x.ventas })), ventas: f.ventas, pct: f.pct, variacionPct: f.variacionPct })),
         top: t.top.map((p) => ({ nombre: p.nombre, familia: p.familia as string, unidades: p.unidades, ingresos: p.ingresos, pctTrimestre: p.pctTrimestre })),
-        suben: [...conVar].sort((a, b) => (b.variacionPct ?? 0) - (a.variacionPct ?? 0)).slice(0, 5).map((p) => ({ nombre: p.nombre, variacionPct: p.variacionPct, ingresos: p.ingresos })),
-        bajan: [...conVar].sort((a, b) => (a.variacionPct ?? 0) - (b.variacionPct ?? 0)).slice(0, 5).map((p) => ({ nombre: p.nombre, variacionPct: p.variacionPct, ingresos: p.ingresos })),
+        suben: conVar.filter((p) => (p.variacionPct ?? 0) >= 15).sort((a, b) => (b.variacionPct ?? 0) - (a.variacionPct ?? 0)).slice(0, 5)
+          .map((p) => ({ nombre: p.nombre, variacionPct: p.variacionPct, ingresos: p.ingresos })),
+        bajan: conVar.filter((p) => (p.variacionPct ?? 0) <= -15).sort((a, b) => (a.variacionPct ?? 0) - (b.variacionPct ?? 0)).slice(0, 5)
+          .map((p) => ({ nombre: p.nombre, variacionPct: p.variacionPct, ingresos: p.ingresos })),
       },
     };
   } catch (e) {

@@ -189,6 +189,7 @@ export function InformeTrimestralGrupo({ hastaMes }: { hastaMes: string }) {
                     <td className="px-3 py-1.5 font-medium">
                       {monthLabel(m.month)}
                       {m.incompleto && <span className="block text-[10px] text-amber-700">solo {m.desde.slice(8)}/{m.desde.slice(5, 7)} → {m.hasta.slice(8)}/{m.hasta.slice(5, 7)}</span>}
+                      {m.sospechoso && <span className="block text-[10px] text-red-700">vendió mucho menos que los otros meses: revisar si la carga fue parcial</span>}
                     </td>
                     <td className="px-3 py-1.5 text-right tabular-nums text-gray-500">{m.dias}</td>
                     <td className="px-3 py-1.5 text-right tabular-nums font-semibold">{formatCurrency(m.ventas)}</td>
