@@ -25,6 +25,15 @@
  *   Clase ABC sobre los ingresos del trimestre, ordenando de mayor a menor:
  *   A hasta el 80% acumulado, B hasta el 95%, C el resto.
  *
+ * ─── Meses a medias (el mes en curso) ───
+ *
+ * Si el primer o el último mes no está completo (por ejemplo setiembre del 1
+ * al 21), comparar totales diría que todo "cae". En ese caso la tendencia se
+ * mide por DÍA: venta diaria del último mes contra venta diaria del primero.
+ * Con los dos meses completos se comparan totales, igual que el Excel de
+ * Jahnn. La marca de "mes sospechoso" también usa la venta por día, para no
+ * confundir el mes en curso con una carga parcial.
+ *
  * La RECOMENDACIÓN cruza clase, tendencia y meses activo. Es un punto de
  * partida, no un veredicto: no mira costos ni márgenes, y una caída puede ser
  * un quiebre de stock y no falta de demanda (nota de Jahnn en su Excel).
@@ -102,6 +111,8 @@ export type InformeTrimestral = {
   productosTodos: ProductoTrimestre[];
   concentracionTop10: number;
   claseA: number;
+  /** true = la tendencia se midió por día (hay un mes a medias). */
+  tendenciaPorDia: boolean;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -145,7 +156,7 @@ export function armarTrimestral(meses: MesDeRotacion[]): InformeTrimestral {
   const panoramas = meses.map((m) => ({ ...m, p: armarPanorama(m.filas, m.desde, m.hasta, 10) }));
   const mesesKeys = meses.map((m) => m.month);
 
-  const ventasPorMes = panoramas.map((x) => x.p.ventas).filter((v) => v > 0).sort((a, b) => a - b);
+  const ventasPorMes = panoramas.map((x) => x.p.ventaPorDia).filter((v) => v > 0).sort((a, b) => a - b);
   const mediana = ventasPorMes.length > 0
     ? (ventasPorMes.length % 2 ? ventasPorMes[(ventasPorMes.length - 1) / 2] : (ventasPorMes[ventasPorMes.length / 2 - 1] + ventasPorMes[ventasPorMes.length / 2]) / 2)
     : 0;
@@ -157,9 +168,16 @@ export function armarTrimestral(meses: MesDeRotacion[]): InformeTrimestral {
       month, dias: p.dias, ventas: p.ventas, unidades: p.unidades, ventaPorDia: p.ventaPorDia,
       productos: p.productos, fueraDeCarta: p.fueraDeCarta.ventas, desde, hasta,
       incompleto: desde > `${month}-01` || hasta < ultimoDia,
-      sospechoso: ventasPorMes.length > 1 && p.ventas > 0 && mediana > 0 && p.ventas < mediana * 0.5,
+      sospechoso: ventasPorMes.length > 1 && p.ventaPorDia > 0 && mediana > 0 && p.ventaPorDia < mediana * 0.5,
     };
   });
+
+  // Con el primer o el último mes a medias, la tendencia se mide por día.
+  const primero = resumen[0];
+  const ultimo = resumen[resumen.length - 1];
+  const porDia = !!primero && !!ultimo && (primero.incompleto || ultimo.incompleto);
+  const escala = (v: number, m: MesResumen | undefined) => (porDia && m && m.dias > 0 ? v / m.dias : v);
+  const comparar = (a: number, b: number) => tendenciaDe(escala(a, primero), escala(b, ultimo));
 
   // Productos: una fila por producto con su desglose mensual.
   const acc = new Map<string, { nombre: string; porMes: Map<string, { unidades: number; ingresos: number }> }>();
@@ -185,7 +203,7 @@ export function armarTrimestral(meses: MesDeRotacion[]): InformeTrimestral {
     const porMes = mesesKeys.map((month) => ({ month, unidades: p.porMes.get(month)?.unidades ?? 0, ingresos: p.porMes.get(month)?.ingresos ?? 0 }));
     const unidades = r2(porMes.reduce((t, m) => t + m.unidades, 0));
     const ingresos = r2(porMes.reduce((t, m) => t + m.ingresos, 0));
-    const { tendencia, variacion } = tendenciaDe(porMes[0]?.ingresos ?? 0, porMes[porMes.length - 1]?.ingresos ?? 0);
+    const { tendencia, variacion } = comparar(porMes[0]?.ingresos ?? 0, porMes[porMes.length - 1]?.ingresos ?? 0);
     return {
       nombre: p.nombre, familia: familiaDeProducto(p.nombre), porMes, unidades, ingresos,
       precio: unidades > 0 ? r2(ingresos / unidades) : null,
@@ -216,7 +234,7 @@ export function armarTrimestral(meses: MesDeRotacion[]): InformeTrimestral {
       ventas: r2(dentro.reduce((t, p) => t + (p.porMes.find((m) => m.month === month)?.ingresos ?? 0), 0)),
       unidades: r2(dentro.reduce((t, p) => t + (p.porMes.find((m) => m.month === month)?.unidades ?? 0), 0)),
     }));
-    const { variacion } = tendenciaDe(porMes[0]?.ventas ?? 0, porMes[porMes.length - 1]?.ventas ?? 0);
+    const { variacion } = comparar(porMes[0]?.ventas ?? 0, porMes[porMes.length - 1]?.ventas ?? 0);
     return { familia, porMes, ventas, unidades: r2(dentro.reduce((t, p) => t + p.unidades, 0)), pct: pct(ventas, ventasTrim), variacionPct: variacion, productos: dentro };
   }).filter((f) => f.ventas > 0);
 
@@ -244,6 +262,7 @@ export function armarTrimestral(meses: MesDeRotacion[]): InformeTrimestral {
     productosTodos,
     concentracionTop10: pct(top.reduce((t, p) => t + p.ingresos, 0), ventasTrim),
     claseA: productosTodos.filter((p) => p.clase === "A").length,
+    tendenciaPorDia: porDia,
   };
 }
 

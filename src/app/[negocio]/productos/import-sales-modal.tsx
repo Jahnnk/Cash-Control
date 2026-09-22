@@ -115,12 +115,10 @@ export function ImportSalesModal({
           {!result && (
             <>
               <p className="text-xs text-gray-500">
-                Sube <strong>UN reporte de Byte por mes</strong> (mes calendario completo).
-                El ideal es <strong>&ldquo;Productos con mayor rotación&rdquo;</strong> (cuadra ~99% con la
-                venta); también acepta <strong>&ldquo;Rentabilidad por Plato&rdquo;</strong> (cubre 87-94% en
-                cafeterías) — el sistema detecta el formato solo. No subas ambos del mismo mes:
-                re-subir un mes lo <strong>reemplaza</strong> (no duplica). Los costos NO salen de Byte
-                sino del pricing-engine. Este import no toca saldos ni movimientos.
+                Sube el reporte <strong>&ldquo;Platos con mayor rotación&rdquo;</strong> de Byte del rango que quieras:
+                el mes completo o lo que va del mes. El mes y los días salen del título del archivo, y una carga nueva
+                reemplaza solo los días que pisa (no duplica). También acepta &ldquo;Rentabilidad por Plato&rdquo;, pero
+                cubre solo los productos con receta. Para subir varios meses a la vez, usa Grupo → Productos.
               </p>
 
               {/* Dropzone */}

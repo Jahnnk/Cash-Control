@@ -170,6 +170,18 @@ describe("informe trimestral (método del Excel de Jahnn)", () => {
     expect(conJulioRoto.meses[1].incompleto).toBe(false);
   });
 
+  it("con el mes en curso a medias, la tendencia se mide por día (setiembre 1–21)", () => {
+    const r = armarTrimestral([
+      mes("2026-07", "2026-07-01", "2026-07-31", [{ nombre: "EMPANADA MIXTA", unidades: 248, ingresos: 1984 }]),
+      mes("2026-08", "2026-08-01", "2026-08-31", [{ nombre: "EMPANADA MIXTA", unidades: 227, ingresos: 1816 }]),
+      mes("2026-09", "2026-09-01", "2026-09-21", [{ nombre: "EMPANADA MIXTA", unidades: 168, ingresos: 1344 }]),
+    ]);
+    // Total: 1,344 contra 1,984 parece -32%. Por día: 64 contra 64 = estable.
+    expect(r.tendenciaPorDia).toBe(true);
+    expect(r.productosTodos[0].tendencia).toBe("Estable");
+    expect(r.meses[2]).toMatchObject({ incompleto: true, sospechoso: false });
+  });
+
   it("lo que no es carta va aparte, no al ranking", () => {
     expect(t.productosTodos.map((p) => p.nombre)).not.toContain("DELIVERY 2");
     expect(t.fueraDeCarta.ventas).toBe(84);

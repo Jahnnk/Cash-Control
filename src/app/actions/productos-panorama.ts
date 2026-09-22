@@ -20,6 +20,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import { armarPanorama, type PanoramaProductos, type FilaProducto } from "@/lib/productos/panorama";
 import { armarTrimestral, type InformeTrimestral } from "@/lib/productos/trimestral";
+import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -296,5 +297,42 @@ export async function getTrimestreSede(hastaMes: string): Promise<Res<{ data: Tr
   } catch (e) {
     console.error("[getTrimestreSede] failed:", e);
     return { ok: false, error: "No se pudo armar el resumen del trimestre." };
+  }
+}
+
+/* ─────────────── Qué hay cargado (la grilla de Grupo) ─────────────── */
+
+/**
+ * Los períodos cargados de las tres sedes en los últimos `meses` meses, con
+ * quién los subió. La grilla y el aviso de "qué hará este archivo" salen de
+ * acá (ver lib/productos/cobertura-rotacion.ts).
+ */
+export async function getCoberturaRotacion(meses = 6): Promise<Res<{ hoy: string; meses: string[]; periodos: PeriodoCargado[] }>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const lista = mesesAntes(hoy.slice(0, 7), Math.min(12, Math.max(1, meses)));
+  try {
+    const filas = (await sql`
+      SELECT business_id, month, origen, period_start::text AS desde, period_end::text AS hasta,
+             SUM(revenue)::float AS ventas,
+             (MAX(imported_at) AT TIME ZONE 'America/Lima')::date::text AS cargado
+      FROM product_period_sales
+      WHERE business_id IN (1, 2, 3) AND month = ANY(${lista}::text[])
+      GROUP BY 1, 2, 3, 4, 5
+      ORDER BY 1, 2, 4
+    `) as unknown as { business_id: number; month: string; origen: string; desde: string; hasta: string; ventas: number; cargado: string | null }[];
+    return {
+      ok: true,
+      hoy,
+      meses: lista,
+      periodos: filas.map((f) => ({
+        businessId: f.business_id, month: f.month, origen: f.origen === "direccion" ? "direccion" : "sede",
+        desde: f.desde, hasta: f.hasta, ventas: Math.round(f.ventas * 100) / 100, cargadoEl: f.cargado,
+      })),
+    };
+  } catch (e) {
+    console.error("[getCoberturaRotacion] failed:", e);
+    return { ok: false, error: "No se pudo leer qué está cargado." };
   }
 }

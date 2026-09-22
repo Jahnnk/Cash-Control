@@ -323,7 +323,7 @@ export function InformeTrimestralGrupo({ hastaMes }: { hastaMes: string }) {
           )}
           <div className="text-[11px] text-gray-400">
             Clase A = productos que juntan el 80% de la venta · B hasta 95% · C el resto. Tendencia = último mes contra el primero
-            (≥ +15% creciendo, ≤ −15% cayendo). La recomendación no mira costos ni márgenes: antes de sacar algo de carta, cruzar con
+            (≥ +15% creciendo, ≤ −15% cayendo){t.tendenciaPorDia ? "; como hay un mes a medias, se compara la venta POR DÍA para no confundir un mes en curso con una caída" : ""}. La recomendación no mira costos ni márgenes: antes de sacar algo de carta, cruzar con
             el Pricing Maestro y confirmar si hubo quiebre de stock.
           </div>
         </>

@@ -3,14 +3,14 @@
 import { useCallback, useEffect, useState } from "react";
 import Link from "next/link";
 import { ControlCargasProductos } from "./control-cargas";
-import { Package, Upload, ArrowRight, Rocket, ShieldCheck, SlidersHorizontal, Search, FlaskConical, Eye } from "lucide-react";
+import { Package, ArrowRight, Rocket, ShieldCheck, SlidersHorizontal, Search, FlaskConical, Eye } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getPortfolioStoryForSede } from "@/app/actions/portfolio-story";
 import type { PortfolioStory, Verdict } from "@/lib/portfolio/types";
-import { ImportSalesModal } from "@/app/[negocio]/productos/import-sales-modal";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { PanoramaProductosGrupo } from "./panorama-grupo";
 import { InformeTrimestralGrupo } from "./informe-trimestral";
+import { CargasByte } from "./cargas-byte";
 
 /**
  * Grupo → Productos · Centro de decisión del portafolio (pedido jul-2026):
@@ -50,9 +50,10 @@ type SedeStory = { sede: (typeof SEDES)[number]; story: PortfolioStory | null; e
 
 export function GrupoProductosClient() {
   const [month, setMonth] = useState(currentMonth());
+  // Sube cuando se importan reportes: fuerza a recargar el panorama y el trimestral.
+  const [version, setVersion] = useState(0);
   const [stories, setStories] = useState<SedeStory[] | null>(null);
   const [loading, setLoading] = useState(true);
-  const [importSede, setImportSede] = useState<{ id: number; name: string } | null>(null);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -94,44 +95,20 @@ export function GrupoProductosClient() {
         />
       </div>
 
-      {/* LO PRIMERO: subir el reporte. Estaba al final y Jahnn no lo
-          encontraba (22-sep-2026); un análisis sin datos frescos no sirve. */}
-      <section className="bg-white rounded-xl border-2 border-primary/30 p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="min-w-0">
-            <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-              <Upload className="w-4 h-4 text-primary" /> Subir reporte de Byte · cualquier mes
-            </h2>
-            <p className="text-[11px] text-gray-500 mt-0.5 max-w-3xl">
-              Exporta de Byte <strong>&ldquo;Platos con mayor rotación&rdquo;</strong> del rango que quieras —el mes completo
-              (junio, julio, agosto…) o la semana— y súbelo eligiendo la sede. El mes y el rango salen del título del
-              archivo, así que no hay que elegirlos. <strong>Tu carga manda</strong> sobre la del administrador y la suya
-              se conserva: si no coinciden, el informe de abajo lo avisa.
-            </p>
-          </div>
-          <div className="flex gap-2 shrink-0">
-            {SEDES.map((s) => (
-              <button
-                key={s.id}
-                onClick={() => setImportSede({ id: s.id, name: s.name })}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
-              >
-                <Upload className="w-3.5 h-3.5" /> {s.name}
-              </button>
-            ))}
-          </div>
-        </div>
-      </section>
+      {/* LO PRIMERO: qué está cargado y subir reportes (varios a la vez).
+          Pedido de Jahnn (22-sep-2026): el cargador anterior era "un archivo,
+          un mes" y no decía qué había ni qué iba a pasar. */}
+      <CargasByte onImportado={() => { setVersion((v) => v + 1); void load(month); }} />
 
       {/* ¿Está entrando el reporte que alimenta todo esto? Un análisis con
           datos viejos es peor que no tenerlo: parece actual y no lo es. */}
       <ControlCargasProductos />
 
       {/* Qué se vendió este mes, sede por sede (mismo bloque que ven los administradores) */}
-      <PanoramaProductosGrupo month={month} />
+      <PanoramaProductosGrupo key={`p-${version}`} month={month} />
 
       {/* Informe trimestral (el Excel de dirección dentro del sistema) */}
-      <InformeTrimestralGrupo hastaMes={month} />
+      <InformeTrimestralGrupo key={`t-${version}`} hastaMes={month} />
 
       {loading || !stories ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Analizando…</div>
@@ -143,13 +120,6 @@ export function GrupoProductosClient() {
         </div>
       )}
 
-      {importSede && (
-        <ImportSalesModal
-          sede={importSede}
-          onClose={() => setImportSede(null)}
-          onImported={() => load(month)}
-        />
-      )}
     </div>
   );
 }
