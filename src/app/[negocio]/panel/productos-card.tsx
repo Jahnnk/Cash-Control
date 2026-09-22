@@ -10,7 +10,7 @@
 import { useEffect, useState } from "react";
 import { Loader2, ShoppingBag } from "lucide-react";
 import { getPanoramaProductos, type PanoramaDeSede } from "@/app/actions/productos-panorama";
-import { PanoramaProductosVista } from "@/components/panorama-productos";
+import { VistaMes } from "@/components/productos/vista-mes";
 
 export function ProductosCard({ month }: { month: string }) {
   const [data, setData] = useState<PanoramaDeSede | null>(null);
@@ -48,8 +48,11 @@ export function ProductosCard({ month }: { month: string }) {
     );
   }
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-4">
-      <PanoramaProductosVista p={data.panorama} cargadoEl={data.cargadoEl} />
+    <div className="space-y-3">
+      <div className="text-base font-bold text-gray-900 flex items-center gap-2 px-1">
+        <ShoppingBag className="w-5 h-5 text-primary" /> Qué se vendió este mes
+      </div>
+      <VistaMes p={data.panorama} cargadoEl={data.cargadoEl} />
     </div>
   );
 }
