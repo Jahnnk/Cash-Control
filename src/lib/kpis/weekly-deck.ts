@@ -19,6 +19,7 @@ import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { portfolioSlides } from "./portfolio-slides";
 import { breakevenSlide } from "./breakeven-slide";
 import { impactoIncentivosSlide } from "./impacto-incentivos-slide";
+import { productosSlides, type PanoramaSedeDeck } from "./productos-slides";
 import type { ImpactoIncentivos } from "@/lib/incentives/impacto";
 
 const PRIMARY = BRAND.primary.replace("#", "");
@@ -313,6 +314,11 @@ export async function renderWeeklyKpiDeck(
    * sale sin ella en vez de caerse.
    */
   impactoIncentivos?: ImpactoIncentivos[] | null,
+  /**
+   * Qué se vendió este mes por sede (rotación de Byte): panorama por familia,
+   * top 10 por ingresos y ranking de postres. Opcional como las demás.
+   */
+  productos?: PanoramaSedeDeck[] | null,
 ): Promise<{ blob: Blob; filename: string }> {
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "WIDE", width: 10, height: 5.625 });
@@ -420,6 +426,13 @@ export async function renderWeeklyKpiDeck(
   // que fue exactamente la lectura de Kelly en la reunión del 8-sep-2026.
   if (impactoIncentivos && impactoIncentivos.length > 0) {
     impactoIncentivosSlide((t, sb) => baseSlide(pptx, t, sb), sub, impactoIncentivos);
+  }
+
+  // 6b-ter · Qué se vendió este mes (rotación de Byte): panorama por familia,
+  // top 10 por ingresos y postres. Va ANTES del portafolio: primero qué se
+  // vendió, después el veredicto de qué hacer con cada producto.
+  if (productos && productos.some((x) => x.panorama)) {
+    productosSlides((t, sb) => baseSlide(pptx, t, sb), sub, productos);
   }
 
   // 6c · Portafolio de productos por sede: qué mantener, promocionar o

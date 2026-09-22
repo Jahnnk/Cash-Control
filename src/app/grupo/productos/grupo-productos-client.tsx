@@ -9,6 +9,7 @@ import { getPortfolioStoryForSede } from "@/app/actions/portfolio-story";
 import type { PortfolioStory, Verdict } from "@/lib/portfolio/types";
 import { ImportSalesModal } from "@/app/[negocio]/productos/import-sales-modal";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
+import { PanoramaProductosGrupo } from "./panorama-grupo";
 
 /**
  * Grupo → Productos · Centro de decisión del portafolio (pedido jul-2026):
@@ -95,6 +96,9 @@ export function GrupoProductosClient() {
       {/* ¿Se está subiendo el reporte que alimenta todo esto? Va arriba
           porque un análisis con datos viejos es peor que no tenerlo:
           parece actual y no lo es. */}
+      {/* Qué se vendió este mes, sede por sede (mismo bloque que ven los administradores) */}
+      <PanoramaProductosGrupo month={month} />
+
       <ControlCargasProductos />
 
       {/* Carga semanal del reporte de Byte */}

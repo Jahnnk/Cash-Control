@@ -33,6 +33,7 @@ import { MiRutina } from "./mi-rutina";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 import { BonoDelMesCard } from "./bono-del-mes-card";
+import { ProductosCard } from "./productos-card";
 import { SupervisionesCard } from "./supervisiones-card";
 
 /**
@@ -603,6 +604,9 @@ function IncentivosPage() {
 
           {/* 4b · KPIs de la semana (reemplaza el cuadro de Notion) */}
           <KpisWeekSection key={weekRefresh} fullSession={!data.isAdminSession} />
+
+          {/* 4c · Qué se vendió este mes (reporte de rotación de Byte) */}
+          <ProductosCard month={month} />
 
           {/* 5 · Mejor vendedor por turno (hándicap) — el veredicto real */}
           <MejorVendedorSection month={month} />
