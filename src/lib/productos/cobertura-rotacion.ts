@@ -41,7 +41,24 @@ export type CeldaCobertura = {
   quien: "direccion" | "sede" | "ambos" | null;
   /** Días del mes que no tiene nadie, en palabras ("30 y 31 ago"). */
   faltan: string | null;
+  /**
+   * Vende menos de la mitad por día que los otros meses de la sede: la carga
+   * puede ser parcial aunque diga "mes completo" (Fonavi, julio 2026).
+   */
+  sospechosa?: boolean;
 };
+
+/** Marca las casillas de una sede que venden por día menos de la mitad de la mediana de las demás. */
+export function marcarSospechosas(celdas: CeldaCobertura[]): CeldaCobertura[] {
+  const porDia = (c: CeldaCobertura) => (c.diasCubiertos > 0 ? c.ventas / c.diasCubiertos : 0);
+  return celdas.map((c) => {
+    if (c.estado === "vacio") return c;
+    const otras = celdas.filter((o) => o !== c && o.estado !== "vacio").map(porDia).sort((a, b) => a - b);
+    if (otras.length < 2) return c;
+    const mid = otras.length % 2 ? otras[(otras.length - 1) / 2] : (otras[otras.length / 2 - 1] + otras[otras.length / 2]) / 2;
+    return { ...c, sospechosa: porDia(c) < mid * 0.5 };
+  });
+}
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
 

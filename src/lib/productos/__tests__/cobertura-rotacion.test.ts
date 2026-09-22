@@ -4,7 +4,7 @@
  * declarado completo pero parcial, setiembre en curso.
  */
 import { describe, it, expect } from "vitest";
-import { celdaCobertura, queHaraLaCarga, sedeDelNombre, periodosEfectivos, type PeriodoCargado } from "../cobertura-rotacion";
+import { celdaCobertura, queHaraLaCarga, sedeDelNombre, periodosEfectivos, marcarSospechosas, type PeriodoCargado } from "../cobertura-rotacion";
 
 const p = (o: Partial<PeriodoCargado>): PeriodoCargado => ({
   businessId: 2, month: "2026-08", origen: "sede", desde: "2026-08-01", hasta: "2026-08-29", ventas: 36844.8, cargadoEl: null, ...o,
@@ -73,5 +73,19 @@ describe("la sede según el nombre del archivo", () => {
     expect(sedeDelNombre("Fonavi_Agosto-Platos con mayor rotacion del 2026-08-01 al 2026-08-31.xlsx")).toBe(2);
     expect(sedeDelNombre("centro julio.xlsx")).toBe(3);
     expect(sedeDelNombre("Platos con mayor rotacion del 2026-08-01 al 2026-08-31.xlsx")).toBeNull();
+  });
+});
+
+describe("la carga parcial que dice ser mes completo", () => {
+  it("julio de Fonavi (S/6,996 en '1 al 31') sale marcado", () => {
+    const hoy = "2026-09-22";
+    const ps = [
+      p({ month: "2026-06", desde: "2026-06-01", hasta: "2026-06-30", ventas: 38244.8 }),
+      p({ month: "2026-07", desde: "2026-07-01", hasta: "2026-07-31", ventas: 6996.3 }),
+      p({ month: "2026-08", desde: "2026-08-01", hasta: "2026-08-29", ventas: 36844.8 }),
+      p({ month: "2026-09", desde: "2026-09-01", hasta: "2026-09-19", ventas: 24381.2 }),
+    ];
+    const celdas = marcarSospechosas(["2026-06", "2026-07", "2026-08", "2026-09"].map((m) => celdaCobertura(ps, m, hoy)));
+    expect(celdas.map((c) => !!c.sospechosa)).toEqual([false, true, false, false]);
   });
 });

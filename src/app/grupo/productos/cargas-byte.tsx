@@ -14,7 +14,7 @@ import { useCallback, useEffect, useState } from "react";
 import { Upload, Loader2, Table2 } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getCoberturaRotacion } from "@/app/actions/productos-panorama";
-import { celdaCobertura, type CeldaCobertura, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
+import { celdaCobertura, marcarSospechosas, type CeldaCobertura, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { ImportarReportesModal } from "./importar-reportes";
 
 const SEDES = [
@@ -88,15 +88,17 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
               </tr>
             </thead>
             <tbody>
-              {SEDES.map((s) => (
+              {SEDES.map((s) => {
+                const celdas = marcarSospechosas(datos.meses.map((m) => celdaCobertura(datos.periodos.filter((p) => p.businessId === s.id), m, datos.hoy)));
+                return (
                 <tr key={s.id}>
                   <td className="px-1 font-semibold text-gray-800 whitespace-nowrap">{s.nombre}</td>
-                  {datos.meses.map((m) => {
-                    const c = celdaCobertura(datos.periodos.filter((p) => p.businessId === s.id), m, datos.hoy);
+                  {celdas.map((c) => {
+                    const m = c.month;
                     return (
                       <td key={m} className="align-top">
                         <button type="button" onClick={() => setModal({ sede: s.id })}
-                          className={`w-full min-w-[7.5rem] text-left rounded-lg border px-2 py-1.5 hover:ring-2 hover:ring-primary/30 ${TONO[c.estado]}`}>
+                          className={`w-full min-w-[7.5rem] text-left rounded-lg border px-2 py-1.5 hover:ring-2 hover:ring-primary/30 ${c.sospechosa ? "bg-red-50 border-red-200 text-red-900" : TONO[c.estado]}`}>
                           {c.estado === "vacio" ? (
                             <span>Sin reporte</span>
                           ) : (
@@ -107,6 +109,7 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
                                 {c.quien ? ` · ${QUIEN[c.quien]}` : ""}
                               </div>
                               {c.faltan && <div className="text-[10px]">falta: {c.faltan}</div>}
+                              {c.sospechosa && <div className="text-[10px] font-semibold">vende muy poco: ¿carga parcial? vuelve a subirlo</div>}
                             </>
                           )}
                         </button>
@@ -114,7 +117,8 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
                     );
                   })}
                 </tr>
-              ))}
+                );
+              })}
             </tbody>
           </table>
         </div>
