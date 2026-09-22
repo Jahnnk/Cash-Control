@@ -4,6 +4,7 @@
  */
 import { describe, it, expect } from "vitest";
 import { armarPanorama, familiaDeProducto, esLineaEliminada, nombreLimpio, diasEntre } from "../panorama";
+import { armarTrimestral, recomendacionDe } from "../trimestral";
 
 describe("a qué familia pertenece cada producto", () => {
   it.each([
@@ -51,24 +52,28 @@ describe("el panorama del mes (Fonavi, 1–19 set 2026)", () => {
   ];
   const p = armarPanorama(filas, "2026-09-01", "2026-09-19", 3);
 
-  it("cuenta 19 días y deja fuera las líneas anuladas", () => {
+  it("suma la línea eliminada a su producto y separa el ajuste (método de Jahnn)", () => {
     expect(p.dias).toBe(19);
-    expect(p.ventas).toBe(5425);
-    expect(p.unidades).toBe(455);
+    // El cappuccino eliminado (9 u, S/108) se suma al cappuccino activo;
+    // la "reposición cake chocolate" es un ajuste y sale de la carta.
+    expect(p.carta.find((x) => x.nombre === "CAPPUCCINO")).toMatchObject({ unidades: 53, ingresos: 636 });
+    expect(p.ventas).toBe(5533);
     expect(p.productos).toBe(7);
-    expect(p.eliminadas).toMatchObject({ lineas: 2, unidades: 13, ingresos: 297.6 });
+    expect(p.fueraDeCarta).toMatchObject({ ventas: 189.6, unidades: 4 });
+    expect(p.ventasTotales).toBe(5722.6);
+    expect(p.eliminadas).toMatchObject({ lineas: 2, unidasAlProducto: 1, propias: 0, ajustes: 1 });
   });
 
   it("ordena las familias por ingresos y saca su porcentaje", () => {
-    expect(p.familias[0]).toEqual({ familia: "Postres y pastelería", ventas: 1508, unidades: 121, pct: 27.8 });
+    expect(p.familias[0]).toEqual({ familia: "Postres y pastelería", ventas: 1508, unidades: 121, pct: 27.3 });
     expect(p.familias.map((f) => f.familia)).toContain("Empanadas");
     expect(p.familias.reduce((t, f) => t + f.ventas, 0)).toBe(p.ventas);
   });
 
   it("el top sale por ingresos, con precio y unidades por día", () => {
     expect(p.top.map((t) => t.nombre)).toEqual(["EMPANADA MIXTA", "PAN INTEGRAL MULTIGRANO TIPO MOLDE 750 G", "POLLO CON PIÑA GRILL"]);
-    expect(p.top[0]).toMatchObject({ precio: 8, unidadesPorDia: 8.7, pct: 24.3 });
-    expect(p.concentracionTop10).toBe(61.7);
+    expect(p.top[0]).toMatchObject({ precio: 8, unidadesPorDia: 8.7, pct: 23.9 });
+    expect(p.concentracionTop10).toBe(60.5);
   });
 
   it("el ranking de postres trae solo postres, por ingresos", () => {
@@ -80,9 +85,87 @@ describe("el panorama del mes (Fonavi, 1–19 set 2026)", () => {
     expect(p.colaLarga).toBe(1);
   });
 
+  it("lo que no es carta suma al total pero no compite en el ranking", () => {
+    const conDelivery = armarPanorama([...filas, { nombre: "DELIVERY 2", unidades: 5, ingresos: 30 }], "2026-09-01", "2026-09-19", 3);
+    expect(conDelivery.top.map((t) => t.nombre)).not.toContain("DELIVERY 2");
+    expect(conDelivery.fueraDeCarta.ventas).toBe(219.6);
+    expect(conDelivery.ventas).toBe(5533);
+  });
+
+  it("una línea eliminada sin producto activo queda como producto propio", () => {
+    const r = armarPanorama([
+      { nombre: "[ELIMINADO 2026-06-15 18:20:54] CAKE DE PRIMAVERA", unidades: 20, ingresos: 240 },
+      { nombre: "CARROT CAKE PORCIÓN", unidades: 10, ingresos: 120 },
+    ], "2026-06-01", "2026-06-30");
+    expect(r.carta.map((x) => x.nombre)).toContain("CAKE DE PRIMAVERA");
+    expect(r.eliminadas).toMatchObject({ propias: 1, unidasAlProducto: 0 });
+  });
+
   it("la venta por día usa los días del período", () => {
-    expect(p.ventaPorDia).toBe(285.53);
+    expect(p.ventaPorDia).toBe(291.21);
     expect(diasEntre("2026-09-01", "2026-09-19")).toBe(19);
     expect(diasEntre("2026-09-19", "2026-09-01")).toBe(0);
+  });
+});
+
+describe("informe trimestral (método del Excel de Jahnn)", () => {
+  const mes = (month: string, desde: string, hasta: string, filas: { nombre: string; unidades: number; ingresos: number }[]) => ({ month, desde, hasta, filas });
+  const t = armarTrimestral([
+    mes("2026-06", "2026-06-01", "2026-06-30", [
+      { nombre: "EMPANADA MIXTA", unidades: 278, ingresos: 2224 },
+      { nombre: "CARROT CAKE PORCIÓN", unidades: 135, ingresos: 1620 },
+      { nombre: "JUGO DE FRESA", unidades: 20, ingresos: 200 },
+      { nombre: "DELIVERY 2", unidades: 14, ingresos: 84 },
+    ]),
+    mes("2026-07", "2026-07-01", "2026-07-31", [
+      { nombre: "EMPANADA MIXTA", unidades: 245, ingresos: 1960 },
+      { nombre: "CARROT CAKE PORCIÓN", unidades: 140, ingresos: 1680 },
+      { nombre: "JUGO DE FRESA", unidades: 40, ingresos: 400 },
+      { nombre: "COOKIE NUEVA", unidades: 10, ingresos: 90 },
+    ]),
+    mes("2026-08", "2026-08-01", "2026-08-29", [
+      { nombre: "EMPANADA MIXTA", unidades: 227, ingresos: 1816 },
+      { nombre: "CARROT CAKE PORCIÓN", unidades: 127, ingresos: 1524 },
+      { nombre: "COOKIE NUEVA", unidades: 30, ingresos: 270 },
+    ]),
+  ]);
+
+  it("arma el comparativo mensual y marca el mes incompleto", () => {
+    expect(t.meses.map((m) => m.ventas)).toEqual([4044, 4130, 3610]);
+    expect(t.meses[2].incompleto).toBe(true);
+    expect(t.meses[0].incompleto).toBe(false);
+    expect(t.ventas).toBe(11784);
+  });
+
+  it("clasifica tendencia del último mes contra el primero", () => {
+    const por = (n: string) => t.productosTodos.find((p) => p.nombre === n)!;
+    expect(por("EMPANADA MIXTA").tendencia).toBe("Cayendo");
+    expect(por("CARROT CAKE PORCIÓN").tendencia).toBe("Estable");
+    expect(por("JUGO DE FRESA").tendencia).toBe("Dejó de venderse");
+    expect(por("COOKIE NUEVA").tendencia).toBe("Nuevo");
+    expect(por("COOKIE NUEVA").mesesActivo).toBe(2);
+  });
+
+  it("asigna clase ABC por acumulado (A hasta 80%, B hasta 95%)", () => {
+    expect(t.productosTodos.map((p) => `${p.nombre}:${p.clase}`)).toEqual([
+      "EMPANADA MIXTA:A", "CARROT CAKE PORCIÓN:B", "JUGO DE FRESA:C", "COOKIE NUEVA:C",
+    ]);
+  });
+
+  it("la recomendación cruza clase y tendencia", () => {
+    expect(recomendacionDe("A", "Cayendo", 3, 3)).toContain("Revisar YA");
+    expect(recomendacionDe("C", "Dejó de venderse", 2, 3)).toContain("quiebre");
+    expect(recomendacionDe("C", "Estable", 3, 3)).toContain("Vende poco");
+    expect(recomendacionDe("A", "Creciendo", 3, 3)).toContain("Impulsar");
+  });
+
+  it("lo que no es carta va aparte, no al ranking", () => {
+    expect(t.productosTodos.map((p) => p.nombre)).not.toContain("DELIVERY 2");
+    expect(t.fueraDeCarta.ventas).toBe(84);
+  });
+
+  it("el top del trimestre trae el desglose por mes", () => {
+    expect(t.top[0].porMes.map((m) => m.ingresos)).toEqual([2224, 1960, 1816]);
+    expect(t.topPorMes[0].productos[0].nombre).toBe("EMPANADA MIXTA");
   });
 });

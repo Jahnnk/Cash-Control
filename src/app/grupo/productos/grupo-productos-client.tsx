@@ -10,6 +10,7 @@ import type { PortfolioStory, Verdict } from "@/lib/portfolio/types";
 import { ImportSalesModal } from "@/app/[negocio]/productos/import-sales-modal";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { PanoramaProductosGrupo } from "./panorama-grupo";
+import { InformeTrimestralGrupo } from "./informe-trimestral";
 
 /**
  * Grupo → Productos · Centro de decisión del portafolio (pedido jul-2026):
@@ -98,6 +99,9 @@ export function GrupoProductosClient() {
           parece actual y no lo es. */}
       {/* Qué se vendió este mes, sede por sede (mismo bloque que ven los administradores) */}
       <PanoramaProductosGrupo month={month} />
+
+      {/* Informe trimestral (el Excel de dirección dentro del sistema) */}
+      <InformeTrimestralGrupo hastaMes={month} />
 
       <ControlCargasProductos />
 

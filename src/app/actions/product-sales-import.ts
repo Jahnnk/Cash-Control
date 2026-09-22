@@ -73,7 +73,7 @@ export async function importProductSales(input: ImportInput): Promise<ProductSal
   if (!(await requireFullSession())) {
     return { ok: false, error: "El import de Productos es solo para la dirección." };
   }
-  return runImport(bId, input, `PIC · ventas por producto (Byte rotación) · ${input.month}`);
+  return runImport(bId, input, `PIC · ventas por producto (Byte rotación) · ${input.month}`, "direccion");
 }
 
 /**
@@ -91,7 +91,7 @@ export async function importProductSalesForSede(
   if (sede !== 1 && sede !== 2 && sede !== 3) {
     return { ok: false, error: "Sede inválida." };
   }
-  return runImport(sede, input, `PIC · ventas por producto (Byte rotación, desde Grupo) · ${input.month}`);
+  return runImport(sede, input, `PIC · ventas por producto (Byte rotación, desde Grupo) · ${input.month}`, "direccion");
 }
 
 /**
@@ -117,10 +117,18 @@ export async function importProductSalesFromPanel(input: ImportInput): Promise<P
   // Cualquier rango dentro del mes vale: se acumula por períodos y una
   // carga nueva reemplaza a las que pisa (ver runImport). Lo ideal es la
   // semana, pero si sube el mes entero también sale bien.
-  return runImport(bId, input, `PIC · rotación semanal desde Panel de Sede · ${input.month}`);
+  return runImport(bId, input, `PIC · rotación semanal desde Panel de Sede · ${input.month}`, "sede");
 }
 
-async function runImport(bId: number, input: ImportInput, batchNote: string): Promise<ProductSalesImportResult> {
+async function runImport(bId: number, input: ImportInput, batchNote: string,
+  /**
+   * Quién sube el archivo (decisión de Jahnn, 22-sep-2026): 'sede' es la carga
+   * semanal del administrador y 'direccion' la que sube Jahnn. Para los
+   * números manda la de dirección; la otra se conserva y el sistema avisa si
+   * no coinciden (ver rotacion_efectiva en la migración del 22-sep).
+   */
+  origen: "sede" | "direccion" = "sede",
+): Promise<ProductSalesImportResult> {
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(input.month)) {
     return { ok: false, error: "Mes inválido (formato AAAA-MM)." };
   }
@@ -206,7 +214,7 @@ async function runImport(bId: number, input: ImportInput, batchNote: string): Pr
       //    evita el doble conteo: el mes entero reemplaza a las semanas
       //    de adentro, y re-subir una semana la actualiza.
       sql`DELETE FROM product_period_sales
-          WHERE business_id = ${bId} AND source = 'byte'
+          WHERE business_id = ${bId} AND source = 'byte' AND origen = ${origen}
             AND period_start <= ${pFin}::date AND ${pIni}::date <= period_end`,
 
       // 2) Entra el período nuevo.
@@ -214,9 +222,9 @@ async function runImport(bId: number, input: ImportInput, batchNote: string): Pr
         (it) => sql`
           INSERT INTO product_period_sales
             (business_id, period_start, period_end, month, product_id, product_name_raw,
-             units, revenue, source, import_batch_id, file_name)
+             units, revenue, source, import_batch_id, file_name, origen)
           VALUES (${bId}, ${pIni}, ${pFin}, ${input.month}, ${it.productId}, ${it.name},
-                  ${it.units}, ${it.revenue}, 'byte', ${batchId}, ${input.fileName})`,
+                  ${it.units}, ${it.revenue}, 'byte', ${batchId}, ${input.fileName}, ${origen})`,
       ),
 
       // 3) El mes se RECALCULA como la suma de sus períodos. Todo lo que
@@ -226,11 +234,10 @@ async function runImport(bId: number, input: ImportInput, batchNote: string): Pr
           WHERE business_id = ${bId} AND month = ${input.month} AND source = 'byte'`,
       sql`INSERT INTO product_month_sales
             (business_id, product_id, product_name_raw, month, units, revenue, source, import_batch_id)
-          SELECT business_id, product_id, MIN(product_name_raw), month,
+          SELECT ${bId}, product_id, MIN(product_name_raw), ${input.month},
                  SUM(units), SUM(revenue), 'byte', ${batchId}
-          FROM product_period_sales
-          WHERE business_id = ${bId} AND month = ${input.month} AND source = 'byte'
-          GROUP BY business_id, month, product_id,
+          FROM rotacion_efectiva(${bId}, ${input.month})
+          GROUP BY product_id,
                    CASE WHEN product_id IS NULL THEN lower(product_name_raw) ELSE NULL END`,
     ]);
 

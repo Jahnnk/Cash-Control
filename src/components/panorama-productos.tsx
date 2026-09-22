@@ -139,11 +139,17 @@ export function PanoramaProductosVista({ p, titulo, cargadoEl }: { p: PanoramaPr
 
       <div className="text-[11px] text-gray-500 space-y-0.5">
         <div>{p.colaLarga} productos vendieron 3 unidades o menos en el período: la cola larga que conviene revisar en la carta.</div>
+        {p.fueraDeCarta.ventas > 0 && (
+          <div>
+            Fuera del ranking, {formatCurrency(p.fueraDeCarta.ventas)} que no es carta (delivery, extras, packaging, retail):
+            {" "}{p.fueraDeCarta.filas.slice(0, 3).map((d) => d.nombre.toLowerCase()).join(", ")}
+            {p.fueraDeCarta.filas.length > 3 ? "…" : ""}. Con todo, el período suma {formatCurrency(p.ventasTotales)}.
+          </div>
+        )}
         {p.eliminadas.lineas > 0 && (
           <div>
-            Fuera del ranking: {p.eliminadas.lineas} línea(s) anuladas o de ajuste del reporte de Byte por {formatCurrency(p.eliminadas.ingresos)}
-            {" "}({p.eliminadas.detalle.slice(0, 3).map((d) => d.nombre.toLowerCase()).join(", ")}
-            {p.eliminadas.detalle.length > 3 ? "…" : ""}).
+            Byte trae {p.eliminadas.lineas} línea(s) «eliminadas» (productos editados o renombrados): {p.eliminadas.unidasAlProducto} se
+            sumaron a su producto, {p.eliminadas.propias} quedaron como producto propio y {p.eliminadas.ajustes} son ajustes de caja.
           </div>
         )}
       </div>

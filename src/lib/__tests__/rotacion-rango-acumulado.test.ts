@@ -36,9 +36,15 @@ describe("acumulación por períodos", () => {
   });
 
   it("el mes se recalcula sumando sus períodos", () => {
-    expect(action).toMatch(/INSERT INTO product_month_sales[\s\S]{0,400}SELECT business_id, product_id/);
+    expect(action).toMatch(/INSERT INTO product_month_sales/);
     expect(action).toMatch(/SUM\(units\), SUM\(revenue\)/);
-    expect(action).toMatch(/FROM product_period_sales/);
+    // Desde el 22-sep-2026 la suma sale de rotacion_efectiva: los períodos
+    // que cuentan (los de dirección ganan a los de la sede que pisan).
+    expect(action).toMatch(/FROM rotacion_efectiva/);
+  });
+
+  it("una carga solo reemplaza períodos de SU origen (sede o dirección)", () => {
+    expect(action).toMatch(/AND origen = \$\{origen\}/);
   });
 
   it("agrupa los no matcheados por nombre para no partirlos en dos filas", () => {

@@ -34,6 +34,7 @@ import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 import { BonoDelMesCard } from "./bono-del-mes-card";
 import { ProductosCard } from "./productos-card";
+import { TrimestreCard } from "./trimestre-card";
 import { SupervisionesCard } from "./supervisiones-card";
 
 /**
@@ -607,6 +608,9 @@ function IncentivosPage() {
 
           {/* 4c · Qué se vendió este mes (reporte de rotación de Byte) */}
           <ProductosCard month={month} />
+
+          {/* 4d · Cómo va la carta en los últimos 3 meses (versión corta) */}
+          <TrimestreCard month={month} />
 
           {/* 5 · Mejor vendedor por turno (hándicap) — el veredicto real */}
           <MejorVendedorSection month={month} />

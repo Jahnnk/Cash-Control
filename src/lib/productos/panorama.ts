@@ -22,10 +22,23 @@
  *
  * ─── Las líneas ELIMINADO ───
  *
- * Byte exporta también las líneas anuladas o de ajuste, con el prefijo
- * "[ELIMINADO fecha]": reposiciones, extras, un vaso roto. Suman al total del
- * reporte pero NO son ventas de un producto, así que quedan fuera de los
- * rankings y se muestran aparte (en Fonavi, 1–19 set: 10 líneas, S/411.20).
+ * Byte exporta con el prefijo "[ELIMINADO fecha]" las ventas de un producto
+ * que alguien editó o renombró después. Método de Jahnn (informe trimestral,
+ * 22-sep-2026), que es el correcto y el que se aplica acá:
+ *
+ *   · Si existe el MISMO producto activo en el período, la línea eliminada se
+ *     SUMA a él: es la misma venta partida en dos (Fonavi, junio: empanada de
+ *     lomito con 180 u eliminadas + 34 activas son 214).
+ *   · Si no existe, queda como su propio producto (junio: "cake de primavera",
+ *     20 u) — no se descarta una venta real.
+ *   · Solo los AJUSTES (reposiciones, extras, un vaso roto) salen de los
+ *     rankings, junto con lo que no es carta.
+ *
+ * ─── Lo que no es carta ───
+ *
+ * Cargos de delivery, extras, packaging, retail y combos puntuales suman al
+ * total del período pero NO compiten en los rankings de producto: mezclarlos
+ * con los platos ensucia el ranking. Van en "Otros (extras y retail)".
  */
 
 export const FAMILIAS = [
@@ -83,6 +96,26 @@ const REGLAS: Regla[] = [
   ] },
 ];
 
+/**
+ * Nombres que son el MISMO producto escrito de otra forma (typos y nombres
+ * viejos que quedaron en Byte). Los tres primeros los identificó Jahnn al
+ * armar el trimestral de Fonavi.
+ */
+const ALIAS_PRODUCTO: Record<string, string> = {
+  "CAPUCCINO": "CAPPUCCINO",
+  "POLLO CPN PIÑA": "POLLO CON PIÑA GRILL",
+  "ESPRESSO": "CAFE ESPRESSO",
+  "EXPRESSO": "CAFE ESPRESSO",
+  "ROLL DE CANELA": "ROLLO DE CANELA",
+  "MATCHA LATTE": "MATCHA LATTE CALIENTE",
+  "PACKAGIN": "PACKAGING",
+};
+
+/** Líneas que son un ajuste de caja, no la venta de un producto. */
+const AJUSTES = ["REPOSICION", "REPOSICIÓN", "VASO ROTO", "SORBETE ROTO", "EXTRA", "ADICIONAL", "TAJADA DE PAN"];
+
+const normGrupo = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+
 const norm = (t: string) => ` ${t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase().replace(/\s+/g, " ").trim()} `;
 
 const MARCA_ELIMINADA = /^\s*\[ELIMINADO/i;
@@ -97,9 +130,25 @@ export function nombreLimpio(nombre: string): string {
   return nombre.replace(/^\s*\[ELIMINADO[^\]]*\]\s*/i, "").trim();
 }
 
+/** El nombre con el que se agrupa: sin la marca ELIMINADO y con los alias resueltos. */
+export function nombreCanonico(nombre: string): string {
+  const limpio = nombreLimpio(nombre);
+  const clave = limpio.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase().replace(/\s+/g, " ").trim();
+  for (const [de, a] of Object.entries(ALIAS_PRODUCTO)) {
+    const deNorm = de.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase();
+    if (clave === deNorm) return a;
+  }
+  return limpio;
+}
+
+/** Un ajuste de caja (reposición, extra, vaso roto): nunca compite en los rankings. */
+export function esAjuste(nombre: string): boolean {
+  const t = norm(nombreLimpio(nombre));
+  return AJUSTES.some((a) => t.includes(a.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toUpperCase()));
+}
+
 export function familiaDeProducto(nombre: string): Familia {
-  if (esLineaEliminada(nombre)) return FAMILIA_OTROS;
-  const t = norm(nombre);
+  const t = norm(nombreCanonico(nombre));
   for (const r of REGLAS) {
     for (const clave of r.claves) {
       if (t.includes(norm(clave).slice(0, -1)) && t.includes(` ${norm(clave).trim()}`.slice(0, 1))) {
@@ -129,6 +178,9 @@ export type PanoramaProductos = {
   dias: number;
   desde: string;
   hasta: string;
+  /** Todo lo que vendió el período, carta + lo que no es carta. */
+  ventasTotales: number;
+  /** Solo productos de carta: la base de los rankings y los porcentajes. */
   ventas: number;
   unidades: number;
   productos: number;
@@ -136,11 +188,16 @@ export type PanoramaProductos = {
   familias: FamiliaResumen[];
   top: ProductoRanking[];
   postres: ProductoRanking[];
-  /** Productos con 3 unidades o menos en el período (la "cola larga"). */
+  /** Todos los productos de carta, ordenados por ingresos (para el ranking por familia). */
+  carta: ProductoRanking[];
+  /** Productos de carta con 3 unidades o menos en el período (la "cola larga"). */
   colaLarga: number;
-  /** % de las ventas que explican los 10 primeros. */
+  /** % de las ventas de carta que explican los 10 primeros. */
   concentracionTop10: number;
-  eliminadas: { lineas: number; unidades: number; ingresos: number; detalle: FilaProducto[] };
+  /** Delivery, extras, packaging, retail y combos: suman al total, no al ranking. */
+  fueraDeCarta: { ventas: number; unidades: number; filas: FilaProducto[] };
+  /** Qué pasó con las líneas "[ELIMINADO …]" del reporte. */
+  eliminadas: { lineas: number; unidasAlProducto: number; propias: number; ajustes: number; ingresos: number };
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -159,14 +216,44 @@ export function diasEntre(desde: string, hasta: string): number {
  */
 export function armarPanorama(filas: FilaProducto[], desde: string, hasta: string, topN = 10): PanoramaProductos {
   const dias = diasEntre(desde, hasta);
-  const eliminadas = filas.filter((f) => esLineaEliminada(f.nombre));
-  const vendidos = filas.filter((f) => !esLineaEliminada(f.nombre) && (f.unidades > 0 || f.ingresos > 0));
-  const ventas = r2(vendidos.reduce((t, f) => t + f.ingresos, 0));
-  const unidades = r2(vendidos.reduce((t, f) => t + f.unidades, 0));
 
-  const conFamilia: ProductoRanking[] = vendidos
+  // 1 · Consolidar por nombre canónico: las líneas "[ELIMINADO …]" se suman a
+  //     su producto activo; si no existe, quedan como producto propio.
+  const activos = new Set(filas.filter((f) => !esLineaEliminada(f.nombre)).map((f) => normGrupo(nombreCanonico(f.nombre))));
+  const porNombre = new Map<string, FilaProducto & { ajuste: boolean }>();
+  let unidasAlProducto = 0, propias = 0, ajustes = 0, ingresosElim = 0, lineasElim = 0;
+  for (const f of filas) {
+    const eliminada = esLineaEliminada(f.nombre);
+    const nombre = nombreCanonico(f.nombre);
+    const clave = normGrupo(nombre);
+    const ajuste = esAjuste(f.nombre);
+    if (eliminada) {
+      lineasElim++; ingresosElim += f.ingresos;
+      if (ajuste) ajustes++;
+      else if (activos.has(clave)) unidasAlProducto++;
+      else propias++;
+    }
+    const previo = porNombre.get(clave);
+    if (previo) {
+      previo.unidades += f.unidades;
+      previo.ingresos += f.ingresos;
+      previo.ajuste = previo.ajuste && ajuste;
+    } else {
+      porNombre.set(clave, { nombre, unidades: f.unidades, ingresos: f.ingresos, ajuste });
+    }
+  }
+
+  // 2 · Carta vs lo que no es carta (delivery, extras, retail, ajustes).
+  const todos = [...porNombre.values()].filter((f) => f.unidades > 0 || f.ingresos > 0);
+  const fuera = todos.filter((f) => f.ajuste || familiaDeProducto(f.nombre) === FAMILIA_OTROS);
+  const cartaFilas = todos.filter((f) => !fuera.includes(f));
+  const ventas = r2(cartaFilas.reduce((t, f) => t + f.ingresos, 0));
+  const unidades = r2(cartaFilas.reduce((t, f) => t + f.unidades, 0));
+  const ventasFuera = r2(fuera.reduce((t, f) => t + f.ingresos, 0));
+
+  const carta: ProductoRanking[] = cartaFilas
     .map((f) => ({
-      ...f,
+      nombre: f.nombre,
       ingresos: r2(f.ingresos),
       unidades: r2(f.unidades),
       familia: familiaDeProducto(f.nombre),
@@ -177,28 +264,31 @@ export function armarPanorama(filas: FilaProducto[], desde: string, hasta: strin
     .sort((a, b) => b.ingresos - a.ingresos);
 
   const familias: FamiliaResumen[] = FAMILIAS.map((familia) => {
-    const dentro = conFamilia.filter((p) => p.familia === familia);
+    const dentro = carta.filter((p) => p.familia === familia);
     const v = r2(dentro.reduce((t, p) => t + p.ingresos, 0));
     return { familia, ventas: v, unidades: r2(dentro.reduce((t, p) => t + p.unidades, 0)), pct: pct(v, ventas) };
   })
     .filter((f) => f.ventas > 0 || f.unidades > 0)
     .sort((a, b) => b.ventas - a.ventas);
 
-  const top = conFamilia.slice(0, topN);
+  const top = carta.slice(0, topN);
   return {
-    dias, desde, hasta, ventas, unidades,
-    productos: conFamilia.length,
+    dias, desde, hasta,
+    ventasTotales: r2(ventas + ventasFuera),
+    ventas, unidades,
+    productos: carta.length,
     ventaPorDia: dias > 0 ? r2(ventas / dias) : 0,
     familias,
     top,
-    postres: conFamilia.filter((p) => p.familia === FAMILIA_POSTRES),
-    colaLarga: conFamilia.filter((p) => p.unidades <= 3).length,
+    postres: carta.filter((p) => p.familia === FAMILIA_POSTRES),
+    carta,
+    colaLarga: carta.filter((p) => p.unidades <= 3).length,
     concentracionTop10: pct(top.reduce((t, p) => t + p.ingresos, 0), ventas),
-    eliminadas: {
-      lineas: eliminadas.length,
-      unidades: r2(eliminadas.reduce((t, f) => t + f.unidades, 0)),
-      ingresos: r2(eliminadas.reduce((t, f) => t + f.ingresos, 0)),
-      detalle: eliminadas.map((f) => ({ nombre: nombreLimpio(f.nombre), unidades: r2(f.unidades), ingresos: r2(f.ingresos) })),
+    fueraDeCarta: {
+      ventas: ventasFuera,
+      unidades: r2(fuera.reduce((t, f) => t + f.unidades, 0)),
+      filas: fuera.map((f) => ({ nombre: f.nombre, unidades: r2(f.unidades), ingresos: r2(f.ingresos) })).sort((a, b) => b.ingresos - a.ingresos),
     },
+    eliminadas: { lineas: lineasElim, unidasAlProducto, propias, ajustes, ingresos: r2(ingresosElim) },
   };
 }
