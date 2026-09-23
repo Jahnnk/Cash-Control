@@ -21,6 +21,7 @@ import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
+import { costoPorUnidadRegistrada, type UnidadBase } from "@/lib/costos-preparaciones";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -34,12 +35,19 @@ export type MermaItem = {
   producto: string;
   cantidad: number;
   unidad: string | null;      // kg, und, lt… (texto libre)
-  costoUnit: number;          // S/ por unidad
+  costoUnit: number;          // S/ por unidad (4 decimales)
   total: number;              // cantidad × costo (redondeado a 2)
   motivo: string | null;      // Merma de calidad, Vencimiento, …
   accion: string | null;      // Descarte, Reproceso, …
+  /**
+   * Ítem de la lista de costos del Excel de pricing (ver
+   * actions/costos-preparaciones.ts). Si viene, el costo lo pone el
+   * servidor desde la lista — la administradora no lo puede cambiar.
+   */
+  costoRef?: string | null;
 };
 
+const r4 = (n: number) => Math.round(n * 10000) / 10000;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
 /** Detalle de mermas de un día. */
@@ -53,7 +61,8 @@ export async function getMermaItems(date: string): Promise<
   try {
     const rows = (await sql`
       SELECT producto, cantidad::float AS cantidad, unidad,
-             costo_unit::float AS "costoUnit", total::float AS total, motivo, accion
+             costo_unit::float AS "costoUnit", total::float AS total, motivo, accion,
+             costo_ref AS "costoRef"
       FROM merma_items
       WHERE business_id = ${bId} AND date = ${date}
       ORDER BY id
@@ -80,22 +89,50 @@ export async function saveMermaDetail(input: {
     if (!Number.isFinite(it.cantidad) || it.cantidad <= 0) return { ok: false, error: `Cantidad inválida en "${it.producto}".` };
     if (!Number.isFinite(it.costoUnit) || it.costoUnit < 0) return { ok: false, error: `Costo inválido en "${it.producto}".` };
   }
-  const clean = input.items.map((it) => ({
-    producto: it.producto.trim(),
-    cantidad: it.cantidad,
-    unidad: it.unidad?.trim() || null,
-    costoUnit: r2(it.costoUnit),
-    total: r2(it.cantidad * it.costoUnit),
-    motivo: it.motivo?.trim() || null,
-    accion: it.accion?.trim() || null,
-  }));
+  // El costo de lo que viene de la lista del Excel lo pone el servidor.
+  const refs = [...new Set(input.items.map((it) => it.costoRef).filter((r): r is string => !!r))];
+  const lista = new Map<string, { unidad: UnidadBase; costo: number }>();
+  if (refs.length > 0) {
+    try {
+      const rows = (await sql`
+        SELECT ref, unidad, costo::float AS costo FROM costos_preparaciones
+        WHERE business_id = ${bId} AND ref = ANY(${refs}::text[])
+      `) as { ref: string; unidad: UnidadBase; costo: number }[];
+      for (const r of rows) lista.set(r.ref, r);
+    } catch {
+      return { ok: false, error: "No se pudo leer la lista de costos. Intenta de nuevo." };
+    }
+  }
+  const clean = [];
+  for (const it of input.items) {
+    let costoUnit = it.costoUnit;
+    let costoRef: string | null = null;
+    if (it.costoRef) {
+      const item = lista.get(it.costoRef);
+      if (!item) return { ok: false, error: `"${it.producto}" ya no está en la lista de costos. Vuelve a elegirlo.` };
+      const c = costoPorUnidadRegistrada(item, it.unidad?.trim() ?? "");
+      if (c === null) return { ok: false, error: `La unidad de "${it.producto}" no calza con su costo (${item.unidad}).` };
+      costoUnit = c;
+      costoRef = it.costoRef;
+    }
+    clean.push({
+      producto: it.producto.trim(),
+      cantidad: it.cantidad,
+      unidad: it.unidad?.trim() || null,
+      costoUnit: r4(costoUnit),
+      total: r2(it.cantidad * costoUnit),
+      motivo: it.motivo?.trim() || null,
+      accion: it.accion?.trim() || null,
+      costoRef,
+    });
+  }
   const total = r2(clean.reduce((s, it) => s + it.total, 0));
   try {
     await sql.transaction([
       sql`DELETE FROM merma_items WHERE business_id = ${bId} AND date = ${input.date}`,
       ...clean.map((it) => sql`
-        INSERT INTO merma_items (business_id, date, producto, cantidad, unidad, costo_unit, total, motivo, accion)
-        VALUES (${bId}, ${input.date}, ${it.producto}, ${it.cantidad}, ${it.unidad}, ${it.costoUnit}, ${it.total}, ${it.motivo}, ${it.accion})`),
+        INSERT INTO merma_items (business_id, date, producto, cantidad, unidad, costo_unit, total, motivo, accion, costo_ref)
+        VALUES (${bId}, ${input.date}, ${it.producto}, ${it.cantidad}, ${it.unidad}, ${it.costoUnit}, ${it.total}, ${it.motivo}, ${it.accion}, ${it.costoRef})`),
       // Una sola fuente de verdad: el KPI del día = suma del detalle.
       sql`INSERT INTO upselling_daily (business_id, date, mermas_soles, source, updated_at)
           VALUES (${bId}, ${input.date}, ${total}, 'manual', NOW())
