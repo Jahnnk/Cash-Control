@@ -125,7 +125,54 @@ export type Candidato = {
   impactoMes: { venta: number; ganancia: number | null };
   /** Salida programada (solo "Sacar de carta"). */
   plan: { fechaSalida: string; reemplazo: string | null; vencida: boolean } | null;
+  /** Fonavi contra Centro: ¿el problema es de una sede o del producto? (null si se vende en una sola). */
+  comparacionSedes: ComparacionSedes | null;
+  /** Solo "Preparar reemplazo": plazo para decidir y reemplazo anotado (lo agrega la action). */
+  seguimiento?: { plazo: ReturnType<typeof plazoDe> | null; reemplazo: string | null } | null;
 };
+
+export type ComparacionSedes = {
+  fuerte: string;
+  floja: string;
+  /** Cuántas veces más vende por día la sede fuerte. */
+  veces: number;
+  /** % que se cobra de más (+) o de menos (−) en la sede floja respecto de la fuerte. */
+  difPrecioPct: number | null;
+  /** Una línea: dónde parece estar el problema. */
+  conclusion: string;
+};
+
+/**
+ * ¿Es la sede o es el producto? Si una vende 2 veces o más que la otra, el
+ * problema parece de la sede floja (vitrina, cómo se ofrece, precio); si
+ * venden parecido y poco, es el producto.
+ */
+export function compararSedes(sedes: Pick<ProductoEnSede, "sede" | "ventaDia" | "precio">[]): ComparacionSedes | null {
+  if (sedes.length !== 2) return null;
+  const [a, b] = [...sedes].sort((x, y) => y.ventaDia - x.ventaDia);
+  const veces = b.ventaDia > 0 ? Math.round((a.ventaDia / b.ventaDia) * 10) / 10 : null;
+  const difPrecioPct = a.precio && b.precio ? Math.round(((b.precio - a.precio) / a.precio) * 100) : null;
+  const precioTxt = difPrecioPct !== null && Math.abs(difPrecioPct) >= 10
+    ? ` En ${b.sede} se cobra ${Math.abs(difPrecioPct)}% ${difPrecioPct > 0 ? "más" : "menos"}.`
+    : "";
+  const conclusion = veces === null
+    ? `En ${b.sede} casi no se vende: el problema parece ser de ${b.sede} (vitrina, cómo se ofrece).${precioTxt}`
+    : veces >= 2
+      ? `Se vende ${veces}× más en ${a.sede}: el problema parece ser de ${b.sede} (vitrina, cómo se ofrece).${precioTxt}`
+      : `Vende parecido en las dos, y poco: el problema es el producto. Prepara el reemplazo.${precioTxt}`;
+  return { fuerte: a.sede, floja: b.sede, veces: veces ?? 0, difPrecioPct, conclusion };
+}
+
+/** Plazo de "Preparar reemplazo": 4 semanas desde que entró a la lista. */
+export const DIAS_PARA_DECIDIR = 28;
+
+export function plazoDe(desde: string, hoy: string): { desde: string; vence: string; diasRestantes: number; vencido: boolean } {
+  const d = new Date(`${desde}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + DIAS_PARA_DECIDIR);
+  const vence = d.toISOString().slice(0, 10);
+  const diasRestantes = Math.round((Date.parse(`${vence}T12:00:00Z`) - Date.parse(`${hoy}T12:00:00Z`)) / 86_400_000);
+  return { desde, vence, diasRestantes, vencido: diasRestantes <= 0 };
+}
 
 export type ResultadoCandidatos = {
   candidatos: Candidato[];
@@ -420,6 +467,11 @@ export function armarCandidatos(
       veredicto = "observar"; cuando = "Volver a mirar el próximo mes";
     }
     if (!veredicto) continue;
+    // Jahnn ya decidió sacarlo (programó la salida desde otra lista): va a "Sacar de carta".
+    if (decision?.tipo === "programar" && decision.fechaSalida && veredicto !== "confirmar" && veredicto !== "sacar") {
+      veredicto = "sacar";
+      cuando = "Decidiste sacarlo en el próximo cambio de carta";
+    }
 
     const primero = enSedes[0];
     const puntos = Math.round(enSedes.reduce((s, x) => s + x.puntos, 0) / enSedes.length);
@@ -437,6 +489,7 @@ export function armarCandidatos(
         venta: Math.round(enSedes.reduce((s, x) => s + x.ventaDia, 0) * 30),
         ganancia: enSedes.every((x) => x.gananciaDia !== null) ? Math.round(enSedes.reduce((s, x) => s + x.gananciaDia!, 0) * 30) : null,
       },
+      comparacionSedes: compararSedes(enSedes),
       plan: veredicto === "sacar" && decision?.tipo === "programar" && decision.fechaSalida
         ? { fechaSalida: decision.fechaSalida, reemplazo: decision.reemplazo, vencida: decision.fechaSalida <= hoy }
         : null,

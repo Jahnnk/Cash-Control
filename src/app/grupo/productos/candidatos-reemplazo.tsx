@@ -8,9 +8,9 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, ArchiveRestore, CalendarClock, ChevronDown, Hand, Link2, Loader2 } from "lucide-react";
+import { Archive, ArchiveRestore, CalendarClock, ChevronDown, Hand, Link2, Loader2, Pencil, Timer } from "lucide-react";
 import {
-  archivarProductos, getCandidatosReemplazo, mantenerProducto, programarSalida, quitarDecision, restaurarProducto,
+  anotarReemplazo, archivarProductos, getCandidatosReemplazo, mantenerProducto, programarSalida, quitarDecision, restaurarProducto,
   vincularCostoCarta, type CandidatosReemplazo,
 } from "@/app/actions/productos-panorama";
 import type { Candidato, MotivoArchivo, ProductoEnSede, Veredicto } from "@/lib/productos/candidatos";
@@ -72,6 +72,7 @@ export function CandidatosReemplazo({ month }: { month: string }) {
   const accion = ARCHIVAR[filtro];
   const sacar = (data?.candidatos ?? []).filter((c) => c.veredicto === "sacar");
   const vencidas = sacar.filter((c) => c.plan?.vencida).length;
+  const plazosVencidos = (data?.candidatos ?? []).filter((c) => c.veredicto === "preparar" && c.seguimiento?.plazo?.vencido).length;
 
   async function archivar(cs: Candidato[], clave: string) {
     if (!accion || cs.length === 0) return;
@@ -116,6 +117,11 @@ export function CandidatosReemplazo({ month }: { month: string }) {
       }
       resumen={data && (
         <div className="flex flex-wrap gap-1.5">
+          {plazosVencidos > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-900">
+              <Timer className="w-3 h-3" /> Decisiones vencidas <b className="tabular-nums">{plazosVencidos}</b>
+            </span>
+          )}
           {vencidas > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-900">
               <CalendarClock className="w-3 h-3" /> Salidas por archivar <b className="tabular-nums">{vencidas}</b>
@@ -244,7 +250,11 @@ function Tarjeta({ c, carta, onVinculado, onDecidido, archivar }: {
         </p>
       )}
 
+      {c.veredicto === "preparar" && c.seguimiento?.plazo && <Plazo p={c.seguimiento.plazo} />}
+
       <p className="text-[13px] text-gray-700 leading-relaxed">{c.razon}</p>
+
+      {c.veredicto === "preparar" && c.comparacionSedes && <CompararSedes c={c} />}
 
       <div className={`grid gap-2.5 ${c.sedes.length > 1 ? "sm:grid-cols-2" : ""}`}>
         {c.sedes.map((s) => <Sede key={s.businessId} s={s} />)}
@@ -266,7 +276,10 @@ function Tarjeta({ c, carta, onVinculado, onDecidido, archivar }: {
           </div>
         )}
         {sinCosto && <Vincular nombre={c.nombre} carta={carta} onVinculado={onVinculado} />}
-        {(archivar || c.veredicto === "sacar") && (
+        {c.veredicto === "preparar" && (
+          <ReemplazoPreparado nombre={c.nombre} actual={c.seguimiento?.reemplazo ?? null} carta={carta} onGuardado={onDecidido} />
+        )}
+        {(archivar || c.veredicto === "sacar" || c.veredicto === "preparar") && (
           <Acciones c={c} carta={carta} archivar={archivar} onDecidido={onDecidido} />
         )}
       </footer>
@@ -434,6 +447,104 @@ function SinCosto({ items, carta, onVinculado }: { items: CandidatosReemplazo["s
 
 const soles0 = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
 
+/** "Decidir antes del 22 oct · faltan 12 días" (ámbar cuando venció). */
+function Plazo({ p }: { p: NonNullable<NonNullable<Candidato["seguimiento"]>["plazo"]> }) {
+  const total = 28;
+  const usados = Math.min(total, Math.max(0, total - p.diasRestantes));
+  return (
+    <div className={`rounded-lg border px-2.5 py-2 text-xs ${p.vencido ? "border-amber-300 bg-amber-50 text-amber-900" : "border-gray-200 bg-gray-50 text-gray-700"}`}>
+      <div className="flex items-center justify-between gap-2">
+        <span className="inline-flex items-center gap-1.5">
+          <Timer className="w-3.5 h-3.5" />
+          {p.vencido
+            ? <b>Se venció el plazo para decidir ({fechaCorta(p.vence)}): prográmale la salida o mantenlo.</b>
+            : <>Decidir antes del <b>{fechaCorta(p.vence)}</b></>}
+        </span>
+        {!p.vencido && <span className="tabular-nums whitespace-nowrap">faltan {p.diasRestantes} {p.diasRestantes === 1 ? "día" : "días"}</span>}
+      </div>
+      <div className="mt-1.5"><Barra pct={(usados / total) * 100} color={p.vencido ? "#C8893B" : "#098B5F"} alto="h-1" /></div>
+      <div className="text-[10px] text-gray-500 mt-1">En la lista desde el {fechaCorta(p.desde)}</div>
+    </div>
+  );
+}
+
+/** Fonavi contra Centro: ¿el problema es de la sede o del producto? */
+function CompararSedes({ c }: { c: Candidato }) {
+  const cmp = c.comparacionSedes!;
+  const filas: { t: string; v: (s: ProductoEnSede) => string }[] = [
+    { t: "Precio cobrado", v: (s) => (s.precio !== null ? soles(s.precio) : "—") },
+    { t: "Por semana", v: (s) => `${s.unidadesSemana} und` },
+    { t: "Margen", v: (s) => (s.margenPct !== null ? `${s.margenPct}%` : "—") },
+    { t: "Gana al día", v: (s) => (s.gananciaDia !== null ? soles(s.gananciaDia) : "—") },
+  ];
+  return (
+    <div className="rounded-xl border border-gray-200 overflow-hidden">
+      <table className="w-full text-xs">
+        <thead className="bg-gray-50 text-gray-500">
+          <tr>
+            <th className="text-left font-medium px-3 py-1.5">¿La sede o el producto?</th>
+            {c.sedes.map((s) => (
+              <th key={s.businessId} className={`text-right font-medium px-3 py-1.5 ${s.sede === cmp.floja ? "text-red-700" : ""}`}>{s.sede}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {filas.map((f) => (
+            <tr key={f.t} className="border-t border-gray-100">
+              <td className="px-3 py-1.5 text-gray-500">{f.t}</td>
+              {c.sedes.map((s) => <td key={s.businessId} className="px-3 py-1.5 text-right tabular-nums text-gray-900">{f.v(s)}</td>)}
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <p className="px-3 py-2 text-xs text-gray-800 bg-gray-50 border-t border-gray-100">{cmp.conclusion}</p>
+    </div>
+  );
+}
+
+/** Con qué se reemplazaría (sin fecha de salida todavía). */
+function ReemplazoPreparado({ nombre, actual, carta, onGuardado }: {
+  nombre: string; actual: string | null; carta: CandidatosReemplazo["carta"]; onGuardado: () => void;
+}) {
+  const { showToast } = useToast();
+  const [editando, setEditando] = useState(false);
+  const [texto, setTexto] = useState(actual ?? "");
+  const [guardando, setGuardando] = useState(false);
+  const listaId = `prep-${nombre}`;
+  async function guardar() {
+    setGuardando(true);
+    const r = await anotarReemplazo(nombre, texto || null);
+    setGuardando(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(texto ? "Reemplazo anotado." : "Reemplazo borrado.", "success");
+    setEditando(false);
+    onGuardado();
+  }
+  if (!editando) {
+    return (
+      <div className="text-gray-700 flex flex-wrap items-center gap-x-2">
+        <span className="font-medium">Reemplazo en preparación:</span>
+        {actual ? <span>{actual}</span> : <span className="text-gray-400">sin anotar</span>}
+        <button type="button" onClick={() => setEditando(true)} className="inline-flex items-center gap-1 text-primary font-medium hover:underline">
+          <Pencil className="w-3 h-3" /> {actual ? "Cambiar" : "Anotar"}
+        </button>
+      </div>
+    );
+  }
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      <input value={texto} onChange={(e) => setTexto(e.target.value)} list={listaId} autoFocus placeholder="ej. jugo de temporada"
+        className="flex-1 min-w-[180px] border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white" />
+      <datalist id={listaId}>{carta.map((x) => <option key={x.ref} value={x.nombre} />)}</datalist>
+      <button type="button" onClick={() => setEditando(false)} disabled={guardando} className="px-2 py-1.5 text-xs text-gray-600 hover:bg-gray-50 rounded-lg">Cancelar</button>
+      <button type="button" onClick={() => void guardar()} disabled={guardando}
+        className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50">
+        {guardando && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar
+      </button>
+    </div>
+  );
+}
+
 /** Arriba de "Sacar de carta": lo que pesa la lista entera. */
 function ImpactoLista({ lista }: { lista: Candidato[] }) {
   const venta = lista.reduce((t, c) => t + c.impactoMes.venta, 0);
@@ -476,7 +587,7 @@ function Acciones({ c, carta, archivar, onDecidido }: {
   const { showToast } = useToast();
   const [abierto, setAbierto] = useState<"programar" | "mantener" | null>(null);
   const [fecha, setFecha] = useState(c.plan?.fechaSalida ?? primeroDelMesQueViene());
-  const [reemplazo, setReemplazo] = useState(c.plan?.reemplazo ?? "");
+  const [reemplazo, setReemplazo] = useState(c.plan?.reemplazo ?? c.seguimiento?.reemplazo ?? "");
   const [motivo, setMotivo] = useState("");
   const [guardando, setGuardando] = useState(false);
   const listaId = `reemplazos-${c.clave}`;
@@ -495,7 +606,7 @@ function Acciones({ c, carta, archivar, onDecidido }: {
   return (
     <div className="pt-1 space-y-2">
       <div className="flex flex-wrap gap-2">
-        {c.veredicto === "sacar" && (
+        {(c.veredicto === "sacar" || c.veredicto === "preparar") && (
           <>
             <button type="button" onClick={() => setAbierto(abierto === "programar" ? null : "programar")}
               className={`${btn} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}>
@@ -535,7 +646,8 @@ function Acciones({ c, carta, archivar, onDecidido }: {
                 className={`${btn} text-gray-600 hover:bg-white`}>Quitar programación</button>
             )}
             <button type="button" disabled={guardando || !fecha}
-              onClick={() => void guardar(() => programarSalida({ nombre: c.nombre, fechaSalida: fecha, reemplazo: reemplazo || null }), `Salida programada para el ${fechaCorta(fecha)}.`)}
+              onClick={() => void guardar(() => programarSalida({ nombre: c.nombre, fechaSalida: fecha, reemplazo: reemplazo || null }),
+                c.veredicto === "preparar" ? `Pasa a «Sacar de carta»: sale el ${fechaCorta(fecha)}.` : `Salida programada para el ${fechaCorta(fecha)}.`)}
               className={`${btn} text-white bg-primary hover:bg-primary-light`}>
               {guardando && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar
             </button>
@@ -673,7 +785,7 @@ function ComoDecide() {
           <div className="font-medium text-gray-800 mb-1">Las dos sedes deciden juntas</div>
           <ul className="space-y-1 list-disc pl-4">
             <li><b>Sacar de carta:</b> flojo en las dos (o en la única que lo vende). En el próximo cambio de carta.</li>
-            <li><b>Preparar reemplazo:</b> flojo en una y en duda en la otra. Decidir en 4 semanas.</li>
+            <li><b>Preparar reemplazo:</b> flojo en una y en duda en la otra. Hay 4 semanas para decidir desde que entra a la lista; si le programas la salida pasa a «Sacar de carta».</li>
             <li><b>Revisar en una sede:</b> flojo en una y bien en la otra: el problema es de esa sede (precio, vitrina, cómo se ofrece).</li>
             <li><b>¿Ya salieron?:</b> dos meses sin ventas y antes sí.</li>
           </ul>

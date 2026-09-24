@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { armarCandidatos, type MesCandidatos, type SedeCandidatos } from "./candidatos";
+import { armarCandidatos, compararSedes, plazoDe, type MesCandidatos, type SedeCandidatos } from "./candidatos";
 import { enlazarCosto, parecido, type CostoCarta } from "./costos-carta";
 import { semanasDeCortes, type Corte } from "./semanas";
 import type { Familia } from "./panorama";
@@ -176,6 +176,35 @@ describe("decisiones de «Sacar de carta»", () => {
     expect(r.archivados[0].comparacion?.reemplazo).toBe("Jugo Nuevo");
     expect(r.archivados[0].comparacion?.ventaDiaAntes).toBe(1.73);
     expect(r.archivados[0].comparacion?.ventaDiaReemplazo).toBeGreaterThan(10);
+  });
+});
+
+describe("«Preparar reemplazo»", () => {
+  it("el plazo son 4 semanas desde que entró a la lista", () => {
+    expect(plazoDe("2026-09-24", "2026-10-10")).toEqual({ desde: "2026-09-24", vence: "2026-10-22", diasRestantes: 12, vencido: false });
+    expect(plazoDe("2026-09-24", "2026-10-22").vencido).toBe(true);
+  });
+
+  it("dice si el problema es de una sede o del producto", () => {
+    const a = compararSedes([{ sede: "Fonavi", ventaDia: 1, precio: 13 }, { sede: "Centro", ventaDia: 3.3, precio: 13 }])!;
+    expect(a).toMatchObject({ fuerte: "Centro", floja: "Fonavi", veces: 3.3 });
+    expect(a.conclusion).toMatch(/problema parece ser de Fonavi/);
+    const b = compararSedes([{ sede: "Fonavi", ventaDia: 1.2, precio: 15 }, { sede: "Centro", ventaDia: 1, precio: 12 }])!;
+    expect(b.conclusion).toMatch(/el problema es el producto/);
+    expect(b.conclusion).toMatch(/En Centro se cobra 20% menos/);
+    expect(compararSedes([{ sede: "Fonavi", ventaDia: 1, precio: 10 }])).toBeNull();
+  });
+
+  it("si Jahnn le programa la salida, pasa a «Sacar de carta»", () => {
+    const POLLO: [string, Familia, number[], number] = ["POLLO CON PIÑA GRILL", S, [400, 410, 420], 16];
+    const f = sede(2, "Fonavi", [...RELLENO, POLLO, ["CAFE CORTADO", C, [20, 10, 1], 11]]);
+    const c = sede(3, "Centro", [...RELLENO, POLLO, ["CAFE CORTADO", C, [300, 310, 300], 11]]);
+    const sin = armarCandidatos([f, c], COSTOS, new Map(), [], [], [], "2026-09-24").candidatos.find((x) => x.nombre === "CAFE CORTADO");
+    expect(sin?.veredicto).toBe("revisar");
+    const d = [{ clave: "cafe cortado", nombre: "CAFE CORTADO", tipo: "programar" as const, motivo: null, fechaSalida: "2026-10-01", reemplazo: null, hasta: null, decididoPor: "jahnn" }];
+    const con = armarCandidatos([f, c], COSTOS, new Map(), [], [], d, "2026-09-24").candidatos.find((x) => x.nombre === "CAFE CORTADO")!;
+    expect(con.veredicto).toBe("sacar");
+    expect(con.plan?.fechaSalida).toBe("2026-10-01");
   });
 });
 

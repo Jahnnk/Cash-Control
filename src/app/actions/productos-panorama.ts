@@ -21,7 +21,9 @@ import { getSessionRole } from "@/lib/session-access";
 import { armarPanorama, type PanoramaProductos, type FilaProducto } from "@/lib/productos/panorama";
 import { armarTrimestral, type InformeTrimestral } from "@/lib/productos/trimestral";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
-import { armarCandidatos, type Archivado, type Decision, type MotivoArchivo, type ResultadoCandidatos, type SedeCandidatos } from "@/lib/productos/candidatos";
+import {
+  armarCandidatos, plazoDe, type Archivado, type Candidato, type Decision, type MotivoArchivo, type ResultadoCandidatos, type SedeCandidatos,
+} from "@/lib/productos/candidatos";
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
@@ -414,6 +416,7 @@ export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ da
     }));
     const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
     const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos, decisiones, hoy);
+    await seguirPreparar(r.candidatos, hoy);
     return {
       ok: true,
       data: { ...r, hasta, carta: costos.filter((c) => c.precio !== null).map((c) => ({ ref: c.ref, nombre: c.nombre, costo: c.costo, precio: c.precio })).sort((a, b) => a.nombre.localeCompare(b.nombre)) },
@@ -562,5 +565,53 @@ export async function quitarDecision(clave: string): Promise<Res<object>> {
   } catch (e) {
     console.error("[quitarDecision] failed:", e);
     return { ok: false, error: "No se pudo quitar." };
+  }
+}
+
+/**
+ * "Preparar reemplazo": anota desde cuándo está cada producto en la lista
+ * (el plazo para decidir son 4 semanas desde ahí) y le pega a cada tarjeta
+ * su plazo y el reemplazo anotado. Si un producto sale de la lista, su reloj
+ * se reinicia. Sin la tabla (antes de la migración), las tarjetas van sin plazo.
+ */
+async function seguirPreparar(candidatos: Candidato[], hoy: string): Promise<void> {
+  const preparar = candidatos.filter((c) => c.veredicto === "preparar");
+  const claves = preparar.map((c) => c.clave);
+  try {
+    await sql.transaction([
+      sql`UPDATE candidatos_seguimiento SET desde = NULL, actualizado_el = NOW()
+          WHERE desde IS NOT NULL AND NOT (clave = ANY(${claves}::text[]))`,
+      sql`INSERT INTO candidatos_seguimiento (clave, nombre, desde)
+          SELECT t.clave, t.nombre, ${hoy}::date FROM unnest(${claves}::text[], ${preparar.map((c) => c.nombre)}::text[]) AS t(clave, nombre)
+          ON CONFLICT (clave) DO UPDATE SET desde = COALESCE(candidatos_seguimiento.desde, EXCLUDED.desde), nombre = EXCLUDED.nombre`,
+    ]);
+    const filas = (await sql`
+      SELECT clave, desde::text AS desde, reemplazo FROM candidatos_seguimiento WHERE clave = ANY(${claves}::text[])
+    `) as { clave: string; desde: string | null; reemplazo: string | null }[];
+    const por = new Map(filas.map((f) => [f.clave, f]));
+    for (const c of preparar) {
+      const f = por.get(c.clave);
+      c.seguimiento = { plazo: f?.desde ? plazoDe(f.desde, hoy) : null, reemplazo: f?.reemplazo ?? null };
+    }
+  } catch (e) {
+    console.error("[seguirPreparar] failed:", e);
+  }
+}
+
+/** Anota (o borra, con null) con qué se reemplazaría un producto de "Preparar reemplazo". */
+export async function anotarReemplazo(nombre: string, reemplazo: string | null): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const clave = claveByte(nombre ?? "");
+  if (!clave) return { ok: false, error: "Producto inválido." };
+  const texto = reemplazo?.trim() ? reemplazo.trim().slice(0, 120) : null;
+  try {
+    await sql`
+      INSERT INTO candidatos_seguimiento (clave, nombre, reemplazo) VALUES (${clave}, ${nombre.trim()}, ${texto})
+      ON CONFLICT (clave) DO UPDATE SET reemplazo = EXCLUDED.reemplazo, actualizado_el = NOW()`;
+    return { ok: true };
+  } catch (e) {
+    console.error("[anotarReemplazo] failed:", e);
+    return { ok: false, error: "No se pudo guardar el reemplazo." };
   }
 }
