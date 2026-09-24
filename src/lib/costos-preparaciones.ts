@@ -31,7 +31,8 @@
  */
 export function claveNombre(s: string): string {
   return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim()
-    .replace(/\(kg\)$/, "").replace(/ kg$/, "").trim();
+    .replace(/\(kg\)$/, "").replace(/ kg$/, "").trim()
+    .replace(/cheescake/g, "cheesecake"); // así está escrito en algunas filas del Excel
 }
 
 import type { CostoCarta } from "@/lib/productos/costos-carta";
