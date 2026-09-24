@@ -8,9 +8,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Link2, Loader2 } from "lucide-react";
-import { getCandidatosReemplazo, vincularCostoCarta, type CandidatosReemplazo } from "@/app/actions/productos-panorama";
-import type { Candidato, ProductoEnSede, Veredicto } from "@/lib/productos/candidatos";
+import { Archive, ArchiveRestore, ChevronDown, Link2, Loader2 } from "lucide-react";
+import {
+  archivarProductos, getCandidatosReemplazo, restaurarProducto, vincularCostoCarta, type CandidatosReemplazo,
+} from "@/app/actions/productos-panorama";
+import type { Candidato, MotivoArchivo, ProductoEnSede, Veredicto } from "@/lib/productos/candidatos";
 import { UMBRAL_CANDIDATO, UMBRAL_OBSERVAR } from "@/lib/productos/candidatos";
 import { Barra, Pastilla, PuntoFamilia, Seccion, fechaCorta, nombreMes } from "@/components/productos/ui";
 import { useToast } from "@/components/toast-provider";
@@ -27,10 +29,26 @@ const ORDEN: Veredicto[] = ["sacar", "preparar", "revisar", "confirmar", "observ
 
 const soles = (n: number) => `S/${n.toFixed(2)}`;
 
+/** Qué significa archivar desde cada lista (solo "Sacar de carta" y "¿Ya salieron?" archivan). */
+const ARCHIVAR: Partial<Record<Veredicto, { motivo: MotivoArchivo; boton: string; confirmar: (n: number) => string }>> = {
+  confirmar: {
+    motivo: "ya-no-se-vende", boton: "Ya no se vende · Archivar",
+    confirmar: (n) => `¿Archivar ${n === 1 ? "este producto" : `los ${n} productos`} de «¿Ya salieron?»? Dejan de aparecer; si alguno vuelve a venderse, reaparece solo.`,
+  },
+  sacar: {
+    motivo: "sacado-de-carta", boton: "Ya lo saqué de carta · Archivar",
+    confirmar: (n) => `¿Archivar ${n === 1 ? "este producto" : `los ${n} productos`} de «Sacar de carta» porque ya salieron de la carta? Si alguno vuelve a venderse, reaparece solo.`,
+  },
+};
+
+const MOTIVO_TEXTO: Record<MotivoArchivo, string> = { "ya-no-se-vende": "ya no se vende", "sacado-de-carta": "sacado de carta" };
+
 export function CandidatosReemplazo({ month }: { month: string }) {
   const [data, setData] = useState<CandidatosReemplazo | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [filtro, setFiltro] = useState<Veredicto>("sacar");
+  const [archivando, setArchivando] = useState<string | null>(null);
+  const { showToast } = useToast();
 
   const cargar = useCallback(async () => {
     const r = await getCandidatosReemplazo(month);
@@ -50,6 +68,27 @@ export function CandidatosReemplazo({ month }: { month: string }) {
   }, [data]);
 
   const lista = (data?.candidatos ?? []).filter((c) => c.veredicto === filtro);
+  const accion = ARCHIVAR[filtro];
+
+  async function archivar(cs: Candidato[], clave: string) {
+    if (!accion || cs.length === 0) return;
+    if (cs.length > 1 && !window.confirm(accion.confirmar(cs.length))) return;
+    setArchivando(clave);
+    const r = await archivarProductos(cs.map((c) => ({ nombre: c.nombre, motivo: accion.motivo })));
+    setArchivando(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(r.archivados === 1 ? `«${cs[0].nombre}» archivado.` : `${r.archivados} productos archivados.`, "success");
+    void cargar();
+  }
+
+  async function restaurar(clave: string, nombre: string) {
+    setArchivando(clave);
+    const r = await restaurarProducto(clave);
+    setArchivando(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(`«${nombre}» vuelve a evaluarse.`, "success");
+    void cargar();
+  }
 
   // "(hasta el 19 set)" si las dos sedes llegan al mismo día; si no, cada una.
   const cortes = (data?.hasta ?? []).filter((h) => h.hasta);
@@ -101,14 +140,33 @@ export function CandidatosReemplazo({ month }: { month: string }) {
             })}
           </div>
 
+          {accion && lista.length > 1 && (
+            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-gray-50 px-3.5 py-2.5">
+              <p className="text-xs text-gray-600">
+                ¿Ya revisaste {filtro === "confirmar" ? "que ninguno se vende" : "que salieron de la carta"}? Archívalos todos de una vez.
+              </p>
+              <button type="button" disabled={archivando !== null} onClick={() => void archivar(lista, "__todos")}
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg disabled:opacity-50">
+                {archivando === "__todos" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
+                Archivar los {lista.length}
+              </button>
+            </div>
+          )}
+
           {lista.length === 0 ? (
             <p className="text-sm text-gray-500 py-6 text-center">Ningún producto en «{VEREDICTOS[filtro].titulo}».</p>
           ) : (
             <div className="grid gap-3 xl:grid-cols-2">
-              {lista.map((c) => <Tarjeta key={c.clave} c={c} carta={data.carta} onVinculado={cargar} />)}
+              {lista.map((c) => (
+                <Tarjeta
+                  key={c.clave} c={c} carta={data.carta} onVinculado={cargar}
+                  archivar={accion ? { texto: accion.boton, ocupado: archivando === c.clave, bloqueado: archivando !== null, onClick: () => void archivar([c], c.clave) } : null}
+                />
+              ))}
             </div>
           )}
 
+          {data.archivados.length > 0 && <Archivados items={data.archivados} ocupado={archivando} onRestaurar={restaurar} />}
           <ComoDecide />
           {data.sinCosto.length > 0 && <SinCosto items={data.sinCosto} carta={data.carta} onVinculado={cargar} />}
         </div>
@@ -117,7 +175,12 @@ export function CandidatosReemplazo({ month }: { month: string }) {
   );
 }
 
-function Tarjeta({ c, carta, onVinculado }: { c: Candidato; carta: CandidatosReemplazo["carta"]; onVinculado: () => void }) {
+function Tarjeta({ c, carta, onVinculado, archivar }: {
+  c: Candidato;
+  carta: CandidatosReemplazo["carta"];
+  onVinculado: () => void;
+  archivar: { texto: string; ocupado: boolean; bloqueado: boolean; onClick: () => void } | null;
+}) {
   const meta = VEREDICTOS[c.veredicto];
   const sinCosto = c.sedes.every((s) => s.costo === null);
   return (
@@ -138,6 +201,12 @@ function Tarjeta({ c, carta, onVinculado }: { c: Candidato; carta: CandidatosRee
         <span className="text-xs tabular-nums text-gray-600 whitespace-nowrap">Riesgo {c.puntos}/100</span>
       </div>
 
+      {c.volvioAVenderse && (
+        <p className="text-xs text-sky-800 bg-sky-50 border border-sky-200 rounded-lg px-2.5 py-1.5">
+          Volvió a venderse: lo habías archivado el {fechaCorta(c.volvioAVenderse.archivadoEl)} ({MOTIVO_TEXTO[c.volvioAVenderse.motivo]}).
+        </p>
+      )}
+
       <p className="text-[13px] text-gray-700 leading-relaxed">{c.razon}</p>
 
       <div className={`grid gap-2.5 ${c.sedes.length > 1 ? "sm:grid-cols-2" : ""}`}>
@@ -153,6 +222,15 @@ function Tarjeta({ c, carta, onVinculado }: { c: Candidato; carta: CandidatosRee
           </div>
         )}
         {sinCosto && <Vincular nombre={c.nombre} carta={carta} onVinculado={onVinculado} />}
+        {archivar && (
+          <div className="pt-1">
+            <button type="button" onClick={archivar.onClick} disabled={archivar.bloqueado}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50">
+              {archivar.ocupado ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
+              {archivar.texto}
+            </button>
+          </div>
+        )}
       </footer>
     </article>
   );
@@ -309,6 +387,45 @@ function SinCosto({ items, carta, onVinculado }: { items: CandidatosReemplazo["s
           <li key={i.nombre} className="text-xs space-y-1">
             <div className="flex justify-between gap-3"><span className="text-gray-800">{i.nombre}</span><span className="tabular-nums text-gray-500 whitespace-nowrap">{soles(i.ventaDia)} al día</span></div>
             <Vincular nombre={i.nombre} carta={carta} onVinculado={onVinculado} />
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
+function Archivados({ items, ocupado, onRestaurar }: {
+  items: CandidatosReemplazo["archivados"];
+  ocupado: string | null;
+  onRestaurar: (clave: string, nombre: string) => void;
+}) {
+  const volvieron = items.filter((i) => i.volvio).length;
+  return (
+    <details className="group rounded-xl border border-gray-200 px-4 py-3">
+      <summary className="cursor-pointer list-none flex items-center justify-between gap-3 text-sm font-medium text-gray-800">
+        <span>
+          Archivados ({items.length})
+          {volvieron > 0 && <span className="ml-2 text-xs font-normal text-sky-700">{volvieron} volvió a venderse</span>}
+        </span>
+        <ChevronDown className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" />
+      </summary>
+      <p className="text-xs text-gray-500 mt-2">
+        No aparecen en los candidatos. Si alguno vuelve a venderse en un mes posterior, reaparece solo; también puedes restaurarlo a mano.
+      </p>
+      <ul className="mt-3 divide-y divide-gray-100">
+        {items.map((i) => (
+          <li key={i.clave} className="py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="min-w-0">
+              <div className="text-gray-800">{i.nombre}</div>
+              <div className="text-gray-500">
+                {MOTIVO_TEXTO[i.motivo]} · {fechaCorta(i.archivadoEl)}{i.archivadoPor ? ` · ${i.archivadoPor === "kelly" ? "Kelly" : "Jahnn"}` : ""}
+                {i.volvio && <span className="text-sky-700"> · volvió a venderse</span>}
+              </div>
+            </div>
+            <button type="button" onClick={() => onRestaurar(i.clave, i.nombre)} disabled={ocupado !== null}
+              className="inline-flex items-center gap-1 text-primary font-medium hover:underline disabled:opacity-50">
+              {ocupado === i.clave ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ArchiveRestore className="w-3.5 h-3.5" />} Restaurar
+            </button>
           </li>
         ))}
       </ul>
