@@ -45,6 +45,11 @@ const EXCEL = libro({
     ["AC005", "Mantequilla sin sal", "g", 28, 500, 14, 0.028, 50, 0, 1.4, 0, 1.4],
     [null, "Sub Total", null, null, 500, 14, null, 50, null, 1.4, 0, 1.4],
     [null, "TOTAL COSTO FINAL X PRODUCTO", null, null, null, null, null, null, null, 1.4, 0, 1.4],
+    [null, "▼ Galletas por kg"],
+    [null, "Rendimiento por Receta sin merma", 1, "KG"],
+    ["SKU", "Ingrediente", "Und", "Precio por Kg/Lt (S/)", "Q x Receta", "Costo Total de Receta (S/)", "Precio Unt. g/ml", "Q x Und.Prod. (g/ml)", "% Merma", "Costo con Merma", "Costo Merma S/", "Costo Unitario (S/)"],
+    ["AC005", "Mantequilla sin sal", "g", 28, 400, 11.2, 0.028, 400, 0, 11.2, 0, 11.2],
+    [null, "TOTAL COSTO FINAL X PRODUCTO", null, null, null, null, null, null, null, 11.2, 0, 11.2],
     [null, "▼ Torta Vieja  [ARCHIVADO 07-sep-2026]"],
     [null, "Rendimiento por Receta:", 1],
     ["SKU", "Ingrediente", "Und", "Precio por Kg/Lt (S/)", "Q x Receta", "Costo Total de Receta (S/)", "Precio Unt. g/ml", "Q x Und.Prod. (g/ml)", "% Merma", "Costo con Merma", "Costo Merma S/", "Costo Unitario (S/)"],
@@ -115,7 +120,9 @@ describe("recetas del Excel", () => {
     const t = r.items.find((i) => i.nombre === "Tarta Nueva");
     expect(t).toMatchObject({ ref: "PROD:tarta nueva", tipo: "producto", unidad: "und", costo: 1.4, categoria: "Pastelería" });
     expect(t?.detalle?.rendimiento).toBe(10);
-    expect(r.sinPricing).toEqual(["Tarta Nueva"]);
+    expect(r.sinPricing).toEqual(["Tarta Nueva", "Galletas por kg"]);
+    // Rinde "1 KG": se pesa, no se cuenta.
+    expect(r.items.find((i) => i.nombre === "Galletas por kg")).toMatchObject({ tipo: "preparacion", unidad: "kg", costo: 11.2 });
     expect(r.items.some((i) => i.nombre.startsWith("Torta Vieja"))).toBe(false); // archivada
   });
 
@@ -151,5 +158,6 @@ describe("claveNombre", () => {
     expect(claveNombre("Granola Yayi's Kg")).toBe(claveNombre("Granola Yayi's"));
     expect(claveNombre("Masa de Pie de Manzana")).toBe(claveNombre("MASA DE PIE DE MANZANA"));
     expect(claveNombre("Pulpa de Maracuyá")).toBe(claveNombre("Pulpa de maracuya"));
+    expect(claveNombre("Mermelada para Cheescake")).toBe(claveNombre("Mermelada para Cheesecake (kg)"));
   });
 });

@@ -162,6 +162,8 @@ type Bloque = {
   merma: number;
   /** Fila "TOTAL COSTO FINAL X PRODUCTO": costo por unidad (hojas de productos). */
   costoUnidad: number | null;
+  /** El rendimiento dice "KG": la receta rinde kilos, no unidades. */
+  rindeKg: boolean;
   ingredientes: { sku: string; nombre: string; unidad: string; cantidad: number }[];
 };
 
@@ -183,13 +185,17 @@ function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
     const numeroTras = (texto: string) => r.slice(r.indexOf(texto) + 1).map(num).find((v) => v !== null) ?? null;
     if (etiqueta?.trim().startsWith("▼")) {
       const crudo = etiqueta.trim().slice(1).trim();
-      b = { hoja, fila: fila0 + n, nombre: limpiarNombre(crudo), archivado: r.some((c) => typeof c === "string" && /ARCHIVADO/i.test(c)), kg: null, rendimiento: null, merma: 0, costoUnidad: null, ingredientes: [] };
+      b = { hoja, fila: fila0 + n, nombre: limpiarNombre(crudo), archivado: r.some((c) => typeof c === "string" && /ARCHIVADO/i.test(c)), kg: null, rendimiento: null, merma: 0, costoUnidad: null, rindeKg: false, ingredientes: [] };
       out.push(b);
       col = null;
       continue;
     }
     if (!b) continue;
-    if (etiqueta && /^rendimiento por receta/i.test(etiqueta.trim())) { b.rendimiento = numeroTras(etiqueta); continue; }
+    if (etiqueta && /^rendimiento por receta/i.test(etiqueta.trim())) {
+      b.rendimiento = numeroTras(etiqueta);
+      b.rindeKg = r.some((c) => typeof c === "string" && /^\s*kg\s*$/i.test(c));
+      continue;
+    }
     if (etiqueta && /^% merma de prep/i.test(etiqueta.trim())) { b.merma = numeroTras(etiqueta) ?? 0; continue; }
     if (etiqueta && /costo por 1 kg/i.test(etiqueta)) { b.kg = numeroTras(etiqueta); continue; }
     if (etiqueta && /^total costo final/i.test(etiqueta.trim())) {
@@ -379,7 +385,9 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
     const n = nombreSinKg(b.nombre);
     if (porNombre.has(n)) continue;
     const item: CostoPreparacion = {
-      ref: `PROD:${n}`, tipo: "producto", nombre: b.nombre, categoria: b.hoja.replace(/^ATE · /, ""), unidad: "und", costo: b.costoUnidad,
+      // Un bloque que rinde "1 KG" es una preparación que se pesa, no un producto por unidad.
+      ref: `PROD:${n}`, tipo: b.rindeKg ? "preparacion" : "producto", nombre: b.nombre, categoria: b.hoja.replace(/^ATE · /, ""),
+      unidad: b.rindeKg ? "kg" : "und", costo: b.costoUnidad,
     };
     unicos.push(item);
     porNombre.set(n, item.ref);
