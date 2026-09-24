@@ -35,6 +35,7 @@ import { VentasImportModal } from "./ventas-import-modal";
 import { BonoDelMesCard } from "./bono-del-mes-card";
 import { ProductosCard } from "./productos-card";
 import { TrimestreCard } from "./trimestre-card";
+import { RevisarSedeCard } from "./revisar-sede-card";
 import { SupervisionesCard } from "./supervisiones-card";
 
 /**
@@ -611,6 +612,9 @@ function IncentivosPage() {
 
           {/* 4d · Cómo va la carta en los últimos 3 meses (versión corta) */}
           <TrimestreCard month={month} />
+
+          {/* 4e · Productos flojos solo en esta sede + plan de acción de dirección (plegado) */}
+          <RevisarSedeCard month={month} />
 
           {/* 5 · Mejor vendedor por turno (hándicap) — el veredicto real */}
           <MejorVendedorSection month={month} />
