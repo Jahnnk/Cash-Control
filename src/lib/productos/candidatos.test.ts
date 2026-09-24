@@ -121,7 +121,7 @@ describe("archivados", () => {
   it("un archivado deja de aparecer", () => {
     const r = armarCandidatos([mk(2, "Fonavi", [10, 0, 0]), mk(3, "Centro", [8, 0, 0])], COSTOS, new Map(), [], [archivo]);
     expect(r.candidatos.find((c) => c.nombre === "JUGO VIEJO")).toBeUndefined();
-    expect(r.archivados).toEqual([{ ...archivo, volvio: false }]);
+    expect(r.archivados).toEqual([{ ...archivo, volvio: false, comparacion: null }]);
   });
 
   it("si vuelve a venderse en un mes posterior, reaparece marcado", () => {
@@ -134,6 +134,48 @@ describe("archivados", () => {
   it("las ventas del mismo mes en que se archivó no cuentan como volver", () => {
     const r = armarCandidatos([mk(2, "Fonavi", [10, 0, 0]), mk(3, "Centro", [8, 0, 0])], COSTOS, new Map(), [], [{ ...archivo, archivadoEl: "2026-06-05" }]);
     expect(r.archivados[0].volvio).toBe(false);
+  });
+});
+
+describe("decisiones de «Sacar de carta»", () => {
+  const POLLO: [string, Familia, number[], number] = ["POLLO CON PIÑA GRILL", S, [400, 410, 420], 16];
+  const CORTADO: [string, Familia, number[], number] = ["CAFE CORTADO", C, [300, 310, 300], 11];
+  const f = () => sede(2, "Fonavi", [...RELLENO, POLLO, CORTADO, ["BATIDO DE PAPAYA", B, [3, 2, 2], 12], ["JUGO NUEVO", B, [0, 50, 60], 10]]);
+  const c = () => sede(3, "Centro", [...RELLENO, POLLO, CORTADO, ["BATIDO DE PAPAYA", B, [2, 3, 1], 12], ["JUGO NUEVO", B, [0, 40, 50], 10]]);
+  const base = { clave: "batido papaya", nombre: "BATIDO DE PAPAYA", motivo: null, fechaSalida: null, reemplazo: null, hasta: null, decididoPor: "jahnn" };
+
+  it("dice cuánto se deja de vender y ganar al mes", () => {
+    const r = armarCandidatos([f(), c()], COSTOS, new Map(), [], [], [], "2026-09-24");
+    const b = r.candidatos.find((x) => x.nombre === "BATIDO DE PAPAYA")!;
+    // (7 + 6 unidades en 90 días) × 30 × S/12 = S/52; ganancia con costo S/2.12.
+    expect(b.impactoMes.venta).toBe(52);
+    expect(b.impactoMes.ganancia).toBe(Math.round((13 / 90) * 30 * 9.88));
+  });
+
+  it("una salida programada avisa cuando se cumple la fecha", () => {
+    const d = [{ ...base, tipo: "programar" as const, fechaSalida: "2026-10-01", reemplazo: "JUGO NUEVO" }];
+    const antes = armarCandidatos([f(), c()], COSTOS, new Map(), [], [], d, "2026-09-24").candidatos.find((x) => x.nombre === "BATIDO DE PAPAYA")!;
+    expect(antes.plan).toEqual({ fechaSalida: "2026-10-01", reemplazo: "JUGO NUEVO", vencida: false });
+    const despues = armarCandidatos([f(), c()], COSTOS, new Map(), [], [], d, "2026-10-01").candidatos.find((x) => x.nombre === "BATIDO DE PAPAYA")!;
+    expect(despues.plan?.vencida).toBe(true);
+  });
+
+  it("«lo mantengo» lo saca de la lista hasta su fecha y luego vuelve", () => {
+    const d = [{ ...base, tipo: "mantener" as const, motivo: "trae clientes", hasta: "2026-12-24" }];
+    const r = armarCandidatos([f(), c()], COSTOS, new Map(), [], [], d, "2026-09-24");
+    expect(r.candidatos.find((x) => x.nombre === "BATIDO DE PAPAYA")).toBeUndefined();
+    expect(r.mantenidos).toHaveLength(1);
+    const luego = armarCandidatos([f(), c()], COSTOS, new Map(), [], [], d, "2026-12-25");
+    expect(luego.candidatos.find((x) => x.nombre === "BATIDO DE PAPAYA")?.veredicto).toBe("sacar");
+    expect(luego.mantenidos).toHaveLength(0);
+  });
+
+  it("compara el reemplazo con lo que vendía el archivado", () => {
+    const a = [{ clave: "batido papaya", nombre: "BATIDO DE PAPAYA", motivo: "sacado-de-carta" as const, archivadoEl: "2026-09-24", archivadoPor: "jahnn", reemplazo: "Jugo Nuevo", ventaDiaAlArchivar: 1.73 }];
+    const r = armarCandidatos([f(), c()], COSTOS, new Map(), [], a, [], "2026-09-24");
+    expect(r.archivados[0].comparacion?.reemplazo).toBe("Jugo Nuevo");
+    expect(r.archivados[0].comparacion?.ventaDiaAntes).toBe(1.73);
+    expect(r.archivados[0].comparacion?.ventaDiaReemplazo).toBeGreaterThan(10);
   });
 });
 

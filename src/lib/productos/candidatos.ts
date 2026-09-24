@@ -34,6 +34,15 @@
  * del archivo, reaparece marcado "volvió a venderse" (un producto de
  * temporada no queda escondido por error).
  *
+ * Decisiones sobre "Sacar de carta" (pedido de Jahnn, 24-sep-2026):
+ *   · Cuánto se pierde al sacarlo: venta y ganancia de un mes (30 días) entre
+ *     las sedes. Es el techo: parte de esa venta se pasa a otros productos.
+ *   · Programar la salida (fecha + reemplazo opcional): el producto sigue en la
+ *     lista con su fecha; cumplida la fecha, avisa para archivarlo.
+ *   · Mantener con motivo: sale de la lista por 3 meses y vuelve a evaluarse.
+ *   · El reemplazo queda guardado al archivar, y se compara cuánto vende hoy
+ *     contra cuánto vendía el producto que se sacó.
+ *
  * Decisión de Jahnn: las dos cafeterías deciden JUNTAS.
  *   · Candidato en las dos           → Sacar de carta, en el próximo cambio de carta.
  *   · Candidato en una, flojo en otra → Preparar reemplazo, decidir en 4 semanas.
@@ -112,6 +121,10 @@ export type Candidato = {
   costoEnlazado: "manual" | "nombre" | null;
   /** Lo había archivado y volvió a venderse después. */
   volvioAVenderse: Archivado | null;
+  /** Si se saca: venta y ganancia de un mes entre las sedes (ganancia null si falta el costo en alguna). */
+  impactoMes: { venta: number; ganancia: number | null };
+  /** Salida programada (solo "Sacar de carta"). */
+  plan: { fechaSalida: string; reemplazo: string | null; vencida: boolean } | null;
 };
 
 export type ResultadoCandidatos = {
@@ -122,7 +135,30 @@ export type ResultadoCandidatos = {
   /** % de las ventas analizadas que tienen costo (para decir cuánto se sabe de rentabilidad). */
   coberturaCosto: number;
   sinCosto: { nombre: string; ventaDia: number }[];
-  archivados: (Archivado & { volvio: boolean })[];
+  archivados: (Archivado & { volvio: boolean; comparacion: ComparacionReemplazo | null })[];
+  mantenidos: Decision[];
+};
+
+/** Decisión de Jahnn sobre un producto de "Sacar de carta". */
+export type Decision = {
+  clave: string;
+  nombre: string;
+  tipo: "programar" | "mantener";
+  motivo: string | null;
+  /** Programar: fecha de salida (AAAA-MM-DD). */
+  fechaSalida: string | null;
+  reemplazo: string | null;
+  /** Mantener: hasta cuándo no se vuelve a evaluar (AAAA-MM-DD). */
+  hasta: string | null;
+  decididoPor: string | null;
+};
+
+export type ComparacionReemplazo = {
+  reemplazo: string;
+  /** Lo que vendía por día el producto al archivarlo (entre las sedes). */
+  ventaDiaAntes: number | null;
+  /** Lo que vende hoy por día el reemplazo (null = todavía no aparece en ventas). */
+  ventaDiaReemplazo: number | null;
 };
 
 export type MotivoArchivo = "ya-no-se-vende" | "sacado-de-carta";
@@ -134,6 +170,8 @@ export type Archivado = {
   /** Fecha (AAAA-MM-DD) en que se archivó. */
   archivadoEl: string;
   archivadoPor: string | null;
+  reemplazo?: string | null;
+  ventaDiaAlArchivar?: number | null;
 };
 
 const MESES_VENTANA = 3;
@@ -319,6 +357,9 @@ export function armarCandidatos(
   /** Nombres marcados como acompañamiento en el sistema (products.es_acompanamiento). */
   acompanamientos: string[] = [],
   archivos: Archivado[] = [],
+  decisiones: Decision[] = [],
+  /** Hoy (AAAA-MM-DD, Lima): para saber si una salida ya venció o un "mantener" expiró. */
+  hoy: string = new Date().toISOString().slice(0, 10),
 ): ResultadoCandidatos {
   const protegidos = new Set(acompanamientos.map(claveByte));
   const porSede = sedes.map((s) => ({ sede: s, ...evaluarSede(s, costos, vinculos, protegidos) }));
@@ -326,6 +367,11 @@ export function armarCandidatos(
 
   // ¿Volvió a venderse después de archivarlo? Vendió algo en un mes posterior al del archivo.
   const archivo = new Map(archivos.map((a) => [a.clave, a]));
+  const decisionPor = new Map(decisiones.map((d) => [d.clave, d]));
+  const ventaDiaDe = (clave: string): number | null => {
+    const xs = porSede.map((x) => x.evaluados.get(clave)).filter((x) => !!x);
+    return xs.length > 0 ? r2(xs.reduce((s, x) => s + x!.ventaDia, 0)) : null;
+  };
   const volvio = (clave: string): boolean => {
     const a = archivo.get(clave);
     if (!a) return false;
@@ -347,6 +393,8 @@ export function armarCandidatos(
   const candidatos: Candidato[] = [];
   for (const clave of claves) {
     if (archivo.has(clave) && !volvio(clave)) continue;
+    const decision = decisionPor.get(clave);
+    if (decision?.tipo === "mantener" && decision.hasta && decision.hasta >= hoy) continue;
     const enSedes = porSede.map((x) => x.evaluados.get(clave)).filter((x): x is NonNullable<typeof x> => !!x && x.ventaDia + x.porMes.reduce((s, m) => s + m.ingresos, 0) > 0);
     if (enSedes.length === 0) continue;
     const estados = enSedes.map((x) => x.estado);
@@ -385,6 +433,13 @@ export function armarCandidatos(
       referencia: lider && lider.nombre !== primero.nombre ? { nombre: lider.nombre, gananciaDia: lider.gananciaDia, ventaDia: lider.ventaDia } : null,
       costoEnlazado: enSedes.find((x) => x.enlace)?.enlace ?? null,
       volvioAVenderse: archivo.get(clave) ?? null,
+      impactoMes: {
+        venta: Math.round(enSedes.reduce((s, x) => s + x.ventaDia, 0) * 30),
+        ganancia: enSedes.every((x) => x.gananciaDia !== null) ? Math.round(enSedes.reduce((s, x) => s + x.gananciaDia!, 0) * 30) : null,
+      },
+      plan: veredicto === "sacar" && decision?.tipo === "programar" && decision.fechaSalida
+        ? { fechaSalida: decision.fechaSalida, reemplazo: decision.reemplazo, vencida: decision.fechaSalida <= hoy }
+        : null,
     });
   }
 
@@ -407,6 +462,13 @@ export function armarCandidatos(
     semanas: Math.max(0, ...sedes.map((s) => s.semanas.length)),
     coberturaCosto: total > 0 ? Math.round((conCosto / total) * 100) : 0,
     sinCosto: [...sinCosto.entries()].map(([nombre, ventaDia]) => ({ nombre, ventaDia: r2(ventaDia) })).sort((a, b) => b.ventaDia - a.ventaDia),
-    archivados: archivos.map((a) => ({ ...a, volvio: volvio(a.clave) })).sort((a, b) => b.archivadoEl.localeCompare(a.archivadoEl)),
+    archivados: archivos.map((a) => ({
+      ...a,
+      volvio: volvio(a.clave),
+      comparacion: a.reemplazo
+        ? { reemplazo: a.reemplazo, ventaDiaAntes: a.ventaDiaAlArchivar ?? null, ventaDiaReemplazo: ventaDiaDe(claveByte(a.reemplazo)) }
+        : null,
+    })).sort((a, b) => b.archivadoEl.localeCompare(a.archivadoEl)),
+    mantenidos: decisiones.filter((d) => d.tipo === "mantener" && d.hasta && d.hasta >= hoy).sort((a, b) => a.hasta!.localeCompare(b.hasta!)),
   };
 }

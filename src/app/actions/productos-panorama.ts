@@ -21,7 +21,7 @@ import { getSessionRole } from "@/lib/session-access";
 import { armarPanorama, type PanoramaProductos, type FilaProducto } from "@/lib/productos/panorama";
 import { armarTrimestral, type InformeTrimestral } from "@/lib/productos/trimestral";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
-import { armarCandidatos, type Archivado, type MotivoArchivo, type ResultadoCandidatos, type SedeCandidatos } from "@/lib/productos/candidatos";
+import { armarCandidatos, type Archivado, type Decision, type MotivoArchivo, type ResultadoCandidatos, type SedeCandidatos } from "@/lib/productos/candidatos";
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
@@ -361,15 +361,27 @@ export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ da
   const lista = mesesAntes(hastaMes, 6);
   const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
   try {
-    const [costos, vinculos, acompanamientos, archivos] = await Promise.all([
+    const [costos, vinculos, acompanamientos, archivos, decisiones] = await Promise.all([
       (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
       (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
       (sql`SELECT DISTINCT regexp_replace(name, '\\s*\\((Fonavi|Centro)\\)\\s*$', '') AS name FROM products WHERE es_acompanamiento = true` as unknown as Promise<{ name: string }[]>).catch(() => []),
       (sql`
         SELECT clave, nombre, motivo, archivado_por AS "archivadoPor",
-               to_char(archivado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "archivadoEl"
+               to_char(archivado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "archivadoEl",
+               reemplazo, venta_dia_al_archivar::float AS "ventaDiaAlArchivar"
         FROM productos_archivados
-      ` as unknown as Promise<Archivado[]>).catch(() => [] as Archivado[]),
+      ` as unknown as Promise<Archivado[]>).catch(() =>
+        // Antes de la migración de decisiones: sin las columnas nuevas.
+        (sql`
+          SELECT clave, nombre, motivo, archivado_por AS "archivadoPor",
+                 to_char(archivado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "archivadoEl"
+          FROM productos_archivados
+        ` as unknown as Promise<Archivado[]>).catch(() => [] as Archivado[])),
+      (sql`
+        SELECT clave, nombre, tipo, motivo, fecha_salida::text AS "fechaSalida", reemplazo, hasta::text AS hasta,
+               decidido_por AS "decididoPor"
+        FROM decisiones_carta
+      ` as unknown as Promise<Decision[]>).catch(() => [] as Decision[]),
     ]);
     const hasta: { sede: string; hasta: string | null }[] = [];
     const sedes: SedeCandidatos[] = await Promise.all(cafeterias.map(async (s) => {
@@ -400,7 +412,8 @@ export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ da
         }),
       };
     }));
-    const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos);
+    const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+    const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos, decisiones, hoy);
     return {
       ok: true,
       data: { ...r, hasta, carta: costos.filter((c) => c.precio !== null).map((c) => ({ ref: c.ref, nombre: c.nombre, costo: c.costo, precio: c.precio })).sort((a, b) => a.nombre.localeCompare(b.nombre)) },
@@ -441,22 +454,39 @@ export async function vincularCostoCarta(nombreByte: string, ref: string | null)
  * venden o que ya los sacó de carta). Dejan de aparecer; si vuelven a
  * venderse en un mes posterior, reaparecen marcados.
  */
-export async function archivarProductos(items: { nombre: string; motivo: MotivoArchivo }[]): Promise<Res<{ archivados: number }>> {
+export async function archivarProductos(items: {
+  nombre: string;
+  motivo: MotivoArchivo;
+  /** Con qué se reemplaza (viene de la salida programada). */
+  reemplazo?: string | null;
+  /** Lo que vendía por día entre las sedes, para comparar después con el reemplazo. */
+  ventaDia?: number | null;
+}[]): Promise<Res<{ archivados: number }>> {
   const role = await getSessionRole();
   if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
   const validos = (Array.isArray(items) ? items : [])
     .filter((i) => i?.nombre?.trim() && (i.motivo === "ya-no-se-vende" || i.motivo === "sacado-de-carta"))
-    .map((i) => ({ clave: claveByte(i.nombre), nombre: i.nombre.trim(), motivo: i.motivo }))
+    .map((i) => ({
+      clave: claveByte(i.nombre), nombre: i.nombre.trim(), motivo: i.motivo,
+      reemplazo: typeof i.reemplazo === "string" && i.reemplazo.trim() ? i.reemplazo.trim().slice(0, 120) : null,
+      ventaDia: typeof i.ventaDia === "number" && Number.isFinite(i.ventaDia) ? i.ventaDia : null,
+    }))
     .filter((i) => i.clave)
     .slice(0, 500);
   if (validos.length === 0) return { ok: false, error: "No hay productos para archivar." };
   try {
-    await sql`
-      INSERT INTO productos_archivados (clave, nombre, motivo, archivado_por)
-      SELECT t.clave, t.nombre, t.motivo, ${role.quien}
-      FROM unnest(${validos.map((v) => v.clave)}::text[], ${validos.map((v) => v.nombre)}::text[], ${validos.map((v) => v.motivo)}::text[])
-        AS t(clave, nombre, motivo)
-      ON CONFLICT (clave) DO UPDATE SET motivo = EXCLUDED.motivo, archivado_por = EXCLUDED.archivado_por, archivado_el = NOW()`;
+    await sql.transaction([
+      sql`
+        INSERT INTO productos_archivados (clave, nombre, motivo, archivado_por, reemplazo, venta_dia_al_archivar)
+        SELECT t.clave, t.nombre, t.motivo, ${role.quien}, t.reemplazo, t.venta
+        FROM unnest(${validos.map((v) => v.clave)}::text[], ${validos.map((v) => v.nombre)}::text[], ${validos.map((v) => v.motivo)}::text[],
+                    ${validos.map((v) => v.reemplazo)}::text[], ${validos.map((v) => v.ventaDia)}::numeric[])
+          AS t(clave, nombre, motivo, reemplazo, venta)
+        ON CONFLICT (clave) DO UPDATE SET motivo = EXCLUDED.motivo, archivado_por = EXCLUDED.archivado_por, archivado_el = NOW(),
+          reemplazo = EXCLUDED.reemplazo, venta_dia_al_archivar = EXCLUDED.venta_dia_al_archivar`,
+      // Archivado, su salida programada ya se cumplió: la decisión se cierra.
+      sql`DELETE FROM decisiones_carta WHERE clave = ANY(${validos.map((v) => v.clave)}::text[])`,
+    ]);
     return { ok: true, archivados: validos.length };
   } catch (e) {
     console.error("[archivarProductos] failed:", e);
@@ -474,5 +504,63 @@ export async function restaurarProducto(clave: string): Promise<Res<object>> {
   } catch (e) {
     console.error("[restaurarProducto] failed:", e);
     return { ok: false, error: "No se pudo restaurar." };
+  }
+}
+
+/** Programa la salida de un producto de "Sacar de carta" (fecha y, si se sabe, con qué se reemplaza). */
+export async function programarSalida(input: { nombre: string; fechaSalida: string; reemplazo: string | null }): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const clave = claveByte(input.nombre ?? "");
+  if (!clave) return { ok: false, error: "Producto inválido." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.fechaSalida ?? "")) return { ok: false, error: "Elige la fecha de salida." };
+  const reemplazo = input.reemplazo?.trim() ? input.reemplazo.trim().slice(0, 120) : null;
+  try {
+    await sql`
+      INSERT INTO decisiones_carta (clave, nombre, tipo, fecha_salida, reemplazo, decidido_por)
+      VALUES (${clave}, ${input.nombre.trim()}, 'programar', ${input.fechaSalida}, ${reemplazo}, ${role.quien})
+      ON CONFLICT (clave) DO UPDATE SET tipo = 'programar', fecha_salida = EXCLUDED.fecha_salida, reemplazo = EXCLUDED.reemplazo,
+        motivo = NULL, hasta = NULL, decidido_por = EXCLUDED.decidido_por, decidido_el = NOW()`;
+    return { ok: true };
+  } catch (e) {
+    console.error("[programarSalida] failed:", e);
+    return { ok: false, error: "No se pudo programar la salida." };
+  }
+}
+
+/** "Lo mantengo": sale de la lista por 3 meses con un motivo. */
+export async function mantenerProducto(input: { nombre: string; motivo: string }): Promise<Res<{ hasta: string }>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const clave = claveByte(input.nombre ?? "");
+  const motivo = input.motivo?.trim().slice(0, 200);
+  if (!clave) return { ok: false, error: "Producto inválido." };
+  if (!motivo) return { ok: false, error: "Escribe por qué lo mantienes." };
+  try {
+    const rows = (await sql`
+      INSERT INTO decisiones_carta (clave, nombre, tipo, motivo, hasta, decidido_por)
+      VALUES (${clave}, ${input.nombre.trim()}, 'mantener', ${motivo},
+              ((NOW() AT TIME ZONE 'America/Lima')::date + INTERVAL '3 months')::date, ${role.quien})
+      ON CONFLICT (clave) DO UPDATE SET tipo = 'mantener', motivo = EXCLUDED.motivo, hasta = EXCLUDED.hasta,
+        fecha_salida = NULL, reemplazo = NULL, decidido_por = EXCLUDED.decidido_por, decidido_el = NOW()
+      RETURNING hasta::text AS hasta
+    `) as { hasta: string }[];
+    return { ok: true, hasta: rows[0].hasta };
+  } catch (e) {
+    console.error("[mantenerProducto] failed:", e);
+    return { ok: false, error: "No se pudo guardar." };
+  }
+}
+
+/** Quita una salida programada o un "lo mantengo": el producto vuelve a evaluarse. */
+export async function quitarDecision(clave: string): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  try {
+    await sql`DELETE FROM decisiones_carta WHERE clave = ${clave}`;
+    return { ok: true };
+  } catch (e) {
+    console.error("[quitarDecision] failed:", e);
+    return { ok: false, error: "No se pudo quitar." };
   }
 }
