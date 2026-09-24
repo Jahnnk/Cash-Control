@@ -76,7 +76,8 @@ export function SeccionDesplegable({ titulo, subtitulo, resumen, children, abier
         <div className="min-w-0">
           <h3 className="text-[15px] font-semibold text-gray-900 leading-tight">{titulo}</h3>
           {subtitulo && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{subtitulo}</p>}
-          {resumen && <div className="mt-2.5">{resumen}</div>}
+          {/* Cerrada: el resumen dice si vale la pena abrirla; abierta, el detalle ya lo muestra. */}
+          {resumen && !abierta && <div className="mt-2.5">{resumen}</div>}
         </div>
         <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-primary mt-0.5">
           {abierta ? "Cerrar" : "Abrir"}

@@ -8,9 +8,10 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, ArchiveRestore, ChevronDown, Link2, Loader2 } from "lucide-react";
+import { Archive, ArchiveRestore, CalendarClock, ChevronDown, Hand, Link2, Loader2 } from "lucide-react";
 import {
-  archivarProductos, getCandidatosReemplazo, restaurarProducto, vincularCostoCarta, type CandidatosReemplazo,
+  archivarProductos, getCandidatosReemplazo, mantenerProducto, programarSalida, quitarDecision, restaurarProducto,
+  vincularCostoCarta, type CandidatosReemplazo,
 } from "@/app/actions/productos-panorama";
 import type { Candidato, MotivoArchivo, ProductoEnSede, Veredicto } from "@/lib/productos/candidatos";
 import { UMBRAL_CANDIDATO, UMBRAL_OBSERVAR } from "@/lib/productos/candidatos";
@@ -69,12 +70,17 @@ export function CandidatosReemplazo({ month }: { month: string }) {
 
   const lista = (data?.candidatos ?? []).filter((c) => c.veredicto === filtro);
   const accion = ARCHIVAR[filtro];
+  const sacar = (data?.candidatos ?? []).filter((c) => c.veredicto === "sacar");
+  const vencidas = sacar.filter((c) => c.plan?.vencida).length;
 
   async function archivar(cs: Candidato[], clave: string) {
     if (!accion || cs.length === 0) return;
     if (cs.length > 1 && !window.confirm(accion.confirmar(cs.length))) return;
     setArchivando(clave);
-    const r = await archivarProductos(cs.map((c) => ({ nombre: c.nombre, motivo: accion.motivo })));
+    const r = await archivarProductos(cs.map((c) => ({
+      nombre: c.nombre, motivo: accion.motivo, reemplazo: c.plan?.reemplazo ?? null,
+      ventaDia: Math.round(c.sedes.reduce((t, x) => t + x.ventaDia, 0) * 100) / 100,
+    })));
     setArchivando(null);
     if (!r.ok) { showToast(r.error, "error"); return; }
     showToast(r.archivados === 1 ? `«${cs[0].nombre}» archivado.` : `${r.archivados} productos archivados.`, "success");
@@ -110,6 +116,11 @@ export function CandidatosReemplazo({ month }: { month: string }) {
       }
       resumen={data && (
         <div className="flex flex-wrap gap-1.5">
+          {vencidas > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-900">
+              <CalendarClock className="w-3 h-3" /> Salidas por archivar <b className="tabular-nums">{vencidas}</b>
+            </span>
+          )}
           {ORDEN.filter((v) => conteo[v] > 0).map((v) => (
             <span key={v} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-0.5 text-[11px] text-gray-700">
               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: VEREDICTOS[v].barra }} />
@@ -150,6 +161,8 @@ export function CandidatosReemplazo({ month }: { month: string }) {
             })}
           </div>
 
+          {filtro === "sacar" && lista.length > 0 && <ImpactoLista lista={lista} />}
+
           {accion && lista.length > 1 && (
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl bg-gray-50 px-3.5 py-2.5">
               <p className="text-xs text-gray-600">
@@ -169,13 +182,14 @@ export function CandidatosReemplazo({ month }: { month: string }) {
             <div className="grid gap-3 xl:grid-cols-2">
               {lista.map((c) => (
                 <Tarjeta
-                  key={c.clave} c={c} carta={data.carta} onVinculado={cargar}
+                  key={c.clave} c={c} carta={data.carta} onVinculado={cargar} onDecidido={cargar}
                   archivar={accion ? { texto: accion.boton, ocupado: archivando === c.clave, bloqueado: archivando !== null, onClick: () => void archivar([c], c.clave) } : null}
                 />
               ))}
             </div>
           )}
 
+          {data.mantenidos.length > 0 && <Mantenidos items={data.mantenidos} onQuitado={cargar} />}
           {data.archivados.length > 0 && <Archivados items={data.archivados} ocupado={archivando} onRestaurar={restaurar} />}
           <ComoDecide />
           {data.sinCosto.length > 0 && <SinCosto items={data.sinCosto} carta={data.carta} onVinculado={cargar} />}
@@ -185,10 +199,11 @@ export function CandidatosReemplazo({ month }: { month: string }) {
   );
 }
 
-function Tarjeta({ c, carta, onVinculado, archivar }: {
+function Tarjeta({ c, carta, onVinculado, onDecidido, archivar }: {
   c: Candidato;
   carta: CandidatosReemplazo["carta"];
   onVinculado: () => void;
+  onDecidido: () => void;
   archivar: { texto: string; ocupado: boolean; bloqueado: boolean; onClick: () => void } | null;
 }) {
   const meta = VEREDICTOS[c.veredicto];
@@ -217,6 +232,18 @@ function Tarjeta({ c, carta, onVinculado, archivar }: {
         </p>
       )}
 
+      {c.plan && (
+        <p className={`text-xs rounded-lg px-2.5 py-1.5 border flex items-start gap-1.5 ${
+          c.plan.vencida ? "text-amber-900 bg-amber-50 border-amber-300" : "text-gray-700 bg-gray-50 border-gray-200"
+        }`}>
+          <CalendarClock className="w-3.5 h-3.5 mt-px shrink-0" />
+          <span>
+            {c.plan.vencida ? <b>Ya pasó su fecha de salida ({fechaCorta(c.plan.fechaSalida)}): si ya salió de carta, archívalo.</b> : <>Sale el <b>{fechaCorta(c.plan.fechaSalida)}</b></>}
+            {c.plan.reemplazo && <> · reemplazo: <b>{c.plan.reemplazo}</b></>}
+          </span>
+        </p>
+      )}
+
       <p className="text-[13px] text-gray-700 leading-relaxed">{c.razon}</p>
 
       <div className={`grid gap-2.5 ${c.sedes.length > 1 ? "sm:grid-cols-2" : ""}`}>
@@ -224,6 +251,13 @@ function Tarjeta({ c, carta, onVinculado, archivar }: {
       </div>
 
       <footer className="pt-2 border-t border-gray-100 space-y-1.5 text-xs">
+        {c.veredicto === "sacar" && (
+          <div className="text-gray-800">
+            <span className="font-medium">Si lo sacas:</span> dejas de vender ~{soles0(c.impactoMes.venta)} al mes
+            {c.impactoMes.ganancia !== null ? <> y de ganar ~{soles0(c.impactoMes.ganancia)}</> : " (sin costo para calcular la ganancia)"}
+            {c.sedes.length > 1 ? " entre las dos sedes" : ` en ${c.sedes[0].sede}`}.
+          </div>
+        )}
         <div className="text-gray-800"><span className="font-medium">Cuándo:</span> {c.cuando}</div>
         {c.referencia && (c.veredicto === "sacar" || c.veredicto === "preparar") && (
           <div className="text-gray-500">
@@ -232,14 +266,8 @@ function Tarjeta({ c, carta, onVinculado, archivar }: {
           </div>
         )}
         {sinCosto && <Vincular nombre={c.nombre} carta={carta} onVinculado={onVinculado} />}
-        {archivar && (
-          <div className="pt-1">
-            <button type="button" onClick={archivar.onClick} disabled={archivar.bloqueado}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50">
-              {archivar.ocupado ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
-              {archivar.texto}
-            </button>
-          </div>
+        {(archivar || c.veredicto === "sacar") && (
+          <Acciones c={c} carta={carta} archivar={archivar} onDecidido={onDecidido} />
         )}
       </footer>
     </article>
@@ -404,6 +432,173 @@ function SinCosto({ items, carta, onVinculado }: { items: CandidatosReemplazo["s
   );
 }
 
+const soles0 = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
+
+/** Arriba de "Sacar de carta": lo que pesa la lista entera. */
+function ImpactoLista({ lista }: { lista: Candidato[] }) {
+  const venta = lista.reduce((t, c) => t + c.impactoMes.venta, 0);
+  const conGanancia = lista.filter((c) => c.impactoMes.ganancia !== null);
+  const ganancia = conGanancia.reduce((t, c) => t + c.impactoMes.ganancia!, 0);
+  const programadas = lista.filter((c) => c.plan).length;
+  return (
+    <div className="rounded-xl border border-gray-200 px-4 py-3 grid gap-3 sm:grid-cols-3 text-sm">
+      <div>
+        <div className="text-[11px] uppercase tracking-wide text-gray-500">Si sacas los {lista.length}</div>
+        <div className="font-semibold text-gray-900 tabular-nums">~{soles0(venta)} de venta al mes</div>
+        <div className="text-[11px] text-gray-500">Es el techo: parte de esa venta se pasa a otros productos.</div>
+      </div>
+      <div>
+        <div className="text-[11px] uppercase tracking-wide text-gray-500">Ganancia que dejan</div>
+        <div className="font-semibold text-gray-900 tabular-nums">~{soles0(ganancia)} al mes</div>
+        {conGanancia.length < lista.length && <div className="text-[11px] text-gray-500">{lista.length - conGanancia.length} sin costo para calcular</div>}
+      </div>
+      <div>
+        <div className="text-[11px] uppercase tracking-wide text-gray-500">Salida programada</div>
+        <div className="font-semibold text-gray-900 tabular-nums">{programadas} de {lista.length}</div>
+      </div>
+    </div>
+  );
+}
+
+function primeroDelMesQueViene(): string {
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const [y, m] = hoy.split("-").map(Number);
+  return m === 12 ? `${y + 1}-01-01` : `${y}-${String(m + 1).padStart(2, "0")}-01`;
+}
+
+/** Botones de la tarjeta: programar la salida, mantener con motivo y archivar. */
+function Acciones({ c, carta, archivar, onDecidido }: {
+  c: Candidato;
+  carta: CandidatosReemplazo["carta"];
+  archivar: { texto: string; ocupado: boolean; bloqueado: boolean; onClick: () => void } | null;
+  onDecidido: () => void;
+}) {
+  const { showToast } = useToast();
+  const [abierto, setAbierto] = useState<"programar" | "mantener" | null>(null);
+  const [fecha, setFecha] = useState(c.plan?.fechaSalida ?? primeroDelMesQueViene());
+  const [reemplazo, setReemplazo] = useState(c.plan?.reemplazo ?? "");
+  const [motivo, setMotivo] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const listaId = `reemplazos-${c.clave}`;
+
+  async function guardar(accion: () => Promise<{ ok: true } | { ok: false; error: string }>, ok: string) {
+    setGuardando(true);
+    const r = await accion();
+    setGuardando(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(ok, "success");
+    setAbierto(null);
+    onDecidido();
+  }
+
+  const btn = "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg disabled:opacity-50";
+  return (
+    <div className="pt-1 space-y-2">
+      <div className="flex flex-wrap gap-2">
+        {c.veredicto === "sacar" && (
+          <>
+            <button type="button" onClick={() => setAbierto(abierto === "programar" ? null : "programar")}
+              className={`${btn} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}>
+              <CalendarClock className="w-3.5 h-3.5" /> {c.plan ? "Cambiar salida" : "Programar salida"}
+            </button>
+            <button type="button" onClick={() => setAbierto(abierto === "mantener" ? null : "mantener")}
+              className={`${btn} border border-gray-300 bg-white text-gray-700 hover:bg-gray-50`}>
+              <Hand className="w-3.5 h-3.5" /> Lo mantengo
+            </button>
+          </>
+        )}
+        {archivar && (
+          <button type="button" onClick={archivar.onClick} disabled={archivar.bloqueado}
+            className={`${btn} text-white ${c.plan?.vencida ? "bg-amber-600 hover:bg-amber-700" : "bg-primary hover:bg-primary-light"}`}>
+            {archivar.ocupado ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Archive className="w-3.5 h-3.5" />}
+            {archivar.texto}
+          </button>
+        )}
+      </div>
+
+      {abierto === "programar" && (
+        <div className="rounded-xl bg-gray-50 p-3 grid gap-2.5 sm:grid-cols-[auto_1fr] items-end">
+          <label className="block">
+            <span className="text-[11px] text-gray-500">Sale de carta el</span>
+            <input type="date" value={fecha} onChange={(e) => setFecha(e.target.value)}
+              className="mt-0.5 block border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white" />
+          </label>
+          <label className="block min-w-0">
+            <span className="text-[11px] text-gray-500">Lo reemplaza (opcional)</span>
+            <input value={reemplazo} onChange={(e) => setReemplazo(e.target.value)} list={listaId} placeholder="ej. Cheesecake de Fresa"
+              className="mt-0.5 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white" />
+            <datalist id={listaId}>{carta.map((x) => <option key={x.ref} value={x.nombre} />)}</datalist>
+          </label>
+          <div className="sm:col-span-2 flex flex-wrap justify-end gap-2">
+            {c.plan && (
+              <button type="button" disabled={guardando} onClick={() => void guardar(() => quitarDecision(c.clave), "Salida programada quitada.")}
+                className={`${btn} text-gray-600 hover:bg-white`}>Quitar programación</button>
+            )}
+            <button type="button" disabled={guardando || !fecha}
+              onClick={() => void guardar(() => programarSalida({ nombre: c.nombre, fechaSalida: fecha, reemplazo: reemplazo || null }), `Salida programada para el ${fechaCorta(fecha)}.`)}
+              className={`${btn} text-white bg-primary hover:bg-primary-light`}>
+              {guardando && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar
+            </button>
+          </div>
+        </div>
+      )}
+
+      {abierto === "mantener" && (
+        <div className="rounded-xl bg-gray-50 p-3 space-y-2">
+          <label className="block">
+            <span className="text-[11px] text-gray-500">¿Por qué lo mantienes? Sale de la lista por 3 meses y luego se vuelve a evaluar.</span>
+            <input value={motivo} onChange={(e) => setMotivo(e.target.value)} placeholder="ej. trae clientes al desayuno"
+              className="mt-0.5 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white" />
+          </label>
+          <div className="flex justify-end">
+            <button type="button" disabled={guardando || !motivo.trim()}
+              onClick={() => void guardar(async () => mantenerProducto({ nombre: c.nombre, motivo }), `«${c.nombre}» se mantiene 3 meses.`)}
+              className={`${btn} text-white bg-primary hover:bg-primary-light`}>
+              {guardando && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Mantenidos({ items, onQuitado }: { items: CandidatosReemplazo["mantenidos"]; onQuitado: () => void }) {
+  const { showToast } = useToast();
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  async function quitar(clave: string, nombre: string) {
+    setOcupado(clave);
+    const r = await quitarDecision(clave);
+    setOcupado(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(`«${nombre}» vuelve a evaluarse.`, "success");
+    onQuitado();
+  }
+  return (
+    <details className="group rounded-xl border border-gray-200 px-4 py-3">
+      <summary className="cursor-pointer list-none flex items-center justify-between text-sm font-medium text-gray-800">
+        Mantenidos ({items.length})
+        <ChevronDown className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" />
+      </summary>
+      <p className="text-xs text-gray-500 mt-2">Decidiste mantenerlos: no aparecen en «Sacar de carta» hasta la fecha indicada.</p>
+      <ul className="mt-3 divide-y divide-gray-100">
+        {items.map((i) => (
+          <li key={i.clave} className="py-2 flex flex-wrap items-center justify-between gap-2 text-xs">
+            <div className="min-w-0">
+              <div className="text-gray-800">{i.nombre}</div>
+              <div className="text-gray-500">«{i.motivo}» · hasta el {fechaCorta(i.hasta!)}{i.decididoPor ? ` · ${i.decididoPor === "kelly" ? "Kelly" : "Jahnn"}` : ""}</div>
+            </div>
+            <button type="button" onClick={() => void quitar(i.clave, i.nombre)} disabled={ocupado !== null}
+              className="inline-flex items-center gap-1 text-primary font-medium hover:underline disabled:opacity-50">
+              {ocupado === i.clave && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Volver a evaluar
+            </button>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
+
 function Archivados({ items, ocupado, onRestaurar }: {
   items: CandidatosReemplazo["archivados"];
   ocupado: string | null;
@@ -431,6 +626,19 @@ function Archivados({ items, ocupado, onRestaurar }: {
                 {MOTIVO_TEXTO[i.motivo]} · {fechaCorta(i.archivadoEl)}{i.archivadoPor ? ` · ${i.archivadoPor === "kelly" ? "Kelly" : "Jahnn"}` : ""}
                 {i.volvio && <span className="text-sky-700"> · volvió a venderse</span>}
               </div>
+              {i.comparacion && (
+                <div className="text-gray-600 mt-0.5">
+                  Reemplazo: <b>{i.comparacion.reemplazo}</b>
+                  {i.comparacion.ventaDiaReemplazo === null
+                    ? " · todavía no aparece en las ventas"
+                    : <> · vende {soles(i.comparacion.ventaDiaReemplazo)} al día
+                      {i.comparacion.ventaDiaAntes !== null && <> vs {soles(i.comparacion.ventaDiaAntes)} que vendía el anterior
+                        <span className={i.comparacion.ventaDiaReemplazo >= i.comparacion.ventaDiaAntes ? " text-emerald-700" : " text-red-700"}>
+                          {i.comparacion.ventaDiaReemplazo >= i.comparacion.ventaDiaAntes ? " (mejor)" : " (peor)"}
+                        </span></>}
+                    </>}
+                </div>
+              )}
             </div>
             <button type="button" onClick={() => onRestaurar(i.clave, i.nombre)} disabled={ocupado !== null}
               className="inline-flex items-center gap-1 text-primary font-medium hover:underline disabled:opacity-50">
