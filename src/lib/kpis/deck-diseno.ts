@@ -114,10 +114,10 @@ export function diapositiva(
 }
 
 /** Recuadro de fecha arriba a la derecha (a la altura del título). */
-export function cajaFecha(s: PptxGenJS.Slide, linea1: string, linea2: string) {
+export function cajaFecha(s: PptxGenJS.Slide, linea1: string, linea2: string, ic: IconoDeck = "calendario") {
   const w = 2.2, x = W - MX - w, y = 0.54;
   tarjeta(s, x, y, w, 0.5);
-  icono(s, "calendario", "oscuro", x + 0.13, y + 0.12, 0.26);
+  icono(s, ic, "oscuro", x + 0.13, y + 0.12, 0.26);
   texto(s, linea1, { x: x + 0.5, y: y + 0.07, w: w - 0.58, h: 0.2, fontSize: 9, bold: true, color: C.tinta });
   texto(s, linea2, { x: x + 0.5, y: y + 0.27, w: w - 0.58, h: 0.16, fontSize: 7.5, color: C.gris });
 }

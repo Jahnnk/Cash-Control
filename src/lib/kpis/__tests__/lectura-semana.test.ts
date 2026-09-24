@@ -125,3 +125,13 @@ describe("hallazgosEquilibrio", () => {
     expect(h[0].texto).toMatch(/Faltan S\/5,200/);
   });
 });
+
+describe("nombreLegible (nombres de Byte en la lámina)", () => {
+  it("pasa las MAYÚSCULAS a tipo título sin romper siglas ni pesos", async () => {
+    const { nombreLegible } = await import("../deck-productos");
+    expect(nombreLegible("PAN INTEGRAL MULTIGRANO TIPO MOLDE 750 G")).toBe("Pan Integral Multigrano Tipo Molde 750 g");
+    expect(nombreLegible("Y-PAN IMG TIPO MOLDE 750G")).toBe("Y-Pan IMG Tipo Molde 750g");
+    expect(nombreLegible("P-ciabatta")).toBe("P-Ciabatta");
+    expect(nombreLegible("Cake de Chocolate - Porción")).toBe("Cake de Chocolate - Porción");
+  });
+});
