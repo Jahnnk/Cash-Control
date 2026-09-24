@@ -14,7 +14,7 @@ import {
 } from "@/app/actions/productos-panorama";
 import type { Candidato, MotivoArchivo, ProductoEnSede, Veredicto } from "@/lib/productos/candidatos";
 import { UMBRAL_CANDIDATO, UMBRAL_OBSERVAR } from "@/lib/productos/candidatos";
-import { Barra, Pastilla, PuntoFamilia, Seccion, fechaCorta, nombreMes } from "@/components/productos/ui";
+import { Barra, Pastilla, PuntoFamilia, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 import { useToast } from "@/components/toast-provider";
 
 const VEREDICTOS: Record<Veredicto, { titulo: string; corto: string; tono: "rojo" | "ambar" | "azul" | "gris"; barra: string; ayuda: string }> = {
@@ -100,7 +100,7 @@ export function CandidatosReemplazo({ month }: { month: string }) {
     : "";
 
   return (
-    <Seccion
+    <SeccionDesplegable
       titulo="Candidatos a reemplazo"
       subtitulo={
         data
@@ -108,6 +108,16 @@ export function CandidatosReemplazo({ month }: { month: string }) {
             {data.semanas > 1 ? ` · ${data.semanas} semanas guardadas` : " · las semanas se ven desde las próximas cargas del sábado"}</>
           : "Qué productos de la carta conviene sacar o revisar, por qué y cuándo."
       }
+      resumen={data && (
+        <div className="flex flex-wrap gap-1.5">
+          {ORDEN.filter((v) => conteo[v] > 0).map((v) => (
+            <span key={v} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-0.5 text-[11px] text-gray-700">
+              <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: VEREDICTOS[v].barra }} />
+              {VEREDICTOS[v].titulo} <b className="tabular-nums font-semibold">{conteo[v]}</b>
+            </span>
+          ))}
+        </div>
+      )}
     >
       {error ? (
         <p className="text-sm text-gray-500">{error}</p>
@@ -171,7 +181,7 @@ export function CandidatosReemplazo({ month }: { month: string }) {
           {data.sinCosto.length > 0 && <SinCosto items={data.sinCosto} carta={data.carta} onVinculado={cargar} />}
         </div>
       )}
-    </Seccion>
+    </SeccionDesplegable>
   );
 }
 
