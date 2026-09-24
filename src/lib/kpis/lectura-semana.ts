@@ -59,17 +59,12 @@ export function lecturaCafeteria(c: ResumenCafeteria): LecturaSede {
     frasePct("Ticket", c.ticketPct, "referencia"),
   ].filter((x): x is string => !!x);
 
+  // NPS y merma solo se mencionan si algo está mal: lo que está bien ya se
+  // ve en la tarjeta de arriba (pedido de Jahnn: menos texto amontonado).
   const npsOk = c.traffic.nps === "verde";
   const mermaOk = c.traffic.mermas === "verde";
-  if (c.nps !== null || c.mermasPct !== null) {
-    if (npsOk && mermaOk) puntos.push("NPS en meta y merma en rango.");
-    else {
-      if (c.nps !== null) puntos.push(npsOk ? `NPS en meta (${c.nps}).` : `NPS bajo la meta (${c.nps}, meta ≥ ${c.npsMin}).`);
-      if (c.mermasPct !== null) {
-        puntos.push(mermaOk ? "Merma en rango." : `Merma por encima del rango (${c.mermasPct}%, máx. ${Math.round(c.mermasMaxPct * 100)}%).`);
-      }
-    }
-  }
+  if (c.nps !== null && !npsOk) puntos.push(`NPS bajo la meta (${c.nps}; meta ≥ ${c.npsMin}).`);
+  if (c.mermasPct !== null && !mermaOk) puntos.push(`Merma sobre el rango (${c.mermasPct}%; máx. ${Math.round(c.mermasMaxPct * 100)}%).`);
 
   const tv = c.traffic.ventas as Tono;
   const tt = c.traffic.ticket as Tono;
@@ -89,10 +84,7 @@ export type ResumenAtelier = { ventasTotal: number; dias: number; ticketProm: nu
 
 export function lecturaAtelier(a: ResumenAtelier): LecturaSede {
   const puntos = [`${soles0(a.ventasTotal)} vendidos en ${a.dias} ${a.dias === 1 ? "día" : "días"}.`];
-  if (a.ticketProm !== null) puntos.push(`Ticket promedio ${soles(a.ticketProm)} por pedido.`);
-  if (a.mermasPct !== null) {
-    puntos.push(a.mermasPct <= a.mermasMaxPct * 100 ? "Merma en rango." : `Merma por encima del rango (${a.mermasPct}%).`);
-  }
+  if (a.mermasPct !== null && a.mermasPct > a.mermasMaxPct * 100) puntos.push(`Merma sobre el rango (${a.mermasPct}%).`);
   return { titulo: "Atelier", tono: "gris", puntos, accion: "Falta definir meta/referencia de ventas para evaluar su desempeño." };
 }
 
@@ -104,7 +96,7 @@ export function lecturaVentas(v: ResumenVentas): LecturaSede {
   const puntos: string[] = [];
   const m = v.deltaMesPct;
   if (m !== null) {
-    puntos.push(m >= -2 && m <= 2 ? `Acumulado prácticamente estable (${signo(m)}).` : `${signo(m)} en el acumulado vs. mes anterior.`);
+    puntos.push(m >= -2 && m <= 2 ? `Acumulado estable (${signo(m)}) vs. mes anterior.` : `Acumulado ${signo(m)} vs. mes anterior.`);
   }
   const s = v.deltaSemanaPct;
   if (s !== null) {
@@ -142,7 +134,7 @@ export function hallazgosCafeteria(c: DetalleCafeteria): Hallazgo[] {
     out.push({
       titulo: tv === "verde" ? "Ventas en meta" : tv === "ambar" ? "Ventas cerca de la meta" : "Ventas bajo la meta",
       texto: `Promedio diario ${soles(c.ventasProm)} (${signo(dif)} vs meta).` +
-        (c.peorDiaVentas && tv !== "verde" ? ` ${c.peorDiaVentas.dia} fue el día más bajo (${soles0(c.peorDiaVentas.valor)}).` : ""),
+        (c.peorDiaVentas && tv !== "verde" ? ` Día más bajo: ${c.peorDiaVentas.dia} (${soles0(c.peorDiaVentas.valor)}).` : ""),
       tono: tv,
     });
   }
@@ -231,8 +223,8 @@ export function hallazgosIncentivos(xs: ResumenIncentivo[]): Hallazgo[] {
   if (conDato.length > 0) {
     const suben = conDato.filter((x) => x.deltaActual! > 0);
     out.push({
-      titulo: suben.length === conDato.length ? (conDato.length > 1 ? "Ambas sedes aumentan el ticket" : `${conDato[0].sede} aumenta el ticket`)
-        : suben.length === 0 ? "El ticket no sube respecto de la base" : `${suben.map((x) => x.sede).join(" y ")} aumenta el ticket`,
+      titulo: suben.length === conDato.length ? (conDato.length > 1 ? "Ambas sedes suben el ticket" : `${conDato[0].sede} sube el ticket`)
+        : suben.length === 0 ? "El ticket no sube vs. la base" : `${suben.map((x) => x.sede).join(" y ")} sube el ticket`,
       texto: conDato.map((x) => `${x.sede} ${x.deltaActual! >= 0 ? "+" : "−"}${soles(Math.abs(x.deltaActual!))}`).join(" y ") + " de venta nueva por cliente vs. base del mes.",
       tono: suben.length === conDato.length ? "verde" : suben.length === 0 ? "rojo" : "ambar",
     });
@@ -262,12 +254,12 @@ export function hallazgosIncentivos(xs: ResumenIncentivo[]): Hallazgo[] {
     const mismo = prox.every((x) => x.avanceProximo!.nivel === nivel);
     const alto = prox.every((x) => x.avanceProximo!.pct >= 80);
     out.push({
-      titulo: mismo ? `${nivel} ${alto ? "casi alcanzado" : "en camino"}` : "Avance hacia el próximo nivel",
+      titulo: mismo ? `${nivel} ${alto ? "casi alcanzado" : "en camino"}` : "Avance al próximo nivel",
       texto: prox.map((x) => `${x.sede} ${x.avanceProximo!.pct}%${mismo ? "" : ` de ${x.avanceProximo!.nivel}`}`).join(" y ") + ". Enfocar en cerrar la brecha.",
       tono: alto ? "ambar" : "gris",
     });
   } else if (xs.some((x) => x.nivelAlcanzado)) {
-    out.push({ titulo: "Todos los niveles alcanzados", texto: "El equipo ya llegó al nivel más alto del mes.", tono: "verde" });
+    out.push({ titulo: "Todos los niveles logrados", texto: "El equipo ya llegó al nivel más alto del mes.", tono: "verde" });
   }
   return out;
 }
@@ -289,7 +281,7 @@ export function hallazgosEquilibrio(sedes: ResumenEquilibrio[], grupo: ResumenEq
   }
   if (arriba.length > 0) {
     out.push({
-      titulo: `${arriba.map((s) => s.nombre).join(" y ")} ya en ganancia`,
+      titulo: `${arriba.map((s) => s.nombre).join(" y ")} en ganancia`,
       texto: `${arriba.map((s) => `${Math.round(s.avancePct ?? 0)}%`).join(" y ")} de la meta${arriba.length > 1 ? " respectivamente" : ""}.`,
       tono: "verde",
     });
