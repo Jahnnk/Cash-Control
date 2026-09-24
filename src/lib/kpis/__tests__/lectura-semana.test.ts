@@ -20,10 +20,10 @@ describe("peorTono", () => {
 });
 
 describe("lecturaCafeteria", () => {
-  it("semana en meta: una línea para NPS y merma y acción de mantener", () => {
+  it("semana en meta: NPS y merma no se repiten si están bien", () => {
     const l = lecturaCafeteria(cafe());
     expect(l.tono).toBe("verde");
-    expect(l.puntos).toEqual(["Ventas 4% sobre la meta.", "Ticket 1% sobre la referencia.", "NPS en meta y merma en rango."]);
+    expect(l.puntos).toEqual(["Ventas 4% sobre la meta.", "Ticket 1% sobre la referencia."]);
     expect(l.accion).toMatch(/mantener/i);
   });
 
@@ -34,7 +34,7 @@ describe("lecturaCafeteria", () => {
     }));
     expect(l.tono).toBe("rojo");
     expect(l.puntos[0]).toBe("Ventas 12% por debajo de la meta.");
-    expect(l.puntos).toContain("Merma por encima del rango (7%, máx. 5%).");
+    expect(l.puntos).toContain("Merma sobre el rango (7%; máx. 5%).");
     expect(l.accion).toMatch(/recuperar las ventas/);
   });
 
@@ -49,7 +49,7 @@ describe("lecturaAtelier", () => {
   it("no tiene meta: tono gris y pide definirla", () => {
     const l = lecturaAtelier({ ventasTotal: 8123.4, dias: 6, ticketProm: 95.5, mermasPct: 2, mermasMaxPct: 0.04 });
     expect(l.tono).toBe("gris");
-    expect(l.puntos).toContain("Merma en rango.");
+    expect(l.puntos).toEqual(["S/8,123 vendidos en 6 días."]);
     expect(l.accion).toMatch(/meta/);
   });
 });
@@ -79,7 +79,7 @@ describe("hallazgosCafeteria", () => {
     expect(bien[0].texto).not.toMatch(/Mar 16/);
     const mal = hallazgosCafeteria({ ...cafe({ ventasPct: 90, traffic: { ventas: "rojo", ticket: "verde", nps: "verde", mermas: "verde" } }), ...base });
     expect(mal[0].titulo).toBe("Ventas bajo la meta");
-    expect(mal[0].texto).toMatch(/Mar 16 fue el día más bajo/);
+    expect(mal[0].texto).toMatch(/Día más bajo: Mar 16/);
     expect(mal[2].titulo).toBe("NPS y mermas en buen nivel");
   });
 });
@@ -101,7 +101,7 @@ describe("hallazgosIncentivos", () => {
 
   it("ambas suben, piso de tráfico ok y mismo nivel casi alcanzado", () => {
     const h = hallazgosIncentivos([inc({}), inc({ sede: "Centro", deltaActual: 0.9, avanceProximo: { nivel: "Nivel 2", pct: 82 } })]);
-    expect(h.map((x) => x.titulo)).toEqual(["Ambas sedes aumentan el ticket", "Tráfico en el piso objetivo", "Nivel 2 casi alcanzado"]);
+    expect(h.map((x) => x.titulo)).toEqual(["Ambas sedes suben el ticket", "Tráfico en el piso objetivo", "Nivel 2 casi alcanzado"]);
   });
 
   it("con candado de ventas reemplaza al piso de tráfico", () => {
@@ -121,7 +121,7 @@ describe("hallazgosEquilibrio", () => {
       ],
       { nombre: "Grupo", avancePct: 93, falta: 1800, superado: false, sinDatos: false },
     );
-    expect(h.map((x) => x.titulo)).toEqual(["Centro por debajo", "Fonavi y Atelier ya en ganancia", "Grupo casi en equilibrio"]);
+    expect(h.map((x) => x.titulo)).toEqual(["Centro por debajo", "Fonavi y Atelier en ganancia", "Grupo casi en equilibrio"]);
     expect(h[0].texto).toMatch(/Faltan S\/5,200/);
   });
 });
