@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
 import { costoPorUnidadRegistrada, unidadSugerida } from "@/lib/costos-preparaciones";
 import { leerPricingAtelier } from "@/lib/costos-preparaciones-excel";
+import { costoDeReceta } from "@/lib/recetas";
 
 function libro(hojas: Record<string, unknown[][]>): Uint8Array {
   const wb = XLSX.utils.book_new();
@@ -24,6 +25,11 @@ const EXCEL = libro({
   "ATE · Sub-Recetas": [
     [null, "▼ Frosting de Chocolate", null, null, null, null, null, null, null, null, null, null, null, null, "OK"],
     [null, "Rendimiento por Receta sin merma", 1],
+    [null, "% Merma de Preparación", 0.03],
+    ["SKU", "Ingrediente", "Und", "Precio por Kg/Lt (S/)", "Q x Receta", "Costo Total de Receta (S/)", "Precio Unt. g/ml"],
+    ["AC005", "Mantequilla sin sal", "g", 28, 400, 11.2, 0.028],
+    ["OT012", "Polvo de hornear", "g", 12.76, 8, 0.1, 0.01276],
+    [null, "Sub Total", null, null, 408],
     [null, "📊 Costo por 1 KG", null, null, null, null, null, null, 18.378],
     [null, "▼ Crema Pastelera", null, null, null, null, null, null, null, null, null, null, null, null, "OK"],
     [null, "📊 Costo por 1 KG", null, null, null, null, null, null, 9.214],
@@ -38,6 +44,8 @@ const EXCEL = libro({
     ["AC005", "Mantequilla sin sal", 28, 1000, "g", 0.028],
     ["AC002", "Aceite de Oliva", 36.2, 1000, "ml", 0.0362],
     ["AZ003", "Azucar En Bolsa (Caja)", null, null, null, null],
+    ["OT012", "Agua en Bidón", 9, 20000, "ml", 0.00045],
+    ["OT012", "Polvo de hornear", 63.8, 5000, "g", 0.01276],
     ["📦 Packaging"],
     ["PK005", "Bisagra CT4 opaco", 38, 100, "ciento", 0.38],
     ["🧑‍🍳 Sub-Recetas"],
@@ -74,6 +82,25 @@ describe("leerPricingAtelier", () => {
     expect(por("PK005")).toMatchObject({ unidad: "und", costo: 0.38, categoria: "Packaging" });
     expect(por("AZ003")).toBeUndefined(); // sin precio
     expect(por("SR009")).toBeUndefined(); // ya está como sub-receta
+  });
+});
+
+describe("recetas del Excel", () => {
+  const { items, avisos } = leerPricingAtelier(EXCEL);
+
+  it("guarda los ingredientes de cada sub-receta para poder abrirla", () => {
+    const f = items.find((i) => i.nombre === "Frosting de Chocolate" && i.tipo === "preparacion")!;
+    expect(f.detalle?.ingredientes.map((g) => [g.ref, g.cantidad, g.unidad])).toEqual([["AC005", 400, "g"], ["OT012·2", 8, "g"]]);
+    // Abierta en el sistema tiene que dar el mismo costo que el Excel: si la
+    // mezcla no calza con "Costo por 1 KG", se guardan los kg que salen.
+    const porRef = (ref: string) => items.find((i) => i.ref === ref) ?? null;
+    expect(costoDeReceta("preparacion", f.detalle!, porRef).costo).toBeCloseTo(18.378, 3);
+  });
+
+  it("un SKU repetido no esconde el segundo insumo y se avisa", () => {
+    expect(items.find((i) => i.ref === "OT012")?.nombre).toBe("Agua en Bidón");
+    expect(items.find((i) => i.ref === "OT012·2")?.nombre).toBe("Polvo de hornear");
+    expect(avisos.some((a) => a.includes("OT012"))).toBe(true);
   });
 });
 

@@ -22,6 +22,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import { costoPorUnidadRegistrada, type UnidadBase } from "@/lib/costos-preparaciones";
+import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -93,15 +94,8 @@ export async function saveMermaDetail(input: {
   const refs = [...new Set(input.items.map((it) => it.costoRef).filter((r): r is string => !!r))];
   const lista = new Map<string, { unidad: UnidadBase; costo: number }>();
   if (refs.length > 0) {
-    try {
-      const rows = (await sql`
-        SELECT ref, unidad, costo::float AS costo FROM costos_preparaciones
-        WHERE business_id = ${bId} AND ref = ANY(${refs}::text[])
-      `) as { ref: string; unidad: UnidadBase; costo: number }[];
-      for (const r of rows) lista.set(r.ref, r);
-    } catch {
-      return { ok: false, error: "No se pudo leer la lista de costos. Intenta de nuevo." };
-    }
+    // La misma lista que vio la administradora: Excel + recetas del sistema.
+    for (const i of (await leerCatalogo(sql, bId)).efectivo) if (refs.includes(i.ref)) lista.set(i.ref, i);
   }
   const clean = [];
   for (const it of input.items) {

@@ -17,7 +17,7 @@ const fechaLarga = (iso: string) =>
  * lista (ver actions/costos-preparaciones.ts). Primero se muestra qué se
  * leyó y recién al confirmar se reemplaza la lista.
  */
-export function PricingAdmin() {
+export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } = {}) {
   const { showToast } = useToast();
   const [estado, setEstado] = useState<EstadoPricing | undefined>(undefined);
   const [leido, setLeido] = useState<{ archivo: string; items: CostoPreparacion[] } | null>(null);
@@ -74,6 +74,7 @@ export function PricingAdmin() {
     showToast(`Lista de costos de Atelier actualizada (${r.guardados} ítems).`, "success");
     limpiar();
     void load();
+    onActualizado?.();
   }
 
   const total = estado ? estado.conteos.producto + estado.conteos.preparacion + estado.conteos.insumo : 0;
@@ -86,9 +87,9 @@ export function PricingAdmin() {
             <Calculator className="w-4 h-4 text-primary" /> Costos de Atelier para las mermas
           </h2>
           <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-            Sube tu Excel maestro de pricing: la administradora de Atelier elige en sus mermas el producto, la
-            preparación o el insumo, y el sistema pone solo el costo en insumos (ej. 70 Cookie XL, 500 g de Frosting de
-            Chocolate). Cada vez que actualices el Excel, vuélvelo a subir. Las mermas ya registradas no cambian.
+            Sube tu Excel maestro de pricing cuando cambien precios o varias recetas a la vez: la administradora de Atelier
+            elige en sus mermas el producto, la preparación o el insumo, y el sistema pone solo el costo en insumos. Para una
+            sola receta no hace falta: créala o modifícala abajo. Las mermas ya registradas no cambian.
           </p>
         </div>
         <label className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg cursor-pointer whitespace-nowrap ${
@@ -131,9 +132,15 @@ export function PricingAdmin() {
               ))}
             </ul>
           )}
+          {estado && estado.reemplazos.length > 0 && (
+            <div className="text-[11px] text-gray-700">
+              <span className="font-medium">Siguen valiendo tus versiones del sistema</span> (no las pisa este Excel):{" "}
+              {estado.reemplazos.map((r) => r.nombre).join(", ")}. Si quieres la del Excel, ábrela abajo y elige «Volver a la del Excel».
+            </div>
+          )}
           {resumen.avisos.length > 0 && (
             <div className="text-[11px] text-amber-800 space-y-0.5">
-              <div className="flex items-center gap-1 font-medium"><AlertTriangle className="w-3 h-3" /> Quedan fuera (no tienen costo en el Excel):</div>
+              <div className="flex items-center gap-1 font-medium"><AlertTriangle className="w-3 h-3" /> Para revisar en el Excel:</div>
               {resumen.avisos.map((a) => <div key={a}>· {a}</div>)}
             </div>
           )}

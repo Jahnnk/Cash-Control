@@ -1,6 +1,5 @@
 import { UsersAdmin } from "./users-admin";
 import { CutoffAdmin } from "./cutoff-admin";
-import { PricingAdmin } from "./pricing-admin";
 
 /**
  * Grupo → Configuración: gestión de accesos del personal (solo
@@ -12,7 +11,6 @@ export default function GrupoConfiguracionPage() {
     <div className="space-y-6">
       <UsersAdmin />
       <CutoffAdmin />
-      <PricingAdmin />
     </div>
   );
 }

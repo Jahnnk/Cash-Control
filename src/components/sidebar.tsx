@@ -26,6 +26,7 @@ import {
   Target,
   ClipboardCheck,
   ListChecks,
+  ChefHat,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -52,6 +53,7 @@ const NAV: NavItem[] = [
   { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote,      scopes: ["atelier"] },
   { segment: "propinas",      label: "Propinas",        icon: HandCoins,       scopes: ["atelier", "fonavi", "centro"] },
   { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["atelier", "fonavi", "centro", "grupo"] },
+  { segment: "recetas",       label: "Recetas y costos", icon: ChefHat,        scopes: ["grupo"] },
   { segment: "panel",         label: "Panel de Sede",   icon: Trophy,          scopes: ["atelier", "fonavi", "centro"] },
   { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "incentivos",    label: "Bonos e Incentivos", icon: Medal,        scopes: ["grupo"] },

@@ -37,6 +37,36 @@ export type CostoPreparacion = {
   unidad: UnidadBase;
   /** Costo en insumos por unidad base (S/ por und, por kg o por litro). */
   costo: number;
+  /**
+   * La receta detrás del costo, cuando se conoce: la del Excel (para abrirla
+   * y modificarla) o la creada en el sistema (ver lib/recetas.ts).
+   */
+  detalle?: DetalleReceta | null;
+  /** "sistema" = receta creada o modificada en Grupo → Recetas. */
+  origen?: "excel" | "sistema";
+  /** Solo recetas del sistema: su id y el ítem del Excel que reemplazan. */
+  recetaId?: number;
+  reemplaza?: string | null;
+};
+
+export type Ingrediente = {
+  /** Ítem de la lista (insumo, preparación o producto); null = sin enlazar. */
+  ref: string | null;
+  nombre: string;
+  /** g, kg, ml, l o und. */
+  unidad: string;
+  cantidad: number;
+};
+
+export type DetalleReceta = {
+  /**
+   * Productos: unidades que salen de la receta. Preparaciones: kg que salen,
+   * o null = el peso de la mezcla menos la merma (ver lib/recetas.ts).
+   */
+  rendimiento: number | null;
+  /** Merma de preparación, 0 a 0.95 (0.02 = 2%). */
+  merma: number;
+  ingredientes: Ingrediente[];
 };
 
 export type LecturaPricing = {
