@@ -8,12 +8,14 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, ArchiveRestore, CalendarClock, ChevronDown, Hand, Link2, Loader2, Pencil, Timer } from "lucide-react";
+import { Archive, ArchiveRestore, CalendarClock, ChevronDown, ClipboardList, Hand, Link2, Loader2, Pencil, Timer } from "lucide-react";
 import {
-  anotarReemplazo, archivarProductos, getCandidatosReemplazo, mantenerProducto, programarSalida, quitarDecision, restaurarProducto,
+  anotarReemplazo, archivarProductos, cerrarPlanSede, crearPlanSede, getCandidatosReemplazo, mantenerProducto, programarSalida,
+  quitarDecision, restaurarProducto,
   vincularCostoCarta, type CandidatosReemplazo,
 } from "@/app/actions/productos-panorama";
-import type { Candidato, MotivoArchivo, ProductoEnSede, Veredicto } from "@/lib/productos/candidatos";
+import type { AccionPlan, Candidato, MotivoArchivo, PlanConResultado, ProductoEnSede, Veredicto } from "@/lib/productos/candidatos";
+import { ACCION_TEXTO, EstadoPlan } from "@/components/productos/plan-sede";
 import { UMBRAL_CANDIDATO, UMBRAL_OBSERVAR } from "@/lib/productos/candidatos";
 import { Barra, Pastilla, PuntoFamilia, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 import { useToast } from "@/components/toast-provider";
@@ -72,6 +74,8 @@ export function CandidatosReemplazo({ month }: { month: string }) {
   const accion = ARCHIVAR[filtro];
   const sacar = (data?.candidatos ?? []).filter((c) => c.veredicto === "sacar");
   const vencidas = sacar.filter((c) => c.plan?.vencida).length;
+  const enRevisar = new Set((data?.candidatos ?? []).filter((c) => c.veredicto === "revisar").map((c) => c.clave));
+  const planesSinLista = (data?.planes ?? []).filter((p) => !enRevisar.has(p.clave));
   const plazosVencidos = (data?.candidatos ?? []).filter((c) => c.veredicto === "preparar" && c.seguimiento?.plazo?.vencido).length;
 
   async function archivar(cs: Candidato[], clave: string) {
@@ -189,12 +193,14 @@ export function CandidatosReemplazo({ month }: { month: string }) {
               {lista.map((c) => (
                 <Tarjeta
                   key={c.clave} c={c} carta={data.carta} onVinculado={cargar} onDecidido={cargar}
+                  plan={data.planes.find((p) => p.clave === c.clave) ?? null}
                   archivar={accion ? { texto: accion.boton, ocupado: archivando === c.clave, bloqueado: archivando !== null, onClick: () => void archivar([c], c.clave) } : null}
                 />
               ))}
             </div>
           )}
 
+          {planesSinLista.length > 0 && <PlanesEnCurso planes={planesSinLista} onCerrado={cargar} />}
           {data.mantenidos.length > 0 && <Mantenidos items={data.mantenidos} onQuitado={cargar} />}
           {data.archivados.length > 0 && <Archivados items={data.archivados} ocupado={archivando} onRestaurar={restaurar} />}
           <ComoDecide />
@@ -205,8 +211,9 @@ export function CandidatosReemplazo({ month }: { month: string }) {
   );
 }
 
-function Tarjeta({ c, carta, onVinculado, onDecidido, archivar }: {
+function Tarjeta({ c, carta, onVinculado, onDecidido, archivar, plan }: {
   c: Candidato;
+  plan: PlanConResultado | null;
   carta: CandidatosReemplazo["carta"];
   onVinculado: () => void;
   onDecidido: () => void;
@@ -254,7 +261,8 @@ function Tarjeta({ c, carta, onVinculado, onDecidido, archivar }: {
 
       <p className="text-[13px] text-gray-700 leading-relaxed">{c.razon}</p>
 
-      {c.veredicto === "preparar" && c.comparacionSedes && <CompararSedes c={c} />}
+      {(c.veredicto === "preparar" || c.veredicto === "revisar") && c.comparacionSedes && <CompararSedes c={c} />}
+      {c.veredicto === "revisar" && <PlanRevisar c={c} plan={plan} onGuardado={onDecidido} />}
 
       <div className={`grid gap-2.5 ${c.sedes.length > 1 ? "sm:grid-cols-2" : ""}`}>
         {c.sedes.map((s) => <Sede key={s.businessId} s={s} />)}
@@ -446,6 +454,111 @@ function SinCosto({ items, carta, onVinculado }: { items: CandidatosReemplazo["s
 }
 
 const soles0 = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
+
+/** Plan de acción en la sede floja: crear, ver su resultado, cambiarlo o cerrarlo. */
+function PlanRevisar({ c, plan, onGuardado }: { c: Candidato; plan: PlanConResultado | null; onGuardado: () => void }) {
+  const { showToast } = useToast();
+  const floja = c.sedes.find((s) => s.estado === "candidato") ?? c.sedes[0];
+  const [abierto, setAbierto] = useState(false);
+  const [accion, setAccion] = useState<AccionPlan>("vitrina");
+  const [detalle, setDetalle] = useState("");
+  const [guardando, setGuardando] = useState(false);
+
+  async function guardar() {
+    setGuardando(true);
+    const r = await crearPlanSede({ nombre: c.nombre, businessId: floja.businessId, accion, detalle: detalle || null, ventaDiaAntes: floja.ventaDia });
+    setGuardando(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(`Plan guardado para ${floja.sede}: en 4 semanas se mide si subió la venta.`, "success");
+    setAbierto(false);
+    onGuardado();
+  }
+  async function cerrar(id: number) {
+    setGuardando(true);
+    const r = await cerrarPlanSede(id);
+    setGuardando(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast("Plan cerrado.", "success");
+    onGuardado();
+  }
+
+  const btn = "inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium rounded-lg disabled:opacity-50";
+  return (
+    <div className="space-y-2">
+      {plan && <EstadoPlan p={plan} />}
+      <div className="flex flex-wrap gap-2">
+        <button type="button" onClick={() => setAbierto(!abierto)} className={`${btn} ${plan ? "border border-gray-300 bg-white text-gray-700 hover:bg-gray-50" : "text-white bg-primary hover:bg-primary-light"}`}>
+          <ClipboardList className="w-3.5 h-3.5" /> {plan ? "Cambiar plan" : `Plan de acción en ${floja.sede}`}
+        </button>
+        {plan && (
+          <button type="button" disabled={guardando} onClick={() => void cerrar(plan.id)} className={`${btn} text-gray-600 hover:bg-gray-50`}>
+            Cerrar plan
+          </button>
+        )}
+      </div>
+      {abierto && (
+        <div className="rounded-xl bg-gray-50 p-3 space-y-2">
+          <div className="grid gap-2 sm:grid-cols-[auto_1fr]">
+            <label className="block">
+              <span className="text-[11px] text-gray-500">Qué se va a hacer en {floja.sede}</span>
+              <select value={accion} onChange={(e) => setAccion(e.target.value as AccionPlan)}
+                className="mt-0.5 block border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white">
+                {(Object.keys(ACCION_TEXTO) as AccionPlan[]).map((a) => <option key={a} value={a}>{ACCION_TEXTO[a]}</option>)}
+              </select>
+            </label>
+            <label className="block min-w-0">
+              <span className="text-[11px] text-gray-500">Detalle {accion === "otra" ? "" : "(opcional)"}</span>
+              <input value={detalle} onChange={(e) => setDetalle(e.target.value)} placeholder="ej. ponerlo en la vitrina de la entrada"
+                className="mt-0.5 w-full border border-gray-200 rounded-lg px-2 py-1.5 text-xs bg-white" />
+            </label>
+          </div>
+          <p className="text-[11px] text-gray-500">
+            Hoy vende {soles(floja.ventaDia)} al día en {floja.sede}. En 4 semanas se compara con lo que venda desde hoy. El administrador lo ve en su panel.
+          </p>
+          <div className="flex justify-end">
+            <button type="button" disabled={guardando || (accion === "otra" && !detalle.trim())} onClick={() => void guardar()}
+              className={`${btn} text-white bg-primary hover:bg-primary-light`}>
+              {guardando && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Guardar plan
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/** Planes activos cuyo producto ya salió de «Revisar en una sede» (mejoró o cambió de lista). */
+function PlanesEnCurso({ planes, onCerrado }: { planes: PlanConResultado[]; onCerrado: () => void }) {
+  const { showToast } = useToast();
+  const [ocupado, setOcupado] = useState<number | null>(null);
+  async function cerrar(id: number) {
+    setOcupado(id);
+    const r = await cerrarPlanSede(id);
+    setOcupado(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast("Plan cerrado.", "success");
+    onCerrado();
+  }
+  return (
+    <details className="group rounded-xl border border-gray-200 px-4 py-3">
+      <summary className="cursor-pointer list-none flex items-center justify-between text-sm font-medium text-gray-800">
+        Planes de acción en curso ({planes.length})
+        <ChevronDown className="w-4 h-4 text-gray-400 group-open:rotate-180 transition-transform" />
+      </summary>
+      <p className="text-xs text-gray-500 mt-2">Su producto ya no está en «Revisar en una sede» (puede que el plan esté funcionando). Ciérralos cuando ya decidiste.</p>
+      <ul className="mt-3 space-y-2.5">
+        {planes.map((p) => (
+          <li key={p.id} className="space-y-1.5">
+            <div className="text-xs font-medium text-gray-800">{p.nombre}</div>
+            <EstadoPlan p={p} />
+            <button type="button" onClick={() => void cerrar(p.id)} disabled={ocupado !== null}
+              className="text-xs text-primary font-medium hover:underline disabled:opacity-50">Cerrar plan</button>
+          </li>
+        ))}
+      </ul>
+    </details>
+  );
+}
 
 /** "Decidir antes del 22 oct · faltan 12 días" (ámbar cuando venció). */
 function Plazo({ p }: { p: NonNullable<NonNullable<Candidato["seguimiento"]>["plazo"]> }) {
@@ -786,7 +899,7 @@ function ComoDecide() {
           <ul className="space-y-1 list-disc pl-4">
             <li><b>Sacar de carta:</b> flojo en las dos (o en la única que lo vende). En el próximo cambio de carta.</li>
             <li><b>Preparar reemplazo:</b> flojo en una y en duda en la otra. Hay 4 semanas para decidir desde que entra a la lista; si le programas la salida pasa a «Sacar de carta».</li>
-            <li><b>Revisar en una sede:</b> flojo en una y bien en la otra: el problema es de esa sede (precio, vitrina, cómo se ofrece).</li>
+            <li><b>Revisar en una sede:</b> flojo en una y bien en la otra: el problema es de esa sede (precio, vitrina, cómo se ofrece). Con un plan de acción, a las 4 semanas se ve si subió la venta.</li>
             <li><b>¿Ya salieron?:</b> dos meses sin ventas y antes sí.</li>
           </ul>
           <p className="mt-2">No se juzgan los productos nuevos (menos de 2 meses) ni los acompañamientos (huevos, humitas, porciones).</p>

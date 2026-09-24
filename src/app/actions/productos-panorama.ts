@@ -22,7 +22,8 @@ import { armarPanorama, type PanoramaProductos, type FilaProducto } from "@/lib/
 import { armarTrimestral, type InformeTrimestral } from "@/lib/productos/trimestral";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import {
-  armarCandidatos, plazoDe, type Archivado, type Candidato, type Decision, type MotivoArchivo, type ResultadoCandidatos, type SedeCandidatos,
+  armarCandidatos, plazoDe, type AccionPlan, type Archivado, type Candidato, type Decision, type MotivoArchivo, type PlanConResultado,
+  type PlanSede, type ProductoEnSede, type ResultadoCandidatos, type SedeCandidatos,
 } from "@/lib/productos/candidatos";
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
@@ -356,66 +357,77 @@ export type CandidatosReemplazo = ResultadoCandidatos & {
  * lib/productos/candidatos.ts). Últimos 6 meses hasta `hastaMes`; decide con
  * los 3 más recientes. Solo dirección.
  */
+/** El cálculo de los candidatos, sin chequear permisos (lo hacen las actions que lo usan). */
+async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandidatos; hasta: CandidatosReemplazo["hasta"]; costos: CostoCarta[]; hoy: string }> {
+  const lista = mesesAntes(hastaMes, 6);
+  const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
+  const [costos, vinculos, acompanamientos, archivos, decisiones, planes] = await Promise.all([
+    (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
+    (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
+    (sql`SELECT DISTINCT regexp_replace(name, '\\s*\\((Fonavi|Centro)\\)\\s*$', '') AS name FROM products WHERE es_acompanamiento = true` as unknown as Promise<{ name: string }[]>).catch(() => []),
+    (sql`
+      SELECT clave, nombre, motivo, archivado_por AS "archivadoPor",
+             to_char(archivado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "archivadoEl",
+             reemplazo, venta_dia_al_archivar::float AS "ventaDiaAlArchivar"
+      FROM productos_archivados
+    ` as unknown as Promise<Archivado[]>).catch(() =>
+      // Antes de la migración de decisiones: sin las columnas nuevas.
+      (sql`
+        SELECT clave, nombre, motivo, archivado_por AS "archivadoPor",
+               to_char(archivado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "archivadoEl"
+        FROM productos_archivados
+      ` as unknown as Promise<Archivado[]>).catch(() => [] as Archivado[])),
+    (sql`
+      SELECT clave, nombre, tipo, motivo, fecha_salida::text AS "fechaSalida", reemplazo, hasta::text AS hasta,
+             decidido_por AS "decididoPor"
+      FROM decisiones_carta
+    ` as unknown as Promise<Decision[]>).catch(() => [] as Decision[]),
+    (sql`
+      SELECT id, clave, nombre, business_id AS "businessId", sede, accion, detalle, inicio::text AS inicio,
+             venta_dia_antes::float AS "ventaDiaAntes", creado_por AS "creadoPor"
+      FROM planes_sede WHERE estado = 'activo'
+    ` as unknown as Promise<PlanSede[]>).catch(() => [] as PlanSede[]),
+  ]);
+  const hasta: { sede: string; hasta: string | null }[] = [];
+  const sedes: SedeCandidatos[] = await Promise.all(cafeterias.map(async (s) => {
+    const datos = await Promise.all(lista.map(async (month) => {
+      const { filas, desde, hasta: h } = await filasDelMes(s.id, month);
+      return { month, desde: desde ?? `${month}-01`, hasta: h ?? `${month}-01`, filas };
+    }));
+    const trim = armarTrimestral(datos);
+    hasta.push({ sede: s.nombre, hasta: [...datos].reverse().find((d) => d.filas.length > 0)?.hasta ?? null });
+    let cortes: Corte[] = [];
+    try {
+      cortes = ((await sql`
+        SELECT origen, month, period_start::text AS "periodStart", period_end::text AS "periodEnd", cargado_el::text AS "cargadoEl",
+               product_name_raw AS nombre, units::float AS unidades, revenue::float AS ingresos
+        FROM rotacion_cortes WHERE business_id = ${s.id} AND month = ANY(${lista}::text[])
+      `) as unknown as Corte[]);
+    } catch {
+      cortes = []; // antes de la migración: sin semanas
+    }
+    return {
+      businessId: s.id, sede: s.nombre, semanas: semanasDeCortes(cortes),
+      meses: datos.map((d, i) => {
+        const p = armarPanorama(d.filas, d.desde, d.hasta, 10);
+        return {
+          month: d.month, dias: d.filas.length > 0 ? p.dias : 0, sospechoso: trim.meses[i]?.sospechoso ?? false,
+          carta: p.carta.map((c) => ({ nombre: c.nombre, familia: c.familia, unidades: c.unidades, ingresos: c.ingresos })),
+        };
+      }),
+    };
+  }));
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos, decisiones, hoy, planes);
+  return { r, hasta, costos, hoy };
+}
+
 export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ data: CandidatosReemplazo }>> {
   if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
   if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
-  const lista = mesesAntes(hastaMes, 6);
-  const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
   try {
-    const [costos, vinculos, acompanamientos, archivos, decisiones] = await Promise.all([
-      (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
-      (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
-      (sql`SELECT DISTINCT regexp_replace(name, '\\s*\\((Fonavi|Centro)\\)\\s*$', '') AS name FROM products WHERE es_acompanamiento = true` as unknown as Promise<{ name: string }[]>).catch(() => []),
-      (sql`
-        SELECT clave, nombre, motivo, archivado_por AS "archivadoPor",
-               to_char(archivado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "archivadoEl",
-               reemplazo, venta_dia_al_archivar::float AS "ventaDiaAlArchivar"
-        FROM productos_archivados
-      ` as unknown as Promise<Archivado[]>).catch(() =>
-        // Antes de la migración de decisiones: sin las columnas nuevas.
-        (sql`
-          SELECT clave, nombre, motivo, archivado_por AS "archivadoPor",
-                 to_char(archivado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "archivadoEl"
-          FROM productos_archivados
-        ` as unknown as Promise<Archivado[]>).catch(() => [] as Archivado[])),
-      (sql`
-        SELECT clave, nombre, tipo, motivo, fecha_salida::text AS "fechaSalida", reemplazo, hasta::text AS hasta,
-               decidido_por AS "decididoPor"
-        FROM decisiones_carta
-      ` as unknown as Promise<Decision[]>).catch(() => [] as Decision[]),
-    ]);
-    const hasta: { sede: string; hasta: string | null }[] = [];
-    const sedes: SedeCandidatos[] = await Promise.all(cafeterias.map(async (s) => {
-      const datos = await Promise.all(lista.map(async (month) => {
-        const { filas, desde, hasta: h } = await filasDelMes(s.id, month);
-        return { month, desde: desde ?? `${month}-01`, hasta: h ?? `${month}-01`, filas };
-      }));
-      const trim = armarTrimestral(datos);
-      hasta.push({ sede: s.nombre, hasta: [...datos].reverse().find((d) => d.filas.length > 0)?.hasta ?? null });
-      let cortes: Corte[] = [];
-      try {
-        cortes = ((await sql`
-          SELECT origen, month, period_start::text AS "periodStart", period_end::text AS "periodEnd", cargado_el::text AS "cargadoEl",
-                 product_name_raw AS nombre, units::float AS unidades, revenue::float AS ingresos
-          FROM rotacion_cortes WHERE business_id = ${s.id} AND month = ANY(${lista}::text[])
-        `) as unknown as Corte[]);
-      } catch {
-        cortes = []; // antes de la migración: sin semanas
-      }
-      return {
-        businessId: s.id, sede: s.nombre, semanas: semanasDeCortes(cortes),
-        meses: datos.map((d, i) => {
-          const p = armarPanorama(d.filas, d.desde, d.hasta, 10);
-          return {
-            month: d.month, dias: d.filas.length > 0 ? p.dias : 0, sospechoso: trim.meses[i]?.sospechoso ?? false,
-            carta: p.carta.map((c) => ({ nombre: c.nombre, familia: c.familia, unidades: c.unidades, ingresos: c.ingresos })),
-          };
-        }),
-      };
-    }));
-    const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-    const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos, decisiones, hoy);
+    const { r, hasta, costos, hoy } = await calcularCandidatos(hastaMes);
     await seguirPreparar(r.candidatos, hoy);
     return {
       ok: true,
@@ -613,5 +625,99 @@ export async function anotarReemplazo(nombre: string, reemplazo: string | null):
   } catch (e) {
     console.error("[anotarReemplazo] failed:", e);
     return { ok: false, error: "No se pudo guardar el reemplazo." };
+  }
+}
+
+/* ─────────── Revisar en una sede: planes de acción y panel del admin ─────────── */
+
+const ACCIONES: AccionPlan[] = ["precio", "vitrina", "ofrecer", "calidad", "otra"];
+
+/**
+ * Empieza un plan de acción para un producto en la sede donde anda flojo.
+ * Guarda cuánto vendía por día al empezar, para medir en 4 semanas si subió.
+ */
+export async function crearPlanSede(input: { nombre: string; businessId: number; accion: AccionPlan; detalle: string | null; ventaDiaAntes: number | null }): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const clave = claveByte(input.nombre ?? "");
+  const sede = SEDES.find((x) => x.id === input.businessId && (x.id === 2 || x.id === 3));
+  if (!clave || !sede) return { ok: false, error: "Producto o sede inválidos." };
+  if (!ACCIONES.includes(input.accion)) return { ok: false, error: "Elige qué se va a hacer." };
+  const detalle = input.detalle?.trim() ? input.detalle.trim().slice(0, 200) : null;
+  if (input.accion === "otra" && !detalle) return { ok: false, error: "Escribe qué se va a hacer." };
+  const antes = typeof input.ventaDiaAntes === "number" && Number.isFinite(input.ventaDiaAntes) ? input.ventaDiaAntes : null;
+  try {
+    await sql.transaction([
+      // Un solo plan activo por producto y sede: el nuevo reemplaza al anterior.
+      sql`UPDATE planes_sede SET estado = 'cerrado', cerrado_el = NOW() WHERE clave = ${clave} AND business_id = ${sede.id} AND estado = 'activo'`,
+      sql`INSERT INTO planes_sede (clave, nombre, business_id, sede, accion, detalle, venta_dia_antes, creado_por)
+          VALUES (${clave}, ${input.nombre.trim()}, ${sede.id}, ${sede.nombre}, ${input.accion}, ${detalle}, ${antes}, ${role.quien})`,
+    ]);
+    return { ok: true };
+  } catch (e) {
+    console.error("[crearPlanSede] failed:", e);
+    return { ok: false, error: "No se pudo guardar el plan." };
+  }
+}
+
+/** Cierra un plan (ya se decidió con su resultado): deja de mostrarse. */
+export async function cerrarPlanSede(id: number): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  try {
+    await sql`UPDATE planes_sede SET estado = 'cerrado', cerrado_el = NOW() WHERE id = ${id} AND estado = 'activo'`;
+    return { ok: true };
+  } catch (e) {
+    console.error("[cerrarPlanSede] failed:", e);
+    return { ok: false, error: "No se pudo cerrar el plan." };
+  }
+}
+
+export type RevisarEnMiSede = {
+  sede: string;
+  productos: {
+    nombre: string;
+    familia: string;
+    razon: string;
+    mia: ProductoEnSede;
+    /** La otra sede, como referencia de lo que el producto puede vender. */
+    otra: ProductoEnSede | null;
+    conclusion: string | null;
+    plan: PlanConResultado | null;
+  }[];
+  /** Planes activos de la sede cuyo producto ya no está en la lista (mejoró o cambió). */
+  planesSinLista: PlanConResultado[];
+};
+
+/**
+ * Panel del administrador (Fonavi/Centro): los productos que andan flojos en
+ * SU sede y bien en la otra, con lo que vende la otra como referencia y el
+ * plan de acción que decidió dirección (pedido de Jahnn, 24-sep-2026).
+ */
+export async function getRevisarEnMiSede(hastaMes: string): Promise<Res<{ data: RevisarEnMiSede | null }>> {
+  if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  const bId = await activeBusinessId();
+  if (!(role?.kind === "full" || (role?.kind === "admin" && role.sede === bId))) return { ok: false, error: "Sin acceso." };
+  const sede = SEDES.find((x) => x.id === bId && (x.id === 2 || x.id === 3));
+  if (!sede) return { ok: true, data: null };
+  try {
+    const { r } = await calcularCandidatos(hastaMes);
+    const planes = r.planes.filter((p) => p.businessId === sede.id);
+    const productos = r.candidatos
+      .filter((c) => c.veredicto === "revisar" && (c.sedeRevisar ?? "").split(" y ").includes(sede.nombre))
+      .map((c) => ({
+        nombre: c.nombre, familia: c.familia as string, razon: c.razon,
+        mia: c.sedes.find((x) => x.businessId === sede.id)!,
+        otra: c.sedes.find((x) => x.businessId !== sede.id) ?? null,
+        conclusion: c.comparacionSedes?.conclusion ?? null,
+        plan: planes.find((p) => p.clave === c.clave) ?? null,
+      }))
+      .filter((x) => x.mia);
+    const enLista = new Set(r.candidatos.filter((c) => c.veredicto === "revisar").map((c) => c.clave));
+    return { ok: true, data: { sede: sede.nombre, productos, planesSinLista: planes.filter((p) => !enLista.has(p.clave)) } };
+  } catch (e) {
+    console.error("[getRevisarEnMiSede] failed:", e);
+    return { ok: false, error: "No se pudo armar la lista." };
   }
 }

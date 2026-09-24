@@ -147,7 +147,7 @@ export type ComparacionSedes = {
  * problema parece de la sede floja (vitrina, cómo se ofrece, precio); si
  * venden parecido y poco, es el producto.
  */
-export function compararSedes(sedes: Pick<ProductoEnSede, "sede" | "ventaDia" | "precio">[]): ComparacionSedes | null {
+export function compararSedes(sedes: (Pick<ProductoEnSede, "sede" | "ventaDia" | "precio"> & Partial<Pick<ProductoEnSede, "estado" | "variacion">>)[]): ComparacionSedes | null {
   if (sedes.length !== 2) return null;
   const [a, b] = [...sedes].sort((x, y) => y.ventaDia - x.ventaDia);
   const veces = b.ventaDia > 0 ? Math.round((a.ventaDia / b.ventaDia) * 10) / 10 : null;
@@ -155,6 +155,15 @@ export function compararSedes(sedes: Pick<ProductoEnSede, "sede" | "ventaDia" | 
   const precioTxt = difPrecioPct !== null && Math.abs(difPrecioPct) >= 10
     ? ` En ${b.sede} se cobra ${Math.abs(difPrecioPct)}% ${difPrecioPct > 0 ? "más" : "menos"}.`
     : "";
+  // La sede marcada como floja vende igual o más que la otra: lo que preocupa
+  // no es cuánto vende sino que viene cayendo (Agua San Luis en Centro, set-26).
+  const marcada = sedes.filter((x) => x.estado === "candidato");
+  if (marcada.length === 1 && marcada[0] === a && (a.variacion ?? 0) <= -20) {
+    return {
+      fuerte: a.sede, floja: a.sede, veces: veces ?? 0, difPrecioPct,
+      conclusion: `En ${a.sede} vende igual o más que en ${b.sede}; lo que preocupa es que viene cayendo (${a.variacion}%). Revisa qué cambió en ${a.sede}.`,
+    };
+  }
   const conclusion = veces === null
     ? `En ${b.sede} casi no se vende: el problema parece ser de ${b.sede} (vitrina, cómo se ofrece).${precioTxt}`
     : veces >= 2
@@ -184,7 +193,58 @@ export type ResultadoCandidatos = {
   sinCosto: { nombre: string; ventaDia: number }[];
   archivados: (Archivado & { volvio: boolean; comparacion: ComparacionReemplazo | null })[];
   mantenidos: Decision[];
+  /** Planes de acción de «Revisar en una sede» con su resultado hasta hoy. */
+  planes: PlanConResultado[];
 };
+
+export type AccionPlan = "precio" | "vitrina" | "ofrecer" | "calidad" | "otra";
+
+/** Plan de acción en la sede floja (pedido de Jahnn, 24-sep-2026). */
+export type PlanSede = {
+  id: number;
+  clave: string;
+  nombre: string;
+  businessId: number;
+  sede: string;
+  accion: AccionPlan;
+  detalle: string | null;
+  /** Fecha de inicio (AAAA-MM-DD). */
+  inicio: string;
+  /** Venta por día del producto en esa sede cuando empezó el plan. */
+  ventaDiaAntes: number | null;
+  creadoPor: string | null;
+};
+
+export type PlanConResultado = PlanSede & {
+  /** Días medidos desde el inicio (semanas guardadas que empiezan en o después del inicio). */
+  diasMedidos: number;
+  ventaDiaDespues: number | null;
+  /** % de cambio contra antes (null si todavía no hay semanas medidas). */
+  cambioPct: number | null;
+  /** Ya pasaron las 4 semanas: el resultado es para decidir. */
+  listo: boolean;
+  /** Fecha en que el resultado queda listo (inicio + 28 días). */
+  resultadoEl: string;
+  /** Días desde el inicio (para la barra de avance). */
+  diasTranscurridos: number;
+};
+
+/**
+ * ¿Funcionó el plan? Compara la venta por día de las semanas guardadas desde
+ * el inicio con la que tenía al empezar. Las semanas salen de las cargas del
+ * sábado (ver semanas.ts); sin cargas nuevas, todavía no hay con qué medir.
+ */
+export function resultadoPlan(plan: PlanSede, semanas: { desde: string; hasta: string; ingresos: number }[], hoy: string): PlanConResultado {
+  const medidas = semanas.filter((s) => s.desde >= plan.inicio);
+  const dias = medidas.reduce((t, s) => t + Math.round((Date.parse(`${s.hasta}T12:00:00Z`) - Date.parse(`${s.desde}T12:00:00Z`)) / 86_400_000) + 1, 0);
+  const ventaDiaDespues = dias > 0 ? r2(medidas.reduce((t, s) => t + s.ingresos, 0) / dias) : null;
+  const cambioPct = ventaDiaDespues !== null && plan.ventaDiaAntes ? Math.round(((ventaDiaDespues - plan.ventaDiaAntes) / plan.ventaDiaAntes) * 100) : null;
+  const fin = new Date(`${plan.inicio}T12:00:00Z`);
+  fin.setUTCDate(fin.getUTCDate() + DIAS_PARA_DECIDIR);
+  const resultadoEl = fin.toISOString().slice(0, 10);
+  const diasTranscurridos = Math.max(0, Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${plan.inicio}T12:00:00Z`)) / 86_400_000));
+  return { ...plan, diasMedidos: dias, ventaDiaDespues, cambioPct, listo: hoy >= resultadoEl, resultadoEl, diasTranscurridos };
+}
 
 /** Decisión de Jahnn sobre un producto de "Sacar de carta". */
 export type Decision = {
@@ -407,6 +467,7 @@ export function armarCandidatos(
   decisiones: Decision[] = [],
   /** Hoy (AAAA-MM-DD, Lima): para saber si una salida ya venció o un "mantener" expiró. */
   hoy: string = new Date().toISOString().slice(0, 10),
+  planes: PlanSede[] = [],
 ): ResultadoCandidatos {
   const protegidos = new Set(acompanamientos.map(claveByte));
   const porSede = sedes.map((s) => ({ sede: s, ...evaluarSede(s, costos, vinculos, protegidos) }));
@@ -523,5 +584,9 @@ export function armarCandidatos(
         : null,
     })).sort((a, b) => b.archivadoEl.localeCompare(a.archivadoEl)),
     mantenidos: decisiones.filter((d) => d.tipo === "mantener" && d.hasta && d.hasta >= hoy).sort((a, b) => a.hasta!.localeCompare(b.hasta!)),
+    planes: planes.map((p) => {
+      const enSede = porSede.find((x) => x.sede.businessId === p.businessId)?.evaluados.get(p.clave);
+      return resultadoPlan(p, enSede?.porSemana ?? [], hoy);
+    }).sort((a, b) => a.resultadoEl.localeCompare(b.resultadoEl)),
   };
 }

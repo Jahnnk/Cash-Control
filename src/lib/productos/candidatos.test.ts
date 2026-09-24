@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { armarCandidatos, compararSedes, plazoDe, type MesCandidatos, type SedeCandidatos } from "./candidatos";
+import { armarCandidatos, compararSedes, plazoDe, resultadoPlan, type MesCandidatos, type SedeCandidatos } from "./candidatos";
 import { enlazarCosto, parecido, type CostoCarta } from "./costos-carta";
 import { semanasDeCortes, type Corte } from "./semanas";
 import type { Familia } from "./panorama";
@@ -193,6 +193,13 @@ describe("«Preparar reemplazo»", () => {
     expect(b.conclusion).toMatch(/el problema es el producto/);
     expect(b.conclusion).toMatch(/En Centro se cobra 20% menos/);
     expect(compararSedes([{ sede: "Fonavi", ventaDia: 1, precio: 10 }])).toBeNull();
+    // Marcada floja pero vende más que la otra: el problema es la caída.
+    const c = compararSedes([
+      { sede: "Centro", ventaDia: 3.49, precio: 6, estado: "candidato", variacion: -44 },
+      { sede: "Fonavi", ventaDia: 2.58, precio: 6, estado: "bien", variacion: 73 },
+    ])!;
+    expect(c.floja).toBe("Centro");
+    expect(c.conclusion).toMatch(/viene cayendo \(-44%\)/);
   });
 
   it("si Jahnn le programa la salida, pasa a «Sacar de carta»", () => {
@@ -205,6 +212,28 @@ describe("«Preparar reemplazo»", () => {
     const con = armarCandidatos([f, c], COSTOS, new Map(), [], [], d, "2026-09-24").candidatos.find((x) => x.nombre === "CAFE CORTADO")!;
     expect(con.veredicto).toBe("sacar");
     expect(con.plan?.fechaSalida).toBe("2026-10-01");
+  });
+});
+
+describe("plan de acción en una sede", () => {
+  const plan = { id: 1, clave: "latte macchiato", nombre: "LATTE MACCHIATO", businessId: 2, sede: "Fonavi", accion: "vitrina" as const, detalle: null, inicio: "2026-09-24", ventaDiaAntes: 1.32, creadoPor: "jahnn" };
+
+  it("sin semanas desde el inicio, todavía mide", () => {
+    const r = resultadoPlan(plan, [{ desde: "2026-09-13", hasta: "2026-09-19", ingresos: 50 }], "2026-09-30");
+    expect(r).toMatchObject({ ventaDiaDespues: null, cambioPct: null, listo: false, resultadoEl: "2026-10-22", diasTranscurridos: 6 });
+  });
+
+  it("compara la venta por día desde el inicio con la de antes", () => {
+    const semanas = [
+      { desde: "2026-09-20", hasta: "2026-09-26", ingresos: 30 }, // empezó antes del plan: no cuenta
+      { desde: "2026-09-27", hasta: "2026-10-03", ingresos: 14 },
+      { desde: "2026-10-04", hasta: "2026-10-10", ingresos: 21 },
+    ];
+    const r = resultadoPlan(plan, semanas, "2026-10-22");
+    expect(r.diasMedidos).toBe(14);
+    expect(r.ventaDiaDespues).toBe(2.5);
+    expect(r.cambioPct).toBe(89);
+    expect(r.listo).toBe(true);
   });
 });
 
