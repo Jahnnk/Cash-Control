@@ -11,7 +11,8 @@
  *   · El color de cada familia es el mismo en todas las vistas.
  */
 
-import type { ReactNode } from "react";
+import { useId, useState, type ReactNode } from "react";
+import { ChevronDown } from "lucide-react";
 
 /** Un color por familia, el mismo en todas las pantallas. */
 export const COLOR_FAMILIA: Record<string, string> = {
@@ -41,6 +42,48 @@ export function Seccion({ titulo, subtitulo, acciones, children, className = "" 
         </header>
       )}
       {children}
+    </section>
+  );
+}
+
+/**
+ * Sección plegable: cerrada hasta que se la pide (regla de Jahnn, 24-sep-2026:
+ * orden visual — lo nuevo no se abre solo). Cerrada muestra el título y un
+ * resumen corto para saber si vale la pena abrirla.
+ */
+export function SeccionDesplegable({ titulo, subtitulo, resumen, children, abiertaAlInicio = false, onAbrir, className = "" }: {
+  titulo: ReactNode;
+  subtitulo?: ReactNode;
+  /** Lo que se ve con la sección cerrada (ej. conteos). */
+  resumen?: ReactNode;
+  children: ReactNode;
+  abiertaAlInicio?: boolean;
+  /** Se llama la primera vez que se abre (para cargar datos recién ahí si hace falta). */
+  onAbrir?: () => void;
+  className?: string;
+}) {
+  const [abierta, setAbierta] = useState(abiertaAlInicio);
+  const id = useId();
+  return (
+    <section className={`bg-white rounded-2xl border border-gray-200/80 min-w-0 ${className}`}>
+      <button
+        type="button"
+        aria-expanded={abierta}
+        aria-controls={id}
+        onClick={() => { if (!abierta) onAbrir?.(); setAbierta(!abierta); }}
+        className="w-full text-left flex items-start justify-between gap-3 p-4 sm:p-6 rounded-2xl hover:bg-gray-50/60 focus-visible:outline-2 focus-visible:outline-primary"
+      >
+        <div className="min-w-0">
+          <h3 className="text-[15px] font-semibold text-gray-900 leading-tight">{titulo}</h3>
+          {subtitulo && <p className="text-xs text-gray-500 mt-1 leading-relaxed">{subtitulo}</p>}
+          {resumen && <div className="mt-2.5">{resumen}</div>}
+        </div>
+        <span className="shrink-0 inline-flex items-center gap-1 text-xs font-medium text-primary mt-0.5">
+          {abierta ? "Cerrar" : "Abrir"}
+          <ChevronDown className={`w-4 h-4 transition-transform ${abierta ? "rotate-180" : ""}`} />
+        </span>
+      </button>
+      {abierta && <div id={id} className="px-4 sm:px-6 pb-4 sm:pb-6">{children}</div>}
     </section>
   );
 }
