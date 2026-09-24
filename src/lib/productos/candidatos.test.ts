@@ -1,0 +1,129 @@
+import { describe, expect, it } from "vitest";
+import { armarCandidatos, type MesCandidatos, type SedeCandidatos } from "./candidatos";
+import { enlazarCosto, parecido, type CostoCarta } from "./costos-carta";
+import { semanasDeCortes, type Corte } from "./semanas";
+import type { Familia } from "./panorama";
+
+const COSTOS: CostoCarta[] = [
+  { ref: "CF-011", nombre: "Sánguche de Pollo con Piña al Grill", nombreCarta: "Sándwich de Pollo con Piña al Grill", categoria: null, costo: 5.6, precio: 16 },
+  { ref: "CF-031", nombre: "Cortado", nombreCarta: "Café Cortado", categoria: null, costo: 2, precio: 11 },
+  { ref: "CF-022", nombre: "Batido de Papaya", nombreCarta: "Batido de Papaya", categoria: null, costo: 2.12, precio: 12 },
+  { ref: "MN-077", nombre: "Leche deslactosada", nombreCarta: "Leche deslactosada", categoria: null, costo: 0.13, precio: 1 },
+  { ref: "AT-094", nombre: "Pavo", nombreCarta: null, categoria: null, costo: 69, precio: null },
+  { ref: "CF-009", nombre: "Sánguche de Pavo", nombreCarta: "Sándwich de Pavo", categoria: null, costo: 8, precio: 18 },
+  { ref: "AT-067", nombre: "Pan IMG Tipo Molde 1 KG", nombreCarta: null, categoria: null, costo: 14, precio: 23.5 },
+  { ref: "CF-127", nombre: "Pan Hamburguesa Unidad", nombreCarta: null, categoria: null, costo: 0.9, precio: 2 },
+];
+
+describe("enlace de costos por nombre", () => {
+  it("reconoce el mismo producto escrito distinto", () => {
+    expect(enlazarCosto("POLLO CON PIÑA GRILL", COSTOS, new Map(), 16)?.item.ref).toBe("CF-011");
+    expect(enlazarCosto("CAFE CORTADO", COSTOS, new Map(), 11)?.item.ref).toBe("CF-031");
+    expect(enlazarCosto("PAN INTEGRAL MULTIGRANO TIPO MOLDE 1KG", COSTOS, new Map(), 23.5)?.item.ref).toBe("AT-067");
+  });
+  it("no se deja engañar por una palabra suelta ni por un precio muy distinto", () => {
+    expect(enlazarCosto("PAN INTEGRAL MULTIGRANO 550 G", COSTOS, new Map(), 12.5)).toBeNull();
+    expect(enlazarCosto("LATTE : LECHE DESLACTOSADA", COSTOS, new Map(), 14)).toBeNull();
+  });
+  it("en empate gana el que se vende en carta, y el vínculo manual manda", () => {
+    expect(enlazarCosto("SANGUCHE DE PAVO", COSTOS, new Map(), 18)?.item.ref).toBe("CF-009");
+    expect(enlazarCosto("PAN DE SEMILLAS 550 G", COSTOS, new Map([["550g pan semilla", "AT-067"]]))).toMatchObject({ como: "manual", item: { ref: "AT-067" } });
+    expect(parecido("Café Americano", "CAFÉ AMERICANO")).toBe(1);
+  });
+});
+
+const MESES = ["2026-06", "2026-07", "2026-08"];
+
+/** Un producto con unidades por mes; precio fijo. */
+function carta(filas: [string, Familia, number[], number][]): (i: number) => MesCandidatos["carta"] {
+  return (i) => filas.map(([nombre, familia, u, precio]) => ({ nombre, familia, unidades: u[i], ingresos: u[i] * precio })).filter((x) => x.unidades > 0);
+}
+
+function sede(id: number, nombre: string, filas: [string, Familia, number[], number][]): SedeCandidatos {
+  const c = carta(filas);
+  return { businessId: id, sede: nombre, semanas: [], meses: MESES.map((month, i) => ({ month, dias: 30, sospechoso: false, carta: c(i) })) };
+}
+
+const S: Familia = "Sánguches, platos y desayunos";
+const B: Familia = "Jugos, batidos y bebidas frías";
+const C: Familia = "Café e infusiones";
+
+// Una carta de 10 productos que se venden bien + los casos a probar.
+const RELLENO: [string, Familia, number[], number][] = Array.from({ length: 10 }, (_, i) => [`PLATO ${String.fromCharCode(65 + i)}`, S, [300, 300, 300], 15]);
+
+describe("candidatos a reemplazo", () => {
+  const fonavi = sede(2, "Fonavi", [
+    ...RELLENO,
+    ["POLLO CON PIÑA GRILL", S, [400, 410, 420], 16],
+    ["BATIDO DE PAPAYA", B, [3, 2, 2], 12],
+    ["CAFE CORTADO", C, [20, 10, 1], 11],
+    ["HUEVO REVUELTO CLÁSICO", S, [2, 1, 1], 3],
+    ["JUGO VIEJO", B, [10, 0, 0], 10],
+  ]);
+  const centro = sede(3, "Centro", [
+    ...RELLENO,
+    ["POLLO CON PIÑA GRILL", S, [500, 500, 520], 16],
+    ["BATIDO DE PAPAYA", B, [2, 3, 1], 12],
+    ["CAFE CORTADO", C, [300, 310, 300], 11],
+    ["HUEVO REVUELTO CLÁSICO", S, [1, 2, 1], 3],
+    ["JUGO VIEJO", B, [8, 0, 0], 10],
+  ]);
+  const r = armarCandidatos([fonavi, centro], COSTOS, new Map(), []);
+  const de = (n: string) => r.candidatos.find((c) => c.nombre === n);
+
+  it("flojo en las dos sedes → sacar de carta", () => {
+    expect(de("BATIDO DE PAPAYA")).toMatchObject({ veredicto: "sacar", cuando: "En el próximo cambio de carta" });
+    expect(de("BATIDO DE PAPAYA")!.razon).toMatch(/menos venden en las dos sedes/);
+  });
+
+  it("flojo en una y bien en la otra → revisar en esa sede", () => {
+    expect(de("CAFE CORTADO")).toMatchObject({ veredicto: "revisar", sedeRevisar: "Fonavi" });
+    expect(de("CAFE CORTADO")!.sedes.find((s) => s.sede === "Fonavi")!.senales).toContain("cayendo");
+  });
+
+  it("dos meses sin ventas → ¿ya salió?", () => {
+    expect(de("JUGO VIEJO")?.veredicto).toBe("confirmar");
+  });
+
+  it("no juzga acompañamientos ni a los que venden bien", () => {
+    expect(de("HUEVO REVUELTO CLÁSICO")).toBeUndefined();
+    expect(de("POLLO CON PIÑA GRILL")).toBeUndefined();
+  });
+
+  it("calcula la rentabilidad con el costo del Excel", () => {
+    const p = de("BATIDO DE PAPAYA")!.sedes[0];
+    expect(p.costo).toBe(2.12);
+    expect(p.margenUnidad).toBeCloseTo(9.88, 2);
+    expect(r.coberturaCosto).toBeLessThan(100); // el relleno no tiene costo
+  });
+});
+
+describe("semanas desde las cargas del sábado", () => {
+  const c = (periodEnd: string, cargadoEl: string, unidades: number, periodStart = "2026-09-01", origen = "sede"): Corte =>
+    ({ origen, month: "2026-09", periodStart, periodEnd, cargadoEl, nombre: "LATTE", unidades, ingresos: unidades * 12 });
+
+  it("la semana es la diferencia entre dos cargas acumuladas seguidas", () => {
+    const s = semanasDeCortes([c("2026-09-07", "2026-09-08", 20), c("2026-09-12", "2026-09-13", 40), c("2026-09-19", "2026-09-20", 70), c("2026-09-26", "2026-09-27", 95)]);
+    expect(s.map((x) => [x.desde, x.hasta, x.productos[0]?.unidades])).toEqual([
+      ["2026-09-01", "2026-09-07", 20], ["2026-09-08", "2026-09-12", 20], ["2026-09-13", "2026-09-19", 30], ["2026-09-20", "2026-09-26", 25],
+    ]);
+  });
+
+  it("un período de más de 10 días no se muestra como semana", () => {
+    expect(semanasDeCortes([c("2026-09-19", "2026-09-20", 70)])).toEqual([]);
+  });
+
+  it("de una misma fecha vale la última carga, y la de dirección no pisa a la sede", () => {
+    const s = semanasDeCortes([
+      c("2026-09-07", "2026-09-08T10:00", 60), c("2026-09-07", "2026-09-08T18:00", 70),
+      c("2026-09-30", "2026-10-01", 999, "2026-09-01", "direccion"),
+    ]);
+    expect(s).toHaveLength(1);
+    expect(s[0].productos[0].unidades).toBe(70);
+  });
+
+  it("un archivo que no empieza el 01 cuenta por sí mismo", () => {
+    const s = semanasDeCortes([c("2026-09-07", "2026-09-08", 40), c("2026-09-19", "2026-09-20", 22, "2026-09-13")]);
+    expect(s.map((x) => [x.desde, x.productos[0].unidades])).toEqual([["2026-09-01", 40], ["2026-09-13", 22]]);
+  });
+});

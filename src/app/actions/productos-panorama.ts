@@ -21,6 +21,9 @@ import { getSessionRole } from "@/lib/session-access";
 import { armarPanorama, type PanoramaProductos, type FilaProducto } from "@/lib/productos/panorama";
 import { armarTrimestral, type InformeTrimestral } from "@/lib/productos/trimestral";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
+import { armarCandidatos, type ResultadoCandidatos, type SedeCandidatos } from "@/lib/productos/candidatos";
+import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
+import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -334,5 +337,96 @@ export async function getCoberturaRotacion(meses = 6): Promise<Res<{ hoy: string
   } catch (e) {
     console.error("[getCoberturaRotacion] failed:", e);
     return { ok: false, error: "No se pudo leer qué está cargado." };
+  }
+}
+
+/* ─────────────────── Candidatos a reemplazo ─────────────────── */
+
+export type CandidatosReemplazo = ResultadoCandidatos & {
+  /** Hasta qué día llega lo cargado de cada cafetería en el último mes. */
+  hasta: { sede: string; hasta: string | null }[];
+  /** Lista de costos de carta (para vincular a mano lo que no enlaza solo). */
+  carta: { ref: string; nombre: string; costo: number; precio: number | null }[];
+};
+
+/**
+ * Qué productos de la carta de Fonavi y Centro conviene reemplazar (motor en
+ * lib/productos/candidatos.ts). Últimos 6 meses hasta `hastaMes`; decide con
+ * los 3 más recientes. Solo dirección.
+ */
+export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ data: CandidatosReemplazo }>> {
+  if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const lista = mesesAntes(hastaMes, 6);
+  const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
+  try {
+    const [costos, vinculos, acompanamientos] = await Promise.all([
+      (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
+      (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
+      (sql`SELECT DISTINCT regexp_replace(name, '\\s*\\((Fonavi|Centro)\\)\\s*$', '') AS name FROM products WHERE es_acompanamiento = true` as unknown as Promise<{ name: string }[]>).catch(() => []),
+    ]);
+    const hasta: { sede: string; hasta: string | null }[] = [];
+    const sedes: SedeCandidatos[] = await Promise.all(cafeterias.map(async (s) => {
+      const datos = await Promise.all(lista.map(async (month) => {
+        const { filas, desde, hasta: h } = await filasDelMes(s.id, month);
+        return { month, desde: desde ?? `${month}-01`, hasta: h ?? `${month}-01`, filas };
+      }));
+      const trim = armarTrimestral(datos);
+      hasta.push({ sede: s.nombre, hasta: [...datos].reverse().find((d) => d.filas.length > 0)?.hasta ?? null });
+      let cortes: Corte[] = [];
+      try {
+        cortes = ((await sql`
+          SELECT origen, month, period_start::text AS "periodStart", period_end::text AS "periodEnd", cargado_el::text AS "cargadoEl",
+                 product_name_raw AS nombre, units::float AS unidades, revenue::float AS ingresos
+          FROM rotacion_cortes WHERE business_id = ${s.id} AND month = ANY(${lista}::text[])
+        `) as unknown as Corte[]);
+      } catch {
+        cortes = []; // antes de la migración: sin semanas
+      }
+      return {
+        businessId: s.id, sede: s.nombre, semanas: semanasDeCortes(cortes),
+        meses: datos.map((d, i) => {
+          const p = armarPanorama(d.filas, d.desde, d.hasta, 10);
+          return {
+            month: d.month, dias: d.filas.length > 0 ? p.dias : 0, sospechoso: trim.meses[i]?.sospechoso ?? false,
+            carta: p.carta.map((c) => ({ nombre: c.nombre, familia: c.familia, unidades: c.unidades, ingresos: c.ingresos })),
+          };
+        }),
+      };
+    }));
+    const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name));
+    return {
+      ok: true,
+      data: { ...r, hasta, carta: costos.filter((c) => c.precio !== null).map((c) => ({ ref: c.ref, nombre: c.nombre, costo: c.costo, precio: c.precio })).sort((a, b) => a.nombre.localeCompare(b.nombre)) },
+    };
+  } catch (e) {
+    console.error("[getCandidatosReemplazo] failed:", e);
+    return { ok: false, error: "No se pudieron armar los candidatos a reemplazo." };
+  }
+}
+
+/** "Este producto de Byte es este del Excel" (o quitar el vínculo con ref = null). */
+export async function vincularCostoCarta(nombreByte: string, ref: string | null): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const clave = claveByte(nombreByte ?? "");
+  if (!clave) return { ok: false, error: "Producto inválido." };
+  try {
+    if (ref === null) {
+      await sql`DELETE FROM carta_vinculos WHERE clave = ${clave}`;
+    } else {
+      const existe = (await sql`SELECT 1 FROM costos_carta WHERE ref = ${ref}`) as unknown[];
+      if (existe.length === 0) return { ok: false, error: "Ese producto ya no está en la lista de costos." };
+      await sql`
+        INSERT INTO carta_vinculos (clave, nombre_byte, ref, actualizado_por)
+        VALUES (${clave}, ${nombreByte}, ${ref}, ${role.quien})
+        ON CONFLICT (clave) DO UPDATE SET ref = EXCLUDED.ref, nombre_byte = EXCLUDED.nombre_byte,
+          actualizado_por = EXCLUDED.actualizado_por, actualizado_el = NOW()`;
+    }
+    return { ok: true };
+  } catch (e) {
+    console.error("[vincularCostoCarta] failed:", e);
+    return { ok: false, error: "No se pudo guardar el vínculo." };
   }
 }
