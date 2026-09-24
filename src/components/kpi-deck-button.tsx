@@ -3,10 +3,8 @@
 import { useState } from "react";
 import { FileDown, Loader2, X, CalendarRange } from "lucide-react";
 import { getBoardDeckData } from "@/app/actions/kpis";
-import { getBoardPortfolio } from "@/app/actions/board-portfolio";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
-import { getImpactoIncentivos } from "@/app/actions/impacto-incentivos";
-import { getPanoramaProductosGrupo } from "@/app/actions/productos-panorama";
+import { getPanoramaProductosGrupo, getCandidatosReemplazo } from "@/app/actions/productos-panorama";
 import { getToday } from "@/lib/utils";
 import { useToast } from "@/components/toast-provider";
 
@@ -28,25 +26,23 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
     if (end < start) { showToast("La fecha final no puede ser anterior a la inicial", "error"); return; }
     setGenerating(true);
     try {
-      // El portafolio y el punto de equilibrio se piden EN PARALELO y su
-      // fallo no tumba el deck: si faltan datos salen las láminas de
-      // siempre (decisión de diseño, 24-ago-2026).
+      // Los extras (equilibrio, productos, candidatos) se piden EN PARALELO y
+      // su fallo no tumba el deck: si faltan datos, esa lámina no sale
+      // (decisión de diseño, 24-ago-2026).
       const mes = end.slice(0, 7);
-      const [r, port, be, imp, prod] = await Promise.all([
+      const [r, be, prod, cand] = await Promise.all([
         getBoardDeckData(start, end),
-        getBoardPortfolio(mes),
         getGroupBreakeven(mes),
-        getImpactoIncentivos(mes),
         getPanoramaProductosGrupo(mes),
+        getCandidatosReemplazo(mes),
       ]);
       if (!r.ok) { showToast(r.error, "error"); return; }
       const { renderWeeklyKpiDeck } = await import("@/lib/kpis/weekly-deck");
       const { blob, filename } = await renderWeeklyKpiDeck(
         r.data,
-        port.ok ? port.sedes : null,
         be.ok ? be.data : null,
-        imp.ok ? imp.data : null,
         prod.ok ? prod.sedes : null,
+        cand.ok ? cand.data : null,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -54,20 +50,14 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
       a.download = filename;
       a.click();
       URL.revokeObjectURL(url);
-            // El aviso nombra lo que FALTÓ, no solo que salió: si una parte no
+      // El aviso nombra lo que FALTÓ, no solo que salió: si una parte no
       // entró, hay que enterarse ahora y no en la reunión.
       const faltaron = [
-        port.ok ? null : `portafolio (${port.error})`,
         be.ok ? null : `punto de equilibrio (${be.error})`,
-        imp.ok ? null : `impacto de incentivos (${imp.error})`,
-        prod.ok ? null : `qué se vendió este mes (${prod.error})`,
+        prod.ok ? null : `productos del mes (${prod.error})`,
+        cand.ok ? null : `candidatos a reemplazo (${cand.error})`,
       ].filter(Boolean);
-      showToast(
-        faltaron.length === 0
-          ? "Deck generado (con portafolio por sede y punto de equilibrio)"
-          : `Deck generado — sin ${faltaron.join(" ni ")}`,
-        "success",
-      );
+      showToast(faltaron.length === 0 ? "Deck generado" : `Deck generado — sin ${faltaron.join(" ni ")}`, "success");
       setOpen(false);
     } finally {
       setGenerating(false);

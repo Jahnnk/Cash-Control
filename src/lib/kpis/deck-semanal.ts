@@ -294,7 +294,7 @@ function tablaDiaria(s: PptxGenJS.Slide, x: number, y: number, w: number, filaH:
   });
 }
 
-export function detalleCafeteria(ctx: Ctx, cf: Cafeteria, variante: "columna" | "fila") {
+export function detalleCafeteria(ctx: Ctx, cf: Cafeteria) {
   const s = diapositiva(ctx.pptx, {
     titulo: `${cf.sede}: detalle de KPIs`, subtitulo: "Resultados de la semana comparados con sus metas.",
     periodo: ctx.periodo, derecha: `${cf.sede} · Detalle de KPIs`,
@@ -341,9 +341,8 @@ export function detalleCafeteria(ctx: Ctx, cf: Cafeteria, variante: "columna" | 
   });
   const ty = y + h + 0.14;
   texto(s, "Detalle diario de la semana", { x: MX, y: ty, w: 4, h: 0.2, fontSize: 10, bold: true, color: C.oscuro });
-  // Centro usaba la lectura en fila bajo la tabla, pero con 7 días no
-  // entraba sin apretar la tabla: las dos sedes usan la misma disposición.
-  void variante;
+  // Fonavi y Centro con la misma disposición: la lectura en fila bajo la
+  // tabla no entraba con 7 días sin apretar todo (24-sep-2026).
   const fh = Math.min(0.26, (YMAX - (ty + 0.26)) / (sm.days.length + 1));
   tablaDiaria(s, MX, ty + 0.26, 5.95, fh, sm, tg);
   hallazgosEnColumna(s, 6.5, ty, W - MX - 6.5, YMAX - ty, hs);
