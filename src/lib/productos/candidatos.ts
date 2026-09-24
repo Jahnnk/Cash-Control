@@ -28,6 +28,12 @@
  * mes: de 2 a 1 unidad no es una caída, es ruido. "Dejó de venderse" pide
  * dos meses seguidos sin ventas (un mes a medias no alcanza).
  *
+ * Archivar (pedido de Jahnn, 24-sep-2026: "que sea más aplicativo"): cuando
+ * Jahnn confirma que un producto ya no se vende o que ya lo sacó de carta,
+ * lo archiva y deja de aparecer. Si vuelve a venderse en un mes POSTERIOR al
+ * del archivo, reaparece marcado "volvió a venderse" (un producto de
+ * temporada no queda escondido por error).
+ *
  * Decisión de Jahnn: las dos cafeterías deciden JUNTAS.
  *   · Candidato en las dos           → Sacar de carta, en el próximo cambio de carta.
  *   · Candidato en una, flojo en otra → Preparar reemplazo, decidir en 4 semanas.
@@ -104,6 +110,8 @@ export type Candidato = {
   /** El que mejor le va en su familia, como referencia para el reemplazo. */
   referencia: { nombre: string; gananciaDia: number | null; ventaDia: number } | null;
   costoEnlazado: "manual" | "nombre" | null;
+  /** Lo había archivado y volvió a venderse después. */
+  volvioAVenderse: Archivado | null;
 };
 
 export type ResultadoCandidatos = {
@@ -114,6 +122,18 @@ export type ResultadoCandidatos = {
   /** % de las ventas analizadas que tienen costo (para decir cuánto se sabe de rentabilidad). */
   coberturaCosto: number;
   sinCosto: { nombre: string; ventaDia: number }[];
+  archivados: (Archivado & { volvio: boolean })[];
+};
+
+export type MotivoArchivo = "ya-no-se-vende" | "sacado-de-carta";
+
+export type Archivado = {
+  clave: string;
+  nombre: string;
+  motivo: MotivoArchivo;
+  /** Fecha (AAAA-MM-DD) en que se archivó. */
+  archivadoEl: string;
+  archivadoPor: string | null;
 };
 
 const MESES_VENTANA = 3;
@@ -298,10 +318,20 @@ export function armarCandidatos(
   vinculos: Map<string, string>,
   /** Nombres marcados como acompañamiento en el sistema (products.es_acompanamiento). */
   acompanamientos: string[] = [],
+  archivos: Archivado[] = [],
 ): ResultadoCandidatos {
   const protegidos = new Set(acompanamientos.map(claveByte));
   const porSede = sedes.map((s) => ({ sede: s, ...evaluarSede(s, costos, vinculos, protegidos) }));
   const claves = new Set(porSede.flatMap((x) => [...x.evaluados.keys()]));
+
+  // ¿Volvió a venderse después de archivarlo? Vendió algo en un mes posterior al del archivo.
+  const archivo = new Map(archivos.map((a) => [a.clave, a]));
+  const volvio = (clave: string): boolean => {
+    const a = archivo.get(clave);
+    if (!a) return false;
+    const mesArchivo = a.archivadoEl.slice(0, 7);
+    return porSede.some((x) => x.evaluados.get(clave)?.porMes.some((m) => m.month > mesArchivo && m.unidades > 0));
+  };
 
   // Referencia de reemplazo: el que más gana por día en su familia (entre todas las sedes).
   const lideres = new Map<Familia, { nombre: string; gananciaDia: number | null; ventaDia: number; valor: number }>();
@@ -316,6 +346,7 @@ export function armarCandidatos(
 
   const candidatos: Candidato[] = [];
   for (const clave of claves) {
+    if (archivo.has(clave) && !volvio(clave)) continue;
     const enSedes = porSede.map((x) => x.evaluados.get(clave)).filter((x): x is NonNullable<typeof x> => !!x && x.ventaDia + x.porMes.reduce((s, m) => s + m.ingresos, 0) > 0);
     if (enSedes.length === 0) continue;
     const estados = enSedes.map((x) => x.estado);
@@ -353,6 +384,7 @@ export function armarCandidatos(
       sedes: enSedes.map(({ nombre: _n, familia: _f, enlace: _e, ...x }) => x),
       referencia: lider && lider.nombre !== primero.nombre ? { nombre: lider.nombre, gananciaDia: lider.gananciaDia, ventaDia: lider.ventaDia } : null,
       costoEnlazado: enSedes.find((x) => x.enlace)?.enlace ?? null,
+      volvioAVenderse: archivo.get(clave) ?? null,
     });
   }
 
@@ -375,5 +407,6 @@ export function armarCandidatos(
     semanas: Math.max(0, ...sedes.map((s) => s.semanas.length)),
     coberturaCosto: total > 0 ? Math.round((conCosto / total) * 100) : 0,
     sinCosto: [...sinCosto.entries()].map(([nombre, ventaDia]) => ({ nombre, ventaDia: r2(ventaDia) })).sort((a, b) => b.ventaDia - a.ventaDia),
+    archivados: archivos.map((a) => ({ ...a, volvio: volvio(a.clave) })).sort((a, b) => b.archivadoEl.localeCompare(a.archivadoEl)),
   };
 }

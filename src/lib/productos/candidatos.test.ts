@@ -114,6 +114,29 @@ describe("candidatos a reemplazo", () => {
   });
 });
 
+describe("archivados", () => {
+  const mk = (id: number, n: string, jugo: number[]) => sede(id, n, [...RELLENO, ["JUGO VIEJO", B, jugo, 10]]);
+  const archivo = { clave: "jugo viejo", nombre: "JUGO VIEJO", motivo: "ya-no-se-vende" as const, archivadoEl: "2026-06-20", archivadoPor: "jahnn" };
+
+  it("un archivado deja de aparecer", () => {
+    const r = armarCandidatos([mk(2, "Fonavi", [10, 0, 0]), mk(3, "Centro", [8, 0, 0])], COSTOS, new Map(), [], [archivo]);
+    expect(r.candidatos.find((c) => c.nombre === "JUGO VIEJO")).toBeUndefined();
+    expect(r.archivados).toEqual([{ ...archivo, volvio: false }]);
+  });
+
+  it("si vuelve a venderse en un mes posterior, reaparece marcado", () => {
+    const r = armarCandidatos([mk(2, "Fonavi", [10, 0, 2]), mk(3, "Centro", [8, 0, 0])], COSTOS, new Map(), [], [archivo]);
+    expect(r.archivados[0].volvio).toBe(true);
+    const c = r.candidatos.find((x) => x.nombre === "JUGO VIEJO");
+    expect(c?.volvioAVenderse?.archivadoEl).toBe("2026-06-20");
+  });
+
+  it("las ventas del mismo mes en que se archivó no cuentan como volver", () => {
+    const r = armarCandidatos([mk(2, "Fonavi", [10, 0, 0]), mk(3, "Centro", [8, 0, 0])], COSTOS, new Map(), [], [{ ...archivo, archivadoEl: "2026-06-05" }]);
+    expect(r.archivados[0].volvio).toBe(false);
+  });
+});
+
 describe("semanas desde las cargas del sábado", () => {
   const c = (periodEnd: string, cargadoEl: string, unidades: number, periodStart = "2026-09-01", origen = "sede"): Corte =>
     ({ origen, month: "2026-09", periodStart, periodEnd, cargadoEl, nombre: "LATTE", unidades, ingresos: unidades * 12 });

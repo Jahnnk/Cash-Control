@@ -21,7 +21,7 @@ import { getSessionRole } from "@/lib/session-access";
 import { armarPanorama, type PanoramaProductos, type FilaProducto } from "@/lib/productos/panorama";
 import { armarTrimestral, type InformeTrimestral } from "@/lib/productos/trimestral";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
-import { armarCandidatos, type ResultadoCandidatos, type SedeCandidatos } from "@/lib/productos/candidatos";
+import { armarCandidatos, type Archivado, type MotivoArchivo, type ResultadoCandidatos, type SedeCandidatos } from "@/lib/productos/candidatos";
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
@@ -361,10 +361,15 @@ export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ da
   const lista = mesesAntes(hastaMes, 6);
   const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
   try {
-    const [costos, vinculos, acompanamientos] = await Promise.all([
+    const [costos, vinculos, acompanamientos, archivos] = await Promise.all([
       (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
       (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
       (sql`SELECT DISTINCT regexp_replace(name, '\\s*\\((Fonavi|Centro)\\)\\s*$', '') AS name FROM products WHERE es_acompanamiento = true` as unknown as Promise<{ name: string }[]>).catch(() => []),
+      (sql`
+        SELECT clave, nombre, motivo, archivado_por AS "archivadoPor",
+               to_char(archivado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "archivadoEl"
+        FROM productos_archivados
+      ` as unknown as Promise<Archivado[]>).catch(() => [] as Archivado[]),
     ]);
     const hasta: { sede: string; hasta: string | null }[] = [];
     const sedes: SedeCandidatos[] = await Promise.all(cafeterias.map(async (s) => {
@@ -395,7 +400,7 @@ export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ da
         }),
       };
     }));
-    const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name));
+    const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos);
     return {
       ok: true,
       data: { ...r, hasta, carta: costos.filter((c) => c.precio !== null).map((c) => ({ ref: c.ref, nombre: c.nombre, costo: c.costo, precio: c.precio })).sort((a, b) => a.nombre.localeCompare(b.nombre)) },
@@ -428,5 +433,46 @@ export async function vincularCostoCarta(nombreByte: string, ref: string | null)
   } catch (e) {
     console.error("[vincularCostoCarta] failed:", e);
     return { ok: false, error: "No se pudo guardar el vínculo." };
+  }
+}
+
+/**
+ * Archiva productos de "Candidatos a reemplazo" (Jahnn confirmó que ya no se
+ * venden o que ya los sacó de carta). Dejan de aparecer; si vuelven a
+ * venderse en un mes posterior, reaparecen marcados.
+ */
+export async function archivarProductos(items: { nombre: string; motivo: MotivoArchivo }[]): Promise<Res<{ archivados: number }>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const validos = (Array.isArray(items) ? items : [])
+    .filter((i) => i?.nombre?.trim() && (i.motivo === "ya-no-se-vende" || i.motivo === "sacado-de-carta"))
+    .map((i) => ({ clave: claveByte(i.nombre), nombre: i.nombre.trim(), motivo: i.motivo }))
+    .filter((i) => i.clave)
+    .slice(0, 500);
+  if (validos.length === 0) return { ok: false, error: "No hay productos para archivar." };
+  try {
+    await sql`
+      INSERT INTO productos_archivados (clave, nombre, motivo, archivado_por)
+      SELECT t.clave, t.nombre, t.motivo, ${role.quien}
+      FROM unnest(${validos.map((v) => v.clave)}::text[], ${validos.map((v) => v.nombre)}::text[], ${validos.map((v) => v.motivo)}::text[])
+        AS t(clave, nombre, motivo)
+      ON CONFLICT (clave) DO UPDATE SET motivo = EXCLUDED.motivo, archivado_por = EXCLUDED.archivado_por, archivado_el = NOW()`;
+    return { ok: true, archivados: validos.length };
+  } catch (e) {
+    console.error("[archivarProductos] failed:", e);
+    return { ok: false, error: "No se pudieron archivar." };
+  }
+}
+
+/** Saca un producto de los archivados: vuelve a evaluarse con los demás. */
+export async function restaurarProducto(clave: string): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  try {
+    await sql`DELETE FROM productos_archivados WHERE clave = ${clave}`;
+    return { ok: true };
+  } catch (e) {
+    console.error("[restaurarProducto] failed:", e);
+    return { ok: false, error: "No se pudo restaurar." };
   }
 }
