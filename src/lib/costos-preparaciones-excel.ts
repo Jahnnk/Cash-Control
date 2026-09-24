@@ -9,6 +9,7 @@
 import * as XLSX from "xlsx";
 import { claveNombre, type CostoPreparacion, type DetalleReceta, type Ingrediente, type LecturaPricing, type UnidadBase } from "@/lib/costos-preparaciones";
 import { costoDeReceta } from "@/lib/recetas";
+import type { CostoCarta } from "@/lib/productos/costos-carta";
 
 const HOJA_PRICING = "PRICING";
 const HOJA_SUBRECETAS = "ATE · Sub-Recetas";
@@ -66,6 +67,53 @@ function fuenteDe(texto: unknown): Fuente | null {
   // el bloque, no el bloque. Esa receta no se puede abrir tal cual.
   const conversion = /conversi|×|÷|costo\/kg/i.test(texto);
   return hoja ? { hoja, fila: Number(m[3]), conversion } : null;
+}
+
+/**
+ * Lo que le cuesta a la cafetería cada producto de la carta y a cuánto se
+ * vende (Fonavi y Centro tienen la misma carta). Toda fila vigente con
+ * "Costo para cafetería": los platos propios y lo que Atelier les vende.
+ */
+function leerCarta(rows: Fila[], avisos: string[]): CostoCarta[] {
+  const h = rows.findIndex((r) => r.some((c) => c === "Producto maestro"));
+  if (h === -1) return [];
+  const cab = rows[h].map((c) => (typeof c === "string" ? c.trim() : ""));
+  const col = (nombre: string) => cab.findIndex((c) => c === nombre);
+  const cId = col("ID"), cCat = col("Categoría"), cNom = col("Producto maestro"), cCarta = col("Nombre en carta");
+  const cCosto = col("Costo para cafetería"), cPrecio = col("Precio público carta"), cVig = col("Vigente");
+  console.log(`[costos-carta] ${HOJA_PRICING}: header=${h} costo=${cCosto} precio=${cPrecio} carta=${cCarta}`);
+  if (cCosto === -1 || cNom === -1) {
+    avisos.push(`La hoja ${HOJA_PRICING} no tiene la columna "Costo para cafetería": la rentabilidad de las cafeterías no se actualiza.`);
+    return [];
+  }
+  const out: CostoCarta[] = [];
+  const vistos = new Set<string>();
+  for (const r of rows.slice(h + 1)) {
+    if (typeof r[cNom] !== "string") continue;
+    if (cVig !== -1 && typeof r[cVig] === "string" && norm(r[cVig] as string) !== "si") continue;
+    const costo = num(r[cCosto]);
+    if (!costo || costo <= 0) continue;
+    const ref = String(r[cId] ?? "").trim() || `CARTA:${norm(r[cNom] as string)}`;
+    if (vistos.has(ref)) continue;
+    vistos.add(ref);
+    const precio = cPrecio === -1 ? null : num(r[cPrecio]);
+    out.push({
+      ref,
+      nombre: limpiarNombre(r[cNom] as string),
+      nombreCarta: cCarta !== -1 && typeof r[cCarta] === "string" ? limpiarNombre(r[cCarta] as string) : null,
+      categoria: cCat !== -1 && typeof r[cCat] === "string" ? (r[cCat] as string).trim() : null,
+      costo,
+      precio: precio && precio > 0 ? precio : null,
+    });
+  }
+  // Dos productos con el mismo "Nombre en carta" confunden el enlace con Byte
+  // (en el Excel de set-26, "Jugo de Naranja" dice "Jugo de Piña").
+  const porCarta = new Map<string, string[]>();
+  for (const i of out) if (i.nombreCarta) porCarta.set(norm(i.nombreCarta), [...(porCarta.get(norm(i.nombreCarta)) ?? []), i.nombre]);
+  for (const [n, lista] of porCarta) {
+    if (lista.length > 1) avisos.push(`"Nombre en carta" repetido en ${HOJA_PRICING}: ${lista.join(" y ")} dicen "${n}".`);
+  }
+  return out;
 }
 
 function leerPricing(rows: Fila[], avisos: string[], fuentes: Map<string, Fuente>): CostoPreparacion[] {
@@ -264,6 +312,7 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
 
   const fuentes = new Map<string, Fuente>();
   const productos = pricing ? leerPricing(pricing, avisos, fuentes) : [];
+  const carta = pricing ? leerCarta(pricing, avisos) : [];
   const subRecetas = sub ? leerSubRecetas(sub, primeraFila(wb, HOJA_SUBRECETAS), avisos) : { items: [], bloques: [] };
   const { items: insumos, sr } = ins ? leerInsumos(ins, avisos) : { items: [], sr: [] };
 
@@ -364,5 +413,5 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
     i.detalle = detalle;
   }
   unicos.push(...extra.filter((e) => !unicos.some((u) => u.ref === e.ref)));
-  return { items: unicos, avisos, sinPricing };
+  return { items: unicos, avisos, sinPricing, carta };
 }

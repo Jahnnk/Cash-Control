@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import type { CostoPreparacion, TipoCosto } from "@/lib/costos-preparaciones";
+import type { CostoCarta } from "@/lib/productos/costos-carta";
 import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -41,6 +42,8 @@ export async function guardarCostos(input: {
    * como ingrediente pasa a usar la del Excel.
    */
   quedarmeConExcel?: { id: number; ref: string }[];
+  /** Costo y precio de carta de las cafeterías (ver lib/productos/costos-carta.ts). */
+  carta?: CostoCarta[];
 }): Promise<{ ok: true; guardados: number; reemplazadas: number } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
   const it = Array.isArray(input.items) ? input.items : [];
@@ -78,9 +81,32 @@ export async function guardarCostos(input: {
     console.error("[guardarCostos] failed:", e);
     return { ok: false, error: "No se pudo guardar la lista de costos." };
   }
+  await guardarCarta(input.carta ?? [], archivo);
   const reemplazadas = await quedarmeConLasDelExcel(input.quedarmeConExcel ?? [], refs);
   revalidatePath("/grupo/recetas");
   return { ok: true, guardados: it.length, reemplazadas };
+}
+
+/** La carta de las cafeterías se reemplaza entera con cada Excel (si trae). */
+async function guardarCarta(carta: CostoCarta[], archivo: string): Promise<void> {
+  const ok = carta.filter((c) => c?.ref?.trim() && c.nombre?.trim() && Number.isFinite(c.costo) && c.costo >= 0).slice(0, 5000);
+  if (ok.length === 0) return;
+  try {
+    await sql.transaction([
+      sql`DELETE FROM costos_carta`,
+      sql`
+        INSERT INTO costos_carta (ref, nombre, nombre_carta, categoria, costo, precio, archivo)
+        SELECT t.ref, t.nombre, t.nombre_carta, t.categoria, t.costo, t.precio, ${archivo}
+        FROM unnest(
+          ${ok.map((c) => c.ref.trim())}::text[], ${ok.map((c) => c.nombre.trim())}::text[], ${ok.map((c) => c.nombreCarta ?? null)}::text[],
+          ${ok.map((c) => c.categoria ?? null)}::text[], ${ok.map((c) => c.costo)}::numeric[], ${ok.map((c) => (c.precio && Number.isFinite(c.precio) ? c.precio : null))}::numeric[]
+        ) AS t(ref, nombre, nombre_carta, categoria, costo, precio)
+        ON CONFLICT (ref) DO NOTHING`,
+    ]);
+  } catch (e) {
+    // Antes de la migración de candidatos: la lista de Atelier se guarda igual.
+    console.error("[guardarCarta] failed:", e);
+  }
 }
 
 /** Ver guardarCostos › quedarmeConExcel. Devuelve cuántas recetas se reemplazaron. */

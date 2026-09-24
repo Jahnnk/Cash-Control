@@ -34,6 +34,8 @@ export function claveNombre(s: string): string {
     .replace(/\(kg\)$/, "").replace(/ kg$/, "").trim();
 }
 
+import type { CostoCarta } from "@/lib/productos/costos-carta";
+
 export type TipoCosto = "producto" | "preparacion" | "insumo";
 export type UnidadBase = "und" | "kg" | "l";
 
@@ -84,6 +86,12 @@ export type LecturaPricing = {
   avisos: string[];
   /** Productos con receta en las hojas de producción pero sin fila en PRICING (entran igual). */
   sinPricing?: string[];
+  /**
+   * Costo y precio de carta de las cafeterías (hoja PRICING, "Costo para
+   * cafetería" y "Precio público carta"): la rentabilidad de "Candidatos a
+   * reemplazo" en Grupo → Productos.
+   */
+  carta?: CostoCarta[];
 };
 
 export type ResumenPricing = {

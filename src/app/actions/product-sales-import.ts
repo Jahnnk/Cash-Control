@@ -227,6 +227,13 @@ async function runImport(bId: number, input: ImportInput, batchNote: string,
                   ${it.units}, ${it.revenue}, 'byte', ${batchId}, ${input.fileName}, ${origen})`,
       ),
 
+      // 2b) La carga queda también en el historial, tal cual llegó (nunca se
+      //     reemplaza): de ahí salen las semanas de "Candidatos a reemplazo"
+      //     (decisión de Jahnn, 24-sep-2026).
+      sql`INSERT INTO rotacion_cortes (business_id, origen, month, period_start, period_end, product_name_raw, units, revenue, import_batch_id)
+          SELECT business_id, origen, month, period_start, period_end, product_name_raw, units, revenue, import_batch_id::text
+          FROM product_period_sales WHERE import_batch_id = ${batchId}`,
+
       // 3) El mes se RECALCULA como la suma de sus períodos. Todo lo que
       //    ya lee product_month_sales (portfolio, alias, incentivos)
       //    sigue igual sin enterarse de este cambio.

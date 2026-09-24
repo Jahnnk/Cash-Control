@@ -14,6 +14,7 @@ import {
 } from "@/app/actions/productos-panorama";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { CargasByte } from "./cargas-byte";
+import { CandidatosReemplazo } from "./candidatos-reemplazo";
 import { ImportarReportesModal } from "./importar-reportes";
 import { VistaMes } from "@/components/productos/vista-mes";
 import { VistaTrimestre } from "@/components/productos/vista-trimestre";
@@ -228,6 +229,8 @@ function PestanaMes({ month, sede, onSede }: { month: string; sede: number; onSe
       {sel?.panorama
         ? <VistaMes p={sel.panorama} cargadoEl={sel.cargadoEl} />
         : <Vacio>{sel?.sede ?? "Esta sede"} no tiene reporte de rotación de {monthLabel(month)}. Súbelo con «Subir reportes».</Vacio>}
+      {/* Fonavi y Centro juntas: no depende de la sede elegida arriba. */}
+      <CandidatosReemplazo month={month} />
     </div>
   );
 }
