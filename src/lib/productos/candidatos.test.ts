@@ -25,9 +25,25 @@ describe("enlace de costos por nombre", () => {
     expect(enlazarCosto("PAN INTEGRAL MULTIGRANO 550 G", COSTOS, new Map(), 12.5)).toBeNull();
     expect(enlazarCosto("LATTE : LECHE DESLACTOSADA", COSTOS, new Map(), 14)).toBeNull();
   });
+  it("desempata por lo que distingue al producto, no por las palabras de formato", () => {
+    const panes: CostoCarta[] = [
+      { ref: "AT-137", nombre: "Pan de Semillas 1 Kg", nombreCarta: null, categoria: null, costo: 16.6, precio: 24.5 },
+      { ref: "AT-071", nombre: "Pan con Pan tipo Molde 1 kg", nombreCarta: null, categoria: null, costo: 9.45, precio: null },
+      { ref: "AT-070", nombre: "Pan con Pan tipo molde 750", nombreCarta: null, categoria: null, costo: 6.98, precio: 15.5 },
+      { ref: "AT-069", nombre: "Pan IMG Tipo Molde 750 g", nombreCarta: null, categoria: null, costo: 10.52, precio: null },
+      { ref: "CF-026", nombre: "Jugo de Piña", nombreCarta: "Jugo de Piña", categoria: null, costo: 2.68, precio: 10 },
+      { ref: "CF-119", nombre: "Jugo de Naranja", nombreCarta: "Jugo de Piña", categoria: null, costo: 3.97, precio: 10 },
+    ];
+    expect(enlazarCosto("PAN DE SEMILLAS TIPO MOLDE 1KG", panes, new Map(), 24.5)?.item.ref).toBe("AT-137");
+    expect(enlazarCosto("PAN CON PAN TIPO MOLDE 750G", panes, new Map(), 15.5)?.item.ref).toBe("AT-070");
+    // Dos dicen "Jugo de Piña" en carta: gana el que SE LLAMA así.
+    expect(enlazarCosto("JUGO DE PIÑA", panes, new Map(), 10)?.item.ref).toBe("CF-026");
+    expect(enlazarCosto("JUGO DE NARANJA", panes, new Map(), 10)?.item.ref).toBe("CF-119");
+  });
+
   it("en empate gana el que se vende en carta, y el vínculo manual manda", () => {
     expect(enlazarCosto("SANGUCHE DE PAVO", COSTOS, new Map(), 18)?.item.ref).toBe("CF-009");
-    expect(enlazarCosto("PAN DE SEMILLAS 550 G", COSTOS, new Map([["550g pan semilla", "AT-067"]]))).toMatchObject({ como: "manual", item: { ref: "AT-067" } });
+    expect(enlazarCosto("PAN DE SEMILLAS 550 G", COSTOS, new Map([["550 pan semilla", "AT-067"]]))).toMatchObject({ como: "manual", item: { ref: "AT-067" } });
     expect(parecido("Café Americano", "CAFÉ AMERICANO")).toBe(1);
   });
 });
