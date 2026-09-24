@@ -32,9 +32,16 @@ const UNIDADES = ["und", "kg", "l"];
  * Reemplaza la lista de costos de Atelier. El Excel se lee en el navegador
  * (pesa más que el límite de 1 MB de las actions); acá se valida cada ítem.
  */
-export async function guardarCostos(input: { archivo: string; items: CostoPreparacion[] }): Promise<
-  { ok: true; guardados: number } | { ok: false; error: string }
-> {
+export async function guardarCostos(input: {
+  archivo: string;
+  items: CostoPreparacion[];
+  /**
+   * Recetas del sistema que ahora trae el Excel con el mismo nombre y que
+   * Jahnn eligió reemplazar por la del Excel: se borran y quien las usaba
+   * como ingrediente pasa a usar la del Excel.
+   */
+  quedarmeConExcel?: { id: number; ref: string }[];
+}): Promise<{ ok: true; guardados: number; reemplazadas: number } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
   const it = Array.isArray(input.items) ? input.items : [];
   if (it.length === 0) return { ok: false, error: "El Excel no trae costos de Atelier." };
@@ -71,8 +78,32 @@ export async function guardarCostos(input: { archivo: string; items: CostoPrepar
     console.error("[guardarCostos] failed:", e);
     return { ok: false, error: "No se pudo guardar la lista de costos." };
   }
+  const reemplazadas = await quedarmeConLasDelExcel(input.quedarmeConExcel ?? [], refs);
   revalidatePath("/grupo/recetas");
-  return { ok: true, guardados: it.length };
+  return { ok: true, guardados: it.length, reemplazadas };
+}
+
+/** Ver guardarCostos › quedarmeConExcel. Devuelve cuántas recetas se reemplazaron. */
+async function quedarmeConLasDelExcel(pares: { id: number; ref: string }[], refsExcel: Set<string>): Promise<number> {
+  const validos = pares.filter((p) => Number.isInteger(p.id) && refsExcel.has(p.ref));
+  if (validos.length === 0) return 0;
+  const { recetas } = await leerCatalogo(sql, ATELIER);
+  const cambio = new Map(validos.filter((p) => recetas.some((r) => r.id === p.id && !r.reemplaza)).map((p) => [`REC:${p.id}`, p.ref]));
+  if (cambio.size === 0) return 0;
+  const ids = [...cambio.keys()].map((k) => Number(k.slice(4)));
+  const actualizar = recetas
+    .filter((r) => !ids.includes(r.id) && r.detalle.ingredientes.some((g) => g.ref && cambio.has(g.ref)))
+    .map((r) => {
+      const detalle = { ...r.detalle, ingredientes: r.detalle.ingredientes.map((g) => (g.ref && cambio.has(g.ref) ? { ...g, ref: cambio.get(g.ref)! } : g)) };
+      return sql`UPDATE recetas_sistema SET detalle = ${JSON.stringify(detalle)}::jsonb, actualizado_el = NOW() WHERE id = ${r.id}`;
+    });
+  try {
+    await sql.transaction([...actualizar, sql`DELETE FROM recetas_sistema WHERE business_id = ${ATELIER} AND id = ANY(${ids}::int[])`]);
+    return ids.length;
+  } catch (e) {
+    console.error("[quedarmeConLasDelExcel] failed:", e);
+    return 0;
+  }
 }
 
 export type EstadoPricing = {
@@ -81,6 +112,12 @@ export type EstadoPricing = {
   conteos: Record<TipoCosto, number>;
   /** Recetas del Excel que tienen versión propia en el sistema (esa sigue valiendo al subir otro Excel). */
   reemplazos: { ref: string; nombre: string }[];
+  /**
+   * Recetas creadas en el sistema (no reemplazan a ninguna del Excel): al
+   * subir un Excel que ya las trae con el mismo nombre, se ofrece quedarse
+   * con la del Excel.
+   */
+  propias: { id: number; nombre: string; unidad: string; costo: number | null }[];
 } | null;
 
 /** Qué Excel está cargado y cuándo (para la tarjeta de Configuración). */
@@ -104,7 +141,12 @@ export async function getEstadoPricing(): Promise<EstadoPricing> {
     } catch {
       reemplazos = []; // antes de la migración de recetas
     }
-    return { archivo: rows[0]?.archivo ?? null, cargadoEl: rows.map((r) => r.cargado).sort().pop() ?? null, conteos, reemplazos };
+    const cat = await leerCatalogo(sql, ATELIER);
+    const propias = cat.recetas.filter((r) => !r.reemplaza).map((r) => {
+      const i = cat.efectivo.find((x) => x.recetaId === r.id);
+      return { id: r.id, nombre: r.nombre, unidad: r.tipo === "preparacion" ? "kg" : "und", costo: i?.costo ?? null };
+    });
+    return { archivo: rows[0]?.archivo ?? null, cargadoEl: rows.map((r) => r.cargado).sort().pop() ?? null, conteos, reemplazos, propias };
   } catch {
     return null;
   }

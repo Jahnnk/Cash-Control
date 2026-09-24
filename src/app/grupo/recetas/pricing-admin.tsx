@@ -4,7 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Calculator, Loader2, Upload, Check, AlertTriangle } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { getEstadoPricing, guardarCostos, type EstadoPricing } from "@/app/actions/costos-preparaciones";
-import type { CostoPreparacion, ResumenPricing } from "@/lib/costos-preparaciones";
+import { claveNombre, type CostoPreparacion, type ResumenPricing } from "@/lib/costos-preparaciones";
 
 const TIPO_PLURAL = { producto: "productos", preparacion: "preparaciones", insumo: "insumos" } as const;
 const soles = (n: number) => `S/${n.toFixed(2)}`;
@@ -23,6 +23,8 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
   const [leido, setLeido] = useState<{ archivo: string; items: CostoPreparacion[] } | null>(null);
   const [resumen, setResumen] = useState<ResumenPricing | null>(null);
   const [busy, setBusy] = useState<"leyendo" | "guardando" | null>(null);
+  /** Recetas del sistema que el Excel trae con el mismo nombre y se reemplazan por la del Excel (id → sí/no). */
+  const [conExcel, setConExcel] = useState<Record<number, boolean>>({});
   const input = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => setEstado(await getEstadoPricing()), []);
@@ -35,6 +37,7 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
 
   function limpiar() {
     setLeido(null);
+    setConExcel({});
     setResumen(null);
     if (input.current) input.current.value = "";
   }
@@ -68,16 +71,27 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
   async function guardar() {
     if (!leido) return;
     setBusy("guardando");
-    const r = await guardarCostos(leido);
+    const quedarmeConExcel = duplicadas.filter((d) => conExcel[d.id] !== false).map((d) => ({ id: d.id, ref: d.excel.ref }));
+    const r = await guardarCostos({ ...leido, quedarmeConExcel });
     setBusy(null);
     if (!r.ok) { showToast(r.error, "error"); return; }
-    showToast(`Lista de costos de Atelier actualizada (${r.guardados} ítems).`, "success");
+    showToast(
+      `Lista de costos de Atelier actualizada (${r.guardados} ítems)` +
+        (r.reemplazadas > 0 ? ` · ${r.reemplazadas} receta${r.reemplazadas === 1 ? "" : "s"} del sistema reemplazada${r.reemplazadas === 1 ? "" : "s"} por la del Excel.` : "."),
+      "success",
+    );
     limpiar();
     void load();
     onActualizado?.();
   }
 
   const total = estado ? estado.conteos.producto + estado.conteos.preparacion + estado.conteos.insumo : 0;
+
+  // Recetas que creaste en el sistema y que este Excel ya trae con el mismo nombre.
+  const duplicadas = (estado?.propias ?? []).flatMap((p) => {
+    const excel = leido?.items.find((i) => i.tipo !== "insumo" && claveNombre(i.nombre) === claveNombre(p.nombre));
+    return excel ? [{ ...p, excel }] : [];
+  });
 
   return (
     <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -136,6 +150,32 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
             <div className="text-[11px] text-gray-700">
               <span className="font-medium">Siguen valiendo tus versiones del sistema</span> (no las pisa este Excel):{" "}
               {estado.reemplazos.map((r) => r.nombre).join(", ")}. Si quieres la del Excel, ábrela abajo y elige «Volver a la del Excel».
+            </div>
+          )}
+          {resumen.sinPricing && resumen.sinPricing.length > 0 && (
+            <div className="text-[11px] text-gray-700">
+              <span className="font-medium">Entran aunque no tienen fila en PRICING</span> (tienen su receta en las hojas de producción):{" "}
+              {resumen.sinPricing.join(", ")}.
+            </div>
+          )}
+          {duplicadas.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 space-y-2">
+              <div className="text-[11px] font-medium text-amber-900">
+                Este Excel ya trae recetas que creaste en el sistema. ¿Con cuál te quedas?
+              </div>
+              {duplicadas.map((d) => (
+                <label key={d.id} className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-gray-800 cursor-pointer">
+                  <input type="checkbox" className="accent-[#004C40]" checked={conExcel[d.id] !== false}
+                    onChange={(e) => setConExcel((p) => ({ ...p, [d.id]: e.target.checked }))} />
+                  <span className="font-medium">{d.nombre}</span>
+                  <span className="text-gray-500 tabular-nums">
+                    sistema {d.costo !== null ? `${soles(d.costo)} / ${d.unidad}` : "sin costo"} · Excel {soles(d.excel.costo)} / {d.excel.unidad}
+                  </span>
+                  <span className="text-[11px] text-gray-500">
+                    {conExcel[d.id] !== false ? "→ me quedo con la del Excel (se borra la del sistema)" : "→ se quedan las dos"}
+                  </span>
+                </label>
+              ))}
             </div>
           )}
           {resumen.avisos.length > 0 && (
