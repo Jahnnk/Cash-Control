@@ -15,7 +15,9 @@
  * ─── Las familias ───
  *
  * Byte NO trae categoría: solo el nombre del plato. Las familias se deducen
- * del nombre, con las mismas siete del informe. El orden de las reglas
+ * del nombre. Eran las siete del informe; el 24-sep-2026 Jahnn pidió sus
+ * nombres (bebidas calientes, bebidas frías, panadería) y separar los
+ * cócteles de las bebidas frías: quedan ocho. El orden de las reglas
  * importa y va de lo más específico a lo más general: "BUDÍN DE MASA MADRE"
  * es postre aunque diga masa madre, y "CHOCOLATE CALIENTE" es café aunque
  * diga chocolate.
@@ -45,9 +47,10 @@ export const FAMILIAS = [
   "Postres y pastelería",
   "Sánguches, platos y desayunos",
   "Empanadas",
-  "Jugos, batidos y bebidas frías",
-  "Panes y masa madre",
-  "Café e infusiones",
+  "Bebidas calientes",
+  "Bebidas frías",
+  "Cócteles y bar",
+  "Panadería",
   "Otros (extras y retail)",
 ] as const;
 
@@ -65,12 +68,17 @@ const REGLAS: Regla[] = [
     "EXTRA", "ADICIONAL", "REPOSICION", "REPOSICIÓN", "VASO ROTO", "SORBETE ROTO", "DELIVERY", "PROPINA", "TAPER",
     "EMPAQUE", "CAJAS CON LOGO", "TAJADA DE PAN", "POR KILO", "SEMILLAS 1KG", "MANTEQUILLA 400", "QUESO TIPO SUIZO",
   ] },
-  { familia: "Café e infusiones", claves: ["BOLSA DE INFUSION", "BOLSA DE INFUSIÓN"] },
-  { familia: "Café e infusiones", claves: ["CHOCOLATE CALIENTE", "SUBMARINO"] },
-  // Bebidas frías y cócteles de la carta (el nombre no dice qué son).
-  { familia: "Jugos, batidos y bebidas frías", claves: ["MILKSHAKE", "PINA COLADA", "PIÑA COLADA", "MARACUYA SOUR", "MARACUYÁ SOUR", "CHILCANO", "COLD BREW", "MOJITO"] },
+  { familia: "Bebidas calientes", claves: ["BOLSA DE INFUSION", "BOLSA DE INFUSIÓN"] },
+  { familia: "Bebidas calientes", claves: ["CHOCOLATE CALIENTE", "SUBMARINO"] },
+  // Cócteles y bar (Jahnn, 24-sep-2026: categoría propia, antes iban con las bebidas frías).
+  { familia: "Cócteles y bar", claves: [
+    "PINA COLADA", "PIÑA COLADA", "MARACUYA SOUR", "MARACUYÁ SOUR", "PISCO SOUR", "CHILCANO", "MOJITO", "COCTEL", "CÓCTEL",
+    "SANGRIA", "SANGRÍA", "CERVEZA", "VINO", "PISCO", "MIMOSA", "SPRITZ", "APEROL", "MICHELADA",
+  ] },
+  // Bebidas frías de la carta que el nombre no delata.
+  { familia: "Bebidas frías", claves: ["MILKSHAKE", "COLD BREW"] },
   // Infusiones de la casa, con nombre propio.
-  { familia: "Café e infusiones", claves: ["VALENTINA", "BOSQUE ENCANTADO", "FRESCA LAVANDA", "ANDEAN CITRUS", "MASALA CHAI", "TROPICO RELAJANTE", "TRÓPICO RELAJANTE", "MOCCACCINO", "EXPRESSO", "AFFOGATO"] },
+  { familia: "Bebidas calientes", claves: ["VALENTINA", "BOSQUE ENCANTADO", "FRESCA LAVANDA", "ANDEAN CITRUS", "MASALA CHAI", "TROPICO RELAJANTE", "TRÓPICO RELAJANTE", "MOCCACCINO", "EXPRESSO", "AFFOGATO"] },
   { familia: FAMILIA_POSTRES, claves: [
     "CAKE", "TORTA", "CHEESECAKE", "PIE DE", "BROWNIE", "BLONDIE", "COOKIE", "GALLETA", "ALFAJOR", "TRUFA",
     "CROISSANT", "ROLLO DE CANELA", "CROCANTE", "CUCHAREABLE", "CUCHARABLE", "BUDIN", "BUDÍN", "MUFFIN", "DONUT",
@@ -78,15 +86,14 @@ const REGLAS: Regla[] = [
     "ROLL DE CANELA", "ROLLOS DE CANELA", "BERLIN", "BERLÍN", "CANELA",
   ] },
   { familia: "Empanadas", claves: ["EMPANADA", "ENPANADA"] },
-  { familia: "Panes y masa madre", claves: ["PAN ", "PAN_", "PANES", "MASA MADRE", "BAGUETTE", "CIABATTA", "CHAPATA", "FOCACCIA", "BAGEL", "MOLDE", "MULTIGRANO", "INTEGRAL", "CIABATA", "BRIOCHE", "CAMPESINO", "GRISIN", "GRISSIN"] },
-  { familia: "Café e infusiones", claves: [
+  { familia: "Panadería", claves: ["PAN ", "PAN_", "PANES", "MASA MADRE", "BAGUETTE", "CIABATTA", "CHAPATA", "FOCACCIA", "BAGEL", "MOLDE", "MULTIGRANO", "INTEGRAL", "CIABATA", "BRIOCHE", "CAMPESINO", "GRISIN", "GRISSIN"] },
+  { familia: "Bebidas calientes", claves: [
     "CAFE", "CAFÉ", "CAPPUCCINO", "CAPUCCINO", "LATTE", "ESPRESSO", "EXPRESO", "AMERICANO", "MOCACCINO", "MOCHA",
     "MACCHIATO", "CORTADO", "INFUSION", "INFUSIÓN", "MANZANILLA", "ANIS", "ANÍS", "HIERBA LUISA", "CHAI", "TÉ ", "TE ",
   ] },
-  { familia: "Jugos, batidos y bebidas frías", claves: [
+  { familia: "Bebidas frías", claves: [
     "JUGO", "BATIDO", "SMOOTHIE", "LIMONADA", "FRAPPE", "FRAPPÉ", "ICED", "HELADO DE", "SODA", "AGUA", "GASEOSA",
-    "KOMBUCHA", "CHICHA", "REFRESCO", "COCTEL", "CÓCTEL", "MOJITO", "SANGRIA", "SANGRÍA", "CERVEZA", "VINO", "PISCO",
-    "MATCHA", "FRIO", "FRÍO", "MARACUYA FRESH", "NARANJA FRESH",
+    "KOMBUCHA", "CHICHA", "REFRESCO", "MATCHA", "FRIO", "FRÍO", "MARACUYA FRESH", "NARANJA FRESH",
   ] },
   { familia: "Sánguches, platos y desayunos", claves: [
     "SANGUCHE", "SÁNGUCHE", "SANDWICH", "SÁNDWICH", "TRIPLE", "HAMBURGUESA", "POLLO", "LOMO", "TOSTADA", "DESAYUNO",

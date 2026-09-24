@@ -61,8 +61,8 @@ function sede(id: number, nombre: string, filas: [string, Familia, number[], num
 }
 
 const S: Familia = "Sánguches, platos y desayunos";
-const B: Familia = "Jugos, batidos y bebidas frías";
-const C: Familia = "Café e infusiones";
+const B: Familia = "Bebidas frías";
+const C: Familia = "Bebidas calientes";
 
 // Una carta de 10 productos que se venden bien + los casos a probar.
 const RELLENO: [string, Familia, number[], number][] = Array.from({ length: 10 }, (_, i) => [`PLATO ${String.fromCharCode(65 + i)}`, S, [300, 300, 300], 15]);

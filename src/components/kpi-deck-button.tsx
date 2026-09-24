@@ -4,7 +4,7 @@ import { useState } from "react";
 import { FileDown, Loader2, X, CalendarRange } from "lucide-react";
 import { getBoardDeckData } from "@/app/actions/kpis";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
-import { getPanoramaProductosGrupo, getCandidatosReemplazo } from "@/app/actions/productos-panorama";
+import { getPanoramaProductosGrupo, getCandidatosReemplazo, getReglaOchentaVeinte } from "@/app/actions/productos-panorama";
 import { getToday } from "@/lib/utils";
 import { useToast } from "@/components/toast-provider";
 
@@ -30,11 +30,12 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
       // su fallo no tumba el deck: si faltan datos, esa lámina no sale
       // (decisión de diseño, 24-ago-2026).
       const mes = end.slice(0, 7);
-      const [r, be, prod, cand] = await Promise.all([
+      const [r, be, prod, cand, ov] = await Promise.all([
         getBoardDeckData(start, end),
         getGroupBreakeven(mes),
         getPanoramaProductosGrupo(mes),
         getCandidatosReemplazo(mes),
+        getReglaOchentaVeinte(mes),
       ]);
       if (!r.ok) { showToast(r.error, "error"); return; }
       const { renderWeeklyKpiDeck } = await import("@/lib/kpis/weekly-deck");
@@ -43,6 +44,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
         be.ok ? be.data : null,
         prod.ok ? prod.sedes : null,
         cand.ok ? cand.data : null,
+        ov.ok ? ov.sedes : null,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
@@ -56,6 +58,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
         be.ok ? null : `punto de equilibrio (${be.error})`,
         prod.ok ? null : `productos del mes (${prod.error})`,
         cand.ok ? null : `candidatos a reemplazo (${cand.error})`,
+        ov.ok ? null : `regla 80/20 (${ov.error})`,
       ].filter(Boolean);
       showToast(faltaron.length === 0 ? "Deck generado" : `Deck generado — sin ${faltaron.join(" ni ")}`, "success");
       setOpen(false);

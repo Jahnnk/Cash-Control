@@ -20,6 +20,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import { armarPanorama, type PanoramaProductos, type FilaProducto } from "@/lib/productos/panorama";
 import { armarTrimestral, type InformeTrimestral } from "@/lib/productos/trimestral";
+import { reglaOchentaVeinte, type Pareto } from "@/lib/productos/ochenta-veinte";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import {
   armarCandidatos, plazoDe, type AccionPlan, type Archivado, type Candidato, type Decision, type MotivoArchivo, type PlanConResultado,
@@ -192,6 +193,51 @@ export async function getInformeTrimestral(hastaMes: string, businessId?: number
   } catch (e) {
     console.error("[getInformeTrimestral] failed:", e);
     return { ok: false, error: "No se pudo armar el informe trimestral." };
+  }
+}
+
+/* ─────────────────────── Regla 80/20 ─────────────────────── */
+
+export type OchentaVeinteSede = {
+  businessId: number;
+  sede: string;
+  /** El mes (lo cargado del 01 a hoy). */
+  mes: Pareto | null;
+  /** Los últimos 3 meses, incluido este. */
+  tresMeses: Pareto | null;
+  meses: string[];
+};
+
+/**
+ * ¿El 80% de la venta sale del 20% de los productos? Por sede, del mes y de
+ * los últimos 3 meses (pedido de Jahnn, 24-sep-2026) para ver la tendencia.
+ */
+export async function getReglaOchentaVeinte(hastaMes: string): Promise<Res<{ sedes: OchentaVeinteSede[] }>> {
+  if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const lista = mesesAntes(hastaMes, 3);
+  try {
+    const sedes = await Promise.all(SEDES.map(async (s) => {
+      const datos = await Promise.all(lista.map(async (month) => {
+        const { filas, desde, hasta } = await filasDelMes(s.id, month);
+        return { month, desde: desde ?? `${month}-01`, hasta: hasta ?? `${month}-01`, filas };
+      }));
+      const actual = datos[datos.length - 1];
+      const panorama = actual.filas.length > 0 && actual.desde && actual.hasta ? armarPanorama(actual.filas, actual.desde, actual.hasta) : null;
+      const tri = datos.some((d) => d.filas.length > 0) ? armarTrimestral(datos) : null;
+      return {
+        businessId: s.id,
+        sede: s.nombre,
+        mes: panorama ? reglaOchentaVeinte(panorama.carta) : null,
+        tresMeses: tri ? reglaOchentaVeinte(tri.productosTodos) : null,
+        meses: lista,
+      };
+    }));
+    return { ok: true, sedes };
+  } catch (e) {
+    console.error("[getReglaOchentaVeinte] failed:", e);
+    return { ok: false, error: "No se pudo calcular la regla 80/20." };
   }
 }
 
