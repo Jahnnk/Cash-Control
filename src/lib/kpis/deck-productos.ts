@@ -7,8 +7,10 @@
  *   9  · Qué rota más en cada sede (ventas de carta, familias y los que más
  *        unidades venden).
  *   10 · Los 10 que más facturan, por sede.
- *   11 · Ranking de postres y pastelería, por sede.
- *   12 · Candidatos a reemplazo (Fonavi y Centro juntas).
+ *   11–13 · Ranking por categoría, una lámina por sede (antes solo postres;
+ *        ampliado el 24-sep-2026 con los candidatos de cada categoría).
+ *   14 · Regla 80/20: el mes contra los últimos 3 meses.
+ *   15 · Candidatos a reemplazo (Fonavi y Centro juntas).
  *
  * Mismos datos que el dashboard (getPanoramaProductosGrupo y
  * getCandidatosReemplazo): el deck nunca contradice a la pantalla. Una sede
@@ -16,8 +18,10 @@
  */
 
 import type PptxGenJS from "pptxgenjs";
-import type { PanoramaDeSede, CandidatosReemplazo } from "@/app/actions/productos-panorama";
-import type { ProductoRanking, PanoramaProductos } from "@/lib/productos/panorama";
+import type { PanoramaDeSede, CandidatosReemplazo, OchentaVeinteSede } from "@/app/actions/productos-panorama";
+import { FAMILIA_OTROS, type ProductoRanking, type PanoramaProductos } from "@/lib/productos/panorama";
+import { tendenciaPareto, type Pareto } from "@/lib/productos/ochenta-veinte";
+import { candidatosDeCategoria } from "@/lib/productos/por-categoria";
 import type { Candidato, Senal } from "@/lib/productos/candidatos";
 import { COLOR_FAMILIA } from "@/components/productos/ui";
 import {
@@ -31,7 +35,6 @@ import type { Tono } from "./lectura-semana";
 const ORDEN = [2, 3, 1];
 const MES3 = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
 const fechaCorta = (iso: string) => `${Number(iso.slice(8, 10))} ${MES3[Number(iso.slice(5, 7)) - 1]}`;
-const soles2 = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const colorFam = (f: string) => (COLOR_FAMILIA[f] ?? "#B6BCB8").replace("#", "");
 
 /** Byte manda los nombres en MAYÚSCULAS: en la lámina se leen mejor en tipo oración. */
@@ -49,16 +52,21 @@ export function nombreLegible(n: string): string {
     // "p-ciabatta" → "P-Ciabatta"
     return p.split("-").map((q) => q.charAt(0).toUpperCase() + q.slice(1)).join("-");
   };
-  const todoMayus = limpio === limpio.toUpperCase();
+  // "Casi todo en mayúsculas" también cuenta (Byte a veces trae "TOSTóN").
+  const letras = limpio.replace(/[^A-Za-zÁÉÍÓÚÑáéíóúñ]/g, "");
+  const minus = letras.replace(/[^a-záéíóúñ]/g, "").length;
+  const todoMayus = letras.length > 0 && minus / letras.length <= 0.15;
   if (!todoMayus && !/^[A-Z]-[a-z]/.test(limpio)) return limpio;
   return limpio.toLowerCase().split(" ").map(palabra).join(" ");
 }
 
 /** Corta un nombre para que entre en `lineas` líneas del ancho dado. */
 function recortar(t: string, fontSize: number, ancho: number, lineas: number): string {
-  if (lineasEstimadas(t, fontSize, ancho) <= lineas) return t;
+  // Margen de seguridad: si el cálculo se queda corto, el texto saltaría de línea.
+  const a = ancho * 0.95;
+  if (lineasEstimadas(t, fontSize, a) <= lineas) return t;
   let s = t;
-  while (s.length > 4 && lineasEstimadas(`${s}…`, fontSize, ancho) > lineas) s = s.slice(0, -1);
+  while (s.length > 4 && lineasEstimadas(`${s}…`, fontSize, a) > lineas) s = s.slice(0, -1);
   return `${s.trimEnd()}…`;
 }
 
@@ -198,33 +206,182 @@ export function topFacturacion(ctx: Ctx, sedes: PanoramaDeSede[]) {
   });
 }
 
-/* ───────────────── 11 · Ranking de postres y pastelería ───────────────── */
+/* ──────────── 11 a 13 · Ranking por categoría, una lámina por sede ──────────── */
 
-export function rankingPostres(ctx: Ctx, sedes: PanoramaDeSede[]) {
+const VEREDICTO_CORTO: Record<string, string> = { sacar: "Sacar", preparar: "Preparar", revisar: "Revisar", confirmar: "¿Salió?" };
+
+/**
+ * Todas las categorías de una sede en tarjetas: los 3 que más ingresan y
+ * los candidatos a reemplazo de esa categoría (los mismos de la lámina de
+ * candidatos, repartidos). Reemplaza al ranking de postres (24-sep-2026).
+ */
+export function categoriasDeSede(ctx: Ctx, sd: PanoramaDeSede, candidatos: CandidatosReemplazo | null) {
+  if (!sd.panorama) return;
+  const p = sd.panorama;
+  const cafeteria = sd.businessId === 2 || sd.businessId === 3;
   const s = diapositiva(ctx.pptx, {
-    titulo: "Ranking de postres y pastelería",
-    subtitulo: "Los 10 postres que más ingresan en cada sede y cuántos salen por día.",
+    titulo: `${sd.sede}: ranking por categoría`,
+    subtitulo: cafeteria
+      ? "Los 3 productos que más ingresan en cada categoría y los que están para reemplazo."
+      : "Los productos que más ingresan en cada categoría.",
     periodo: ctx.periodo, derecha: "Productos",
   });
-  cajaFecha(s, rangoReportes(sedes), "Fuente: rotación de Byte");
-  tresColumnas(s, sedes, (p) => {
-    const fam = p.familias.find((f) => f.familia === "Postres y pastelería");
-    return fam ? `${solesDeck0(fam.ventas)} en postres · ${fam.pct}% de la venta` : "Sin postres en el reporte";
-  }, (x, y, w, h, { p }) => {
-    const filas = p.postres.slice(0, 10);
-    if (filas.length === 0) {
-      texto(s, "No hay postres en el reporte de este mes.", { x, y: y + 0.1, w, h: 0.3, fontSize: 8.5, italic: true, color: C.gris, valign: "top" });
+  cajaFecha(s, `${fechaCorta(p.desde)} al ${fechaCorta(p.hasta)} ${p.hasta.slice(0, 4)}`, "Fuente: rotación de Byte");
+  const fams = p.familias.filter((f) => f.familia !== FAMILIA_OTROS && f.ventas > 0);
+  const cols = fams.length <= 6 ? 3 : 4;
+  const filas = Math.ceil((fams.length + 1) / cols);
+  const gap = 0.15;
+  const w = (ANCHO - gap * (cols - 1)) / cols;
+  const h = (YMAX - Y0 - gap * (filas - 1)) / filas;
+  const todos = cafeteria && candidatos ? candidatos.candidatos : [];
+  let totalCand = 0;
+
+  fams.forEach((f, i) => {
+    const x = MX + (i % cols) * (w + gap);
+    const y = Y0 + Math.floor(i / cols) * (h + gap);
+    const cab = 0.5;
+    tarjeta(s, x, y, w, h, { cabecera: { alto: cab, color: SUAVE.gris } });
+    s.addShape("ellipse", { x: x + 0.12, y: y + 0.1, w: 0.1, h: 0.1, fill: { color: colorFam(f.familia) }, line: { color: colorFam(f.familia), type: "none" } });
+    texto(s, recortar(f.familia, 8.5, w - 0.3, 1), { x: x + 0.28, y: y + 0.05, w: w - 0.36, h: 0.2, fontSize: 8.5, bold: true, color: C.tinta });
+    texto(s, `${solesDeck0(f.ventas)} · ${f.pct}% de la venta`, { x: x + 0.28, y: y + 0.26, w: w - 0.36, h: 0.16, fontSize: 7, color: C.gris });
+
+    // Los que más ingresan: 3 en las cafeterías (abajo van sus candidatos);
+    // en Atelier, que no tiene candidatos, los que quepan hasta 5.
+    const topN = cafeteria ? 3 : Math.min(5, Math.floor((h - 0.5 - 0.35) / 0.25));
+    const top = p.carta.filter((r) => r.familia === f.familia).slice(0, topN);
+    const ry0 = y + cab + 0.06;
+    const rh = 0.25;
+    top.forEach((r, k) => {
+      const ry = ry0 + k * rh;
+      circulo(s, x + 0.12, ry + 0.035, 0.18, String(k + 1), k === 0 ? "verde" : "gris");
+      texto(s, recortar(nombreLegible(r.nombre), 7, w - 1.06, 1), { x: x + 0.36, y: ry, w: w - 1.06, h: rh, fontSize: 7, color: C.tinta });
+      texto(s, solesDeck0(r.ingresos), { x: x + w - 0.74, y: ry, w: 0.62, h: rh, fontSize: 7.5, bold: true, color: C.tinta, align: "right" });
+    });
+
+    // Candidatos de la categoría.
+    const cy = ry0 + topN * rh + 0.06;
+    s.addShape("line", { x: x + 0.12, y: cy - 0.03, w: w - 0.24, h: 0, line: { color: C.borde, width: 0.5 } });
+    if (!cafeteria) {
+      texto(s, "Candidatos: solo Fonavi y Centro", { x: x + 0.12, y: cy, w: w - 0.24, h: 0.16, fontSize: 6.5, italic: true, color: C.gris });
       return;
     }
-    listaRanking(s, x, y, w, Math.min(0.37, h / filas.length), filas.map((r) => ({
-      nombre: nombreLegible(r.nombre),
-      valor: solesDeck0(r.ingresos),
-      detalle: `${r.unidadesPorDia ?? "—"} por día · ${r.precio !== null ? soles2(r.precio) : "—"}`,
-    })));
+    const cs = candidatosDeCategoria(todos, f.familia, sd.businessId);
+    totalCand += cs.length;
+    if (cs.length === 0) {
+      texto(s, "Sin candidatos a reemplazo", { x: x + 0.12, y: cy, w: w - 0.24, h: 0.16, fontSize: 6.5, color: C.verde });
+      return;
+    }
+    // Cuántos de cada lista y, debajo, los nombres (los primeros que entren).
+    const conteo = (["sacar", "preparar", "revisar", "confirmar"] as const)
+      .map((v) => [v, cs.filter((c) => c.veredicto === v).length] as const)
+      .filter(([, n]) => n > 0)
+      .map(([v, n]) => `${n} ${VEREDICTO_CORTO[v].toLowerCase()}`)
+      .join(" · ");
+    texto(s, `Para reemplazo: ${cs.length}`, { x: x + 0.12, y: cy, w: w - 0.24, h: 0.15, fontSize: 7, bold: true, color: C.rojo });
+    texto(s, recortar(conteo, 6.5, w - 0.24, 1), { x: x + 0.12, y: cy + 0.15, w: w - 0.24, h: 0.13, fontSize: 6.5, color: C.gris });
+    const ny = cy + 0.3;
+    const lineas = Math.max(1, Math.floor((y + h - 0.05 - ny) / altoLinea(6.5)));
+    const nombres = recortar(cs.map((c) => nombreLegible(c.nombre)).join(", "), 6.5, w - 0.24, lineas);
+    texto(s, nombres, { x: x + 0.12, y: ny, w: w - 0.24, h: altoLinea(6.5) * lineas, fontSize: 6.5, color: C.tinta, valign: "top" });
+  });
+
+  // Última tarjeta: el resumen de la sede.
+  const i = fams.length;
+  const x = MX + (i % cols) * (w + gap);
+  const y = Y0 + Math.floor(i / cols) * (h + gap);
+  tarjeta(s, x, y, w, h, { fondo: "F4F2EA" });
+  texto(s, "En resumen", { x: x + 0.14, y: y + 0.1, w: w - 0.28, h: 0.2, fontSize: 9, bold: true, color: C.oscuro });
+  const lider = fams[0];
+  const lineas = [
+    lider ? `Categoría que más vende: ${lider.familia} (${lider.pct}%).` : "",
+    `${fams.length} categorías con venta este mes.`,
+    cafeteria ? (candidatos ? `${totalCand} productos para reemplazo en la sede.` : "No se pudieron leer los candidatos.") : "Atelier aún no tiene candidatos a reemplazo.",
+  ].filter(Boolean);
+  texto(s, lineas.map((t, k) => ({ text: `•  ${t}`, options: { breakLine: k < lineas.length - 1 } })), {
+    x: x + 0.14, y: y + 0.36, w: w - 0.28, h: h - 0.46, fontSize: 7.5, color: C.tinta, valign: "top",
   });
 }
 
-/* ───────────────────── 12 · Candidatos a reemplazo ───────────────────── */
+/* ──────────────────────────── 14 · Regla 80/20 ──────────────────────────── */
+
+export function reglaOchentaVeinteSlide(ctx: Ctx, sedes: OchentaVeinteSede[]) {
+  const lista = [...sedes].sort((a, b) => ORDEN.indexOf(a.businessId) - ORDEN.indexOf(b.businessId));
+  if (!lista.some((x) => x.mes || x.tresMeses)) return;
+  const s = diapositiva(ctx.pptx, {
+    titulo: "Regla 80/20 de los productos",
+    subtitulo: "¿De cuántos productos depende la venta? Este mes contra los últimos 3 meses.",
+    periodo: ctx.periodo, derecha: "Productos",
+  });
+  const meses = lista[0]?.meses ?? [];
+  if (meses.length) cajaFecha(s, `${MES3[Number(meses[0].slice(5, 7)) - 1]}–${MES3[Number(meses[meses.length - 1].slice(5, 7)) - 1]} ${meses[meses.length - 1].slice(0, 4)}`, "Fuente: rotación de Byte");
+  const gap = 0.2;
+  const w = (ANCHO - gap * (lista.length - 1)) / lista.length;
+  const h = YMAX - Y0 - 0.26;
+
+  lista.forEach((sd, i) => {
+    const x = MX + i * (w + gap);
+    const m = sd.mes, t = sd.tresMeses;
+    const tend = tendenciaPareto(m, t);
+    const tono: Tono = !tend ? "gris" : tend.tono === "concentra" ? "ambar" : tend.tono === "reparte" ? "verde" : "gris";
+    tarjeta(s, x, Y0, w, h, { cabecera: { alto: 0.46, color: SUAVE.verde } });
+    icono(s, sd.businessId === 1 ? "fabrica" : "tienda", "oscuro", x + 0.14, Y0 + 0.1, 0.26);
+    texto(s, sd.sede.toUpperCase(), { x: x + 0.5, y: Y0 + 0.06, w: w - 0.6, h: 0.2, fontSize: 11, bold: true, color: C.tinta });
+    texto(s, m ? `${m.productos} productos con venta este mes` : "Sin reporte este mes", { x: x + 0.5, y: Y0 + 0.26, w: w - 0.6, h: 0.15, fontSize: 7.5, color: C.gris });
+    const ix = x + 0.16, iw = w - 0.32;
+
+    const bloque = (by: number, rotulo: string, pr: Pareto | null, grande: boolean) => {
+      texto(s, rotulo, { x: ix, y: by, w: iw, h: 0.15, fontSize: 7.5, bold: true, color: C.oscuro });
+      if (!pr) { texto(s, "Sin datos", { x: ix, y: by + 0.18, w: iw, h: 0.2, fontSize: 8, italic: true, color: C.gris }); return; }
+      texto(s, [
+        { text: `${pr.nucleo} productos`, options: { bold: true, fontSize: grande ? 16 : 12, color: C.tinta } },
+        { text: `  (${pr.pctNucleo}% de la carta)`, options: { fontSize: 7.5, color: C.gris } },
+      ], { x: ix, y: by + 0.17, w: iw, h: grande ? 0.3 : 0.24 });
+      const yb = by + (grande ? 0.52 : 0.44);
+      texto(s, "hacen el 80% de la venta", { x: ix, y: yb - 0.05, w: iw, h: 0.14, fontSize: 7, color: C.gris });
+      // Dos barras: qué parte de la carta frente a qué parte de la venta.
+      const barra = (yy: number, pct: number, col: string, et: string) => {
+        texto(s, et, { x: ix, y: yy, w: 0.62, h: 0.12, fontSize: 6.5, color: C.gris });
+        s.addShape("rect", { x: ix + 0.64, y: yy + 0.02, w: iw - 1.1, h: 0.09, fill: { color: "ECE9DF" }, line: { color: "ECE9DF", type: "none" } });
+        s.addShape("rect", { x: ix + 0.64, y: yy + 0.02, w: Math.max(0.02, (iw - 1.1) * pct / 100), h: 0.09, fill: { color: col }, line: { color: col, type: "none" } });
+        texto(s, `${pct}%`, { x: ix + iw - 0.42, y: yy, w: 0.42, h: 0.12, fontSize: 6.5, bold: true, color: C.tinta, align: "right" });
+      };
+      barra(yb + 0.13, pr.pctNucleo, C.oscuro, "Productos");
+      barra(yb + 0.28, 80, C.verde, "Venta");
+    };
+    bloque(Y0 + 0.58, "Este mes", m, true);
+    s.addShape("line", { x: ix, y: Y0 + 1.6, w: iw, h: 0, line: { color: C.borde, width: 0.5 } });
+    bloque(Y0 + 1.68, "Últimos 3 meses", t, false);
+
+    // Tendencia y cola.
+    const ty = Y0 + 2.62;
+    if (tend) {
+      const et = tend.tono === "concentra" ? "Se concentra" : tend.tono === "reparte" ? "Se reparte" : "Estable";
+      pastilla(s, ix, ty, 1.05, 0.22, et, tono, { tam: 8 });
+      const expl = tend.tono === "concentra" ? "Hacen falta menos productos que antes: más dependencia de pocos."
+        : tend.tono === "reparte" ? "Hacen falta más productos que antes: la venta se abre."
+        : "Igual que en los últimos 3 meses.";
+      texto(s, expl, { x: ix, y: ty + 0.27, w: iw, h: altoLinea(7) * 2, fontSize: 7, color: C.tinta, valign: "top" });
+    }
+    if (m) {
+      texto(s, [
+        { text: `El 20% más vendido (${m.top20} productos) hace el `, options: {} },
+        { text: `${m.ventasTop20Pct}%`, options: { bold: true } },
+        { text: " de la venta." },
+      ], { x: ix, y: ty + 0.54, w: iw, h: altoLinea(7) * 2, fontSize: 7, color: C.tinta, valign: "top" });
+      const cy = ty + 0.86;
+      s.addShape("roundRect", { x: ix, y: cy, w: iw, h: 0.4, rectRadius: 0.04, fill: { color: "F4F2EA" }, line: { color: "F4F2EA", type: "none" } });
+      texto(s, [
+        { text: `La cola: ${m.cola} productos`, options: { bold: true, breakLine: true } },
+        { text: `juntos hacen solo el ${m.ventasColaPct}% de la venta. Ahí se buscan los candidatos a reemplazo.` },
+      ], { x: ix + 0.1, y: cy, w: iw - 0.2, h: 0.4, fontSize: 7, color: C.tinta });
+    }
+  });
+  texto(s, "Regla 80/20: en casi todo negocio, cerca del 80% de la venta sale de alrededor del 20% de los productos. Cuanto menos productos hagan falta, más depende la venta de ellos.", {
+    x: MX, y: YMAX - 0.18, w: ANCHO, h: 0.2, fontSize: 7, italic: true, color: C.gris,
+  });
+}
+
+/* ───────────────────── 15 · Candidatos a reemplazo ───────────────────── */
 
 const SENAL_CORTA: Record<Senal, string> = {
   "vende-poco": "vende poco", "deja-poco": "gana poco", pierde: "pierde plata", cayendo: "cae", "rota-lento": "menos de 3 por semana",

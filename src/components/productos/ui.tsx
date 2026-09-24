@@ -19,9 +19,10 @@ export const COLOR_FAMILIA: Record<string, string> = {
   "Postres y pastelería": "#098B5F",
   "Sánguches, platos y desayunos": "#C8893B",
   "Empanadas": "#C9674A",
-  "Jugos, batidos y bebidas frías": "#3F8DAE",
-  "Panes y masa madre": "#9C8358",
-  "Café e infusiones": "#6E5140",
+  "Bebidas frías": "#3F8DAE",
+  "Cócteles y bar": "#A0526B",
+  "Panadería": "#9C8358",
+  "Bebidas calientes": "#6E5140",
   "Otros (extras y retail)": "#B6BCB8",
 };
 

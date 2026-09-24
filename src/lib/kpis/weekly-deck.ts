@@ -1,26 +1,28 @@
 /**
  * KPIs · Renderer del deck de la Reunión Semanal (renderer tonto).
  *
- * Estructura (rediseño de Jahnn, 24-sep-2026): 12 diapositivas.
- *   1 · Portada                       7 · Meta de ticket e incentivos
- *   2 · La semana en una mirada       8 · Punto de equilibrio
- *   3 · Ventas del mes (Byte)         9 · Qué rota más en cada sede
- *   4 · Fonavi: detalle de KPIs      10 · Los 10 que más facturan
- *   5 · Centro: detalle de KPIs      11 · Ranking de postres y pastelería
- *   6 · Atelier: detalle B2B         12 · Candidatos a reemplazo
+ * Estructura (rediseño de Jahnn, 24-sep-2026): 15 diapositivas.
+ *   1 · Portada                       9 · Qué rota más en cada sede
+ *   2 · La semana en una mirada      10 · Los 10 que más facturan
+ *   3 · Ventas del mes (Byte)        11 · Fonavi: ranking por categoría
+ *   4 · Fonavi: detalle de KPIs      12 · Centro: ranking por categoría
+ *   5 · Centro: detalle de KPIs      13 · Atelier: ranking por categoría
+ *   6 · Atelier: detalle B2B         14 · Regla 80/20
+ *   7 · Meta de ticket e incentivos  15 · Candidatos a reemplazo
+ *   8 · Punto de equilibrio
  *
  * Salieron (pedido de Jahnn): "¿el bono por ticket se paga solo?", las
  * láminas de portafolio, "qué mejoró / qué empeoró" y Kaizen. Los productos
- * se resumieron en 4 láminas, como se ven en Grupo → Productos.
+ * se resumieron como se ven en Grupo → Productos.
  * Acepta rangos personalizados (no solo la semana dom→sáb).
  */
 
 import PptxGenJS from "pptxgenjs";
 import type { BoardDeckData } from "@/app/actions/kpis";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
-import type { PanoramaDeSede, CandidatosReemplazo } from "@/app/actions/productos-panorama";
+import type { PanoramaDeSede, CandidatosReemplazo, OchentaVeinteSede } from "@/app/actions/productos-panorama";
 import { contexto, portada, laSemanaEnUnaMirada, ventasDelMes, detalleCafeteria, detalleAtelier, incentivos, puntoDeEquilibrio } from "./deck-semanal";
-import { rotacionPorSede, topFacturacion, rankingPostres, candidatosReemplazo } from "./deck-productos";
+import { rotacionPorSede, topFacturacion, categoriasDeSede, reglaOchentaVeinteSlide, candidatosReemplazo } from "./deck-productos";
 import { FONT } from "./deck-diseno";
 
 export async function renderWeeklyKpiDeck(
@@ -34,6 +36,8 @@ export async function renderWeeklyKpiDeck(
   productos?: PanoramaDeSede[] | null,
   /** Candidatos a reemplazo de Fonavi y Centro. */
   candidatos?: CandidatosReemplazo | null,
+  /** Regla 80/20 por sede (mes y últimos 3 meses). */
+  ochentaVeinte?: OchentaVeinteSede[] | null,
 ): Promise<{ blob: Blob; filename: string }> {
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "WIDE", width: 10, height: 5.625 });
@@ -52,8 +56,13 @@ export async function renderWeeklyKpiDeck(
   if (productos && productos.some((x) => x.panorama)) {
     rotacionPorSede(ctx, productos);
     topFacturacion(ctx, productos);
-    rankingPostres(ctx, productos);
+    // Una lámina de categorías por sede, en el orden del dashboard.
+    for (const id of [2, 3, 1]) {
+      const sd = productos.find((x) => x.businessId === id);
+      if (sd) categoriasDeSede(ctx, sd, candidatos ?? null);
+    }
   }
+  if (ochentaVeinte) reglaOchentaVeinteSlide(ctx, ochentaVeinte);
   if (candidatos) candidatosReemplazo(ctx, candidatos);
 
   const blob = (await pptx.write({ outputType: "blob" })) as Blob;
