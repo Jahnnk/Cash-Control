@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as XLSX from "xlsx";
-import { costoPorUnidadRegistrada, unidadSugerida } from "@/lib/costos-preparaciones";
+import { claveNombre, costoPorUnidadRegistrada, unidadSugerida } from "@/lib/costos-preparaciones";
 import { leerPricingAtelier } from "@/lib/costos-preparaciones-excel";
 import { costoDeReceta } from "@/lib/recetas";
 
@@ -37,6 +37,19 @@ const EXCEL = libro({
     [null, "📊 Costo por 1 KG", null, null, null, null, null, null, 7.65],
     [null, "▼ Cake de Chocolate - Torta Entera"],
     [null, "Sub Total", null, null, 1238],
+  ],
+  "ATE · Pastelería": [
+    [null, "▼ Tarta Nueva"],
+    [null, "Rendimiento por Receta:", 10],
+    ["SKU", "Ingrediente", "Und", "Precio por Kg/Lt (S/)", "Q x Receta", "Costo Total de Receta (S/)", "Precio Unt. g/ml", "Q x Und.Prod. (g/ml)", "% Merma", "Costo con Merma", "Costo Merma S/", "Costo Unitario (S/)"],
+    ["AC005", "Mantequilla sin sal", "g", 28, 500, 14, 0.028, 50, 0, 1.4, 0, 1.4],
+    [null, "Sub Total", null, null, 500, 14, null, 50, null, 1.4, 0, 1.4],
+    [null, "TOTAL COSTO FINAL X PRODUCTO", null, null, null, null, null, null, null, 1.4, 0, 1.4],
+    [null, "▼ Torta Vieja  [ARCHIVADO 07-sep-2026]"],
+    [null, "Rendimiento por Receta:", 1],
+    ["SKU", "Ingrediente", "Und", "Precio por Kg/Lt (S/)", "Q x Receta", "Costo Total de Receta (S/)", "Precio Unt. g/ml", "Q x Und.Prod. (g/ml)", "% Merma", "Costo con Merma", "Costo Merma S/", "Costo Unitario (S/)"],
+    ["AC005", "Mantequilla sin sal", "g", 28, 100, 2.8, 0.028, 100, 0, 2.8, 0, 2.8],
+    [null, "TOTAL COSTO FINAL X PRODUCTO", null, null, null, null, null, null, null, 2.8, 0, 2.8],
   ],
   "ATE · Insumos": [
     ["SKU", "Nombre del Insumo / Packaging", "Precio de Compra (S/ x Kg)", "Cantidad de Compra", "Unidad de Compra", "Costo por Peso (g,ml)"],
@@ -97,6 +110,15 @@ describe("recetas del Excel", () => {
     expect(costoDeReceta("preparacion", f.detalle!, porRef).costo).toBeCloseTo(18.378, 3);
   });
 
+  it("un producto con receta pero sin fila en PRICING entra igual, por unidad", () => {
+    const r = leerPricingAtelier(EXCEL);
+    const t = r.items.find((i) => i.nombre === "Tarta Nueva");
+    expect(t).toMatchObject({ ref: "PROD:tarta nueva", tipo: "producto", unidad: "und", costo: 1.4, categoria: "Pastelería" });
+    expect(t?.detalle?.rendimiento).toBe(10);
+    expect(r.sinPricing).toEqual(["Tarta Nueva"]);
+    expect(r.items.some((i) => i.nombre.startsWith("Torta Vieja"))).toBe(false); // archivada
+  });
+
   it("un SKU repetido no esconde el segundo insumo y se avisa", () => {
     expect(items.find((i) => i.ref === "OT012")?.nombre).toBe("Agua en Bidón");
     expect(items.find((i) => i.ref === "OT012·2")?.nombre).toBe("Polvo de hornear");
@@ -120,5 +142,14 @@ describe("costo de la merma", () => {
     expect(unidadSugerida({ unidad: "kg" })).toBe("g");
     expect(unidadSugerida({ unidad: "l" })).toBe("ml");
     expect(unidadSugerida({ unidad: "und" })).toBe("und");
+  });
+});
+
+describe("claveNombre", () => {
+  it("compara sin tildes, mayúsculas ni el kg del final", () => {
+    expect(claveNombre("Crema Pastelera (kg)")).toBe(claveNombre("crema  pastelera"));
+    expect(claveNombre("Granola Yayi's Kg")).toBe(claveNombre("Granola Yayi's"));
+    expect(claveNombre("Masa de Pie de Manzana")).toBe(claveNombre("MASA DE PIE DE MANZANA"));
+    expect(claveNombre("Pulpa de Maracuyá")).toBe(claveNombre("Pulpa de maracuya"));
   });
 });

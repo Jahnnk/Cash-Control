@@ -7,7 +7,7 @@
  */
 
 import * as XLSX from "xlsx";
-import type { CostoPreparacion, DetalleReceta, Ingrediente, LecturaPricing, UnidadBase } from "@/lib/costos-preparaciones";
+import { claveNombre, type CostoPreparacion, type DetalleReceta, type Ingrediente, type LecturaPricing, type UnidadBase } from "@/lib/costos-preparaciones";
 import { costoDeReceta } from "@/lib/recetas";
 
 const HOJA_PRICING = "PRICING";
@@ -21,7 +21,7 @@ const norm = (s: string) =>
 const limpiarNombre = (s: string) => s.replace(/\[[^\]]*\]/g, "").replace(/\s+/g, " ").trim();
 
 /** "Crema Pastelera (kg)", "Granola Yayi's Kg" → mismo nombre que su sub-receta. */
-const nombreSinKg = (s: string) => norm(s).replace(/\(kg\)$/, "").replace(/ kg$/, "").trim();
+const nombreSinKg = claveNombre;
 
 const num = (v: unknown): number | null => (typeof v === "number" && Number.isFinite(v) ? v : null);
 
@@ -112,6 +112,8 @@ type Bloque = {
   rendimiento: number | null;
   /** "% Merma de Preparación" del bloque (solo sub-recetas). */
   merma: number;
+  /** Fila "TOTAL COSTO FINAL X PRODUCTO": costo por unidad (hojas de productos). */
+  costoUnidad: number | null;
   ingredientes: { sku: string; nombre: string; unidad: string; cantidad: number }[];
 };
 
@@ -129,11 +131,11 @@ function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
     const i = r.findIndex((c) => typeof c === "string" && c.trim() !== "");
     if (i === -1) continue;
     const t = String(r[i]).trim();
-    const etiqueta = r.find((c, k) => k >= i && typeof c === "string" && /^(▼|rendimiento por receta|% merma de prep|.*costo por 1 kg)/i.test(c.trim())) as string | undefined;
+    const etiqueta = r.find((c, k) => k >= i && typeof c === "string" && /^(▼|rendimiento por receta|% merma de prep|.*costo por 1 kg|total costo final)/i.test(c.trim())) as string | undefined;
     const numeroTras = (texto: string) => r.slice(r.indexOf(texto) + 1).map(num).find((v) => v !== null) ?? null;
     if (etiqueta?.trim().startsWith("▼")) {
       const crudo = etiqueta.trim().slice(1).trim();
-      b = { hoja, fila: fila0 + n, nombre: limpiarNombre(crudo), archivado: r.some((c) => typeof c === "string" && /ARCHIVADO/i.test(c)), kg: null, rendimiento: null, merma: 0, ingredientes: [] };
+      b = { hoja, fila: fila0 + n, nombre: limpiarNombre(crudo), archivado: r.some((c) => typeof c === "string" && /ARCHIVADO/i.test(c)), kg: null, rendimiento: null, merma: 0, costoUnidad: null, ingredientes: [] };
       out.push(b);
       col = null;
       continue;
@@ -142,6 +144,12 @@ function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
     if (etiqueta && /^rendimiento por receta/i.test(etiqueta.trim())) { b.rendimiento = numeroTras(etiqueta); continue; }
     if (etiqueta && /^% merma de prep/i.test(etiqueta.trim())) { b.merma = numeroTras(etiqueta) ?? 0; continue; }
     if (etiqueta && /costo por 1 kg/i.test(etiqueta)) { b.kg = numeroTras(etiqueta); continue; }
+    if (etiqueta && /^total costo final/i.test(etiqueta.trim())) {
+      // La columna "Costo Unitario" del bloque; si no se detectó, el último número.
+      const v = col && col.unit !== -1 ? num(r[col.unit]) : null;
+      b.costoUnidad = v ?? [...r].reverse().map(num).find((x) => x !== null) ?? null;
+      continue;
+    }
     if (/^sku$/i.test(t)) {
       const cab = r.map((c) => (typeof c === "string" ? norm(c) : ""));
       col = {
@@ -312,6 +320,23 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
     if (!extra.includes(s)) { extra.push(s); porNombre.set(nombreSinKg(s.nombre), s.ref); }
     return s.ref;
   };
+  // Productos que tienen su receta en una hoja de producción pero todavía no
+  // su fila en PRICING (Jahnn saca una receta nueva y primero la costea en el
+  // Excel): entran igual, por unidad, con el "TOTAL COSTO FINAL X PRODUCTO".
+  const usados = new Set(unicos.filter((i) => i.tipo !== "insumo").map(bloqueDe).filter(Boolean));
+  const sinPricing: string[] = [];
+  for (const b of deProductos) {
+    if (b.archivado || usados.has(b) || b.ingredientes.length === 0 || !b.costoUnidad || b.costoUnidad <= 0) continue;
+    const n = nombreSinKg(b.nombre);
+    if (porNombre.has(n)) continue;
+    const item: CostoPreparacion = {
+      ref: `PROD:${n}`, tipo: "producto", nombre: b.nombre, categoria: b.hoja.replace(/^ATE · /, ""), unidad: "und", costo: b.costoUnidad,
+    };
+    unicos.push(item);
+    porNombre.set(n, item.ref);
+    sinPricing.push(b.nombre);
+  }
+
   const buscar = (ref: string) => unicos.find((x) => x.ref === ref) ?? extra.find((x) => x.ref === ref) ?? null;
   for (const i of unicos) {
     if (i.tipo === "insumo") continue;
@@ -339,5 +364,5 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
     i.detalle = detalle;
   }
   unicos.push(...extra.filter((e) => !unicos.some((u) => u.ref === e.ref)));
-  return { items: unicos, avisos };
+  return { items: unicos, avisos, sinPricing };
 }

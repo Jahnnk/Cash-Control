@@ -25,6 +25,15 @@
  * merma puede venir en g o ml y se convierte (costoPorUnidadRegistrada).
  */
 
+/**
+ * Clave para comparar nombres: sin tildes, mayúsculas ni el "(kg)" / " kg"
+ * del final ("Crema Pastelera (kg)" = "Crema Pastelera").
+ */
+export function claveNombre(s: string): string {
+  return s.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim()
+    .replace(/\(kg\)$/, "").replace(/ kg$/, "").trim();
+}
+
 export type TipoCosto = "producto" | "preparacion" | "insumo";
 export type UnidadBase = "und" | "kg" | "l";
 
@@ -73,6 +82,8 @@ export type LecturaPricing = {
   items: CostoPreparacion[];
   /** Lo que se dejó fuera y por qué (para que Jahnn lo vea al subir). */
   avisos: string[];
+  /** Productos con receta en las hojas de producción pero sin fila en PRICING (entran igual). */
+  sinPricing?: string[];
 };
 
 export type ResumenPricing = {
@@ -81,15 +92,16 @@ export type ResumenPricing = {
   /** Algunos ítems conocidos para que Jahnn reconozca los números. */
   ejemplos: CostoPreparacion[];
   avisos: string[];
+  sinPricing: string[];
 };
 
 const CONOCIDOS = ["Cookie XL", "Empanada de Lomito", "Frosting de Chocolate", "Crema Pastelera (kg)", "Mantequilla sin sal"];
 
-export function resumirPricing(archivo: string, { items, avisos }: LecturaPricing): ResumenPricing {
+export function resumirPricing(archivo: string, { items, avisos, sinPricing }: LecturaPricing): ResumenPricing {
   const conteos: Record<TipoCosto, number> = { producto: 0, preparacion: 0, insumo: 0 };
   for (const i of items) conteos[i.tipo]++;
   const ejemplos = CONOCIDOS.map((n) => items.find((i) => i.nombre === n)).filter((i): i is CostoPreparacion => !!i);
-  return { archivo, conteos, ejemplos, avisos };
+  return { archivo, conteos, ejemplos, avisos, sinPricing: sinPricing ?? [] };
 }
 
 /* ── Registro de la merma ─────────────────────────────────────────────── */
