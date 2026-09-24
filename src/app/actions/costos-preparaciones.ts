@@ -17,6 +17,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import type { CostoPreparacion, TipoCosto } from "@/lib/costos-preparaciones";
+import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -54,12 +55,13 @@ export async function guardarCostos(input: { archivo: string; items: CostoPrepar
     await sql.transaction([
       sql`DELETE FROM costos_preparaciones WHERE business_id = ${ATELIER}`,
       sql`
-        INSERT INTO costos_preparaciones (business_id, ref, tipo, nombre, categoria, unidad, costo, archivo)
-        SELECT ${ATELIER}, t.ref, t.tipo, t.nombre, t.categoria, t.unidad, t.costo, ${archivo}
+        INSERT INTO costos_preparaciones (business_id, ref, tipo, nombre, categoria, unidad, costo, archivo, detalle)
+        SELECT ${ATELIER}, t.ref, t.tipo, t.nombre, t.categoria, t.unidad, t.costo, ${archivo}, t.detalle::jsonb
         FROM unnest(
           ${it.map((i) => i.ref.trim())}::text[], ${it.map((i) => i.tipo)}::text[], ${it.map((i) => i.nombre.trim())}::text[],
-          ${it.map((i) => i.categoria ?? null)}::text[], ${it.map((i) => i.unidad)}::text[], ${it.map((i) => i.costo)}::numeric[]
-        ) AS t(ref, tipo, nombre, categoria, unidad, costo)`,
+          ${it.map((i) => i.categoria ?? null)}::text[], ${it.map((i) => i.unidad)}::text[], ${it.map((i) => i.costo)}::numeric[],
+          ${it.map((i) => (i.detalle ? JSON.stringify(i.detalle) : null))}::text[]
+        ) AS t(ref, tipo, nombre, categoria, unidad, costo, detalle)`,
     ]);
   } catch (e) {
     const msg = e instanceof Error ? e.message : "";
@@ -69,11 +71,17 @@ export async function guardarCostos(input: { archivo: string; items: CostoPrepar
     console.error("[guardarCostos] failed:", e);
     return { ok: false, error: "No se pudo guardar la lista de costos." };
   }
-  revalidatePath("/grupo/configuracion");
+  revalidatePath("/grupo/recetas");
   return { ok: true, guardados: it.length };
 }
 
-export type EstadoPricing = { archivo: string | null; cargadoEl: string | null; conteos: Record<TipoCosto, number> } | null;
+export type EstadoPricing = {
+  archivo: string | null;
+  cargadoEl: string | null;
+  conteos: Record<TipoCosto, number>;
+  /** Recetas del Excel que tienen versión propia en el sistema (esa sigue valiendo al subir otro Excel). */
+  reemplazos: { ref: string; nombre: string }[];
+} | null;
 
 /** Qué Excel está cargado y cuándo (para la tarjeta de Configuración). */
 export async function getEstadoPricing(): Promise<EstadoPricing> {
@@ -87,24 +95,34 @@ export async function getEstadoPricing(): Promise<EstadoPricing> {
     `) as { tipo: TipoCosto; n: number; archivo: string; cargado: string }[];
     const conteos: Record<TipoCosto, number> = { producto: 0, preparacion: 0, insumo: 0 };
     for (const r of rows) conteos[r.tipo] = r.n;
-    return { archivo: rows[0]?.archivo ?? null, cargadoEl: rows.map((r) => r.cargado).sort().pop() ?? null, conteos };
+    let reemplazos: { ref: string; nombre: string }[] = [];
+    try {
+      reemplazos = (await sql`
+        SELECT reemplaza_ref AS ref, nombre FROM recetas_sistema
+        WHERE business_id = ${ATELIER} AND reemplaza_ref IS NOT NULL ORDER BY nombre
+      `) as { ref: string; nombre: string }[];
+    } catch {
+      reemplazos = []; // antes de la migración de recetas
+    }
+    return { archivo: rows[0]?.archivo ?? null, cargadoEl: rows.map((r) => r.cargado).sort().pop() ?? null, conteos, reemplazos };
   } catch {
     return null;
   }
 }
 
-/** La lista de costos de la sede activa, para el detalle de mermas. */
+/**
+ * La lista de costos de la sede activa para el detalle de mermas: el Excel
+ * con las recetas del sistema encima. Sin la receta de cada ítem (no hace
+ * falta para registrar una merma y pesa).
+ */
 export async function getCatalogoCostos(): Promise<CostoPreparacion[]> {
   const bId = await activeBusinessId();
   const role = await getSessionRole();
   if (!(role?.kind === "full" || (role?.kind === "admin" && role.sede === bId))) return [];
-  try {
-    return (await sql`
-      SELECT ref, tipo, nombre, categoria, unidad, costo::float AS costo
-      FROM costos_preparaciones WHERE business_id = ${bId}
-      ORDER BY CASE tipo WHEN 'producto' THEN 0 WHEN 'preparacion' THEN 1 ELSE 2 END, nombre
-    `) as CostoPreparacion[];
-  } catch {
-    return []; // antes de la migración: el detalle sigue funcionando a mano
-  }
+  const { efectivo } = await leerCatalogo(sql, bId);
+  return efectivo
+    .map((i) => ({ ...i, detalle: undefined }))
+    .sort((a, b) => ORDEN[a.tipo] - ORDEN[b.tipo] || a.nombre.localeCompare(b.nombre));
 }
+
+const ORDEN = { producto: 0, preparacion: 1, insumo: 2 } as const;
