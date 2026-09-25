@@ -18,12 +18,14 @@ import { useToast } from "@/components/toast-provider";
 import { formatCurrency } from "@/lib/utils";
 import {
   getPorDefinir, resolverCategoria, resolverGasto, marcarCorregidoPorKelly,
-  getGastosDeGrupo, separarGastos, deshacerSeparacion,
+  getGastosDeGrupo, separarGastos, deshacerSeparacion, resolverConflicto, marcarReglasEnExcel,
   type BandejaPorDefinir, type ItemPorDefinir, type GastoDelGrupo, type SeparacionDelGrupo,
 } from "@/app/actions/por-definir";
 import type { TipoPE } from "@/lib/pe-kelly";
 import type { GrupoCategoria } from "@/lib/catalogo-categorias";
 import { coincideRegla, textoSugeridoParaRegla } from "@/lib/texto-regla";
+import { CATEGORIAS_GASTO, POR_ACLARAR, tipoDeCategoria } from "@/lib/reglas-gasto";
+import { NOMBRE_FUENTE, type Opinion } from "@/lib/clasificador-gasto";
 
 const MOTIVO: Record<string, string> = {
   difiere: "El Excel y el sistema lo clasifican distinto",
@@ -33,6 +35,7 @@ const MOTIVO: Record<string, string> = {
   bolson: "Gasto en el bolsón OTROS / PENDIENTE",
   atipico: "Monto fuera de lo normal para su categoría",
   separado: "Separado de su grupo",
+  conflicto: "El clasificador tiene dudas",
 };
 const GRUPO_LABEL: Record<GrupoCategoria, string> = {
   fijo: "Fijo", variable: "Variable", financiamiento: "Financiamiento (fuera del EBITDA)", fuera: "Fuera de la operación (inversión / no recurrente)",
@@ -403,6 +406,80 @@ function TarjetaGasto({ item, categorias, conListaKelly, onHecho }: { item: Item
   );
 }
 
+const CATEGORIAS_LISTA = CATEGORIAS_GASTO.map((c) => c.nombre).filter((n) => n !== POR_ACLARAR);
+
+/**
+ * Una duda del clasificador experto: las opiniones que no se ponen de
+ * acuerdo y un botón por cada opción. Con un clic se decide; si además se
+ * enseña la regla, vale para los gastos parecidos y los que vengan.
+ */
+function TarjetaConflicto({ item, onHecho }: { item: ItemPorDefinir; onHecho: () => void }) {
+  const { showToast } = useToast();
+  const d = item.datos as {
+    fecha: string; monto: number; concepto: string | null; grupo: string; categoria: string; deExcel?: boolean;
+    tipoActual: string | null; opiniones: Opinion[]; sugerencias: string[]; explicacion: string;
+  };
+  const [ensenar, setEnsenar] = useState(false);
+  const [regla, setRegla] = useState(() => textoSugeridoParaRegla(d.concepto));
+  const [otra, setOtra] = useState("");
+  const [guardando, start] = useTransition();
+
+  function decidir(categoria: string) {
+    if (ensenar && regla.trim().length < 4) { showToast("El texto de la regla es muy corto.", "error"); return; }
+    start(async () => {
+      const r = await resolverConflicto(item.id, { categoria, regla: ensenar ? regla : null });
+      if (!r.ok) { showToast(r.error, "error"); return; }
+      showToast(r.afectados > 0 ? `Listo: ${categoria}, y ${r.afectados} gasto${r.afectados === 1 ? "" : "s"} parecido${r.afectados === 1 ? "" : "s"}` : `Listo: ${categoria}`, "success");
+      onHecho();
+    });
+  }
+
+  return (
+    <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-gray-900">{d.concepto ?? "Sin concepto"}</div>
+          <div className="text-xs text-gray-500">{d.fecha} · {d.deExcel === false ? `registrado a mano como «${d.grupo}»` : `en el Excel: «${d.grupo}»`}</div>
+          <div className="text-xs text-amber-800 mt-0.5">{d.explicacion}</div>
+        </div>
+        <div className="flex gap-1.5 flex-wrap">
+          <Chip>{item.sede}</Chip>
+          <Chip tono="ambar">{formatCurrency(d.monto)}</Chip>
+        </div>
+      </div>
+      {d.opiniones.length > 0 && (
+        <div className="flex flex-wrap gap-1.5">
+          {d.opiniones.map((o) => <Chip key={o.fuente}>{NOMBRE_FUENTE[o.fuente]}: {o.categoria} ({o.tipo ?? "sin tipo"})</Chip>)}
+        </div>
+      )}
+      <div className="text-xs text-gray-600">
+        Mientras decides, cuenta como <strong>{d.categoria}</strong> ({d.tipoActual ?? "sin tipo"}) en el punto de equilibrio.
+      </div>
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        {d.sugerencias.map((c) => (
+          <button key={c} disabled={guardando} onClick={() => decidir(c)}
+            className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-800 hover:bg-emerald-50 disabled:opacity-60">
+            Es {c} <span className="text-emerald-600">· {tipoDeCategoria(c)}</span>
+          </button>
+        ))}
+        <select value={otra} onChange={(e) => setOtra(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5">
+          <option value="">Otra categoría…</option>
+          {CATEGORIAS_LISTA.filter((c) => !d.sugerencias.includes(c)).map((c) => <option key={c} value={c}>{c} · {tipoDeCategoria(c)}</option>)}
+        </select>
+        {otra && <button disabled={guardando} onClick={() => decidir(otra)} className="px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-60">Guardar</button>}
+        {guardando && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />}
+      </div>
+      <label className="flex flex-wrap items-center gap-2 text-xs text-gray-600">
+        <input type="checkbox" checked={ensenar} onChange={(e) => setEnsenar(e.target.checked)} />
+        Enseñar la regla: todos los gastos de {item.sede} que dicen
+        <input value={regla} onChange={(e) => setRegla(e.target.value.toUpperCase())} disabled={!ensenar}
+          className="border border-gray-300 rounded-lg px-2 py-1 w-56 disabled:bg-gray-50 disabled:text-gray-400" />
+        van en la misma categoría (también los que lleguen en el Excel).
+      </label>
+    </div>
+  );
+}
+
 export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
   const { showToast } = useToast();
   const [data, setData] = useState(inicial);
@@ -426,8 +503,9 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
           <ListChecks className="w-5 h-5 text-primary" /> Por definir {cargando && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
         </h1>
         <p className="text-xs text-gray-500 mt-1">
-          Lo que el sistema no puede clasificar solo: grupos que el Excel y el sistema clasifican distinto, y gastos que no se entienden.
-          Tu decisión se aplica ya; si contradice el Excel, queda en «Correcciones para el Excel» hasta que el Excel lo traiga corregido.
+          Lo que el clasificador de egresos no puede decidir solo: gastos en los que el Excel, el registro y las reglas se contradicen
+          (fijo, variable, inversión…), gastos que nadie reconoce y montos fuera de lo normal. Tu decisión se aplica ya y, si enseñas la
+          regla, vale para los gastos parecidos y los que lleguen. Si contradice el Excel, queda en «Correcciones para el Excel».
         </p>
       </div>
 
@@ -445,6 +523,8 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
           <div className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-emerald-700">Nada por definir. 👏</div>
         ) : pendientes.map((i) => i.alcance === "categoria"
           ? <TarjetaCategoria key={i.id} item={i} categorias={data.categorias[i.businessId] ?? []} onHecho={recargar} />
+          : i.motivo === "conflicto"
+          ? <TarjetaConflicto key={i.id} item={i} onHecho={recargar} />
           : <TarjetaGasto key={i.id} item={i} categorias={data.categorias[i.businessId] ?? []} conListaKelly={data.sedesConListaKelly.includes(i.businessId)} onHecho={recargar} />)}
       </section>
 
@@ -453,7 +533,7 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
           <h2 className="text-sm font-semibold text-gray-900">Correcciones para el Excel</h2>
           <p className="text-xs text-gray-500">Cada punto se cierra solo cuando llega un Excel que ya lo trae corregido.</p>
           {data.paraKelly.map((k) => {
-            const texto = `Correcciones para el Excel de ${k.sede}:\n${k.lineas.join("\n")}`;
+            const texto = `Correcciones para el Excel de ${k.sede}:\n${[...k.lineas, ...k.reglas].join("\n")}`;
             return (
               <div key={k.businessId} className="border border-gray-100 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-1.5">
@@ -462,7 +542,14 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
                     <Copy className="w-3.5 h-3.5" /> Copiar
                   </button>
                 </div>
-                <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans">{k.lineas.join("\n")}</pre>
+                {k.lineas.length > 0 && <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans">{k.lineas.join("\n")}</pre>}
+                {k.reglas.length > 0 && (
+                  <div className="mt-2 space-y-1">
+                    <pre className="text-xs text-gray-700 whitespace-pre-wrap font-sans">{k.reglas.join("\n")}</pre>
+                    <button onClick={() => start(async () => { const r = await marcarReglasEnExcel(k.businessId); if (!r.ok) showToast(r.error, "error"); recargar(); })}
+                      className="text-xs text-primary">Kelly ya las agregó a su pestaña REGLAS</button>
+                  </div>
+                )}
               </div>
             );
           })}

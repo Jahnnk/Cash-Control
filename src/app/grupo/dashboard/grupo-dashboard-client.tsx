@@ -15,6 +15,7 @@ import { BandaFrescura } from "@/components/banda-frescura";
 import { DIAS_SALDO_FRESCO, type LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { CargasKelly, SubirExcelKelly } from "./cargas-kelly";
+import { SelloClasificacionGrupo } from "@/components/sello-clasificacion";
 import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
 import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import { fechaLarga } from "@/lib/frescura-datos";
@@ -290,6 +291,8 @@ export function GrupoDashboardClient({
 
       {pestana === "finanzas" && (
         <div className="space-y-6">
+          {/* ¿Cuánto confiar en el punto de equilibrio? Lo que vale la clasificación. */}
+          <SelloClasificacionGrupo month={selectedMonth} />
           {breakeven && (
             <section className="space-y-3">
               <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Punto de equilibrio · {periodo}</h2>

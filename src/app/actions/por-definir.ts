@@ -15,7 +15,9 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole } from "@/lib/session-access";
-import { grupoAColumnas, type GrupoCategoria } from "@/lib/catalogo-categorias";
+import { grupoAColumnas, grupoDelCatalogo, type GrupoCategoria } from "@/lib/catalogo-categorias";
+import { enListaUnica, type Opinion } from "@/lib/clasificador-gasto";
+import { tipoDeCategoria } from "@/lib/reglas-gasto";
 import { normGrupoPE, type TipoPE } from "@/lib/pe-kelly";
 import { sincronizarRevisiones, inicioRevision } from "@/lib/revision-clasificacion-sql";
 import {
@@ -64,8 +66,8 @@ export type ItemPorDefinir = {
 
 export type BandejaPorDefinir = {
   pendientes: ItemPorDefinir[];
-  /** Lo que Kelly tiene que pasar a su Excel, por sede. */
-  paraKelly: { businessId: number; sede: string; lineas: string[] }[];
+  /** Lo que Kelly tiene que pasar a su Excel, por sede (correcciones y reglas nuevas para su pestaña REGLAS). */
+  paraKelly: { businessId: number; sede: string; lineas: string[]; reglas: string[] }[];
   resueltasRecientes: ItemPorDefinir[];
   /** Categorías de cada sede, para elegir a dónde mover un gasto. */
   categorias: Record<number, string[]>;
@@ -104,13 +106,24 @@ export async function getPorDefinir(): Promise<Res<{ data: BandejaPorDefinir }>>
     const categorias: Record<number, string[]> = {};
     for (const c of cats) (categorias[c.business_id] ??= []).push(c.name);
 
+    // Reglas que enseñó Jahnn y Kelly todavía no pasó a la pestaña REGLAS de su Excel.
+    let reglasNuevas: { business_id: number; texto: string; categoria: string }[] = [];
+    try {
+      reglasNuevas = (await sql`
+        SELECT business_id, texto, categoria FROM reglas_aprendidas WHERE activo AND en_excel_en IS NULL ORDER BY creado_en
+      `) as typeof reglasNuevas;
+    } catch { /* migración pendiente */ }
+
     const paraKelly = SEDES.map((s) => ({
       businessId: s.id,
       sede: s.nombre,
       lineas: items
         .filter((i) => i.businessId === s.id && i.kellyPendiente && !i.kellyCorregidoEn && i.decision && !("automatica" in i.decision))
         .map((i) => lineaParaKelly({ alcance: i.alcance, datos: i.datos, decision: i.decision as DecisionCategoria | DecisionGasto })),
-    })).filter((x) => x.lineas.length > 0);
+      reglas: reglasNuevas
+        .filter((r) => r.business_id === s.id)
+        .map((r) => `• Agregar a la pestaña REGLAS: los conceptos que dicen «${r.texto}» → ${r.categoria}.`),
+    })).filter((x) => x.lineas.length > 0 || x.reglas.length > 0);
 
     return {
       ok: true,
@@ -271,6 +284,93 @@ export async function resolverGasto(id: string, decision: DecisionGasto): Promis
     console.error("[resolverGasto] failed:", e);
     return { ok: false, error: "No se pudo guardar la decisión." };
   }
+}
+
+/* ─────────────────────────── Clasificador experto ─────────────────────────── */
+
+export type DecisionConflicto = {
+  /** Una categoría de la lista única. */
+  categoria: string;
+  /** Enseñar la regla: todos los gastos de la sede cuyo concepto dice este texto van en `categoria`. */
+  regla?: string | null;
+};
+
+/**
+ * Decide un gasto en el que el clasificador experto dudaba. Se aplica YA
+ * (categoría del gasto; el punto de equilibrio sale de ella) y, si Jahnn
+ * enseña la regla, también a los gastos parecidos de la sede y a los que
+ * lleguen en cada Excel (reaplicarDecisionesSQL).
+ */
+export async function resolverConflicto(id: string, d: DecisionConflicto): Promise<Res<{ afectados: number }>> {
+  const nombre = await quien();
+  if (!nombre) return { ok: false, error: "Solo dirección." };
+  const categoria = nombreCategoria(d.categoria);
+  if (!categoria || !enListaUnica(categoria) || categoria === "POR ACLARAR") return { ok: false, error: "Elige una categoría de la lista." };
+  const item = await leerItem(id);
+  if (!item || item.alcance !== "gasto") return { ok: false, error: "No existe." };
+  const bId = item.business_id;
+  const texto = d.regla ? textoDeRegla(d.regla) : null;
+  if (texto !== null && texto.length < 4) return { ok: false, error: "El texto de la regla es muy corto: tomaría gastos que no son." };
+  const tipo = tipoDeCategoria(categoria);
+  const tipoPE: TipoPE = tipo === "Fijo" ? "Fijo" : tipo === "Variable" ? "Variable" : "Excluido";
+  const grupo = grupoDelCatalogo(categoria) ?? GRUPO_POR_TIPO[tipoPE];
+  // Si el Excel decía otra cosa, Kelly tiene que corregirlo allá.
+  const excel = ((item.datos.opiniones as Opinion[] | undefined) ?? []).find((o) => o.fuente === "excel");
+  const kellyPendiente = !!excel && excel.categoria !== categoria;
+  const decision = { accion: "reclasificar", tipoPE, categoriaDestino: categoria, regla: texto };
+  try {
+    const afectados = texto
+      ? ((await sql`
+          SELECT COUNT(*)::int AS n FROM expenses
+          WHERE business_id = ${bId} AND archived = false AND tipo_pe IS NULL AND category <> ${categoria}
+            AND position(${texto} in norm_grupo(concepto_norm(concept))) > 0
+        `) as { n: number }[])[0]?.n ?? 0
+      : 0;
+    await sql.transaction([
+      asegurarCategoria(bId, categoria, grupo),
+      sql`
+        UPDATE expenses SET category = ${categoria}, tipo_pe = ${tipoPE}
+         WHERE business_id = ${bId} AND archived = false
+           AND huella_gasto(business_id, date, amount, concept) = ${item.clave}
+      `,
+      ...(texto ? [
+        sql`
+          INSERT INTO reglas_aprendidas (business_id, texto, categoria, creado_por, origen)
+          VALUES (${bId}, ${texto}, ${categoria}, ${nombre}, ${JSON.stringify({ fecha: item.datos.fecha, monto: item.datos.monto, concepto: item.datos.concepto })}::jsonb)
+          ON CONFLICT (business_id, texto) DO UPDATE
+            SET categoria = EXCLUDED.categoria, activo = true, creado_por = EXCLUDED.creado_por, creado_en = now(), en_excel_en = NULL
+        `,
+        // Los gastos parecidos de la sede (salvo los que Jahnn decidió uno por uno).
+        sql`
+          UPDATE expenses SET category = ${categoria}
+           WHERE business_id = ${bId} AND archived = false AND tipo_pe IS NULL
+             AND position(${texto} in norm_grupo(concepto_norm(concept))) > 0
+        `,
+      ] : []),
+      sql`
+        UPDATE clasificacion_revisiones
+           SET estado = 'resuelta', decision = ${JSON.stringify(decision)}::jsonb,
+               decidido_por = ${nombre}, decidido_en = now(), kelly_pendiente = ${kellyPendiente}, kelly_corregido_en = NULL,
+               actualizado_en = now()
+         WHERE id = ${id}
+      `,
+    ]);
+    await sincronizarRevisiones(bId);
+    refrescar();
+    return { ok: true, afectados };
+  } catch (e) {
+    console.error("[resolverConflicto] failed:", e);
+    return { ok: false, error: "No se pudo guardar la decisión." };
+  }
+}
+
+/** Kelly ya pasó las reglas nuevas de una sede a la pestaña REGLAS de su Excel. */
+export async function marcarReglasEnExcel(businessId: number): Promise<Res> {
+  if (!(await quien())) return { ok: false, error: "Solo dirección." };
+  if (![1, 2, 3].includes(businessId)) return { ok: false, error: "Sede inválida." };
+  await sql`UPDATE reglas_aprendidas SET en_excel_en = now() WHERE business_id = ${businessId} AND en_excel_en IS NULL`;
+  refrescar();
+  return { ok: true };
 }
 
 /** Kelly avisó que ya lo corrigió (por si su Excel todavía no llegó). */
