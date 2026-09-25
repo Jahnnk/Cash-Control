@@ -9,6 +9,8 @@ describe("ingresos que son préstamos (Excel de Kelly)", () => {
     ["PRESTAMO A ATELIER (FONDOS MUTUOS)", "Otros no operativos"],
     ["PAGO 1ER CUOTA PRÉSTAMO (5000.00) (PRODUCTOS SALUDABLES YAYI)", "Otros no operativos"],
     ["PAGO 1ER CUOTA PRESTAMO A ATELIER (PRODUCTOS SALUDABLES YAYI´S SRL)", "Otros no operativos"],
+    ["REScATE PARA ADELANTO UTILIDADES 2026 JUANI & JAHNN (FONDOS MUTUOS)", "Otros no operativos"],
+    ["RESCATE PARA ADELANTO UTILIDADES JUANI & JAHNN – 2400", "Otros no operativos"],
   ])("%s → %s", (nota, cat) => {
     expect(categoriaPrestamoIngreso(nota)).toBe(cat);
   });

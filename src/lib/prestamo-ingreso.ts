@@ -14,6 +14,10 @@
  *     devuelve a esta un préstamo que le dio: es cobrar una deuda, no vender)
  *   · "PRÉSTAMO A ATELIER (FONDOS MUTUOS)" → Otros no operativos (la sede saca
  *     sus ahorros para prestarle a otra: tampoco es financiamiento recibido)
+ *   · "RESCATE PARA ADELANTO UTILIDADES … (FONDOS MUTUOS)" → Otros no
+ *     operativos. Kelly (25-sep-2026): cada mes Centro saca S/2,400 de sus
+ *     ahorros para pagar el adelanto de utilidades de Jahnn y Juani (S/1,200
+ *     c/u). Es plata propia que vuelve, no venta.
  */
 
 import type { NON_OPERATIVE_CATEGORIES } from "./income-base";
@@ -25,6 +29,8 @@ const norm = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCa
 export function categoriaPrestamoIngreso(nota: string | null | undefined): NoOperativa | null {
   if (!nota) return null;
   const t = norm(nota);
+  // Rescate de ahorros (fondos mutuos, plazo fijo): plata propia que vuelve.
+  if (/\bRESCATE\b/.test(t)) return "Otros no operativos";
   if (!/\bPRESTAMO/.test(t)) return null;
   // Devolución de un préstamo que esta sede dio (cuota que le pagan).
   if (/^(PAGO|DEVOLUCION|CUOTA|ABONO)\b/.test(t) || /\bCUOTA\b.*\bPRESTAMO\b/.test(t)) return "Otros no operativos";
