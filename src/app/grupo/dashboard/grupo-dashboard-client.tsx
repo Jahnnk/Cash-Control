@@ -12,7 +12,7 @@ import { GroupKpisSection } from "./group-kpis-section";
 import { AtelierB2BCard } from "./atelier-b2b-card";
 import type { AtelierB2BResumen } from "@/app/actions/atelier-b2b";
 import { BandaFrescura } from "@/components/banda-frescura";
-import type { LiquidezGrupo } from "@/lib/liquidez";
+import { DIAS_SALDO_FRESCO, type LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { CargasKelly, SubirExcelKelly } from "./cargas-kelly";
 import { fechaLarga } from "@/lib/frescura-datos";
@@ -48,6 +48,8 @@ import type { ScopeCode } from "@/lib/business-theme";
  */
 
 const SEDE_CODE: Record<number, ScopeCode> = { 1: "atelier", 2: "fonavi", 3: "centro" };
+/** Orden de la liquidez por sede bajo el número del grupo. */
+const ORDEN_LIQUIDEZ = [2, 3, 1];
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
 type Props = {
@@ -97,6 +99,17 @@ export function GrupoDashboardClient({
     liquidez: liquidez ? liquidez.total : t.bankBalance,
     liquidezProcedencia: liquidez ? liquidez.procedencia : null,
     liquidezConfiable: liquidez ? liquidez.confiable : false,
+    liquidezSedes: ORDEN_LIQUIDEZ
+      .map((id) => liquidez?.sedes.find((x) => x.businessId === id))
+      .filter((x): x is NonNullable<typeof x> => !!x)
+      .map((x) => ({
+        businessId: x.businessId, nombre: x.nombre.replace("Yayi's ", ""),
+        total: x.total, banco: x.banco, caja: x.caja,
+        // Alerta solo si el saldo no está declarado o ya está viejo; lo que a
+        // Kelly le falta cuadrar se muestra aparte, como dato.
+        alerta: x.origen !== "declarado" || (x.antiguedadDias ?? 0) > DIAS_SALDO_FRESCO,
+        descuadre: x.descuadreKelly !== null && Math.abs(x.descuadreKelly) >= 0.01 ? x.descuadreKelly : null,
+      })),
     ventasMes: ventasMes > 0 ? ventasMes : t.monthlyIncome,
     ventasDeltaPct: deltaGrupo,
     margen: t.margin,
@@ -106,6 +119,7 @@ export function GrupoDashboardClient({
   };
 
   // ── Sedes ordenadas por desempeño (mejor arriba) ──
+  const liqById = new Map((liquidez?.sedes ?? []).map((x) => [x.businessId, x]));
   const pulses: SedePulse[] = summaries
     .map((s): SedePulse => {
       const v = byId.get(s.businessId);
@@ -118,7 +132,9 @@ export function GrupoDashboardClient({
         deltaPct: v?.mesCmp?.sameDay.pct ?? null,
         diasComparados: v?.mesCmp?.sameDay.daysCompared ?? 0,
         coberturaBaja: v?.mesCmp?.lowCoverage ?? false,
-        saldo: s.bankBalance,
+        // Misma fuente que la liquidez del hero; si no cargó, el saldo del resumen.
+        saldo: liqById.get(s.businessId)?.total ?? s.bankBalance,
+        gastosMes: s.monthlyExpenses,
         equilibrioPct: be?.avancePct ?? null,
         serie: v?.serie14 ?? [],
         hasta: v?.hasta ?? null,

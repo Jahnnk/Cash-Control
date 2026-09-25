@@ -24,7 +24,10 @@ export type SedePulse = {
   /** Días emparejados del comparativo; <10 = poco confiable. */
   diasComparados: number;
   coberturaBaja: boolean;
+  /** Banco + caja de la sede: la misma cifra que la liquidez de arriba. */
   saldo: number;
+  /** Gastos operativos del mes (lo mismo que la tabla de Finanzas). */
+  gastosMes: number;
   /** % del punto de equilibrio cubierto (0-100+); null sin base. */
   equilibrioPct: number | null;
   serie: number[];
@@ -76,6 +79,7 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
 
       {/* El número de la sede */}
       <div className="mt-5">
+        <div className="text-[10px] font-medium uppercase tracking-[0.09em] text-gray-400 mb-1.5">Ventas del mes</div>
         <div className="text-3xl font-semibold text-gray-900 tabular-nums tracking-[-0.03em] leading-none">
           {formatCurrency(s.ventasMes)}
         </div>
@@ -107,7 +111,11 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
           </div>
         )}
         <div className="flex items-baseline justify-between text-[11px] pt-1">
-          <span className="text-gray-400">Saldo</span>
+          <span className="text-gray-400">Gastos del mes</span>
+          <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.gastosMes)}</span>
+        </div>
+        <div className="flex items-baseline justify-between text-[11px]">
+          <span className="text-gray-400">Liquidez (banco + caja)</span>
           <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.saldo)}</span>
         </div>
       </div>
