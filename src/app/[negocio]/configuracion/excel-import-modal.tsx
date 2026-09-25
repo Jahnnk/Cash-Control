@@ -127,7 +127,7 @@ export function ExcelImportModal({
       try {
         const r = await listExcelSheets(b64);
         if (r.candidatesIngGtos.length === 0 && r.candidatesControlVtas.length === 0) {
-          setError("El archivo no contiene pestañas 'Ing&Gtos' ni 'Control de VTAS'. ¿Es el formato correcto de Kelly?");
+          setError("El archivo no contiene pestañas 'Ing&Gtos' ni 'Control de VTAS'. ¿Es el Excel con el formato correcto?");
           return;
         }
         setIngGtosCandidates(r.candidatesIngGtos);
@@ -426,7 +426,7 @@ function SelectStep({ onFile, pending }: { onFile: (f: File) => void; pending: b
     const files = Array.from(e.dataTransfer.files ?? []);
     const xlsx = files.find(isXlsx);
     if (!xlsx) {
-      setDragError("Tipo de archivo no soportado. Solo se acepta .xlsx (Excel de Kelly).");
+      setDragError("Tipo de archivo no soportado. Solo se acepta .xlsx (Excel).");
       return;
     }
     onFile(xlsx);
@@ -470,7 +470,7 @@ function SelectStep({ onFile, pending }: { onFile: (f: File) => void; pending: b
                 {isDragging ? "Suelta el archivo aquí" : "Click o arrastra el archivo .xlsx aquí"}
               </div>
               <div className="text-xs text-gray-500 mt-1">
-                Formato esperado: Excel de Kelly (pestaña Ing&Gtos)
+                Formato esperado: Excel (pestaña Ing&Gtos)
               </div>
             </>
           )}
@@ -688,7 +688,7 @@ function PreviewStep({
           >
             {preview.cuadre.cuadra
               ? "✓ Va a cuadrar con el Excel"
-              : "Cuadre con el Excel de Kelly"}
+              : "Cuadre con el Excel"}
           </div>
           <p className={`text-xs mb-2 ${preview.cuadre.cuadra ? "text-emerald-800" : "text-sky-900"}`}>
             {resumenCuadre(preview.cuadre)}
@@ -794,8 +794,8 @@ function PreviewStep({
                 }`}
               >
                 {Math.abs(p.saldoBancoReal.diferencia) < 0.01
-                  ? "✓ Cuadra exacto con el libro de Kelly."
-                  : `⚠ El libro de Kelly da ${formatCurrency(p.saldoBancoReal.saldoLibro)}: le falta cuadrar ${formatCurrency(Math.abs(p.saldoBancoReal.diferencia))} contra su banco.`}
+                  ? "✓ Cuadra exacto con el libro del Excel."
+                  : `⚠ El libro del Excel da ${formatCurrency(p.saldoBancoReal.saldoLibro)}: le falta cuadrar ${formatCurrency(Math.abs(p.saldoBancoReal.diferencia))} contra su banco.`}
                 {p.saldoBancoReal.lecturasEncontradas > 1 &&
                   ` La columna traía ${p.saldoBancoReal.lecturasEncontradas} lecturas (las otras son de meses anteriores).`}
               </p>
@@ -822,7 +822,7 @@ function PreviewStep({
           {cv.fechasCorregidas.length > 0 && (
             <div className="mt-2 text-[11px] text-blue-800 bg-blue-50 border border-blue-200 rounded-lg px-2.5 py-2">
               📅 <strong>{cv.fechasCorregidas.length} fechas corregidas</strong> al mes de la pestaña.
-              Kelly escribió el mes anterior, pero el día de la semana que puso confirma cuál era el
+              El Excel tenía el mes anterior, pero el día de la semana confirma cuál era el
               bueno.
               <div className="mt-1 text-blue-700/90">
                 {cv.fechasCorregidas.slice(0, 3).map((f) => `${f.original} → ${f.fecha}`).join(" · ")}
@@ -1030,7 +1030,7 @@ function PreviewStep({
             fueraDelMes
               ? "Hay filas con fecha de otro mes. Corrige las fechas en el Excel antes de importar."
               : hasBlocking
-                ? "Hay filas bloqueantes que el parser no puede autocorregir. Pídele a Kelly que arregle el Excel antes de importar."
+                ? "Hay filas bloqueantes que el parser no puede autocorregir. Hay que corregir el Excel antes de importar."
                 : undefined
           }
           className="px-4 py-2 text-sm font-medium text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg disabled:opacity-50 disabled:cursor-not-allowed"
@@ -1127,7 +1127,7 @@ function AvisoPorDefinir({ pendientes, nuevas }: { pendientes?: number | null; n
       <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" />
       <div>
         Hay <strong>{pendientes}</strong> cosa(s) por definir en la clasificación de gastos
-        {nuevas ? <> ({nuevas} nueva(s) con este Excel)</> : null}: grupos que Kelly y el sistema clasifican distinto
+        {nuevas ? <> ({nuevas} nueva(s) con este Excel)</> : null}: grupos que el Excel y el sistema clasifican distinto
         o gastos que no se entienden.{" "}
         <a href="/grupo/por-definir" className="font-semibold underline">Revisar ahora</a>
       </div>
@@ -1274,7 +1274,7 @@ function ParseWarningsSection({
         </div>
         {blocking.length > 0 && (
           <p className="text-xs text-red-700 mt-1">
-            Hay errores que el parser no puede resolver. Pídele a Kelly que arregle estas filas antes de importar.
+            Hay errores que el sistema no puede resolver solo: hay que corregir estas filas del Excel antes de importar.
           </p>
         )}
         {info.length > 0 && (

@@ -136,8 +136,8 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
         {s.excelKelly && (
           <div className={`text-[10px] ${s.excelKelly.igual ? "text-emerald-700" : "text-amber-700"}`}>
             {s.excelKelly.igual
-              ? "✓ Igual al Excel de Kelly"
-              : `⚠ Excel de Kelly: ingresos ${formatCurrency(s.excelKelly.ingresos)} · gastos ${formatCurrency(s.excelKelly.gastos)}`}
+              ? "✓ Igual al Excel"
+              : `⚠ Excel: ingresos ${formatCurrency(s.excelKelly.ingresos)} · gastos ${formatCurrency(s.excelKelly.gastos)}`}
           </div>
         )}
         <div className="flex items-baseline justify-between text-[11px]">

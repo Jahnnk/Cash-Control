@@ -212,7 +212,7 @@ export function MonthlyReport() {
                       footer={
                         !vc.kellyHasta ? (
                           <div className="border-t border-gray-100 pt-2 mt-1 text-slate-400">
-                            Desglose: falta el Excel de Kelly del mes.
+                            Desglose: falta el Excel del mes.
                           </div>
                         ) : <div className="border-t border-gray-100 pt-2 mt-1 space-y-0.5">
                           {vc.metodos.map((m) => (
@@ -227,7 +227,7 @@ export function MonthlyReport() {
                           </div>
                           {sinClasificar >= 0.01 && (
                             <div className="flex justify-between text-slate-400">
-                              <span>Pendiente de Kelly{vc.kellyHasta ? ` (al ${formatDateShort(vc.kellyHasta)})` : ""}</span>
+                              <span>Pendiente del Excel{vc.kellyHasta ? ` (al ${formatDateShort(vc.kellyHasta)})` : ""}</span>
                               <span className="font-medium">{formatCurrency(sinClasificar)}</span>
                             </div>
                           )}

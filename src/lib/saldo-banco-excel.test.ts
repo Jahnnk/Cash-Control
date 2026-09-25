@@ -110,7 +110,7 @@ describe("leerSaldoBancoExcel", () => {
   it("avisa cuando Kelly no anotó ningún saldo, en vez de inventar uno", () => {
     const r = leerSaldoBancoExcel(hoja({ movimientos: [[100, null], [500, null]] }));
     expect(r.ok).toBe(false);
-    if (!r.ok) expect(r.motivo).toContain("no anotó el saldo");
+    if (!r.ok) expect(r.motivo).toContain("no tiene anotado el saldo");
   });
 
   it("avisa cuando todas las lecturas son viejas, en vez de agarrar cualquiera", () => {

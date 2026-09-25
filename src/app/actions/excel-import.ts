@@ -719,7 +719,7 @@ export async function executeExcelImport(
       success: false,
       error:
         `${blockingWarnings.length} fila(s) del Excel tienen tipo y montos contradictorios y el parser no puede autocorregirlas: ${filas}. ` +
-        "Pídele a Kelly que arregle estas filas antes de importar.",
+        "Hay que corregir estas filas del Excel antes de importar.",
     };
   }
 
@@ -1057,8 +1057,8 @@ export async function executeExcelImport(
         // saldo tiene derecho a saberlo.
         const nota =
           Math.abs(sb.diferencia) < 0.01
-            ? "Saldo del banco leído del Excel de Kelly (cuadrado con su libro)"
-            : `Saldo del banco leído del Excel de Kelly. Su libro da ${sb.saldoLibro.toFixed(2)}: le falta cuadrar ${Math.abs(sb.diferencia).toFixed(2)}`;
+            ? "Saldo del banco leído del Excel (cuadrado con su libro)"
+            : `Saldo del banco leído del Excel. Su libro da ${sb.saldoLibro.toFixed(2)}: le falta cuadrar ${Math.abs(sb.diferencia).toFixed(2)}`;
 
         await db.execute(sql`
           INSERT INTO sede_balances (business_id, fecha, banco, caja, nota, registrado_por)

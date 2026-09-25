@@ -97,7 +97,7 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
                     Banco {formatCurrency(x.banco)} · Caja {formatCurrency(x.caja)}
                   </div>
                   {x.descuadre !== null && (
-                    <div className="text-[11px] text-amber-700 tabular-nums">Kelly por cuadrar: {formatCurrency(Math.abs(x.descuadre))}</div>
+                    <div className="text-[11px] text-amber-700 tabular-nums">Por cuadrar en el Excel: {formatCurrency(Math.abs(x.descuadre))}</div>
                   )}
                 </div>
               ))}
@@ -125,7 +125,7 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
           </div>
         </Stat>
         <Stat label="Flujo del mes" value={formatCurrency(s.margen)}>
-          <div className="text-xs text-gray-400">Lo que entró − lo que salió (Excel de Kelly)</div>
+          <div className="text-xs text-gray-400">Lo que entró − lo que salió (Excel)</div>
         </Stat>
         <Stat label="Punto de equilibrio" value={eq === null ? "—" : `${Math.round(eq)}%`}>
           {eq !== null ? (

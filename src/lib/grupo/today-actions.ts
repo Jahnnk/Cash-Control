@@ -54,8 +54,8 @@ export function buildTodayActions(input: ActionsInput): TodayAction[] {
       out.push({
         id: `cuadre-${c.sede}-${c.mes}`,
         severity: "critico",
-        title: `Revisa el cuadre de ${c.sede} con el Excel de Kelly`,
-        detail: `${c.alertas} ${c.alertas === 1 ? "diferencia" : "diferencias"} en ${c.mes}. El detalle está en la pestaña «Excel de Kelly».`,
+        title: `Revisa el cuadre de ${c.sede} con el Excel`,
+        detail: `${c.alertas} ${c.alertas === 1 ? "diferencia" : "diferencias"} en ${c.mes}. El detalle está en la pestaña «Excel».`,
         href: "/grupo/dashboard",
       });
     }

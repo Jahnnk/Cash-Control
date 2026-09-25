@@ -216,7 +216,7 @@ export function GrupoDashboardClient({
             <button
               type="button"
               onClick={() => setPestana("kelly")}
-              title="Ver qué Excel de Kelly están cargados"
+              title="Ver qué Excel están cargados"
               className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
                 alDia ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"
               }`}
@@ -235,7 +235,7 @@ export function GrupoDashboardClient({
             ["resumen", "Resumen"],
             ["equipo", "Sedes y equipo"],
             ["finanzas", "Finanzas"],
-            ["kelly", "Excel de Kelly"],
+            ["kelly", "Excel"],
           ] as const).map(([k, label]) => (
             <button
               key={k}

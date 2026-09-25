@@ -147,7 +147,7 @@ export function leerSaldoBancoExcel(filas: unknown[][]): LecturaSaldo {
       ok: false,
       motivo:
         lecturas === 0
-          ? "La columna 'Banco Crédito Cta. Cte' está vacía: Kelly no anotó el saldo del banco."
+          ? "La columna 'Banco Crédito Cta. Cte' está vacía: el Excel no tiene anotado el saldo del banco."
           : "Ninguna lectura del banco está a la altura del saldo final del libro — parecen todas de meses anteriores.",
     };
   }
