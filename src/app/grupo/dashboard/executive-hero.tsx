@@ -19,6 +19,11 @@ export type HeroStats = {
   liquidezProcedencia: string | null;
   /** true = los tres saldos están declarados y frescos. */
   liquidezConfiable: boolean;
+  /**
+   * La liquidez de cada sede (banco + caja). Sale del MISMO cálculo que el
+   * total (getLiquidezGrupo), así que las tres suman el número grande.
+   */
+  liquidezSedes: { businessId: number; nombre: string; total: number; banco: number; caja: number; alerta: boolean; descuadre: number | null }[];
   ventasMes: number;
   ventasDeltaPct: number | null;
   margen: number;
@@ -76,6 +81,26 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
           {s.liquidezProcedencia && (
             <div className={`mt-1.5 text-[11px] ${s.liquidezConfiable ? "text-emerald-600" : "text-amber-700"}`}>
               {s.liquidezConfiable ? "✓ " : "⚠ "}{s.liquidezProcedencia}
+            </div>
+          )}
+          {/* De qué sede es cada sol (pedido de Jahnn, 25-sep-2026). */}
+          {s.liquidezSedes.length > 0 && (
+            <div className="mt-5 flex flex-wrap gap-x-8 gap-y-3">
+              {s.liquidezSedes.map((x) => (
+                <div key={x.businessId} className="min-w-0">
+                  <div className="text-[10px] font-medium uppercase tracking-[0.09em] text-gray-400">{x.nombre}</div>
+                  <div className={`mt-0.5 text-lg font-semibold tabular-nums tracking-tight ${x.alerta ? "text-amber-700" : "text-gray-900"}`}>
+                    {x.alerta && <span title="Este saldo no está declarado o ya no está al día">⚠ </span>}
+                    {formatCurrency(x.total)}
+                  </div>
+                  <div className="text-[11px] text-gray-400 tabular-nums">
+                    Banco {formatCurrency(x.banco)} · Caja {formatCurrency(x.caja)}
+                  </div>
+                  {x.descuadre !== null && (
+                    <div className="text-[11px] text-amber-700 tabular-nums">Kelly por cuadrar: {formatCurrency(Math.abs(x.descuadre))}</div>
+                  )}
+                </div>
+              ))}
             </div>
           )}
         </div>
