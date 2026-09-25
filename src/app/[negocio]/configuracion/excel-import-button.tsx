@@ -24,7 +24,7 @@ export function ExcelImportButton({ negocio }: { negocio: string }) {
               Importar desde Excel
             </h3>
             <p className="text-xs text-gray-500 mt-1">
-              Sube el archivo .xlsx de Kelly para importar todos los movimientos del mes en {negocioLabel}.
+              Sube el archivo Excel (.xlsx) para importar todos los movimientos del mes en {negocioLabel}.
               Los manuales del mismo rango se archivan (recuperables).
             </p>
           </div>

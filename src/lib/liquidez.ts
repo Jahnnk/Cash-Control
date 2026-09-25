@@ -128,7 +128,7 @@ export function calcularLiquidez(input: {
       // El descuadre de Kelly NO se tapa: si su libro no cuaja con su
       // banco, quien decida sobre este saldo tiene derecho a saberlo.
       if (descuadreKelly !== null && Math.abs(descuadreKelly) >= 0.01) {
-        avisos.push(`a Kelly le falta cuadrar ${r2(Math.abs(descuadreKelly))} entre su libro y el banco`);
+        avisos.push(`falta cuadrar ${r2(Math.abs(descuadreKelly))} entre el libro del Excel y el banco`);
       }
       const dias = diasEntre(fecha, todayISO);
       if (dias > DIAS_SALDO_FRESCO) {
@@ -177,9 +177,9 @@ export function calcularLiquidez(input: {
   const deKelly = sedes.filter((s) => s.fuente === "excel-kelly").length;
   const procedencia = confiable
     ? deKelly === sedes.length
-      ? "Saldos leídos del banco en el Excel de Kelly."
+      ? "Saldos leídos del banco en el Excel."
       : deKelly > 0
-        ? "Saldos verificados contra el banco (parte del Excel de Kelly, parte registrados por ti)."
+        ? "Saldos verificados contra el banco (parte del Excel, parte registrados por ti)."
         : "Saldos verificados contra el banco esta semana."
     : sinNada.length > 0
       ? `Sin saldo ni estimación en ${enumerar(sinNada)}: el total está incompleto.`

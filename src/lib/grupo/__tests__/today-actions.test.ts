@@ -23,7 +23,7 @@ describe("buildTodayActions", () => {
       sedes: [sede()],
       cuadres: [{ sede: "Atelier", mes: "2026-09", alertas: 2 }, { sede: "Fonavi", mes: "2026-09", alertas: 0 }],
     });
-    expect(a[0].title).toBe("Revisa el cuadre de Atelier con el Excel de Kelly");
+    expect(a[0].title).toBe("Revisa el cuadre de Atelier con el Excel");
     expect(a[0].detail).toContain("2 diferencias");
     expect(a.filter((x) => x.id.startsWith("cuadre-"))).toHaveLength(1);
   });

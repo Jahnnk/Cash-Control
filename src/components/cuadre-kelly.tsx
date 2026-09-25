@@ -70,7 +70,7 @@ function DashboardVsExcel({ v }: { v: VerificacionSedeMes }) {
         <tr className="text-[11px] uppercase tracking-wider text-gray-500">
           <th className="text-left font-medium pb-2"></th>
           <th className="text-right font-medium pb-2">Dashboard</th>
-          <th className="text-right font-medium pb-2">Excel de Kelly</th>
+          <th className="text-right font-medium pb-2">Excel</th>
           <th className="w-8"></th>
         </tr>
       </thead>
@@ -107,7 +107,7 @@ export function DetalleCuadre({ v }: { v: VerificacionSedeMes }) {
       )}
       <DashboardVsExcel v={v} />
       <div className="text-[11px] text-gray-500">
-        Cómo se llega del Excel a los números de la operación (los que usa el punto de equilibrio) y de la venta de Kelly a la de Byte:
+        Cómo se llega del Excel a los números de la operación (los que usa el punto de equilibrio) y de la venta del Excel a la del sistema:
       </div>
       <div className={`grid grid-cols-1 gap-6 ${v.puenteVentas ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
         <Puente titulo="Ingresos de la operación" lineas={v.puenteIngresos} total={v.sistema.ingresos} totalEtiqueta="Ingresos de la operación" />

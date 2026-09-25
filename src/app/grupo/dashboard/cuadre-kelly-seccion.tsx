@@ -21,7 +21,7 @@ export function CuadreKellySeccion({ items }: { items: VerificacionSedeMes[] | n
   const meses = [...new Set(items.map((v) => v.month))];
   return (
     <SeccionDesplegable
-      titulo="Cuadre con el Excel de Kelly"
+      titulo="Cuadre con el Excel"
       subtitulo="El sistema compara solo cada carga con el Excel: que no falte ni sobre plata, que cada diferencia tenga su razón y que los datos tengan sentido."
       resumen={
         conAlerta.length === 0

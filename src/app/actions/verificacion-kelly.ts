@@ -116,7 +116,7 @@ export async function getVerificacionKelly(): Promise<{ ok: true; items: Verific
     return { ok: true, items };
   } catch (e) {
     console.error("[getVerificacionKelly] failed:", e);
-    return { ok: false, error: "No se pudo verificar el Excel de Kelly." };
+    return { ok: false, error: "No se pudo verificar el Excel." };
   }
 }
 

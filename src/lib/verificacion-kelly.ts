@@ -30,6 +30,7 @@
 
 import { categoriaPrestamoIngreso } from "./prestamo-ingreso";
 import { esReembolsoEntreSedes } from "./reembolsos-entre-sedes";
+import { elegirVentaDia } from "./kpis/venta-del-dia";
 
 export type IngresoFila = {
   monto: number;
@@ -71,8 +72,6 @@ export type Alerta = { regla: string; titulo: string; detalle: string };
 export type VentaDia = { date: string; total: number };
 export type FuentesVenta = { byte: VentaDia[]; kelly: VentaDia[]; registro: VentaDia[] };
 
-/** A partir de cuánto una diferencia de venta de un día es alerta (menos es redondeo o voucher). */
-export const TOLERANCIA_VENTA_DIA = 5;
 
 export type Verificacion = {
   estado: "ok" | "alerta" | "sin-foto";
@@ -127,7 +126,7 @@ export function verificarMes(input: {
   const cargadoIn = suma(impIn, (i) => i.monto);
   const puenteIngresos: LineaPuente[] = [];
   if (foto) {
-    puenteIngresos.push({ etiqueta: "Ingresos del Excel de Kelly", monto: foto.ingresos });
+    puenteIngresos.push({ etiqueta: "Ingresos del Excel", monto: foto.ingresos });
     const dif = r2(cargadoIn - foto.ingresos);
     if (Math.abs(dif) >= 0.01) {
       puenteIngresos.push({ etiqueta: "Diferencia entre el Excel y lo cargado", monto: dif });
@@ -154,7 +153,7 @@ export function verificarMes(input: {
   const cargadoEx = suma(impEx, (g) => g.monto);
   const puenteGastos: LineaPuente[] = [];
   if (foto) {
-    puenteGastos.push({ etiqueta: "Gastos del Excel de Kelly", monto: foto.egresos });
+    puenteGastos.push({ etiqueta: "Gastos del Excel", monto: foto.egresos });
     if (foto.omitidosEgresos) puenteGastos.push({ etiqueta: "Ya registrados como compartidos (no se duplican)", monto: -foto.omitidosEgresos });
     const dif = r2(cargadoEx - (foto.egresos - foto.omitidosEgresos));
     if (Math.abs(dif) >= 0.01) {
@@ -228,10 +227,10 @@ export function verificarMes(input: {
     const esperadoSalio = foto ? r2(foto.egresos + extraEx - foto.omitidosEgresos) : null;
     caja = { entro: r2(input.caja.entro), salio: r2(input.caja.salio), esperadoEntro, esperadoSalio };
     if (esperadoEntro !== null && Math.abs(caja.entro - esperadoEntro) >= 0.01) {
-      alertas.push({ regla: "caja", titulo: "Los ingresos del dashboard no son los del Excel", detalle: `El dashboard muestra ${soles(caja.entro)} y el Excel de Kelly${extraIn ? " más lo registrado por dirección" : ""} da ${soles(esperadoEntro)}.` });
+      alertas.push({ regla: "caja", titulo: "Los ingresos del dashboard no son los del Excel", detalle: `El dashboard muestra ${soles(caja.entro)} y el Excel${extraIn ? " más lo registrado por dirección" : ""} da ${soles(esperadoEntro)}.` });
     }
     if (esperadoSalio !== null && Math.abs(caja.salio - esperadoSalio) >= 0.01) {
-      alertas.push({ regla: "caja", titulo: "Los gastos del dashboard no son los del Excel", detalle: `El dashboard muestra ${soles(caja.salio)} y el Excel de Kelly${extraEx ? " más lo registrado por dirección" : ""} da ${soles(esperadoSalio)}.` });
+      alertas.push({ regla: "caja", titulo: "Los gastos del dashboard no son los del Excel", detalle: `El dashboard muestra ${soles(caja.salio)} y el Excel${extraEx ? " más lo registrado por dirección" : ""} da ${soles(esperadoSalio)}.` });
     }
   }
 
@@ -254,51 +253,53 @@ export function verificarMes(input: {
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 /**
- * Ventas del mes. El sistema toma, día por día, el reporte oficial de Byte;
- * si no está, la copia de Kelly en su "Control de VTAS"; si tampoco, el
- * registro diario (misma regla que ventas-loader.ts). El puente parte de lo
- * que dice Kelly y nombra cada diferencia. Un día en que el reporte de Byte
- * y la copia de Kelly difieren en S/5 o más es alerta: alguno de los dos
- * está mal y hay que mirarlo (el 07/09 de Atelier: Byte S/2,919.97 y Kelly
- * S/2,316.58, que ella misma tenía en "REVISAR").
+ * Ventas del mes. El sistema elige la venta de cada día con la regla de dos
+ * de tres (lib/kpis/venta-del-dia.ts: Byte, el Excel y el administrador). El
+ * puente parte de lo que dice el Excel y nombra cada diferencia. Un día en que
+ * dos fuentes no coinciden (S/5 o más) es alerta, y dice cuál confirma el
+ * administrador para saber a quién corregir.
  */
 export function verificarVentas(f: FuentesVenta): { puente: LineaPuente[]; sistema: number; alertas: Alerta[] } | null {
   const byte = new Map(f.byte.map((x) => [x.date, x.total]));
-  const kelly = new Map(f.kelly.map((x) => [x.date, x.total]));
-  const registro = new Map(f.registro.map((x) => [x.date, x.total]));
-  if (byte.size === 0 && kelly.size === 0 && registro.size === 0) return null;
+  const excel = new Map(f.kelly.map((x) => [x.date, x.total]));
+  const admin = new Map(f.registro.map((x) => [x.date, x.total]));
+  if (byte.size === 0 && excel.size === 0 && admin.size === 0) return null;
 
-  const baseKelly = suma([...kelly.values()], (x) => x);
-  let difByte = 0, soloByte = 0, soloRegistro = 0, diasDif = 0, diasSoloByte = 0, diasSoloRegistro = 0;
-  const grandes: string[] = [];
-  const fechas = new Set([...byte.keys(), ...kelly.keys(), ...registro.keys()]);
-  let sistema = 0;
-  for (const d of [...fechas].sort()) {
-    const b = byte.get(d), k = kelly.get(d), r = registro.get(d);
-    if (b !== undefined) {
-      sistema += b;
-      if (k !== undefined) {
-        const dif = r2(b - k);
-        if (Math.abs(dif) >= 0.01) { difByte += dif; diasDif++; }
-        if (Math.abs(dif) >= TOLERANCIA_VENTA_DIA) grandes.push(`${ddmm(d)}: Byte ${soles(b)} y Kelly ${soles(k)}`);
-      } else { soloByte += b; diasSoloByte++; }
-    } else if (k !== undefined) {
-      sistema += k;
-    } else if (r !== undefined) {
-      sistema += r; soloRegistro += r; diasSoloRegistro++;
-    }
+  const baseExcel = suma([...excel.values()], (x) => x);
+  let difByte = 0, diasByte = 0, soloOtros = 0, diasSoloOtros = 0, sistema = 0;
+  const conByte: string[] = [], conExcel: string[] = [], sinDesempate: string[] = [];
+  for (const d of [...new Set([...byte.keys(), ...excel.keys(), ...admin.keys()])].sort()) {
+    const b = byte.get(d), e = excel.get(d), a = admin.get(d);
+    const x = elegirVentaDia(b, e, a);
+    if (!x) continue;
+    sistema += x.total;
+    if (e === undefined) { soloOtros += x.total; diasSoloOtros++; }
+    else if (Math.abs(x.total - e) >= 0.01) { difByte += x.total - e; diasByte++; }
+    const trio = `Byte ${b === undefined ? "—" : soles(b)}, Excel ${e === undefined ? "—" : soles(e)}, administrador ${a === undefined ? "—" : soles(a)}`;
+    if (x.motivo === "admin-confirma-excel") conExcel.push(`${ddmm(d)} (${trio})`);
+    else if (x.motivo === "admin-confirma-byte") conByte.push(`${ddmm(d)} (${trio})`);
+    else if (x.motivo === "sin-desempate") sinDesempate.push(`${ddmm(d)} (${trio})`);
   }
-  const puente: LineaPuente[] = [{ etiqueta: "Ventas en el Control de VTAS de Kelly", monto: baseKelly }];
-  if (diasDif) puente.push({ etiqueta: `El reporte oficial de Byte difiere de Kelly (${diasDif} ${diasDif === 1 ? "día" : "días"})`, monto: r2(difByte) });
-  if (diasSoloByte) puente.push({ etiqueta: `Días que Kelly aún no tiene (${diasSoloByte})`, monto: r2(soloByte), nota: "Se usa el reporte de Byte" });
-  if (diasSoloRegistro) puente.push({ etiqueta: `Días solo en el registro diario (${diasSoloRegistro})`, monto: r2(soloRegistro) });
-  const alertas: Alerta[] = grandes.length
-    ? [{
-        regla: "ventas",
-        titulo: `Las ventas de Byte y del Excel de Kelly no coinciden en ${grandes.length} ${grandes.length === 1 ? "día" : "días"}`,
-        detalle: `${grandes.join(" · ")}. El sistema usa el reporte de Byte; pídele a Kelly que revise su Control de VTAS.`,
-      }]
-    : [];
+  const puente: LineaPuente[] = [{ etiqueta: "Ventas en el Control de VTAS del Excel", monto: baseExcel }];
+  if (diasByte) puente.push({ etiqueta: `Días en que se usa el reporte de Byte (${diasByte})`, monto: r2(difByte) });
+  if (diasSoloOtros) puente.push({ etiqueta: `Días que el Excel aún no tiene (${diasSoloOtros})`, monto: r2(soloOtros), nota: "Se usa el reporte de Byte o el registro del administrador" });
+
+  const alertas: Alerta[] = [];
+  if (conExcel.length) alertas.push({
+    regla: "ventas",
+    titulo: `El reporte de Byte parece incompleto en ${conExcel.length} ${conExcel.length === 1 ? "día" : "días"}`,
+    detalle: `${conExcel.join(" · ")}. El administrador confirma el Excel y el sistema usa esa cifra; vuelve a subir el reporte de Byte de esos días.`,
+  });
+  if (conByte.length) alertas.push({
+    regla: "ventas",
+    titulo: `El Excel no coincide con Byte en ${conByte.length} ${conByte.length === 1 ? "día" : "días"}`,
+    detalle: `${conByte.join(" · ")}. El administrador confirma Byte: hay que corregir el Control de VTAS del Excel.`,
+  });
+  if (sinDesempate.length) alertas.push({
+    regla: "ventas",
+    titulo: `Ventas que no coinciden en ${sinDesempate.length} ${sinDesempate.length === 1 ? "día" : "días"} y no hay tercer dato`,
+    detalle: `${sinDesempate.join(" · ")}. El sistema usa Byte (o el Excel si no hay Byte); hay que revisar cuál es la correcta.`,
+  });
   return { puente, sistema: r2(sistema), alertas };
 }
 

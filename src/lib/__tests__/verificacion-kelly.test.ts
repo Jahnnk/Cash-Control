@@ -120,3 +120,19 @@ describe("el ingreso y gasto del dashboard son los del Excel", () => {
     expect(v.alertas).toEqual([]);
   });
 });
+
+describe("ventas con el administrador como tercer dato", () => {
+  it("30/08: Byte incompleto, el admin confirma el Excel y el sistema lo usa", async () => {
+    const { verificarVentas } = await import("../verificacion-kelly");
+    const r = verificarVentas({
+      byte: [{ date: "2026-08-30", total: 102.1 }, { date: "2026-08-05", total: 1187.3 }],
+      kelly: [{ date: "2026-08-30", total: 899.6 }, { date: "2026-08-05", total: 1071.3 }],
+      registro: [{ date: "2026-08-30", total: 899.6 }, { date: "2026-08-05", total: 1187.3 }],
+    })!;
+    expect(r.sistema).toBe(899.6 + 1187.3);
+    expect(r.alertas.map((a) => a.titulo)).toEqual([
+      "El reporte de Byte parece incompleto en 1 día",
+      "El Excel no coincide con Byte en 1 día",
+    ]);
+  });
+});

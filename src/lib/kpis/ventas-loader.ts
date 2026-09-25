@@ -6,12 +6,14 @@
  * cargar comparada contra sí misma).
  *
  * Regla de la casa (patrón multi-fuente): se combinan las fuentes POR
- * DÍA, y el dato más oficial manda:
- *   1. byte_ventas_daily  — reporte "Ventas" de Byte (oficial).
- *   2. byte_sales_daily   — Excel financiero de Kelly (también Byte,
- *                           transcrito; historia profunda de Fonavi).
- *   3. registro diario    — upselling_daily (cafeterías) /
- *                           daily_records.byte_total (Atelier), manual.
+ * DÍA con la regla de dos de tres (venta-del-dia.ts, 25-sep-2026):
+ *   1. byte_ventas_daily  — reporte "Ventas" de Byte (oficial, source='import').
+ *   2. byte_sales_daily   — el Excel financiero (también Byte, transcrito;
+ *                           total_pos_excel, con crédito).
+ *   3. registro del admin — upselling_daily (cafeterías) / lo que teclea la
+ *                           supervisora o daily_records (Atelier).
+ * Manda Byte, salvo que Byte y el Excel difieran y el administrador
+ * confirme el Excel.
  *
  * Todo lector de venta diaria (deck de la reunión, dashboard de Grupo)
  * debe pasar por aquí: dos lectores con cadenas distintas = dos
@@ -19,6 +21,7 @@
  */
 
 import type { VentaRow } from "./ventas-deck";
+import { elegirVentaDia } from "./venta-del-dia";
 
 /** Firma mínima del template tag de @neondatabase/serverless. */
 type SqlTag = (strings: TemplateStringsArray, ...params: unknown[]) => Promise<unknown>;
@@ -42,10 +45,14 @@ export async function leerFuentesVenta(
   // Prioridad 1 y 2: reportes de Byte (oficial primero).
   let byte: VentaRow[] = [];
   try {
+    // Solo el reporte oficial: lo que la supervisora de Atelier teclea en
+    // su panel también se guarda aquí (source='manual'), pero es dato del
+    // administrador, no de Byte.
     byte = (await sql`
       SELECT date::text AS date, total::float AS total
       FROM byte_ventas_daily
       WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to} AND total > 0
+        AND COALESCE(source, 'import') = 'import'
     `) as VentaRow[];
   } catch { /* tabla pendiente de migración */ }
   let kelly: VentaRow[] = [];
@@ -64,18 +71,25 @@ export async function leerFuentesVenta(
     `) as VentaRow[];
   } catch { /* tabla pendiente de migración */ }
 
-  // Prioridad 3: registro diario manual.
+  // El registro del administrador: tercera opinión independiente. En las
+  // cafeterías, lo que teclea el admin en su panel; en Atelier, lo de la
+  // supervisora (mientras el reporte de Byte no lo pise) o, si no hay, el
+  // cierre diario de dirección. Lo copiado del reporte de Byte
+  // (source='import') no cuenta: no es una opinión distinta.
   const registro: VentaRow[] = bId === 1
     ? ((await sql`
-        SELECT date::text AS date, byte_total::float AS total
-        FROM daily_records
-        WHERE business_id = 1 AND date BETWEEN ${from} AND ${to}
-          AND archived = false AND COALESCE(byte_total, 0) > 0
+        SELECT date::text AS date, total::float AS total FROM byte_ventas_daily
+        WHERE business_id = 1 AND date BETWEEN ${from} AND ${to} AND total > 0 AND source = 'manual'
+        UNION ALL
+        SELECT date::text, byte_total::float FROM daily_records d
+        WHERE business_id = 1 AND date BETWEEN ${from} AND ${to} AND archived = false AND COALESCE(byte_total, 0) > 0
+          AND NOT EXISTS (SELECT 1 FROM byte_ventas_daily v WHERE v.business_id = 1 AND v.date = d.date AND v.source = 'manual' AND v.total > 0)
       `) as VentaRow[])
     : ((await sql`
         SELECT date::text AS date, revenue::float AS total
         FROM upselling_daily
         WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to} AND COALESCE(revenue, 0) > 0
+          AND COALESCE(source, 'manual') <> 'import'
       `) as VentaRow[]);
 
   return { byte, kelly, registro };
@@ -88,10 +102,15 @@ export async function loadVentaRowsBlended(
   to: string,
 ): Promise<VentaRowsBlended> {
   const { byte, kelly, registro } = await leerFuentesVenta(sql, bId, from, to);
+  // Día por día, la regla de dos de tres (venta-del-dia.ts).
+  const b = new Map(byte.map((r) => [r.date, r.total]));
+  const e = new Map(kelly.map((r) => [r.date, r.total]));
+  const a = new Map(registro.map((r) => [r.date, r.total]));
   const byDate = new Map<string, { total: number; src: "byte" | "registro" }>();
-  for (const r of registro) byDate.set(r.date, { total: r.total, src: "registro" });
-  for (const r of kelly) byDate.set(r.date, { total: r.total, src: "byte" });
-  for (const r of byte) byDate.set(r.date, { total: r.total, src: "byte" });
+  for (const d of new Set([...b.keys(), ...e.keys(), ...a.keys()])) {
+    const x = elegirVentaDia(b.get(d), e.get(d), a.get(d));
+    if (x) byDate.set(d, { total: x.total, src: x.fuente === "admin" ? "registro" : "byte" });
+  }
 
   if (byDate.size === 0) return { rows: [], fuente: null };
   const rows = [...byDate.entries()]

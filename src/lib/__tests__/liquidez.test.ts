@@ -157,7 +157,7 @@ describe("el saldo que viene del Excel de Kelly", () => {
     const r = conKelly(null);
     expect(r.sedes.every((s) => s.origen === "declarado")).toBe(true);
     expect(r.confiable).toBe(true);
-    expect(r.procedencia).toBe("Saldos leídos del banco en el Excel de Kelly.");
+    expect(r.procedencia).toBe("Saldos leídos del banco en el Excel.");
   });
 
   it("NO tapa lo que Kelly no logró cuadrar", () => {
@@ -165,7 +165,7 @@ describe("el saldo que viene del Excel de Kelly", () => {
     // no para decidir al céntimo. Taparlo sería peor que el estimado.
     const r = conKelly(1752.3);
     const at = r.sedes.find((s) => s.nombre === "Atelier")!;
-    expect(at.avisos.some((a) => a.includes("le falta cuadrar 1752.3"))).toBe(true);
+    expect(at.avisos.some((a) => a.includes("falta cuadrar 1752.3"))).toBe(true);
     expect(r.confiable).toBe(false);
   });
 
@@ -182,6 +182,6 @@ describe("el saldo que viene del Excel de Kelly", () => {
         sede(2, "Fonavi", { banco: 15594.02, caja: 6427.87, fecha: "2026-09-08", fuente: "dirección" }, null),
       ],
     });
-    expect(r.procedencia).toContain("parte del Excel de Kelly, parte registrados por ti");
+    expect(r.procedencia).toContain("parte del Excel, parte registrados por ti");
   });
 });

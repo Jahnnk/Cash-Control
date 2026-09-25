@@ -44,7 +44,7 @@ export function EquilibrioResumenSection({ month }: { month: string }) {
           <Scale className="w-4 h-4 text-primary" /> Punto de equilibrio por mes
         </h3>
         <p className="text-xs text-gray-500 mt-0.5">
-          Lista única de categorías (la misma del Excel de Kelly) y ventas de su Control de VTAS. Cada mes con sus propios números.
+          Lista única de categorías (la misma del Excel) y ventas de su Control de VTAS. Cada mes con sus propios números.
           «Incluyendo deudas» suma las cuotas de préstamos y tarjetas: lo que hay que vender para pagarlas también.
         </p>
       </div>
@@ -60,7 +60,7 @@ export function EquilibrioResumenSection({ month }: { month: string }) {
               <th className="text-right px-3 py-2 font-medium">Incluyendo deudas</th>
               <th className="text-right px-3 py-2 font-medium">Utilidad operativa</th>
               <th className="text-left px-3 py-2 font-medium">Estado</th>
-              <th className="text-right px-3 py-2 font-medium">Excel de Kelly</th>
+              <th className="text-right px-3 py-2 font-medium">Excel</th>
             </tr>
           </thead>
           <tbody>

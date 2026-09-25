@@ -108,7 +108,7 @@ export function resumirFrescura(input: {
       hasta: null, diasAtraso: null, masAtrasadas: sedes.map((s) => s.name), sedes,
       estado: "sin_datos",
       titular: "No hay datos financieros cargados en ninguna sede.",
-      accion: "Sube los Excels de Kelly desde Configuración de cada sede.",
+      accion: "Sube los Excel desde Configuración de cada sede.",
       proximaEntrega: proximoViernes(todayISO),
     };
   }
@@ -144,7 +144,7 @@ export function resumirFrescura(input: {
   const accion =
     estado === "al_dia"
       ? null
-      : `Pídele a Kelly el Excel de ${quienes} desde el ${fechaLarga(siguienteDia(hasta))} en adelante.`;
+      : `Falta el Excel de ${quienes} desde el ${fechaLarga(siguienteDia(hasta))} en adelante.`;
 
   return { hasta, diasAtraso, masAtrasadas, sedes, estado, titular, accion, proximaEntrega: proximoViernes(todayISO) };
 }

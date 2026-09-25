@@ -147,6 +147,6 @@ export function resumenCorrecciones(
   return (
     `Se corrigieron ${correcciones.length} ${correcciones.length === 1 ? "fecha" : "fechas"} ` +
     `de ${desde} a ${hacia} (ej. ${ejemplo.original} → ${ejemplo.fecha}). ` +
-    `El día de la semana que escribió Kelly confirma el mes de la hoja.`
+    `El día de la semana que dice el Excel confirma el mes de la hoja.`
   );
 }

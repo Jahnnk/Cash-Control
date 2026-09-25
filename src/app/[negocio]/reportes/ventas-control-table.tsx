@@ -16,7 +16,7 @@ import type { DiaConciliado } from "@/lib/ventas-control-conciliacion";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import type { ConciliacionVentasMes } from "@/lib/ventas-control-conciliacion";
 
-const NOMBRE_FUENTE = { byte: "Archivo de Byte", registro: "Registro del administrador", kelly: "Excel de Kelly" } as const;
+const NOMBRE_FUENTE = { byte: "Archivo de Byte", registro: "Registro del administrador", kelly: "Excel" } as const;
 
 /** "Archivo de Byte S/1,187.30 · Registro del administrador S/1,187.30 · Excel de Kelly S/1,071.30" */
 function textoDiscrepancia(d: DiaConciliado): string {
@@ -34,7 +34,7 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
         <div>
           <strong>Total vendido</strong>: archivo de Byte{c.byteHasta && <> (hasta el {formatDateShort(c.byteHasta)})</>}; si falta o vino incompleto, la venta que registró el administrador
           {c.registroHasta && <> (hasta el {formatDateShort(c.registroHasta)})</>}.{" "}
-          <strong>{c.metodos.map((m) => m.etiqueta).join(", ")}</strong>: Excel de Kelly
+          <strong>{c.metodos.map((m) => m.etiqueta).join(", ")}</strong>: Excel
           {c.kellyHasta ? <> (trabajado hasta el {formatDateShort(c.kellyHasta)})</> : <> (todavía no cargado)</>}.{" "}
           <strong>Variación</strong> = total vendido − total.
         </div>
@@ -45,7 +45,7 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
         )}
         {c.diasConDiscrepancia > 0 && (
           <div className="text-red-700">
-            {c.diasConDiscrepancia} día(s) donde el archivo de Byte, el registro del administrador y el Excel de Kelly no dicen lo mismo (marcados con ⚠). Alguien copió mal la venta.
+            {c.diasConDiscrepancia} día(s) donde el archivo de Byte, el registro del administrador y el Excel no dicen lo mismo (marcados con ⚠). Alguien copió mal la venta.
           </div>
         )}
       </div>
@@ -81,7 +81,7 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
                   {formatCurrency(d.totalVendido)}
                   {d.fuente !== "byte" && (
                     <span className="block text-[10px] font-normal text-gray-400">
-                      {d.fuente === "registro" ? "del registro del administrador" : "del Excel de Kelly"}
+                      {d.fuente === "registro" ? "del registro del administrador" : "del Excel"}
                     </span>
                   )}
                   {d.parcial && (
@@ -89,7 +89,7 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
                   )}
                 </td>
                 {d.montos === null ? (
-                  <td colSpan={c.metodos.length + 2} className="px-3 py-2 text-right text-xs text-gray-400">Pendiente del Excel de Kelly</td>
+                  <td colSpan={c.metodos.length + 2} className="px-3 py-2 text-right text-xs text-gray-400">Pendiente del Excel</td>
                 ) : (
                   <>
                     {c.metodos.map((m) => (
@@ -127,7 +127,7 @@ export function VentasControlTable({ c }: { c: ConciliacionVentasMes }) {
           {pendientes.length > 0 && (
             <tr>
               <td colSpan={columnas} className="px-3 py-2 text-[11px] text-gray-500">
-                El desglose y la variación suman solo los días que Kelly ya trabajó. Faltan {pendientes.length} día(s) por{" "}
+                El desglose y la variación suman solo los días que ya trae el Excel. Faltan {pendientes.length} día(s) por{" "}
                 {formatCurrency(pendientes.reduce((t, d) => t + d.totalVendido, 0))} de venta.
               </td>
             </tr>

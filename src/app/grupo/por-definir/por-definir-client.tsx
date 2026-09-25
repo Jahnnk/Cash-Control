@@ -26,9 +26,9 @@ import type { GrupoCategoria } from "@/lib/catalogo-categorias";
 import { coincideRegla, textoSugeridoParaRegla } from "@/lib/texto-regla";
 
 const MOTIVO: Record<string, string> = {
-  difiere: "Kelly y el sistema lo clasifican distinto",
-  no_calza: "La categoría del sistema junta grupos que Kelly clasifica distinto",
-  sin_kelly: "Este grupo no está en la lista «Categorías PE» de Kelly",
+  difiere: "El Excel y el sistema lo clasifican distinto",
+  no_calza: "La categoría del sistema junta grupos que el Excel clasifica distinto",
+  sin_kelly: "Este grupo no está en la lista «Categorías PE» del Excel",
   sin_sistema: "La categoría no tiene grupo en el sistema",
   bolson: "Gasto en el bolsón OTROS / PENDIENTE",
   atipico: "Monto fuera de lo normal para su categoría",
@@ -282,7 +282,7 @@ function TarjetaCategoria({ item, categorias, onHecho }: { item: ItemPorDefinir;
       </div>
 
       <div className="grid sm:grid-cols-2 gap-2 text-xs">
-        <div className="rounded-lg bg-gray-50 px-3 py-2">Excel de Kelly: <strong>{d.tipoKelly ?? "no está en su lista"}</strong></div>
+        <div className="rounded-lg bg-gray-50 px-3 py-2">Excel: <strong>{d.tipoKelly ?? "no está en su lista"}</strong></div>
         <div className="rounded-lg bg-gray-50 px-3 py-2">Sistema: <strong>{d.grupoSistema ? GRUPO_LABEL[d.grupoSistema] : "sin grupo"}</strong></div>
       </div>
 
@@ -367,13 +367,13 @@ function TarjetaGasto({ item, categorias, conListaKelly, onHecho }: { item: Item
         </div>
       </div>
       <div className="text-xs text-gray-600">Hoy cuenta como: <strong>{d.tipoKelly ?? d.tipoSistema ?? "sin tipo"}</strong> en el punto de equilibrio.</div>
-      {consulta && <div className="text-xs text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 flex gap-1.5"><HelpCircle className="w-3.5 h-3.5 mt-0.5" /> Consultado a Kelly: «{consulta}»</div>}
+      {consulta && <div className="text-xs text-sky-800 bg-sky-50 border border-sky-100 rounded-lg px-3 py-2 flex gap-1.5"><HelpCircle className="w-3.5 h-3.5 mt-0.5" /> Consultado: «{consulta}»</div>}
 
       {modo === "nada" && (
         <div className="flex flex-wrap gap-2 text-xs">
           <button disabled={guardando} onClick={() => enviar({ accion: "ok" }, "Marcado como correcto")} className="px-3 py-1.5 rounded-lg border border-emerald-300 text-emerald-800 hover:bg-emerald-50">Está bien así</button>
           <button onClick={() => setModo("reclasificar")} className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50">Va en otro lado</button>
-          {!consulta && <button onClick={() => setModo("consultar")} className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50">No sé: preguntarle a Kelly</button>}
+          {!consulta && <button onClick={() => setModo("consultar")} className="px-3 py-1.5 rounded-lg border border-gray-300 hover:bg-gray-50">No sé: consultar</button>}
         </div>
       )}
       {modo === "reclasificar" && (
@@ -395,7 +395,7 @@ function TarjetaGasto({ item, categorias, conListaKelly, onHecho }: { item: Item
           <textarea value={pregunta} onChange={(e) => setPregunta(e.target.value)} rows={2} placeholder="¿Qué quieres saber? (ej. ¿fue un gasto del local o personal?)" className="w-full border border-gray-300 rounded-lg px-2 py-1.5" />
           <div className="flex gap-2 justify-end">
             <button onClick={() => setModo("nada")} className="px-3 py-1.5 text-gray-600">Cancelar</button>
-            <button disabled={guardando} onClick={() => enviar({ accion: "consultar", pregunta }, "Agregado a la lista para Kelly")} className="px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-60">Agregar a la lista de Kelly</button>
+            <button disabled={guardando} onClick={() => enviar({ accion: "consultar", pregunta }, "Agregado a las correcciones para el Excel")} className="px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-60">Agregar a la lista de Kelly</button>
           </div>
         </div>
       )}
@@ -426,8 +426,8 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
           <ListChecks className="w-5 h-5 text-primary" /> Por definir {cargando && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
         </h1>
         <p className="text-xs text-gray-500 mt-1">
-          Lo que el sistema no puede clasificar solo: grupos que el Excel de Kelly y el sistema clasifican distinto, y gastos que no se entienden.
-          Tu decisión se aplica ya; si contradice el Excel, queda en la lista para Kelly hasta que su Excel lo traiga corregido.
+          Lo que el sistema no puede clasificar solo: grupos que el Excel y el sistema clasifican distinto, y gastos que no se entienden.
+          Tu decisión se aplica ya; si contradice el Excel, queda en «Correcciones para el Excel» hasta que el Excel lo traiga corregido.
         </p>
       </div>
 
@@ -450,15 +450,15 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
 
       {data.paraKelly.length > 0 && (
         <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Lista para Kelly</h2>
-          <p className="text-xs text-gray-500">Correcciones para su Excel. Cada punto se cierra solo cuando llega un Excel que ya lo trae corregido.</p>
+          <h2 className="text-sm font-semibold text-gray-900">Correcciones para el Excel</h2>
+          <p className="text-xs text-gray-500">Cada punto se cierra solo cuando llega un Excel que ya lo trae corregido.</p>
           {data.paraKelly.map((k) => {
-            const texto = `Kelly, correcciones para el Excel de ${k.sede}:\n${k.lineas.join("\n")}`;
+            const texto = `Correcciones para el Excel de ${k.sede}:\n${k.lineas.join("\n")}`;
             return (
               <div key={k.businessId} className="border border-gray-100 rounded-lg p-3">
                 <div className="flex items-center justify-between mb-1.5">
                   <span className="text-xs font-semibold text-gray-800">{k.sede}</span>
-                  <button onClick={() => { void navigator.clipboard.writeText(texto); showToast("Copiado para enviar a Kelly", "success"); }} className="text-xs text-primary flex items-center gap-1">
+                  <button onClick={() => { void navigator.clipboard.writeText(texto); showToast("Copiado", "success"); }} className="text-xs text-primary flex items-center gap-1">
                     <Copy className="w-3.5 h-3.5" /> Copiar
                   </button>
                 </div>
@@ -484,8 +484,8 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
                     {dec?.categoriaDestino ? ` (${dec.categoriaDestino})` : ""} · {i.decididoPor}
                   </span>
                   {i.kellyPendiente && !i.kellyCorregidoEn ? (
-                    <button onClick={() => start(async () => { await marcarCorregidoPorKelly(i.id); recargar(); })} className="text-primary">Kelly ya lo corrigió</button>
-                  ) : i.kellyPendiente ? <Chip tono="verde">Kelly corrigió</Chip> : null}
+                    <button onClick={() => start(async () => { await marcarCorregidoPorKelly(i.id); recargar(); })} className="text-primary">Ya se corrigió en el Excel</button>
+                  ) : i.kellyPendiente ? <Chip tono="verde">Corregido en el Excel</Chip> : null}
                 </li>
               );
             })}

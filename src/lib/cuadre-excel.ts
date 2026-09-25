@@ -124,7 +124,7 @@ export function resumenCuadre(c: CuadreExcel): string {
   return (
     `El sistema va a mostrar ${partes.join(" y ")} más que el Excel: ` +
     `${n} movimiento${n === 1 ? "" : "s"} que ${n === 1 ? "está" : "están"} ` +
-    `registrado${n === 1 ? "" : "s"} en el sistema y no en el archivo de Kelly. ` +
+    `registrado${n === 1 ? "" : "s"} en el sistema y no en el archivo. ` +
     `No es un error — es lo que ella no lleva en su Excel.`
   );
 }

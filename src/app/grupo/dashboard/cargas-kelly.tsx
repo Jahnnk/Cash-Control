@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * "Excel de Kelly · qué está cargado" — la grilla sede × mes del dashboard de
+ * "Excel · qué está cargado" — la grilla sede × mes del dashboard de
  * Grupo (pedido de Jahnn, 22-sep-2026: "quiero lo mismo que hiciste con la
  * carga de Byte… hoy subo los Excel de Kelly desde el dashboard, pero está
  * escondido y desordenado").
@@ -37,7 +37,7 @@ const TONO: Record<CeldaKelly["estado"], string> = {
 };
 
 /**
- * El botón "Subir Excel de Kelly": primero se elige la sede (los Excel de las
+ * El botón "Subir Excel": primero se elige la sede (los Excel de las
  * tres sedes son idénticos en formato; un import en la sede equivocada sería
  * un incidente de datos silencioso) y recién ahí se abre el cargador de
  * siempre, que ya maneja varios meses a la vez.
@@ -66,7 +66,7 @@ export function SubirExcelKelly({ sede, onCerrar, className = "" }: {
           onClick={() => setEligiendo(true)}
           className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl whitespace-nowrap ${className}`}
         >
-          <Upload className="w-4 h-4" /> Subir Excel de Kelly
+          <Upload className="w-4 h-4" /> Subir Excel
         </button>
       )}
 
@@ -128,7 +128,7 @@ export function CargasKelly({ inicial = null }: { inicial?: DatosKelly | null } 
     <section className="bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-6 space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
-          <h2 className="text-[15px] font-semibold text-gray-900">Excel de Kelly · qué está cargado</h2>
+          <h2 className="text-[15px] font-semibold text-gray-900">Excel · qué está cargado</h2>
           <p className="text-xs text-gray-500 mt-1 max-w-3xl leading-relaxed">
             Cuánto vendió y gastó cada sede según el Excel, hasta qué día llega y cuándo se subió. El Excel puede traer varios meses:
             al subirlo eliges cuáles importar. Click en una casilla para subir el Excel de esa sede.
