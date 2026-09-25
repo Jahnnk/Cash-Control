@@ -230,11 +230,20 @@ export function evaluarRepartos(
 export function partirMonto(
   monto: number,
   r: ReglaReparto,
+  /**
+   * Solo modo "fixed": lo que ya se le asignó a cada sede con esta regla en
+   * el MISMO mes. El fijo es mensual: si el alquiler de S/2,700 se paga en
+   * dos partes (S/2,400 y S/300), los S/1,800 de Atelier salen del primer
+   * pago y el saldo va entero a Fonavi. Antes se aplicaba a cada pago y el
+   * saldo de S/300 le cargó S/1,800 a Atelier y −S/1,500 a Fonavi (set-2026).
+   */
+  yaAsignado: { atelier: number; centro: number } = { atelier: 0, centro: 0 },
 ): { atelier: number; fonavi: number; centro: number } {
   const r2 = (n: number) => Math.round(n * 100) / 100;
   if (r.modo === "fixed") {
-    const atelier = r2(r.atelierFijo ?? monto);
-    const centro = r2(r.centroFijo ?? 0);
+    // Ninguna parte puede ser negativa ni pasar lo que queda del pago.
+    const atelier = r2(Math.min(monto, Math.max(0, (r.atelierFijo ?? monto) - yaAsignado.atelier)));
+    const centro = r2(Math.min(monto - atelier, Math.max(0, (r.centroFijo ?? 0) - yaAsignado.centro)));
     return { atelier, centro, fonavi: r2(monto - atelier - centro) };
   }
   const atelier = r2((monto * r.atelierPct) / 100);

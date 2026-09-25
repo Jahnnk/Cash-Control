@@ -48,6 +48,7 @@ import {
   type EvaluacionReparto,
   type ReglaReparto,
 } from "@/lib/reparto-compartido";
+import { categoriaPrestamoIngreso } from "@/lib/prestamo-ingreso";
 import {
   detectarDuplicadosCompartidos,
   filasADescartar,
@@ -873,6 +874,8 @@ export async function executeExcelImport(
         }
       }
     }
+    // Montos fijos ya asignados por regla y mes (ver partirMonto).
+    const asignadoFijo = new Map<string, { atelier: number; centro: number }>();
     for (const m of parseResult.movimientos) {
       if (m.type === "expense" && filasOmitidas.has(m.excelRow)) continue;
       if (m.type === "income") {
@@ -880,11 +883,18 @@ export async function executeExcelImport(
         // costo que esta sede adelantó. Sin la marca, "Ingresos en
         // cuentas" queda inflado — S/3,979 entre may y ago-2026.
         const entreSedes = esReembolsoEntreSedes(m.note);
-        q.push(txSql`INSERT INTO bank_income_items (business_id, date, amount, payment_method, note, is_byte_sale, is_refund, is_fonavi_reimbursement, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, ${m.note}, ${m.isByteSale}, ${m.isRefund}, ${entreSedes}, true, ${batchId}::uuid)`);
+        // Un préstamo que entra (o la cuota que devuelve otra sede) tampoco
+        // es venta: entra al banco pero no a los ingresos del mes.
+        const noOperativo = entreSedes || m.isByteSale ? null : categoriaPrestamoIngreso(m.note);
+        q.push(txSql`INSERT INTO bank_income_items (business_id, date, amount, payment_method, note, is_byte_sale, is_refund, is_fonavi_reimbursement, non_operative_category, imported_from_excel, import_batch_id) VALUES (${bId}, ${m.date}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, ${m.note}, ${m.isByteSale}, ${m.isRefund}, ${entreSedes}, ${noOperativo}, true, ${batchId}::uuid)`);
       } else {
         const regla = repartoPorFila.get(m.excelRow);
         if (regla) {
-          const parte = partirMonto(m.amount, regla);
+          // El fijo es mensual: lo ya asignado con esta regla en el mes se descuenta.
+          const claveFijo = `${regla.id}|${String(m.date).slice(0, 7)}`;
+          const ya = asignadoFijo.get(claveFijo) ?? { atelier: 0, centro: 0 };
+          const parte = partirMonto(m.amount, regla, ya);
+          asignadoFijo.set(claveFijo, { atelier: ya.atelier + parte.atelier, centro: ya.centro + parte.centro });
           q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id, is_shared, atelier_amount, fonavi_amount, centro_amount, grupo_excel) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid, true, ${parte.atelier.toFixed(2)}, ${parte.fonavi.toFixed(2)}, ${parte.centro.toFixed(2)}, ${m.grupoExcel})`);
         } else {
           q.push(txSql`INSERT INTO expenses (business_id, date, category, concept, amount, payment_method, notes, imported_from_excel, import_batch_id, grupo_excel) VALUES (${bId}, ${m.date}, ${m.category}, ${m.note}, ${m.amount.toFixed(2)}, ${m.paymentMethod}, NULL, true, ${batchId}::uuid, ${m.grupoExcel})`);

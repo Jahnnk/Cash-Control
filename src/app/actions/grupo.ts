@@ -2,6 +2,7 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
+import { CATEGORIAS_DEUDA_Y_AHORRO } from "@/lib/reglas-gasto";
 
 /**
  * Datos consolidados para la vista /grupo/dashboard.
@@ -23,6 +24,8 @@ export type BusinessSummary = {
   bankBalance: number;
   monthlyIncome: number;
   monthlyExpenses: number;
+  /** Parte de monthlyExpenses que es pagar deudas, ahorrar o prestar a otra sede. */
+  monthlyDebtSavings: number;
   margin: number;
 };
 
@@ -207,6 +210,15 @@ export async function getGroupDashboard(monthInput?: string) {
     `);
     const monthlyExpenses = parseFloat(expRes.rows[0].t as string);
 
+    // De esos gastos, lo que es pagar deudas o ahorrar (no operación).
+    const deudaRes = await db.execute(sql`
+      SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) AS t
+      FROM expenses
+      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
+        AND category IN (${sql.join(CATEGORIAS_DEUDA_Y_AHORRO.map((c) => sql`${c}`), sql`, `)})
+    `);
+    const monthlyDebtSavings = parseFloat(deudaRes.rows[0].t as string);
+
     summaries.push({
       businessId: b.id,
       code: b.code,
@@ -214,6 +226,7 @@ export async function getGroupDashboard(monthInput?: string) {
       bankBalance,
       monthlyIncome,
       monthlyExpenses,
+      monthlyDebtSavings,
       margin: monthlyIncome - monthlyExpenses,
     });
   }

@@ -134,7 +134,8 @@ export function GrupoDashboardClient({
         coberturaBaja: v?.mesCmp?.lowCoverage ?? false,
         // Misma fuente que la liquidez del hero; si no cargó, el saldo del resumen.
         saldo: liqById.get(s.businessId)?.total ?? s.bankBalance,
-        gastosMes: s.monthlyExpenses,
+        gastosOperativos: s.monthlyExpenses - (s.monthlyDebtSavings ?? 0),
+        deudaAhorro: s.monthlyDebtSavings ?? 0,
         equilibrioPct: be?.avancePct ?? null,
         serie: v?.serie14 ?? [],
         hasta: v?.hasta ?? null,
