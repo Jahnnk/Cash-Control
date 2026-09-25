@@ -217,3 +217,14 @@ const PORNOMBRE = new Map(CATEGORIAS_GASTO.map((c) => [c.nombre, c]));
 export function tipoDeCategoria(nombre: string): TipoCategoria | null {
   return PORNOMBRE.get(nombre)?.tipo ?? null;
 }
+
+/**
+ * Lo que sale del banco pero no es gasto de la operación: cuotas de
+ * préstamos y tarjetas, ahorro y préstamos entre sedes. En Grupo → Resumen
+ * se muestra aparte de los gastos operativos (pedido de Jahnn, 25-sep-2026:
+ * en Atelier los S/6,822 de cuotas hacían parecer que gastaba más de lo que
+ * vendía).
+ */
+export const CATEGORIAS_DEUDA_Y_AHORRO: string[] = CATEGORIAS_GASTO
+  .filter((c) => c.tipo === "Financiamiento" || c.nombre === "AHORRO" || c.nombre === "PRÉSTAMOS ENTRE SEDES")
+  .map((c) => c.nombre);

@@ -26,8 +26,10 @@ export type SedePulse = {
   coberturaBaja: boolean;
   /** Banco + caja de la sede: la misma cifra que la liquidez de arriba. */
   saldo: number;
-  /** Gastos operativos del mes (lo mismo que la tabla de Finanzas). */
-  gastosMes: number;
+  /** Gastos de la operación del mes (sin cuotas de deuda ni ahorro). */
+  gastosOperativos: number;
+  /** Cuotas de préstamos y tarjetas, ahorro y préstamos a otras sedes. */
+  deudaAhorro: number;
   /** % del punto de equilibrio cubierto (0-100+); null sin base. */
   equilibrioPct: number | null;
   serie: number[];
@@ -111,9 +113,15 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
           </div>
         )}
         <div className="flex items-baseline justify-between text-[11px] pt-1">
-          <span className="text-gray-400">Gastos del mes</span>
-          <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.gastosMes)}</span>
+          <span className="text-gray-400">Gastos operativos del mes</span>
+          <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.gastosOperativos)}</span>
         </div>
+        {s.deudaAhorro > 0 && (
+          <div className="flex items-baseline justify-between text-[11px]">
+            <span className="text-gray-400">Pagos de deuda y ahorro</span>
+            <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.deudaAhorro)}</span>
+          </div>
+        )}
         <div className="flex items-baseline justify-between text-[11px]">
           <span className="text-gray-400">Liquidez (banco + caja)</span>
           <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.saldo)}</span>
