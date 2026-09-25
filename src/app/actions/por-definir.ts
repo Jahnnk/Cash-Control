@@ -305,14 +305,17 @@ export async function resolverConflicto(id: string, d: DecisionConflicto): Promi
   const nombre = await quien();
   if (!nombre) return { ok: false, error: "Solo dirección." };
   const categoria = nombreCategoria(d.categoria);
-  if (!categoria || !enListaUnica(categoria) || categoria === "POR ACLARAR") return { ok: false, error: "Elige una categoría de la lista." };
+  if (!categoria || !enListaUnica(categoria)) return { ok: false, error: "Elige una categoría de la lista." };
+  // "No se sabe" (POR ACLARAR, tipo Desconocido) es una decisión válida pero no se enseña como regla.
+  if (categoria === "POR ACLARAR" && d.regla) return { ok: false, error: "Lo desconocido no se enseña como regla." };
   const item = await leerItem(id);
   if (!item || item.alcance !== "gasto") return { ok: false, error: "No existe." };
   const bId = item.business_id;
   const texto = d.regla ? textoDeRegla(d.regla) : null;
   if (texto !== null && texto.length < 4) return { ok: false, error: "El texto de la regla es muy corto: tomaría gastos que no son." };
   const tipo = tipoDeCategoria(categoria);
-  const tipoPE: TipoPE = tipo === "Fijo" ? "Fijo" : tipo === "Variable" ? "Variable" : "Excluido";
+  // Lo desconocido cuenta como fijo en el punto de equilibrio (lib/fixed-variable.ts).
+  const tipoPE: TipoPE = tipo === "Fijo" || tipo === "Desconocido" ? "Fijo" : tipo === "Variable" ? "Variable" : "Excluido";
   const grupo = grupoDelCatalogo(categoria) ?? GRUPO_POR_TIPO[tipoPE];
   // Si el Excel decía otra cosa, Kelly tiene que corregirlo allá.
   const excel = ((item.datos.opiniones as Opinion[] | undefined) ?? []).find((o) => o.fuente === "excel");

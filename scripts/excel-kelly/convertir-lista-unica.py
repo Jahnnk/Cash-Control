@@ -26,7 +26,7 @@ SEDES = {
 VERDE, OSCURO, CREMA = "098B5F", "004C40", "F9F6EB"
 H = Font(name="Calibri", bold=True, color="FFFFFF")
 HFILL = PatternFill("solid", fgColor=OSCURO)
-TIPO_FILL = {"Fijo": "E3F1EA", "Variable": "FFF4D6", "Financiamiento": "E8E4F4", "Inversión": "E1ECF7", "No es gasto": "EFEFEF"}
+TIPO_FILL = {"Fijo": "E3F1EA", "Variable": "FFF4D6", "Financiamiento": "E8E4F4", "Inversión": "E1ECF7", "No es gasto": "EFEFEF", "Desconocido": "F8E0DC"}
 thin = Side(style="thin", color="D9D9D9")
 BOX = Border(left=thin, right=thin, top=thin, bottom=thin)
 
@@ -46,7 +46,7 @@ def hoja_catalogo(wb):
         c = ws.cell(4, i, h); c.font = H; c.fill = HFILL; c.alignment = Alignment(vertical="center")
     for j, cat in enumerate(CATS):
         r = 5 + j
-        entra = "Sí" if cat["tipo"] in ("Fijo", "Variable") else ("Solo en 'PE incluyendo deudas'" if cat["tipo"] == "Financiamiento" else "No")
+        entra = "Sí" if cat["tipo"] in ("Fijo", "Variable") else ("Sí, como fijo" if cat["tipo"] == "Desconocido" else ("Solo en 'PE incluyendo deudas'" if cat["tipo"] == "Financiamiento" else "No"))
         vals = [cat["nombre"], cat["tipo"], entra, cat["descripcion"], cat["ejemplos"]]
         for i, v in enumerate(vals, 1):
             c = ws.cell(r, i, v); c.border = BOX; c.alignment = Alignment(wrap_text=True, vertical="top")
@@ -188,11 +188,12 @@ def hoja_pe(wb, hoja_mes, hoja_vtas, titulo, mes_etq):
     t = rN + 3
     filas = [
         ("Total Costos Variables", f'=SUMIFS({rng("D")},{rng("C")},"Variable")'),
-        ("Total Costos Fijos", f'=SUMIFS({rng("D")},{rng("C")},"Fijo")'),
+        # Lo desconocido (POR ACLARAR) cuenta como fijo, igual que en el sistema.
+        ("Total Costos Fijos (incluye desconocidos)", f'=SUMIFS({rng("D")},{rng("C")},"Fijo")+SUMIFS({rng("D")},{rng("C")},"Desconocido")'),
         ("Total Financiamiento (préstamos y tarjetas)", f'=SUMIFS({rng("D")},{rng("C")},"Financiamiento")'),
         ("Total Inversión (equipos y remodelación)", f'=SUMIFS({rng("D")},{rng("C")},"Inversión")'),
-        ("Total No es gasto (utilidades, ahorro, entre sedes, devoluciones, por aclarar)", f'=SUMIFS({rng("D")},{rng("C")},"No es gasto")'),
-        ("   de los cuales POR ACLARAR (revisar)", f"=D{porAcl}"),
+        ("Total No es gasto (utilidades, ahorro, entre sedes, devoluciones)", f'=SUMIFS({rng("D")},{rng("C")},"No es gasto")'),
+        ("   de los fijos, desconocidos (POR ACLARAR)", f"=D{porAcl}"),
     ]
     for k, (lab, f) in enumerate(filas):
         ws.cell(t + k, 2, lab); ws.cell(t + k, 4, f)

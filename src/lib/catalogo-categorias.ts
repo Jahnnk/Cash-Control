@@ -68,6 +68,8 @@ export type CategoriaCanonica = {
  */
 const GRUPO_POR_TIPO: Record<TipoCategoria, GrupoCategoria> = {
   Fijo: "fijo", Variable: "variable", Financiamiento: "financiamiento", "Inversión": "fuera", "No es gasto": "fuera",
+  // En la base queda fuera del EBITDA; el punto de equilibrio lo cuenta como fijo (lib/fixed-variable.ts).
+  Desconocido: "fuera",
 };
 
 export const CATALOGO: CategoriaCanonica[] = [
