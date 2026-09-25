@@ -129,14 +129,14 @@ export function GrupoDashboardClient({
 
   // ── Sedes ordenadas por desempeño (mejor arriba) ──
   const liqById = new Map((liquidez?.sedes ?? []).map((x) => [x.businessId, x]));
-  // Lo que dice el Excel de Kelly del mes elegido: la primera línea de cada
-  // puente de la verificación (la "foto" guardada al cargar).
+  // ¿Los ingresos y gastos de la sede son los del Excel de Kelly de este mes?
   const excelDe = (bId: number) => {
     const v = (cuadreKelly ?? []).find((x) => x.businessId === bId && x.month === selectedMonth);
-    const ing = v?.puenteIngresos[0], gas = v?.puenteGastos[0];
-    if (!v || !ing?.etiqueta.includes("Excel") || !gas?.etiqueta.includes("Excel")) return null;
-    return { ingresos: ing.monto, gastos: gas.monto, cuadra: v.estado === "ok" };
+    if (!v?.caja || v.caja.esperadoEntro === null || v.caja.esperadoSalio === null) return null;
+    const igual = Math.abs(v.caja.entro - v.caja.esperadoEntro) < 0.01 && Math.abs(v.caja.salio - v.caja.esperadoSalio) < 0.01;
+    return { igual, ingresos: v.caja.esperadoEntro, gastos: v.caja.esperadoSalio };
   };
+
   const pulses: SedePulse[] = summaries
     .map((s): SedePulse => {
       const v = byId.get(s.businessId);
@@ -152,9 +152,9 @@ export function GrupoDashboardClient({
         // Misma fuente que la liquidez del hero; si no cargó, el saldo del resumen.
         saldo: liqById.get(s.businessId)?.total ?? s.bankBalance,
         ingresosMes: s.monthlyIncome,
-        excelKelly: excelDe(s.businessId),
-        gastosOperativos: s.monthlyExpenses - (s.monthlyDebtSavings ?? 0),
+        gastosMes: s.monthlyExpenses,
         deudaAhorro: s.monthlyDebtSavings ?? 0,
+        excelKelly: excelDe(s.businessId),
         equilibrioPct: be?.avancePct ?? null,
         serie: v?.serie14 ?? [],
         hasta: v?.hasta ?? null,

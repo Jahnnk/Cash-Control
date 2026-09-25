@@ -100,3 +100,23 @@ describe("verificación de ventas (Control de VTAS de Kelly vs reporte de Byte)"
     expect(verificarVentas({ byte: [], kelly: [], registro: [] })).toBeNull();
   });
 });
+
+describe("el ingreso y gasto del dashboard son los del Excel", () => {
+  it("igual al Excel: sin alerta; distinto: alerta", async () => {
+    const { verificarMes } = await import("../verificacion-kelly");
+    const base = { foto, ingresos, gastos: gastosBien, sistema: { ingresos: 27750.02, gastos: 30687.47 }, fijosAtelier: FIJOS, esAtelier: true };
+    const ok = verificarMes({ ...base, caja: { entro: 30150.02, salio: 31632.42 } });
+    expect(ok.estado).toBe("ok");
+    expect(ok.caja).toEqual({ entro: 30150.02, salio: 31632.42, esperadoEntro: 30150.02, esperadoSalio: 31632.42 });
+    const mal = verificarMes({ ...base, caja: { entro: 30150.02, salio: 31000 } });
+    expect(mal.alertas.map((a) => a.regla)).toEqual(["caja"]);
+  });
+
+  it("un gasto pagado por el socio no cuenta como plata que salió", async () => {
+    const { verificarMes } = await import("../verificacion-kelly");
+    const conSocio = [...gastosBien, gas(500, "Pagado por Jahnn", { importado: false, metodo: "socio" })];
+    const v = verificarMes({ foto, ingresos, gastos: conSocio, sistema: { ingresos: 27750.02, gastos: 31187.47 }, fijosAtelier: FIJOS, esAtelier: true, caja: { entro: 30150.02, salio: 31632.42 } });
+    expect(v.caja?.esperadoSalio).toBe(31632.42);
+    expect(v.alertas).toEqual([]);
+  });
+});
