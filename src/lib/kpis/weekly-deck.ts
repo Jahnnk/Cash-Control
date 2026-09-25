@@ -1,15 +1,16 @@
 /**
  * KPIs · Renderer del deck de la Reunión Semanal (renderer tonto).
  *
- * Estructura (rediseño de Jahnn, 24-sep-2026): 15 diapositivas.
- *   1 · Portada                       9 · Qué rota más en cada sede
- *   2 · La semana en una mirada      10 · Los 10 que más facturan
- *   3 · Ventas del mes (Byte)        11 · Fonavi: ranking por categoría
- *   4 · Fonavi: detalle de KPIs      12 · Centro: ranking por categoría
- *   5 · Centro: detalle de KPIs      13 · Atelier: ranking por categoría
- *   6 · Atelier: detalle B2B         14 · Regla 80/20
- *   7 · Meta de ticket e incentivos  15 · Candidatos a reemplazo
- *   8 · Punto de equilibrio
+ * Estructura (rediseño de Jahnn, 24-sep-2026; gastos el 25-sep): 18 diapositivas.
+ *   1 · Portada                       10 · Categorías que más pesan
+ *   2 · La semana en una mirada       11 · Piso mensual y pagos grandes
+ *   3 · Ventas del mes (Byte)         12 · Qué rota más en cada sede
+ *   4 · Fonavi: detalle de KPIs       13 · Los 10 que más facturan
+ *   5 · Centro: detalle de KPIs       14 · Fonavi: ranking por categoría
+ *   6 · Atelier: detalle B2B          15 · Centro: ranking por categoría
+ *   7 · Meta de ticket e incentivos   16 · Atelier: ranking por categoría
+ *   8 · Punto de equilibrio           17 · Regla 80/20
+ *   9 · ¿A dónde se fue la plata?     18 · Candidatos a reemplazo
  *
  * Salieron (pedido de Jahnn): "¿el bono por ticket se paga solo?", las
  * láminas de portafolio, "qué mejoró / qué empeoró" y Kaizen. Los productos
@@ -23,6 +24,8 @@ import type { GroupBreakeven } from "@/app/actions/breakeven";
 import type { PanoramaDeSede, CandidatosReemplazo, OchentaVeinteSede } from "@/app/actions/productos-panorama";
 import { contexto, portada, laSemanaEnUnaMirada, ventasDelMes, detalleCafeteria, detalleAtelier, incentivos, puntoDeEquilibrio } from "./deck-semanal";
 import { rotacionPorSede, topFacturacion, categoriasDeSede, reglaOchentaVeinteSlide, candidatosReemplazo } from "./deck-productos";
+import { aDondeSeFueLaPlata, categoriasQueMasPesan, pisoYPagosGrandes } from "./deck-gastos";
+import type { InformeGastos } from "@/app/actions/informe-gastos";
 import { FONT } from "./deck-diseno";
 
 export async function renderWeeklyKpiDeck(
@@ -38,6 +41,8 @@ export async function renderWeeklyKpiDeck(
   candidatos?: CandidatosReemplazo | null,
   /** Regla 80/20 por sede (mes y últimos 3 meses). */
   ochentaVeinte?: OchentaVeinteSede[] | null,
+  /** A dónde se fue la plata: último mes cerrado por sede. */
+  gastos?: InformeGastos | null,
 ): Promise<{ blob: Blob; filename: string }> {
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "WIDE", width: 10, height: 5.625 });
@@ -52,6 +57,11 @@ export async function renderWeeklyKpiDeck(
   if (data.atelier) detalleAtelier(ctx, data.atelier, data.ventas?.find((v) => v.sede.includes("Atelier")) ?? null);
   incentivos(ctx, data.cafeterias);
   if (breakeven) puntoDeEquilibrio(ctx, breakeven);
+  if (gastos && gastos.sedes.length > 0) {
+    aDondeSeFueLaPlata(ctx, gastos);
+    categoriasQueMasPesan(ctx, gastos);
+    pisoYPagosGrandes(ctx, gastos);
+  }
 
   if (productos && productos.some((x) => x.panorama)) {
     rotacionPorSede(ctx, productos);
