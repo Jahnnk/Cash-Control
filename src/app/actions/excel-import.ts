@@ -64,6 +64,7 @@ import {
   type CuadreExcel, type MovimientoSoloSistema,
 } from "@/lib/cuadre-excel";
 import { recalcBankBalance } from "./daily-records";
+import { bloquesANotas } from "@/lib/bloques-pie-excel";
 
 // Cliente neon directo para sql.transaction([...]) atómico (mismo patrón que
 // record-edits.ts). Se usa SOLO para el bloque de escritura por mes; el resto
@@ -776,6 +777,10 @@ export async function executeExcelImport(
   const omitidosEgresos = parseResult
     ? Math.round(parseResult.movimientos.filter((m) => m.type === "expense" && filasOmitidas.has(m.excelRow)).reduce((t, m) => t + m.amount, 0) * 100) / 100
     : 0;
+  // Los resúmenes de Kelly al pie de la hoja (total del mes según la hoja y
+  // su análisis de rentabilidad): se guardan para la verificación.
+  const notasPie = parseResult ? bloquesANotas(parseResult.bloquesPie) : [];
+  const notasFoto = [...(omitidosEgresos > 0 ? [`omitidos_egresos=${omitidosEgresos}`] : []), ...notasPie];
   const batchRes = await db.execute(sql`
     INSERT INTO import_batches (
       business_id, file_name, sheet_name, date_range_start, date_range_end,
@@ -789,7 +794,7 @@ export async function executeExcelImport(
       ${warningsJson}::jsonb,
       ${foto?.excelIngresos ?? null}, ${foto?.excelEgresos ?? null},
       ${parseResult?.totales.saldoFinalBcp ?? null}, ${parseResult?.totales.saldoFinalEfectivo ?? null},
-      ${omitidosEgresos > 0 ? `omitidos_egresos=${omitidosEgresos}` : null}
+      ${notasFoto.length > 0 ? notasFoto.join(", ") : null}
     )
     RETURNING id::text AS id
   `);
@@ -1084,7 +1089,7 @@ export async function executeExcelImport(
     SET archived_count = ${archivedCount},
         initial_cash_applied = ${initialCashApplied !== null ? initialCashApplied.toFixed(2) : null},
         initial_bcp_applied = ${initialBcpApplied !== null ? initialBcpApplied.toFixed(2) : null},
-        notes = ${`byte_sales_days=${byteSalesDays}, tips=${tipsCount}, alerts=${alertsCount}${omitidosEgresos > 0 ? `, omitidos_egresos=${omitidosEgresos}` : ""}`}
+        notes = ${[`byte_sales_days=${byteSalesDays}`, `tips=${tipsCount}`, `alerts=${alertsCount}`, ...notasFoto].join(", ")}
     WHERE id = ${batchId}::uuid
   `);
 

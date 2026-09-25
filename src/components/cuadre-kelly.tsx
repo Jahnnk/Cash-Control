@@ -114,6 +114,13 @@ export function DetalleCuadre({ v }: { v: VerificacionSedeMes }) {
         <Puente titulo="Gastos de la operación" lineas={v.puenteGastos} total={v.sistema.gastos} totalEtiqueta="Gastos de la operación" />
         {v.puenteVentas && v.sistema.ventas !== null && <Puente titulo="Vendido (Byte)" lineas={v.puenteVentas} total={v.sistema.ventas} totalEtiqueta="Vendido según el sistema" />}
       </div>
+      {v.analisisKelly && (
+        <p className="text-[11px] text-gray-500 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
+          Análisis de rentabilidad del Excel (fila {v.analisisKelly.fila}): ingresos {formatCurrency(v.analisisKelly.ingresos)} · gastos{" "}
+          {formatCurrency(v.analisisKelly.egresos)} · resultado {formatCurrency(v.analisisKelly.ingresos - v.analisisKelly.egresos)}.
+          Son cifras con ajustes a mano (sin el depósito a fondos mutuos / plazo fijo): el sistema las muestra como referencia y no las usa como ingresos ni gastos del mes.
+        </p>
+      )}
       <p className="text-[11px] text-gray-400">Archivo: {v.archivo} · cargado el {v.cargadoEl}</p>
     </div>
   );
