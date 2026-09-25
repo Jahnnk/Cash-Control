@@ -49,11 +49,24 @@ function ddmm(iso: string | null) {
   return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—";
 }
 
+/**
+ * ¿Hasta qué día está al día la venta? Lo normal es "ayer": el
+ * administrador registra al día siguiente del cierre de Byte. Si falta
+ * ayer o más, se avisa cuántos días faltan (Jahnn la revisa cada mañana).
+ */
+function diasSinRegistrar(hasta: string | null): number | null {
+  if (!hasta) return null;
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const dias = Math.round((Date.parse(hoy + "T12:00:00Z") - Date.parse(hasta + "T12:00:00Z")) / 86_400_000);
+  return Math.max(0, dias - 1);
+}
+
 export function SedePulseCard({ s }: { s: SedePulse }) {
   const theme = BUSINESS_THEMES[s.code];
   const Icon = theme.icon;
   const tone = s.deltaPct === null ? "neutral" : s.deltaPct >= 0 ? "positive" : "negative";
   const eq = s.equilibrioPct;
+  const faltan = diasSinRegistrar(s.hasta);
   const eqTone = eq === null ? "neutral" : eq >= 100 ? "positive" : eq >= 80 ? "warning" : "negative";
 
   return (
@@ -99,6 +112,13 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
             {s.coberturaBaja && <span className="text-amber-600"> · {s.diasComparados} días</span>}
           </span>
         </div>
+        {s.hasta && (
+          <div className={`mt-1.5 text-[11px] ${faltan ? "text-amber-600" : "text-gray-400"}`}>
+            {faltan
+              ? `⚠ Al día hasta el ${ddmm(s.hasta)} · ${faltan === 1 ? "falta 1 día" : `faltan ${faltan} días`}`
+              : `✓ Al día hasta el ${ddmm(s.hasta)}`}
+          </div>
+        )}
       </div>
 
       {/* Tendencia */}
@@ -147,8 +167,7 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
       </div>
 
       {/* Microinteracción: el pie aparece al pasar el mouse */}
-      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-between">
-        <span className="text-[11px] text-gray-400">Datos al {ddmm(s.hasta)}</span>
+      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-end">
         <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-gray-400 group-hover:text-primary transition-colors">
           Abrir
           <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
