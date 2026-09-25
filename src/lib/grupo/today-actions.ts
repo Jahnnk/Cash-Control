@@ -35,6 +35,8 @@ export type ActionsInput = {
     /** true = el mes ya cerró o el ritmo no alcanza a cubrir costos. */
     equilibrioEnRiesgo: boolean;
   }[];
+  /** Meses donde el sistema no cuadra con el Excel de Kelly (verificacion-kelly.ts). */
+  cuadres?: { sede: string; mes: string; alertas: number }[];
 };
 
 const ORDEN: Record<ActionSeverity, number> = { critico: 0, atencion: 1, info: 2 };
@@ -44,6 +46,20 @@ export const CAIDA_RELEVANTE_PCT = -15;
 
 export function buildTodayActions(input: ActionsInput): TodayAction[] {
   const out: TodayAction[] = [];
+
+  // 0. El sistema no muestra lo que dice el Excel de Kelly: antes que
+  //    cualquier otra lectura, los números tienen que ser confiables.
+  for (const c of input.cuadres ?? []) {
+    if (c.alertas > 0) {
+      out.push({
+        id: `cuadre-${c.sede}-${c.mes}`,
+        severity: "critico",
+        title: `Revisa el cuadre de ${c.sede} con el Excel de Kelly`,
+        detail: `${c.alertas} ${c.alertas === 1 ? "diferencia" : "diferencias"} en ${c.mes}. El detalle está en la pestaña «Excel de Kelly».`,
+        href: "/grupo/dashboard",
+      });
+    }
+  }
 
   // 1. Sin carga de datos: todo lo demás se decide a ciegas.
   for (const c of input.cargas) {

@@ -342,6 +342,12 @@ export const importBatches = pgTable("import_batches", {
   // JSONB con los ParseWarning estructurados emitidos por excel-importer.ts
   // (defensas tolerantes Prompt 18). Se llena al confirmar el import.
   warningsJson: jsonb("warnings_json"),
+  // "Foto" del Excel de Kelly al cargar (25-sep-2026): contra esto compara la
+  // verificación automática (lib/verificacion-kelly.ts).
+  excelIngresos: numeric("excel_ingresos", { precision: 12, scale: 2 }),
+  excelEgresos: numeric("excel_egresos", { precision: 12, scale: 2 }),
+  excelSaldoBanco: numeric("excel_saldo_banco", { precision: 12, scale: 2 }),
+  excelSaldoEfectivo: numeric("excel_saldo_efectivo", { precision: 12, scale: 2 }),
 });
 
 /**

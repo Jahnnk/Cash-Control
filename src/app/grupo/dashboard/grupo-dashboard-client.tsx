@@ -15,6 +15,8 @@ import { BandaFrescura } from "@/components/banda-frescura";
 import { DIAS_SALDO_FRESCO, type LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { CargasKelly, SubirExcelKelly } from "./cargas-kelly";
+import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
+import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import { fechaLarga } from "@/lib/frescura-datos";
 import { ExecutiveHero, type HeroStats } from "./executive-hero";
 import { SedePulseCard, type SedePulse } from "./sede-pulse-card";
@@ -63,11 +65,13 @@ type Props = {
   ventas: GroupVentasSede[] | null;
   kellyLoads: KellyLoadStatus[];
   atelierB2B: AtelierB2BResumen;
+  /** Verificación automática contra el Excel de Kelly; null si falló. */
+  cuadreKelly: VerificacionSedeMes[] | null;
 };
 
 export function GrupoDashboardClient({
   selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas, kellyLoads,
-  atelierB2B,
+  atelierB2B, cuadreKelly,
 }: Props) {
   const [pestana, setPestana] = useState<"resumen" | "equipo" | "finanzas" | "kelly">("resumen");
 
@@ -156,6 +160,7 @@ export function GrupoDashboardClient({
 
   // ── Acciones de hoy (motor puro y testeado) ──
   const actions = buildTodayActions({
+    cuadres: (cuadreKelly ?? []).map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
     cargas: kellyLoads.map((k) => ({
       nombre: k.name.replace("Yayi's ", ""),
       nivel: k.level,
@@ -338,6 +343,7 @@ export function GrupoDashboardClient({
       {pestana === "kelly" && (
         <div className="space-y-6">
           {frescura && <BandaFrescura frescura={frescura} />}
+          <CuadreKellySeccion items={cuadreKelly} />
           <CargasKelly />
         </div>
       )}

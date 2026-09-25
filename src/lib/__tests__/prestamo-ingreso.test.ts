@@ -6,7 +6,7 @@ describe("ingresos que son préstamos (Excel de Kelly)", () => {
   it.each([
     ["PRÉSTAMO PARA 50% ARREGLO ABATIDOR (SE DEBOLVERÁ EN OCTUBRE) (JUAN TERRONES)", "Préstamos / financiamiento recibido"],
     ["PRÉSTAMO SIN INTERESES EN 5 CUOTAS (AGO-DIC) (SERVICIOS GASTRONOMICOS YAYIS SAC)", "Préstamos / financiamiento recibido"],
-    ["PRESTAMO A ATELIER (FONDOS MUTUOS)", "Préstamos / financiamiento recibido"],
+    ["PRESTAMO A ATELIER (FONDOS MUTUOS)", "Otros no operativos"],
     ["PAGO 1ER CUOTA PRÉSTAMO (5000.00) (PRODUCTOS SALUDABLES YAYI)", "Otros no operativos"],
     ["PAGO 1ER CUOTA PRESTAMO A ATELIER (PRODUCTOS SALUDABLES YAYI´S SRL)", "Otros no operativos"],
   ])("%s → %s", (nota, cat) => {

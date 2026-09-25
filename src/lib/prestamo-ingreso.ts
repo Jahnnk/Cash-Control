@@ -12,6 +12,8 @@
  *   · "PRÉSTAMO …"                       → Préstamos / financiamiento recibido
  *   · "PAGO 1ER CUOTA PRÉSTAMO …"        → Otros no operativos (otra sede le
  *     devuelve a esta un préstamo que le dio: es cobrar una deuda, no vender)
+ *   · "PRÉSTAMO A ATELIER (FONDOS MUTUOS)" → Otros no operativos (la sede saca
+ *     sus ahorros para prestarle a otra: tampoco es financiamiento recibido)
  */
 
 import type { NON_OPERATIVE_CATEGORIES } from "./income-base";
@@ -26,5 +28,8 @@ export function categoriaPrestamoIngreso(nota: string | null | undefined): NoOpe
   if (!/\bPRESTAMO/.test(t)) return null;
   // Devolución de un préstamo que esta sede dio (cuota que le pagan).
   if (/^(PAGO|DEVOLUCION|CUOTA|ABONO)\b/.test(t) || /\bCUOTA\b.*\bPRESTAMO\b/.test(t)) return "Otros no operativos";
+  // Plata propia que vuelve de los ahorros para prestarle a otra sede
+  // ("PRESTAMO A ATELIER (FONDOS MUTUOS)"): no es financiamiento recibido.
+  if (/FONDOS? MUTUOS?|AHORRO/.test(t)) return "Otros no operativos";
   return "Préstamos / financiamiento recibido";
 }

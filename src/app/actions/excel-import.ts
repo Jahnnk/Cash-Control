@@ -766,16 +766,30 @@ export async function executeExcelImport(
     parseResult?.parseWarnings.length
       ? JSON.stringify(parseResult.parseWarnings)
       : null;
+  // "Foto" del Excel (25-sep-2026): lo que la pestaña dice del mes, para
+  // que la verificación automática compare contra esto al céntimo. Los
+  // gastos que se omiten por estar ya registrados como compartidos se
+  // anotan aparte: son una diferencia EXPLICADA, no plata perdida.
+  const foto = parseResult
+    ? totalesDelMes(parseResult.movimientos, ingGtosSheet ? sheetMonthKey(ingGtosSheet) : null)
+    : null;
+  const omitidosEgresos = parseResult
+    ? Math.round(parseResult.movimientos.filter((m) => m.type === "expense" && filasOmitidas.has(m.excelRow)).reduce((t, m) => t + m.amount, 0) * 100) / 100
+    : 0;
   const batchRes = await db.execute(sql`
     INSERT INTO import_batches (
       business_id, file_name, sheet_name, date_range_start, date_range_end,
-      movements_count, ingresos_count, egresos_count, warnings_json
+      movements_count, ingresos_count, egresos_count, warnings_json,
+      excel_ingresos, excel_egresos, excel_saldo_banco, excel_saldo_efectivo, notes
     ) VALUES (
       ${bId}, ${fileName}, ${sheetLabel}, ${start}, ${end},
       ${(parseResult?.movimientos.length ?? 0) - filasOmitidas.size},
       ${parseResult?.ingresos ?? 0},
       ${parseResult?.egresos ?? 0},
-      ${warningsJson}::jsonb
+      ${warningsJson}::jsonb,
+      ${foto?.excelIngresos ?? null}, ${foto?.excelEgresos ?? null},
+      ${parseResult?.totales.saldoFinalBcp ?? null}, ${parseResult?.totales.saldoFinalEfectivo ?? null},
+      ${omitidosEgresos > 0 ? `omitidos_egresos=${omitidosEgresos}` : null}
     )
     RETURNING id::text AS id
   `);
@@ -1070,7 +1084,7 @@ export async function executeExcelImport(
     SET archived_count = ${archivedCount},
         initial_cash_applied = ${initialCashApplied !== null ? initialCashApplied.toFixed(2) : null},
         initial_bcp_applied = ${initialBcpApplied !== null ? initialBcpApplied.toFixed(2) : null},
-        notes = ${`byte_sales_days=${byteSalesDays}, tips=${tipsCount}, alerts=${alertsCount}`}
+        notes = ${`byte_sales_days=${byteSalesDays}, tips=${tipsCount}, alerts=${alertsCount}${omitidosEgresos > 0 ? `, omitidos_egresos=${omitidosEgresos}` : ""}`}
     WHERE id = ${batchId}::uuid
   `);
 
@@ -1186,6 +1200,8 @@ export type MultiMonthResult = {
     status: "imported" | "skipped" | "error";
     movementsCount?: number;
     byteSalesDays?: number;
+    /** La carga creada, para verificarla contra el Excel apenas termina. */
+    batchId?: string;
     error?: string;
   }>;
   importedMonths: number;
@@ -1262,6 +1278,7 @@ export async function executeMultiMonthImport(
         status: "imported",
         movementsCount: r.movementsCount,
         byteSalesDays: r.byteSalesDays,
+        batchId: r.batchId,
       });
       importedMonths++;
       if (r.revisionesPendientes !== undefined) revisionesPendientes = r.revisionesPendientes;
