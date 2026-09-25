@@ -50,6 +50,11 @@ import type { ScopeCode } from "@/lib/business-theme";
  */
 
 const SEDE_CODE: Record<number, ScopeCode> = { 1: "atelier", 2: "fonavi", 3: "centro" };
+/** "2026-09" → "2026-08". */
+const mesAnterior = (m: string) => {
+  const [y, mm] = m.split("-").map(Number);
+  return mm === 1 ? `${y - 1}-12` : `${y}-${String(mm - 1).padStart(2, "0")}`;
+};
 /** Orden de la liquidez por sede bajo el número del grupo. */
 const ORDEN_LIQUIDEZ = [2, 3, 1];
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
@@ -124,6 +129,14 @@ export function GrupoDashboardClient({
 
   // ── Sedes ordenadas por desempeño (mejor arriba) ──
   const liqById = new Map((liquidez?.sedes ?? []).map((x) => [x.businessId, x]));
+  // Lo que dice el Excel de Kelly del mes elegido: la primera línea de cada
+  // puente de la verificación (la "foto" guardada al cargar).
+  const excelDe = (bId: number) => {
+    const v = (cuadreKelly ?? []).find((x) => x.businessId === bId && x.month === selectedMonth);
+    const ing = v?.puenteIngresos[0], gas = v?.puenteGastos[0];
+    if (!v || !ing?.etiqueta.includes("Excel") || !gas?.etiqueta.includes("Excel")) return null;
+    return { ingresos: ing.monto, gastos: gas.monto, cuadra: v.estado === "ok" };
+  };
   const pulses: SedePulse[] = summaries
     .map((s): SedePulse => {
       const v = byId.get(s.businessId);
@@ -138,6 +151,8 @@ export function GrupoDashboardClient({
         coberturaBaja: v?.mesCmp?.lowCoverage ?? false,
         // Misma fuente que la liquidez del hero; si no cargó, el saldo del resumen.
         saldo: liqById.get(s.businessId)?.total ?? s.bankBalance,
+        ingresosMes: s.monthlyIncome,
+        excelKelly: excelDe(s.businessId),
         gastosOperativos: s.monthlyExpenses - (s.monthlyDebtSavings ?? 0),
         deudaAhorro: s.monthlyDebtSavings ?? 0,
         equilibrioPct: be?.avancePct ?? null,
@@ -160,7 +175,11 @@ export function GrupoDashboardClient({
 
   // ── Acciones de hoy (motor puro y testeado) ──
   const actions = buildTodayActions({
-    cuadres: (cuadreKelly ?? []).map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
+    // Solo el mes elegido y el anterior: lo más viejo se ve en la sección
+    // del cuadre (pestaña Excel de Kelly) sin llenar las acciones de hoy.
+    cuadres: (cuadreKelly ?? [])
+      .filter((v) => v.month >= mesAnterior(selectedMonth))
+      .map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
     cargas: kellyLoads.map((k) => ({
       nombre: k.name.replace("Yayi's ", ""),
       nivel: k.level,

@@ -26,6 +26,13 @@ export type SedePulse = {
   coberturaBaja: boolean;
   /** Banco + caja de la sede: la misma cifra que la liquidez de arriba. */
   saldo: number;
+  /** Ingresos del mes (sin reembolsos entre sedes ni préstamos): totales-mes-sede.ts. */
+  ingresosMes: number;
+  /**
+   * Lo que dice el Excel de Kelly de este mes (la "foto" de la última carga)
+   * y si la verificación explicó cada diferencia. null = sin foto.
+   */
+  excelKelly: { ingresos: number; gastos: number; cuadra: boolean } | null;
   /** Gastos de la operación del mes (sin cuotas de deuda ni ahorro). */
   gastosOperativos: number;
   /** Cuotas de préstamos y tarjetas, ahorro y préstamos a otras sedes. */
@@ -112,7 +119,19 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
             <ProgressBar pct={eq} tone={eqTone} />
           </div>
         )}
-        <div className="flex items-baseline justify-between text-[11px] pt-1">
+        <div className="pt-1">
+          <div className="flex items-baseline justify-between text-[11px]">
+            <span className="text-gray-400">Ingresos del mes</span>
+            <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.ingresosMes)}</span>
+          </div>
+          {s.excelKelly && (
+            <div className="flex items-baseline justify-between text-[10px] text-gray-400">
+              <span>Excel de Kelly {s.excelKelly.cuadra ? "✓" : "⚠"}</span>
+              <span className="tabular-nums">{formatCurrency(s.excelKelly.ingresos)}</span>
+            </div>
+          )}
+        </div>
+        <div className="flex items-baseline justify-between text-[11px]">
           <span className="text-gray-400">Gastos operativos del mes</span>
           <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.gastosOperativos)}</span>
         </div>
@@ -120,6 +139,12 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
           <div className="flex items-baseline justify-between text-[11px]">
             <span className="text-gray-400">Pagos de deuda y ahorro</span>
             <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.deudaAhorro)}</span>
+          </div>
+        )}
+        {s.excelKelly && (
+          <div className="flex items-baseline justify-between text-[10px] text-gray-400">
+            <span>Gastos en el Excel de Kelly {s.excelKelly.cuadra ? "✓" : "⚠"}</span>
+            <span className="tabular-nums">{formatCurrency(s.excelKelly.gastos)}</span>
           </div>
         )}
         <div className="flex items-baseline justify-between text-[11px]">

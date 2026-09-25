@@ -78,3 +78,25 @@ describe("verificación del Excel de Kelly", () => {
     expect(omitidosDeNotas(null)).toBe(0);
   });
 });
+
+describe("verificación de ventas (Control de VTAS de Kelly vs reporte de Byte)", () => {
+  it("caso Atelier set-2026: explica cada sol y marca los días que difieren en S/5 o más", async () => {
+    const { verificarVentas } = await import("../verificacion-kelly");
+    const r = verificarVentas({
+      byte: [{ date: "2026-09-07", total: 2919.97 }, { date: "2026-09-08", total: 779.8 }, { date: "2026-09-09", total: 1640.72 }],
+      kelly: [{ date: "2026-09-07", total: 2316.58 }, { date: "2026-09-08", total: 777.8 }, { date: "2026-09-09", total: 1640.72 }, { date: "2026-09-22", total: 3182.09 }],
+      registro: [{ date: "2026-09-23", total: 100 }],
+    })!;
+    expect(r.sistema).toBe(2919.97 + 779.8 + 1640.72 + 3182.09 + 100);
+    expect(r.puente.map((l) => l.monto)).toEqual([7917.19, 605.39, 100]);
+    // El 08/09 difiere solo S/2: entra al puente pero no es alerta.
+    expect(r.alertas).toHaveLength(1);
+    expect(r.alertas[0].detalle).toContain("07/09");
+    expect(r.alertas[0].detalle).not.toContain("08/09");
+  });
+
+  it("sin ninguna fuente no verifica ventas", async () => {
+    const { verificarVentas } = await import("../verificacion-kelly");
+    expect(verificarVentas({ byte: [], kelly: [], registro: [] })).toBeNull();
+  });
+});

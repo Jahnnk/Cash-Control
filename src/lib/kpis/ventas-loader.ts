@@ -30,12 +30,15 @@ export type VentaRowsBlended = {
   fuente: "byte" | "registro" | "mixta" | null;
 };
 
-export async function loadVentaRowsBlended(
+/** Las tres fuentes de venta diaria, por separado (para la verificación contra Kelly). */
+export type FuentesVentaDia = { byte: VentaRow[]; kelly: VentaRow[]; registro: VentaRow[] };
+
+export async function leerFuentesVenta(
   sql: SqlTag,
   bId: number,
   from: string,
   to: string,
-): Promise<VentaRowsBlended> {
+): Promise<FuentesVentaDia> {
   // Prioridad 1 y 2: reportes de Byte (oficial primero).
   let byte: VentaRow[] = [];
   try {
@@ -47,10 +50,17 @@ export async function loadVentaRowsBlended(
   } catch { /* tabla pendiente de migración */ }
   let kelly: VentaRow[] = [];
   try {
+    // La venta del día según Byte, TAL COMO la copia Kelly en "Control de
+    // VTAS": la columna de Byte (total_pos_excel), con las ventas al crédito
+    // incluidas — igual que el reporte oficial de Byte. `total` (efectivo +
+    // Yape + POS del lado Cuentas) dejaba afuera el crédito (Atelier, que
+    // vende casi todo a crédito, salía en 0) y usaba montos manuales de un
+    // día que Byte aún no cerraba (25-sep-2026). Cargas viejas sin esa
+    // columna caen al `total` de antes.
     kelly = (await sql`
-      SELECT date::text AS date, total::float AS total
+      SELECT date::text AS date, COALESCE(total_pos_excel, total)::float AS total
       FROM byte_sales_daily
-      WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to} AND COALESCE(total, 0) > 0
+      WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to} AND COALESCE(total_pos_excel, total, 0) > 0
     `) as VentaRow[];
   } catch { /* tabla pendiente de migración */ }
 
@@ -68,6 +78,16 @@ export async function loadVentaRowsBlended(
         WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to} AND COALESCE(revenue, 0) > 0
       `) as VentaRow[]);
 
+  return { byte, kelly, registro };
+}
+
+export async function loadVentaRowsBlended(
+  sql: SqlTag,
+  bId: number,
+  from: string,
+  to: string,
+): Promise<VentaRowsBlended> {
+  const { byte, kelly, registro } = await leerFuentesVenta(sql, bId, from, to);
   const byDate = new Map<string, { total: number; src: "byte" | "registro" }>();
   for (const r of registro) byDate.set(r.date, { total: r.total, src: "registro" });
   for (const r of kelly) byDate.set(r.date, { total: r.total, src: "byte" });
