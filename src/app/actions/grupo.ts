@@ -2,7 +2,7 @@
 
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
-import { CATEGORIAS_DEUDA_Y_AHORRO } from "@/lib/reglas-gasto";
+import { totalesMesSede } from "@/lib/totales-mes-sede";
 
 /**
  * Datos consolidados para la vista /grupo/dashboard.
@@ -194,30 +194,12 @@ export async function getGroupDashboard(monthInput?: string) {
       bankBalance = Math.round((anchor + parseFloat(incRes.rows[0].t as string) - parseFloat(expRes.rows[0].t as string)) * 100) / 100;
     }
 
-    // Ingresos del mes (operativos: excluye reembolsos Fonavi, préstamos socio e ingresos no operativos)
-    const incomeRes = await db.execute(sql`
-      SELECT COALESCE(SUM(amount), 0) AS t FROM bank_income_items
-      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false AND archived = false AND non_operative_category IS NULL
-    `);
-    const monthlyIncome = parseFloat(incomeRes.rows[0].t as string);
-
-    // Gastos del mes — atelier_amount cuando es compartido (no contar la parte Fonavi).
-    // Excluye préstamos del socio (no son gasto operativo).
-    const expRes = await db.execute(sql`
-      SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) AS t
-      FROM expenses
-      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
-    `);
-    const monthlyExpenses = parseFloat(expRes.rows[0].t as string);
-
-    // De esos gastos, lo que es pagar deudas o ahorrar (no operación).
-    const deudaRes = await db.execute(sql`
-      SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0) AS t
-      FROM expenses
-      WHERE business_id = ${b.id} AND date >= ${startOfMonth} AND date <= ${monthEndDate} AND is_special_loan = false AND is_internal_transfer = false AND archived = false
-        AND category IN (${sql.join(CATEGORIAS_DEUDA_Y_AHORRO.map((c) => sql`${c}`), sql`, `)})
-    `);
-    const monthlyDebtSavings = parseFloat(deudaRes.rows[0].t as string);
+    // Ingresos, gastos y deuda del mes: la definición única (totales-mes-sede.ts),
+    // la misma contra la que se verifica el Excel de Kelly.
+    const tm = await totalesMesSede(b.id, startOfMonth, monthEndDate);
+    const monthlyIncome = tm.ingresos;
+    const monthlyExpenses = tm.gastos;
+    const monthlyDebtSavings = tm.deudaAhorro;
 
     summaries.push({
       businessId: b.id,

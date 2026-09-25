@@ -17,6 +17,17 @@ describe("buildTodayActions", () => {
       .toEqual([]);
   });
 
+  it("si el sistema no cuadra con el Excel de Kelly, va primero; si cuadra, no molesta", () => {
+    const a = buildTodayActions({
+      cargas: [{ nombre: "Atelier", nivel: "rojo", diasDesdeCarga: 20 }],
+      sedes: [sede()],
+      cuadres: [{ sede: "Atelier", mes: "2026-09", alertas: 2 }, { sede: "Fonavi", mes: "2026-09", alertas: 0 }],
+    });
+    expect(a[0].title).toBe("Revisa el cuadre de Atelier con el Excel de Kelly");
+    expect(a[0].detail).toContain("2 diferencias");
+    expect(a.filter((x) => x.id.startsWith("cuadre-"))).toHaveLength(1);
+  });
+
   it("carga faltante es lo más urgente: sin datos todo se decide a ciegas", () => {
     const a = buildTodayActions({
       cargas: [{ nombre: "Atelier", nivel: "rojo", diasDesdeCarga: 20 }],

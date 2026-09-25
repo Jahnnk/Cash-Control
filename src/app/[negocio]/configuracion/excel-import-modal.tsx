@@ -1,5 +1,6 @@
 "use client";
 
+import { CuadreDeCarga } from "@/components/cuadre-kelly";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileSpreadsheet, Upload, X, AlertTriangle, CheckCircle2, Loader2, Shield } from "lucide-react";
@@ -1152,6 +1153,9 @@ function ResultStep({
         </div>
       </div>
 
+      {/* Verificación automática contra el Excel (25-sep-2026). */}
+      {result.batchId && <CuadreDeCarga batchId={result.batchId} />}
+
       <AvisoPorDefinir
         pendientes={(result as { revisionesPendientes?: number }).revisionesPendientes}
         nuevas={(result as { revisionesNuevas?: number }).revisionesNuevas}
@@ -1575,6 +1579,8 @@ function MultiResultStep({ result, onClose }: { result: MultiMonthResult; onClos
           </div>
         ))}
       </div>
+      {/* Verificación automática de cada mes cargado contra el Excel. */}
+      {result.perMonth.filter((p) => p.status === "imported" && p.batchId).map((p) => <CuadreDeCarga key={p.batchId} batchId={p.batchId!} />)}
       <AvisoPorDefinir pendientes={result.revisionesPendientes} nuevas={result.revisionesNuevas} />
       <div className="flex justify-end pt-2">
         <button onClick={onClose} className="px-4 py-2 text-sm bg-primary text-white rounded-lg hover:bg-primary-light">

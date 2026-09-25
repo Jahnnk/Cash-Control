@@ -4,19 +4,21 @@ import { getLiquidezGrupo } from "@/app/actions/liquidez";
 import { getGroupVentasComparison } from "@/app/actions/group-ventas";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
 import { getAtelierB2BResumen } from "@/app/actions/atelier-b2b";
+import { getVerificacionKelly } from "@/app/actions/verificacion-kelly";
 import { GrupoDashboardClient } from "./grupo-dashboard-client";
 
 export const dynamic = "force-dynamic";
 
 export default async function GrupoDashboardPage() {
   const data = await getGroupDashboard();
-  const [be, ventas, kellyLoads, atelierB2B, frescura, liquidez] = await Promise.all([
+  const [be, ventas, kellyLoads, atelierB2B, frescura, liquidez, cuadre] = await Promise.all([
     getGroupBreakeven(data.selectedMonth),
     getGroupVentasComparison(),
     getKellyLoadStatus(),
     getAtelierB2BResumen(),
     getFrescuraGrupo(),
     getLiquidezGrupo(),
+    getVerificacionKelly(),
   ]);
   return (
     <GrupoDashboardClient
@@ -30,6 +32,7 @@ export default async function GrupoDashboardPage() {
       ventas={ventas.ok ? ventas.sedes : null}
       kellyLoads={kellyLoads}
       atelierB2B={atelierB2B}
+      cuadreKelly={cuadre.ok ? cuadre.items : null}
     />
   );
 }
