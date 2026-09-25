@@ -103,6 +103,8 @@ export function buildGroupMap(categories: FVCategoryMeta[]): Map<string, Effecti
   return map;
 }
 
+const POR_ACLARAR_KEY = normalizeCategory("POR ACLARAR");
+
 export function buildFixedVariable(
   rows: FVExpenseRow[],
   categories: FVCategoryMeta[],
@@ -119,8 +121,11 @@ export function buildFixedVariable(
 
   for (const row of rows) {
     const key = normalizeCategory(row.category);
+    // Lo que nadie sabe todavía qué es (POR ACLARAR) cuenta como FIJO hasta
+    // que se decida en Por definir. Decisión de Jahnn (25-sep-2026): sacarlo
+    // haría ver el punto de equilibrio mejor de lo que es.
     // Categoría no catalogada → sin clasificar (no se adivina)
-    const group = groupMap.get(key) ?? "sin_clasificar";
+    const group = key === POR_ACLARAR_KEY ? "fijo" : groupMap.get(key) ?? "sin_clasificar";
     const bucket = buckets[group];
     bucket.set(key, (bucket.get(key) ?? 0) + row.amount);
   }

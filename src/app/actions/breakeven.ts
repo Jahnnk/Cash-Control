@@ -20,6 +20,7 @@ import {
 } from "@/lib/incentives/candado-ventas";
 import { conciliacionVentas } from "@/lib/ventas-conciliadas-sql";
 import { buildFixedVariable } from "@/lib/fixed-variable";
+import { POR_ACLARAR } from "@/lib/reglas-gasto";
 import { ventasInternasDelGrupo, type SedeEnConsolidado } from "@/lib/ventas-internas-grupo";
 import { gastosDevueltos, MARCA_PAGO_ERRADO, DIAS_MAX, type IngresoCandidato } from "@/lib/pagos-devueltos";
 import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
@@ -181,6 +182,8 @@ async function monthCosts(bId: number, start: string, end: string) {
   const compraAtelier = catAtelier && catAtelier.cost_group === "variable" && !catAtelier.exclude_from_ebitda
     ? cuentan.filter((r) => r.category === CATEGORIA_COMPRA_ATELIER).reduce((t, r) => t + Number(r.amount), 0)
     : 0;
+  // POR ACLARAR cuenta como fijo provisional (lib/fixed-variable.ts): se avisa cuánto.
+  const porAclarar = cuentan.filter((r) => r.category === POR_ACLARAR).reduce((t, r) => t + Number(r.amount), 0);
   const report = buildFixedVariable(
     cuentan.map((r) => ({ category: r.category, amount: Number(r.amount) })),
     categorias.map((c) => ({
@@ -195,6 +198,8 @@ async function monthCosts(bId: number, start: string, end: string) {
     /** Cuotas de préstamos y tarjetas: van aparte ("PE incluyendo deudas"). */
     financiamiento: report.financiamiento.total,
     sinClasificar: report.sinClasificar.total,
+    /** Parte de los fijos que es POR ACLARAR (provisional). */
+    porAclarar: Math.round(porAclarar * 100) / 100,
     compraAtelier,
     ultimoGasto: gastos.reduce<string | null>((max, g) => (max === null || g.date > max ? g.date : max), null),
   };
@@ -323,7 +328,11 @@ async function breakevenOf(bId: number, month: string): Promise<BreakevenResult>
     ];
     return r;
   }
-  return computeBreakeven({ ...costs, ventas, daysElapsed, daysInMonth, reference });
+  const r = computeBreakeven({ ...costs, ventas, daysElapsed, daysInMonth, reference });
+  if (costs.porAclarar > 0) {
+    r.warnings = [...r.warnings, `Incluye S/${costs.porAclarar.toFixed(2)} de gastos por aclarar, contados como fijos hasta que se decidan en Por definir.`];
+  }
+  return r;
 }
 
 /** Punto de equilibrio del mes para la sede activa (dashboard de sede). */

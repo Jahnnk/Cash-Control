@@ -23,6 +23,7 @@ import { DeleteRecordModal, type DeleteTarget } from "./delete-record-modal";
 import { RoundingAlertsSection } from "./rounding-alerts-section";
 import { VentasControlTable } from "./ventas-control-table";
 import type { ConciliacionVentasMes } from "@/lib/ventas-control-conciliacion";
+import { SelloClasificacionMes } from "@/components/sello-clasificacion";
 
 const PIE_COLORS = [
   "#004C40", "#098B5F", "#22C55E", "#EAB308", "#F97316",
@@ -891,8 +892,9 @@ export function MonthlyReport() {
             )}
 
             <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-              <div className="px-6 py-4 border-b border-gray-100">
+              <div className="px-6 py-4 border-b border-gray-100 space-y-1">
                 <h3 className="text-sm font-semibold text-gray-900">Detalle por categoría</h3>
+                <SelloClasificacionMes month={month} />
               </div>
               <DataTable
                 rowKey={(row) => row.category as string}

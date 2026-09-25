@@ -39,7 +39,8 @@ export type { TipoPE };
 /** 'concepto' = regla "todos los gastos de una categoría cuyo concepto dice X" (ver separarGastos). */
 export type AlcanceRevision = "categoria" | "gasto" | "concepto";
 /** 'separado' = Jahnn sacó gastos de un grupo desde su tarjeta (no lo detectó el sistema). */
-export type MotivoRevision = "difiere" | "no_calza" | "sin_kelly" | "sin_sistema" | "bolson" | "atipico" | "separado";
+/** 'conflicto' = el clasificador experto tiene confianza baja (lib/clasificador-gasto.ts). */
+export type MotivoRevision = "difiere" | "no_calza" | "sin_kelly" | "sin_sistema" | "bolson" | "atipico" | "separado" | "conflicto";
 
 export type FilaGastoRevision = {
   huella: string;
@@ -257,6 +258,10 @@ export function lineaParaKelly(item: {
   }
   const dec = item.decision as DecisionGasto;
   const gasto = `"${d.concepto ?? "sin concepto"}" del ${d.fecha} (S/${(d.monto ?? 0).toFixed(2)})`;
+  // Decisiones del clasificador experto: se dice la categoría de la lista única.
+  if (Array.isArray((item.datos as { opiniones?: unknown }).opiniones) && dec.accion === "reclasificar" && dec.categoriaDestino) {
+    return `• ${gasto}: su grupo es ${dec.categoriaDestino} (en el Excel dice "${d.grupo}").`;
+  }
   if (dec.accion === "consultar") return `• ¿Qué fue ${gasto}? ${dec.pregunta}`;
   if (dec.accion === "reclasificar") {
     return `• ${gasto}: moverlo del grupo "${d.grupo}" a uno de tipo ${dec.tipoPE}${dec.categoriaDestino ? ` (${dec.categoriaDestino})` : ""}.`;

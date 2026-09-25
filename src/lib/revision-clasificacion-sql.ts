@@ -10,9 +10,10 @@
 import { neon } from "@neondatabase/serverless";
 import { normGrupoPE, type CategoriaPE, type TipoPE } from "./pe-kelly";
 import {
-  detectarRevisiones, type CategoriaSistema, type FilaGastoRevision,
+  detectarRevisiones, type CategoriaSistema, type FilaGastoRevision, type CandidatoRevision,
   type DecisionCategoria, type DecisionGasto,
 } from "./revision-clasificacion";
+import { clasificarEgreso, calidadClasificacion, type ReglaAprendida, type CalidadClasificacion } from "./clasificador-gasto";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -40,6 +41,47 @@ async function categoriasKelly(): Promise<CategoriaPE[] | null> {
   return null;
 }
 
+/** Las reglas que Jahnn enseñó en una sede. Sin la tabla (migración pendiente), ninguna. */
+export async function leerReglasAprendidas(bId: number): Promise<ReglaAprendida[]> {
+  try {
+    return (await sql`
+      SELECT texto, categoria FROM reglas_aprendidas WHERE business_id = ${bId} AND activo = true
+    `) as ReglaAprendida[];
+  } catch {
+    return [];
+  }
+}
+
+type FilaClasificable = FilaGastoRevision & { grupoExcel: string | null; deExcel: boolean; propio: number; transferencia: boolean };
+
+/**
+ * Los gastos en los que el clasificador experto tiene confianza BAJA (las
+ * opiniones se contradicen en el tipo, nadie sabe qué es, o la categoría ya
+ * no existe): pasan a la bandeja con las categorías entre las que elegir.
+ * Ver lib/clasificador-gasto.ts.
+ */
+function detectarConflictos(gastos: FilaClasificable[], aprendidas: ReglaAprendida[], gruposMovidos: Set<string>, gastosRevisados: Set<string>): CandidatoRevision[] {
+  const r2 = (n: number) => Math.round(n * 100) / 100;
+  const out: CandidatoRevision[] = [];
+  const vistos = new Set<string>();
+  for (const g of gastos) {
+    // Una transferencia entre cuentas propias no es gasto: no hay nada que clasificar.
+    if (!(g.propio > 0) || g.transferencia || vistos.has(g.huella)) continue;
+    const decidido = g.tipoPE != null || gastosRevisados.has(g.huella) || gruposMovidos.has(`${normGrupoPE(g.grupo)}|${g.category}`);
+    const c = clasificarEgreso({ concepto: g.concept, categoria: g.category, grupoExcel: g.grupoExcel, deExcel: g.deExcel, decidido }, aprendidas);
+    if (c.confianza !== "baja") continue;
+    vistos.add(g.huella);
+    out.push({
+      alcance: "gasto", motivo: "conflicto", clave: g.huella,
+      datos: {
+        fecha: g.date, monto: r2(g.propio), concepto: g.concept, grupo: g.grupo, categoria: g.category, deExcel: g.deExcel,
+        tipoActual: c.tipo, opiniones: c.opiniones, sugerencias: c.sugerencias, explicacion: c.motivo,
+      },
+    });
+  }
+  return out;
+}
+
 /**
  * Recalcula qué hay que preguntar en una sede. Devuelve cuántas preguntas
  * NUEVAS aparecieron (para el aviso de la importación).
@@ -55,7 +97,10 @@ export async function sincronizarRevisiones(bId: number): Promise<{ nuevas: numb
   const [gastosRaw, catsRaw, kelly] = await Promise.all([
     sql`
       SELECT huella_gasto(business_id, date, amount, concept) AS huella, date::text AS date, amount::float AS amount,
-             concept, category, COALESCE(NULLIF(btrim(grupo_excel), ''), category) AS grupo, tipo_pe AS "tipoPE"
+             concept, category, COALESCE(NULLIF(btrim(grupo_excel), ''), category) AS grupo, tipo_pe AS "tipoPE",
+             NULLIF(btrim(grupo_excel), '') AS "grupoExcel", imported_from_excel AS "deExcel",
+             (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS propio,
+             is_internal_transfer AS "transferencia"
       FROM expenses
       WHERE business_id = ${bId} AND archived = false AND payment_method <> 'pendiente_atelier'
         AND date >= ${desde(hoy)}
@@ -63,7 +108,8 @@ export async function sincronizarRevisiones(bId: number): Promise<{ nuevas: numb
     sql`SELECT name, cost_group AS "costGroup", exclude_from_ebitda AS "excludeFromEbitda" FROM expense_categories WHERE business_id = ${bId}`,
     categoriasKelly(),
   ]);
-  const gastos = gastosRaw as FilaGastoRevision[];
+  const gastos = gastosRaw as FilaClasificable[];
+  const aprendidas = await leerReglasAprendidas(bId);
   const cats = catsRaw as CategoriaSistema[];
 
   const antes = (await sql`
@@ -77,8 +123,18 @@ export async function sincronizarRevisiones(bId: number): Promise<{ nuevas: numb
       .filter((r) => r.alcance === "categoria" && r.estado === "resuelta" && (r.decision as DecisionCategoria | null)?.categoriaDestino)
       .map((r) => `${r.clave.split("|")[0]}|${(r.decision as DecisionCategoria).categoriaDestino}`),
   );
-  const candidatos = detectarRevisiones({ gastos, categoriasSistema: cats, categoriasKelly: kelly })
-    .filter((c) => !(c.alcance === "categoria" && yaDecididas.has(c.clave)));
+  // El clasificador experto primero: si un gasto además es atípico o está en
+  // un bolsón, la pregunta del clasificador ya trae con qué opciones decidir.
+  // Gastos que Jahnn ya miró uno por uno ("está bien así" también cuenta).
+  const revisados = new Set(antes.filter((r) => r.alcance === "gasto" && r.estado === "resuelta" && (r.decision as { accion?: string } | null)?.accion).map((r) => r.clave));
+  const conflictos = detectarConflictos(gastos, aprendidas, yaDecididas, revisados);
+  const enConflicto = new Set(conflictos.map((c) => c.clave));
+  const candidatos = [
+    ...conflictos,
+    ...detectarRevisiones({ gastos, categoriasSistema: cats, categoriasKelly: kelly })
+      .filter((c) => !(c.alcance === "categoria" && yaDecididas.has(c.clave)))
+      .filter((c) => !(c.alcance === "gasto" && enConflicto.has(c.clave))),
+  ];
   const existentes = new Map(antes.map((r) => [`${r.alcance}|${r.clave}`, r]));
   const detectadas = new Set(candidatos.map((c) => `${c.alcance}|${c.clave}`));
 
@@ -135,6 +191,23 @@ export async function sincronizarRevisiones(bId: number): Promise<{ nuevas: numb
  */
 export function reaplicarDecisionesSQL<Q>(txSql: (strings: TemplateStringsArray, ...values: unknown[]) => Q, bId: number, inicio: string, fin: string): Q[] {
   return [
+    // Reglas que enseñó Jahnn ("todos los que dicen TAPA DE LOMO son
+    // INSUMOS"): primero, para que las decisiones puntuales de abajo ganen.
+    // Si varias coinciden, manda la más específica (el texto más largo).
+    txSql`
+      UPDATE expenses e
+         SET category = m.categoria
+        FROM (
+          SELECT DISTINCT ON (e2.id) e2.id, ra.categoria
+            FROM expenses e2
+            JOIN reglas_aprendidas ra
+              ON ra.business_id = e2.business_id AND ra.activo
+             AND position(ra.texto in norm_grupo(concepto_norm(e2.concept))) > 0
+           WHERE e2.business_id = ${bId} AND e2.date BETWEEN ${inicio} AND ${fin} AND e2.archived = false
+           ORDER BY e2.id, length(ra.texto) DESC
+        ) m
+       WHERE e.id = m.id AND e.tipo_pe IS NULL
+    `,
     // Reglas por concepto ("todos los que dicen PRESTAMO VEHICULAR"): van
     // primero, para que el grupo entero no se las lleve a otra categoría.
     txSql`
@@ -194,4 +267,40 @@ export async function tiposDecididosPorGrupo(bId: number): Promise<Map<string, T
   } catch {
     return new Map();
   }
+}
+
+/**
+ * Qué tan confiable es la clasificación de los egresos de una sede en un
+ * periodo: cuánta plata está con confianza alta, media o baja según el
+ * clasificador experto. Es el sello del punto de equilibrio y del reporte de
+ * gastos por categoría (pedido de Jahnn, 25-sep-2026).
+ */
+export async function calidadClasificacionSede(bId: number, desdeFecha: string, hastaFecha: string): Promise<CalidadClasificacion> {
+  const [filas, decisiones, aprendidas] = await Promise.all([
+    sql`
+      SELECT huella_gasto(business_id, date, amount, concept) AS huella,
+             concept, category, tipo_pe AS "tipoPE", NULLIF(btrim(grupo_excel), '') AS "grupoExcel", imported_from_excel AS "deExcel",
+             COALESCE(NULLIF(btrim(grupo_excel), ''), category) AS grupo,
+             (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS propio
+      FROM expenses
+      WHERE business_id = ${bId} AND archived = false AND payment_method <> 'pendiente_atelier'
+        AND is_internal_transfer = false AND date BETWEEN ${desdeFecha} AND ${hastaFecha}
+    ` as unknown as Promise<{ huella: string; concept: string | null; category: string; tipoPE: string | null; grupoExcel: string | null; deExcel: boolean; grupo: string; propio: number }[]>,
+    sql`
+      SELECT alcance, clave, decision->>'categoriaDestino' AS destino FROM clasificacion_revisiones
+      WHERE business_id = ${bId} AND estado = 'resuelta' AND decision ? 'accion' OR (business_id = ${bId} AND alcance = 'categoria' AND estado = 'resuelta' AND COALESCE(decision->>'categoriaDestino', '') <> '')
+    ` as unknown as Promise<{ alcance: string; clave: string; destino: string | null }[]>,
+    leerReglasAprendidas(bId),
+  ]);
+  const movidos = new Set(decisiones.filter((d) => d.alcance === "categoria" && d.destino).map((d) => `${d.clave.split("|")[0]}|${d.destino}`));
+  const revisados = new Set(decisiones.filter((d) => d.alcance === "gasto").map((d) => d.clave));
+  return calidadClasificacion(
+    filas.filter((f) => f.propio > 0).map((f) => ({
+      monto: f.propio,
+      confianza: clasificarEgreso({
+        concepto: f.concept, categoria: f.category, grupoExcel: f.grupoExcel, deExcel: f.deExcel,
+        decidido: f.tipoPE != null || revisados.has(f.huella) || movidos.has(`${normGrupoPE(f.grupo)}|${f.category}`),
+      }, aprendidas).confianza,
+    })),
+  );
 }
