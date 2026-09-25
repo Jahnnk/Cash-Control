@@ -210,7 +210,7 @@ export function verificarMes(input: {
   }
   for (const i of ingresos.filter(cuentaIngreso)) {
     if (categoriaPrestamoIngreso(i.nota)) {
-      alertas.push({ regla: "prestamo", titulo: "Un préstamo está contado como venta", detalle: `${i.fecha} · ${i.nota} (${soles(i.monto)}). Debe ir como ingreso no operativo.` });
+      alertas.push({ regla: "prestamo", titulo: "Un préstamo o rescate de ahorros está contado como venta", detalle: `${i.fecha} · ${i.nota} (${soles(i.monto)}). Debe ir como ingreso no operativo.` });
     } else if (esReembolsoEntreSedes(i.nota)) {
       alertas.push({ regla: "reembolso", titulo: "Un reembolso entre sedes está contado como venta", detalle: `${i.fecha} · ${i.nota} (${soles(i.monto)}).` });
     }
