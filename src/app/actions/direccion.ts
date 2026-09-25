@@ -270,7 +270,6 @@ const SEED: SaveItemInput[] = [
       { block: "persona", title: "Luis · Administrador Atelier", detail: "Producción y operación del centro." },
       { block: "persona", title: "Chari · Administradora Centro", detail: "Operación, equipo, ticket promedio." },
       { block: "persona", title: "Administrador Fonavi · por cubrir", detail: "Operación, equipo, ticket promedio." },
-      { block: "persona", title: "Luana · Supervisora Atelier", detail: "Disciplina y constancia del día a día." },
 
       // Decisiones de la semana.
       { block: "decision", title: "Kelly asume las finanzas de las 3 sedes", detail: "Desde el 1 de agosto.", status: "tomada" },

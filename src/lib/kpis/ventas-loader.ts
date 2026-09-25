@@ -10,8 +10,8 @@
  *   1. byte_ventas_daily  — reporte "Ventas" de Byte (oficial, source='import').
  *   2. byte_sales_daily   — el Excel financiero (también Byte, transcrito;
  *                           total_pos_excel, con crédito).
- *   3. registro del admin — upselling_daily (cafeterías) / lo que teclea la
- *                           supervisora o daily_records (Atelier).
+ *   3. registro del admin — upselling_daily (cafeterías) / lo que anota
+ *                           Luis (venta_admin) o daily_records (Atelier).
  * Manda Byte, salvo que Byte y el Excel difieran y el administrador
  * confirme el Excel.
  *
@@ -45,7 +45,7 @@ export async function leerFuentesVenta(
   // Prioridad 1 y 2: reportes de Byte (oficial primero).
   let byte: VentaRow[] = [];
   try {
-    // Solo el reporte oficial: lo que la supervisora de Atelier teclea en
+    // Solo el reporte oficial: lo que el administrador de Atelier teclea en
     // su panel también se guarda aquí (source='manual'), pero es dato del
     // administrador, no de Byte.
     byte = (await sql`
@@ -72,18 +72,18 @@ export async function leerFuentesVenta(
   } catch { /* tabla pendiente de migración */ }
 
   // El registro del administrador: tercera opinión independiente. En las
-  // cafeterías, lo que teclea el admin en su panel; en Atelier, lo de la
-  // supervisora (mientras el reporte de Byte no lo pise) o, si no hay, el
-  // cierre diario de dirección. Lo copiado del reporte de Byte
-  // (source='import') no cuenta: no es una opinión distinta.
+  // cafeterías, lo que teclea el admin en su panel; en Atelier, lo que anota
+  // Luis (upselling_daily.venta_admin, que el reporte de Byte ya no pisa —
+  // 25-sep-2026) o, si no hay, el cierre diario de dirección. Lo copiado del
+  // reporte de Byte (source='import') no cuenta: no es una opinión distinta.
   const registro: VentaRow[] = bId === 1
     ? ((await sql`
-        SELECT date::text AS date, total::float AS total FROM byte_ventas_daily
-        WHERE business_id = 1 AND date BETWEEN ${from} AND ${to} AND total > 0 AND source = 'manual'
+        SELECT date::text AS date, venta_admin::float AS total FROM upselling_daily
+        WHERE business_id = 1 AND date BETWEEN ${from} AND ${to} AND COALESCE(venta_admin, 0) > 0
         UNION ALL
         SELECT date::text, byte_total::float FROM daily_records d
         WHERE business_id = 1 AND date BETWEEN ${from} AND ${to} AND archived = false AND COALESCE(byte_total, 0) > 0
-          AND NOT EXISTS (SELECT 1 FROM byte_ventas_daily v WHERE v.business_id = 1 AND v.date = d.date AND v.source = 'manual' AND v.total > 0)
+          AND NOT EXISTS (SELECT 1 FROM upselling_daily u WHERE u.business_id = 1 AND u.date = d.date AND COALESCE(u.venta_admin, 0) > 0)
       `) as VentaRow[])
     : ((await sql`
         SELECT date::text AS date, revenue::float AS total
