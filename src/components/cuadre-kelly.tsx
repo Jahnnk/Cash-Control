@@ -12,7 +12,7 @@ import { formatCurrency, monthLabel } from "@/lib/utils";
 import type { LineaPuente } from "@/lib/verificacion-kelly";
 import { getVerificacionDeLote, type VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 
-function Puente({ titulo, lineas, total }: { titulo: string; lineas: LineaPuente[]; total: number }) {
+function Puente({ titulo, lineas, total, totalEtiqueta }: { titulo: string; lineas: LineaPuente[]; total: number; totalEtiqueta: string }) {
   return (
     <div className="min-w-0">
       <div className="text-[11px] font-medium uppercase tracking-wider text-gray-500 mb-2">{titulo}</div>
@@ -28,7 +28,7 @@ function Puente({ titulo, lineas, total }: { titulo: string; lineas: LineaPuente
             </tr>
           ))}
           <tr className="border-t border-gray-200 font-semibold text-gray-900">
-            <td className="pt-2 pr-3">Lo que muestra el sistema</td>
+            <td className="pt-2 pr-3">{totalEtiqueta}</td>
             <td className="pt-2 text-right tabular-nums">{formatCurrency(total)}</td>
           </tr>
         </tbody>
@@ -56,7 +56,42 @@ export function EstadoCuadre({ v }: { v: VerificacionSedeMes }) {
   );
 }
 
-/** El detalle de una sede y mes: alertas arriba, puentes abajo. */
+/** Dashboard contra Excel de Kelly, en una tabla de tres filas. */
+function DashboardVsExcel({ v }: { v: VerificacionSedeMes }) {
+  const ventasKelly = v.puenteVentas?.[0]?.monto ?? null;
+  const filas: [string, number | null, number | null][] = [
+    ["Ingresos (plata que entró)", v.caja?.entro ?? null, v.caja?.esperadoEntro ?? null],
+    ["Gastos (plata que salió)", v.caja?.salio ?? null, v.caja?.esperadoSalio ?? null],
+    ["Vendido (Byte)", v.sistema.ventas, ventasKelly],
+  ];
+  return (
+    <table className="w-full text-sm">
+      <thead>
+        <tr className="text-[11px] uppercase tracking-wider text-gray-500">
+          <th className="text-left font-medium pb-2"></th>
+          <th className="text-right font-medium pb-2">Dashboard</th>
+          <th className="text-right font-medium pb-2">Excel de Kelly</th>
+          <th className="w-8"></th>
+        </tr>
+      </thead>
+      <tbody className="divide-y divide-gray-100">
+        {filas.filter(([, a, b]) => a !== null || b !== null).map(([et, a, b]) => {
+          const igual = a !== null && b !== null && Math.abs(a - b) < 0.01;
+          return (
+            <tr key={et}>
+              <td className="py-1.5 text-gray-700">{et}</td>
+              <td className="py-1.5 text-right tabular-nums text-gray-900">{a === null ? "—" : formatCurrency(a)}</td>
+              <td className="py-1.5 text-right tabular-nums text-gray-900">{b === null ? "—" : formatCurrency(b)}</td>
+              <td className={`py-1.5 text-center ${igual ? "text-emerald-600" : "text-amber-600"}`}>{igual ? "✓" : "≠"}</td>
+            </tr>
+          );
+        })}
+      </tbody>
+    </table>
+  );
+}
+
+/** El detalle de una sede y mes: alertas arriba, comparación y puentes abajo. */
 export function DetalleCuadre({ v }: { v: VerificacionSedeMes }) {
   return (
     <div className="space-y-4">
@@ -70,10 +105,14 @@ export function DetalleCuadre({ v }: { v: VerificacionSedeMes }) {
           ))}
         </ul>
       )}
+      <DashboardVsExcel v={v} />
+      <div className="text-[11px] text-gray-500">
+        Cómo se llega del Excel a los números de la operación (los que usa el punto de equilibrio) y de la venta de Kelly a la de Byte:
+      </div>
       <div className={`grid grid-cols-1 gap-6 ${v.puenteVentas ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
-        <Puente titulo="Ingresos a cuentas" lineas={v.puenteIngresos} total={v.sistema.ingresos} />
-        <Puente titulo="Gastos" lineas={v.puenteGastos} total={v.sistema.gastos} />
-        {v.puenteVentas && v.sistema.ventas !== null && <Puente titulo="Ventas (Byte)" lineas={v.puenteVentas} total={v.sistema.ventas} />}
+        <Puente titulo="Ingresos de la operación" lineas={v.puenteIngresos} total={v.sistema.ingresos} totalEtiqueta="Ingresos de la operación" />
+        <Puente titulo="Gastos de la operación" lineas={v.puenteGastos} total={v.sistema.gastos} totalEtiqueta="Gastos de la operación" />
+        {v.puenteVentas && v.sistema.ventas !== null && <Puente titulo="Vendido (Byte)" lineas={v.puenteVentas} total={v.sistema.ventas} totalEtiqueta="Vendido según el sistema" />}
       </div>
       <p className="text-[11px] text-gray-400">Archivo: {v.archivo} · cargado el {v.cargadoEl}</p>
     </div>
@@ -102,9 +141,8 @@ export function CuadreDeCarga({ batchId }: { batchId: string }) {
       </div>
       {v.estado === "alerta" ? <DetalleCuadre v={v} /> : (
         <p className="text-xs text-gray-600">
-          Lo cargado suma lo mismo que el Excel y cada diferencia con lo que muestra el sistema tiene su razón.
-          Ingresos {formatCurrency(v.sistema.ingresos)} · gastos {formatCurrency(v.sistema.gastos)}
-          {v.sistema.ventas !== null && <> · ventas {formatCurrency(v.sistema.ventas)}</>}.
+          Los ingresos ({formatCurrency(v.caja?.entro ?? v.sistema.ingresos)}) y gastos ({formatCurrency(v.caja?.salio ?? v.sistema.gastos)}) del
+          sistema son los mismos del Excel, y cada diferencia de la operación tiene su razón.
         </p>
       )}
     </div>

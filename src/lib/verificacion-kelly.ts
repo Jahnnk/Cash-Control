@@ -40,6 +40,8 @@ export type IngresoFila = {
   prestamoSocio: boolean;
   transferenciaInterna: boolean;
   noOperativo: string | null;
+  /** Préstamo del socio que entró por el banco (cuenta como plata que entró). */
+  viaBanco?: boolean;
 };
 
 export type GastoFila = {
@@ -54,6 +56,9 @@ export type GastoFila = {
   centro: number | null;
   prestamoSocio: boolean;
   transferenciaInterna: boolean;
+  /** Método de pago: 'socio' y 'pendiente_atelier' no son plata que salió de la sede. */
+  metodo?: string;
+  viaBanco?: boolean;
 };
 
 export type Foto = { ingresos: number; egresos: number; omitidosEgresos: number };
@@ -75,8 +80,14 @@ export type Verificacion = {
   puenteGastos: LineaPuente[];
   /** Ventas: del "Control de VTAS" de Kelly a lo que muestra el sistema. null = sin datos. */
   puenteVentas: LineaPuente[] | null;
-  /** Lo que muestra el sistema (Grupo → Resumen). */
+  /** Números de la operación (punto de equilibrio) y ventas de Byte. */
   sistema: { ingresos: number; gastos: number; ventas: number | null };
+  /**
+   * Lo que muestra Grupo → Resumen como ingreso y gasto de la sede (la plata
+   * que entró y salió) y lo que debería mostrar según el Excel más lo que
+   * registró dirección aparte. null = no se pasó la cifra de caja.
+   */
+  caja: { entro: number; salio: number; esperadoEntro: number | null; esperadoSalio: number | null } | null;
   /** Diferencia que ningún motivo explica (debe ser 0). */
   sinExplicar: { ingresos: number; gastos: number };
   alertas: Alerta[];
@@ -102,6 +113,8 @@ export function verificarMes(input: {
   esAtelier: boolean;
   /** Ventas por día de cada fuente; sin esto no se verifican ventas. */
   ventas?: FuentesVenta;
+  /** Entró / salió del mes según el sistema (totales-mes-sede.ts). */
+  caja?: { entro: number; salio: number };
 }): Verificacion {
   const { foto, ingresos, gastos, sistema } = input;
   const alertas: Alerta[] = [];
@@ -204,6 +217,24 @@ export function verificarMes(input: {
     }
   }
 
+  // ── 3b · El ingreso y el gasto del dashboard son los del Excel ──
+  let caja: Verificacion["caja"] = null;
+  if (input.caja) {
+    const entraCaja = (i: IngresoFila) => !i.transferenciaInterna && (!i.prestamoSocio || !!i.viaBanco);
+    const saleCaja = (g: GastoFila) => !g.transferenciaInterna && (!g.prestamoSocio || !!g.viaBanco) && g.metodo !== "socio" && g.metodo !== "pendiente_atelier";
+    const extraIn = suma(manIn.filter(entraCaja), (i) => i.monto);
+    const extraEx = suma(manEx.filter(saleCaja), (g) => g.monto);
+    const esperadoEntro = foto ? r2(foto.ingresos + extraIn) : null;
+    const esperadoSalio = foto ? r2(foto.egresos + extraEx - foto.omitidosEgresos) : null;
+    caja = { entro: r2(input.caja.entro), salio: r2(input.caja.salio), esperadoEntro, esperadoSalio };
+    if (esperadoEntro !== null && Math.abs(caja.entro - esperadoEntro) >= 0.01) {
+      alertas.push({ regla: "caja", titulo: "Los ingresos del dashboard no son los del Excel", detalle: `El dashboard muestra ${soles(caja.entro)} y el Excel de Kelly${extraIn ? " más lo registrado por dirección" : ""} da ${soles(esperadoEntro)}.` });
+    }
+    if (esperadoSalio !== null && Math.abs(caja.salio - esperadoSalio) >= 0.01) {
+      alertas.push({ regla: "caja", titulo: "Los gastos del dashboard no son los del Excel", detalle: `El dashboard muestra ${soles(caja.salio)} y el Excel de Kelly${extraEx ? " más lo registrado por dirección" : ""} da ${soles(esperadoSalio)}.` });
+    }
+  }
+
   // ── 4 · Ventas: el Control de VTAS de Kelly contra lo que usa el sistema ──
   const v = input.ventas ? verificarVentas(input.ventas) : null;
   if (v) alertas.push(...v.alertas);
@@ -214,6 +245,7 @@ export function verificarMes(input: {
     puenteGastos,
     puenteVentas: v?.puente ?? null,
     sistema: { ...sistema, ventas: v?.sistema ?? null },
+    caja,
     sinExplicar,
     alertas,
   };

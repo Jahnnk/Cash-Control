@@ -124,8 +124,8 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
             <span className="text-gray-400 ml-1.5">vs mes pasado</span>
           </div>
         </Stat>
-        <Stat label="Margen consolidado" value={formatCurrency(s.margen)}>
-          <div className="text-xs text-gray-400">Ingresos − gastos del mes</div>
+        <Stat label="Flujo del mes" value={formatCurrency(s.margen)}>
+          <div className="text-xs text-gray-400">Lo que entró − lo que salió (Excel de Kelly)</div>
         </Stat>
         <Stat label="Punto de equilibrio" value={eq === null ? "—" : `${Math.round(eq)}%`}>
           {eq !== null ? (

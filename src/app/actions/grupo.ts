@@ -197,8 +197,10 @@ export async function getGroupDashboard(monthInput?: string) {
     // Ingresos, gastos y deuda del mes: la definición única (totales-mes-sede.ts),
     // la misma contra la que se verifica el Excel de Kelly.
     const tm = await totalesMesSede(b.id, startOfMonth, monthEndDate);
-    const monthlyIncome = tm.ingresos;
-    const monthlyExpenses = tm.gastos;
+    // Decisión de Jahnn (25-sep-2026): el ingreso y el gasto de la sede son
+    // los del Excel de Kelly — la plata que entró y salió —, un solo monto.
+    const monthlyIncome = tm.entro;
+    const monthlyExpenses = tm.salio;
     const monthlyDebtSavings = tm.deudaAhorro;
 
     summaries.push({
