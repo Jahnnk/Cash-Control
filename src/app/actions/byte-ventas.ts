@@ -179,10 +179,13 @@ export async function saveAtelierDay(input: {
     //    de Byte (source='import') — se corrige re-subiendo el reporte.
     //  - mermas: siempre de la supervisora; vacío no borra (COALESCE).
     await sql`
-      INSERT INTO upselling_daily (business_id, date, personas, revenue, mermas_soles, source, updated_at)
-      VALUES (1, ${input.date}, ${input.pedidos}, ${input.venta}, ${input.mermas}, 'manual', NOW())
+      INSERT INTO upselling_daily (business_id, date, personas, revenue, mermas_soles, source, venta_admin, updated_at)
+      VALUES (1, ${input.date}, ${input.pedidos}, ${input.venta}, ${input.mermas}, 'manual', ${input.venta}, NOW())
       ON CONFLICT (business_id, date) DO UPDATE
         SET personas = CASE WHEN upselling_daily.source = 'import' THEN upselling_daily.personas ELSE EXCLUDED.personas END,
+            -- Lo que anotó Luis se guarda SIEMPRE aparte (25-sep-2026): el
+            -- reporte de Byte no lo pisa y sirve de tercer dato de la venta.
+            venta_admin = EXCLUDED.venta_admin,
             revenue = CASE WHEN upselling_daily.source = 'import' THEN upselling_daily.revenue ELSE EXCLUDED.revenue END,
             mermas_soles = COALESCE(EXCLUDED.mermas_soles, upselling_daily.mermas_soles),
             source = CASE WHEN upselling_daily.source = 'import' THEN 'import' ELSE 'manual' END,

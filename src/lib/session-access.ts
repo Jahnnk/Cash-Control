@@ -32,7 +32,7 @@ const AUTH_COOKIE = "yayis_auth";
 
 /** Sede (business_id) que corresponde a cada scope de token v2. */
 const SEDE_BY_SCOPE: Record<string, number> = {
-  "admin-atelier": 1, // supervisora operativa (registro diario + ventas Byte)
+  "admin-atelier": 1, // administrador de Atelier (Luis): registro diario + ventas Byte
   "admin-fonavi": 2,
   "admin-centro": 3,
   "verif-fonavi": 2,
