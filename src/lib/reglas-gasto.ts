@@ -35,7 +35,12 @@
  * equilibrio hasta que alguien diga qué es. Adivinar es peor que preguntar.
  */
 
-export type TipoCategoria = "Fijo" | "Variable" | "Financiamiento" | "Inversión" | "No es gasto";
+/**
+ * "Desconocido" (Jahnn, 25-sep-2026): gastos viejos que ya nadie sabe qué
+ * fueron ("Por regularizar", "Sin descripción"). Son plata que salió de
+ * verdad: en el punto de equilibrio cuentan como fijos (lib/fixed-variable.ts).
+ */
+export type TipoCategoria = "Fijo" | "Variable" | "Financiamiento" | "Inversión" | "No es gasto" | "Desconocido";
 
 export type CategoriaGasto = {
   nombre: string;
@@ -77,7 +82,8 @@ export const CATEGORIAS_GASTO: CategoriaGasto[] = [
   { nombre: "AHORRO", tipo: "No es gasto", descripcion: "Plata que se guarda", ejemplos: "Fondos mutuos" },
   { nombre: "PRÉSTAMOS ENTRE SEDES", tipo: "No es gasto", descripcion: "Plata que una sede le presta o le devuelve a otra", ejemplos: "Préstamo a Atelier, devolución de cuota a Fonavi o Centro" },
   { nombre: "DEVOLUCIONES", tipo: "No es gasto", descripcion: "Plata que no era de Yayi's", ejemplos: "Devoluciones a clientes, pagos por error, pagos dobles, propinas entregadas al equipo" },
-  { nombre: POR_ACLARAR, tipo: "No es gasto", descripcion: "Nadie sabe todavía qué es: no entra al punto de equilibrio hasta aclararlo", ejemplos: "Lo que ninguna regla reconoce" },
+  // ─── DESCONOCIDO: nadie sabe qué fue ───
+  { nombre: POR_ACLARAR, tipo: "Desconocido", descripcion: "Nadie sabe qué fue: cuenta como gasto fijo en el punto de equilibrio mientras no se aclare", ejemplos: "Lo que ninguna regla reconoce, pagos sin descripción" },
 ];
 
 export type ReglaGasto = { clave: string; categoria: string };

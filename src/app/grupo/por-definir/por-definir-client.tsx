@@ -467,6 +467,17 @@ function TarjetaConflicto({ item, onHecho }: { item: ItemPorDefinir; onHecho: ()
           {CATEGORIAS_LISTA.filter((c) => !d.sugerencias.includes(c)).map((c) => <option key={c} value={c}>{c} · {tipoDeCategoria(c)}</option>)}
         </select>
         {otra && <button disabled={guardando} onClick={() => decidir(otra)} className="px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-60">Guardar</button>}
+        {!d.sugerencias.includes(POR_ACLARAR) && (
+          <button disabled={guardando} onClick={() => { setEnsenar(false); start(async () => {
+            const r = await resolverConflicto(item.id, { categoria: POR_ACLARAR, regla: null });
+            if (!r.ok) { showToast(r.error, "error"); return; }
+            showToast("Queda como desconocido (cuenta como fijo)", "success");
+            onHecho();
+          }); }}
+            className="px-3 py-1.5 rounded-lg border border-gray-300 text-gray-600 hover:bg-gray-50 disabled:opacity-60">
+            No se sabe · Desconocido
+          </button>
+        )}
         {guardando && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />}
       </div>
       <label className="flex flex-wrap items-center gap-2 text-xs text-gray-600">

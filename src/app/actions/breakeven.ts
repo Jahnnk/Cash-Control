@@ -330,7 +330,7 @@ async function breakevenOf(bId: number, month: string): Promise<BreakevenResult>
   }
   const r = computeBreakeven({ ...costs, ventas, daysElapsed, daysInMonth, reference });
   if (costs.porAclarar > 0) {
-    r.warnings = [...r.warnings, `Incluye S/${costs.porAclarar.toFixed(2)} de gastos por aclarar, contados como fijos hasta que se decidan en Por definir.`];
+    r.warnings = [...r.warnings, `Incluye S/${costs.porAclarar.toFixed(2)} de gastos desconocidos (POR ACLARAR), contados como fijos.`];
   }
   return r;
 }
