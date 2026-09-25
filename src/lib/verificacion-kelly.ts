@@ -62,7 +62,13 @@ export type GastoFila = {
   viaBanco?: boolean;
 };
 
-export type Foto = { ingresos: number; egresos: number; omitidosEgresos: number };
+export type Foto = {
+  ingresos: number; egresos: number; omitidosEgresos: number;
+  /** El total del mes que calcula la propia hoja (bloque INGRESOS/GASTOS al pie). Ver bloques-pie-excel.ts. */
+  hoja?: { ingresos: number; egresos: number } | null;
+  /** El análisis de rentabilidad de Kelly (ajustes a mano): solo referencia. */
+  analisis?: { ingresos: number; egresos: number; fila: number } | null;
+};
 
 export type LineaPuente = { etiqueta: string; monto: number; nota?: string };
 
@@ -89,6 +95,8 @@ export type Verificacion = {
   caja: { entro: number; salio: number; esperadoEntro: number | null; esperadoSalio: number | null } | null;
   /** Diferencia que ningún motivo explica (debe ser 0). */
   sinExplicar: { ingresos: number; gastos: number };
+  /** El análisis de rentabilidad que Kelly arma al pie de la hoja (referencia, no son movimientos). */
+  analisisKelly: { ingresos: number; egresos: number; fila: number } | null;
   alertas: Alerta[];
 };
 
@@ -235,11 +243,31 @@ export function verificarMes(input: {
   }
 
   // ── 4 · Ventas: el Control de VTAS de Kelly contra lo que usa el sistema ──
+  // ── El total que calcula la propia hoja vs. la suma de sus filas ──
+  // Caso real (Centro, julio 2026): la fórmula =SUM(J5:J249) no llegaba a la
+  // fila 250 (rescate de S/550) y el resumen de la hoja decía S/550 menos.
+  if (foto?.hoja) {
+    const difIn = r2(foto.hoja.ingresos - foto.ingresos);
+    const difEx = r2(foto.hoja.egresos - foto.egresos);
+    if (Math.abs(difIn) >= 0.01 || Math.abs(difEx) >= 0.01) {
+      const partes = [
+        Math.abs(difIn) >= 0.01 ? `ingresos: la hoja dice ${soles(foto.hoja.ingresos)} y sus filas suman ${soles(foto.ingresos)}` : null,
+        Math.abs(difEx) >= 0.01 ? `gastos: la hoja dice ${soles(foto.hoja.egresos)} y sus filas suman ${soles(foto.egresos)}` : null,
+      ].filter(Boolean).join("; ");
+      alertas.push({
+        regla: "total-hoja",
+        titulo: "El total del Excel no incluye todas sus filas",
+        detalle: `${partes}. Suele pasar cuando la fórmula de totales (=SUM…) no llega hasta la última fila: hay que ampliarla en el Excel. El sistema usa la suma de las filas.`,
+      });
+    }
+  }
+
   const v = input.ventas ? verificarVentas(input.ventas) : null;
   if (v) alertas.push(...v.alertas);
 
   return {
     estado: alertas.length > 0 ? "alerta" : foto ? "ok" : "sin-foto",
+    analisisKelly: foto?.analisis ?? null,
     puenteIngresos,
     puenteGastos,
     puenteVentas: v?.puente ?? null,
@@ -297,7 +325,7 @@ export function verificarVentas(f: FuentesVenta): { puente: LineaPuente[]; siste
   });
   if (sinDesempate.length) alertas.push({
     regla: "ventas",
-    titulo: `Ventas que no coinciden en ${sinDesempate.length} ${sinDesempate.length === 1 ? "día" : "días"} y no hay tercer dato`,
+    titulo: `Ventas que no coinciden en ${sinDesempate.length} ${sinDesempate.length === 1 ? "día" : "días"} y nadie desempata`,
     detalle: `${sinDesempate.join(" · ")}. El sistema usa Byte (o el Excel si no hay Byte); hay que revisar cuál es la correcta.`,
   });
   return { puente, sistema: r2(sistema), alertas };

@@ -15,6 +15,7 @@ import { totalesMesSede } from "@/lib/totales-mes-sede";
 import { leerFuentesVenta } from "@/lib/kpis/ventas-loader";
 import { verificarMes, omitidosDeNotas, type Verificacion } from "@/lib/verificacion-kelly";
 import { sheetMonthKey } from "@/lib/excel-month-pairing";
+import { bloquesDeNotas } from "@/lib/bloques-pie-excel";
 
 const sql = neon(process.env.DATABASE_URL!);
 const SEDES: Record<number, string> = { 1: "Atelier", 2: "Fonavi", 3: "Centro" };
@@ -57,7 +58,7 @@ async function verificarSedeMes(b: {
   ]);
   const v = verificarMes({
     foto: b.excel_ingresos !== null && b.excel_egresos !== null
-      ? { ingresos: Number(b.excel_ingresos), egresos: Number(b.excel_egresos), omitidosEgresos: omitidosDeNotas(b.notes) }
+      ? { ingresos: Number(b.excel_ingresos), egresos: Number(b.excel_egresos), omitidosEgresos: omitidosDeNotas(b.notes), ...bloquesDeNotas(b.notes) }
       : null,
     ingresos: (ingresos as Record<string, unknown>[]).map((r) => ({
       monto: Number(r.monto), importado: Boolean(r.importado), fecha: String(r.fecha), nota: String(r.nota),

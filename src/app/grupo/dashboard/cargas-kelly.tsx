@@ -13,9 +13,9 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { FileSpreadsheet, Loader2, Upload, X } from "lucide-react";
+import { CheckCircle2, FileSpreadsheet, Loader2, Upload, X } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
-import { getCoberturaKelly } from "@/app/actions/cobertura-kelly";
+import { getCoberturaKelly, getExcelSubidosHoy, type ExcelSubidoHoy } from "@/app/actions/cobertura-kelly";
 import { celdaKelly, fechaCortaKelly, type CeldaKelly, type MesKelly } from "@/lib/cobertura-kelly";
 import { ExcelImportModal } from "@/app/[negocio]/configuracion/excel-import-modal";
 
@@ -49,6 +49,13 @@ export function SubirExcelKelly({ sede, onCerrar, className = "" }: {
 }) {
   const [eligiendo, setEligiendo] = useState(false);
   const [elegida, setElegida] = useState<Sede | null>(null);
+  // Qué sedes ya tienen su Excel subido hoy: su casilla se pinta de verde.
+  const [subidos, setSubidos] = useState<ExcelSubidoHoy[]>([]);
+
+  function abrirSelector() {
+    setEligiendo(true);
+    void getExcelSubidosHoy().then((r) => { if (r.ok) setSubidos(r.subidos); });
+  }
   const router = useRouter();
   const abierta = elegida ?? sede ?? null;
 
@@ -63,7 +70,7 @@ export function SubirExcelKelly({ sede, onCerrar, className = "" }: {
       {sede === undefined && (
         <button
           type="button"
-          onClick={() => setEligiendo(true)}
+          onClick={abrirSelector}
           className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl whitespace-nowrap ${className}`}
         >
           <Upload className="w-4 h-4" /> Subir Excel
@@ -85,17 +92,36 @@ export function SubirExcelKelly({ sede, onCerrar, className = "" }: {
               </button>
             </div>
             <div className="grid grid-cols-3 gap-3">
-              {SEDES.map((s) => (
-                <button
-                  key={s.code}
-                  type="button"
-                  onClick={() => { setEligiendo(false); setElegida(s.code); }}
-                  className="rounded-xl border border-gray-200 hover:border-primary-light hover:bg-primary-50/50 py-4 text-sm font-semibold text-gray-800"
-                >
-                  {s.nombre}
-                </button>
-              ))}
+              {SEDES.map((s) => {
+                const hoy = subidos.find((x) => x.businessId === s.id);
+                return (
+                  <button
+                    key={s.code}
+                    type="button"
+                    onClick={() => { setEligiendo(false); setElegida(s.code); }}
+                    title={hoy ? `Subido hoy a las ${hoy.hora}: ${hoy.archivo}` : undefined}
+                    className={`rounded-xl border px-2 py-4 text-sm font-semibold min-w-0 ${hoy
+                      ? "border-emerald-300 bg-emerald-50 text-emerald-900 hover:bg-emerald-100"
+                      : "border-gray-200 text-gray-800 hover:border-primary-light hover:bg-primary-50/50"}`}
+                  >
+                    <span className="inline-flex items-center gap-1">
+                      {hoy && <CheckCircle2 className="w-4 h-4 text-emerald-600" />}{s.nombre}
+                    </span>
+                    {hoy && (
+                      <span className="block mt-1 text-[10px] font-normal text-emerald-800">
+                        Subido hoy {hoy.hora}
+                        <span className="block truncate">{hoy.archivo}</span>
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
             </div>
+            {subidos.length > 0 && (
+              <p className="text-[11px] text-gray-500">
+                {subidos.length === 3 ? "Ya subiste los tres Excel de hoy." : `Falta${3 - subidos.length === 1 ? "" : "n"}: ${SEDES.filter((s) => !subidos.some((x) => x.businessId === s.id)).map((s) => s.nombre).join(" y ")}.`}
+              </p>
+            )}
           </div>
         </div>
       )}

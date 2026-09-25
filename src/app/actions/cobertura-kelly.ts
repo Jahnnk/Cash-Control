@@ -130,3 +130,30 @@ export async function getCoberturaKelly(meses = 6): Promise<
     return { ok: false, error: "No se pudo leer qué Excel están cargados." };
   }
 }
+
+export type ExcelSubidoHoy = { businessId: number; archivo: string; hora: string };
+
+/**
+ * Qué sedes ya tienen su Excel subido HOY (fecha de Lima), con el nombre del
+ * archivo. Pedido de Jahnn (25-sep-2026): al subir los tres Excel de la
+ * semana, ver de un vistazo cuál ya subió y cuál falta.
+ */
+export async function getExcelSubidosHoy(): Promise<{ ok: true; subidos: ExcelSubidoHoy[] } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  try {
+    const rows = (await sql`
+      SELECT DISTINCT ON (business_id) business_id, file_name,
+             to_char(imported_at AT TIME ZONE 'America/Lima', 'HH24:MI') AS hora
+      FROM import_batches
+      WHERE business_id IN (1, 2, 3) AND status = 'completed'
+        AND sheet_name IS NOT NULL AND (sheet_name ILIKE '%ing%' OR sheet_name ILIKE '%vtas%')
+        AND (imported_at AT TIME ZONE 'America/Lima')::date = (now() AT TIME ZONE 'America/Lima')::date
+      ORDER BY business_id, imported_at DESC
+    `) as { business_id: number; file_name: string | null; hora: string }[];
+    return { ok: true, subidos: rows.map((r) => ({ businessId: r.business_id, archivo: r.file_name ?? "Excel", hora: r.hora })) };
+  } catch (e) {
+    console.error("[getExcelSubidosHoy] failed:", e);
+    return { ok: false, error: "No se pudo leer qué Excel se subieron hoy." };
+  }
+}

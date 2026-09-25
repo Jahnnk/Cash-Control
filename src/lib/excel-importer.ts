@@ -51,6 +51,7 @@ export function resolverGrupoDelGasto(
 }
 import { parseSheetMonthYear, currentYearLima } from "./sheet-month";
 import { leerSaldoBancoExcel, type SaldoBancoExcel } from "./saldo-banco-excel";
+import { leerBloquesDelPie, type BloquesPie } from "./bloques-pie-excel";
 
 // ─────────────────────────────────────────────────────────────────
 // Tipos
@@ -164,6 +165,12 @@ export type ParseResult = {
   saldoBancoReal: SaldoBancoExcel | null;
   /** Por qué no se pudo leer, cuando `saldoBancoReal` es null. */
   saldoBancoMotivo: string | null;
+  /**
+   * Los resúmenes que Kelly arma al pie de la hoja: el total del mes según
+   * la hoja (control) y su análisis de rentabilidad con ajustes a mano
+   * (referencia, nunca movimientos). Ver src/lib/bloques-pie-excel.ts.
+   */
+  bloquesPie: BloquesPie;
   ingresos: number;
   egresos: number;
   devoluciones: number;
@@ -809,6 +816,7 @@ export function parseExcelFile(
     distribucionPaymentMethod: distMethod,
     saldoBancoReal: lectura.ok ? lectura.saldo : null,
     saldoBancoMotivo: lectura.ok ? null : lectura.motivo,
+    bloquesPie: leerBloquesDelPie(rows),
     ingresos,
     egresos,
     devoluciones,
@@ -833,6 +841,7 @@ function emptyResult(errores: string[], warnings: string[]): ParseResult {
     },
     distribucionPaymentMethod: { transferencia: 0, efectivo: 0, yape_plin: 0, pos: 0 },
     saldoBancoReal: null, saldoBancoMotivo: null,
+    bloquesPie: { totalHoja: null, analisis: [] },
     ingresos: 0, egresos: 0, devoluciones: 0, ventasByte: 0,
   };
 }
