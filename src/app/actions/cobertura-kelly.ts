@@ -11,6 +11,7 @@
 import { neon } from "@neondatabase/serverless";
 import { getSessionRole } from "@/lib/session-access";
 import type { MesKelly } from "@/lib/cobertura-kelly";
+import { totalesMesSede } from "@/lib/totales-mes-sede";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -88,6 +89,18 @@ export async function getCoberturaKelly(meses = 6): Promise<
       ventasAtelier = [];
     }
 
+    // Entró / salió de cada casilla: la definición única del Resumen.
+    const finDeMes = (month: string) => {
+      const [y, m] = month.split("-").map(Number);
+      return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
+    };
+    const totales = new Map(
+      await Promise.all(
+        [2, 3, 1].flatMap((bId) => lista.map(async (month) =>
+          [`${bId}|${month}`, await totalesMesSede(bId, `${month}-01`, finDeMes(month))] as const)),
+      ),
+    );
+
     const mayor = (...fs: (string | null | undefined)[]) => fs.filter((f): f is string => !!f).sort().pop() ?? null;
     const celdas: MesKelly[] = [];
     for (const businessId of [2, 3, 1]) {
@@ -106,6 +119,8 @@ export async function getCoberturaKelly(meses = 6): Promise<
           hasta: mayor(v?.hasta, g?.hasta, i?.hasta),
           cargadoEl: c?.cargado ?? null,
           gastosManuales: Math.round((manuales.find((x) => x.business_id === businessId && x.month === month)?.gastos ?? 0) * 100) / 100,
+          entro: totales.get(`${businessId}|${month}`)?.entro ?? 0,
+          salio: totales.get(`${businessId}|${month}`)?.salio ?? 0,
         });
       }
     }

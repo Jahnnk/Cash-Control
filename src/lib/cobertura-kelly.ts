@@ -34,6 +34,15 @@ export type MesKelly = {
   cargadoEl: string | null;
   /** Gastos registrados a mano ese mes (antes de que Kelly llevara el Excel de la sede). */
   gastosManuales?: number;
+  /**
+   * Lo que entró y salió ese mes: la MISMA cifra que Grupo → Resumen y
+   * Finanzas y que los totales de la pestaña Ing&Gtos del Excel
+   * (lib/totales-mes-sede.ts). Es lo que se muestra; ventas/gastos de arriba
+   * solo deciden el estado de la casilla. Pedido de Jahnn (25-sep-2026): los
+   * montos sincronizados en todas las pestañas.
+   */
+  entro?: number;
+  salio?: number;
 };
 
 export type EstadoMesKelly = "completo" | "al-dia" | "atrasado" | "parcial" | "manual" | "vacio";

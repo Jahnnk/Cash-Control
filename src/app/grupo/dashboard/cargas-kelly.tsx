@@ -6,7 +6,7 @@
  * carga de Byte… hoy subo los Excel de Kelly desde el dashboard, pero está
  * escondido y desordenado").
  *
- * Cada casilla dice cuánto vendió y gastó la sede ese mes según el Excel,
+ * Cada casilla dice cuánto entró y salió de la sede ese mes (igual que el Resumen),
  * hasta qué día llega y cuándo se subió. Un click abre la carga de esa sede.
  * La regla de cada estado vive en lib/cobertura-kelly.ts.
  */
@@ -130,7 +130,7 @@ export function CargasKelly({ inicial = null }: { inicial?: DatosKelly | null } 
         <div className="min-w-0">
           <h2 className="text-[15px] font-semibold text-gray-900">Excel · qué está cargado</h2>
           <p className="text-xs text-gray-500 mt-1 max-w-3xl leading-relaxed">
-            Cuánto vendió y gastó cada sede según el Excel, hasta qué día llega y cuándo se subió. El Excel puede traer varios meses:
+            Cuánto entró y salió de cada sede según el Excel (las mismas cifras del Resumen), hasta qué día llega y cuándo se subió. El Excel puede traer varios meses:
             al subirlo eliges cuáles importar. Click en una casilla para subir el Excel de esa sede.
           </p>
         </div>
@@ -172,8 +172,8 @@ export function CargasKelly({ inicial = null }: { inicial?: DatosKelly | null } 
                         >
                           {conDatos ? (
                             <>
-                              <div className="text-sm font-semibold tabular-nums">{formatCurrency(c.ventas)}</div>
-                              <div className="text-[11px] opacity-80 tabular-nums">gastos {formatCurrency(c.gastos)}</div>
+                              <div className="text-sm font-semibold tabular-nums">ingresos {formatCurrency(c.entro ?? 0)}</div>
+                              <div className="text-[11px] opacity-80 tabular-nums">gastos {formatCurrency(c.salio ?? 0)}</div>
                               <div className="text-[11px] font-medium mt-1.5">{c.texto}</div>
                               {c.cargadoEl && <div className="text-[10px] opacity-70">subido el {fechaCortaKelly(c.cargadoEl)}</div>}
                             </>
@@ -182,7 +182,8 @@ export function CargasKelly({ inicial = null }: { inicial?: DatosKelly | null } 
                               <div className="text-sm">{c.estado === "manual" ? "A mano" : "Sin cargar"}</div>
                               {c.estado === "manual" ? (
                                 <>
-                                  <div className="text-[11px] opacity-80 tabular-nums">gastos {formatCurrency(c.gastosManuales ?? 0)}</div>
+                                  <div className="text-[11px] opacity-80 tabular-nums">ingresos {formatCurrency(c.entro ?? 0)}</div>
+                                  <div className="text-[11px] opacity-80 tabular-nums">gastos {formatCurrency(c.salio ?? 0)}</div>
                                   <div className="text-[11px] font-medium mt-1.5">antes del Excel</div>
                                 </>
                               ) : (
