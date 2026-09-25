@@ -62,12 +62,21 @@ export type LineaPuente = { etiqueta: string; monto: number; nota?: string };
 
 export type Alerta = { regla: string; titulo: string; detalle: string };
 
+/** Venta de un día según cada fuente (lib/kpis/ventas-loader.ts). */
+export type VentaDia = { date: string; total: number };
+export type FuentesVenta = { byte: VentaDia[]; kelly: VentaDia[]; registro: VentaDia[] };
+
+/** A partir de cuánto una diferencia de venta de un día es alerta (menos es redondeo o voucher). */
+export const TOLERANCIA_VENTA_DIA = 5;
+
 export type Verificacion = {
   estado: "ok" | "alerta" | "sin-foto";
   puenteIngresos: LineaPuente[];
   puenteGastos: LineaPuente[];
+  /** Ventas: del "Control de VTAS" de Kelly a lo que muestra el sistema. null = sin datos. */
+  puenteVentas: LineaPuente[] | null;
   /** Lo que muestra el sistema (Grupo → Resumen). */
-  sistema: { ingresos: number; gastos: number };
+  sistema: { ingresos: number; gastos: number; ventas: number | null };
   /** Diferencia que ningún motivo explica (debe ser 0). */
   sinExplicar: { ingresos: number; gastos: number };
   alertas: Alerta[];
@@ -91,6 +100,8 @@ export function verificarMes(input: {
   /** Reglas de monto fijo de Atelier: categoría → lo que le toca al mes. */
   fijosAtelier: { categoria: string; concepto: string; fijo: number }[];
   esAtelier: boolean;
+  /** Ventas por día de cada fuente; sin esto no se verifican ventas. */
+  ventas?: FuentesVenta;
 }): Verificacion {
   const { foto, ingresos, gastos, sistema } = input;
   const alertas: Alerta[] = [];
@@ -193,14 +204,70 @@ export function verificarMes(input: {
     }
   }
 
+  // ── 4 · Ventas: el Control de VTAS de Kelly contra lo que usa el sistema ──
+  const v = input.ventas ? verificarVentas(input.ventas) : null;
+  if (v) alertas.push(...v.alertas);
+
   return {
     estado: alertas.length > 0 ? "alerta" : foto ? "ok" : "sin-foto",
     puenteIngresos,
     puenteGastos,
-    sistema,
+    puenteVentas: v?.puente ?? null,
+    sistema: { ...sistema, ventas: v?.sistema ?? null },
     sinExplicar,
     alertas,
   };
+}
+
+const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+/**
+ * Ventas del mes. El sistema toma, día por día, el reporte oficial de Byte;
+ * si no está, la copia de Kelly en su "Control de VTAS"; si tampoco, el
+ * registro diario (misma regla que ventas-loader.ts). El puente parte de lo
+ * que dice Kelly y nombra cada diferencia. Un día en que el reporte de Byte
+ * y la copia de Kelly difieren en S/5 o más es alerta: alguno de los dos
+ * está mal y hay que mirarlo (el 07/09 de Atelier: Byte S/2,919.97 y Kelly
+ * S/2,316.58, que ella misma tenía en "REVISAR").
+ */
+export function verificarVentas(f: FuentesVenta): { puente: LineaPuente[]; sistema: number; alertas: Alerta[] } | null {
+  const byte = new Map(f.byte.map((x) => [x.date, x.total]));
+  const kelly = new Map(f.kelly.map((x) => [x.date, x.total]));
+  const registro = new Map(f.registro.map((x) => [x.date, x.total]));
+  if (byte.size === 0 && kelly.size === 0 && registro.size === 0) return null;
+
+  const baseKelly = suma([...kelly.values()], (x) => x);
+  let difByte = 0, soloByte = 0, soloRegistro = 0, diasDif = 0, diasSoloByte = 0, diasSoloRegistro = 0;
+  const grandes: string[] = [];
+  const fechas = new Set([...byte.keys(), ...kelly.keys(), ...registro.keys()]);
+  let sistema = 0;
+  for (const d of [...fechas].sort()) {
+    const b = byte.get(d), k = kelly.get(d), r = registro.get(d);
+    if (b !== undefined) {
+      sistema += b;
+      if (k !== undefined) {
+        const dif = r2(b - k);
+        if (Math.abs(dif) >= 0.01) { difByte += dif; diasDif++; }
+        if (Math.abs(dif) >= TOLERANCIA_VENTA_DIA) grandes.push(`${ddmm(d)}: Byte ${soles(b)} y Kelly ${soles(k)}`);
+      } else { soloByte += b; diasSoloByte++; }
+    } else if (k !== undefined) {
+      sistema += k;
+    } else if (r !== undefined) {
+      sistema += r; soloRegistro += r; diasSoloRegistro++;
+    }
+  }
+  const puente: LineaPuente[] = [{ etiqueta: "Ventas en el Control de VTAS de Kelly", monto: baseKelly }];
+  if (diasDif) puente.push({ etiqueta: `El reporte oficial de Byte difiere de Kelly (${diasDif} ${diasDif === 1 ? "día" : "días"})`, monto: r2(difByte) });
+  if (diasSoloByte) puente.push({ etiqueta: `Días que Kelly aún no tiene (${diasSoloByte})`, monto: r2(soloByte), nota: "Se usa el reporte de Byte" });
+  if (diasSoloRegistro) puente.push({ etiqueta: `Días solo en el registro diario (${diasSoloRegistro})`, monto: r2(soloRegistro) });
+  const alertas: Alerta[] = grandes.length
+    ? [{
+        regla: "ventas",
+        titulo: `Las ventas de Byte y del Excel de Kelly no coinciden en ${grandes.length} ${grandes.length === 1 ? "día" : "días"}`,
+        detalle: `${grandes.join(" · ")}. El sistema usa el reporte de Byte; pídele a Kelly que revise su Control de VTAS.`,
+      }]
+    : [];
+  return { puente, sistema: r2(sistema), alertas };
 }
 
 /** Lee "omitidos_egresos=123.45" de las notas del lote. */

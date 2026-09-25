@@ -70,9 +70,10 @@ export function DetalleCuadre({ v }: { v: VerificacionSedeMes }) {
           ))}
         </ul>
       )}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-        <Puente titulo="Ingresos" lineas={v.puenteIngresos} total={v.sistema.ingresos} />
+      <div className={`grid grid-cols-1 gap-6 ${v.puenteVentas ? "lg:grid-cols-3" : "lg:grid-cols-2"}`}>
+        <Puente titulo="Ingresos a cuentas" lineas={v.puenteIngresos} total={v.sistema.ingresos} />
         <Puente titulo="Gastos" lineas={v.puenteGastos} total={v.sistema.gastos} />
+        {v.puenteVentas && v.sistema.ventas !== null && <Puente titulo="Ventas (Byte)" lineas={v.puenteVentas} total={v.sistema.ventas} />}
       </div>
       <p className="text-[11px] text-gray-400">Archivo: {v.archivo} · cargado el {v.cargadoEl}</p>
     </div>
@@ -102,7 +103,8 @@ export function CuadreDeCarga({ batchId }: { batchId: string }) {
       {v.estado === "alerta" ? <DetalleCuadre v={v} /> : (
         <p className="text-xs text-gray-600">
           Lo cargado suma lo mismo que el Excel y cada diferencia con lo que muestra el sistema tiene su razón.
-          Ingresos {formatCurrency(v.sistema.ingresos)} · gastos {formatCurrency(v.sistema.gastos)}.
+          Ingresos {formatCurrency(v.sistema.ingresos)} · gastos {formatCurrency(v.sistema.gastos)}
+          {v.sistema.ventas !== null && <> · ventas {formatCurrency(v.sistema.ventas)}</>}.
         </p>
       )}
     </div>

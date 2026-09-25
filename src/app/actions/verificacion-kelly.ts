@@ -12,6 +12,7 @@
 import { neon } from "@neondatabase/serverless";
 import { getSessionRole } from "@/lib/session-access";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
+import { leerFuentesVenta } from "@/lib/kpis/ventas-loader";
 import { verificarMes, omitidosDeNotas, type Verificacion } from "@/lib/verificacion-kelly";
 import { sheetMonthKey } from "@/lib/excel-month-pairing";
 
@@ -37,7 +38,7 @@ async function verificarSedeMes(b: {
 }): Promise<VerificacionSedeMes> {
   const desde = `${b.month}-01`;
   const hasta = finDeMes(b.month);
-  const [ingresos, gastos, fijos, sistema] = await Promise.all([
+  const [ingresos, gastos, fijos, sistema, ventas] = await Promise.all([
     sql`SELECT amount::float AS monto, imported_from_excel AS importado, date::text AS fecha, COALESCE(note, '') AS nota,
                is_fonavi_reimbursement AS reemb, is_special_loan AS socio, is_internal_transfer AS interna, non_operative_category AS noop
         FROM bank_income_items WHERE business_id = ${b.business_id} AND date BETWEEN ${desde} AND ${hasta} AND archived = false`,
@@ -50,6 +51,7 @@ async function verificarSedeMes(b: {
         WHERE r.active = true AND r.split_mode = 'fixed' AND r.atelier_fixed IS NOT NULL
         GROUP BY c.name`,
     totalesMesSede(b.business_id, desde, hasta),
+    leerFuentesVenta(sql, b.business_id, desde, hasta),
   ]);
   const v = verificarMes({
     foto: b.excel_ingresos !== null && b.excel_egresos !== null
@@ -69,6 +71,7 @@ async function verificarSedeMes(b: {
     sistema: { ingresos: sistema.ingresos, gastos: sistema.gastos },
     fijosAtelier: (fijos as { categoria: string; concepto: string; fijo: number }[]),
     esAtelier: b.business_id === 1,
+    ventas,
   });
   return { ...v, businessId: b.business_id, sede: SEDES[b.business_id] ?? `Sede ${b.business_id}`, month: b.month, archivo: b.file_name, cargadoEl: b.cargado };
 }
