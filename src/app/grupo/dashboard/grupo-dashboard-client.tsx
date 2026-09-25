@@ -16,6 +16,7 @@ import { DIAS_SALDO_FRESCO, type LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { CargasKelly, SubirExcelKelly } from "./cargas-kelly";
 import { SelloClasificacionGrupo } from "@/components/sello-clasificacion";
+import { InformeGastosGrupo } from "./informe-gastos";
 import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
 import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import { fechaLarga } from "@/lib/frescura-datos";
@@ -79,7 +80,7 @@ export function GrupoDashboardClient({
   selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas, kellyLoads,
   atelierB2B, cuadreKelly,
 }: Props) {
-  const [pestana, setPestana] = useState<"resumen" | "equipo" | "finanzas" | "kelly">("resumen");
+  const [pestana, setPestana] = useState<"resumen" | "equipo" | "finanzas" | "gastos" | "kelly">("resumen");
 
   const [y, m] = selectedMonth.split("-").map(Number);
   const periodo = `${MESES[m - 1]} ${y}`;
@@ -236,6 +237,7 @@ export function GrupoDashboardClient({
             ["resumen", "Resumen"],
             ["equipo", "Sedes y equipo"],
             ["finanzas", "Finanzas"],
+            ["gastos", "Gastos"],
             ["kelly", "Excel"],
           ] as const).map(([k, label]) => (
             <button
@@ -288,6 +290,8 @@ export function GrupoDashboardClient({
           <GroupKpisSection showDeck={false} />
         </div>
       )}
+
+      {pestana === "gastos" && <InformeGastosGrupo />}
 
       {pestana === "finanzas" && (
         <div className="space-y-6">
