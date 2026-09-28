@@ -26,6 +26,7 @@ import { contexto, portada, laSemanaEnUnaMirada, ventasDelMes, detalleCafeteria,
 import { rotacionPorSede, topFacturacion, categoriasDeSede, reglaOchentaVeinteSlide, candidatosReemplazo } from "./deck-productos";
 import { aDondeSeFueLaPlata, categoriasQueMasPesan, pisoYPagosGrandes } from "./deck-gastos";
 import type { InformeGastos } from "@/app/actions/informe-gastos";
+import type { CorteExcelSede } from "@/app/actions/cobertura-kelly";
 import { FONT } from "./deck-diseno";
 
 export async function renderWeeklyKpiDeck(
@@ -43,6 +44,8 @@ export async function renderWeeklyKpiDeck(
   ochentaVeinte?: OchentaVeinteSede[] | null,
   /** A dónde se fue la plata: último mes cerrado por sede. */
   gastos?: InformeGastos | null,
+  /** Hasta qué día llegan los Excel de cada sede (portada). */
+  corteExcel?: CorteExcelSede[] | null,
 ): Promise<{ blob: Blob; filename: string }> {
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "WIDE", width: 10, height: 5.625 });
@@ -50,7 +53,7 @@ export async function renderWeeklyKpiDeck(
   pptx.theme = { headFontFace: FONT, bodyFontFace: FONT };
   const ctx = contexto(pptx, data.weekStart, data.weekEnd);
 
-  portada(ctx, data.isCustomRange);
+  portada(ctx, data.isCustomRange, corteExcel);
   laSemanaEnUnaMirada(ctx, data);
   if (data.ventas) ventasDelMes(ctx, data.ventas, data.weekEnd);
   data.cafeterias.forEach((cf) => detalleCafeteria(ctx, cf));

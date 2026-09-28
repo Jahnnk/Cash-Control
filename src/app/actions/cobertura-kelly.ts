@@ -157,3 +157,53 @@ export async function getExcelSubidosHoy(): Promise<{ ok: true; subidos: ExcelSu
     return { ok: false, error: "No se pudo leer qué Excel se subieron hoy." };
   }
 }
+
+export type CorteExcelSede = {
+  businessId: number;
+  sede: string;
+  /** Último día con movimientos que trajo el Excel (null = nunca se subió). */
+  hasta: string | null;
+  /** Cuándo se subió y procesó el último Excel (fecha de Lima). */
+  subidoEl: string | null;
+};
+
+/**
+ * Hasta qué día llegan los datos del Excel en cada sede y cuándo se subió
+ * el último. Pedido de Jahnn (28-sep-2026): el Excel llega con atraso
+ * algunas semanas, y en la reunión hay que saber que "egresos de Centro
+ * S/18,000" es "hasta el día X", no hoy. Va en la portada del deck.
+ */
+export async function getCorteExcel(): Promise<{ ok: true; sedes: CorteExcelSede[] } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  try {
+    const [movs, cargas] = await Promise.all([
+      sql`
+        SELECT business_id, MAX(d)::text AS hasta FROM (
+          SELECT business_id, MAX(date) AS d FROM expenses
+          WHERE imported_from_excel = true AND archived = false AND date <= ${hoy} GROUP BY 1
+          UNION ALL
+          SELECT business_id, MAX(date) FROM bank_income_items
+          WHERE imported_from_excel = true AND archived = false AND date <= ${hoy} GROUP BY 1
+        ) x GROUP BY 1
+      ` as unknown as Promise<{ business_id: number; hasta: string | null }[]>,
+      sql`
+        SELECT business_id, (MAX(imported_at) AT TIME ZONE 'America/Lima')::date::text AS subido
+        FROM import_batches
+        WHERE business_id IN (1, 2, 3) AND status = 'completed'
+          AND sheet_name IS NOT NULL AND (sheet_name ILIKE '%ing%' OR sheet_name ILIKE '%vtas%')
+        GROUP BY 1
+      ` as unknown as Promise<{ business_id: number; subido: string | null }[]>,
+    ]);
+    const sedes: CorteExcelSede[] = ([[2, "Fonavi"], [3, "Centro"], [1, "Atelier"]] as const).map(([id, sede]) => ({
+      businessId: id, sede,
+      hasta: movs.find((m) => m.business_id === id)?.hasta ?? null,
+      subidoEl: cargas.find((c) => c.business_id === id)?.subido ?? null,
+    }));
+    return { ok: true, sedes };
+  } catch (e) {
+    console.error("[getCorteExcel] failed:", e);
+    return { ok: false, error: "No se pudo leer hasta cuándo llegan los Excel." };
+  }
+}

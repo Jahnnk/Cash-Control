@@ -14,6 +14,7 @@
  * igual en cualquier programa.
  */
 
+import type { CorteExcelSede } from "@/app/actions/cobertura-kelly";
 import type PptxGenJS from "pptxgenjs";
 import type { BoardDeckData } from "@/app/actions/kpis";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
@@ -58,7 +59,38 @@ const semanaCorta = (ctx: Ctx) => `${rangoCorto(ctx.ws, ctx.we)} ${ctx.we.slice(
 
 /* ─────────────────────────── 1 · Portada ─────────────────────────── */
 
-export function portada(ctx: Ctx, personalizado: boolean) {
+/** Una semana de rezago es lo pactado (el Excel llega los viernes); más, es atraso. */
+const DIAS_EXCEL_AL_DIA = 7;
+
+/**
+ * Hasta qué día llegan los datos del Excel de cada sede (pedido de Jahnn,
+ * 28-sep-2026): el Excel llega con atraso algunas semanas, y en la reunión
+ * hay que saber que los ingresos y gastos que se presentan son "hasta el
+ * día X", no de hoy. Se compara contra el cierre de la semana del deck.
+ */
+function corteDelExcel(s: PptxGenJS.Slide, ctx: Ctx, corte: CorteExcelSede[]) {
+  const y = 4.0, h = 1.2;
+  s.addShape("roundRect", { x: MX, y, w: ANCHO, h, rectRadius: 0.06, fill: { color: "0B5E50" }, line: { color: "2E7D6B", width: 0.75 } });
+  texto(s, "Datos del Excel: ingresos, gastos, punto de equilibrio y gastos por categoría", {
+    x: MX + 0.25, y: y + 0.08, w: ANCHO - 0.5, h: 0.24, fontSize: 9.5, bold: true, color: C.crema,
+  });
+  const w = (ANCHO - 0.5) / corte.length;
+  corte.forEach((c, k) => {
+    const x = MX + 0.25 + k * w;
+    const atraso = c.hasta ? Math.round((Date.parse(`${ctx.we}T12:00:00Z`) - Date.parse(`${c.hasta}T12:00:00Z`)) / 86_400_000) : null;
+    const atrasado = atraso === null || atraso > DIAS_EXCEL_AL_DIA;
+    const color = atrasado ? "F2C66B" : C.crema;
+    texto(s, c.sede.toUpperCase(), { x, y: y + 0.38, w: w - 0.1, h: 0.18, fontSize: 8.5, bold: true, color: "8FCFB6" });
+    texto(s, c.hasta ? `Hasta el ${diaCorto(c.hasta)}` : "Sin Excel", { x, y: y + 0.56, w: w - 0.1, h: 0.3, fontSize: 15, bold: true, color });
+    const nota = [c.subidoEl ? `subido el ${diaCorto(c.subidoEl)}` : null, atrasado && atraso !== null ? `${atraso} días de atraso` : null].filter(Boolean).join(" · ");
+    texto(s, nota, { x, y: y + 0.87, w: w - 0.1, h: 0.18, fontSize: 8, color: atrasado ? "F2C66B" : "B9DCCD" });
+  });
+  texto(s, "Las ventas y los KPIs del día vienen del panel de los administradores y de Byte.", {
+    x: MX, y: y + h + 0.06, w: ANCHO, h: 0.2, fontSize: 8, italic: true, color: "8FCFB6", align: "center",
+  });
+}
+
+export function portada(ctx: Ctx, personalizado: boolean, corte?: CorteExcelSede[] | null) {
   const s = ctx.pptx.addSlide();
   s.background = { color: C.oscuro };
   const lw = 1.8;
@@ -69,6 +101,7 @@ export function portada(ctx: Ctx, personalizado: boolean) {
   s.addShape("line", { x: W / 2 - 0.6, y: 2.86, w: 1.2, h: 0, line: { color: C.verde, width: 2.5 } });
   texto(s, ctx.periodo, { x: MX, y: 3.0, w: ANCHO, h: 0.4, fontSize: 16, color: "6DB08A", align: "center" });
   texto(s, "Fonavi · Centro · Atelier", { x: MX, y: 3.42, w: ANCHO, h: 0.3, fontSize: 11, color: C.crema, align: "center" });
+  if (corte && corte.length > 0) corteDelExcel(s, ctx, corte);
 }
 
 /* ──────────────────── 2 · La semana en una mirada ──────────────────── */
