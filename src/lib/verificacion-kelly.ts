@@ -76,7 +76,7 @@ export type Alerta = { regla: string; titulo: string; detalle: string };
 
 /** Venta de un día según cada fuente (lib/kpis/ventas-loader.ts). */
 export type VentaDia = { date: string; total: number };
-export type FuentesVenta = { byte: VentaDia[]; kelly: VentaDia[]; registro: VentaDia[] };
+export type FuentesVenta = { byte: VentaDia[]; kelly: VentaDia[]; registro: VentaDia[]; /** Byte de la sede en los días que también subió dirección. */ byteSede?: VentaDia[] };
 
 
 export type Verificacion = {
@@ -327,6 +327,19 @@ export function verificarVentas(f: FuentesVenta): { puente: LineaPuente[]; siste
     regla: "ventas",
     titulo: `Ventas que no coinciden en ${sinDesempate.length} ${sinDesempate.length === 1 ? "día" : "días"} y nadie desempata`,
     detalle: `${sinDesempate.join(" · ")}. El sistema usa Byte (o el Excel si no hay Byte); hay que revisar cuál es la correcta.`,
+  });
+  // El Byte que subió la sede contra el que subió dirección (manda el de
+  // dirección): una diferencia casi siempre es un reporte bajado con el día
+  // abierto (Fonavi 30/08: S/102.10 contra S/899.60).
+  const dir = new Map(f.byte.map((x) => [x.date, x.total]));
+  const difSede = (f.byteSede ?? [])
+    .filter((x) => dir.has(x.date) && Math.abs(x.total - dir.get(x.date)!) >= 1)
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .map((x) => `${ddmm(x.date)} (sede ${soles(x.total)}, dirección ${soles(dir.get(x.date)!)})`);
+  if (difSede.length) alertas.push({
+    regla: "ventas",
+    titulo: `El reporte de Byte de la sede no coincide con el de dirección en ${difSede.length} ${difSede.length === 1 ? "día" : "días"}`,
+    detalle: `${difSede.join(" · ")}. Se usa el de dirección. Suele pasar cuando la sede baja el reporte con el día abierto.`,
   });
   return { puente, sistema: r2(sistema), alertas };
 }

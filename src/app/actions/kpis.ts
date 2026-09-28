@@ -335,7 +335,7 @@ export async function getBoardDeckData(weekStart: string, rangeEnd?: string): Pr
     let at: { date: string; v: number }[] = [];
     try {
       at = (await sql`
-        SELECT date::text, total::float AS v FROM byte_ventas_daily
+        SELECT date::text, total::float AS v FROM byte_ventas_efectiva
         WHERE business_id = 1 AND date BETWEEN ${ws} AND ${we} AND total > 0
         ORDER BY date
       `) as { date: string; v: number }[];

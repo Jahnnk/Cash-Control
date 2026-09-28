@@ -34,7 +34,8 @@ export async function conciliacionVentas(bId: number, startDate: string, endDate
     SELECT date::text AS date, pedidos::int AS pedidos, COALESCE(descuentos, 0)::float AS descuentos, total::float AS total,
            -- Subido el mismo día (hora Lima): el local podía seguir vendiendo.
            (date >= (updated_at AT TIME ZONE 'America/Lima')::date) AS parcial
-    FROM byte_ventas_daily
+    -- El reporte de dirección manda sobre el de la sede (byte_ventas_efectiva).
+    FROM byte_ventas_efectiva
     WHERE business_id = ${bId} AND date BETWEEN ${startDate} AND ${endDate}
     ORDER BY date
   `)).rows as FilaByte[];
