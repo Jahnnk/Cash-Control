@@ -140,14 +140,14 @@ export function queHaraLaCarga(archivo: ArchivoACargar, periodos: PeriodoCargado
   const deSede = mismos.filter((p) => p.origen === "sede");
   const partes: string[] = [];
   if (propios.length > 0) {
-    partes.push(`Reemplaza tu carga anterior (${propios.map((p) => `${fecha(p.desde)} → ${fecha(p.hasta)}, ${soles(p.ventas)}`).join("; ")}).`);
+    partes.push(`Reemplaza tu carga anterior de gerencia (${propios.map((p) => `${fecha(p.desde)} → ${fecha(p.hasta)}, ${soles(p.ventas)}`).join("; ")}).`);
   }
   if (deSede.length > 0) {
     const ventasSede = deSede.reduce((t, p) => t + p.ventas, 0);
     const rangoSede = `${fecha(deSede.map((p) => p.desde).sort()[0])} → ${fecha(deSede.map((p) => p.hasta).sort().pop()!)}`;
     const dif = Math.round((archivo.total - ventasSede) * 100) / 100;
     partes.push(
-      `La sede subió ${soles(ventasSede)} para ${rangoSede}: queda como segunda fuente y manda la tuya` +
+      `Administración subió ${soles(ventasSede)} para ${rangoSede}: queda como segunda fuente y manda la tuya` +
       (Math.abs(dif) >= 1 ? ` (tu archivo trae ${soles(Math.abs(dif))} ${dif > 0 ? "más" : "menos"}).` : " (coinciden)."),
     );
   }

@@ -31,9 +31,9 @@ const TONO: Record<CeldaCobertura["estado"], string> = {
 };
 
 const QUIEN: Record<NonNullable<CeldaCobertura["quien"]>, string> = {
-  direccion: "subió dirección",
-  sede: "subió la sede",
-  ambos: "sede + dirección",
+  direccion: "subió gerencia",
+  sede: "subió administración",
+  ambos: "administración + gerencia",
 };
 
 export function CargasByte({ onImportado }: { onImportado: () => void }) {
@@ -68,7 +68,7 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
         </div>
         <button type="button" onClick={() => setModal({ sede: null })}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg shrink-0">
-          <Upload className="w-4 h-4" /> Subir Reportes Byte
+          <Upload className="w-4 h-4" /> Subir Reportes Gerencia
         </button>
       </div>
 
