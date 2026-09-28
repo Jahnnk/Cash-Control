@@ -270,7 +270,7 @@ function IncentivosPage() {
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
           >
             <Upload className="w-3.5 h-3.5" />
-            Subir reportes de control
+            Subir Reportes Administración
           </button>
         </div>
       </div>
