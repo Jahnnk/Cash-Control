@@ -46,7 +46,7 @@ export function MiRutina({
   esProduccion = false,
 }: {
   refrescar?: number;
-  /** Abre el modal de "Subir reportes de control". */
+  /** Abre el modal de "Subir Reportes Administración". */
   onSubirReporte?: () => void;
   /**
    * Atelier: centro de producción, no cafetería. No lleva NPS y no

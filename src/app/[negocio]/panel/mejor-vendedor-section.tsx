@@ -78,7 +78,7 @@ export function MejorVendedorSection({ month }: { month: string }) {
         <div className="p-6 text-center text-sm text-gray-500">{error}</div>
       ) : !data || data.sinDatos ? (
         <div className="p-6 text-center text-sm text-gray-500">
-          Aún no hay reporte de Ventas por Trabajador este mes. Súbelo desde &ldquo;Subir reportes de control&rdquo;.
+          Aún no hay reporte de Ventas por Trabajador este mes. Súbelo desde &ldquo;Subir Reportes Administración&rdquo;.
         </div>
       ) : (
         <>
