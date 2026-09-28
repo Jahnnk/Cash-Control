@@ -110,7 +110,7 @@ export function GrupoProductosClient() {
               disabled={abriendo}
               className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl disabled:opacity-60 whitespace-nowrap"
             >
-              {abriendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Subir Reportes Byte
+              {abriendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Subir Reportes Gerencia
             </button>
           </div>
         </div>
@@ -230,7 +230,7 @@ function PestanaMes({ month, sede, onSede }: { month: string; sede: number; onSe
       />
       {sel?.panorama
         ? <VistaMes p={sel.panorama} cargadoEl={sel.cargadoEl} />
-        : <Vacio>{sel?.sede ?? "Esta sede"} no tiene reporte de rotación de {monthLabel(month)}. Súbelo con «Subir Reportes Byte».</Vacio>}
+        : <Vacio>{sel?.sede ?? "Esta sede"} no tiene reporte de rotación de {monthLabel(month)}. Súbelo con «Subir Reportes Gerencia».</Vacio>}
       {/* Por categoría y 80/20 de la sede elegida (pedido de Jahnn, 24-sep-2026). */}
       {sel?.panorama && <RankingPorCategoria key={`cat-${sede}`} p={sel.panorama} sede={sede} month={month} />}
       <ReglaOchentaVeinte month={month} sede={sede} />

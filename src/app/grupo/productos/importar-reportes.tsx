@@ -34,6 +34,41 @@ const SEDES = [
 
 const NOMBRE_TIPO: Record<TipoReporteByte, string> = { ventas: "Ventas del mes", mayor: "Mayor rotación", menor: "Menor rotación" };
 
+/** Los tres reportes de Byte que sube gerencia: uno por cuadro. */
+const REPORTES: { tipo: TipoReporteByte; titulo: string; ejemplo: string; ayuda: string }[] = [
+  { tipo: "ventas", titulo: "Reporte de ventas", ejemplo: "Ventas de SEPTIEMBRE 2026", ayuda: "Venta de cada día del mes. Del 01 a ayer." },
+  { tipo: "mayor", titulo: "Productos con mayor rotación", ejemplo: "Platos con mayor rotacion del … al …", ayuda: "Lo que más se vende. Del 01 a ayer (puedes subir varios meses)." },
+  { tipo: "menor", titulo: "Productos con menor rotación", ejemplo: "Platos con menor rotacion del … al …", ayuda: "Lo que casi no se vende. Del 01 a ayer." },
+];
+const TITULO_TIPO: Record<TipoReporteByte, string> = { ventas: "Reporte de ventas", mayor: "Productos con mayor rotación", menor: "Productos con menor rotación" };
+
+/** Un cuadro para un solo tipo de reporte. */
+function CuadroReporte({ r, deshabilitado, cargados, onArchivos }: {
+  r: (typeof REPORTES)[number];
+  deshabilitado: boolean;
+  cargados: number;
+  onArchivos: (files: FileList | File[]) => void;
+}) {
+  const ref = useRef<HTMLInputElement>(null);
+  const [sobre, setSobre] = useState(false);
+  return (
+    <div
+      onDragOver={(e) => { e.preventDefault(); setSobre(true); }}
+      onDragLeave={() => setSobre(false)}
+      onDrop={(e) => { e.preventDefault(); setSobre(false); if (!deshabilitado) onArchivos(e.dataTransfer.files); }}
+      onClick={() => !deshabilitado && ref.current?.click()}
+      className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer min-w-0 ${sobre ? "border-primary bg-primary/5" : cargados > 0 ? "border-emerald-300 bg-emerald-50/40" : "border-gray-300 hover:border-gray-400"} ${deshabilitado ? "opacity-60 cursor-not-allowed" : ""}`}>
+      <input ref={ref} type="file" accept=".xlsx,.xls" multiple={r.tipo !== "menor"} className="hidden"
+        onChange={(e) => { if (e.target.files) onArchivos(e.target.files); e.target.value = ""; }} />
+      {cargados > 0 ? <CheckCircle2 className="w-5 h-5 mx-auto text-emerald-600 mb-1" /> : <Upload className="w-5 h-5 mx-auto text-gray-400 mb-1" />}
+      <div className="text-sm font-semibold text-gray-900">{r.titulo}</div>
+      <div className="text-[11px] text-gray-600 mt-0.5">{r.ayuda}</div>
+      <div className="text-[10px] text-gray-400 mt-1 break-words">Título en Byte: «{r.ejemplo}»</div>
+      <div className="text-[11px] text-primary mt-1.5">{cargados > 0 ? `${cargados} archivo${cargados === 1 ? "" : "s"} · agregar otro` : "Click o arrastra el .xlsx"}</div>
+    </div>
+  );
+}
+
 type Archivo = {
   clave: string;
   nombre: string;
@@ -71,9 +106,7 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
 }) {
   const [sede, setSede] = useState<number | null>(sedeInicial);
   const [archivos, setArchivos] = useState<Archivo[]>([]);
-  const [arrastrando, setArrastrando] = useState(false);
   const [subiendo, setSubiendo] = useState(false);
-  const input = useRef<HTMLInputElement>(null);
   // Comparaciones ya pedidas (archivo|sede): no se piden dos veces mientras llegan.
   const pedidas = useRef(new Set<string>());
 
@@ -95,7 +128,7 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
     }
   }, [sede, archivos]);
 
-  async function agregar(files: FileList | File[]) {
+  async function agregar(files: FileList | File[], esperado?: TipoReporteByte) {
     const lista = [...files].filter((f) => /\.xlsx?$/i.test(f.name));
     if (lista.length === 0) return;
     // Si todavía no hay sede y el nombre del archivo la dice, se propone.
@@ -114,6 +147,11 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
         const tipo = tipoDeReporte(rows);
         if (!tipo) {
           actualizar(clave, { estado: "error", error: "No reconozco este reporte. Sirven «Ventas de <MES>», «Platos con mayor rotación» y «Platos con menor rotación» de Byte." });
+          continue;
+        }
+        // Cada cuadro recibe solo su reporte: así no se sube uno por otro.
+        if (esperado && tipo !== esperado) {
+          actualizar(clave, { tipo, estado: "error", error: `Este archivo es «${TITULO_TIPO[tipo]}», no «${TITULO_TIPO[esperado]}». Suéltalo en su propio cuadro.` });
           continue;
         }
         if (tipo === "ventas") {
@@ -199,7 +237,7 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
       const c = a.comparacion && a.comparacion.sede === sede ? a.comparacion : null;
       return (
         <div className="mt-1 space-y-0.5 text-xs">
-          {sede === null && <div className="text-gray-500">Elige la sede para compararlo con lo que ella subió.</div>}
+          {sede === null && <div className="text-gray-500">Elige la sede para compararlo con lo que subió administración.</div>}
           {c && "error" in c && <div className="text-red-700">{c.error}</div>}
           {c && "data" in c && (
             <>
@@ -208,7 +246,7 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
               ))}
               <div className="text-sky-800">
                 Se guardan {c.data.dias} días ({fecha(c.data.desde)} → {fecha(c.data.hasta)}, {formatCurrency(c.data.total)}):{" "}
-                {c.data.iguales} iguales a lo que subió la sede
+                {c.data.iguales} iguales a lo que subió administración
                 {c.data.nuevos > 0 ? ` · ${c.data.nuevos} que la sede no subió` : ""}
                 {c.data.distintos.length > 0 ? ` · ${c.data.distintos.length} distintos` : ""}.
               </div>
@@ -260,7 +298,7 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-primary" /> Subir Reportes Byte
+            <FileSpreadsheet className="w-5 h-5 text-primary" /> Subir Reportes Gerencia
           </h2>
           <button onClick={onClose} disabled={subiendo} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100" aria-label="Cerrar">
             <X className="w-4 h-4" />
@@ -282,21 +320,15 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
           </div>
 
           <div className="space-y-1.5">
-            <div className="text-xs font-semibold text-gray-700">2 · Suelta tus reportes de Byte</div>
-            <div
-              onDragOver={(e) => { e.preventDefault(); setArrastrando(true); }}
-              onDragLeave={() => setArrastrando(false)}
-              onDrop={(e) => { e.preventDefault(); setArrastrando(false); void agregar(e.dataTransfer.files); }}
-              onClick={() => input.current?.click()}
-              className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer ${arrastrando ? "border-primary bg-primary/5" : "border-gray-300 hover:border-gray-400"}`}>
-              <input ref={input} type="file" accept=".xlsx,.xls" multiple className="hidden"
-                onChange={(e) => { if (e.target.files) void agregar(e.target.files); e.target.value = ""; }} />
-              <Upload className="w-6 h-6 mx-auto text-gray-400 mb-1.5" />
-              <div className="text-sm text-gray-600">Arrastra aquí los .xlsx o haz click para elegirlos</div>
-              <div className="text-[11px] text-gray-500 mt-1">
-                «Ventas de &lt;MES&gt;», «Platos con mayor rotación» y «Platos con menor rotación», del 01 del mes a ayer. Cada archivo se reconoce por su título.
-              </div>
+            <div className="text-xs font-semibold text-gray-700">2 · Sube cada reporte en su cuadro</div>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {REPORTES.map((r) => (
+                <CuadroReporte key={r.tipo} r={r} deshabilitado={subiendo}
+                  cargados={archivos.filter((a) => a.tipo === r.tipo && a.estado !== "error").length}
+                  onArchivos={(files) => void agregar(files, r.tipo)} />
+              ))}
             </div>
+            <p className="text-[11px] text-gray-500">Cada cuadro solo recibe su reporte; si sueltas uno equivocado, te avisa. Del 01 del mes a ayer, siempre.</p>
           </div>
 
           {archivos.length > 0 && (
