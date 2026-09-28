@@ -6,6 +6,7 @@ import { getBoardDeckData } from "@/app/actions/kpis";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
 import { getPanoramaProductosGrupo, getCandidatosReemplazo, getReglaOchentaVeinte } from "@/app/actions/productos-panorama";
 import { getInformeGastos } from "@/app/actions/informe-gastos";
+import { getCorteExcel } from "@/app/actions/cobertura-kelly";
 import { getToday } from "@/lib/utils";
 import { useToast } from "@/components/toast-provider";
 
@@ -34,13 +35,14 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
       // Gastos: el último mes CERRADO antes de la semana del deck (decisión de Jahnn, 25-sep-2026).
       const [yy, mm] = mes.split("-").map(Number);
       const mesCerrado = mm === 1 ? `${yy - 1}-12` : `${yy}-${String(mm - 1).padStart(2, "0")}`;
-      const [r, be, prod, cand, ov, gas] = await Promise.all([
+      const [r, be, prod, cand, ov, gas, corte] = await Promise.all([
         getBoardDeckData(start, end),
         getGroupBreakeven(mes),
         getPanoramaProductosGrupo(mes),
         getCandidatosReemplazo(mes),
         getReglaOchentaVeinte(mes),
         getInformeGastos(mesCerrado),
+        getCorteExcel(),
       ]);
       if (!r.ok) { showToast(r.error, "error"); return; }
       const { renderWeeklyKpiDeck } = await import("@/lib/kpis/weekly-deck");
@@ -51,6 +53,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
         cand.ok ? cand.data : null,
         ov.ok ? ov.sedes : null,
         gas.ok ? gas.data : null,
+        corte.ok ? corte.sedes : null,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
