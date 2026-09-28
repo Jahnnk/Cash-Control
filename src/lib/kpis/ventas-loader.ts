@@ -7,7 +7,8 @@
  *
  * Regla de la casa (patrón multi-fuente): se combinan las fuentes POR
  * DÍA con la regla de dos de tres (venta-del-dia.ts, 25-sep-2026):
- *   1. byte_ventas_daily  — reporte "Ventas" de Byte (oficial, source='import').
+ *   1. byte_ventas_efectiva — reporte "Ventas" de Byte (oficial): el que sube
+ *                           dirección y, en los días que no cubre, el de la sede.
  *   2. byte_sales_daily   — el Excel financiero (también Byte, transcrito;
  *                           total_pos_excel, con crédito).
  *   3. registro del admin — upselling_daily (cafeterías) / lo que anota
@@ -33,8 +34,13 @@ export type VentaRowsBlended = {
   fuente: "byte" | "registro" | "mixta" | null;
 };
 
-/** Las tres fuentes de venta diaria, por separado (para la verificación contra Kelly). */
-export type FuentesVentaDia = { byte: VentaRow[]; kelly: VentaRow[]; registro: VentaRow[] };
+/**
+ * Las tres fuentes de venta diaria, por separado (para la verificación contra
+ * el Excel). `byteSede` = lo que subió la sede en los días en que también hay
+ * reporte de dirección (el que manda): sirve para ver si la sede subió un
+ * reporte incompleto.
+ */
+export type FuentesVentaDia = { byte: VentaRow[]; kelly: VentaRow[]; registro: VentaRow[]; byteSede?: VentaRow[] };
 
 export async function leerFuentesVenta(
   sql: SqlTag,
@@ -46,15 +52,25 @@ export async function leerFuentesVenta(
   let byte: VentaRow[] = [];
   try {
     // Solo el reporte oficial: lo que el administrador de Atelier teclea en
-    // su panel también se guarda aquí (source='manual'), pero es dato del
-    // administrador, no de Byte.
+    // su panel también se guarda en byte_ventas_daily (source='manual'), pero
+    // es dato del administrador, no de Byte. El reporte que sube dirección
+    // manda sobre el de la sede (decisión de Jahnn, 28-sep-2026).
     byte = (await sql`
       SELECT date::text AS date, total::float AS total
-      FROM byte_ventas_daily
+      FROM byte_ventas_efectiva
       WHERE business_id = ${bId} AND date BETWEEN ${from} AND ${to} AND total > 0
         AND COALESCE(source, 'import') = 'import'
     `) as VentaRow[];
   } catch { /* tabla pendiente de migración */ }
+  let byteSede: VentaRow[] = [];
+  try {
+    byteSede = (await sql`
+      SELECT v.date::text AS date, v.total::float AS total
+      FROM byte_ventas_daily v
+      JOIN byte_ventas_direccion d ON d.business_id = v.business_id AND d.date = v.date
+      WHERE v.business_id = ${bId} AND v.date BETWEEN ${from} AND ${to} AND COALESCE(v.source, 'import') = 'import'
+    `) as VentaRow[];
+  } catch { /* migración pendiente */ }
   let kelly: VentaRow[] = [];
   try {
     // La venta del día según Byte, TAL COMO la copia Kelly en "Control de
@@ -92,7 +108,7 @@ export async function leerFuentesVenta(
           AND COALESCE(source, 'manual') <> 'import'
       `) as VentaRow[]);
 
-  return { byte, kelly, registro };
+  return { byte, kelly, registro, byteSede };
 }
 
 export async function loadVentaRowsBlended(

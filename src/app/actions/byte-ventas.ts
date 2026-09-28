@@ -55,7 +55,12 @@ export async function importVentasByte(input: {
 
   try {
     console.log(`[importVentasByte] bId=${bId} days=${input.days.length} file=${input.fileName ?? "?"}`);
-    for (const d of input.days) {
+    // El día de hoy no se guarda: si el reporte se bajó con el local abierto,
+    // ese día está a medias (Fonavi 13-set: S/400.10 de S/1,000.60).
+    const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+    const cerrados = input.days.filter((d) => d.date < hoy);
+    if (cerrados.length === 0) return { ok: false, error: "El archivo solo trae el día de hoy, que todavía no cierra." };
+    for (const d of cerrados) {
       // El reporte oficial de Byte siempre manda (source='import').
       await sql`
         INSERT INTO byte_ventas_daily (business_id, date, pedidos, descuentos, total, source, updated_at)
@@ -77,7 +82,7 @@ export async function importVentasByte(input: {
       }
     }
     revalidatePath("/[negocio]/panel", "page");
-    return { ok: true, imported: input.days.length };
+    return { ok: true, imported: cerrados.length };
   } catch (err) {
     console.error("[importVentasByte] failed:", err);
     return { ok: false, error: err instanceof Error ? err.message : "Error al importar las ventas" };

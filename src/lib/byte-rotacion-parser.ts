@@ -57,21 +57,22 @@ export function parseByteRotacion(rows: unknown[][]): ByteRotacionResult {
   //    Distingue el formato: "Rentabilidad por Plato" trae además la
   //    columna "Utilidad Total" (y "Precio Venta" en vez de unitario).
   let headerIdx = -1;
-  let colPlato = -1, colPrecio = -1, colVendido = -1, colTotal = -1;
+  let colPlato = -1, colPrecio = -1, colVendido = -1, colTotal = -1, colPorCobrar = -1;
   let format: "rotacion" | "rentabilidad" = "rotacion";
   for (let i = 0; i < Math.min(rows.length, 8); i++) {
     const row = rows[i] ?? [];
-    let plato = -1, precio = -1, vendido = -1, total = -1, utilidad = -1;
+    let plato = -1, precio = -1, vendido = -1, total = -1, utilidad = -1, porCobrar = -1;
     for (let c = 0; c < row.length; c++) {
       const cell = typeof row[c] === "string" ? (row[c] as string) : "";
       if (/^\s*plato\s*$/i.test(cell)) plato = c;
       else if (/precio\s+(unitario|venta)/i.test(cell)) precio = c;
       else if (/^\s*vendido s?\s*$/i.test(cell) || /^\s*vendidos?\s*$/i.test(cell)) vendido = c;
       else if (/total\s+vendido/i.test(cell)) total = c;
+      else if (/total\s+por\s+cobrar/i.test(cell)) porCobrar = c;
       else if (/utilidad\s+total/i.test(cell)) utilidad = c;
     }
     if (plato !== -1 && vendido !== -1 && total !== -1) {
-      headerIdx = i; colPlato = plato; colPrecio = precio; colVendido = vendido; colTotal = total;
+      headerIdx = i; colPlato = plato; colPrecio = precio; colVendido = vendido; colTotal = total; colPorCobrar = porCobrar;
       format = utilidad !== -1 ? "rentabilidad" : "rotacion";
       break;
     }
@@ -117,6 +118,7 @@ export function parseByteRotacion(rows: unknown[][]): ByteRotacionResult {
   const byName = new Map<string, ByteRotacionItem>();
   const dups: string[] = [];
   let declaredTotal: number | null = null;
+  let sumaPorCobrar = 0;
   for (let i = headerIdx + 1; i < rows.length; i++) {
     const row = rows[i] ?? [];
     const rawName = row[colPlato];
@@ -136,6 +138,7 @@ export function parseByteRotacion(rows: unknown[][]): ByteRotacionResult {
       if (t !== null) declaredTotal = t;
       continue;
     }
+    if (colPorCobrar !== -1) sumaPorCobrar += num(row[colPorCobrar]) ?? 0;
     const units = num(row[colVendido]);
     const revenue = num(row[colTotal]);
     if (units === null || revenue === null) {
@@ -170,6 +173,12 @@ export function parseByteRotacion(rows: unknown[][]): ByteRotacionResult {
 
   // 4) Integridad del parseo: Σ filas vs TOTAL declarado por Byte.
   const sum = r2(items.reduce((s, it) => s + it.revenue, 0));
+  // El TOTAL de Byte suma lo vendido MÁS lo que está por cobrar (Fonavi
+  // 01–28 set 2026: 33,732.10 + 47.00 = 33,779.10). Si cuadra así, el total
+  // declarado de lo vendido es el de Byte sin lo por cobrar.
+  if (declaredTotal !== null && sumaPorCobrar > 0 && Math.abs(sum + sumaPorCobrar - declaredTotal) <= 0.01) {
+    declaredTotal = r2(declaredTotal - sumaPorCobrar);
+  }
   if (declaredTotal !== null && Math.abs(sum - declaredTotal) > 0.01) {
     warnings.push(
       `La suma de las filas (S/${sum.toFixed(2)}) no coincide con el TOTAL del reporte (S/${declaredTotal.toFixed(2)}).`,
