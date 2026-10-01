@@ -26,6 +26,7 @@ import { evaluarCandadoVentas } from "@/lib/incentives/candado-ventas";
 import { leerHorasPlanilla } from "@/lib/incentives/planilla-db";
 import { emparejarVendedor } from "@/lib/incentives/emparejar-vendedor";
 import { elegibilidadDelMes } from "@/lib/incentives/elegibilidad-bono";
+import { leerExcepciones } from "@/lib/incentives/bono-excepciones-db";
 import type { HorasDelMes } from "@/lib/incentives/horas-planilla";
 import { armarPagoSede } from "@/lib/incentives/pago-sede";
 import type { PagoSede, PagosDelMes } from "@/lib/incentives/reporte-bonos-tipos";
@@ -72,9 +73,10 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   } catch (err) {
     console.error(`[liquidación] sede ${bId}: no pude leer quién trabajó el mes en Planilla —`, err);
   }
-  const elegibles = elegibilidadDelMes(deLaPlanilla ?? [], month);
+  const excepciones = await leerExcepciones(sql as never, bId);
+  const elegibles = elegibilidadDelMes(deLaPlanilla ?? [], month, excepciones.reglas);
   const cesadosQueTrabajaron = elegibles.cesadosQueCobran;
-  const enPrueba = new Map(elegibles.enPrueba.map((p) => [p.dni, p]));
+  const excluidosPorDni = elegibles.excluidos;
 
   const staffTodos = (await sql`
     SELECT name, dni, jornada, area, horas_semanales::float AS "horasSemanales"
@@ -82,14 +84,20 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
      WHERE business_id = ${bId} AND (active = true OR dni::text = ANY(${cesadosQueTrabajaron.map((p) => p.dni)}::text[]))
      ORDER BY jornada, name
   `) as { name: string; dni: string | null; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
-  const staff = staffTodos.filter((s) => !(s.dni && enPrueba.has(s.dni.trim())));
+  const staff = staffTodos.filter((s) => !(s.dni && excluidosPorDni.has(s.dni.trim())));
   const avisosEquipo: string[] = [];
+  const excluidos: NonNullable<LiquidationResult["excluidos"]> = [];
   for (const s of staffTodos) {
-    const prueba = s.dni ? enPrueba.get(s.dni.trim()) : undefined;
-    if (prueba) {
-      avisosEquipo.push(`${s.name} no entra al bono de este mes: ingresó el ${prueba.fechaIngreso!.slice(8, 10)}/${prueba.fechaIngreso!.slice(5, 7)} y está en periodo de prueba.`);
+    const ex = s.dni ? excluidosPorDni.get(s.dni.trim()) : undefined;
+    if (ex && s.dni) {
+      excluidos.push({ dni: s.dni.trim(), name: s.name, motivo: ex.motivo, origen: ex.origen, reglaId: ex.reglaId });
+      avisosEquipo.push(`${s.name} no entra al bono de este mes: ${ex.motivo}.`);
     }
   }
+  const incluidosPorExcepcion = elegibles.incluidosPorExcepcion.map((i) => ({
+    dni: i.dni, name: staffTodos.find((s) => s.dni?.trim() === i.dni)?.name ?? i.nombre ?? i.dni, motivo: i.motivo, reglaId: i.reglaId,
+  }));
+  for (const i of incluidosPorExcepcion) avisosEquipo.push(`${i.name} cobra por decisión de la dirección (${i.motivo}), aunque ingresó durante el mes.`);
   for (const c of cesadosQueTrabajaron) {
     const s = staff.find((x) => x.dni?.trim() === c.dni);
     if (s) avisosEquipo.push(`${s.name} ya figura cesado en Planilla pero hizo el mes completo: sí recibe su parte del bono.${c.fechaCese ? "" : " (Falta cargar su fecha de cese en Planilla.)"}`);
@@ -157,6 +165,8 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
     r.warnings.push(avisoHorasIncompletas(resuelto.faltantes));
   }
   r.warnings.push(...avisosEquipo);
+  r.excluidos = excluidos;
+  r.incluidosPorExcepcion = incluidosPorExcepcion;
   return r;
 }
 
@@ -324,6 +334,7 @@ export async function getPagosDelMes(
         `) as { ultima: string | null }[];
 
         const entradaVentas = await getEntradaCandadoVentas(bId, month);
+        const { disponible: excepcionesDisponibles } = await leerExcepciones(sql as never, bId);
         const pol = (await sql`
           SELECT requiere_equilibrio, requiere_supervision, traffic_floor
           FROM incentive_config WHERE business_id = ${bId} AND effective_month <= ${month}
@@ -342,6 +353,7 @@ export async function getPagosDelMes(
           sugeridoEquipo,
           avisosPremio,
           sincronizadoEn: sync[0]?.ultima ?? null,
+          excepcionesDisponibles,
           ventas: entradaVentas ? evaluarCandadoVentas(entradaVentas, diasDelMes) : null,
           politica: {
             requiereEquilibrio: pol[0]?.requiere_equilibrio === true,

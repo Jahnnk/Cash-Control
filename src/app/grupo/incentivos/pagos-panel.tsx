@@ -1,6 +1,8 @@
 "use client";
 
+import { useState } from "react";
 import { AlertTriangle, Lock } from "lucide-react";
+import { guardarExcepcionBono, quitarExcepcionBono } from "@/app/actions/bono-excepciones";
 import { formatCurrency } from "@/lib/utils";
 import type { PagoSede } from "@/lib/incentives/reporte-bonos-tipos";
 import { COLOR_SEDE } from "@/lib/incentives/reporte-bonos";
@@ -12,12 +14,14 @@ const ORIGEN: Record<string, string> = { reloj: "reloj", registrada: "registrada
  * va a transferir. Son las mismas cifras del reporte (PDF y Excel).
  */
 export function PagoSedePanel({
-  pago, elegido, onElegir,
+  pago, elegido, onElegir, onCambioExcepciones,
 }: {
   pago: PagoSede;
   /** A quién se le suma el premio al mejor vendedor ahora (null = a nadie). */
   elegido: string | null;
   onElegir: (nombre: string | null) => void;
+  /** Se llama después de guardar o quitar una excepción, para volver a calcular. */
+  onCambioExcepciones: () => void;
 }) {
   const color = COLOR_SEDE[pago.businessId]?.color ?? "#004C40";
   const acta = pago.fuente === "acta";
@@ -64,6 +68,8 @@ export function PagoSedePanel({
             )}
           </label>
         )}
+
+        <QuienNoCobra pago={pago} bloqueado={acta} onCambio={onCambioExcepciones} />
 
         <div className="overflow-x-auto">
           <table className="w-full text-xs">
@@ -118,6 +124,120 @@ export function PagoSedePanel({
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+/** Mes siguiente de uno YYYY-MM, sumando n meses. */
+function sumarMeses(month: string, n: number): string {
+  const d = new Date(Date.UTC(Number(month.slice(0, 4)), Number(month.slice(5, 7)) - 1 + n, 1));
+  return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+}
+
+/**
+ * Quién NO cobra este mes y por qué, con los botones para decidirlo: la regla
+ * automática solo deja afuera el mes de ingreso (periodo de prueba); aquí la
+ * dirección puede excluir a alguien por más meses o hacer que cobre alguien
+ * que la regla dejó fuera.
+ */
+function QuienNoCobra({ pago, bloqueado, onCambio }: { pago: PagoSede; bloqueado: boolean; onCambio: () => void }) {
+  const [ocupado, setOcupado] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [abierto, setAbierto] = useState(false);
+  const [dni, setDni] = useState("");
+  const [motivo, setMotivo] = useState("Periodo de prueba");
+  const [meses, setMeses] = useState(1);
+
+  const hayAlgo = pago.excluidos.length > 0 || pago.incluidosPorExcepcion.length > 0;
+  if (!hayAlgo && (bloqueado || !pago.excepcionesDisponibles)) {
+    return pago.excepcionesDisponibles || bloqueado ? null : <SinTabla />;
+  }
+
+  async function ejecutar(fn: () => Promise<{ ok: true } | { ok: false; error: string }>) {
+    setOcupado(true);
+    setError(null);
+    const r = await fn();
+    setOcupado(false);
+    if (!r.ok) { setError(r.error); return; }
+    setAbierto(false);
+    onCambio();
+  }
+
+  const quitar = (id: number) => ejecutar(() => quitarExcepcionBono(id));
+  const cobra = (e: PagoSede["excluidos"][number]) =>
+    ejecutar(() => guardarExcepcionBono({ businessId: pago.businessId, dni: e.dni, accion: "incluir", desdeMes: pago.month, hastaMes: pago.month, motivo: "Cobra por decisión de la dirección" }));
+  const excluir = () => {
+    return ejecutar(() => guardarExcepcionBono({
+      businessId: pago.businessId, dni, accion: "excluir", desdeMes: pago.month,
+      hastaMes: sumarMeses(pago.month, meses - 1), motivo,
+    }));
+  };
+
+  return (
+    <div className="rounded-lg border border-gray-200 bg-gray-50/60 px-3 py-2 space-y-2">
+      <div className="text-xs font-semibold text-gray-700">Quién no cobra este mes</div>
+      {!hayAlgo && <div className="text-xs text-gray-500">Todos los del equipo cobran.</div>}
+      {pago.excluidos.map((e) => (
+        <div key={e.dni} className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-medium text-gray-900">{e.name}</span>
+          <span className="text-gray-600">— {e.motivo}{e.origen === "manual" ? " (decidido por la dirección)" : ""}</span>
+          {!bloqueado && pago.excepcionesDisponibles && (
+            <button
+              disabled={ocupado}
+              onClick={() => (e.origen === "manual" && e.reglaId ? quitar(e.reglaId) : cobra(e))}
+              className="ml-auto text-primary underline disabled:opacity-50"
+            >
+              {e.origen === "manual" ? "Quitar exclusión" : "Sí cobra"}
+            </button>
+          )}
+        </div>
+      ))}
+      {pago.incluidosPorExcepcion.map((i) => (
+        <div key={i.dni} className="flex flex-wrap items-center gap-2 text-xs">
+          <span className="font-medium text-gray-900">{i.name}</span>
+          <span className="text-gray-600">— cobra por decisión de la dirección ({i.motivo})</span>
+          {!bloqueado && <button disabled={ocupado} onClick={() => quitar(i.reglaId)} className="ml-auto text-primary underline disabled:opacity-50">Quitar</button>}
+        </div>
+      ))}
+
+      {!bloqueado && !pago.excepcionesDisponibles && <SinTabla />}
+      {!bloqueado && pago.excepcionesDisponibles && (
+        abierto ? (
+          <div className="flex flex-wrap items-end gap-2 text-xs pt-1">
+            <label className="flex flex-col gap-0.5">
+              <span className="text-gray-500">Persona</span>
+              <select value={dni} onChange={(e) => setDni(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 bg-white">
+                <option value="">Elige…</option>
+                {pago.lines.filter((l) => l.dni).map((l) => <option key={l.dni} value={l.dni!}>{l.name}</option>)}
+              </select>
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-gray-500">Motivo</span>
+              <input value={motivo} onChange={(e) => setMotivo(e.target.value)} className="border border-gray-300 rounded-lg px-2 py-1.5 bg-white w-44" />
+            </label>
+            <label className="flex flex-col gap-0.5">
+              <span className="text-gray-500">Por cuántos meses (desde este)</span>
+              <select value={meses} onChange={(e) => setMeses(Number(e.target.value))} className="border border-gray-300 rounded-lg px-2 py-1.5 bg-white">
+                {[1, 2, 3, 6].map((n) => <option key={n} value={n}>{n} {n === 1 ? "mes" : "meses"}</option>)}
+              </select>
+            </label>
+            <button disabled={ocupado || !dni} onClick={excluir} className="px-3 py-1.5 rounded-lg bg-primary text-white disabled:opacity-50">Guardar</button>
+            <button onClick={() => setAbierto(false)} className="px-2 py-1.5 text-gray-500">Cancelar</button>
+          </div>
+        ) : (
+          <button onClick={() => setAbierto(true)} className="text-xs text-primary underline">Dejar a alguien sin bono (ej. en prueba)…</button>
+        )
+      )}
+      {error && <div className="text-xs text-red-600">{error}</div>}
+    </div>
+  );
+}
+
+function SinTabla() {
+  return (
+    <div className="text-[11px] text-amber-700 flex gap-1.5">
+      <AlertTriangle className="w-3 h-3 mt-0.5 shrink-0" />
+      Para decidir quién cobra o no cobra por varios meses falta crear una tabla (se hace una sola vez). Mientras tanto solo rige la regla automática: quien ingresó después del día 1 no cobra ese mes.
     </div>
   );
 }

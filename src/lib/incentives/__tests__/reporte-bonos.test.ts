@@ -50,6 +50,7 @@ const pago = (over: Partial<PagoSede> = {}): PagoSede => ({
     ventas: 3530, diasConVenta: 3, proyeccion: 35300, avancePct: 9.5, falta: 33770, cumple: false, enCamino: false,
   },
   politica: { requiereEquilibrio: false, requiereSupervision: false, trafficFloor: 49 },
+  excluidos: [], incluidosPorExcepcion: [], excepcionesDisponibles: true,
   ...over,
 });
 

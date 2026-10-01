@@ -32,6 +32,7 @@ export type EntradaPagoSede = {
   sincronizadoEn: string | null;
   ventas: EstadoCandadoVentas | null;
   politica: PagoSede["politica"];
+  excepcionesDisponibles: boolean;
 };
 
 export function armarPagoSede(i: EntradaPagoSede): PagoSede {
@@ -82,5 +83,8 @@ export function armarPagoSede(i: EntradaPagoSede): PagoSede {
     sincronizadoEn: i.sincronizadoEn,
     ventas: i.ventas,
     politica: i.politica,
+    excluidos: result.excluidos ?? [],
+    incluidosPorExcepcion: result.incluidosPorExcepcion ?? [],
+    excepcionesDisponibles: i.excepcionesDisponibles,
   };
 }

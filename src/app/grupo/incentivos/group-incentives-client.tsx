@@ -313,6 +313,7 @@ export function GroupIncentivesClient() {
                       pago={p}
                       elegido={p.mejorVendedor.usado}
                       onElegir={(n) => setPremio((prev) => ({ ...prev, [p.businessId]: n }))}
+                      onCambioExcepciones={() => void cargarPagos(data)}
                     />
                   ))}
                   <button

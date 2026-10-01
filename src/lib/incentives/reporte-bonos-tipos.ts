@@ -67,6 +67,12 @@ export type PagoSede = {
   sincronizadoEn: string | null;
   /** Meta de ventas del mes y cómo va (informativa o requisito, según el mes). */
   ventas: EstadoCandadoVentas | null;
+  /** Quiénes NO cobran este mes y por qué (prueba automática o excepción de la dirección). */
+  excluidos: { dni: string; name: string; motivo: string; origen: "automatico" | "manual"; reglaId: number | null }[];
+  /** Quiénes cobran por excepción de la dirección aunque la regla automática los dejaba fuera. */
+  incluidosPorExcepcion: { dni: string; name: string; motivo: string; reglaId: number }[];
+  /** false = todavía no existe la tabla de excepciones (migración pendiente). */
+  excepcionesDisponibles: boolean;
   /** Qué reglas rigen ESE mes (cambian con la política: setiembre no es igual a octubre). */
   politica: {
     requiereEquilibrio: boolean;
