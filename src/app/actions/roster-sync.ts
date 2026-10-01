@@ -29,15 +29,9 @@ import {
   planificarSync, planVacio,
   type TrabajadorPlanilla, type StaffCash, type PlanDeSync,
 } from "@/lib/incentives/roster-sync";
+import { PATRON_EMPRESA, leerHorasPlanilla } from "@/lib/incentives/planilla-db";
 
 const sql = neon(process.env.DATABASE_URL!);
-
-/** Cash Control ↔ Planilla: qué empresa es cada sede. */
-const PATRON_EMPRESA: Record<number, RegExp> = {
-  1: /atelier/i,
-  2: /fonavi/i,
-  3: /centro/i,
-};
 
 /** Cada cuántas horas se refresca solo al abrir el panel. */
 const HORAS_FRESCURA = 6;
@@ -215,12 +209,14 @@ export async function ultimaSincronizacion(bId: number): Promise<string | null> 
 /**
  * Las horas que cada persona trabajó en un mes, según Planilla.
  *
- * Salen de `resumen_dia`, que es donde Planilla deja el resultado del
- * día ya calculado (horas trabajadas + extras). Se suma por MES
- * CALENDARIO y no por ciclo de planilla —que cierra el 29— porque el
- * bono se mide sobre el mes calendario: el ticket promedio de agosto
- * son las ventas del 1 al 31, y pagar esas ventas con horas del 30 de
- * julio al 29 de agosto compararía dos periodos distintos.
+ * La lectura vive en `lib/incentives/planilla-db.ts` y su regla en
+ * `horas-planilla.ts`: el reporte de bonos para Kelly lee EXACTAMENTE lo
+ * mismo, así que lo que ella ve y lo que se paga no pueden diferir.
+ *
+ * Antes se sumaba `resumen_dia` (el reloj de Byte), vacío para Fonavi y
+ * Centro, que no liquidan por reloj: por eso el bono caía siempre a las
+ * horas de contrato. Ahora se usan las horas del mes que Planilla ya tiene
+ * (ver horas-planilla.ts para el orden de fuentes).
  *
  * Devuelve null si Planilla no está configurada o no responde: el
  * llamador se queda con lo que ya tenía, nunca rompe una liquidación.
@@ -229,36 +225,9 @@ async function leerHorasTrabajadas(
   bId: number,
   month: string,
 ): Promise<{ dni: string; horas: number; extra: number }[] | null> {
-  const url = process.env.PLANILLA_DATABASE_URL?.trim().replace(/^["']|["']$/g, "");
-  if (!url) {
-    console.error("[horas-sync] PLANILLA_DATABASE_URL no está definida");
-    return null;
-  }
-  const patron = PATRON_EMPRESA[bId];
-  if (!patron) return null;
-
-  const planilla = neon(url);
-  const empresas = (await planilla`SELECT id, nombre FROM empresas`) as { id: string; nombre: string }[];
-  const emp = empresas.find((e) => patron.test(e.nombre));
-  if (!emp) {
-    console.error(`[horas-sync] sede ${bId}: ninguna empresa de Planilla calza con ${patron}`);
-    return [];
-  }
-
-  const rows = (await planilla`
-    SELECT t.dni,
-           COALESCE(SUM(r.horas_trabajadas), 0)::float AS horas,
-           COALESCE(SUM(r.horas_extra_25 + r.horas_extra_35 + r.horas_extra_dominical), 0)::float AS extra
-    FROM resumen_dia r
-    JOIN trabajadores t ON t.id = r.trabajador_id
-    WHERE t.empresa_id = ${emp.id}
-      AND t.dni IS NOT NULL
-      AND to_char(r.fecha, 'YYYY-MM') = ${month}
-    GROUP BY t.dni
-    HAVING COALESCE(SUM(r.horas_trabajadas), 0) > 0
-  `) as { dni: string; horas: number; extra: number }[];
-
-  return rows.map((r) => ({ dni: String(r.dni).trim(), horas: r.horas, extra: r.extra }));
+  const filas = await leerHorasPlanilla(bId, month);
+  if (filas === null) return null;
+  return filas.map((f) => ({ dni: f.dni, horas: f.horas, extra: f.horasMas }));
 }
 
 /**

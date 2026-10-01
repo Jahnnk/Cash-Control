@@ -22,6 +22,12 @@ import {
   type LiquidationResult,
 } from "@/lib/incentives/engine";
 import { resolverHorasDelMes, avisoHorasIncompletas } from "@/lib/incentives/horas-trabajadas";
+import { evaluarCandadoVentas } from "@/lib/incentives/candado-ventas";
+import { leerHorasPlanilla } from "@/lib/incentives/planilla-db";
+import { emparejarVendedor } from "@/lib/incentives/emparejar-vendedor";
+import type { HorasDelMes } from "@/lib/incentives/horas-planilla";
+import { armarPagoSede } from "@/lib/incentives/pago-sede";
+import type { PagoSede, PagosDelMes } from "@/lib/incentives/reporte-bonos-tipos";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -207,5 +213,119 @@ export async function reopenLiquidation(month: string): Promise<{ ok: true } | {
     return { ok: true };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Error al reabrir" };
+  }
+}
+
+
+/**
+ * El pago del mes de las dos cafeterías, listo para el reporte de Kelly:
+ * cuánto se reparte por sede y cuánto le toca a cada persona, con las horas
+ * que Planilla tiene de cada una.
+ *
+ * Es el MISMO cálculo de la liquidación (`collectForLiquidation`): lo que
+ * Kelly transfiere y lo que dice el acta no pueden diferir. Si el mes ya se
+ * cerró se usa el acta congelada; si no, es una vista previa con lo de hoy.
+ *
+ * Las cifras salen SIN premio al mejor vendedor (salvo que el mes esté
+ * cerrado y el acta ya lo traiga): a quién premiar lo elige la pantalla y lo
+ * suma al instante con `conPremio`, sin volver a consultar Planilla.
+ * `sugeridos` es el ganador de Byte por sede (nombre completo); aquí se
+ * empareja con el equipo solo si es claro.
+ *
+ * Antes de calcular se comprueba el equipo y las horas contra Planilla
+ * (`collectForLiquidation` lo hace): la sincronización es la base.
+ */
+export async function getPagosDelMes(
+  month: string,
+  sugeridos: Record<number, string | null> = {},
+): Promise<{ ok: true; data: PagosDelMes } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "El reporte de pagos es solo para la dirección." };
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return { ok: false, error: "Mes inválido." };
+  const [y, m] = month.split("-").map(Number);
+  const diasDelMes = new Date(y, m, 0).getDate();
+
+  const sedes: PagoSede[] = [];
+  const errores: string[] = [];
+  try {
+    for (const [bId, nombreSede] of [[2, "Fonavi"], [3, "Centro"]] as [number, string][]) {
+      // Una sede que falla (ej. un mes sin configuración del programa) no tumba a la otra.
+      try {
+        // ¿El mes ya está cerrado? Entonces manda el acta.
+        let cerrada: { closedAt: string; result: LiquidationResult; mejorVendedor: string | null } | null = null;
+        try {
+          const rows = (await sql`
+            SELECT closed_at::text AS closed_at, detalle, mejor_vendedor
+            FROM incentive_liquidations WHERE business_id = ${bId} AND month = ${month}
+          `) as { closed_at: string; detalle: LiquidationResult; mejor_vendedor: string | null }[];
+          if (rows.length > 0) cerrada = { closedAt: rows[0].closed_at, result: rows[0].detalle, mejorVendedor: rows[0].mejor_vendedor };
+        } catch { /* tabla pendiente: solo vista previa */ }
+
+        // El ganador de Byte, emparejado con el equipo.
+        const equipoRows = (await sql`
+          SELECT name, dni, active FROM staff WHERE business_id = ${bId} ORDER BY active DESC, name
+        `) as { name: string; dni: string | null; active: boolean }[];
+        const equipoActivo = equipoRows.filter((s) => s.active).map((s) => s.name);
+        const pedido = sugeridos[bId] ?? null;
+        let sugeridoEquipo: string | null = null;
+        const avisosPremio: string[] = [];
+        if (pedido) {
+          sugeridoEquipo = equipoActivo.find((n) => n.trim().toUpperCase() === pedido.trim().toUpperCase())
+            ?? emparejarVendedor(pedido, equipoActivo);
+          if (!sugeridoEquipo) {
+            avisosPremio.push(`No se pudo emparejar al mejor vendedor «${pedido}» con una persona del equipo: elige a quién se le paga el premio.`);
+          }
+        }
+
+        const result = cerrada ? cerrada.result : await collectForLiquidation(bId, month, null);
+
+        // El desglose de horas de Planilla (solo lectura). Si no responde, se
+        // muestran las horas sin desglose: el pago no depende de esto.
+        const desglose = new Map<string, HorasDelMes>();
+        if (!cerrada) {
+          try {
+            for (const h of (await leerHorasPlanilla(bId, month)) ?? []) desglose.set(h.dni, h);
+          } catch (err) {
+            console.error(`[getPagosDelMes] sede ${bId}: no pude leer el desglose de horas —`, err);
+          }
+        }
+        const sync = (await sql`
+          SELECT MAX(sincronizado_en)::text AS ultima FROM staff WHERE business_id = ${bId} AND active = true
+        `) as { ultima: string | null }[];
+
+        const entradaVentas = await getEntradaCandadoVentas(bId, month);
+        const pol = (await sql`
+          SELECT requiere_equilibrio, requiere_supervision, traffic_floor
+          FROM incentive_config WHERE business_id = ${bId} AND effective_month <= ${month}
+          ORDER BY effective_month DESC LIMIT 1
+        `) as { requiere_equilibrio: boolean; requiere_supervision: boolean; traffic_floor: number | null }[];
+
+        sedes.push(armarPagoSede({
+          businessId: bId,
+          sede: nombreSede,
+          month,
+          cerrada: cerrada ? { closedAt: cerrada.closedAt, mejorVendedor: cerrada.mejorVendedor } : null,
+          result,
+          equipo: equipoRows,
+          desglose,
+          sugeridoByte: pedido,
+          sugeridoEquipo,
+          avisosPremio,
+          sincronizadoEn: sync[0]?.ultima ?? null,
+          ventas: entradaVentas ? evaluarCandadoVentas(entradaVentas, diasDelMes) : null,
+          politica: {
+            requiereEquilibrio: pol[0]?.requiere_equilibrio === true,
+            requiereSupervision: pol[0]?.requiere_supervision === true,
+            trafficFloor: pol[0]?.traffic_floor ?? null,
+          },
+        }));
+      } catch (err) {
+        console.error(`[getPagosDelMes] sede ${bId} falló:`, err);
+        errores.push(`${nombreSede}: ${err instanceof Error ? err.message : "no se pudo calcular el pago"}`);
+      }
+    }
+    return { ok: true, data: { month, generadoEn: new Date().toISOString(), sedes, errores } };
+  } catch (err) {
+    console.error("[getPagosDelMes] failed:", err);
+    return { ok: false, error: err instanceof Error ? err.message : "Error al preparar los pagos del mes" };
   }
 }

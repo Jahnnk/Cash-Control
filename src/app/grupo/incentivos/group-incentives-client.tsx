@@ -1,9 +1,14 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
-import { Trophy, CheckCircle2, XCircle, Copy, Check, Coffee, FileDown } from "lucide-react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { Trophy, CheckCircle2, XCircle, Copy, Check, Coffee, FileDown, FileSpreadsheet } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getGroupIncentives, type GroupIncentives, type SedeIncentives } from "@/app/actions/group-incentives";
+import { getPagosDelMes } from "@/app/actions/liquidations";
+import { SeccionDesplegable } from "@/components/productos/ui";
+import { armarReporte, conPremio } from "@/lib/incentives/reporte-bonos";
+import type { PagosDelMes } from "@/lib/incentives/reporte-bonos-tipos";
+import { PagoSedePanel } from "./pagos-panel";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { buildSedeShareLines, buildShareHeader, SHARE_FOOTER } from "@/lib/incentives/share-text";
 
@@ -28,17 +33,6 @@ function ddmm(iso: string | null): string {
 function periodoLabel(data: GroupIncentives): string {
   if (data.range) return `del ${ddmm(data.range.from)} al ${ddmm(data.range.to)} de ${data.range.to.slice(0, 4)}`;
   return monthLabel(data.month);
-}
-
-/** Días naturales del periodo — para la nota "X de Y días registrados". */
-function daysInPeriod(data: GroupIncentives): number {
-  if (data.range) {
-    const a = new Date(data.range.from + "T12:00:00Z").getTime();
-    const b = new Date(data.range.to + "T12:00:00Z").getTime();
-    return Math.round((b - a) / 86400000) + 1;
-  }
-  const [y, m] = data.month.split("-").map(Number);
-  return new Date(y, m, 0).getDate();
 }
 
 const SEDE_CODE: Record<number, ScopeCode> = { 2: "fonavi", 3: "centro" };
@@ -82,7 +76,14 @@ export function GroupIncentivesClient() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [copied, setCopied] = useState(false);
-  const [exporting, setExporting] = useState(false);
+  const [exporting, setExporting] = useState<"pdf" | "xlsx" | null>(null);
+  const [exportError, setExportError] = useState<string | null>(null);
+  // Lo que se reparte (solo mes completo). `premio`: a quién se le suma el
+  // premio al mejor vendedor; sin tocar = el que sugiere Byte.
+  const [pagos, setPagos] = useState<PagosDelMes | null>(null);
+  const [pagosLoading, setPagosLoading] = useState(false);
+  const [pagosError, setPagosError] = useState<string | null>(null);
+  const [premio, setPremio] = useState<Record<number, string | null>>({});
 
   const load = useCallback(async (m: string, range?: { from: string; to: string }) => {
     setLoading(true);
@@ -94,6 +95,8 @@ export function GroupIncentivesClient() {
 
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar/cambiar mes */
+    // Otro mes u otro modo: lo que se reparte ya no corresponde.
+    setPagos(null); setPagosError(null); setPremio({});
     if (mode === "mes") load(month);
     else if (from && to) load(from.slice(0, 7), { from, to });
     /* eslint-enable react-hooks/set-state-in-effect */
@@ -108,37 +111,88 @@ export function GroupIncentivesClient() {
     } catch { /* sin clipboard — queda la selección manual */ }
   }
 
-  async function handleExportPdf() {
+  /** Trae lo que se reparte (y comprueba el equipo y las horas contra Planilla). */
+  const cargarPagos = useCallback(async (d: GroupIncentives): Promise<PagosDelMes | null> => {
+    setPagosLoading(true);
+    setPagosError(null);
+    const sugeridos = Object.fromEntries(d.sedes.map((x) => [x.businessId, x.mejorVendedor?.ganador ?? null]));
+    const r = await getPagosDelMes(d.month, sugeridos);
+    setPagosLoading(false);
+    if (!r.ok) { setPagosError(r.error); return null; }
+    setPagos(r.data);
+    return r.data;
+  }, []);
+
+  /** Las cifras de pago con el premio ya puesto a quien corresponde. */
+  const pagosVista = useMemo(() => {
+    if (!pagos) return null;
+    return {
+      ...pagos,
+      sedes: pagos.sedes.map((p) => conPremio(p, p.businessId in premio ? premio[p.businessId] : p.mejorVendedor.sugeridoEquipo)),
+    };
+  }, [pagos, premio]);
+
+  /** Arma el reporte completo (con gráficos) para el PDF o el Excel. */
+  async function prepararReporte() {
+    if (!data) throw new Error("Sin datos");
+    let pv = pagosVista;
+    if (!data.range && !pv) {
+      const cargados = await cargarPagos(data);
+      if (!cargados) throw new Error("No se pudo calcular el pago del mes. Revisa el mensaje de la sección «Pago a repartir».");
+      pv = {
+        ...cargados,
+        sedes: cargados.sedes.map((p) => conPremio(p, p.mejorVendedor.sugeridoEquipo)),
+      };
+    }
+    const reporte = armarReporte(
+      data, data.range ? null : pv, periodoLabel(data),
+      new Date().toLocaleString("es-PE", { timeZone: "America/Lima", dateStyle: "medium", timeStyle: "short", hour12: false }),
+    );
+    const [{ graficosDelReporte }, { svgAPng }] = await Promise.all([
+      import("@/lib/incentives/reporte-bonos-graficos"),
+      import("@/lib/incentives/svg-to-png"),
+    ]);
+    const svgs = graficosDelReporte(reporte);
+    const png = async (d: typeof svgs.comparativo) => (d ? svgAPng(d, 2.5) : null);
+    const graficos = {
+      comparativo: await png(svgs.comparativo),
+      porSede: Object.fromEntries(
+        await Promise.all(Object.entries(svgs.porSede).map(async ([id, g]) => [
+          Number(id), { ticket: await png(g.ticket), ventas: await png(g.ventas), bonos: await png(g.bonos) },
+        ])),
+      ),
+    };
+    return { reporte, graficos };
+  }
+
+  function descargar(blob: Blob, filename: string) {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  }
+
+  async function handleExport(formato: "pdf" | "xlsx") {
     if (!data) return;
-    setExporting(true);
+    setExporting(formato);
+    setExportError(null);
     try {
-      const { renderPilotReportPdf } = await import("@/lib/incentives/pilot-report-pdf");
-      const { blob, filename } = renderPilotReportPdf({
-        periodoLabel: periodoLabel(data),
-        daysInPeriod: daysInPeriod(data),
-        generatedAtLabel: new Date().toLocaleString("es-PE", {
-          timeZone: "America/Lima", dateStyle: "medium", timeStyle: "short",
-        }),
-        sedes: data.sedes.map((s) => ({
-          sede: s.sede,
-          progress: s.progress,
-          ticketBase: s.ticketBase,
-          mejorVendedor: s.mejorVendedor,
-          mvPeriodStart: s.mvPeriodStart,
-          mvPeriodEnd: s.mvPeriodEnd,
-          minMesas: s.minMesas,
-          noElegibles: s.noElegibles,
-          dailies: s.dailies,
-        })),
-      });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = filename;
-      a.click();
-      URL.revokeObjectURL(url);
+      const { reporte, graficos } = await prepararReporte();
+      if (formato === "pdf") {
+        const { renderBonosReportPdf } = await import("@/lib/incentives/bonos-report-pdf");
+        const { blob, filename } = renderBonosReportPdf(reporte, graficos);
+        descargar(blob, filename);
+      } else {
+        const { renderBonosReportXlsx } = await import("@/lib/incentives/bonos-report-xlsx");
+        const { blob, filename } = await renderBonosReportXlsx(reporte, graficos);
+        descargar(blob, filename);
+      }
+    } catch (e) {
+      setExportError(e instanceof Error ? e.message : "No se pudo generar el reporte.");
     } finally {
-      setExporting(false);
+      setExporting(null);
     }
   }
 
@@ -187,15 +241,27 @@ export function GroupIncentivesClient() {
             </>
           )}
           <button
-            onClick={handleExportPdf}
-            disabled={!data || exporting}
-            title="Reporte con el detalle diario completo de ambas sedes, listo para entregar a cada administrador"
+            onClick={() => handleExport("pdf")}
+            disabled={!data || exporting !== null}
+            title="Reporte completo en PDF: resumen, metas explicadas, detalle día por día, gráficos, pago por persona y hoja de transferencias"
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
           >
-            <FileDown className="w-3.5 h-3.5" /> {exporting ? "Generando…" : "Exportar PDF"}
+            <FileDown className="w-3.5 h-3.5" /> {exporting === "pdf" ? "Generando…" : "Exportar PDF"}
+          </button>
+          <button
+            onClick={() => handleExport("xlsx")}
+            disabled={!data || exporting !== null}
+            title="El mismo reporte en Excel, para trabajar con él: transferencias para marcar, pagos por persona, metas y detalle diario"
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-primary bg-white border border-primary hover:bg-gray-50 disabled:opacity-50 disabled:cursor-not-allowed rounded-lg"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5" /> {exporting === "xlsx" ? "Generando…" : "Exportar Excel"}
           </button>
         </div>
       </div>
+
+      {exportError && (
+        <div className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg px-3 py-2">{exportError}</div>
+      )}
 
       {mode === "rango" && (!from || !to) && (
         <div className="text-xs text-gray-500 bg-white border border-gray-200 rounded-lg px-3 py-2">
@@ -214,6 +280,52 @@ export function GroupIncentivesClient() {
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {data.sedes.map((s) => <SedeCard key={s.businessId} s={s} isRange={data.range !== null} />)}
           </div>
+
+          {/* Pago a repartir (solo mes completo) — plegado, con el resumen a la vista */}
+          {data.range === null && (
+            <SeccionDesplegable
+              titulo="💰 Pago a repartir y a quién (para Kelly)"
+              subtitulo="Lo que se transfiere a cada persona, con las horas de Planilla. Es lo mismo que lleva el reporte."
+              resumen={
+                pagosVista ? (
+                  <span className="text-xs text-gray-700">
+                    {pagosVista.sedes.map((p) => `${p.sede} ${formatCurrency(p.totalBonos)}`).join(" · ")} ·{" "}
+                    <strong>Total {formatCurrency(pagosVista.sedes.reduce((t, p) => t + p.totalBonos, 0))}</strong>
+                  </span>
+                ) : (
+                  <span className="text-xs text-gray-500">Se calcula al abrir: comprueba el equipo y las horas contra Planilla.</span>
+                )
+              }
+              onAbrir={() => { if (!pagos && !pagosLoading) void cargarPagos(data); }}
+            >
+              {pagosLoading && <div className="text-sm text-gray-500 py-6 text-center">Comprobando el equipo y las horas contra Planilla…</div>}
+              {pagosError && <div className="text-sm text-red-600 py-3">{pagosError}</div>}
+              {pagos && pagos.errores.length > 0 && (
+                <div className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mb-3">
+                  No se pudo calcular el pago de: {pagos.errores.join(" · ")}
+                </div>
+              )}
+              {pagosVista && (
+                <div className="space-y-4">
+                  {pagosVista.sedes.map((p) => (
+                    <PagoSedePanel
+                      key={p.businessId}
+                      pago={p}
+                      elegido={p.mejorVendedor.usado}
+                      onElegir={(n) => setPremio((prev) => ({ ...prev, [p.businessId]: n }))}
+                    />
+                  ))}
+                  <button
+                    onClick={() => void cargarPagos(data)}
+                    disabled={pagosLoading}
+                    className="text-xs text-primary underline disabled:opacity-50"
+                  >
+                    Volver a comprobar contra Planilla
+                  </button>
+                </div>
+              )}
+            </SeccionDesplegable>
+          )}
 
           {/* Para compartir con el equipo */}
           <section className="bg-white rounded-xl border border-gray-200 p-4">
