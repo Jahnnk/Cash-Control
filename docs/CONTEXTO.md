@@ -356,6 +356,30 @@ Perú. **NO es programador.** Reglas de comunicación:
   TECHO con tabla fija por rol, piso de tráfico sobre personas
   totales. Base editable solo por dirección (botón "Base" en el panel,
   meses liquidados congelados). Liquidación mensual genera acta.
+- **Reporte de Bonos e Incentivos para Kelly** (1-oct-2026, Grupo →
+  Bonos e Incentivos → «Exportar PDF» / «Exportar Excel»). Lo arma
+  `reporte-bonos.ts` (puro) sobre lo que ya calculan el panel
+  (`getGroupIncentives`) y la liquidación (`getPagosDelMes` en
+  `actions/liquidations.ts`, que llama a `collectForLiquidation`: el pago
+  que ve Kelly es el MISMO del acta). Lo dibujan `bonos-report-pdf.ts` y
+  `bonos-report-xlsx.ts` (renderers tontos); los gráficos son SVG
+  (`bonos-charts.ts`) que el navegador pasa a PNG (`svg-to-png.ts`) para
+  pegarlos en los dos. Cada sede lleva su color (Fonavi verde, Centro
+  ámbar) y la hoja final de transferencias trae nombre, DNI y monto.
+  - **Las horas del bono vienen de Planilla, no del reloj.** Hasta el
+    1-oct la sincronización sumaba `resumen_dia` (reloj de Byte), vacío en
+    Fonavi y Centro, y el bono caía siempre a horas de contrato. Ahora
+    `lib/incentives/horas-planilla.ts` toma, en este orden: reloj →
+    `ajustes_mes.horas_trabajadas` (las que carga el admin, Fonavi) →
+    horario × 4 (Centro); resta faltas y tardanzas, suma tiempo extra y
+    horas no marcadas (el feriado NO suma: ya estaba en el horario).
+  - **Meta de ventas = UNA por sede y mes**, no cambia con los niveles
+    (los niveles solo mueven el bono por ticket). En setiembre es de
+    práctica; desde octubre es requisito (todo o nada).
+  - El premio al mejor vendedor lo elige la pantalla (`conPremio`); Byte
+    trae nombre completo y el equipo nombre corto, se empareja con
+    `emparejar-vendedor.ts` (gana el nombre más largo que sea comienzo).
+  - Sin migración: todo sale de tablas que ya existían.
 - **KPIs diarios** (`src/lib/kpis/engine.ts`): ventas, ticket, NPS,
   mermas (con detalle de productos), tiempos mostrador (<6) / mesa
   (<15) / delivery (<20, configurables). Semáforos verde/ámbar/rojo.
