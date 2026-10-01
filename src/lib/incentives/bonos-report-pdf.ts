@@ -104,7 +104,8 @@ function imagen(c: Ctx, img: ImagenGrafico | null, anchoMm = ancho(false) - M * 
   if (!img) return;
   const h = (anchoMm * img.height) / img.width;
   if (c.y + h > LIMITE) { nuevaPagina(c); c.y = cinta(c, { color: BRAND.primary, titulo: "Bonos e Incentivos", subtitulo: "" }); }
-  c.doc.addImage(img.dataUrl, "PNG", M, c.y, anchoMm, h);
+  // "FAST" comprime la imagen: sin ella jsPDF guarda los píxeles crudos y cada gráfico pesa megas.
+  c.doc.addImage(img.dataUrl, "PNG", M, c.y, anchoMm, h, undefined, "FAST");
   c.y += h + 5;
 }
 
@@ -648,7 +649,7 @@ function paginaTransferencias(c: Ctx, r: ReporteBonos): void {
 // ─────────────────────────────────────────────────────────────────
 
 export function renderBonosReportPdf(r: ReporteBonos, g: GraficosPdf): { blob: Blob; filename: string } {
-  const doc = new jsPDF({ unit: "mm", format: "a4" });
+  const doc = new jsPDF({ unit: "mm", format: "a4", compress: true });
   const c: Ctx = { doc, paginas: [], y: 0 };
 
   paginaResumen(c, r, g);
