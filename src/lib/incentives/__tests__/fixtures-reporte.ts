@@ -56,6 +56,7 @@ export function pagoDePrueba(opts: { conNivel?: boolean } = {}) {
         ventas: 42500, diasConVenta: 30, proyeccion: 42500, avancePct: 104.2, falta: 0, cumple: true, enCamino: true,
       },
       politica: { requiereEquilibrio: false, requiereSupervision: false, trafficFloor: 45 },
+      excepcionesDisponibles: true,
     }),
   };
 }

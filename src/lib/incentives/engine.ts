@@ -441,6 +441,13 @@ export type LiquidationResult = {
   pozo: number | null;
   lines: LiquidationLine[];
   totalBonos: number;
+  /**
+   * Quiénes NO cobraron este mes y por qué (periodo de prueba, excepción de la
+   * dirección). Opcional: las actas cerradas antes de octubre 2026 no lo traen.
+   */
+  excluidos?: { dni: string; name: string; motivo: string; origen: "automatico" | "manual"; reglaId: number | null }[];
+  /** Quiénes cobran por una excepción de la dirección aunque la regla automática los dejaba fuera. */
+  incluidosPorExcepcion?: { dni: string; name: string; motivo: string; reglaId: number }[];
   /** Impiden cerrar (se resuelven primero). */
   blockers: string[];
   /** No impiden cerrar, pero quedan en el acta. */
