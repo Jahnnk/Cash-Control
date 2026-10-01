@@ -40,7 +40,7 @@ const JORNADA: Record<string, string> = {
   medio_turno: "Medio turno",
   administrador: "Administrador",
 };
-const ORIGEN_CORTO: Record<string, string> = { reloj: "reloj", registrada: "registradas", horario: "horario" };
+const ORIGEN_CORTO: Record<string, string> = { reloj: "reloj", registrada: "registradas", horario: "horario", contrato: "contrato" };
 
 const FRANJA: Record<string, string> = { mañana: "Mañana", tarde: "Tarde", completo: "Turno completo" };
 const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
@@ -318,7 +318,7 @@ function paginaReglas(c: Ctx, r: ReporteBonos): void {
     titulo(c, "Cómo se calcula lo que le toca a cada persona");
     const tarifa = r.sedes.find((s) => s.pagos?.tarifaHora)?.pagos?.tarifaHora;
     const pasos = [
-      `1.  Horas del mes: se toman de Planilla. Si el administrador registró las horas del mes de la persona, se usan esas; si no, su horario por 4 semanas. Las faltas y tardanzas restan; el tiempo extra y las horas no marcadas suman.`,
+      `1.  Horas del mes: se toman de Planilla. Si el administrador registró las horas del mes de la persona, se usan esas; si no, lo pactado en su horario (los turnos de una semana por 4). Las faltas restan; el tiempo extra y las horas no marcadas suman.`,
       `2.  Tarifa por hora: el bono de un medio turno en el nivel alcanzado dividido entre 94 horas${tarifa ? ` (ejemplo: S/ ${tarifa.toFixed(4)} la hora en el nivel de este mes)` : ""}.`,
       "3.  Bono de la persona = sus horas del mes x la tarifa por hora. Quien trabajó más horas gana más; quien faltó, menos. Los administradores reciben un monto fijo por nivel.",
       "4.  Premio al mejor vendedor: un monto fijo por nivel, para una sola persona de la sede.",
@@ -494,7 +494,7 @@ function paginaPagos(c: Ctx, r: ReporteBonos, s: SedeReporte, g: GraficosPdf["po
     autoTable(d, {
       startY: c.y,
       margin: { left: M, right: M },
-      head: [["Colaborador", "DNI", "Jornada", "Horas del bono", "Faltas y tard.", "Extra", "Bono", "Premio MV", "Total a transferir"]],
+      head: [["Colaborador", "DNI", "Jornada", "Horas del bono", "Faltas", "Extra", "Bono", "Premio MV", "Total a transferir"]],
       body: pg.lines.map((l) => [
         l.name,
         l.dni ?? "sin DNI",
@@ -516,7 +516,7 @@ function paginaPagos(c: Ctx, r: ReporteBonos, s: SedeReporte, g: GraficosPdf["po
       },
     });
     c.y = ultimaTabla(c) + 3;
-    parrafo(c, "Horas del bono: «registradas» = las horas del mes que el administrador registró en Planilla; «horario» = el horario de Planilla por 4 semanas; «reloj» = el reloj de Byte; «contrato» = las del contrato, porque Planilla no las tiene. Las faltas y tardanzas restan; el tiempo extra suma. El bono de cada persona se redondea al sol.", { tam: 7.4, italica: true, color: BRAND.gray });
+    parrafo(c, "Horas del bono: «registradas» = las horas del mes que el administrador registró en Planilla; «horario» = lo pactado en su horario de Planilla (los turnos de una semana por 4); «reloj» = el reloj de Byte; «contrato» = las del contrato, porque no tiene horario cargado. Las faltas restan y el tiempo extra suma. El bono de cada persona se redondea al sol.", { tam: 7.4, italica: true, color: BRAND.gray });
   }
 
   if (pg.mejorVendedor.usado) {

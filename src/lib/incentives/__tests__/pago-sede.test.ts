@@ -7,14 +7,14 @@ describe("armarPagoSede", () => {
 
   it("une cada línea con su DNI y el desglose de horas de Planilla", () => {
     const teresa = pago.lines.find((l) => l.name === "Teresa")!;
-    expect(teresa).toMatchObject({ dni: "72678416", origenHoras: "horario", horasBase: 94, horasMas: 1.67, horasMes: 95.67 });
+    expect(teresa).toMatchObject({ dni: "72678416", origenHoras: "horario", horasBase: 102, horasMas: 1.67, horasMes: 103.67 });
     const diego = pago.lines.find((l) => l.name === "Diego")!;
     expect(diego).toMatchObject({ origenHoras: "registrada", horasMenos: 2, horasMes: 50 });
   });
 
   it("Nivel 2: horas × (48 ÷ 94) para los salones y 179 fijo para la administradora", () => {
     expect(pago.nivel).toBe("Nivel 2");
-    expect(pago.lines.find((l) => l.name === "Teresa")!.bono).toBe(Math.round((95.67 * 48) / 94)); // 49
+    expect(pago.lines.find((l) => l.name === "Teresa")!.bono).toBe(Math.round((103.67 * 48) / 94)); // 53
     expect(pago.lines.find((l) => l.name === "Diego")!.bono).toBe(Math.round((50 * 48) / 94)); // 26
     expect(pago.lines.find((l) => l.name === "Chari")!.bono).toBe(179);
   });
@@ -29,7 +29,7 @@ describe("armarPagoSede", () => {
     expect(pago.mejorVendedor).toMatchObject({ usado: null, premio: 0, sugeridoEquipo: "Teresa" });
     const conTeresa = conPremio(pago, "Teresa");
     expect(conTeresa.totalBonos).toBe(sinPremio + 134);
-    expect(conTeresa.lines.find((l) => l.name === "Teresa")!.total).toBe(49 + 134);
+    expect(conTeresa.lines.find((l) => l.name === "Teresa")!.total).toBe(53 + 134);
   });
 
   it("sin nivel no hay bono ni tarifa, y se avisa con el motivo", () => {

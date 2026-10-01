@@ -25,6 +25,7 @@ import { resolverHorasDelMes, avisoHorasIncompletas } from "@/lib/incentives/hor
 import { evaluarCandadoVentas } from "@/lib/incentives/candado-ventas";
 import { leerHorasPlanilla } from "@/lib/incentives/planilla-db";
 import { emparejarVendedor } from "@/lib/incentives/emparejar-vendedor";
+import { elegibilidadDelMes } from "@/lib/incentives/elegibilidad-bono";
 import type { HorasDelMes } from "@/lib/incentives/horas-planilla";
 import { armarPagoSede } from "@/lib/incentives/pago-sede";
 import type { PagoSede, PagosDelMes } from "@/lib/incentives/reporte-bonos-tipos";
@@ -60,10 +61,39 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   // calcular: es el dato que decide el monto de cada quien.
   await sincronizarHorasDelMes(bId, month);
 
-  const staff = (await sql`
+  // Quién entra al bono ESTE mes, según lo que dice Planilla (solo lectura):
+  //  · quien ya figura cesado pero hizo el mes completo cobra su parte (Junior,
+  //    que se fue el 30 de septiembre);
+  //  · quien ingresó después del día 1 está en periodo de prueba y no cobra
+  //    ese mes (Ghyan, que ingresó a Centro el 30 de septiembre).
+  let deLaPlanilla: Awaited<ReturnType<typeof leerHorasPlanilla>> = null;
+  try {
+    deLaPlanilla = await leerHorasPlanilla(bId, month);
+  } catch (err) {
+    console.error(`[liquidación] sede ${bId}: no pude leer quién trabajó el mes en Planilla —`, err);
+  }
+  const elegibles = elegibilidadDelMes(deLaPlanilla ?? [], month);
+  const cesadosQueTrabajaron = elegibles.cesadosQueCobran;
+  const enPrueba = new Map(elegibles.enPrueba.map((p) => [p.dni, p]));
+
+  const staffTodos = (await sql`
     SELECT name, dni, jornada, area, horas_semanales::float AS "horasSemanales"
-      FROM staff WHERE business_id = ${bId} AND active = true ORDER BY jornada, name
+      FROM staff
+     WHERE business_id = ${bId} AND (active = true OR dni::text = ANY(${cesadosQueTrabajaron.map((p) => p.dni)}::text[]))
+     ORDER BY jornada, name
   `) as { name: string; dni: string | null; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
+  const staff = staffTodos.filter((s) => !(s.dni && enPrueba.has(s.dni.trim())));
+  const avisosEquipo: string[] = [];
+  for (const s of staffTodos) {
+    const prueba = s.dni ? enPrueba.get(s.dni.trim()) : undefined;
+    if (prueba) {
+      avisosEquipo.push(`${s.name} no entra al bono de este mes: ingresó el ${prueba.fechaIngreso!.slice(8, 10)}/${prueba.fechaIngreso!.slice(5, 7)} y está en periodo de prueba.`);
+    }
+  }
+  for (const c of cesadosQueTrabajaron) {
+    const s = staff.find((x) => x.dni?.trim() === c.dni);
+    if (s) avisosEquipo.push(`${s.name} ya figura cesado en Planilla pero hizo el mes completo: sí recibe su parte del bono.${c.fechaCese ? "" : " (Falta cargar su fecha de cese en Planilla.)"}`);
+  }
 
   const [y, m] = month.split("-").map(Number);
   const monthEnd = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
@@ -126,6 +156,7 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   if (r.nivel && !resuelto.usaTrabajadas && resuelto.faltantes.length > 0 && month >= BONO_POR_HORA_DESDE) {
     r.warnings.push(avisoHorasIncompletas(resuelto.faltantes));
   }
+  r.warnings.push(...avisosEquipo);
   return r;
 }
 

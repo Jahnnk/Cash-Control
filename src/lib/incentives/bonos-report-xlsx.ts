@@ -21,7 +21,7 @@ const SOLES = '"S/ "#,##0.00';
 const SOLES0 = '"S/ "#,##0';
 const PCT = "0.0%";
 const JORNADA: Record<string, string> = { tiempo_completo: "Tiempo completo", medio_turno: "Medio turno", administrador: "Administrador" };
-const ORIGEN: Record<string, string> = { reloj: "Reloj de Byte", registrada: "Horas registradas", horario: "Horario de Planilla" };
+const ORIGEN: Record<string, string> = { reloj: "Reloj de Byte", registrada: "Horas registradas", horario: "Horario de Planilla", contrato: "Horas del contrato" };
 
 const argb = (hex: string) => "FF" + hex.replace("#", "");
 const relleno = (hex: string): ExcelJS.Fill => ({ type: "pattern", pattern: "solid", fgColor: { argb: argb(hex) } });
@@ -156,7 +156,7 @@ function hojaPagos(wb: ExcelJS.Workbook, r: ReporteBonos) {
     { width: 12 }, { width: 22 }, { width: 11 }, { width: 12 }, { width: 14 },
   ];
   titulo(ws, "Pagos · cálculo por persona", `${r.periodoLabel} · bono = horas del mes (Planilla) × tarifa por hora del nivel; administradores: monto fijo del nivel.`, "#004C40", 12);
-  encabezado(ws.addRow(["Sede", "Colaborador", "DNI", "Jornada", "Horas del mes", "Faltas y tard. (h)", "Extra (h)", "Horas del bono", "Origen de las horas", "Bono", "Premio MV", "Total"]), "#374151");
+  encabezado(ws.addRow(["Sede", "Colaborador", "DNI", "Jornada", "Horas del mes", "Faltas (h)", "Extra (h)", "Horas del bono", "Origen de las horas", "Bono", "Premio MV", "Total"]), "#374151");
   for (const s of r.sedes) {
     const pg = s.pagos;
     if (!pg) continue;
@@ -187,7 +187,7 @@ function hojaPagos(wb: ExcelJS.Workbook, r: ReporteBonos) {
     info.getCell(1).font = { italic: true, color: { argb: "FF6B7280" } };
     ws.addRow([]);
   }
-  ws.addRow(["Origen de las horas: «Horas registradas» = las que el administrador cargó en Planilla; «Horario de Planilla» = horario por 4 semanas; «Reloj de Byte»; «Contrato» = Planilla no las tiene. Faltas y tardanzas restan; el tiempo extra suma."])
+  ws.addRow(["Origen de las horas: «Horas registradas» = las que el administrador cargó en Planilla; «Horario de Planilla» = lo pactado en su horario (turnos de una semana × 4); «Reloj de Byte»; «Horas del contrato» = no tiene horario cargado. Las faltas restan; el tiempo extra suma."])
     .getCell(1).font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
 }
 
