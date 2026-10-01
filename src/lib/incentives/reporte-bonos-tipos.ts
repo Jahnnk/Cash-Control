@@ -22,7 +22,7 @@ export type PagoColaborador = {
   /** De dónde salen las horas en Planilla (null si no se pudo leer el desglose). */
   origenHoras: OrigenHoras | null;
   horasBase: number | null;
-  /** Faltas y tardanzas en horas. */
+  /** Faltas, en horas. */
   horasMenos: number;
   /** Tiempo extra y horas no marcadas, en horas. */
   horasMas: number;

@@ -27,7 +27,7 @@ const equipo = [
 ];
 
 const desglose = new Map<string, HorasDelMes>([
-  ["72678416", { dni: "72678416", origen: "horario", horasBase: 94, horasMenos: 0, horasMas: 1.67, horas: 95.67 }],
+  ["72678416", { dni: "72678416", origen: "horario", horasBase: 102, horasMenos: 0, horasMas: 1.67, horas: 103.67 }],
   ["60879780", { dni: "60879780", origen: "registrada", horasBase: 52, horasMenos: 2, horasMas: 0, horas: 50 }],
   ["71821742", { dni: "71821742", origen: "horario", horasBase: 192, horasMenos: 0, horasMas: 0, horas: 192 }],
 ]);

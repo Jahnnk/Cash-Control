@@ -369,10 +369,25 @@ Perú. **NO es programador.** Reglas de comunicación:
   - **Las horas del bono vienen de Planilla, no del reloj.** Hasta el
     1-oct la sincronización sumaba `resumen_dia` (reloj de Byte), vacío en
     Fonavi y Centro, y el bono caía siempre a horas de contrato. Ahora
-    `lib/incentives/horas-planilla.ts` toma, en este orden: reloj →
-    `ajustes_mes.horas_trabajadas` (las que carga el admin, Fonavi) →
-    horario × 4 (Centro); resta faltas y tardanzas, suma tiempo extra y
-    horas no marcadas (el feriado NO suma: ya estaba en el horario).
+    `lib/incentives/horas-planilla.ts` toma, en este orden: reloj (solo
+    sedes por reloj) → `ajustes_mes.horas_trabajadas` (las que carga el
+    admin, Fonavi) → LO PACTADO EN EL HORARIO (turnos de una semana × 4,
+    `horario-programado.ts`, espejo de `horasProgramadasMes` de Planilla;
+    Centro) → contrato × 4 solo si no hay horario. Suma tiempo extra y horas
+    no marcadas, resta faltas; las tardanzas NO restan (Planilla ya las
+    descuenta en dinero y sus «horas pagadas» no las quitan) y el feriado NO
+    suma (ya estaba en el horario). Verificado con Planilla: Annika 111.17 h,
+    Junior 203.25 h, Diego 52 h. Error de la primera versión: usó el
+    contrato (23.5 × 4 = 94) donde Planilla tiene 110 h de horario.
+  - **Quién entra al bono del mes** (`elegibilidad-bono.ts`, aplicado en
+    `collectForLiquidation`): quien figura cesado pero hizo el mes completo
+    SÍ cobra (Junior, Centro, se fue el 30-sep; en Planilla no tiene fecha de
+    cese cargada, se reconoce por tener tiempo registrado los últimos tres
+    días); quien ingresó después del día 1 está en prueba y NO cobra ese mes
+    (Ghyan, ingresó a Centro el 30-sep). Límite: la prueba dura más de un
+    mes y la regla solo excluye el mes de ingreso; para cubrir octubre hace
+    falta una lista de exclusiones que decida Jahnn (las fechas de ingreso de
+    Fonavi son de un segundo registro, no sirven para inferir la prueba).
   - **Meta de ventas = UNA por sede y mes**, no cambia con los niveles
     (los niveles solo mueven el bono por ticket). En setiembre es de
     práctica; desde octubre es requisito (todo o nada).

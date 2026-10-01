@@ -5,7 +5,7 @@ import { formatCurrency } from "@/lib/utils";
 import type { PagoSede } from "@/lib/incentives/reporte-bonos-tipos";
 import { COLOR_SEDE } from "@/lib/incentives/reporte-bonos";
 
-const ORIGEN: Record<string, string> = { reloj: "reloj", registrada: "registradas", horario: "horario" };
+const ORIGEN: Record<string, string> = { reloj: "reloj", registrada: "registradas", horario: "horario", contrato: "contrato" };
 
 /**
  * Lo que se reparte en una sede y a quién: la vista previa de lo que Kelly
