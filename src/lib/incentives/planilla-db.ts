@@ -34,6 +34,8 @@ export type PersonaPlanilla = HorasDelMes & {
   fechaIngreso: string | null;
   /** Fecha de cese (YYYY-MM-DD); null si no la cargaron. */
   fechaCese: string | null;
+  /** Ocupa el puesto de administración (el bono de administración es por PUESTO, no por persona). */
+  esAdministrador: boolean;
 };
 
 /**
@@ -76,6 +78,7 @@ export async function leerHorasPlanilla(bId: number, month: string): Promise<Per
   // subconsulta (unirlas en una sola multiplicaría filas).
   const rows = (await planilla`
     SELECT t.id::text AS id, t.dni, t.nombre_completo AS nombre, t.estado::text AS estado,
+           (SELECT ar.nombre FROM areas_trabajo ar WHERE ar.id = t.area_trabajo_id) AS area,
            t.fecha_ingreso::text AS ingreso, t.fecha_cese::text AS cese,
            t.horas_semanales::float AS semanales,
            (SELECT a.horas_trabajadas::float FROM ajustes_mes a
@@ -102,7 +105,7 @@ export async function leerHorasPlanilla(bId: number, month: string): Promise<Per
         ))
       )
   `) as {
-    id: string; dni: string; nombre: string; estado: string; ingreso: string | null; cese: string | null;
+    id: string; dni: string; nombre: string; estado: string; area: string | null; ingreso: string | null; cese: string | null;
     semanales: number | null; registradas: number | null; reloj: number | null;
     min_falta: number; min_tardanza: number; min_extra: number; min_no_marcadas: number;
   }[];
@@ -152,7 +155,12 @@ export async function leerHorasPlanilla(bId: number, month: string): Promise<Per
       minNoMarcadas: r.min_no_marcadas,
     };
     const h = horasDelMesDesdePlanilla(fila);
-    if (h) out.push({ ...h, nombre: r.nombre, estado: r.estado, fechaIngreso: r.ingreso, fechaCese: r.cese });
+    if (h) {
+      out.push({
+        ...h, nombre: r.nombre, estado: r.estado, fechaIngreso: r.ingreso, fechaCese: r.cese,
+        esAdministrador: !!r.area && /administrativ/i.test(r.area),
+      });
+    }
   }
   return out;
 }

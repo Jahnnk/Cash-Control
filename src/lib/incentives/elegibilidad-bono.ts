@@ -11,6 +11,11 @@
  *    el 30 de septiembre. La regla automática lo reconoce por su fecha de
  *    ingreso: si entró después del día 1 del mes, no hizo el mes completo.
  *
+ * El PUESTO de administración no entra en la regla de prueba: el bono de
+ * administración es por puesto, no por persona (Jahnn, 1-oct-2026). En Fonavi
+ * lo ocuparon dos personas en septiembre (Chari los primeros 15 días y Sol los
+ * siguientes) y el puesto cobra igual.
+ *
  * Límite de la regla automática: solo deja afuera el MES de ingreso, y la
  * prueba dura más. Por eso existen las EXCEPCIONES (tabla bono_exclusiones,
  * las decide Jahnn): "excluir" a alguien de un periodo (ej. de octubre a
@@ -26,6 +31,8 @@ export type PersonaDelMes = {
   estado: string;
   fechaIngreso: string | null;
   fechaCese: string | null;
+  /** Ocupa el puesto de administración: no se le aplica la regla de prueba. */
+  esAdministrador?: boolean;
 };
 
 /** Una excepción decidida por la dirección. */
@@ -70,7 +77,7 @@ export function elegibilidadDelMes(personas: PersonaDelMes[], month: string, reg
 
   // 1) La regla automática: ingresó después del día 1 = prueba.
   for (const p of personas) {
-    if (p.fechaIngreso !== null && p.fechaIngreso > inicio) {
+    if (!p.esAdministrador && p.fechaIngreso !== null && p.fechaIngreso > inicio) {
       const dd = p.fechaIngreso.slice(8, 10);
       const mm = p.fechaIngreso.slice(5, 7);
       excluidos.set(p.dni, { dni: p.dni, nombre: p.nombre, motivo: `ingresó el ${dd}/${mm} y está en periodo de prueba`, origen: "automatico", reglaId: null });
