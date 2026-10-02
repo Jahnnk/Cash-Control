@@ -33,6 +33,7 @@ import { MiRutina } from "./mi-rutina";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 import { BonoDelMesCard } from "./bono-del-mes-card";
+import { CuantoGanaCard } from "./cuanto-gana-card";
 import { ProductosCard } from "./productos-card";
 import { TrimestreCard } from "./trimestre-card";
 import { RevisarSedeCard } from "./revisar-sede-card";
@@ -395,6 +396,15 @@ function IncentivosPage() {
               El pozo es el techo; se paga la tabla fija por rol. Equipo: {data.staff.filter((s) => s.jornada === "tiempo_completo").length} tiempo completo · {data.staff.filter((s) => s.jornada === "medio_turno").length} medio turno · 1 admin.
             </div>
           </div>
+
+          {/* 2a · Cuánto gana el equipo en cada nivel (informativo; solo de ESTA sede). */}
+          <CuantoGanaCard
+            staff={data.staff}
+            levels={p.porNivel.map((n) => n.level)}
+            ticketBase={data.config.ticketBase}
+            month={month}
+            nivelAlcanzado={p.nivelAlcanzado?.nombre ?? null}
+          />
 
           {/* 2c · El admin es la cara del programa: resumen copiable para
               su equipo, con la misma lib de texto que usa la dirección. */}

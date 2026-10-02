@@ -272,7 +272,7 @@ function paginaReglas(c: Ctx, r: ReporteBonos): void {
     },
   });
   c.y = ultimaTabla(c) + 3;
-  parrafo(c, "Ticket del programa = venta presencial (mostrador y mesa) entre las personas atendidas; delivery y consumo del personal no cuentan. Cada nivel exige subir el ticket sobre la base de la sede. \"Se reparte\" = bonos de todo el equipo con las horas de Planilla + premio al mejor vendedor. En color: el nivel alcanzado.", { tam: 7.8, italica: true, color: BRAND.gray });
+  parrafo(c, "Ticket del programa = venta presencial (mostrador y mesa) entre las personas atendidas; delivery y consumo del personal no cuentan. Cada nivel exige subir el ticket sobre la base de la sede. \"Se reparte\" = bonos por horas de todo el equipo + administración + premio al mejor vendedor. La tabla de bonos es la misma en las dos sedes; el total cambia porque depende de las horas del equipo de cada una (más horas, más bono). En color: el nivel alcanzado. El detalle del cálculo está en la página de cada sede.", { tam: 7.8, italica: true, color: BRAND.gray });
 
   // La meta de ventas: la pregunta de Jahnn.
   if (r.sedes.some((s) => s.ventas)) {
@@ -378,22 +378,26 @@ function paginaResultadoSede(c: Ctx, r: ReporteBonos, s: SedeReporte, g: Grafico
   imagen(c, g?.ticket ?? null);
   imagen(c, g?.ventas ?? null);
 
-  // Los niveles de la sede, con lo que está en juego.
-  if (c.y > LIMITE - 38) { nuevaPagina(c); c.y = cinta(c, { color: s.color, titulo: `Yayi's ${s.sede}`, subtitulo: r.periodoLabel }); }
-  titulo(c, "Niveles de ticket y lo que se reparte en cada uno", s.color);
+  // Los niveles de la sede: cuánto se reparte en cada uno y cómo se calcula.
+  const conDesglose = s.ticket.niveles.every((n) => n.desglose !== null);
+  if (c.y > LIMITE - (conDesglose ? 74 : 38)) { nuevaPagina(c); c.y = cinta(c, { color: s.color, titulo: `Yayi's ${s.sede}`, subtitulo: r.periodoLabel }); }
+  titulo(c, "Cuánto se reparte en cada nivel y cómo se calcula", s.color);
   autoTable(c.doc, {
     startY: c.y,
     margin: { left: M, right: M },
-    head: [["Nivel", "Ticket meta", "Aumento sobre la base", "Se reparte entre el equipo", "Colchón vs. pozo"]],
-    body: s.ticket.niveles.map((n) => [
-      `${n.alcanzado ? "> " : ""}${n.nombre}`,
-      fmtSoles(n.metaTicket),
-      `+${fmtSoles(n.delta)}`,
-      entero(n.seReparte),
-      n.colchon !== null ? fmtSoles(n.colchon) : "-",
-    ]),
-    styles: { fontSize: 8.3, cellPadding: 2.1 },
-    headStyles: { fillColor: s.color, fontSize: 7.8 },
+    head: conDesglose
+      ? [["Nivel", "Ticket meta", "Valor por hora", "Horas del equipo", "Bonos por horas", "Administración", "Premio mejor vendedor", "TOTAL a repartir"]]
+      : [["Nivel", "Ticket meta", "Aumento sobre la base", "Se reparte entre el equipo", "Colchón vs. pozo"]],
+    body: s.ticket.niveles.map((n) => {
+      const marca = `${n.alcanzado ? "> " : ""}${n.nombre}`;
+      const d = n.desglose;
+      return d
+        ? [marca, fmtSoles(n.metaTicket), `S/ ${d.valorHora.toFixed(4)}`, `${num1(d.horasEquipo)} h`, entero(d.bonosPorHoras), entero(d.administracion), entero(d.premio), entero(d.total)]
+        : [marca, fmtSoles(n.metaTicket), `+${fmtSoles(n.delta)}`, entero(n.seReparte), n.colchon !== null ? fmtSoles(n.colchon) : "-"];
+    }),
+    styles: { fontSize: 8, cellPadding: 2.1 },
+    headStyles: { fillColor: s.color, fontSize: 7.2 },
+    columnStyles: conDesglose ? { 7: { fontStyle: "bold" } } : {},
     didParseCell: (data) => {
       if (data.section === "body" && s.ticket.niveles[data.row.index]?.alcanzado) {
         data.cell.styles.fillColor = s.colorSuave;
@@ -402,7 +406,14 @@ function paginaResultadoSede(c: Ctx, r: ReporteBonos, s: SedeReporte, g: Grafico
     },
   });
   c.y = ultimaTabla(c) + 3;
-  parrafo(c, "El colchón es lo que queda del pozo después de pagar los bonos de ese nivel.", { tam: 7.8, italica: true, color: BRAND.gray });
+  if (conDesglose) {
+    const [n1, n2, n3] = s.ticket.niveles;
+    const pers = n1.desglose!.personasPorHoras;
+    parrafo(c, `Cómo se calcula: TOTAL = bonos por horas + administración + premio. Bonos por horas = las horas del mes de cada persona (${pers} personas, ${num1(n1.desglose!.horasEquipo)} horas en total) por el valor por hora del nivel, redondeado al sol por persona. La administración y el premio son montos fijos del nivel: la administración se paga una vez por puesto y el premio es para una sola persona.`, { tam: 8, color: BRAND.ink });
+    parrafo(c, `Ejemplo: una persona de medio turno con 94 horas gana ${entero(n1.ejemplos.medioTurno)} en el ${n1.nombre}, ${entero(n2.ejemplos.medioTurno)} en el ${n2.nombre} y ${entero(n3.ejemplos.medioTurno)} en ${n3.nombre}; una de tiempo completo con 192 horas gana ${entero(n1.ejemplos.tiempoCompleto)}, ${entero(n2.ejemplos.tiempoCompleto)} y ${entero(n3.ejemplos.tiempoCompleto)}. Más horas trabajadas en el mes, más bono.`, { tam: 8, color: BRAND.ink });
+  } else {
+    parrafo(c, "El colchón es lo que queda del pozo después de pagar los bonos de ese nivel.", { tam: 7.8, italica: true, color: BRAND.gray });
+  }
 }
 
 function columnasDia(s: SedeReporte): { head: string[]; fila: (d: FilaDia) => string[]; pie: string[] } {

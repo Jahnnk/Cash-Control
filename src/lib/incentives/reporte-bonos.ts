@@ -12,7 +12,8 @@
  * dos formatos dicen exactamente lo mismo y los dibujantes quedan "tontos".
  */
 
-import { dailyPresencial, bonoDeColaborador, type IncentiveLevel } from "./engine";
+import { dailyPresencial, type IncentiveLevel } from "./engine";
+import { desgloseDeNivel, ejemplosDeBono, type DesgloseNivel } from "./desglose-nivel";
 import type { GroupIncentives, SedeIncentives } from "@/app/actions/group-incentives";
 import type { PagoColaborador, PagoSede, PagosDelMes } from "./reporte-bonos-tipos";
 import type { EstadoCandadoVentas } from "./candado-ventas";
@@ -56,6 +57,10 @@ export type FilaNivel = {
   seReparte: number;
   /** El premio al mejor vendedor en este nivel. */
   premioMv: number;
+  /** Cómo se llega a "se reparte": valor por hora, horas del equipo, bonos, administración y premio. null sin pago calculado. */
+  desglose: DesgloseNivel | null;
+  /** Lo que gana un medio turno de 94 h y un tiempo completo de 192 h en este nivel. */
+  ejemplos: { medioTurno: number; tiempoCompleto: number };
   /** El pozo no cubriría esto (alerta): colchón negativo. */
   colchon: number | null;
   alcanzado: boolean;
@@ -123,18 +128,7 @@ const solesEnteros = (n: number) => `S/${n.toLocaleString("es-PE", { maximumFrac
 
 /** Lo que se reparte si se alcanzara un nivel, con las horas reales del equipo. */
 export function seRepartePorNivel(lines: PagoColaborador[], level: IncentiveLevel, month: string): number {
-  const bonos = lines.reduce((t, l) => {
-    const horas = l.horasMes;
-    return t + bonoDeColaborador(
-      {
-        name: l.name, jornada: l.jornada, area: "", active: true,
-        horasMesTrabajadas: horas,
-      },
-      level,
-      month,
-    );
-  }, 0);
-  return r2(bonos + level.premio_mv);
+  return desgloseDeNivel(lines, level, month).total;
 }
 
 function filasDelDia(s: SedeIncentives, metaTicket1: number | null, metaVentas: number | null): FilaDia[] {
@@ -271,6 +265,8 @@ export function armarReporte(
       // Con las horas reales de Planilla cuando hay pagos; si no, lo que calculó el panel.
       seReparte: pago ? seRepartePorNivel(pago.lines, n.level, data.month) : n.sumaBonos,
       premioMv: n.level.premio_mv,
+      desglose: pago ? desgloseDeNivel(pago.lines, n.level, data.month) : null,
+      ejemplos: ejemplosDeBono(n.level),
       colchon: n.colchon,
       alcanzado: p?.nivelAlcanzado?.nombre === n.level.nombre,
     }));

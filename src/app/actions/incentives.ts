@@ -18,6 +18,8 @@ import { resumirSupervisionMes, situacionObservacion, type ResumenSupervisionMes
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { refrescarRosterSiHaceFalta } from "./roster-sync";
+import { equipoDelBono } from "@/lib/incentives/equipo-del-bono";
+import { resolverHorasDelMes } from "@/lib/incentives/horas-trabajadas";
 import { getTodosLosDiasPausados } from "./dias-no-operativos";
 import {
   indicePausados, sinDiasPausados, diasOperativosDelMes,
@@ -81,7 +83,7 @@ export type DashboardDaily = {
 export type IncentiveDashboard = {
   month: string;
   config: IncentiveConfigT & { levelNames: string[] };
-  staff: { name: string; jornada: string; area: string }[];
+  staff: { name: string; jornada: string; area: string; horasMes: number | null }[];
   dailies: DashboardDaily[];
   /** Segunda firma del conteo por día (verificador de mando medio). */
   verifications: Record<string, { status: "confirmado" | "observado"; nota: string | null }>;
@@ -144,10 +146,19 @@ export async function getIncentiveDashboard(
       requiereSupervision: cfg.requiere_supervision === true,
     };
 
-    const staff = (await sql`
-      SELECT name, jornada, area, horas_semanales::float AS "horasSemanales"
-        FROM staff WHERE business_id = ${bId} AND active = true ORDER BY jornada, name
-    `) as { name: string; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
+    // El equipo que entraría al bono este mes, con las horas de Planilla: la
+    // MISMA definición que usa la liquidación, para que lo que ve el administrador
+    // sea lo que se paga. Si Planilla no responde, se cae a las horas de contrato.
+    const equipo = await equipoDelBono(sql as never, bId, month);
+    const horasPlanilla = new Map((equipo.deLaPlanilla ?? []).map((p) => [p.dni, p.horas]));
+    const resueltoHoras = resolverHorasDelMes(
+      equipo.staff.map((s) => ({ ...s, active: true })),
+      horasPlanilla,
+    );
+    const staff = resueltoHoras.staff.map((s) => ({
+      name: s.name, jornada: s.jornada, area: s.area, horasSemanales: s.horasSemanales,
+      horasMesTrabajadas: s.horasMesTrabajadas, horasMes: s.horasMesTrabajadas,
+    }));
 
     const [y, m] = month.split("-").map(Number);
     const daysInMonth = new Date(y, m, 0).getDate();
@@ -239,7 +250,7 @@ export async function getIncentiveDashboard(
     ]);
     const progress = computeProgress(
       config,
-      staff.map((s) => ({ ...s, active: true })),
+      staff.map((s) => ({ ...s, active: true })) as StaffMember[],
       diasQueCuentan,
       diasOperativos,
       candadoVentas,
@@ -311,7 +322,7 @@ export async function getIncentiveDashboard(
       data: {
         month,
         config: { ...config, levelNames: config.levels.map((l) => l.nombre) },
-        staff,
+        staff: staff.map((s) => ({ name: s.name, jornada: s.jornada, area: s.area, horasMes: s.horasMes ?? (s.horasSemanales ? s.horasSemanales * 4 : null) })),
         dailies,
         verifications,
         progress,

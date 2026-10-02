@@ -193,21 +193,30 @@ function hojaPagos(wb: ExcelJS.Workbook, r: ReporteBonos) {
 
 function hojaMetas(wb: ExcelJS.Workbook, r: ReporteBonos) {
   const ws = wb.addWorksheet("Metas", { views: [{ showGridLines: false }] });
-  ws.columns = [{ width: 24 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }];
-  titulo(ws, "Metas del programa", `${r.periodoLabel}`, "#004C40", 7);
+  ws.columns = [{ width: 24 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 18 }, { width: 22 }, { width: 18 }, { width: 14 }];
+  titulo(ws, "Metas del programa", `${r.periodoLabel}`, "#004C40", 9);
 
   for (const s of r.sedes) {
     ws.addRow([]);
     const t = ws.addRow([`${s.sede} · meta de ticket (tres niveles)`]);
     t.getCell(1).font = { bold: true, size: 12, color: { argb: argb(s.color) } };
-    encabezado(ws.addRow(["Nivel", "Ticket meta", "Aumento sobre la base", "Se reparte", "Premio mejor vendedor", "Colchón vs. pozo", "¿Alcanzado?"]), s.color);
-    const base = ws.addRow(["Base (punto de partida)", s.ticket.base, "", "", "", "", ""]);
+    encabezado(ws.addRow(["Nivel", "Ticket meta", "Valor por hora", "Horas del equipo", "Bonos por horas", "Administración", "Premio mejor vendedor", "TOTAL a repartir", "¿Alcanzado?"]), s.color);
+    const base = ws.addRow(["Base (punto de partida)", s.ticket.base, "", "", "", "", "", "", ""]);
     base.getCell(2).numFmt = SOLES;
     for (const n of s.ticket.niveles) {
-      const row = ws.addRow([n.nombre, n.metaTicket, n.delta, n.seReparte, n.premioMv, n.colchon ?? "", n.alcanzado ? "Sí" : ""]);
-      for (const c of [2, 3, 6]) row.getCell(c).numFmt = SOLES;
-      for (const c of [4, 5]) row.getCell(c).numFmt = SOLES0;
+      const d = n.desglose;
+      const row = ws.addRow([n.nombre, n.metaTicket, d?.valorHora ?? "", d?.horasEquipo ?? "", d?.bonosPorHoras ?? "", d?.administracion ?? "", n.premioMv, n.seReparte, n.alcanzado ? "Sí" : ""]);
+      row.getCell(2).numFmt = SOLES;
+      row.getCell(3).numFmt = '"S/ "0.0000';
+      row.getCell(4).numFmt = "0.00";
+      for (const c of [5, 6, 7, 8]) row.getCell(c).numFmt = SOLES0;
       if (n.alcanzado) row.eachCell((c) => { c.fill = relleno(s.colorSuave); c.font = { bold: true }; });
+    }
+    const n1 = s.ticket.niveles[0];
+    if (n1?.desglose) {
+      const ej = s.ticket.niveles.map((n) => `${n.nombre}: medio turno de 94 h ${n.ejemplos.medioTurno}, tiempo completo de 192 h ${n.ejemplos.tiempoCompleto}`).join(" · ");
+      ws.addRow([`Cómo se calcula: TOTAL = bonos por horas (horas del mes de cada persona × valor por hora, ${n1.desglose.personasPorHoras} personas) + administración (monto fijo por puesto) + premio (monto fijo, una persona). Ejemplos en soles: ${ej}.`])
+        .getCell(1).font = { italic: true, size: 9, color: { argb: "FF6B7280" } };
     }
   }
 

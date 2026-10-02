@@ -25,6 +25,12 @@ describe("elegibilidadDelMes (septiembre 2026)", () => {
     expect(r.excluidos.get("Ghyan")).toMatchObject({ origen: "automatico", motivo: "ingresó el 30/09 y está en periodo de prueba" });
   });
 
+  it("el puesto de administración no se excluye por prueba: el bono de administración es por puesto", () => {
+    const r2 = elegibilidadDelMes([{ ...p("Sol", "activo", "2026-09-15"), esAdministrador: true }, p("Ghyan", "activo", "2026-09-30")], "2026-09");
+    expect(r2.excluidos.has("Sol")).toBe(false);
+    expect(r2.excluidos.has("Ghyan")).toBe(true);
+  });
+
   it("quien ingresó justo el día 1 hizo el mes completo; sin fecha de ingreso no se excluye", () => {
     expect(r.excluidos.has("Piero")).toBe(false);
     expect(r.excluidos.has("SinFecha")).toBe(false);
