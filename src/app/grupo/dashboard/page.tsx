@@ -9,11 +9,17 @@ import { GrupoDashboardClient } from "./grupo-dashboard-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function GrupoDashboardPage() {
-  const data = await getGroupDashboard();
+export default async function GrupoDashboardPage({ searchParams }: { searchParams: Promise<{ mes?: string }> }) {
+  // ?mes=2026-09 → cómo nos fue ese mes. Sin parámetro: el mes en curso.
+  const { mes: pedido } = await searchParams;
+  // El mes en curso según Lima (getGroupDashboard usa UTC y a las 7 pm del
+  // último día del mes ya diría "el mes siguiente"). Un mes futuro no existe.
+  const mesActual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+  const mes = pedido && /^\d{4}-(0[1-9]|1[0-2])$/.test(pedido) && pedido <= mesActual ? pedido : mesActual;
+  const data = await getGroupDashboard(mes);
   const [be, ventas, kellyLoads, atelierB2B, frescura, liquidez, cuadre] = await Promise.all([
     getGroupBreakeven(data.selectedMonth),
-    getGroupVentasComparison(),
+    getGroupVentasComparison(data.selectedMonth),
     getKellyLoadStatus(),
     getAtelierB2BResumen(),
     getFrescuraGrupo(),
@@ -23,7 +29,8 @@ export default async function GrupoDashboardPage() {
   return (
     <GrupoDashboardClient
       selectedMonth={data.selectedMonth}
-      isCurrentMonth={data.isCurrentMonth}
+      mesActual={mesActual}
+      isCurrentMonth={data.selectedMonth === mesActual}
       summaries={data.summaries}
       totals={data.totals}
       breakeven={be.ok ? be.data : null}

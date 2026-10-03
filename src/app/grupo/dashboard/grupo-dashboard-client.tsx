@@ -17,6 +17,7 @@ import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { CargasKelly, SubirExcelKelly } from "./cargas-kelly";
 import { SelloClasificacionGrupo } from "@/components/sello-clasificacion";
 import { InformeGastosGrupo } from "./informe-gastos";
+import { SelectorMes } from "./selector-mes";
 import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
 import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import { fechaLarga } from "@/lib/frescura-datos";
@@ -63,6 +64,8 @@ const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "
 
 type Props = {
   selectedMonth: string;
+  /** El mes en curso (para el selector y para saber qué es "hoy"). */
+  mesActual: string;
   isCurrentMonth: boolean;
   summaries: BusinessSummary[];
   totals: { bankBalance: number; monthlyIncome: number; monthlyExpenses: number; margin: number };
@@ -77,7 +80,7 @@ type Props = {
 };
 
 export function GrupoDashboardClient({
-  selectedMonth, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas, kellyLoads,
+  selectedMonth, mesActual, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas, kellyLoads,
   atelierB2B, cuadreKelly,
 }: Props) {
   const [pestana, setPestana] = useState<"resumen" | "equipo" | "finanzas" | "gastos" | "kelly">("resumen");
@@ -85,14 +88,18 @@ export function GrupoDashboardClient({
   const [y, m] = selectedMonth.split("-").map(Number);
   const periodo = `${MESES[m - 1]} ${y}`;
 
-  const byId = new Map((ventas ?? []).map((v) => [v.businessId, v]));
+  // Solo cuentan las sedes con ventas DEL MES elegido: una sede cuyo último
+  // dato es del mes anterior (Atelier a inicios de mes) no aporta su venta
+  // vieja bajo el nombre del mes nuevo.
+  const ventasDelMes = (ventas ?? []).filter((v) => v.hasta?.slice(0, 7) === selectedMonth);
+  const byId = new Map(ventasDelMes.map((v) => [v.businessId, v]));
   const beById = new Map((breakeven?.sedes ?? []).map((s) => [s.businessId, s.result]));
 
   // ── Hero: la venta del grupo y su tendencia agregada por día ──
-  const ventasMes = (ventas ?? []).reduce((s, v) => s + v.mes, 0);
-  const largo = Math.max(0, ...(ventas ?? []).map((v) => v.serie14.length));
+  const ventasMes = ventasDelMes.reduce((s, v) => s + v.mes, 0);
+  const largo = Math.max(0, ...ventasDelMes.map((v) => v.serie14.length));
   const serieGrupo = Array.from({ length: largo }, (_, i) =>
-    (ventas ?? []).reduce((s, v) => {
+    ventasDelMes.reduce((s, v) => {
       // Alinear por el FINAL: el último punto de cada sede es su último día.
       const off = largo - v.serie14.length;
       return s + (i >= off ? v.serie14[i - off] : 0);
@@ -100,8 +107,8 @@ export function GrupoDashboardClient({
   );
   // Δ del grupo: suma de los tramos emparejados de cada sede (no un
   // promedio de porcentajes, que pesaría igual a una sede chica).
-  const cmpCur = (ventas ?? []).reduce((s, v) => s + (v.mesCmp?.sameDay.current ?? 0), 0);
-  const cmpPrev = (ventas ?? []).reduce((s, v) => s + (v.mesCmp?.sameDay.previous ?? 0), 0);
+  const cmpCur = ventasDelMes.reduce((s, v) => s + (v.mesCmp?.sameDay.current ?? 0), 0);
+  const cmpPrev = ventasDelMes.reduce((s, v) => s + (v.mesCmp?.sameDay.previous ?? 0), 0);
   const deltaGrupo = cmpPrev > 0 ? Math.round(((cmpCur - cmpPrev) / cmpPrev) * 1000) / 10 : null;
 
   const hero: HeroStats = {
@@ -127,6 +134,7 @@ export function GrupoDashboardClient({
     equilibrioPct: breakeven?.grupo.avancePct ?? null,
     serie: serieGrupo,
     periodo,
+    mesCerrado: !isCurrentMonth,
   };
 
   // ── Sedes ordenadas por desempeño (mejor arriba) ──
@@ -147,7 +155,8 @@ export function GrupoDashboardClient({
         businessId: s.businessId,
         code: SEDE_CODE[s.businessId] ?? "grupo",
         nombre: s.name.replace("Yayi's ", ""),
-        ventasMes: v?.mes ?? s.monthlyIncome,
+        // Sin ventas cargadas de este mes: 0, no los ingresos (son otra cosa).
+        ventasMes: v?.mes ?? (ventas ? 0 : s.monthlyIncome),
         deltaPct: v?.mesCmp?.sameDay.pct ?? null,
         diasComparados: v?.mesCmp?.sameDay.daysCompared ?? 0,
         coberturaBaja: v?.mesCmp?.lowCoverage ?? false,
@@ -159,7 +168,8 @@ export function GrupoDashboardClient({
         excelKelly: excelDe(s.businessId),
         equilibrioPct: be?.avancePct ?? null,
         serie: v?.serie14 ?? [],
-        hasta: v?.hasta ?? null,
+        // "Al día hasta…" solo vale para el mes en curso.
+        hasta: isCurrentMonth ? v?.hasta ?? null : null,
         flag: null,
       };
     })
@@ -214,7 +224,8 @@ export function GrupoDashboardClient({
           <p className="text-sm text-gray-500 mt-1">{isCurrentMonth ? "Mes en curso" : "Mes cerrado"} · {periodo}</p>
         </div>
         <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
-          {frescura && (
+          <SelectorMes mes={selectedMonth} mesActual={mesActual} />
+          {isCurrentMonth && frescura && (
             <button
               type="button"
               onClick={() => setPestana("kelly")}
@@ -259,26 +270,35 @@ export function GrupoDashboardClient({
           {/* Solo si hay algo que pedirle a Kelly: con todo al día basta la
               pastilla verde de la cabecera (un aviso que aparece siempre deja
               de leerse). */}
-          {frescura && !alDia && <BandaFrescura frescura={frescura} />}
+          {isCurrentMonth && frescura && !alDia && <BandaFrescura frescura={frescura} />}
+
+          {/* Un mes anterior se mira para saber cómo nos fue: lo que solo vale
+              hoy (saldos, acciones, cobranza) lo dice o no se muestra. */}
+          {!isCurrentMonth && (
+            <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
+              Estás viendo <strong>{periodo}</strong>, un mes cerrado. Ventas, ingresos, gastos y punto de equilibrio son de ese mes;
+              los saldos de liquidez son los de hoy (el saldo al cierre de cada mes no se guarda).
+            </div>
+          )}
 
           {/* ¿Cómo estamos?  ·  ¿Qué debo hacer hoy? */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-            <div className="lg:col-span-2 min-w-0">
+            <div className={`${isCurrentMonth ? "lg:col-span-2" : "lg:col-span-3"} min-w-0`}>
               <ExecutiveHero s={hero} />
             </div>
-            <TodayActionsCard actions={actions} />
+            {isCurrentMonth && <TodayActionsCard actions={actions} />}
           </div>
 
           {/* ¿Qué sede preocupa, cuál va mejor? — ordenadas por desempeño */}
           <section className="space-y-3">
-            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Las sedes este mes</h2>
+            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{isCurrentMonth ? "Las sedes este mes" : `Las sedes en ${periodo}`}</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {pulses.map((p) => <SedePulseCard key={p.businessId} s={p} />)}
             </div>
           </section>
 
-          {/* Atelier B2B — tres números para decidir */}
-          <AtelierB2BCard resumen={atelierB2B} />
+          {/* Atelier B2B — lo que se debe HOY: no tiene versión por mes. */}
+          {isCurrentMonth && <AtelierB2BCard resumen={atelierB2B} />}
         </div>
       )}
 
@@ -291,7 +311,7 @@ export function GrupoDashboardClient({
         </div>
       )}
 
-      {pestana === "gastos" && <InformeGastosGrupo />}
+      {pestana === "gastos" && <InformeGastosGrupo mes={isCurrentMonth ? undefined : selectedMonth} />}
 
       {pestana === "finanzas" && (
         <div className="space-y-6">
@@ -338,7 +358,7 @@ export function GrupoDashboardClient({
                     </Link>
                   ),
                 },
-                { key: "bankBalance", header: "Saldo BCP", align: "right", render: (r) => formatCurrency(r.bankBalance) },
+                { key: "bankBalance", header: isCurrentMonth ? "Saldo BCP" : "Saldo BCP (hoy)", align: "right", render: (r) => formatCurrency(r.bankBalance) },
                 { key: "monthlyIncome", header: "Ingresos mes", align: "right", cellClassName: "text-primary-light", render: (r) => formatCurrency(r.monthlyIncome) },
                 { key: "monthlyExpenses", header: "Gastos mes", align: "right", cellClassName: "text-red-600", render: (r) => formatCurrency(r.monthlyExpenses) },
                 {
