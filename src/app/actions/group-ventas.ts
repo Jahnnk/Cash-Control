@@ -47,7 +47,13 @@ function shiftDays(date: string, days: number): string {
   return d.toISOString().slice(0, 10);
 }
 
-export async function getGroupVentasComparison(): Promise<
+/**
+ * `mes` (YYYY-MM): ver un mes anterior. Se corta el cálculo al último día de
+ * ese mes, así "mes" es lo vendido en él y el comparativo vs el mes previo
+ * sigue emparejando los mismos días (28-sep-2026, pedido de Jahnn: ver cómo
+ * nos fue en setiembre, agosto…).
+ */
+export async function getGroupVentasComparison(mes?: string): Promise<
   | { ok: true; sedes: GroupVentasSede[] }
   | { ok: false; error: string }
 > {
@@ -55,7 +61,12 @@ export async function getGroupVentasComparison(): Promise<
     return { ok: false, error: "Solo para la dirección." };
   }
   try {
-    const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+    const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+    let today = hoy;
+    if (mes && /^\d{4}-(0[1-9]|1[0-2])$/.test(mes) && mes < hoy.slice(0, 7)) {
+      const [yy, mm] = mes.split("-").map(Number);
+      today = new Date(Date.UTC(yy, mm, 0)).toISOString().slice(0, 10);
+    }
     // 100 días cubren el mes anterior COMPLETO (para el emparejamiento
     // día a día) más la semana previa a la última semana con datos.
     const from = shiftDays(today, -100);

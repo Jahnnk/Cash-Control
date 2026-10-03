@@ -220,15 +220,16 @@ function DetalleSede({ s }: { s: InformeGastosSede }) {
   );
 }
 
-export function InformeGastosGrupo() {
+/** `mes`: un mes elegido en el selector del dashboard; sin él, el último mes cerrado. */
+export function InformeGastosGrupo({ mes }: { mes?: string }) {
   const [data, setData] = useState<InformeGastos | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
-    void getInformeGastos().then((r) => { if (!vivo) return; if (r.ok) setData(r.data); else setError(r.error); });
+    void getInformeGastos(mes).then((r) => { if (!vivo) return; if (r.ok) setData(r.data); else setError(r.error); });
     return () => { vivo = false; };
-  }, []);
+  }, [mes]);
 
   if (error) return <p className="text-sm text-gray-500">{error}</p>;
   if (!data) return <div className="flex justify-center py-12 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>;

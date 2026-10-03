@@ -32,6 +32,8 @@ export type HeroStats = {
   /** Serie de venta diaria del grupo (últimos días con datos). */
   serie: number[];
   periodo: string;
+  /** Un mes anterior: la liquidez es la de HOY (el saldo al cierre no se guarda). */
+  mesCerrado?: boolean;
 };
 
 export function Delta({ pct, className = "" }: { pct: number | null; className?: string }) {
@@ -69,7 +71,7 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
         {/* El número que manda */}
         <div className="min-w-0">
           <div className="text-[10px] font-medium uppercase tracking-[0.12em] text-gray-400">
-            Liquidez del grupo · {s.periodo}
+            Liquidez del grupo · {s.mesCerrado ? "hoy" : s.periodo}
           </div>
           <div className="mt-2 text-[2.25rem] sm:text-[2.75rem] xl:text-[3.25rem] font-semibold text-gray-900 tabular-nums tracking-[-0.035em] leading-none">
             {formatCurrency(s.liquidez)}
