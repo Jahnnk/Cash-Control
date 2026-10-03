@@ -140,11 +140,11 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
           </div>
         )}
         <div className="flex items-baseline justify-between text-[11px] pt-1">
-          <span className="text-gray-400">Ingresos del mes</span>
+          <span className="text-gray-400">Entró a caja</span>
           <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.ingresosMes)}</span>
         </div>
         <div className="flex items-baseline justify-between text-[11px]">
-          <span className="text-gray-400">Gastos del mes</span>
+          <span className="text-gray-400">Salió de caja</span>
           <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.gastosMes)}</span>
         </div>
         {s.deudaAhorro > 0 && (
