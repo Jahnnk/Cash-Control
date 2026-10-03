@@ -21,7 +21,9 @@ import { SelectorMes } from "./selector-mes";
 import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
 import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import { fechaLarga } from "@/lib/frescura-datos";
-import { ExecutiveHero, type HeroStats } from "./executive-hero";
+import type { HeroStats } from "./executive-hero";
+import { SeisCifrasPanel } from "./seis-cifras-panel";
+import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SedePulseCard, type SedePulse } from "./sede-pulse-card";
 import { TodayActionsCard } from "./today-actions-card";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
@@ -77,11 +79,13 @@ type Props = {
   atelierB2B: AtelierB2BResumen;
   /** Verificación automática contra el Excel de Kelly; null si falló. */
   cuadreKelly: VerificacionSedeMes[] | null;
+  /** Las seis cifras del mes (ventas, costos, gastos, caja, margen, ganancia real); null si falló. */
+  cifras: SeisCifras | null;
 };
 
 export function GrupoDashboardClient({
   selectedMonth, mesActual, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas, kellyLoads,
-  atelierB2B, cuadreKelly,
+  atelierB2B, cuadreKelly, cifras,
 }: Props) {
   const [pestana, setPestana] = useState<"resumen" | "equipo" | "finanzas" | "gastos" | "kelly">("resumen");
 
@@ -276,7 +280,7 @@ export function GrupoDashboardClient({
               hoy (saldos, acciones, cobranza) lo dice o no se muestra. */}
           {!isCurrentMonth && (
             <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
-              Estás viendo <strong>{periodo}</strong>, un mes cerrado. Ventas, ingresos, gastos y punto de equilibrio son de ese mes;
+              Estás viendo <strong>{periodo}</strong>, un mes cerrado. Ventas, costos, gastos, caja, margen, ganancia y punto de equilibrio son de ese mes;
               los saldos de liquidez son los de hoy (el saldo al cierre de cada mes no se guarda).
             </div>
           )}
@@ -284,7 +288,18 @@ export function GrupoDashboardClient({
           {/* ¿Cómo estamos?  ·  ¿Qué debo hacer hoy? */}
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
             <div className={`${isCurrentMonth ? "lg:col-span-2" : "lg:col-span-3"} min-w-0`}>
-              <ExecutiveHero s={hero} />
+              <SeisCifrasPanel
+                cifras={cifras}
+                periodo={periodo}
+                apoyo={{
+                  serie: hero.serie,
+                  ventasDeltaPct: hero.ventasDeltaPct,
+                  liquidez: hero.liquidez,
+                  liquidezSedes: hero.liquidezSedes.map((x) => ({ businessId: x.businessId, nombre: x.nombre, total: x.total })),
+                  equilibrioPct: hero.equilibrioPct,
+                  mesCerrado: !isCurrentMonth,
+                }}
+              />
             </div>
             {isCurrentMonth && <TodayActionsCard actions={actions} />}
           </div>
@@ -345,7 +360,7 @@ export function GrupoDashboardClient({
           )}
 
           <section className="space-y-3">
-            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Caja, ingresos y gastos del mes</h2>
+            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Caja del mes: lo que entró y salió</h2>
             <DataTable
               rowKey={(r) => r.code}
               data={summaries}
@@ -359,10 +374,10 @@ export function GrupoDashboardClient({
                   ),
                 },
                 { key: "bankBalance", header: isCurrentMonth ? "Saldo BCP" : "Saldo BCP (hoy)", align: "right", render: (r) => formatCurrency(r.bankBalance) },
-                { key: "monthlyIncome", header: "Ingresos mes", align: "right", cellClassName: "text-primary-light", render: (r) => formatCurrency(r.monthlyIncome) },
-                { key: "monthlyExpenses", header: "Gastos mes", align: "right", cellClassName: "text-red-600", render: (r) => formatCurrency(r.monthlyExpenses) },
+                { key: "monthlyIncome", header: "Entró (caja)", align: "right", cellClassName: "text-primary-light", render: (r) => formatCurrency(r.monthlyIncome) },
+                { key: "monthlyExpenses", header: "Salió (caja)", align: "right", cellClassName: "text-red-600", render: (r) => formatCurrency(r.monthlyExpenses) },
                 {
-                  key: "margin", header: "Margen", align: "right",
+                  key: "margin", header: "Flujo (caja)", align: "right",
                   render: (r) => (
                     <span className={`font-semibold ${r.margin >= 0 ? "text-primary-light" : "text-red-600"}`}>
                       {formatCurrency(r.margin)}

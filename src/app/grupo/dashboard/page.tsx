@@ -5,6 +5,7 @@ import { getGroupVentasComparison } from "@/app/actions/group-ventas";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
 import { getAtelierB2BResumen } from "@/app/actions/atelier-b2b";
 import { getVerificacionKelly } from "@/app/actions/verificacion-kelly";
+import { getSeisCifras } from "@/app/actions/seis-cifras";
 import { GrupoDashboardClient } from "./grupo-dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -17,7 +18,7 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
   const mesActual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
   const mes = pedido && /^\d{4}-(0[1-9]|1[0-2])$/.test(pedido) && pedido <= mesActual ? pedido : mesActual;
   const data = await getGroupDashboard(mes);
-  const [be, ventas, kellyLoads, atelierB2B, frescura, liquidez, cuadre] = await Promise.all([
+  const [be, ventas, kellyLoads, atelierB2B, frescura, liquidez, cuadre, cifras] = await Promise.all([
     getGroupBreakeven(data.selectedMonth),
     getGroupVentasComparison(data.selectedMonth),
     getKellyLoadStatus(),
@@ -25,6 +26,7 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
     getFrescuraGrupo(),
     getLiquidezGrupo(),
     getVerificacionKelly(),
+    getSeisCifras(data.selectedMonth),
   ]);
   return (
     <GrupoDashboardClient
@@ -40,6 +42,7 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
       kellyLoads={kellyLoads}
       atelierB2B={atelierB2B}
       cuadreKelly={cuadre.ok ? cuadre.items : null}
+      cifras={cifras.ok ? cifras.data : null}
     />
   );
 }
