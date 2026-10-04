@@ -29,6 +29,7 @@ import {
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { coberturaDeRangos, type Cobertura } from "@/lib/productos/cobertura-datos";
+import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -361,7 +362,11 @@ export async function getTrimestreSede(hastaMes: string): Promise<Res<{ data: Tr
  * quién los subió. La grilla y el aviso de "qué hará este archivo" salen de
  * acá (ver lib/productos/cobertura-rotacion.ts).
  */
-export async function getCoberturaRotacion(meses = 6): Promise<Res<{ hoy: string; meses: string[]; periodos: PeriodoCargado[] }>> {
+export async function getCoberturaRotacion(meses = 6): Promise<Res<{
+  hoy: string; meses: string[]; periodos: PeriodoCargado[];
+  /** Reporte de ventas de dirección por sede y mes, y la foto de menor rotación de cada sede (para saber cuál de los 3 reportes falta). */
+  ventas: VentasDelMes[]; menor: { businessId: number; desde: string; hasta: string }[];
+}>> {
   const role = await getSessionRole();
   if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
@@ -376,10 +381,19 @@ export async function getCoberturaRotacion(meses = 6): Promise<Res<{ hoy: string
       GROUP BY 1, 2, 3, 4, 5
       ORDER BY 1, 2, 4
     `) as unknown as { business_id: number; month: string; origen: string; desde: string; hasta: string; ventas: number; cargado: string | null }[];
+    const [ventas, menor] = await Promise.all([
+      (sql`
+        SELECT business_id, to_char(date, 'YYYY-MM') AS month, MIN(date)::text AS desde, MAX(date)::text AS hasta, COUNT(*)::int AS dias
+        FROM byte_ventas_direccion WHERE business_id IN (1, 2, 3) GROUP BY 1, 2
+      ` as unknown as Promise<{ business_id: number; month: string; desde: string; hasta: string; dias: number }[]>).catch(() => []),
+      (sql`SELECT business_id, desde::text AS desde, hasta::text AS hasta FROM productos_menor_rotacion GROUP BY 1, 2, 3` as unknown as Promise<{ business_id: number; desde: string; hasta: string }[]>).catch(() => []),
+    ]);
     return {
       ok: true,
       hoy,
       meses: lista,
+      ventas: ventas.map((v) => ({ businessId: v.business_id, month: v.month, desde: v.desde, hasta: v.hasta, dias: v.dias })),
+      menor: menor.map((m) => ({ businessId: m.business_id, desde: m.desde, hasta: m.hasta })),
       periodos: filas.map((f) => ({
         businessId: f.business_id, month: f.month, origen: f.origen === "direccion" ? "direccion" : "sede",
         desde: f.desde, hasta: f.hasta, ventas: Math.round(f.ventas * 100) / 100, cargadoEl: f.cargado,
