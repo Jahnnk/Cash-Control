@@ -51,7 +51,8 @@ import { tipoDeCategoria } from "./reglas-gasto";
 
 export type FilaCifras = { categoria: string; /** La parte de la sede (en un compartido, sin la de otras). */ propio: number; /** Lo que salió. */ monto: number };
 
-export type FueraDeLaGanancia = { deudas: number; inversion: number; noEsGasto: number; otrasSedes: number };
+/** `ahorro` y `reparto` son partes de `noEsGasto` (fondos mutuos; utilidades a socios): se muestran aparte en Caja. */
+export type FueraDeLaGanancia = { deudas: number; inversion: number; noEsGasto: number; otrasSedes: number; ahorro: number; reparto: number };
 
 export type CifrasSede = {
   businessId: number;
@@ -125,9 +126,13 @@ export function cifrasDeSede(input: {
   const porGastos = new Map<string, number>();
   let otrasSedes = 0;
   let compraAtelier = 0;
+  let ahorro = 0;
+  let reparto = 0;
   for (const f of input.filas) {
     const rubro = rubroDe(f.categoria);
     sumas[rubro] += f.propio;
+    if (f.categoria === "AHORRO") ahorro += f.propio;
+    if (f.categoria === "UTILIDADES A SOCIOS") reparto += f.propio;
     otrasSedes += f.monto - f.propio;
     if (rubro === "costos") porCostos.set(f.categoria, (porCostos.get(f.categoria) ?? 0) + f.propio);
     if (rubro === "gastos") porGastos.set(f.categoria, (porGastos.get(f.categoria) ?? 0) + f.propio);
@@ -154,7 +159,7 @@ export function cifrasDeSede(input: {
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / ventas!) * 100) : null,
     caja: { entro: r2(input.caja.entro), salio: r2(input.caja.salio), flujo: r2(input.caja.entro - input.caja.salio) },
-    fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes) },
+    fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto) },
     compraAtelier: r2(compraAtelier),
     topCostos: top(porCostos), topGastos: top(porGastos),
   };
@@ -211,6 +216,7 @@ export function cifrasDelGrupo(sedes: CifrasSede[]): CifrasGrupo {
     fuera: {
       deudas: r2(sum((s) => s.fuera.deudas)), inversion: r2(sum((s) => s.fuera.inversion)),
       noEsGasto: r2(sum((s) => s.fuera.noEsGasto)), otrasSedes: r2(sum((s) => s.fuera.otrasSedes)),
+      ahorro: r2(sum((s) => s.fuera.ahorro)), reparto: r2(sum((s) => s.fuera.reparto)),
     },
     ventasInternas: r2(internoVentas),
     provisional: conResultado.some((s) => !s.mesCompleto),
