@@ -114,9 +114,11 @@ export async function importMenorRotacion(bId: number, input: { desde: string; h
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.desde) || !/^\d{4}-\d{2}-\d{2}$/.test(input.hasta)) return { ok: false, error: "Rango inválido." };
   if (!Array.isArray(input.productos) || input.productos.length === 0 || input.productos.length > 3000) return { ok: false, error: "El archivo no trae productos." };
   try {
-    // La lista es una foto: la nueva reemplaza a la anterior de la sede.
+    // Cada rango es su propia lista: abril, mayo, junio… se guardan juntas. La nueva solo
+    // reemplaza las listas de la sede que su rango ya cubre (la de abril al re-subir abril;
+    // las semanales «del 01 a ayer»; o todas las mensuales si sube un solo rango de seis meses).
     await sql.transaction([
-      sql`DELETE FROM productos_menor_rotacion WHERE business_id = ${bId}`,
+      sql`DELETE FROM productos_menor_rotacion WHERE business_id = ${bId} AND desde >= ${input.desde} AND hasta <= ${input.hasta}`,
       ...input.productos.map((p) => sql`
         INSERT INTO productos_menor_rotacion (business_id, desde, hasta, producto, tipo_byte, stock, vendido, ultima_venta, nunca_vendido, precio, file_name)
         VALUES (${bId}, ${input.desde}, ${input.hasta}, ${p.producto.slice(0, 200)}, ${p.tipoByte?.slice(0, 80) ?? null}, ${p.stock},
@@ -144,7 +146,10 @@ export type SinVentaSede = {
   noCarta: number;
 };
 
-/** "Productos que no se venden", por sede, de la última lista de menor rotación que subió dirección. */
+/**
+ * "Productos que no se venden", por sede, de la lista de menor rotación más reciente que subió
+ * dirección (la que llega a la fecha más nueva; si hay dos, la de rango más largo).
+ */
 export async function getProductosSinVenta(): Promise<Res<{ sedes: SinVentaSede[] }>> {
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
   try {
@@ -156,8 +161,11 @@ export async function getProductosSinVenta(): Promise<Res<{ sedes: SinVentaSede[
     const nombres: Record<number, string> = { 1: "Atelier", 2: "Fonavi", 3: "Centro" };
     const sedes: SinVentaSede[] = [];
     for (const bId of [2, 3, 1]) {
-      const fs = rows.filter((r) => r.business_id === bId);
-      if (fs.length === 0) continue;
+      const todas = rows.filter((r) => r.business_id === bId);
+      if (todas.length === 0) continue;
+      // Una sede puede tener varias listas (una por mes): se muestra la más reciente.
+      const elegida = todas.reduce((m, r) => (r.hasta > m.hasta || (r.hasta === m.hasta && r.desde < m.desde) ? r : m));
+      const fs = todas.filter((r) => r.desde === elegida.desde && r.hasta === elegida.hasta);
       const productos = fs.map((r) => ({
         producto: r.producto, tipoByte: r.tipo_byte, stock: r.stock, vendido: r.vendido, ultimaVenta: r.ultima_venta,
         nuncaVendido: r.nunca_vendido, precio: r.precio,
