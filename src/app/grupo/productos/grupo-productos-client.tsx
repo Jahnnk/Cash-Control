@@ -18,6 +18,7 @@ import { CandidatosReemplazo } from "./candidatos-reemplazo";
 import { RankingPorCategoria, ReglaOchentaVeinte } from "./categorias-y-pareto";
 import { ProductosSinVenta } from "./productos-sin-venta";
 import { RentabilidadProductos } from "./rentabilidad-productos";
+import { DatosCargados } from "./datos-cargados";
 import { ImportarReportesModal } from "./importar-reportes";
 import { VistaMes } from "@/components/productos/vista-mes";
 import { VistaTrimestre } from "@/components/productos/vista-trimestre";
@@ -116,6 +117,9 @@ export function GrupoProductosClient() {
           </div>
         </div>
       </header>
+
+      {/* Qué fechas cubren los reportes de Byte cargados, por sede (4-oct-2026). */}
+      <DatosCargados version={version} />
 
       <div className="border-b border-gray-200">
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
