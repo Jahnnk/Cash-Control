@@ -9,15 +9,23 @@ import { GroupKpisSection } from "../dashboard/group-kpis-section";
 import { GenerateReportModal } from "@/app/[negocio]/reportes/generate-report-modal";
 import { BandaFrescura } from "@/components/banda-frescura";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
+import type { SeisCifras } from "@/app/actions/seis-cifras";
+import { SelectorMes } from "../dashboard/selector-mes";
+import { VentaAGanancia } from "./venta-a-ganancia";
+
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
+const nombreMes = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
 
 type Props = {
   selectedMonth: string;
+  mesActual: string;
   isCurrentMonth: boolean;
   summaries: BusinessSummary[];
   frescura: FrescuraGrupo | null;
+  cifras: SeisCifras | null;
 };
 
-export function GrupoReportesClient({ selectedMonth, isCurrentMonth, summaries, frescura }: Props) {
+export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, summaries, frescura, cifras }: Props) {
   const [showEirs, setShowEirs] = useState(false);
   return (
     <div className="space-y-6">
@@ -30,9 +38,10 @@ export function GrupoReportesClient({ selectedMonth, isCurrentMonth, summaries, 
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Reportes del Grupo</h1>
           <p className="text-sm text-gray-500 mt-1">
-            Comparativo {isCurrentMonth ? "del mes en curso" : `de ${selectedMonth}`}
+            Comparativo {isCurrentMonth ? "del mes en curso" : `de ${nombreMes(selectedMonth)}`}
           </p>
         </div>
+        <SelectorMes mes={selectedMonth} mesActual={mesActual} ruta="/grupo/reportes" />
         {/* El MISMO generador de las sedes, arrancando en "Grupo Yayi's".
             Desde aquí también se puede elegir cualquier sede — un solo
             lugar para todos los reportes ejecutivos (pedido de Jahnn,
@@ -49,6 +58,8 @@ export function GrupoReportesClient({ selectedMonth, isCurrentMonth, summaries, 
       {/* Reporte de KPIs de la reunión: aquí se GENERA el deck (con rango
           personalizado). El dashboard solo muestra la salud. */}
       <GroupKpisSection />
+
+      <VentaAGanancia cifras={cifras} periodo={nombreMes(selectedMonth)} />
 
       <div>
         <h2 className="text-sm font-semibold text-gray-700">Comparativo financiero del mes</h2>

@@ -24,7 +24,7 @@ function sumar(m: string, n: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-export function SelectorMes({ mes, mesActual }: { mes: string; mesActual: string }) {
+export function SelectorMes({ mes, mesActual, ruta = "/grupo/dashboard" }: { mes: string; mesActual: string; ruta?: string }) {
   const router = useRouter();
   const [cargando, ir] = useTransition();
 
@@ -33,7 +33,7 @@ export function SelectorMes({ mes, mesActual }: { mes: string; mesActual: string
 
   function cambiar(nuevo: string) {
     if (nuevo === mes) return;
-    ir(() => router.push(nuevo === mesActual ? "/grupo/dashboard" : `/grupo/dashboard?mes=${nuevo}`));
+    ir(() => router.push(nuevo === mesActual ? ruta : `${ruta}?mes=${nuevo}`));
   }
 
   const hayAnterior = mes > PRIMER_MES;
