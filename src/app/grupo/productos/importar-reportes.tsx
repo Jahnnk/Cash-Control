@@ -26,7 +26,7 @@ import { importProductSalesForSede } from "@/app/actions/product-sales-import";
 import { compararVentasDireccion, importVentasDireccion, importMenorRotacion, type ComparacionVentas } from "@/app/actions/reportes-direccion";
 import { queHaraLaCarga, sedeDelNombre, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { getCoberturaRotacion } from "@/app/actions/productos-panorama";
-import { CoberturaPorMes } from "./cobertura-por-mes";
+import { GrillaCobertura, FaltaSubir } from "./grilla-cobertura";
 
 const SEDES = [
   { id: 2, nombre: "Fonavi" },
@@ -318,7 +318,13 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
         </div>
 
         <div className="p-6 space-y-4">
-          {cobertura && <CoberturaPorMes periodos={cobertura.periodos} hoy={cobertura.hoy} sedeElegida={sede} />}
+          {cobertura && (
+            <div className="space-y-2">
+              <div className="text-xs font-semibold text-gray-700">Qué tiene cada sede <span className="font-normal text-gray-500">(ventas por producto · mayor rotación). Toca una tarjeta para elegir esa sede.</span></div>
+              <GrillaCobertura compacto hoy={cobertura.hoy} periodos={cobertura.periodos} sedeElegida={sede} onCelda={(id) => !subiendo && setSede(id)} />
+              <FaltaSubir hoy={cobertura.hoy} periodos={cobertura.periodos} />
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <div className="text-xs font-semibold text-gray-700">1 · ¿De qué sede son los archivos?</div>
