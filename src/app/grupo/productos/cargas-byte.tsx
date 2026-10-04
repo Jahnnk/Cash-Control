@@ -13,19 +13,18 @@
 import { useCallback, useEffect, useState } from "react";
 import { Upload, Loader2, Table2 } from "lucide-react";
 import { getCoberturaRotacion } from "@/app/actions/productos-panorama";
-import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
-import { GrillaCobertura, FaltaSubir } from "./grilla-cobertura";
+import { GrillaCobertura, FaltaSubir, type DatosCobertura } from "./grilla-cobertura";
 import { ImportarReportesModal } from "./importar-reportes";
 
 export function CargasByte({ onImportado }: { onImportado: () => void }) {
-  const [datos, setDatos] = useState<{ hoy: string; meses: string[]; periodos: PeriodoCargado[] } | null>(null);
+  const [datos, setDatos] = useState<DatosCobertura | null>(null);
   const [cargando, setCargando] = useState(true);
-  const [modal, setModal] = useState<{ sede: number | null } | null>(null);
+  const [modal, setModal] = useState<{ sede: number | null; mes: string | null } | null>(null);
 
   const cargar = useCallback(async () => {
     setCargando(true);
     const r = await getCoberturaRotacion(12);
-    setDatos(r.ok ? { hoy: r.hoy, meses: r.meses, periodos: r.periodos } : null);
+    setDatos(r.ok ? { hoy: r.hoy, periodos: r.periodos, ventas: r.ventas, menor: r.menor } : null);
     setCargando(false);
   }, []);
 
@@ -47,7 +46,7 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
             que va del mes—; antes de guardar te dice qué va a pasar con cada uno. Click en una casilla para subir a esa sede.
           </p>
         </div>
-        <button type="button" onClick={() => setModal({ sede: null })}
+        <button type="button" onClick={() => setModal({ sede: null, mes: null })}
           className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg shrink-0">
           <Upload className="w-4 h-4" /> Subir Reportes Gerencia
         </button>
@@ -57,8 +56,8 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
         <div className="flex justify-center py-4 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
       ) : datos ? (
         <div className="space-y-3">
-          <GrillaCobertura hoy={datos.hoy} periodos={datos.periodos} onCelda={(id) => setModal({ sede: id })} />
-          <FaltaSubir hoy={datos.hoy} periodos={datos.periodos} />
+          <GrillaCobertura datos={datos} onCelda={(id, mes) => setModal({ sede: id, mes })} />
+          <FaltaSubir datos={datos} />
         </div>
       ) : (
         <p className="text-xs text-gray-500">No se pudo leer qué está cargado.</p>
@@ -67,6 +66,7 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
       {modal && datos && (
         <ImportarReportesModal
           sedeInicial={modal.sede}
+          mesInicial={modal.mes}
           periodos={datos.periodos}
           onClose={() => setModal(null)}
           onImportado={() => { void cargar(); onImportado(); }}
