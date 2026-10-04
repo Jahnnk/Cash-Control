@@ -11,9 +11,9 @@ import { BandaFrescura } from "@/components/banda-frescura";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SelectorMes } from "../dashboard/selector-mes";
-import { margenDeCaja } from "@/lib/verificacion-kelly";
 import { VentaAGanancia } from "./venta-a-ganancia";
 import { FlujoDeCaja } from "./flujo-de-caja";
+import { DosMargenes } from "./dos-margenes";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
@@ -65,6 +65,7 @@ export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, 
 
       <VentaAGanancia cifras={cifras} periodo={nombreMes(selectedMonth)} />
       <FlujoDeCaja flujo={flujo} periodo={nombreMes(selectedMonth)} />
+      <DosMargenes cifras={cifras} periodo={nombreMes(selectedMonth)} />
 
       <div>
         <h2 className="text-sm font-semibold text-gray-700">Comparativo financiero del mes</h2>
@@ -86,22 +87,6 @@ export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, 
                 {formatCurrency(r.margin)}
               </span>
             ),
-          },
-          // Los dos números que Kelly escribe en cada hoja: (entró − salió) ÷ entró, y salió por cada S/100 que entró.
-          {
-            key: "marginPct",
-            header: "Margen %",
-            align: "right",
-            render: (r) => {
-              const m = margenDeCaja(r.monthlyIncome, r.monthlyExpenses);
-              return m === null ? "—" : <span className={m < 0 ? "text-red-600" : "text-gray-900"}>{m.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>;
-            },
-          },
-          {
-            key: "salioPor100",
-            header: "Salió por cada S/ 100",
-            align: "right",
-            render: (r) => (r.monthlyIncome > 0 ? formatCurrency((r.monthlyExpenses / r.monthlyIncome) * 100) : "—"),
           },
         ]}
       />
