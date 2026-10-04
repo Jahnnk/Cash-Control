@@ -10,6 +10,14 @@ describe("flujo de caja mensual", () => {
     expect(s.map((p) => p.acumulado)).toEqual([-10, 10, 5]);
   });
 
+  it("el ahorro no es pérdida: el acumulado no cuenta lo depositado, lo rescatado ni lo pagado a socios", () => {
+    // Centro, septiembre: entró 43,984.61 · salió 44,906.85, de lo cual 7,200 al ahorro y 2,400 a socios; entró un rescate de 2,400.
+    const [sep] = armarSerie([m("2026-09", 43984.61, 44906.85, { ahorro: 7200, reparto: 2400, rescate: 2400 })]);
+    expect(sep.flujo).toBe(-922.24);
+    expect(sep.neto).toBe(6277.76);
+    expect(sep.acumulado).toBe(6277.76);
+  });
+
   it("recorta a la ventana pero el acumulado no se reinicia", () => {
     const meses = ["01", "02", "03", "04", "05", "06", "07", "08"].map((x) => m(`2026-${x}`, 100, 90));
     const s = armarSerie(meses, 6);
