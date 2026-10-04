@@ -49,13 +49,14 @@ function Tarjeta({ icono, titulo, definicion, grande, grandeClase = "text-gray-9
   );
 }
 
-function Fila({ nombre, valor, clase = "text-gray-800", nota }: { nombre: string; valor: string; clase?: string; nota?: string }) {
+function Fila({ nombre, valor, clase = "text-gray-800", nota, nota2 }: { nombre: string; valor: string; clase?: string; nota?: string; nota2?: string }) {
   return (
     <div className="flex items-baseline justify-between gap-3 text-sm">
       <span className="text-gray-600">{nombre}</span>
       <span className="text-right min-w-0">
         <span className={`font-medium tabular-nums ${clase}`}>{valor}</span>
         {nota && <span className="block text-[10px] text-gray-400 leading-tight">{nota}</span>}
+        {nota2 && <span className="block text-[10px] text-emerald-700 leading-tight">{nota2}</span>}
       </span>
     </div>
   );
@@ -128,12 +129,18 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
           definicion="El movimiento real del efectivo: lo que entra y lo que sale físicamente."
           grande={`${g.caja.flujo >= 0 ? "" : "−"}${formatCurrency(Math.abs(g.caja.flujo))}`}
           grandeClase={g.caja.flujo < 0 ? "text-red-600" : "text-gray-900"}
-          sub={<>Entró <strong className="text-gray-700 tabular-nums">{formatCurrency(g.caja.entro)}</strong> · Salió <strong className="text-gray-700 tabular-nums">{formatCurrency(g.caja.salio)}</strong> en el mes</>}
+          sub={<>Entró <strong className="text-gray-700 tabular-nums">{formatCurrency(g.caja.entro)}</strong> · Salió <strong className="text-gray-700 tabular-nums">{formatCurrency(g.caja.salio)}</strong> en el mes
+            {(g.fuera.ahorro + g.fuera.reparto) > 0 && (
+              <span className="block mt-1 text-emerald-700">
+                De lo que salió, {[g.fuera.ahorro > 0 && `${formatCurrency(g.fuera.ahorro)} fue a tu ahorro`, g.fuera.reparto > 0 && `${formatCurrency(g.fuera.reparto)} a socios`].filter(Boolean).join(" y ")}: sin eso, la caja del mes sería {formatCurrency(g.caja.flujo + g.fuera.ahorro + g.fuera.reparto)}.
+              </span>
+            )}</>}
           pie={<>Liquidez {apoyo.mesCerrado ? "de hoy" : "ahora"} (banco + caja): <strong className="text-gray-700 tabular-nums">{formatCurrency(apoyo.liquidez)}</strong>
             {apoyo.liquidezSedes.length > 0 && <> · {apoyo.liquidezSedes.map((x) => `${x.nombre} ${formatCurrency(x.total)}`).join(" · ")}</>}</>}
         >
           {sedes.map((s) => <Fila key={s.businessId} nombre={s.sede} valor={`${s.caja.flujo >= 0 ? "" : "−"}${formatCurrency(Math.abs(s.caja.flujo))}`} clase={color(s.caja.flujo)}
-            nota={`entró ${formatCurrency(s.caja.entro)} · salió ${formatCurrency(s.caja.salio)}`} />)}
+            nota={`entró ${formatCurrency(s.caja.entro)} · salió ${formatCurrency(s.caja.salio)}`}
+            nota2={[s.fuera.ahorro > 0 && `a ahorro ${formatCurrency(s.fuera.ahorro)}`, s.fuera.reparto > 0 && `a socios ${formatCurrency(s.fuera.reparto)}`].filter(Boolean).join(" · ") || undefined} />)}
         </Tarjeta>
 
         {/* Margen */}
