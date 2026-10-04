@@ -12,6 +12,8 @@ import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SelectorMes } from "../dashboard/selector-mes";
 import { VentaAGanancia } from "./venta-a-ganancia";
+import { FlujoDeCaja } from "./flujo-de-caja";
+import type { FlujoCaja } from "@/app/actions/flujo-caja";
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
 const nombreMes = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
@@ -23,9 +25,10 @@ type Props = {
   summaries: BusinessSummary[];
   frescura: FrescuraGrupo | null;
   cifras: SeisCifras | null;
+  flujo: FlujoCaja | null;
 };
 
-export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, summaries, frescura, cifras }: Props) {
+export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, summaries, frescura, cifras, flujo }: Props) {
   const [showEirs, setShowEirs] = useState(false);
   return (
     <div className="space-y-6">
@@ -60,6 +63,7 @@ export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, 
       <GroupKpisSection />
 
       <VentaAGanancia cifras={cifras} periodo={nombreMes(selectedMonth)} />
+      <FlujoDeCaja flujo={flujo} periodo={nombreMes(selectedMonth)} />
 
       <div>
         <h2 className="text-sm font-semibold text-gray-700">Comparativo financiero del mes</h2>
