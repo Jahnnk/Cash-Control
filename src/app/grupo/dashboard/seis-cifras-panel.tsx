@@ -10,6 +10,7 @@
 import type { ReactNode } from "react";
 import { Banknote, Package, Building2, Droplets, PieChart, CheckCircle2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
+import { textoMovimientosAhorro } from "@/lib/flujo-caja";
 import { Sparkline, ProgressBar } from "@/components/ui/Sparkline";
 import { Delta } from "./executive-hero";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
@@ -30,15 +31,6 @@ const ORDEN = [2, 3, 1];
 const pct = (n: number | null) => (n === null ? "—" : `${n.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%`);
 const soles = (n: number | null) => (n === null ? "—" : formatCurrency(n));
 const dd = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—");
-/** Lo que se movió con el ahorro, en una frase: el rescate y el pago a socios son un mismo movimiento (se rescata para pagar las utilidades). */
-function movimientosAhorro(f: { ahorro: number; rescate: number; reparto: number }): string {
-  const partes: string[] = [];
-  if (f.ahorro > 0) partes.push(`al ahorro ${formatCurrency(f.ahorro)}`);
-  if (f.rescate > 0 && f.reparto > 0) partes.push(`del ahorro ${formatCurrency(f.rescate)} → utilidades a socios ${formatCurrency(f.reparto)}`);
-  else if (f.rescate > 0) partes.push(`del ahorro ${formatCurrency(f.rescate)}`);
-  else if (f.reparto > 0) partes.push(`utilidades a socios ${formatCurrency(f.reparto)}`);
-  return partes.join(" · ");
-}
 const color = (n: number | null) => (n === null ? "text-gray-900" : n < 0 ? "text-red-600" : "text-gray-900");
 
 function Tarjeta({ icono, titulo, definicion, grande, grandeClase = "text-gray-900", sub, children, pie }: {
@@ -141,7 +133,7 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
           sub={<>Entró <strong className="text-gray-700 tabular-nums">{formatCurrency(g.caja.entro)}</strong> · Salió <strong className="text-gray-700 tabular-nums">{formatCurrency(g.caja.salio)}</strong> en el mes
             {(g.fuera.ahorro + g.fuera.reparto + g.fuera.rescate) > 0 && (
               <span className="block mt-1 text-emerald-700">
-                Movimientos del ahorro: {movimientosAhorro(g.fuera)}.
+                Movimientos del ahorro: {textoMovimientosAhorro(g.fuera)}.
                 Sin ellos, la caja del mes sería {formatCurrency(g.caja.flujo + g.fuera.ahorro + g.fuera.reparto - g.fuera.rescate)}.
               </span>
             )}</>}
@@ -150,7 +142,7 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
         >
           {sedes.map((s) => <Fila key={s.businessId} nombre={s.sede} valor={`${s.caja.flujo >= 0 ? "" : "−"}${formatCurrency(Math.abs(s.caja.flujo))}`} clase={color(s.caja.flujo)}
             nota={`entró ${formatCurrency(s.caja.entro)} · salió ${formatCurrency(s.caja.salio)}`}
-            nota2={movimientosAhorro(s.fuera) || undefined} />)}
+            nota2={textoMovimientosAhorro(s.fuera) || undefined} />)}
         </Tarjeta>
 
         {/* Margen */}
