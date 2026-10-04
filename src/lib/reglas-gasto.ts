@@ -204,9 +204,17 @@ export const REGLAS_GASTO: ReglaGasto[] = [
     "DEVOLUCION A CLIENT", "VENTA TRANSFERIDA", "ENTREGA A KELLY PARA DEPOSITO", "DEVOLUCION A EFECTIVO"),
 ];
 
+/**
+ * "(PRÉSTAMO DE JUAN)" dice con qué plata se pagó, no qué se compró. Caso real
+ * (Atelier, 16-sep-2026): "ARREGLO 50% ABATIDOR (PRÉSTAMO DE JUAN) (LUIS LINAN)"
+ * se clasificó como cuota de préstamo y salió de la ganancia, cuando es
+ * mantenimiento: la deuda es el ingreso del préstamo, no este pago.
+ */
+export const sinNotaDeFondeo = (t: string | null | undefined): string => (t ?? "").replace(/\(\s*PR[EÉ]STAMOS?\s+DE\s+[^)]*\)/gi, " ");
+
 /** El texto como lo compara el Excel: " CONCEPTO PROVEEDOR ", MAYÚSCULAS, sin tildes, espacios simples. */
 export function textoParaReglas(concepto: string | null | undefined, proveedor?: string | null): string {
-  const t = `${concepto ?? ""} ${proveedor ?? ""}`
+  const t = `${sinNotaDeFondeo(concepto)} ${proveedor ?? ""}`
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
     .toUpperCase().replace(/\s+/g, " ").trim();
   return ` ${t} `;

@@ -37,7 +37,7 @@
  * sacarlo del punto de equilibrio lo haría ver mejor de lo que es.
  */
 
-import { CATEGORIAS_GASTO, POR_ACLARAR, clasificarGasto, tipoDeCategoria, type TipoCategoria } from "./reglas-gasto";
+import { CATEGORIAS_GASTO, POR_ACLARAR, clasificarGasto, sinNotaDeFondeo, tipoDeCategoria, type TipoCategoria } from "./reglas-gasto";
 import { resolverCategoria } from "./categoria-resolver";
 import { esGrupoBolson } from "./categoria-alias";
 import { textoDeRegla } from "./texto-regla";
@@ -128,7 +128,7 @@ export function clasificarEgreso(g: GastoAClasificar, aprendidas: ReglaAprendida
   }
   // El sistema guarda el proveedor entre paréntesis ("VARIOS (METRO)"); en el
   // Excel va en su propia columna. Sin los signos, las reglas lo encuentran igual.
-  const porReglas = clasificarGasto((g.concepto ?? "").replace(/[()[\]]/g, " "));
+  const porReglas = clasificarGasto(sinNotaDeFondeo(g.concepto).replace(/[()[\]]/g, " "));
   if (porReglas !== POR_ACLARAR) opiniones.push(opinion("reglas", porReglas));
 
   // Una regla de Jahnn manda: es su criterio, ya aplicado a gastos parecidos.
