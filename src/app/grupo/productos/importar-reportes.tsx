@@ -25,6 +25,8 @@ import { tipoDeReporte, mesDelTituloVentas, parseMenorRotacion, type ProductoMen
 import { importProductSalesForSede } from "@/app/actions/product-sales-import";
 import { compararVentasDireccion, importVentasDireccion, importMenorRotacion, type ComparacionVentas } from "@/app/actions/reportes-direccion";
 import { queHaraLaCarga, sedeDelNombre, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
+import { getCoberturaRotacion } from "@/app/actions/productos-panorama";
+import { CoberturaPorMes } from "./cobertura-por-mes";
 
 const SEDES = [
   { id: 2, nombre: "Fonavi" },
@@ -107,6 +109,14 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
   const [sede, setSede] = useState<number | null>(sedeInicial);
   const [archivos, setArchivos] = useState<Archivo[]>([]);
   const [subiendo, setSubiendo] = useState(false);
+  // Qué meses tiene cada sede (de abril a hoy), para decir cuál falta subir.
+  const [cobertura, setCobertura] = useState<{ hoy: string; periodos: PeriodoCargado[] } | null>(null);
+  const refrescarCobertura = () => getCoberturaRotacion(12).then((r) => { if (r.ok) setCobertura({ hoy: r.hoy, periodos: r.periodos }); });
+  useEffect(() => {
+    let vivo = true;
+    getCoberturaRotacion(12).then((r) => { if (vivo && r.ok) setCobertura({ hoy: r.hoy, periodos: r.periodos }); });
+    return () => { vivo = false; };
+  }, []);
   // Comparaciones ya pedidas (archivo|sede): no se piden dos veces mientras llegan.
   const pedidas = useRef(new Set<string>());
 
@@ -226,6 +236,8 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
     }
     setSubiendo(false);
     onImportado();
+    // Los cuadros de arriba se actualizan solos: se ve cómo el mes pasa a «completo».
+    void refrescarCobertura();
   }
 
   const nombreSede = SEDES.find((s) => s.id === sede)?.nombre;
@@ -306,6 +318,8 @@ export function ImportarReportesModal({ sedeInicial, periodos, onClose, onImport
         </div>
 
         <div className="p-6 space-y-4">
+          {cobertura && <CoberturaPorMes periodos={cobertura.periodos} hoy={cobertura.hoy} sedeElegida={sede} />}
+
           <div className="space-y-1.5">
             <div className="text-xs font-semibold text-gray-700">1 · ¿De qué sede son los archivos?</div>
             <div className="flex gap-2">
