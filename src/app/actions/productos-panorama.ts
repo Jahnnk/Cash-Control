@@ -28,6 +28,7 @@ import {
 } from "@/lib/productos/candidatos";
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
+import { coberturaDeRangos, type Cobertura } from "@/lib/productos/cobertura-datos";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -483,6 +484,34 @@ export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ da
   } catch (e) {
     console.error("[getCandidatosReemplazo] failed:", e);
     return { ok: false, error: "No se pudieron armar los candidatos a reemplazo." };
+  }
+}
+
+/**
+ * Qué fechas cubren los reportes de productos que hay cargados, por sede:
+ * mayor rotación (ventas por producto) y menor rotación. Solo dirección.
+ */
+export type DatosCargadosSede = { businessId: number; sede: string; mayor: Cobertura; menor: Cobertura };
+export async function getDatosCargadosProductos(): Promise<Res<{ hoy: string; sedes: DatosCargadosSede[] }>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  try {
+    const [mayor, menor] = await Promise.all([
+      sql`SELECT business_id, period_start::text AS desde, period_end::text AS hasta FROM product_period_sales WHERE business_id IN (1, 2, 3) GROUP BY 1, 2, 3` as unknown as Promise<{ business_id: number; desde: string; hasta: string }[]>,
+      (sql`SELECT business_id, desde::text AS desde, hasta::text AS hasta FROM productos_menor_rotacion GROUP BY 1, 2, 3` as unknown as Promise<{ business_id: number; desde: string; hasta: string }[]>).catch(() => []),
+    ]);
+    return {
+      ok: true, hoy,
+      sedes: SEDES.map((s) => ({
+        businessId: s.id, sede: s.nombre,
+        mayor: coberturaDeRangos(mayor.filter((r) => r.business_id === s.id)),
+        menor: coberturaDeRangos(menor.filter((r) => r.business_id === s.id)),
+      })),
+    };
+  } catch (e) {
+    console.error("[getDatosCargadosProductos] failed:", e);
+    return { ok: false, error: "No se pudo leer qué reportes hay cargados." };
   }
 }
 
