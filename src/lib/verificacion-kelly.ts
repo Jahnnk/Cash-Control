@@ -118,6 +118,8 @@ export function verificarMes(input: {
   /** Reglas de monto fijo de Atelier: categoría → lo que le toca al mes. */
   fijosAtelier: { categoria: string; concepto: string; fijo: number }[];
   esAtelier: boolean;
+  /** Centro: lo que cada mes se rescata del fondo mutuo y se paga como adelanto de utilidades (S/2,400). */
+  utilidadesMensuales?: number;
   /** Ventas por día de cada fuente; sin esto no se verifican ventas. */
   ventas?: FuentesVenta;
   /** Entró / salió del mes según el sistema (totales-mes-sede.ts). */
@@ -221,6 +223,20 @@ export function verificarMes(input: {
       alertas.push({ regla: "prestamo", titulo: "Un préstamo o rescate de ahorros está contado como venta", detalle: `${i.fecha} · ${i.nota} (${soles(i.monto)}). Debe ir como ingreso no operativo.` });
     } else if (esReembolsoEntreSedes(i.nota)) {
       alertas.push({ regla: "reembolso", titulo: "Un reembolso entre sedes está contado como venta", detalle: `${i.fecha} · ${i.nota} (${soles(i.monto)}).` });
+    }
+  }
+
+  // Centro: cada mes se rescatan S/2,400 del fondo mutuo y se pagan como adelanto de utilidades.
+  if (input.utilidadesMensuales) {
+    const esperado = input.utilidadesMensuales;
+    const rescatado = r2(suma(ingresos.filter((i) => !i.transferenciaInterna && /\brescate\b/i.test(i.nota)), (i) => i.monto));
+    const pagado = r2(suma(gastos.filter((g) => !g.transferenciaInterna && g.categoria === "UTILIDADES A SOCIOS"), (g) => g.monto));
+    if ((rescatado > 0 || pagado > 0) && (Math.abs(rescatado - esperado) >= 0.01 || Math.abs(pagado - esperado) >= 0.01)) {
+      alertas.push({
+        regla: "utilidades",
+        titulo: "El adelanto de utilidades no es el de siempre",
+        detalle: `Cada mes se rescatan ${soles(esperado)} del fondo mutuo y se pagan ${soles(esperado)} de utilidades. Este mes: rescate ${soles(rescatado)}, utilidades pagadas ${soles(pagado)}.`,
+      });
     }
   }
 
