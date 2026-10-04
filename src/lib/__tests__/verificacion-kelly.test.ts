@@ -136,3 +136,21 @@ describe("ventas con el administrador como tercer dato", () => {
     ]);
   });
 });
+
+describe("adelanto de utilidades de Centro (S/2,400 al mes)", () => {
+  const base = { foto: null, sistema: { ingresos: 0, gastos: 0 }, fijosAtelier: [], esAtelier: false, utilidadesMensuales: 2400 };
+  const rescate = (m: number) => ing(m, "RESCATE PARA ADELANTO UTILIDADES JUANI & JAHNN", { noOperativo: "Otros no operativos" });
+  const pago = (m: number) => gas(m, "ADELANTO UTILIDADES 2026", { categoria: "UTILIDADES A SOCIOS" });
+
+  it("no avisa cuando rescate y pago son S/2,400", () => {
+    const v = verificarMes({ ...base, ingresos: [rescate(2400)], gastos: [pago(1200), pago(1200)] });
+    expect(v.alertas.some((a) => a.regla === "utilidades")).toBe(false);
+  });
+  it("avisa cuando el monto cambia o falta el rescate", () => {
+    expect(verificarMes({ ...base, ingresos: [rescate(2400)], gastos: [pago(1200), pago(1000)] }).alertas.some((a) => a.regla === "utilidades")).toBe(true);
+    expect(verificarMes({ ...base, ingresos: [], gastos: [pago(1200), pago(1200)] }).alertas.some((a) => a.regla === "utilidades")).toBe(true);
+  });
+  it("sin movimientos del mes no avisa (todavía no se pagó)", () => {
+    expect(verificarMes({ ...base, ingresos: [], gastos: [] }).alertas.some((a) => a.regla === "utilidades")).toBe(false);
+  });
+});

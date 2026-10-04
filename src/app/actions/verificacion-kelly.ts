@@ -75,6 +75,7 @@ async function verificarSedeMes(b: {
     sistema: { ingresos: sistema.ingresos, gastos: sistema.gastos },
     fijosAtelier: (fijos as { categoria: string; concepto: string; fijo: number }[]),
     esAtelier: b.business_id === 1,
+    utilidadesMensuales: b.business_id === 3 ? 2400 : undefined,
     ventas,
     caja: { entro: sistema.entro, salio: sistema.salio },
   });
