@@ -2,8 +2,14 @@
  * Flujo de caja mensual · cálculo puro (pedido de Jahnn, 3-oct-2026, idea de
  * un libro: "el flujo de caja es tu brújula").
  *
- *   Flujo del mes     = Entró − Salió (los mismos de la tarjeta Caja y del Excel).
- *   Flujo acumulado   = la suma de los flujos desde que llevamos el control
+ *   Flujo real        = Entró − Salió (los mismos de la tarjeta Caja y del Excel).
+ *   Flujo neto        = el flujo real SIN mover el ahorro: no cuenta lo depositado
+ *                       a fondos mutuos, ni lo rescatado, ni las utilidades pagadas
+ *                       a los socios (que salen de ese rescate). Mandar plata a los
+ *                       fondos no es perderla: sigue siendo nuestra y líquida.
+ *                       Centro mandó S/32,700 al fondo entre abril y septiembre y,
+ *                       contado como salida, parecía perder plata cada mes.
+ *   Flujo acumulado   = la suma de los flujos NETOS desde que llevamos el control
  *                       (marzo 2026). NO es el saldo del banco: no conoce la
  *                       plata con la que arrancó cada sede.
  *
@@ -26,7 +32,19 @@ export type MesFlujo = {
   rescate: number;
 };
 
-export type PuntoFlujo = MesFlujo & { flujo: number; acumulado: number };
+export type PuntoFlujo = MesFlujo & {
+  /** Entró − Salió, tal cual. */
+  flujo: number;
+  /** El flujo sin mover el ahorro: (entró − rescate) − (salió − ahorro − utilidades a socios). */
+  neto: number;
+  /** Suma de los flujos netos hasta este mes. */
+  acumulado: number;
+};
+
+/** Lo que salió sin contar el ahorro ni los socios: lo que el negocio paga de verdad. */
+export const salioOperativo = (m: Pick<MesFlujo, "salio" | "ahorro" | "reparto">) => m.salio - m.ahorro - m.reparto;
+/** Lo que entró sin contar lo que volvió del fondo. */
+export const entroOperativo = (m: Pick<MesFlujo, "entro" | "rescate">) => m.entro - m.rescate;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -52,8 +70,9 @@ export function armarSerie(meses: MesFlujo[], ventana = 6): PuntoFlujo[] {
   let acumulado = 0;
   const puntos: PuntoFlujo[] = orden.map((m) => {
     const flujo = r2(m.entro - m.salio);
-    acumulado = r2(acumulado + flujo);
-    return { ...m, entro: r2(m.entro), salio: r2(m.salio), flujo, acumulado };
+    const neto = r2(entroOperativo(m) - salioOperativo(m));
+    acumulado = r2(acumulado + neto);
+    return { ...m, entro: r2(m.entro), salio: r2(m.salio), flujo, neto, acumulado };
   });
   const primero = puntos.findIndex((p) => p.entro !== 0 || p.salio !== 0);
   return (primero < 0 ? [] : puntos.slice(primero)).slice(-ventana);
