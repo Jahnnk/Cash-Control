@@ -32,6 +32,12 @@ export type BloquePie = {
   fila: number;
   ingresos: number;
   gastos: number;
+  /**
+   * Los márgenes que Kelly calcula dos filas debajo del bloque, en % (19.6 = 19.6%):
+   * margen = (ingresos − gastos) ÷ ingresos, y gastos ÷ ingresos. null si la hoja no los trae.
+   */
+  margenPct: number | null;
+  gastosPct: number | null;
 };
 
 export type BloquesPie = {
@@ -54,7 +60,18 @@ export function leerBloquesDelPie(rows: unknown[][]): BloquesPie {
     const ingresos = num(row[cI + 1]);
     const gastos = num(row[cG + 1]);
     if (ingresos === null || gastos === null) continue;
-    bloques.push({ fila: i + 1, ingresos: Math.round(ingresos * 100) / 100, gastos: Math.round(gastos * 100) / 100 });
+    // Debajo del bloque (1 a 3 filas): margen en la columna de INGRESOS, su monto a la derecha y gastos÷ingresos en la de GASTOS.
+    let margenPct: number | null = null, gastosPct: number | null = null;
+    for (let k = i + 1; k <= Math.min(i + 3, rows.length - 1); k++) {
+      const r = rows[k] ?? [];
+      const m = num(r[cI]), monto = num(r[cI + 1]), g = num(r[cG]);
+      if (m !== null && monto !== null && g !== null && Math.abs(m) < 100 && Math.abs(monto - (ingresos - gastos)) < 0.05) {
+        margenPct = Math.round(m * 10000) / 100;
+        gastosPct = Math.round(g * 10000) / 100;
+        break;
+      }
+    }
+    bloques.push({ fila: i + 1, ingresos: Math.round(ingresos * 100) / 100, gastos: Math.round(gastos * 100) / 100, margenPct, gastosPct });
   }
   return { totalHoja: bloques[0] ?? null, analisis: bloques.slice(1) };
 }
@@ -62,21 +79,30 @@ export function leerBloquesDelPie(rows: unknown[][]): BloquesPie {
 /** Las notas del lote guardan los bloques como "clave=valor" (igual que omitidos_egresos). */
 export function bloquesANotas(b: BloquesPie): string[] {
   const out: string[] = [];
-  if (b.totalHoja) out.push(`hoja_ingresos=${b.totalHoja.ingresos}`, `hoja_egresos=${b.totalHoja.gastos}`);
+  if (b.totalHoja) {
+    out.push(`hoja_ingresos=${b.totalHoja.ingresos}`, `hoja_egresos=${b.totalHoja.gastos}`);
+    if (b.totalHoja.margenPct !== null) out.push(`hoja_margen_pct=${b.totalHoja.margenPct}`, `hoja_gastos_pct=${b.totalHoja.gastosPct}`);
+  }
   const a = b.analisis[b.analisis.length - 1];
-  if (a) out.push(`analisis_ingresos=${a.ingresos}`, `analisis_egresos=${a.gastos}`, `analisis_fila=${a.fila}`);
+  if (a) {
+    out.push(`analisis_ingresos=${a.ingresos}`, `analisis_egresos=${a.gastos}`, `analisis_fila=${a.fila}`);
+    if (a.margenPct !== null) out.push(`analisis_margen_pct=${a.margenPct}`, `analisis_gastos_pct=${a.gastosPct}`);
+  }
   return out;
 }
 
-export function bloquesDeNotas(notas: string | null): { hoja: { ingresos: number; egresos: number } | null; analisis: { ingresos: number; egresos: number; fila: number } | null } {
+export type HojaDeNotas = { ingresos: number; egresos: number; margenPct: number | null; gastosPct: number | null };
+export type AnalisisDeNotas = HojaDeNotas & { fila: number };
+
+export function bloquesDeNotas(notas: string | null): { hoja: HojaDeNotas | null; analisis: AnalisisDeNotas | null } {
   const v = (k: string) => {
-    const m = notas?.match(new RegExp(`${k}=(-?[\\d.]+)`));
+    const m = notas?.match(new RegExp(`(?:^|[^a-z_])${k}=(-?[\\d.]+)`));
     return m ? Number(m[1]) : null;
   };
   const hi = v("hoja_ingresos"), he = v("hoja_egresos");
   const ai = v("analisis_ingresos"), ae = v("analisis_egresos"), af = v("analisis_fila");
   return {
-    hoja: hi !== null && he !== null ? { ingresos: hi, egresos: he } : null,
-    analisis: ai !== null && ae !== null ? { ingresos: ai, egresos: ae, fila: af ?? 0 } : null,
+    hoja: hi !== null && he !== null ? { ingresos: hi, egresos: he, margenPct: v("hoja_margen_pct"), gastosPct: v("hoja_gastos_pct") } : null,
+    analisis: ai !== null && ae !== null ? { ingresos: ai, egresos: ae, fila: af ?? 0, margenPct: v("analisis_margen_pct"), gastosPct: v("analisis_gastos_pct") } : null,
   };
 }

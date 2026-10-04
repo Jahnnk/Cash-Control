@@ -59,11 +59,15 @@ export function EstadoCuadre({ v }: { v: VerificacionSedeMes }) {
 /** Dashboard contra Excel de Kelly, en una tabla de tres filas. */
 function DashboardVsExcel({ v }: { v: VerificacionSedeMes }) {
   const ventasKelly = v.puenteVentas?.[0]?.monto ?? null;
-  const filas: [string, number | null, number | null][] = [
-    ["Ingresos (plata que entró)", v.caja?.entro ?? null, v.caja?.esperadoEntro ?? null],
-    ["Gastos (plata que salió)", v.caja?.salio ?? null, v.caja?.esperadoSalio ?? null],
-    ["Vendido (Byte)", v.sistema.ventas, ventasKelly],
+  const filas: [string, number | null, number | null, "soles" | "pct"][] = [
+    ["Ingresos (plata que entró)", v.caja?.entro ?? null, v.caja?.esperadoEntro ?? null, "soles"],
+    ["Gastos (plata que salió)", v.caja?.salio ?? null, v.caja?.esperadoSalio ?? null, "soles"],
+    ["Vendido (Byte)", v.sistema.ventas, ventasKelly, "soles"],
+    // Margen de caja: (entró − salió) ÷ entró. Kelly lo escribe bajo el primer bloque de su hoja.
+    ["Margen de caja (entró − salió) ÷ entró", v.margen?.sistema ?? null, v.margen?.excel ?? null, "pct"],
   ];
+  const mostrar = (n: number | null, fmt: "soles" | "pct") =>
+    n === null ? "—" : fmt === "pct" ? `${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%` : formatCurrency(n);
   return (
     <table className="w-full text-sm">
       <thead>
@@ -75,14 +79,16 @@ function DashboardVsExcel({ v }: { v: VerificacionSedeMes }) {
         </tr>
       </thead>
       <tbody className="divide-y divide-gray-100">
-        {filas.filter(([, a, b]) => a !== null || b !== null).map(([et, a, b]) => {
+        {filas.filter(([, a, b]) => a !== null || b !== null).map(([et, a, b, fmt]) => {
           const igual = a !== null && b !== null && Math.abs(a - b) < 0.01;
+          // Sin la cifra del Excel (cargas anteriores no la guardaron) no hay con qué comparar: ni ✓ ni ≠.
+          const sinComparar = fmt === "pct" && b === null;
           return (
             <tr key={et}>
               <td className="py-1.5 text-gray-700">{et}</td>
-              <td className="py-1.5 text-right tabular-nums text-gray-900">{a === null ? "—" : formatCurrency(a)}</td>
-              <td className="py-1.5 text-right tabular-nums text-gray-900">{b === null ? "—" : formatCurrency(b)}</td>
-              <td className={`py-1.5 text-center ${igual ? "text-emerald-600" : "text-amber-600"}`}>{igual ? "✓" : "≠"}</td>
+              <td className="py-1.5 text-right tabular-nums text-gray-900">{mostrar(a, fmt)}</td>
+              <td className="py-1.5 text-right tabular-nums text-gray-900">{mostrar(b, fmt)}</td>
+              <td className={`py-1.5 text-center ${sinComparar ? "text-gray-300" : igual ? "text-emerald-600" : "text-amber-600"}`}>{sinComparar ? "" : igual ? "✓" : "≠"}</td>
             </tr>
           );
         })}
@@ -118,7 +124,8 @@ export function DetalleCuadre({ v }: { v: VerificacionSedeMes }) {
         <p className="text-[11px] text-gray-500 rounded-lg bg-gray-50 border border-gray-100 px-3 py-2">
           Análisis de rentabilidad del Excel (fila {v.analisisKelly.fila}): ingresos {formatCurrency(v.analisisKelly.ingresos)} · gastos{" "}
           {formatCurrency(v.analisisKelly.egresos)} · resultado {formatCurrency(v.analisisKelly.ingresos - v.analisisKelly.egresos)}.
-          Son cifras con ajustes a mano (sin el depósito a fondos mutuos / plazo fijo): el sistema las muestra como referencia y no las usa como ingresos ni gastos del mes.
+          {v.analisisKelly.margenPct != null && <> Su margen en ese análisis: {v.analisisKelly.margenPct.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%.</>}
+          {" "}Son cifras con ajustes a mano (sin el depósito a fondos mutuos / plazo fijo): el sistema las muestra como referencia y no las usa como ingresos ni gastos del mes.
         </p>
       )}
       <p className="text-[11px] text-gray-400">Archivo: {v.archivo} · cargado el {v.cargadoEl}</p>

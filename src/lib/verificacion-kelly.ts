@@ -65,9 +65,9 @@ export type GastoFila = {
 export type Foto = {
   ingresos: number; egresos: number; omitidosEgresos: number;
   /** El total del mes que calcula la propia hoja (bloque INGRESOS/GASTOS al pie). Ver bloques-pie-excel.ts. */
-  hoja?: { ingresos: number; egresos: number } | null;
+  hoja?: { ingresos: number; egresos: number; margenPct?: number | null; gastosPct?: number | null } | null;
   /** El análisis de rentabilidad de Kelly (ajustes a mano): solo referencia. */
-  analisis?: { ingresos: number; egresos: number; fila: number } | null;
+  analisis?: { ingresos: number; egresos: number; fila: number; margenPct?: number | null; gastosPct?: number | null } | null;
 };
 
 export type LineaPuente = { etiqueta: string; monto: number; nota?: string };
@@ -96,12 +96,24 @@ export type Verificacion = {
   /** Diferencia que ningún motivo explica (debe ser 0). */
   sinExplicar: { ingresos: number; gastos: number };
   /** El análisis de rentabilidad que Kelly arma al pie de la hoja (referencia, no son movimientos). */
-  analisisKelly: { ingresos: number; egresos: number; fila: number } | null;
+  analisisKelly: { ingresos: number; egresos: number; fila: number; margenPct?: number | null; gastosPct?: number | null } | null;
+  /**
+   * El margen de caja, (entró − salió) ÷ entró, en %: el que calcula el sistema con sus
+   * cifras y el que escribe Kelly bajo el primer bloque de la hoja (null = no se leyó:
+   * las cargas anteriores no lo guardaron). Es margen de CAJA: incluye ahorro, deudas
+   * y préstamos; no es la ganancia.
+   */
+  margen: { sistema: number | null; excel: number | null; excelGastosPct: number | null } | null;
   alertas: Alerta[];
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const suma = <T>(xs: T[], f: (x: T) => number) => r2(xs.reduce((t, x) => t + f(x), 0));
+/** (entró − salió) ÷ entró, en %, con 2 decimales. null si no entró nada. */
+export function margenDeCaja(entro: number, salio: number): number | null {
+  return entro > 0 ? Math.round(((entro - salio) / entro) * 10000) / 100 : null;
+}
+const pct2 = (n: number) => `${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 const soles = (n: number) => `S/${Math.abs(n).toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
 /** La parte del gasto que cuenta para la sede (igual que totales-mes-sede.ts). */
@@ -262,20 +274,37 @@ export function verificarMes(input: {
   // ── El total que calcula la propia hoja vs. la suma de sus filas ──
   // Caso real (Centro, julio 2026): la fórmula =SUM(J5:J249) no llegaba a la
   // fila 250 (rescate de S/550) y el resumen de la hoja decía S/550 menos.
+  // Centro setiembre 2026: =SUM(L5:L280) con movimientos hasta la fila 291
+  // dejó fuera S/9,568.77 de gastos (con el ahorro) y el margen de la hoja
+  // salió 19.6% en vez de −2.1%.
+  const margenSistema = input.caja ? margenDeCaja(input.caja.entro, input.caja.salio) : foto ? margenDeCaja(foto.ingresos, foto.egresos) : null;
+  const margenExcel = foto?.hoja?.margenPct ?? null;
+  let totalHojaDifiere = false;
   if (foto?.hoja) {
     const difIn = r2(foto.hoja.ingresos - foto.ingresos);
     const difEx = r2(foto.hoja.egresos - foto.egresos);
     if (Math.abs(difIn) >= 0.01 || Math.abs(difEx) >= 0.01) {
+      totalHojaDifiere = true;
       const partes = [
         Math.abs(difIn) >= 0.01 ? `ingresos: la hoja dice ${soles(foto.hoja.ingresos)} y sus filas suman ${soles(foto.ingresos)}` : null,
         Math.abs(difEx) >= 0.01 ? `gastos: la hoja dice ${soles(foto.hoja.egresos)} y sus filas suman ${soles(foto.egresos)}` : null,
       ].filter(Boolean).join("; ");
+      const margenReal = margenDeCaja(foto.ingresos, foto.egresos);
+      const conMargen = margenExcel !== null && margenReal !== null ? ` Por eso el margen de la hoja dice ${pct2(margenExcel)} y con todas las filas sería ${pct2(margenReal)}.` : "";
       alertas.push({
         regla: "total-hoja",
         titulo: "El total del Excel no incluye todas sus filas",
-        detalle: `${partes}. Suele pasar cuando la fórmula de totales (=SUM…) no llega hasta la última fila: hay que ampliarla en el Excel. El sistema usa la suma de las filas.`,
+        detalle: `${partes}.${conMargen} Suele pasar cuando la fórmula de totales (=SUM…) no llega hasta la última fila: hay que ampliarla en el Excel. El sistema usa la suma de las filas.`,
       });
     }
+  }
+  // El margen que escribe Kelly contra el del sistema. Si los totales ya no cuadran, la causa es esa (alerta de arriba).
+  if (!totalHojaDifiere && margenExcel !== null && margenSistema !== null && Math.abs(margenExcel - margenSistema) >= 0.01) {
+    alertas.push({
+      regla: "margen",
+      titulo: "El margen del Excel no es el del sistema",
+      detalle: `El Excel dice ${pct2(margenExcel)} y con sus mismos totales sale ${pct2(margenSistema)}. Revisa la fórmula del margen en la hoja (debe ser (ingresos − gastos) ÷ ingresos).`,
+    });
   }
 
   const v = input.ventas ? verificarVentas(input.ventas) : null;
@@ -284,6 +313,7 @@ export function verificarMes(input: {
   return {
     estado: alertas.length > 0 ? "alerta" : foto ? "ok" : "sin-foto",
     analisisKelly: foto?.analisis ?? null,
+    margen: margenSistema !== null || margenExcel !== null ? { sistema: margenSistema, excel: margenExcel, excelGastosPct: foto?.hoja?.gastosPct ?? null } : null,
     puenteIngresos,
     puenteGastos,
     puenteVentas: v?.puente ?? null,

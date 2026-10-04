@@ -11,6 +11,7 @@ import { BandaFrescura } from "@/components/banda-frescura";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SelectorMes } from "../dashboard/selector-mes";
+import { margenDeCaja } from "@/lib/verificacion-kelly";
 import { VentaAGanancia } from "./venta-a-ganancia";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
@@ -74,17 +75,33 @@ export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, 
         columns={[
           { key: "name", header: "Negocio", cellClassName: "font-medium" },
           { key: "bankBalance", header: "Saldo BCP", align: "right", render: (r) => formatCurrency(r.bankBalance) },
-          { key: "monthlyIncome", header: "Ingresos mes", align: "right", cellClassName: "text-primary-light", render: (r) => formatCurrency(r.monthlyIncome) },
-          { key: "monthlyExpenses", header: "Gastos mes", align: "right", cellClassName: "text-red-600", render: (r) => formatCurrency(r.monthlyExpenses) },
+          { key: "monthlyIncome", header: "Entró (caja)", align: "right", cellClassName: "text-primary-light", render: (r) => formatCurrency(r.monthlyIncome) },
+          { key: "monthlyExpenses", header: "Salió (caja)", align: "right", cellClassName: "text-red-600", render: (r) => formatCurrency(r.monthlyExpenses) },
           {
             key: "margin",
-            header: "Margen",
+            header: "Margen de caja",
             align: "right",
             render: (r) => (
               <span className={`font-semibold ${r.margin >= 0 ? "text-primary-light" : "text-red-600"}`}>
                 {formatCurrency(r.margin)}
               </span>
             ),
+          },
+          // Los dos números que Kelly escribe en cada hoja: (entró − salió) ÷ entró, y salió por cada S/100 que entró.
+          {
+            key: "marginPct",
+            header: "Margen %",
+            align: "right",
+            render: (r) => {
+              const m = margenDeCaja(r.monthlyIncome, r.monthlyExpenses);
+              return m === null ? "—" : <span className={m < 0 ? "text-red-600" : "text-gray-900"}>{m.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%</span>;
+            },
+          },
+          {
+            key: "salioPor100",
+            header: "Salió por cada S/ 100",
+            align: "right",
+            render: (r) => (r.monthlyIncome > 0 ? formatCurrency((r.monthlyExpenses / r.monthlyIncome) * 100) : "—"),
           },
         ]}
       />
