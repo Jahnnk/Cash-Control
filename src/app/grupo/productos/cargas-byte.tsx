@@ -12,29 +12,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { Upload, Loader2, Table2 } from "lucide-react";
-import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getCoberturaRotacion } from "@/app/actions/productos-panorama";
-import { celdaCobertura, marcarSospechosas, type CeldaCobertura, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
+import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
+import { GrillaCobertura, FaltaSubir } from "./grilla-cobertura";
 import { ImportarReportesModal } from "./importar-reportes";
-
-const SEDES = [
-  { id: 2, nombre: "Fonavi" },
-  { id: 3, nombre: "Centro" },
-  { id: 1, nombre: "Atelier" },
-];
-
-const TONO: Record<CeldaCobertura["estado"], string> = {
-  completo: "bg-emerald-50 border-emerald-200 text-emerald-900",
-  "en-curso": "bg-emerald-50 border-emerald-200 text-emerald-900",
-  parcial: "bg-amber-50 border-amber-200 text-amber-900",
-  vacio: "bg-gray-50 border-gray-200 text-gray-400",
-};
-
-const QUIEN: Record<NonNullable<CeldaCobertura["quien"]>, string> = {
-  direccion: "subió gerencia",
-  sede: "subió administración",
-  ambos: "administración + gerencia",
-};
 
 export function CargasByte({ onImportado }: { onImportado: () => void }) {
   const [datos, setDatos] = useState<{ hoy: string; meses: string[]; periodos: PeriodoCargado[] } | null>(null);
@@ -43,7 +24,7 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
 
   const cargar = useCallback(async () => {
     setCargando(true);
-    const r = await getCoberturaRotacion(6);
+    const r = await getCoberturaRotacion(12);
     setDatos(r.ok ? { hoy: r.hoy, meses: r.meses, periodos: r.periodos } : null);
     setCargando(false);
   }, []);
@@ -75,52 +56,9 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
       {cargando && !datos ? (
         <div className="flex justify-center py-4 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
       ) : datos ? (
-        <div className="overflow-x-auto">
-          <table className="w-full text-xs border-separate border-spacing-1">
-            <thead>
-              <tr>
-                <th className="text-left font-medium text-gray-500 px-1">Sede</th>
-                {datos.meses.map((m) => (
-                  <th key={m} className="text-left font-medium text-gray-500 px-1">
-                    {monthLabel(m)}{m === datos.hoy.slice(0, 7) ? " (en curso)" : ""}
-                  </th>
-                ))}
-              </tr>
-            </thead>
-            <tbody>
-              {SEDES.map((s) => {
-                const celdas = marcarSospechosas(datos.meses.map((m) => celdaCobertura(datos.periodos.filter((p) => p.businessId === s.id), m, datos.hoy)));
-                return (
-                <tr key={s.id}>
-                  <td className="px-1 font-semibold text-gray-800 whitespace-nowrap">{s.nombre}</td>
-                  {celdas.map((c) => {
-                    const m = c.month;
-                    return (
-                      <td key={m} className="align-top">
-                        <button type="button" onClick={() => setModal({ sede: s.id })}
-                          className={`w-full min-w-[7.5rem] text-left rounded-lg border px-2 py-1.5 hover:ring-2 hover:ring-primary/30 ${c.sospechosa ? "bg-red-50 border-red-200 text-red-900" : TONO[c.estado]}`}>
-                          {c.estado === "vacio" ? (
-                            <span>Sin reporte</span>
-                          ) : (
-                            <>
-                              <div className="font-semibold tabular-nums">{formatCurrency(c.ventas)}</div>
-                              <div className="text-[10px]">
-                                {c.estado === "completo" ? "mes completo" : c.estado === "en-curso" ? `al día (${c.diasCubiertos} días)` : `${c.diasCubiertos} de ${c.diasMes} días`}
-                                {c.quien ? ` · ${QUIEN[c.quien]}` : ""}
-                              </div>
-                              {c.faltan && <div className="text-[10px]">falta: {c.faltan}</div>}
-                              {c.sospechosa && <div className="text-[10px] font-semibold">vende muy poco: ¿carga parcial? vuelve a subirlo</div>}
-                            </>
-                          )}
-                        </button>
-                      </td>
-                    );
-                  })}
-                </tr>
-                );
-              })}
-            </tbody>
-          </table>
+        <div className="space-y-3">
+          <GrillaCobertura hoy={datos.hoy} periodos={datos.periodos} onCelda={(id) => setModal({ sede: id })} />
+          <FaltaSubir hoy={datos.hoy} periodos={datos.periodos} />
         </div>
       ) : (
         <p className="text-xs text-gray-500">No se pudo leer qué está cargado.</p>

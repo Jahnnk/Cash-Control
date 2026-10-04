@@ -39,6 +39,8 @@ export type CeldaCobertura = {
   ventas: number;
   /** Quién puso los datos que cuentan. */
   quien: "direccion" | "sede" | "ambos" | null;
+  /** Cuándo se subió lo último que cuenta (YYYY-MM-DD); null si no hay. */
+  cargadoEl: string | null;
   /** Días del mes que no tiene nadie, en palabras ("30 y 31 ago"). */
   faltan: string | null;
   /**
@@ -52,7 +54,8 @@ export type CeldaCobertura = {
 export function marcarSospechosas(celdas: CeldaCobertura[]): CeldaCobertura[] {
   const porDia = (c: CeldaCobertura) => (c.diasCubiertos > 0 ? c.ventas / c.diasCubiertos : 0);
   return celdas.map((c) => {
-    if (c.estado === "vacio") return c;
+    // Un mes en curso con menos de 10 días es muy corto para opinar (Atelier, 4 días de octubre).
+    if (c.estado === "vacio" || (c.estado === "en-curso" && c.diasCubiertos < 10)) return c;
     const otras = celdas.filter((o) => o !== c && o.estado !== "vacio").map(porDia).sort((a, b) => a - b);
     if (otras.length < 2) return c;
     const mid = otras.length % 2 ? otras[(otras.length - 1) / 2] : (otras[otras.length / 2 - 1] + otras[otras.length / 2]) / 2;
@@ -111,6 +114,7 @@ export function celdaCobertura(periodos: PeriodoCargado[], month: string, hoy: s
   const origenes = new Set(periodos.filter((p) => p.month === month).map((p) => p.origen));
   const quien = origenes.size === 0 ? null : origenes.size === 2 ? "ambos" : [...origenes][0];
   const ventas = Math.round(efectivos.reduce((t, p) => t + p.ventas, 0) * 100) / 100;
+  const cargadoEl = efectivos.map((p) => p.cargadoEl).filter((f): f is string => !!f).sort().pop() ?? null;
 
   let estado: EstadoCelda;
   if (cubiertos.size === 0) estado = "vacio";
@@ -118,7 +122,7 @@ export function celdaCobertura(periodos: PeriodoCargado[], month: string, hoy: s
   else estado = cubiertos.size >= total ? "completo" : "parcial";
 
   return {
-    month, estado, diasCubiertos: cubiertos.size, diasMes: total, ventas, quien,
+    month, estado, diasCubiertos: cubiertos.size, diasMes: total, ventas, quien, cargadoEl,
     faltan: estado === "completo" || estado === "vacio" ? null : rangosEnPalabras(faltanDias, month),
   };
 }

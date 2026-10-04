@@ -55,3 +55,18 @@ export function textoHueco(h: Rango): string {
 
 /** Días desde `f` hasta `hoy`. */
 export const diasHasta = (f: string, hoy: string) => Math.round(dia(hoy) - dia(f));
+
+/** El primer mes con reportes de productos del sistema. */
+export const PRIMER_MES_PRODUCTOS = "2026-04";
+
+/** De abril al mes en curso (YYYY-MM). */
+export function mesesDesdeAbril(hoy: string): string[] {
+  const out: string[] = [];
+  let [y, m] = PRIMER_MES_PRODUCTOS.split("-").map(Number);
+  const fin = hoy.slice(0, 7);
+  while (`${y}-${String(m).padStart(2, "0")}` <= fin) {
+    out.push(`${y}-${String(m).padStart(2, "0")}`);
+    if (m === 12) { y += 1; m = 1; } else m += 1;
+  }
+  return out;
+}
