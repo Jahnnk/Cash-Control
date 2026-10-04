@@ -43,7 +43,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
         ) x
       `) as { corte: string | null }[];
       const corte = c[0]?.corte ?? null;
-      const [filas, ventas, caja] = await Promise.all([
+      const [filas, ventas, caja, rescates] = await Promise.all([
         corte
           ? sql`
               SELECT category AS categoria, amount::float AS monto,
@@ -56,6 +56,13 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
           : Promise.resolve([] as FilaCifras[]),
         loadVentaRowsBlended(sql, bId, inicio, hastaHoy),
         totalesMesSede(bId, inicio, hastaHoy),
+        // Rescates de fondos mutuos: entran a la caja pero es plata propia que vuelve del ahorro.
+        sql`
+          SELECT COALESCE(SUM(amount), 0)::float AS t FROM bank_income_items
+          WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${hastaHoy} AND archived = false
+            AND is_internal_transfer = false AND (is_special_loan = false OR loan_via_bank = true)
+            AND note ILIKE '%rescate%'
+        ` as unknown as Promise<{ t: number }[]>,
       ]);
       const tope = corte ?? hastaHoy;
       const hasta = ventas.rows.filter((r) => r.date <= tope).reduce((t, r) => t + r.total, 0);
@@ -63,7 +70,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
       return cifrasDeSede({
         businessId: bId, sede, mes, finDeMes, corte, filas,
         ventas: hasta > 0 ? hasta : null, ventasPosteriores: corte ? despues : 0,
-        caja: { entro: caja.entro, salio: caja.salio },
+        caja: { entro: caja.entro, salio: caja.salio, rescate: rescates[0]?.t ?? 0 },
       });
     }));
     return { ok: true, data: { mes, sedes, grupo: cifrasDelGrupo(sedes) } };

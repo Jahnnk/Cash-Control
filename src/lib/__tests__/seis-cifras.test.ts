@@ -33,10 +33,10 @@ describe("cifras de una sede", () => {
   it("deudas, inversión y reparto de utilidades salen de la caja pero no de la ganancia", () => {
     const s = sede(2, "Fonavi", {
       filas: [f("INSUMOS", 4000), f("PLANILLA", 3000), f("PRÉSTAMOS Y TARJETAS", 1000), f("EQUIPOS", 800), f("UTILIDADES A SOCIOS", 2400), f("AHORRO", 600), f("ALQUILER", 900, 600)],
-      caja: { entro: 11000, salio: 12700 },
+      caja: { entro: 11000, salio: 12700, rescate: 400 },
     });
     expect(s.ganancia).toBe(10000 - 4000 - (3000 + 600));
-    expect(s.fuera).toEqual({ deudas: 1000, inversion: 800, noEsGasto: 3000, otrasSedes: 300, ahorro: 600, reparto: 2400 });
+    expect(s.fuera).toEqual({ deudas: 1000, inversion: 800, noEsGasto: 3000, otrasSedes: 300, ahorro: 600, reparto: 2400, rescate: 400 });
     expect(s.caja.flujo).toBe(-1700);
   });
 

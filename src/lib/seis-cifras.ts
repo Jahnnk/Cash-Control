@@ -52,7 +52,7 @@ import { tipoDeCategoria } from "./reglas-gasto";
 export type FilaCifras = { categoria: string; /** La parte de la sede (en un compartido, sin la de otras). */ propio: number; /** Lo que salió. */ monto: number };
 
 /** `ahorro` y `reparto` son partes de `noEsGasto` (fondos mutuos; utilidades a socios): se muestran aparte en Caja. */
-export type FueraDeLaGanancia = { deudas: number; inversion: number; noEsGasto: number; otrasSedes: number; ahorro: number; reparto: number };
+export type FueraDeLaGanancia = { deudas: number; inversion: number; noEsGasto: number; otrasSedes: number; ahorro: number; reparto: number; /** Lo que volvió del ahorro (rescate de fondos mutuos): entró a la caja pero no es venta. */ rescate: number };
 
 export type CifrasSede = {
   businessId: number;
@@ -119,7 +119,7 @@ export function cifrasDeSede(input: {
   filas: FilaCifras[];
   ventas: number | null;
   ventasPosteriores?: number;
-  caja: { entro: number; salio: number };
+  caja: { entro: number; salio: number; rescate?: number };
 }): CifrasSede {
   const sumas: Record<Rubro, number> = { costos: 0, gastos: 0, impuestos: 0, deudas: 0, inversion: 0, noEsGasto: 0 };
   const porCostos = new Map<string, number>();
@@ -159,7 +159,7 @@ export function cifrasDeSede(input: {
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / ventas!) * 100) : null,
     caja: { entro: r2(input.caja.entro), salio: r2(input.caja.salio), flujo: r2(input.caja.entro - input.caja.salio) },
-    fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto) },
+    fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0) },
     compraAtelier: r2(compraAtelier),
     topCostos: top(porCostos), topGastos: top(porGastos),
   };
@@ -216,7 +216,7 @@ export function cifrasDelGrupo(sedes: CifrasSede[]): CifrasGrupo {
     fuera: {
       deudas: r2(sum((s) => s.fuera.deudas)), inversion: r2(sum((s) => s.fuera.inversion)),
       noEsGasto: r2(sum((s) => s.fuera.noEsGasto)), otrasSedes: r2(sum((s) => s.fuera.otrasSedes)),
-      ahorro: r2(sum((s) => s.fuera.ahorro)), reparto: r2(sum((s) => s.fuera.reparto)),
+      ahorro: r2(sum((s) => s.fuera.ahorro)), reparto: r2(sum((s) => s.fuera.reparto)), rescate: r2(sum((s) => s.fuera.rescate)),
     },
     ventasInternas: r2(internoVentas),
     provisional: conResultado.some((s) => !s.mesCompleto),

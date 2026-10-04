@@ -130,9 +130,10 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
           grande={`${g.caja.flujo >= 0 ? "" : "−"}${formatCurrency(Math.abs(g.caja.flujo))}`}
           grandeClase={g.caja.flujo < 0 ? "text-red-600" : "text-gray-900"}
           sub={<>Entró <strong className="text-gray-700 tabular-nums">{formatCurrency(g.caja.entro)}</strong> · Salió <strong className="text-gray-700 tabular-nums">{formatCurrency(g.caja.salio)}</strong> en el mes
-            {(g.fuera.ahorro + g.fuera.reparto) > 0 && (
+            {(g.fuera.ahorro + g.fuera.reparto + g.fuera.rescate) > 0 && (
               <span className="block mt-1 text-emerald-700">
-                De lo que salió, {[g.fuera.ahorro > 0 && `${formatCurrency(g.fuera.ahorro)} fue a tu ahorro`, g.fuera.reparto > 0 && `${formatCurrency(g.fuera.reparto)} a socios`].filter(Boolean).join(" y ")}: sin eso, la caja del mes sería {formatCurrency(g.caja.flujo + g.fuera.ahorro + g.fuera.reparto)}.
+                Movimientos del ahorro: {[g.fuera.ahorro > 0 && `${formatCurrency(g.fuera.ahorro)} depositados`, g.fuera.rescate > 0 && `${formatCurrency(g.fuera.rescate)} rescatados`, g.fuera.reparto > 0 && `${formatCurrency(g.fuera.reparto)} a socios`].filter(Boolean).join(" · ")}.
+                Sin ellos, la caja del mes sería {formatCurrency(g.caja.flujo + g.fuera.ahorro + g.fuera.reparto - g.fuera.rescate)}.
               </span>
             )}</>}
           pie={<>Liquidez {apoyo.mesCerrado ? "de hoy" : "ahora"} (banco + caja): <strong className="text-gray-700 tabular-nums">{formatCurrency(apoyo.liquidez)}</strong>
@@ -140,7 +141,7 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
         >
           {sedes.map((s) => <Fila key={s.businessId} nombre={s.sede} valor={`${s.caja.flujo >= 0 ? "" : "−"}${formatCurrency(Math.abs(s.caja.flujo))}`} clase={color(s.caja.flujo)}
             nota={`entró ${formatCurrency(s.caja.entro)} · salió ${formatCurrency(s.caja.salio)}`}
-            nota2={[s.fuera.ahorro > 0 && `a ahorro ${formatCurrency(s.fuera.ahorro)}`, s.fuera.reparto > 0 && `a socios ${formatCurrency(s.fuera.reparto)}`].filter(Boolean).join(" · ") || undefined} />)}
+            nota2={[s.fuera.ahorro > 0 && `a ahorro ${formatCurrency(s.fuera.ahorro)}`, s.fuera.rescate > 0 && `rescate ${formatCurrency(s.fuera.rescate)}`, s.fuera.reparto > 0 && `a socios ${formatCurrency(s.fuera.reparto)}`].filter(Boolean).join(" · ") || undefined} />)}
         </Tarjeta>
 
         {/* Margen */}
