@@ -27,6 +27,7 @@ import {
   type PlanSede, type ProductoEnSede, type ResultadoCandidatos, type SedeCandidatos,
 } from "@/lib/productos/candidatos";
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
+import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -482,6 +483,39 @@ export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ da
   } catch (e) {
     console.error("[getCandidatosReemplazo] failed:", e);
     return { ok: false, error: "No se pudieron armar los candidatos a reemplazo." };
+  }
+}
+
+/**
+ * ¿Dónde ganamos plata? Precio, costo, margen y lo que deja cada producto de la
+ * carta de una cafetería en el mes (motor: lib/productos/rentabilidad.ts).
+ * Solo dirección. null = la sede no tiene reporte de rotación de ese mes.
+ */
+export async function getRentabilidadProductos(mes: string, businessId: number): Promise<Res<{ data: RentabilidadSede | null }>> {
+  if (!mesValido(mes)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const sede = SEDES.find((s) => s.id === businessId && (s.id === 2 || s.id === 3));
+  if (!sede) return { ok: false, error: "Solo Fonavi y Centro tienen carta con precio al público." };
+  try {
+    const [costos, vinculos, mesDatos] = await Promise.all([
+      (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
+      (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
+      filasDelMes(sede.id, mes),
+    ]);
+    if (mesDatos.filas.length === 0 || !mesDatos.desde || !mesDatos.hasta) return { ok: true, data: null };
+    const p = armarPanorama(mesDatos.filas, mesDatos.desde, mesDatos.hasta);
+    return {
+      ok: true,
+      data: rentabilidadDeSede({
+        businessId: sede.id, sede: sede.nombre, mes, desde: mesDatos.desde, hasta: mesDatos.hasta, dias: p.dias,
+        carta: p.carta.map((c) => ({ nombre: c.nombre, familia: c.familia, unidades: c.unidades, ingresos: c.ingresos })),
+        costos, vinculos: new Map(vinculos.map((v) => [v.clave, v.ref])),
+      }),
+    };
+  } catch (e) {
+    console.error("[getRentabilidadProductos] failed:", e);
+    return { ok: false, error: "No se pudo calcular la rentabilidad por producto." };
   }
 }
 

@@ -17,6 +17,7 @@ import { CargasByte } from "./cargas-byte";
 import { CandidatosReemplazo } from "./candidatos-reemplazo";
 import { RankingPorCategoria, ReglaOchentaVeinte } from "./categorias-y-pareto";
 import { ProductosSinVenta } from "./productos-sin-venta";
+import { RentabilidadProductos } from "./rentabilidad-productos";
 import { ImportarReportesModal } from "./importar-reportes";
 import { VistaMes } from "@/components/productos/vista-mes";
 import { VistaTrimestre } from "@/components/productos/vista-trimestre";
@@ -234,6 +235,8 @@ function PestanaMes({ month, sede, onSede }: { month: string; sede: number; onSe
       {/* Por categoría y 80/20 de la sede elegida (pedido de Jahnn, 24-sep-2026). */}
       {sel?.panorama && <RankingPorCategoria key={`cat-${sede}`} p={sel.panorama} sede={sede} month={month} />}
       <ReglaOchentaVeinte month={month} sede={sede} />
+      {/* Precio, costo, margen y lo que deja cada producto (4-oct-2026). */}
+      <RentabilidadProductos key={`rent-${sede}-${month}`} month={month} sede={sede} />
       {/* Del reporte «Platos con menor rotación» que sube dirección (28-sep-2026). */}
       <ProductosSinVenta sede={sede} />
       {/* Fonavi y Centro juntas: no depende de la sede elegida arriba. */}
