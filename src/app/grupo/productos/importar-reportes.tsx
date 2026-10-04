@@ -56,7 +56,7 @@ export function reportesPara(mes: string, hoy: string): DefReporte[] {
   return [
     { tipo: "ventas", titulo: "Reporte de ventas", ejemplo: `Ventas de ${MES_BYTE[m - 1]} ${y}`, ayuda: `Venta de cada día. Del 01 al ${hasta}.` },
     { tipo: "mayor", titulo: "Productos con mayor rotación", ejemplo: `Platos con mayor rotacion del ${ini} al ${fin}`, ayuda: `Lo que más se vende. Del 01 al ${hasta}.` },
-    { tipo: "menor", titulo: "Productos con menor rotación", ejemplo: `Platos con menor rotacion del ${iniMenor} al ${fin}`, ayuda: `Lo que casi no se vende. Reemplaza la anterior: conviene del ${dm(iniMenor)} al ${hasta}.` },
+    { tipo: "menor", titulo: "Productos con menor rotación", ejemplo: `Platos con menor rotacion del ${iniMenor} al ${fin}`, ayuda: `Lo que casi no se vende. Del 01 al ${hasta}, o un solo rango largo (del ${dm(iniMenor)}). Cada rango se guarda aparte.` },
   ];
 }
 const TITULO_TIPO: Record<TipoReporteByte, string> = { ventas: "Reporte de ventas", mayor: "Productos con mayor rotación", menor: "Productos con menor rotación" };
@@ -79,7 +79,7 @@ export function CuadroReporte({ r, deshabilitado, cargados, estado, onArchivos }
       onDrop={(e) => { e.preventDefault(); setSobre(false); if (!deshabilitado) onArchivos(e.dataTransfer.files); }}
       onClick={() => !deshabilitado && ref.current?.click()}
       className={`border-2 border-dashed rounded-xl p-3 text-center cursor-pointer min-w-0 ${sobre ? "border-primary bg-primary/5" : cargados > 0 ? "border-emerald-300 bg-emerald-50/40" : "border-gray-300 hover:border-gray-400"} ${deshabilitado ? "opacity-60 cursor-not-allowed" : ""}`}>
-      <input ref={ref} type="file" accept=".xlsx,.xls" multiple={r.tipo !== "menor"} className="hidden"
+      <input ref={ref} type="file" accept=".xlsx,.xls" multiple className="hidden"
         onChange={(e) => { if (e.target.files) onArchivos(e.target.files); e.target.value = ""; }} />
       {cargados > 0 ? <CheckCircle2 className="w-5 h-5 mx-auto text-emerald-600 mb-1" /> : <Upload className="w-5 h-5 mx-auto text-gray-400 mb-1" />}
       <div className="text-sm font-semibold text-gray-900">{r.titulo}</div>
@@ -306,7 +306,7 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
       return (
         <div className="mt-1 space-y-0.5 text-xs">
           <div className="text-sky-800">
-            {a.productos?.length} productos: {nunca} nunca vendidos · {sinVenta} sin ventas en el rango · el resto con muy pocas. Reemplaza la lista anterior de la sede.
+            {a.productos?.length} productos: {nunca} nunca vendidos · {sinVenta} sin ventas en el rango · el resto con muy pocas. Se guarda como la lista de {fecha(a.desde)} → {fecha(a.hasta)}: solo reemplaza las listas que ese rango ya cubre; las demás de la sede se conservan.
           </div>
           {(a.warnings?.length ?? 0) > 0 && <div className="text-amber-800">{a.warnings!.slice(0, 3).join(" ")}</div>}
         </div>
