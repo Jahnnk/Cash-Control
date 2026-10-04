@@ -90,3 +90,17 @@ describe("sello de confiabilidad", () => {
     expect(porcentajeSeguro({ total: 0, alta: 0, media: 0, baja: 0, filasBaja: 0 })).toBeNull();
   });
 });
+
+describe("la nota de con qué plata se pagó no cambia lo que se compró (Atelier, 16-sep-2026)", () => {
+  it("«ARREGLO 50% ABATIDOR (PRÉSTAMO DE JUAN) (LUIS LINAN)» es mantenimiento, no cuota de préstamo", () => {
+    expect(clasificarGasto("ARREGLO 50% ABATIDOR (PRÉSTAMO DE JUAN) (LUIS LINAN) [FA]")).toBe("MANTENIMIENTO");
+    const c = clasificarEgreso(gasto({ concepto: "ARREGLO 50% ABATIDOR (PRÉSTAMO DE JUAN) (LUIS LINAN) [FA]", categoria: "MANTENIMIENTO", grupoExcel: "MANTENIMIENTO" }));
+    expect(c).toMatchObject({ categoria: "MANTENIMIENTO", confianza: "alta" });
+  });
+
+  it("las cuotas y comisiones de un préstamo siguen siendo préstamo", () => {
+    expect(clasificarGasto("PAGO COMISIÒN PRESTAMO ARREGLO ABATIDOR (JUAN TERRONES)")).toBe("PRÉSTAMOS Y TARJETAS");
+    expect(clasificarGasto("PRESTAMO DINERS (KELLY TERRONES)")).toBe("PRÉSTAMOS Y TARJETAS");
+    expect(clasificarGasto("CUOTA SET26 (KELLY TERRONES)")).toBe("PRÉSTAMOS Y TARJETAS");
+  });
+});
