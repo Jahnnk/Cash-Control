@@ -78,6 +78,12 @@ export type CifrasSede = {
   ganancia: number | null;
   gananciaPct: number | null;
   caja: { entro: number; salio: number; flujo: number };
+  /**
+   * Lo que se COBRÓ de las ventas: ingresos operativos del Excel hasta el corte
+   * (sin préstamos, rescates ni reembolsos). Es la barra del medio de
+   * "De la venta a la ganancia"; null si la sede no tiene Excel del mes.
+   */
+  cobrado: number | null;
   fuera: FueraDeLaGanancia;
   /** Lo que esta sede le compró a Atelier (para netear el consolidado). */
   compraAtelier: number;
@@ -120,6 +126,8 @@ export function cifrasDeSede(input: {
   ventas: number | null;
   ventasPosteriores?: number;
   caja: { entro: number; salio: number; rescate?: number };
+  /** Ingresos operativos del Excel hasta el corte; null = sin Excel. */
+  cobrado?: number | null;
 }): CifrasSede {
   const sumas: Record<Rubro, number> = { costos: 0, gastos: 0, impuestos: 0, deudas: 0, inversion: 0, noEsGasto: 0 };
   const porCostos = new Map<string, number>();
@@ -159,6 +167,7 @@ export function cifrasDeSede(input: {
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / ventas!) * 100) : null,
     caja: { entro: r2(input.caja.entro), salio: r2(input.caja.salio), flujo: r2(input.caja.entro - input.caja.salio) },
+    cobrado: input.cobrado === null || input.cobrado === undefined ? null : r2(input.cobrado),
     fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0) },
     compraAtelier: r2(compraAtelier),
     topCostos: top(porCostos), topGastos: top(porGastos),
