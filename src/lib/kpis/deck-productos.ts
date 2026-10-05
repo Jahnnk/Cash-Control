@@ -10,7 +10,8 @@
  *   11–13 · Ranking por categoría, una lámina por sede (antes solo postres;
  *        ampliado el 24-sep-2026 con los candidatos de cada categoría).
  *   14 · Regla 80/20: el mes contra los últimos 3 meses.
- *   15 · Candidatos a reemplazo (Fonavi y Centro juntas).
+ *   15 · La carta en una matriz (estrella, vaca, interrogante, perro).
+ *   16 · Candidatos a reemplazo (Fonavi y Centro juntas).
  *
  * Mismos datos que el dashboard (getPanoramaProductosGrupo y
  * getCandidatosReemplazo): el deck nunca contradice a la pantalla. Una sede
@@ -22,11 +23,12 @@ import type { PanoramaDeSede, CandidatosReemplazo, OchentaVeinteSede } from "@/a
 import { FAMILIA_OTROS, type ProductoRanking, type PanoramaProductos } from "@/lib/productos/panorama";
 import { tendenciaPareto, type Pareto } from "@/lib/productos/ochenta-veinte";
 import { candidatosDeCategoria } from "@/lib/productos/por-categoria";
+import { armarMatriz, CUADRANTES, escalasMatriz, ORDEN_CUADRANTES, type Cuadrante, type PuntoMatriz } from "@/lib/productos/matriz-carta";
 import type { Candidato, Senal } from "@/lib/productos/candidatos";
 import { COLOR_FAMILIA } from "@/components/productos/ui";
 import {
   C, MX, ANCHO, SUAVE, TEXTO, Y0, YMAX,
-  diapositiva, cajaFecha, tarjeta, texto, icono, circulo, pastilla, lineasEstimadas, altoLinea, solesDeck0,
+  diapositiva, cajaFecha, tarjeta, texto, icono, circulo, pastilla, lineasEstimadas, altoLinea, solesDeck, solesDeck0,
 } from "./deck-diseno";
 import type { Ctx } from "./deck-semanal";
 import type { Tono } from "./lectura-semana";
@@ -472,4 +474,124 @@ export function candidatosReemplazo(ctx: Ctx, d: CandidatosReemplazo) {
       x: MX, y: YMAX - 0.2, w: ANCHO, h: 0.2, fontSize: 7, italic: true, color: C.gris,
     });
   }
+}
+
+
+/* ──────────────────────── La carta en una matriz ──────────────────────── */
+
+const COLOR_CUADRANTE: Record<Cuadrante, { punto: string; fondo: string; tono: Tono }> = {
+  estrella: { punto: "098B5F", fondo: "E4F1EA", tono: "verde" },
+  vaca: { punto: "4A7FB5", fondo: "E6EEF7", tono: "gris" },
+  interrogante: { punto: "C98A12", fondo: "FBF0DA", tono: "ambar" },
+  perro: { punto: "C0392B", fondo: "FAE6E3", tono: "rojo" },
+};
+const URGENCIA_TENDENCIA = { cayendo: 0, "poco-siempre": 1, estable: 2, "sin-datos": 3, subiendo: 4 } as const;
+const un1 = (n: number) => (n >= 10 ? n.toFixed(0) : n.toFixed(1));
+
+/**
+ * La carta en una matriz (pedido de Jahnn, 5-oct-2026): cada producto según lo que
+ * vende y lo que deja por venta, qué parte de la ganancia hay en cada caja y quiénes
+ * piden decisión. Mismos datos y misma regla que la pantalla (lib/productos/matriz-carta.ts).
+ */
+export function matrizDeLaCarta(ctx: Ctx, d: CandidatosReemplazo) {
+  if (!d.matriz || d.matriz.length === 0) return;
+  const m = armarMatriz(d.matriz, d.cartas, { sedeId: null, familia: null });
+  if (m.puntos.length === 0) return;
+
+  const completos = (d.cartas[0]?.serie ?? []).filter((p) => p.completo).map((p) => p.month);
+  const s = diapositiva(ctx.pptx, {
+    titulo: "La carta en una matriz",
+    subtitulo: "Fonavi y Centro juntas: cada producto según lo que vende y lo que deja por cada venta.",
+    periodo: ctx.periodo, derecha: "Productos",
+  });
+  if (completos.length > 0) {
+    cajaFecha(s, `${MES3[Number(completos[0].slice(5, 7)) - 1]}–${MES3[Number(completos[completos.length - 1].slice(5, 7)) - 1]} ${completos[completos.length - 1].slice(0, 4)}`, `${m.puntos.length} productos con costo`, "check");
+  }
+
+  // ── Izquierda: el gráfico de puntos ──
+  const cardW = 5.55, cardH = YMAX - Y0 - 0.02;
+  tarjeta(s, MX, Y0, cardW, cardH);
+  const px = MX + 0.5, py = Y0 + 0.3, pw = cardW - 0.7, ph = cardH - 1.2;
+  const e = escalasMatriz(m.puntos, m.cortes);
+  const X = (v: number) => px + e.xFrac(v) * pw;
+  const Y = (v: number) => py + (1 - e.yFrac(v)) * ph;
+  const cx = X(m.cortes.unidadesSemana), cy = Y(m.cortes.margenUnidad);
+  const caja = (x: number, y: number, w: number, h: number, c: Cuadrante) =>
+    s.addShape("rect", { x, y, w, h, fill: { color: COLOR_CUADRANTE[c].fondo }, line: { color: COLOR_CUADRANTE[c].fondo, type: "none" } });
+  caja(px, py, cx - px, cy - py, "interrogante");
+  caja(cx, py, px + pw - cx, cy - py, "estrella");
+  caja(px, cy, cx - px, py + ph - cy, "perro");
+  caja(cx, cy, px + pw - cx, py + ph - cy, "vaca");
+  s.addShape("line", { x: cx, y: py, w: 0, h: ph, line: { color: C.grisClaro, width: 0.75, dashType: "dash" } });
+  s.addShape("line", { x: px, y: cy, w: pw, h: 0, line: { color: C.grisClaro, width: 0.75, dashType: "dash" } });
+  for (const t of e.xTicks) texto(s, String(t), { x: X(t) - 0.2, y: py + ph + 0.02, w: 0.4, h: 0.13, fontSize: 6, color: C.gris, align: "center" });
+  for (const t of e.yTicks) texto(s, `S/${t}`, { x: px - 0.42, y: Y(t) - 0.07, w: 0.38, h: 0.13, fontSize: 6, color: C.gris, align: "right" });
+  texto(s, "Ventas: unidades por semana →", { x: px, y: py + ph + 0.16, w: pw, h: 0.14, fontSize: 6.5, color: C.gris, align: "center" });
+  texto(s, "↑ Lo que deja cada venta (S/)", { x: MX + 0.14, y: Y0 + 0.07, w: 3, h: 0.15, fontSize: 6.5, color: C.gris });
+
+  // Los puntos: forma = tendencia (▼ cae, ▲ sube, ● el resto), color = caja.
+  for (const p of m.puntos) {
+    const x = X(p.unidadesSemana), y = Y(p.margenUnidad) + (p.margenUnidad > e.yMax ? 0.04 : 0);
+    const color = COLOR_CUADRANTE[p.cuadrante].punto;
+    const line = { color: C.blanco, width: 0.5 };
+    if (p.tendencia.clase === "cayendo") s.addShape("triangle", { x: x - 0.055, y: y - 0.05, w: 0.11, h: 0.1, flipV: true, fill: { color }, line });
+    else if (p.tendencia.clase === "subiendo") s.addShape("triangle", { x: x - 0.055, y: y - 0.05, w: 0.11, h: 0.1, fill: { color }, line });
+    else s.addShape("ellipse", { x: x - 0.04, y: y - 0.04, w: 0.08, h: 0.08, fill: { color }, line });
+  }
+  // Rótulos de las cajas, encima de los puntos y con el fondo de su caja.
+  const rotulo = (c: Cuadrante, x: number, y: number, w: number, align: "left" | "right") => {
+    texto(s, [
+      { text: CUADRANTES[c].nombre.toUpperCase(), options: { bold: true, color: COLOR_CUADRANTE[c].punto } },
+      { text: ` · ${CUADRANTES[c].accion}`, options: { color: C.gris } },
+    ], { x, y, w, h: 0.15, fontSize: 6.5, align, fill: { color: COLOR_CUADRANTE[c].fondo } });
+  };
+  rotulo("interrogante", px + 0.03, py + 0.03, 1.62, "left");
+  rotulo("estrella", px + pw - 1.1, py + 0.03, 1.07, "right");
+  rotulo("perro", px + 0.03, py + ph - 0.18, 1.5, "left");
+  rotulo("vaca", px + pw - 1.68, py + ph - 0.18, 1.65, "right");
+
+  texto(s, [
+    { text: `▼ cae   ▲ sube   ● estable o poco   ·   línea punteada = mediana: se vende más de ${un1(m.cortes.unidadesSemana)} por semana y deja más de ${solesDeck(m.cortes.margenUnidad)} por venta`, options: { breakLine: e.arriba > 0 } },
+    ...(e.arriba > 0 ? [{ text: `${e.arriba} productos que dejan más de S/${Math.round(e.yMax)} por venta se dibujan en el borde de arriba.`, options: {} }] : []),
+  ], { x: MX + 0.14, y: Y0 + cardH - 0.38, w: cardW - 0.28, h: 0.32, fontSize: 6, color: C.gris, valign: "top" });
+
+  // ── Derecha: las cuatro cajas, la alarma y los perros ──
+  const rx = MX + cardW + 0.18, rw = ANCHO - cardW - 0.18;
+  const gap = 0.1, tw = (rw - gap) / 2, th = 0.78;
+  ORDEN_CUADRANTES.forEach((c, i) => {
+    const x = rx + (i % 2) * (tw + gap), y = Y0 + Math.floor(i / 2) * (th + gap);
+    const r = m.cuadrantes[c];
+    const col = COLOR_CUADRANTE[c];
+    tarjeta(s, x, y, tw, th, { fondo: col.fondo });
+    texto(s, CUADRANTES[c].nombre, { x: x + 0.1, y: y + 0.05, w: tw - 0.2, h: 0.15, fontSize: 8, bold: true, color: col.punto });
+    texto(s, String(r.n), { x: x + 0.1, y: y + 0.2, w: 0.5, h: 0.34, fontSize: 18, bold: true, color: C.tinta });
+    texto(s, `${r.pctGanancia}% de la ganancia`, { x: x + 0.58, y: y + 0.24, w: tw - 0.64, h: 0.14, fontSize: 7, bold: true, color: C.tinta });
+    texto(s, `${r.pctVenta}% de lo que vende`, { x: x + 0.58, y: y + 0.38, w: tw - 0.64, h: 0.13, fontSize: 6.5, color: C.gris });
+    texto(s, CUADRANTES[c].accion, { x: x + 0.1, y: y + 0.58, w: tw - 0.2, h: 0.15, fontSize: 6.5, italic: true, color: C.gris });
+  });
+
+  const filas = (titulo: string, tono: Tono, y: number, h: number, items: { nombre: string; pill: string; detalle: string }[], vacio: string) => {
+    tarjeta(s, rx, y, rw, h);
+    texto(s, titulo, { x: rx + 0.12, y: y + 0.05, w: rw - 0.24, h: 0.17, fontSize: 8, bold: true, color: TEXTO[tono] });
+    if (items.length === 0) { texto(s, vacio, { x: rx + 0.12, y: y + 0.3, w: rw - 0.24, h: 0.3, fontSize: 7, italic: true, color: C.gris, valign: "top" }); return; }
+    items.forEach((it, k) => {
+      const fy = y + 0.28 + k * 0.205;
+      if (k > 0) s.addShape("line", { x: rx + 0.12, y: fy - 0.025, w: rw - 0.24, h: 0, line: { color: C.borde, width: 0.5 } });
+      texto(s, recortar(it.nombre, 7, rw - 1.95, 1), { x: rx + 0.12, y: fy, w: rw - 1.95, h: 0.18, fontSize: 7, bold: true, color: C.tinta });
+      pastilla(s, rx + rw - 1.8, fy, 0.78, 0.17, it.pill, tono, { tam: 6.5 });
+      texto(s, it.detalle, { x: rx + rw - 0.98, y: fy, w: 0.88, h: 0.18, fontSize: 6.5, color: C.gris, align: "right" });
+    });
+  };
+  const yCards = Y0 + 2 * (th + gap) + 0.02;
+  const ch = (YMAX - 0.02 - yCards - gap) / 2;
+  const mes = (p: PuntoMatriz) => `${solesDeck0(p.gananciaMes)}/mes`;
+  const alarmas = m.puntos.filter((p) => (p.cuadrante === "estrella" || p.cuadrante === "vaca") && p.tendencia.clase === "cayendo").sort((a, b) => b.gananciaMes - a.gananciaMes);
+  filas("Alarma: dan ganancia y vienen cayendo", "ambar", yCards, ch,
+    alarmas.slice(0, 4).map((p) => ({ nombre: nombreLegible(p.nombre), pill: `cae ${p.tendencia.cambioPct}%`, detalle: mes(p) })),
+    "Ninguna estrella ni vaca viene cayendo.");
+  const perros = m.puntos.filter((p) => p.cuadrante === "perro")
+    .sort((a, b) => URGENCIA_TENDENCIA[a.tendencia.clase] - URGENCIA_TENDENCIA[b.tendencia.clase] || a.gananciaMes - b.gananciaMes);
+  filas("Perros: los primeros a reemplazar", "rojo", yCards + ch + gap, ch,
+    perros.slice(0, 4).map((p) => ({ nombre: nombreLegible(p.nombre), pill: p.tendencia.clase === "cayendo" ? `cae ${p.tendencia.cambioPct}%` : p.tendencia.clase === "poco-siempre" ? "poco, siempre" : p.tendencia.clase === "subiendo" ? "sube" : "estable", detalle: mes(p) })),
+    "No hay perros en esta carta.");
 }

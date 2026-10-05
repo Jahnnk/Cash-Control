@@ -190,3 +190,42 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
 
   return { puntos, cortes, cuadrantes, sinCosto, fuera };
 }
+
+/**
+ * Las escalas del gráfico de puntos (la usan la pantalla y la lámina del deck, para que
+ * dibujen lo mismo). Horizontal: unidades por semana en escala logarítmica (hay productos
+ * de 0.2 y de 80 por semana). Vertical: lo que deja cada venta; llega hasta cerca del
+ * percentil 95 y los pocos que dejan más (tortas enteras) se dibujan en el borde de arriba.
+ */
+export type EscalasMatriz = {
+  /** 0 = borde izquierdo, 1 = borde derecho. */
+  xFrac: (unidadesSemana: number) => number;
+  /** 0 = abajo, 1 = arriba (los que pasan el tope quedan en 1). */
+  yFrac: (margenUnidad: number) => number;
+  xTicks: number[];
+  yTicks: number[];
+  /** Hasta dónde llega el eje vertical (S/ por venta). */
+  yMax: number;
+  /** Cuántos productos dejan más que yMax. */
+  arriba: number;
+};
+
+export function escalasMatriz(puntos: Pick<PuntoMatriz, "unidadesSemana" | "margenUnidad">[], cortes: Matriz["cortes"]): EscalasMatriz {
+  const us = puntos.map((p) => p.unidadesSemana).filter((v) => v > 0);
+  const ms = puntos.map((p) => p.margenUnidad);
+  const xMin = Math.max(0.1, Math.min(...us, cortes.unidadesSemana) * 0.7), xMax = Math.max(...us, cortes.unidadesSemana) * 1.25;
+  const orden = [...ms].sort((a, b) => a - b);
+  const p95 = orden[Math.min(orden.length - 1, Math.floor(orden.length * 0.95))] ?? 0;
+  const yMin = Math.min(0, ...ms);
+  const yMax = Math.min(Math.max(...ms, cortes.margenUnidad) * 1.1, Math.max(p95 * 1.2, cortes.margenUnidad * 2.2));
+  const lmin = Math.log10(xMin), lmax = Math.log10(xMax);
+  const paso = yMax > 40 ? 10 : yMax > 15 ? 5 : 2;
+  const yTicks: number[] = [];
+  for (let t = Math.ceil(yMin / paso) * paso; t <= yMax; t += paso) yTicks.push(t);
+  return {
+    xFrac: (v) => (Math.log10(Math.max(v, xMin)) - lmin) / (lmax - lmin || 1),
+    yFrac: (v) => (Math.min(v, yMax) - yMin) / (yMax - yMin || 1),
+    xTicks: [0.5, 1, 2, 5, 10, 20, 50, 100].filter((t) => t >= xMin && t <= xMax),
+    yTicks, yMax, arriba: ms.filter((v) => v > yMax).length,
+  };
+}
