@@ -30,7 +30,7 @@
 
 import { categoriaPrestamoIngreso } from "./prestamo-ingreso";
 import { esReembolsoEntreSedes } from "./reembolsos-entre-sedes";
-import { elegirVentaDia } from "./kpis/venta-del-dia";
+import { resolverVentasPorDia } from "./kpis/venta-del-dia";
 
 export type IngresoFila = {
   monto: number;
@@ -76,7 +76,7 @@ export type Alerta = { regla: string; titulo: string; detalle: string };
 
 /** Venta de un día según cada fuente (lib/kpis/ventas-loader.ts). */
 export type VentaDia = { date: string; total: number };
-export type FuentesVenta = { byte: VentaDia[]; kelly: VentaDia[]; registro: VentaDia[]; /** Byte de la sede en los días que también subió dirección. */ byteSede?: VentaDia[] };
+export type FuentesVenta = { byte: VentaDia[]; kelly: VentaDia[]; registro: VentaDia[]; /** Byte de la sede en los días que también subió dirección. */ byteSede?: VentaDia[]; /** Los días que siguen al mes: solo para ver si Byte juntó el último día con los siguientes. */ despues?: { byte: VentaDia[]; kelly: VentaDia[]; registro: VentaDia[] } };
 
 
 export type Verificacion = {
@@ -340,14 +340,14 @@ export function verificarVentas(f: FuentesVenta): { puente: LineaPuente[]; siste
   if (byte.size === 0 && excel.size === 0 && admin.size === 0) return null;
 
   const baseExcel = suma([...excel.values()], (x) => x);
-  let difByte = 0, diasByte = 0, soloOtros = 0, diasSoloOtros = 0, sistema = 0;
+  let difByte = 0, diasByte = 0, soloOtros = 0, diasSoloOtros = 0, sistema = 0, difJuntos = 0, diasJuntos = 0;
   const conByte: string[] = [], conExcel: string[] = [], sinDesempate: string[] = [];
-  for (const d of [...new Set([...byte.keys(), ...excel.keys(), ...admin.keys()])].sort()) {
+  const { dias, avisos } = resolverVentasPorDia(f, f.despues);
+  for (const [d, x] of [...dias.entries()].sort(([p], [q]) => p.localeCompare(q))) {
     const b = byte.get(d), e = excel.get(d), a = admin.get(d);
-    const x = elegirVentaDia(b, e, a);
-    if (!x) continue;
     sistema += x.total;
-    if (e === undefined) { soloOtros += x.total; diasSoloOtros++; }
+    if (x.motivo === "dias-juntos") { difJuntos += x.total - (e ?? 0); diasJuntos++; }
+    else if (e === undefined) { soloOtros += x.total; diasSoloOtros++; }
     else if (Math.abs(x.total - e) >= 0.01) { difByte += x.total - e; diasByte++; }
     const trio = `Byte ${b === undefined ? "—" : soles(b)}, Excel ${e === undefined ? "—" : soles(e)}, administrador ${a === undefined ? "—" : soles(a)}`;
     if (x.motivo === "admin-confirma-excel") conExcel.push(`${ddmm(d)} (${trio})`);
@@ -356,6 +356,7 @@ export function verificarVentas(f: FuentesVenta): { puente: LineaPuente[]; siste
   }
   const puente: LineaPuente[] = [{ etiqueta: "Ventas en el Control de VTAS del Excel", monto: baseExcel }];
   if (diasByte) puente.push({ etiqueta: `Días en que se usa el reporte de Byte (${diasByte})`, monto: r2(difByte) });
+  if (diasJuntos) puente.push({ etiqueta: `Días que Byte junta en uno (${diasJuntos})`, monto: r2(difJuntos), nota: "Byte los suma en un solo día (caja sin abrir); se usa lo que anotó el administrador de cada día, que suma lo mismo" });
   if (diasSoloOtros) puente.push({ etiqueta: `Días que el Excel aún no tiene (${diasSoloOtros})`, monto: r2(soloOtros), nota: "Se usa el reporte de Byte o el registro del administrador" });
 
   const alertas: Alerta[] = [];
@@ -368,6 +369,11 @@ export function verificarVentas(f: FuentesVenta): { puente: LineaPuente[]; siste
     regla: "ventas",
     titulo: `El Excel no coincide con Byte en ${conByte.length} ${conByte.length === 1 ? "día" : "días"}`,
     detalle: `${conByte.join(" · ")}. El administrador confirma Byte: hay que corregir el Control de VTAS del Excel.`,
+  });
+  if (avisos.length) alertas.push({
+    regla: "ventas",
+    titulo: `Byte puede haber juntado días y no suman: ${avisos.length === 1 ? "1 caso" : `${avisos.length} casos`}`,
+    detalle: `${avisos.map((x) => `${ddmm(x.fecha)}: Byte ${soles(x.byte)}, administrador ${x.administrador.map((y) => `${ddmm(y.fecha)} ${soles(y.total)}`).join(" + ")}`).join(" · ")}. El administrador anotó días que Byte no tiene y su suma no coincide con Byte; el sistema usa Byte. Revisa los números del administrador.`,
   });
   if (sinDesempate.length) alertas.push({
     regla: "ventas",

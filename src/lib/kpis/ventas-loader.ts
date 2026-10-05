@@ -22,7 +22,7 @@
  */
 
 import type { VentaRow } from "./ventas-deck";
-import { elegirVentaDia } from "./venta-del-dia";
+import { MAX_DIAS_SIGUIENTES, resolverVentasPorDia, sumarDias } from "./venta-del-dia";
 
 /** Firma mínima del template tag de @neondatabase/serverless. */
 type SqlTag = (strings: TemplateStringsArray, ...params: unknown[]) => Promise<unknown>;
@@ -40,14 +40,25 @@ export type VentaRowsBlended = {
  * reporte de dirección (el que manda): sirve para ver si la sede subió un
  * reporte incompleto.
  */
-export type FuentesVentaDia = { byte: VentaRow[]; kelly: VentaRow[]; registro: VentaRow[]; byteSede?: VentaRow[] };
+export type FuentesVentaDia = {
+  byte: VentaRow[]; kelly: VentaRow[]; registro: VentaRow[]; byteSede?: VentaRow[];
+  /**
+   * Los días que siguen al periodo (hasta MAX_DIAS_SIGUIENTES). Solo sirven para
+   * ver si Byte juntó el último día con los siguientes (caja sin abrir); no son
+   * parte del periodo.
+   */
+  despues?: { byte: VentaRow[]; kelly: VentaRow[]; registro: VentaRow[] };
+};
 
 export async function leerFuentesVenta(
   sql: SqlTag,
   bId: number,
   from: string,
-  to: string,
+  hasta: string,
 ): Promise<FuentesVentaDia> {
+  // Se leen unos días más allá del final para detectar los días que Byte junta
+  // (venta-del-dia.ts); abajo se separan del periodo.
+  const to = sumarDias(hasta, MAX_DIAS_SIGUIENTES);
   // Prioridad 1 y 2: reportes de Byte (oficial primero).
   let byte: VentaRow[] = [];
   try {
@@ -108,7 +119,12 @@ export async function leerFuentesVenta(
           AND COALESCE(source, 'manual') <> 'import'
       `) as VentaRow[]);
 
-  return { byte, kelly, registro, byteSede };
+  const enPeriodo = (rows: VentaRow[]) => rows.filter((r) => r.date <= hasta);
+  const despuesDe = (rows: VentaRow[]) => rows.filter((r) => r.date > hasta);
+  return {
+    byte: enPeriodo(byte), kelly: enPeriodo(kelly), registro: enPeriodo(registro), byteSede: enPeriodo(byteSede),
+    despues: { byte: despuesDe(byte), kelly: despuesDe(kelly), registro: despuesDe(registro) },
+  };
 }
 
 export async function loadVentaRowsBlended(
@@ -117,16 +133,11 @@ export async function loadVentaRowsBlended(
   from: string,
   to: string,
 ): Promise<VentaRowsBlended> {
-  const { byte, kelly, registro } = await leerFuentesVenta(sql, bId, from, to);
-  // Día por día, la regla de dos de tres (venta-del-dia.ts).
-  const b = new Map(byte.map((r) => [r.date, r.total]));
-  const e = new Map(kelly.map((r) => [r.date, r.total]));
-  const a = new Map(registro.map((r) => [r.date, r.total]));
+  const f = await leerFuentesVenta(sql, bId, from, to);
+  // Día por día, la regla de dos de tres, y los días que Byte junta (venta-del-dia.ts).
+  const { dias } = resolverVentasPorDia(f, f.despues);
   const byDate = new Map<string, { total: number; src: "byte" | "registro" }>();
-  for (const d of new Set([...b.keys(), ...e.keys(), ...a.keys()])) {
-    const x = elegirVentaDia(b.get(d), e.get(d), a.get(d));
-    if (x) byDate.set(d, { total: x.total, src: x.fuente === "admin" ? "registro" : "byte" });
-  }
+  for (const [d, x] of dias) byDate.set(d, { total: x.total, src: x.fuente === "admin" ? "registro" : "byte" });
 
   if (byDate.size === 0) return { rows: [], fuente: null };
   const rows = [...byDate.entries()]
