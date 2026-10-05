@@ -93,7 +93,7 @@ describe("tendencia de la demanda", () => {
 
 import { evidenciaDe } from "./tendencia";
 describe("evidencia sobre un candidato", () => {
-  const t = (clase: "cayendo" | "subiendo" | "estable" | "poco-siempre" | "sin-datos") => ({ clase, antes: 1, ahora: 1, cambioPct: 0, cartaPct: 0, mesesBajando: 0, tramoAntes: [], tramoAhora: [], resumen: "" });
+  const t = (clase: "cayendo" | "subiendo" | "estable" | "poco-siempre" | "sin-datos") => ({ clase, antes: 1, ahora: 1, cambioPct: 0, cartaPct: 0, mesesBajando: 0, ultimoMes: null, tramoAntes: [], tramoAhora: [], resumen: "" });
   it("cae en las dos sedes: negativa confirmada", () => {
     expect(evidenciaDe([{ sede: "Fonavi", tendencia: t("cayendo") }, { sede: "Centro", tendencia: t("cayendo") }])).toMatchObject({ tono: "rojo", titulo: expect.stringMatching(/confirmada en las dos sedes/) });
   });
@@ -106,5 +106,34 @@ describe("evidencia sobre un candidato", () => {
   it("poco desde siempre y sin datos", () => {
     expect(evidenciaDe([{ sede: "Fonavi", tendencia: t("poco-siempre") }]).titulo).toMatch(/nunca despegó/);
     expect(evidenciaDe([{ sede: "Fonavi", tendencia: t("sin-datos") }]).titulo).toMatch(/Todavía no hay historia/);
+  });
+});
+
+describe("caída del último mes que el promedio esconde (roast beef, 5-oct-2026)", () => {
+  it("roast beef: 18.7 11.5 12.9 13.1 16.0 8.9 por semana → «estable», pero avisa que setiembre cayó fuerte", () => {
+    const porSemana = [18.7, 11.5, 12.9, 13.1, 16.0, 8.9];
+    const t = calcularTendencia(serie(porSemana.map((v) => v / 7)), serie(Array(6).fill(100)));
+    expect(t.clase).toBe("estable"); // el promedio de 3 meses casi no se mueve
+    expect(t.ultimoMes).toEqual({ month: "2026-09", cambioPct: -39 });
+    expect(t.resumen).toMatch(/Ojo: en setiembre bajó 39%/);
+  });
+
+  it("si toda la carta bajó igual ese mes, no es del producto y no se avisa", () => {
+    const t = calcularTendencia(serie([1, 1, 1, 1, 1, 0.6]), serie([100, 100, 100, 100, 100, 62]));
+    expect(t.ultimoMes).toBeNull();
+  });
+
+  it("una bajada chica del último mes no se avisa", () => {
+    expect(calcularTendencia(serie([1, 1, 1, 1, 1, 0.85])).ultimoMes).toBeNull();
+  });
+
+  it("si ya figura como «cayendo» no se repite el aviso en la frase", () => {
+    const t = calcularTendencia(serie([1, 1, 1, 0.5, 0.5, 0.2]));
+    expect(t.clase).toBe("cayendo");
+    expect(t.resumen).not.toMatch(/Ojo:/);
+  });
+
+  it("no avisa en productos que venden muy poco (de 2 a 1 no es una caída)", () => {
+    expect(calcularTendencia(serie([0.12, 0.12, 0.12, 0.12, 0.12, 0.03])).ultimoMes).toBeNull();
   });
 });

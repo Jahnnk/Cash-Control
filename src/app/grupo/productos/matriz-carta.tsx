@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 import type { Familia } from "@/lib/productos/panorama";
-import { armarMatriz, CUADRANTES, escalasMatriz, ORDEN_CUADRANTES, type CartaSede, type Cuadrante, type ProductoMatriz, type PuntoMatriz, type PuntoPrueba, type SenalPrueba } from "@/lib/productos/matriz-carta";
+import { armarMatriz, buscarProductos, CUADRANTES, escalasMatriz, fichaDeProducto, ORDEN_CUADRANTES, type CartaSede, type FichaProducto, type Cuadrante, type ProductoMatriz, type PuntoMatriz, type PuntoPrueba, type SenalPrueba } from "@/lib/productos/matriz-carta";
 import { TEXTO_TENDENCIA, type ClaseTendencia } from "@/lib/productos/tendencia";
 import type { Veredicto } from "@/lib/productos/candidatos";
 import { GraficoDemanda } from "@/components/productos/grafico-demanda";
@@ -292,11 +292,103 @@ function EnPrueba({ items, acciones, anotadas }: { items: PuntoPrueba[]; accione
 const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
 const fechaLarga = (iso: string) => `${Number(iso.slice(8, 10))} de ${MESES_LARGOS[Number(iso.slice(5, 7)) - 1]}`;
 
+// ── Buscador: la ficha de un producto ───────────────────────────────────
+const ETIQUETA_SITUACION: Record<FichaProducto["situacion"], string> = { ubicado: "", prueba: "En período de prueba", "sin-costo": "Sin costo cargado", fuera: "Fuera de la matriz" };
+const COLOR_SEDE_FICHA: Record<number, { color: string; forma: "circulo" | "cuadrado" }> = { 2: { color: "#098B5F", forma: "circulo" }, 3: { color: "#6B4FA0", forma: "cuadrado" } };
+
+function Ficha({ f, veredicto, acciones, anotadas, onCerrar }: {
+  f: FichaProducto; veredicto: Veredicto | null; acciones?: AccionesLanzamiento; anotadas: Map<string, string>; onCerrar: () => void;
+}) {
+  const p = f.punto;
+  const t = p ? TEXTO_TENDENCIA[p.tendencia.clase] : null;
+  return (
+    <div className="rounded-2xl border border-gray-300 bg-white p-4 space-y-3.5" aria-label={`Ficha de ${f.nombre}`}>
+      <header className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h5 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><PuntoFamilia familia={f.familia} /><span className="break-words">{f.nombre}</span></h5>
+          <p className="text-[11px] text-gray-500 mt-0.5 pl-[18px]">{f.familia} · con Fonavi y Centro juntas</p>
+        </div>
+        <div className="flex flex-wrap items-center gap-1.5">
+          {p && <span className="inline-flex items-center rounded-full px-2 py-0.5 text-[11px] font-semibold text-white" style={{ backgroundColor: COLOR[p.cuadrante] }}>{CUADRANTES[p.cuadrante].nombre} · {CUADRANTES[p.cuadrante].accion}</span>}
+          {f.situacion !== "ubicado" && <Pastilla tono={f.situacion === "prueba" ? "azul" : "gris"}>{ETIQUETA_SITUACION[f.situacion]}</Pastilla>}
+          {t && <Pastilla tono={t.tono}>{t.corto}</Pastilla>}
+          {veredicto && <Pastilla tono={veredicto === "sacar" ? "rojo" : "ambar"}>En candidatos: {TITULO_VEREDICTO[veredicto]}</Pastilla>}
+          <button type="button" onClick={onCerrar} className="text-xs text-gray-500 hover:text-gray-800 underline decoration-dotted ml-1">Cerrar ficha</button>
+        </div>
+      </header>
+
+      {p && f.puestos && (
+        <>
+          <p className="text-[13px] font-medium text-gray-900 leading-relaxed">{p.lectura}</p>
+          <p className="text-xs text-gray-700 leading-relaxed">{f.porQue}</p>
+          <p className={`text-xs leading-relaxed ${p.tendencia.ultimoMes ? "text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2" : "text-gray-700"}`}><b>Demanda (las dos sedes juntas):</b> {p.tendencia.resumen}</p>
+          <dl className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
+            {[
+              ["Vende por semana", `${un(p.unidadesSemana)} und`, `n.º ${f.puestos.unidades.n} de ${f.puestos.unidades.de} en unidades`],
+              ["Deja por venta", `${soles(p.margenUnidad)}${p.margenPct !== null ? ` · ${p.margenPct}%` : ""}`, `n.º ${f.puestos.margen.n} de ${f.puestos.margen.de} en margen`],
+              ["Gana al mes", soles0(p.gananciaMes), `n.º ${f.puestos.ganancia.n} de ${f.puestos.ganancia.de} · ${f.puestos.pctGanancia}% de la ganancia`],
+              ["Vende al mes", soles0(p.ventaMes), `n.º ${f.puestos.enFamilia.n} de ${f.puestos.enFamilia.de} en su familia (por ganancia)`],
+            ].map(([k, v, sub]) => (
+              <div key={k} className="rounded-xl bg-gray-50 px-3 py-2.5">
+                <dt className="text-[11px] text-gray-500">{k}</dt>
+                <dd className="text-sm font-semibold text-gray-900 tabular-nums">{v}</dd>
+                <dd className="text-[10px] text-gray-500 mt-0.5 leading-snug">{sub}</dd>
+              </div>
+            ))}
+          </dl>
+          {p.precio !== null && <p className="text-[11px] text-gray-500">Precio promedio {soles(p.precio)} · lo que deja cada venta es precio menos costo.</p>}
+        </>
+      )}
+
+      {f.situacion === "prueba" && f.prueba && <EnPrueba items={[f.prueba]} acciones={acciones} anotadas={anotadas} />}
+      {f.situacion === "sin-costo" && (
+        <p className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">
+          Vende ~{un(f.unidadesSemana)} por semana, pero <b>no tiene costo en el Excel de pricing</b>: sin costo no se sabe cuánto deja por venta y no se puede ubicar en la matriz. Vincula su costo en «Costos sin vincular», más abajo.
+        </p>
+      )}
+      {f.situacion === "fuera" && <p className="text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 leading-relaxed">{f.motivoFuera}</p>}
+
+      <div>
+        <h6 className="text-xs font-semibold text-gray-800 mb-1.5">Por sede</h6>
+        <div className="overflow-x-auto rounded-xl border border-gray-200/80">
+          <table className="w-full text-xs">
+            <thead className="bg-gray-50 text-gray-500 text-left">
+              <tr><th className="px-3 py-2 font-medium">Sede</th><th className="px-2 py-2 font-medium text-right">Por semana</th><th className="px-2 py-2 font-medium text-right">Vende al mes</th><th className="px-2 py-2 font-medium text-right">Gana al mes</th><th className="px-3 py-2 font-medium">Demanda</th></tr>
+            </thead>
+            <tbody>
+              {f.porSede.map((s) => (
+                <tr key={s.businessId} className="border-t border-gray-100">
+                  <td className="px-3 py-2 text-gray-900 font-medium">{s.sede}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{un(s.unidadesSemana)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{soles0(s.ventaMes)}</td>
+                  <td className="px-2 py-2 text-right tabular-nums">{s.gananciaMes !== null ? soles0(s.gananciaMes) : "sin costo"}</td>
+                  <td className="px-3 py-2"><Pastilla tono={TEXTO_TENDENCIA[s.tendencia.clase].tono}>{TEXTO_TENDENCIA[s.tendencia.clase].corto}{s.tendencia.cambioPct !== null && s.tendencia.clase !== "poco-siempre" ? ` ${s.tendencia.cambioPct > 0 ? "+" : ""}${s.tendencia.cambioPct}%` : ""}</Pastilla></td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <GraficoDemanda series={f.porSede.map((s) => ({
+        nombre: s.sede, ...(COLOR_SEDE_FICHA[s.businessId] ?? { color: "#004C40", forma: "circulo" as const }),
+        puntos: s.serie.map((x) => ({ month: x.month, completo: x.completo, porSemana: x.porDia * 7 })),
+      }))} />
+      <div className="space-y-1">
+        {f.porSede.map((s) => <p key={s.businessId} className="text-[11px] text-gray-600 leading-snug"><b>{s.sede}:</b> {s.tendencia.resumen}</p>)}
+      </div>
+      {f.situacion !== "prueba" && acciones && <div className="pt-2 border-t border-gray-100"><Lanzamiento nombre={f.nombre} anotada={f.lanzamiento} estimada={null} acciones={acciones} compacto /></div>}
+    </div>
+  );
+}
+
 // ── Lo principal ────────────────────────────────────────────────────────
 const URGENCIA: Record<ClaseTendencia, number> = { cayendo: 0, "poco-siempre": 1, estable: 2, "sin-datos": 3, subiendo: 4 };
 
-export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null, lanzamiento }: {
+export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null, buscadoInicial = null, lanzamiento }: {
   matriz: ProductoMatriz[]; cartas: CartaSede[]; veredictos: Map<string, Veredicto>;
+  /** Producto con cuya ficha se abre (para saltar desde un aviso). */
+  buscadoInicial?: string | null;
   /** Producto con el que se abre (para saltar desde un aviso). */
   elegidoInicial?: string | null;
   /** Cómo anotar o quitar la fecha de lanzamiento (si no se da, no se muestra el editor). */
@@ -307,6 +399,8 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null,
   const [cuadrante, setCuadrante] = useState<Cuadrante>("perro");
   const [elegido, setElegido] = useState<string | null>(elegidoInicial);
   const [todos, setTodos] = useState(false);
+  const [texto, setTexto] = useState("");
+  const [buscado, setBuscado] = useState<string | null>(buscadoInicial);
 
   const familias = useMemo(() => [...new Set(matriz.map((p) => p.familia))].sort(), [matriz]);
   const m = useMemo(() => armarMatriz(matriz, cartas, { sedeId: sede, familia: familia || null }), [matriz, cartas, sede, familia]);
@@ -318,6 +412,8 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null,
   }, [m, cuadrante]);
   const visibles = todos ? lista : lista.slice(0, 10);
   const sel = m.puntos.find((p) => p.clave === elegido) ?? null;
+  const resultados = useMemo(() => buscarProductos(matriz, texto), [matriz, texto]);
+  const ficha = useMemo(() => (buscado ? fichaDeProducto(matriz, cartas, buscado) : null), [matriz, cartas, buscado]);
   const anotadas = useMemo(() => new Map(matriz.filter((p) => p.lanzamiento).map((p) => [p.clave, p.lanzamiento!] as const)), [matriz]);
   const destacados = m.enPrueba.filter((p) => p.senal === "destaca");
   const alarmas = m.puntos.filter((p) => (p.cuadrante === "estrella" || p.cuadrante === "vaca") && p.tendencia.clase === "cayendo");
@@ -330,6 +426,32 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null,
           Cada producto según lo que <b>vende</b> y lo que <b>deja por cada venta</b>, con todos los meses cargados (desde abril). La línea punteada es la mediana: la mitad de la carta queda de cada lado.
         </p>
       </div>
+
+      <div className="relative">
+        <label className="block text-xs font-medium text-gray-700 mb-1" htmlFor="buscar-producto">Buscar un producto</label>
+        <input id="buscar-producto" type="search" value={texto} autoComplete="off" placeholder="Por ejemplo: roast beef, matcha, croissant…"
+          onChange={(e) => setTexto(e.target.value)}
+          className="w-full rounded-xl border border-gray-300 bg-white px-3.5 py-2.5 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-2 focus:outline-primary" />
+        {texto.trim() !== "" && (
+          <ul className="absolute z-10 left-0 right-0 mt-1 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white shadow-lg divide-y divide-gray-100" role="listbox" aria-label="Productos encontrados">
+            {resultados.length === 0
+              ? <li className="px-3.5 py-3 text-sm text-gray-500">Ningún producto se llama así. Prueba con otra palabra.</li>
+              : resultados.map((r) => {
+                return (
+                  <li key={r.clave} role="option" aria-selected={false}>
+                    <button type="button" onClick={() => { setBuscado(r.clave); setElegido(null); setTexto(""); }}
+                      className="w-full text-left px-3.5 py-2.5 text-sm hover:bg-gray-50 flex items-center justify-between gap-3">
+                      <span className="inline-flex items-center gap-2 min-w-0"><PuntoFamilia familia={r.familia} /><span className="truncate">{r.nombre}</span></span>
+                      <span className="text-[11px] text-gray-500 whitespace-nowrap">{r.familia}</span>
+                    </button>
+                  </li>
+                );
+              })}
+          </ul>
+        )}
+      </div>
+
+      {ficha && <Ficha f={ficha} veredicto={veredictos.get(ficha.clave) ?? null} acciones={lanzamiento} anotadas={anotadas} onCerrar={() => setBuscado(null)} />}
 
       <div className="flex flex-wrap items-center gap-3">
         <Segmentado tamano="sm" valor={sede === null ? 0 : sede} onChange={(v) => setSede(v === 0 ? null : v)}
@@ -387,9 +509,9 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null,
             </p>
           )}
 
-          <Dispersion puntos={m.puntos} enPrueba={m.enPrueba} cortes={m.cortes} elegido={elegido} onElegir={(c) => { setElegido(c); const p = m.puntos.find((x) => x.clave === c); if (p) setCuadrante(p.cuadrante); }} veredictos={veredictos} />
+          <Dispersion puntos={m.puntos} enPrueba={m.enPrueba} cortes={m.cortes} elegido={elegido} onElegir={(c) => { setBuscado(null); setElegido(c); const p = m.puntos.find((x) => x.clave === c); if (p) setCuadrante(p.cuadrante); }} veredictos={veredictos} />
 
-          {sel && <Detalle p={sel} veredicto={veredictos.get(sel.clave) ?? null} acciones={lanzamiento} />}
+          {sel && !ficha && <Detalle p={sel} veredicto={veredictos.get(sel.clave) ?? null} acciones={lanzamiento} />}
 
           <div>
             <h5 className="text-xs font-semibold text-gray-800 mb-1.5">
