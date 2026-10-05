@@ -52,6 +52,8 @@
 
 import type { Familia } from "./panorama";
 import { claveByte, enlazarCosto, palabras, type CostoCarta } from "./costos-carta";
+import { calcularTendencia, type PuntoDia, type Tendencia } from "./tendencia";
+import type { CartaSede, ProductoMatriz } from "./matriz-carta";
 
 export type MesCandidatos = {
   month: string;
@@ -81,8 +83,12 @@ export type Senal = "vende-poco" | "deja-poco" | "pierde" | "cayendo" | "rota-le
 export type ProductoEnSede = {
   businessId: number;
   sede: string;
-  /** Ventas y unidades por día de cada mes (0 si no vendió). */
-  porMes: { month: string; ventaDia: number; unidadesDia: number; ingresos: number; unidades: number }[];
+  /** Ventas y unidades por día de cada mes (0 si no vendió). `completo` = el mes tiene al menos 25 días cargados. */
+  porMes: { month: string; ventaDia: number; unidadesDia: number; ingresos: number; unidades: number; dias: number; completo: boolean }[];
+  /** Cómo viene la demanda a lo largo de los meses (ver tendencia.ts). */
+  tendencia: Tendencia;
+  /** Unidades por día en la ventana de decisión (más fino que unidadesSemana, que se redondea). */
+  unidadesDia: number;
   /** Unidades por semana de las semanas guardadas (vacío hasta que haya cargas semanales). */
   porSemana: { desde: string; hasta: string; unidades: number; ingresos: number }[];
   ventaDia: number;
@@ -187,6 +193,10 @@ export type ResultadoCandidatos = {
   candidatos: Candidato[];
   /** Meses que se usaron para decidir. */
   meses: string[];
+  /** Todos los productos evaluados, para la matriz de la carta (matriz-carta.ts). */
+  matriz: ProductoMatriz[];
+  /** Unidades por día de TODA la carta de cada sede, mes a mes (para ver si una caída es del producto o de la sede). */
+  cartas: CartaSede[];
   semanas: number;
   /** % de las ventas analizadas que tienen costo (para decir cuánto se sabe de rentabilidad). */
   coberturaCosto: number;
@@ -282,6 +292,8 @@ export type Archivado = {
 };
 
 const MESES_VENTANA = 3;
+/** Un mes con menos días cargados que esto es «a medias»: no entra en la tendencia. */
+export const DIAS_MES_COMPLETO = 25;
 export const UMBRAL_CANDIDATO = 55;
 export const UMBRAL_OBSERVAR = 35;
 
@@ -315,6 +327,10 @@ const ES_COMPLEMENTO = /^(huevos? |humita|porcion )/;
 function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<string, string>, protegidos: Set<string>) {
   const validos = sede.meses.filter((m) => !m.sospechoso && m.dias > 0 && m.carta.length > 0);
   const ventana = validos.slice(-MESES_VENTANA);
+  // Toda la carta de la sede, por mes: contra qué se compara la caída de un producto.
+  const cartaSerie: PuntoDia[] = validos.map((m) => ({
+    month: m.month, completo: m.dias >= DIAS_MES_COMPLETO, porDia: m.carta.reduce((t, c) => t + c.unidades, 0) / m.dias,
+  }));
   const diasVentana = ventana.reduce((s, m) => s + m.dias, 0);
 
   // Una fila por producto; las variantes "PROMO MOSTRADOR" o con tilde se juntan.
@@ -350,7 +366,7 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
   const base = [...productos.entries()].map(([clave, a]) => {
     const porMes = validos.map((m) => {
       const x = a.porMes.get(m.month) ?? { ingresos: 0, unidades: 0 };
-      return { month: m.month, ingresos: r2(x.ingresos), unidades: x.unidades, ventaDia: x.ingresos / m.dias, unidadesDia: x.unidades / m.dias };
+      return { month: m.month, dias: m.dias, completo: m.dias >= DIAS_MES_COMPLETO, ingresos: r2(x.ingresos), unidades: x.unidades, ventaDia: x.ingresos / m.dias, unidadesDia: x.unidades / m.dias };
     });
     const enVentana = porMes.slice(-ventana.length);
     const ingresos = enVentana.reduce((s, x) => s + x.ingresos, 0);
@@ -414,6 +430,8 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
     evaluados.set(b.clave, {
       businessId: sede.businessId, sede: sede.sede, nombre: b.a.nombre, familia: b.a.familia, enlace: b.enlace,
       porMes: b.porMes.map((x) => ({ ...x, ventaDia: r2(x.ventaDia), unidadesDia: Math.round(x.unidadesDia * 100) / 100 })),
+      tendencia: calcularTendencia(b.porMes.map((x) => ({ month: x.month, completo: x.completo, porDia: x.unidadesDia })), cartaSerie),
+      unidadesDia: Math.round(b.unidadesDia * 1000) / 1000,
       porSemana: semanasPorClave.get(b.clave) ?? [],
       ventaDia: r2(b.ventaDia), unidadesSemana: Math.round(unidadesSemana * 10) / 10,
       precio: b.precio !== null ? r2(b.precio) : null, costo: b.costo !== null ? r2(b.costo) : null,
@@ -426,7 +444,7 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
       puntos, senales, estado,
     });
   }
-  return { evaluados, meses: validos.map((m) => m.month), ventana: ventana.map((m) => m.month) };
+  return { evaluados, meses: validos.map((m) => m.month), ventana: ventana.map((m) => m.month), cartaSerie };
 }
 
 const soles = (n: number) => `S/${n.toFixed(2)}`;
@@ -570,9 +588,25 @@ export function armarCandidatos(
     }
   }
   const meses = [...new Set(porSede.flatMap((x) => x.ventana))].sort();
+  // Todos los productos (menos acompañamientos) con lo que la matriz necesita.
+  const porClave = new Map<string, ProductoMatriz>();
+  for (const { evaluados } of porSede) {
+    for (const [clave, e] of evaluados) {
+      if (e.estado === "acompanamiento") continue;
+      const m = porClave.get(clave) ?? { clave, nombre: e.nombre, familia: e.familia, sedes: [] };
+      m.sedes.push({
+        businessId: e.businessId, sede: e.sede, estado: e.estado, unidadesDia: e.unidadesDia, unidadesSemana: e.unidadesSemana,
+        ventaDia: e.ventaDia, precio: e.precio, costo: e.costo, gananciaDia: e.gananciaDia,
+        serie: e.porMes.map((x) => ({ month: x.month, completo: x.completo, porDia: x.unidadesDia })),
+      });
+      porClave.set(clave, m);
+    }
+  }
   return {
     candidatos,
     meses,
+    matriz: [...porClave.values()],
+    cartas: porSede.map((x) => ({ businessId: x.sede.businessId, sede: x.sede.sede, serie: x.cartaSerie })),
     semanas: Math.max(0, ...sedes.map((s) => s.semanas.length)),
     coberturaCosto: total > 0 ? Math.round((conCosto / total) * 100) : 0,
     sinCosto: [...sinCosto.entries()].map(([nombre, ventaDia]) => ({ nombre, ventaDia: r2(ventaDia) })).sort((a, b) => b.ventaDia - a.ventaDia),

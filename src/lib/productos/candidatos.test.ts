@@ -266,3 +266,48 @@ describe("semanas desde las cargas del sábado", () => {
     expect(s.map((x) => [x.desde, x.productos[0].unidades])).toEqual([["2026-09-01", 40], ["2026-09-13", 22]]);
   });
 });
+
+describe("tendencia y matriz en el resultado (5-oct-2026)", () => {
+  const SEIS = ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"];
+  const sedeSeis = (id: number, nombre: string, filas: [string, Familia, number[], number][]): SedeCandidatos => {
+    const c = carta(filas);
+    return { businessId: id, sede: nombre, semanas: [], meses: SEIS.map((month, i) => ({ month, dias: 30, sospechoso: false, carta: c(i) })) };
+  };
+  // El matcha vende 40 → 3 por mes en 6 meses; el cortado se mantiene; hay un relleno para que la carta tenga más productos.
+  const filas: [string, Familia, number[], number][] = [
+    ["MATCHA CEREMONIAL CALIENTE", "Bebidas calientes", [40, 36, 16, 6, 8, 3], 14],
+    ["CAFE CORTADO", "Bebidas calientes", [60, 62, 58, 61, 59, 60], 11],
+    ["BATIDO DE PAPAYA", "Bebidas frías", [50, 48, 52, 49, 51, 50], 12],
+    ["SANGUCHE DE PAVO", "Sánguches, platos y desayunos", [80, 82, 79, 81, 80, 83], 18],
+  ];
+  const r = armarCandidatos([sedeSeis(2, "Fonavi", filas), sedeSeis(3, "Centro", filas)], COSTOS, new Map());
+
+  it("usa los 6 meses para la tendencia aunque decida con los 3 últimos", () => {
+    expect(r.meses).toHaveLength(3);
+    const matcha = r.candidatos.find((c) => /MATCHA/.test(c.nombre))!;
+    expect(matcha).toBeDefined();
+    expect(matcha.sedes[0].porMes).toHaveLength(6);
+    expect(matcha.sedes[0].tendencia.clase).toBe("cayendo");
+    expect(matcha.sedes[0].tendencia.tramoAntes).toEqual(["2026-04", "2026-05", "2026-06"]);
+  });
+
+  it("la caída se mide contra la carta: el cortado, estable, no se marca", () => {
+    const m = r.matriz.find((p) => /CORTADO/.test(p.nombre))!;
+    expect(m.sedes[0].serie).toHaveLength(6);
+    expect(m.sedes[0].serie.every((x) => x.completo)).toBe(true);
+  });
+
+  it("entrega todos los productos y la carta de cada sede para la matriz", () => {
+    expect(r.matriz.map((p) => p.nombre).sort()).toEqual(["BATIDO DE PAPAYA", "CAFE CORTADO", "MATCHA CEREMONIAL CALIENTE", "SANGUCHE DE PAVO"]);
+    expect(r.cartas.map((c) => c.sede)).toEqual(["Fonavi", "Centro"]);
+    expect(r.cartas[0].serie).toHaveLength(6);
+  });
+
+  it("un mes con pocos días cargados es «a medias» y no cuenta para la tendencia", () => {
+    const parcial = sedeSeis(2, "Fonavi", filas);
+    parcial.meses[5] = { ...parcial.meses[5], dias: 5 };
+    const rp = armarCandidatos([parcial], COSTOS, new Map());
+    const m = rp.matriz.find((p) => /CORTADO/.test(p.nombre))!;
+    expect(m.sedes[0].serie[5].completo).toBe(false);
+  });
+});
