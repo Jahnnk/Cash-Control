@@ -361,4 +361,48 @@ describe("productos nuevos: 3 meses de prueba (5-oct-2026)", () => {
     const m = rr.matriz.find((p) => /TURRON/.test(p.nombre))!;
     expect(m.sedes[0].prueba).toMatchObject({ inicio: "2026-10-01", dia: 5 });
   });
+
+  describe("fecha exacta de lanzamiento anotada", () => {
+    const clave = armarCandidatos(sedes, COSTOS, new Map(), [], [], [], "2026-10-05").matriz.find((p) => /CUCHAREABLE/.test(p.nombre))!.clave;
+    const con = (hoy: string, anotada?: string) =>
+      armarCandidatos(sedes, COSTOS, new Map(), [], [], [], hoy, [], new Map(anotada ? [[clave, anotada]] : []));
+
+    it("manda sobre la estimación: salió el 21-sep, no el 15", () => {
+      const m = con("2026-10-05", "2026-09-21").matriz.find((p) => p.clave === clave)!;
+      expect(m.sedes[0].prueba).toMatchObject({ inicio: "2026-09-21", dia: 15, origen: "anotada" });
+      expect(m.lanzamiento).toBe("2026-09-21");
+    });
+
+    it("sin fecha anotada sigue estimando (y lo dice)", () => {
+      const m = con("2026-10-05").matriz.find((p) => p.clave === clave)!;
+      expect(m.sedes[0].prueba).toMatchObject({ inicio: "2026-09-15", origen: "estimada" });
+      expect(m.lanzamiento).toBeNull();
+    });
+
+    it("el ritmo se mide desde la fecha exacta", () => {
+      const exacta = con("2026-10-05", "2026-09-25").matriz.find((p) => p.clave === clave)!.sedes[0].prueba!.unidadesSemana;
+      const estimada = con("2026-10-05").matriz.find((p) => p.clave === clave)!.sedes[0].prueba!.unidadesSemana;
+      expect(exacta).toBeGreaterThan(estimada); // menos días observados → más unidades por semana
+    });
+
+    it("pasados los 90 días desde la fecha anotada, ya se puede juzgar", () => {
+      const m = con("2026-12-26", "2026-09-25").matriz.find((p) => p.clave === clave)!; // 92 días
+      expect(m.sedes[0].prueba).toBeNull();
+      expect(m.sedes[0].estado).not.toBe("nuevo");
+    });
+
+    it("una fecha anotada antigua gana a la regla de «menos de 2 meses con ventas»", () => {
+      const m = con("2026-10-05", "2026-04-20").matriz.find((p) => p.clave === clave)!;
+      expect(m.sedes[0].prueba).toBeNull();
+      expect(m.sedes[0].estado).not.toBe("nuevo");
+    });
+
+    it("también vale para un producto que aparece desde abril: Jahnn sabe que salió hace poco", () => {
+      const m = con("2026-10-05", "2026-09-20").matriz.find((p) => /CORTADO/.test(p.nombre));
+      expect(m?.sedes[0].prueba).toBeNull(); // el cortado no tiene fecha anotada: sigue establecido
+      const claveCortado = armarCandidatos(sedes, COSTOS, new Map(), [], [], [], "2026-10-05").matriz.find((p) => /CORTADO/.test(p.nombre))!.clave;
+      const forzado = armarCandidatos(sedes, COSTOS, new Map(), [], [], [], "2026-10-05", [], new Map([[claveCortado, "2026-09-20"]]));
+      expect(forzado.matriz.find((p) => p.clave === claveCortado)!.sedes[0].estado).toBe("nuevo");
+    });
+  });
 });

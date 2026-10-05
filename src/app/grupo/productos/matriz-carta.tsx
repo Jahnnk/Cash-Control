@@ -131,7 +131,7 @@ function Dispersion({ puntos, cortes, elegido, onElegir, veredictos, enPrueba }:
 }
 
 // ── El producto elegido ─────────────────────────────────────────────────
-function Detalle({ p, veredicto }: { p: PuntoMatriz; veredicto: Veredicto | null }) {
+function Detalle({ p, veredicto, acciones }: { p: PuntoMatriz; veredicto: Veredicto | null; acciones?: AccionesLanzamiento }) {
   const t = TEXTO_TENDENCIA[p.tendencia.clase];
   return (
     <div className="rounded-2xl border border-gray-200/80 bg-white p-4 space-y-3">
@@ -164,7 +164,82 @@ function Detalle({ p, veredicto }: { p: PuntoMatriz; veredicto: Veredicto | null
       </dl>
       <GraficoDemanda series={[{ nombre: "Demanda", color: "#004C40", forma: "circulo", puntos: p.serie.map((x) => ({ month: x.month, completo: x.completo, porSemana: x.porDia * 7 })) }]} />
       <p className="text-[11px] text-gray-600 leading-snug">{p.tendencia.resumen}</p>
+      {acciones && <div className="pt-2 border-t border-gray-100"><Lanzamiento nombre={p.nombre} anotada={p.lanzamiento} estimada={null} acciones={acciones} compacto /></div>}
     </div>
+  );
+}
+
+// ── Fecha exacta de lanzamiento ─────────────────────────────────────────
+export type AccionesLanzamiento = {
+  guardar: (nombre: string, fecha: string) => Promise<boolean>;
+  quitar: (nombre: string) => Promise<boolean>;
+};
+
+/**
+ * Cuándo salió el producto: la fecha exacta que anota Jahnn, o la estimada por los
+ * reportes mensuales (el 15 del primer mes con ventas). Con la exacta, los 90 días de
+ * prueba y la señal desde las 2 semanas se cuentan al día.
+ */
+function Lanzamiento({ nombre, anotada, estimada, acciones, compacto = false }: {
+  nombre: string;
+  /** La fecha que anotó Jahnn (null = no hay). */
+  anotada: string | null;
+  /** La fecha estimada que se está usando (solo si no hay anotada). */
+  estimada: string | null;
+  acciones: AccionesLanzamiento;
+  compacto?: boolean;
+}) {
+  const [editando, setEditando] = useState(false);
+  const [fecha, setFecha] = useState(anotada ?? "");
+  const [ocupado, setOcupado] = useState(false);
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+
+  async function guardar() {
+    if (!fecha) return;
+    setOcupado(true);
+    const ok = await acciones.guardar(nombre, fecha);
+    setOcupado(false);
+    if (ok) setEditando(false);
+  }
+  async function quitar() {
+    setOcupado(true);
+    await acciones.quitar(nombre);
+    setOcupado(false);
+    setEditando(false);
+  }
+
+  if (editando) {
+    return (
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <label className="inline-flex items-center gap-1.5 text-gray-700">
+          Salió a la venta el
+          <input type="date" value={fecha} max={hoy} min="2024-01-01" onChange={(e) => setFecha(e.target.value)}
+            className="rounded-lg border border-gray-300 bg-white px-2 py-1 text-xs text-gray-900" />
+        </label>
+        <button type="button" disabled={ocupado || !fecha} onClick={() => void guardar()}
+          className="px-2.5 py-1 rounded-lg bg-primary text-white font-medium disabled:opacity-50">{ocupado ? "Guardando…" : "Guardar"}</button>
+        <button type="button" disabled={ocupado} onClick={() => { setEditando(false); setFecha(anotada ?? ""); }}
+          className="px-2.5 py-1 rounded-lg border border-gray-300 text-gray-700 bg-white">Cancelar</button>
+      </div>
+    );
+  }
+  if (anotada) {
+    return (
+      <p className="text-[11px] text-gray-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+        <span>Salió el <b>{fechaLarga(anotada)}</b> (fecha anotada).</span>
+        <button type="button" onClick={() => setEditando(true)} className="text-primary font-medium hover:underline">Cambiar</button>
+        <button type="button" disabled={ocupado} onClick={() => void quitar()} className="text-gray-500 hover:underline">Quitar</button>
+      </p>
+    );
+  }
+  return (
+    <p className="text-[11px] text-gray-600 flex flex-wrap items-center gap-x-2 gap-y-1">
+      {estimada ? <span>Salió hacia el {fechaLarga(estimada)} <i>(estimada: los reportes son mensuales)</i>.</span>
+        : compacto ? null : <span>¿Es un producto nuevo?</span>}
+      <button type="button" onClick={() => setEditando(true)} className="text-primary font-medium hover:underline">
+        {estimada ? "Anotar la fecha exacta" : "Anotar su fecha de lanzamiento"}
+      </button>
+    </p>
   );
 }
 
@@ -177,7 +252,7 @@ const SENAL_TEXTO: Record<SenalPrueba, { corto: string; tono: "verde" | "ambar" 
   poca: { corto: "poca acogida", tono: "rojo" },
 };
 
-function EnPrueba({ items }: { items: PuntoPrueba[] }) {
+function EnPrueba({ items, acciones, anotadas }: { items: PuntoPrueba[]; acciones?: AccionesLanzamiento; /** clave → fecha anotada */ anotadas: Map<string, string> }) {
   if (items.length === 0) return null;
   return (
     <div className="rounded-2xl border border-gray-200/80 bg-gray-50/60 p-4 space-y-3">
@@ -205,6 +280,7 @@ function EnPrueba({ items }: { items: PuntoPrueba[] }) {
               </div>
               <p className="text-xs text-gray-700 leading-relaxed">{p.texto}</p>
               <p className="text-[11px] text-gray-500">Se evalúa a partir del {fechaLarga(p.evaluarEl)}.</p>
+              {acciones && <Lanzamiento nombre={p.nombre} anotada={anotadas.get(p.clave) ?? null} estimada={p.fechaAnotada ? null : p.inicio} acciones={acciones} />}
             </li>
           );
         })}
@@ -219,7 +295,13 @@ const fechaLarga = (iso: string) => `${Number(iso.slice(8, 10))} de ${MESES_LARG
 // ── Lo principal ────────────────────────────────────────────────────────
 const URGENCIA: Record<ClaseTendencia, number> = { cayendo: 0, "poco-siempre": 1, estable: 2, "sin-datos": 3, subiendo: 4 };
 
-export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null }: { matriz: ProductoMatriz[]; cartas: CartaSede[]; veredictos: Map<string, Veredicto>; /** Producto con el que se abre (para saltar desde un aviso). */ elegidoInicial?: string | null }) {
+export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null, lanzamiento }: {
+  matriz: ProductoMatriz[]; cartas: CartaSede[]; veredictos: Map<string, Veredicto>;
+  /** Producto con el que se abre (para saltar desde un aviso). */
+  elegidoInicial?: string | null;
+  /** Cómo anotar o quitar la fecha de lanzamiento (si no se da, no se muestra el editor). */
+  lanzamiento?: AccionesLanzamiento;
+}) {
   const [sede, setSede] = useState<number | null>(null);
   const [familia, setFamilia] = useState<Familia | "">("");
   const [cuadrante, setCuadrante] = useState<Cuadrante>("perro");
@@ -236,6 +318,7 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null 
   }, [m, cuadrante]);
   const visibles = todos ? lista : lista.slice(0, 10);
   const sel = m.puntos.find((p) => p.clave === elegido) ?? null;
+  const anotadas = useMemo(() => new Map(matriz.filter((p) => p.lanzamiento).map((p) => [p.clave, p.lanzamiento!] as const)), [matriz]);
   const destacados = m.enPrueba.filter((p) => p.senal === "destaca");
   const alarmas = m.puntos.filter((p) => (p.cuadrante === "estrella" || p.cuadrante === "vaca") && p.tendencia.clase === "cayendo");
 
@@ -306,7 +389,7 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null 
 
           <Dispersion puntos={m.puntos} enPrueba={m.enPrueba} cortes={m.cortes} elegido={elegido} onElegir={(c) => { setElegido(c); const p = m.puntos.find((x) => x.clave === c); if (p) setCuadrante(p.cuadrante); }} veredictos={veredictos} />
 
-          {sel && <Detalle p={sel} veredicto={veredictos.get(sel.clave) ?? null} />}
+          {sel && <Detalle p={sel} veredicto={veredictos.get(sel.clave) ?? null} acciones={lanzamiento} />}
 
           <div>
             <h5 className="text-xs font-semibold text-gray-800 mb-1.5">
@@ -339,7 +422,7 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null 
             )}
           </div>
 
-          <EnPrueba items={m.enPrueba} />
+          <EnPrueba items={m.enPrueba} acciones={lanzamiento} anotadas={anotadas} />
 
           <p className="text-[11px] text-gray-500 leading-relaxed">
             Cortes de esta vista: se vende más que {un(m.cortes.unidadesSemana)} por semana y deja más de {soles(m.cortes.margenUnidad)} por venta.

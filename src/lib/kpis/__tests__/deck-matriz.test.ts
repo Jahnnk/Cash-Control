@@ -12,10 +12,10 @@ const sede = (porDia: number[], precio: number, costo: number) => {
   return { businessId: 2, sede: "Fonavi", estado: "bien" as const, unidadesDia: u, unidadesSemana: u * 7, ventaDia: u * precio, precio, costo, gananciaDia: u * (precio - costo), prueba: null, serie: serie(porDia) };
 };
 const matriz: ProductoMatriz[] = [
-  { clave: "a", nombre: "ESTRELLA GRANDE", familia: "Panadería", sedes: [sede([3, 3, 3, 3, 3, 3], 15, 5)] },
-  { clave: "b", nombre: "VACA LECHERA", familia: "Panadería", sedes: [sede([4, 4, 4, 2, 2, 2], 6, 4)] },
-  { clave: "c", nombre: "INTERROGANTE", familia: "Panadería", sedes: [sede([0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 20, 8)] },
-  { clave: "d", nombre: "PERRO CAYENDO", familia: "Panadería", sedes: [sede([0.9, 0.9, 0.9, 0.2, 0.2, 0.2], 5, 4)] },
+  { clave: "a", nombre: "ESTRELLA GRANDE", familia: "Panadería", lanzamiento: null, sedes: [sede([3, 3, 3, 3, 3, 3], 15, 5)] },
+  { clave: "b", nombre: "VACA LECHERA", familia: "Panadería", lanzamiento: null, sedes: [sede([4, 4, 4, 2, 2, 2], 6, 4)] },
+  { clave: "c", nombre: "INTERROGANTE", familia: "Panadería", lanzamiento: null, sedes: [sede([0.5, 0.5, 0.5, 0.5, 0.5, 0.5], 20, 8)] },
+  { clave: "d", nombre: "PERRO CAYENDO", familia: "Panadería", lanzamiento: null, sedes: [sede([0.9, 0.9, 0.9, 0.2, 0.2, 0.2], 5, 4)] },
 ];
 const cartas: CartaSede[] = [{ businessId: 2, sede: "Fonavi", serie: serie([100, 100, 100, 100, 100, 100]) }];
 const laminas = (p: PptxGenJS) => (p as unknown as { slides: unknown[] }).slides.length;
@@ -33,7 +33,7 @@ describe("lámina «La carta en una matriz» del deck", () => {
     expect(laminas(pptx)).toBe(0);
   });
   it("si ningún producto tiene costo, tampoco hay matriz que mostrar", () => {
-    const sinCosto: ProductoMatriz[] = [{ clave: "x", nombre: "X", familia: "Panadería", sedes: [{ ...sede([2, 2, 2, 2, 2, 2], 10, 5), costo: null, gananciaDia: null }] }];
+    const sinCosto: ProductoMatriz[] = [{ clave: "x", nombre: "X", familia: "Panadería", lanzamiento: null, sedes: [{ ...sede([2, 2, 2, 2, 2, 2], 10, 5), costo: null, gananciaDia: null }] }];
     const pptx = new PptxGenJS();
     matrizDeLaCarta(contexto(pptx, "2026-09-27", "2026-10-03"), datos(sinCosto));
     expect(laminas(pptx)).toBe(0);
