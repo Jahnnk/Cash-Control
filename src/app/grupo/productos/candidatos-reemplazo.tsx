@@ -20,6 +20,7 @@ import { UMBRAL_CANDIDATO, UMBRAL_OBSERVAR } from "@/lib/productos/candidatos";
 import { evidenciaDe, TEXTO_TENDENCIA } from "@/lib/productos/tendencia";
 import { GraficoDemanda, type SerieDemanda } from "@/components/productos/grafico-demanda";
 import { MatrizCarta } from "./matriz-carta";
+import { armarMatriz } from "@/lib/productos/matriz-carta";
 import { Barra, Pastilla, PuntoFamilia, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 import { useToast } from "@/components/toast-provider";
 
@@ -73,6 +74,11 @@ export function CandidatosReemplazo({ month }: { month: string }) {
     return c;
   }, [data]);
 
+  // Nuevos que ya destacan (siguen en prueba, pero van muy bien): se avisa aunque la sección esté cerrada.
+  const nuevosQueDestacan = useMemo(
+    () => (data ? armarMatriz(data.matriz, data.cartas, { sedeId: null, familia: null }).enPrueba.filter((p) => p.senal === "destaca").length : 0),
+    [data],
+  );
   const veredictos = useMemo(() => new Map((data?.candidatos ?? []).map((c) => [c.clave, c.veredicto] as const)), [data]);
   const lista = (data?.candidatos ?? []).filter((c) => c.veredicto === filtro);
   const accion = ARCHIVAR[filtro];
@@ -133,6 +139,11 @@ export function CandidatosReemplazo({ month }: { month: string }) {
           {vencidas > 0 && (
             <span className="inline-flex items-center gap-1.5 rounded-full border border-amber-300 bg-amber-50 px-2.5 py-0.5 text-[11px] font-medium text-amber-900">
               <CalendarClock className="w-3 h-3" /> Salidas por archivar <b className="tabular-nums">{vencidas}</b>
+            </span>
+          )}
+          {nuevosQueDestacan > 0 && (
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-emerald-300 bg-emerald-50 px-2.5 py-0.5 text-[11px] font-medium text-emerald-900">
+              Nuevos que van muy bien <b className="tabular-nums">{nuevosQueDestacan}</b>
             </span>
           )}
           {ORDEN.filter((v) => conteo[v] > 0).map((v) => (

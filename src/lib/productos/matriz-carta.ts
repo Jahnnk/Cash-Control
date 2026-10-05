@@ -29,7 +29,11 @@
  * 3 meses está «en prueba»: no se le pone caja ni se le dice «reemplazar» (no es lo
  * mismo uno que en 6 meses no vende que uno de 2 semanas). Se muestra aparte, con
  * cuántos días lleva, a qué ritmo vende contra lo típico de su familia y qué señal
- * da: muy pronto / buena / regular / poca acogida. El veredicto llega a los 90 días.
+ * da: muy pronto / va muy bien / buena / regular / poca acogida. El veredicto llega a
+ * los 90 días. Lo bueno se ve antes que lo malo: un ritmo alto se puede creer a las
+ * 2 semanas (un nuevo que vende más que lo típico de su familia «va muy bien» y se
+ * destaca); un ritmo bajo puede ser solo el arranque y espera al mes. Así un producto
+ * nuevo que pega no queda escondido detrás de «no se juzga».
  */
 
 import type { Familia } from "./panorama";
@@ -101,7 +105,7 @@ export type Matriz = {
   enPrueba: PuntoPrueba[];
 };
 
-export type SenalPrueba = "pronto" | "buena" | "regular" | "poca";
+export type SenalPrueba = "pronto" | "destaca" | "buena" | "regular" | "poca";
 
 export type PuntoPrueba = {
   clave: string;
@@ -121,13 +125,19 @@ export type PuntoPrueba = {
   /** Lo que deja por venta comparado con lo típico de su familia. */
   margen: "bien" | "poco" | null;
   senal: SenalPrueba;
+  /** En qué caja caería si ya se juzgara (null si no tiene costo). */
+  cajaProvisional: Cuadrante | null;
   /** Una frase para leer de corrido. */
   texto: string;
   serie: PuntoDia[];
 };
 
-/** Antes de este día de prueba (un mes) solo se muestra el ritmo: es muy pronto para opinar. */
+/** Antes de este día de prueba (un mes) lo flojo no se opina: puede ser solo el arranque. */
 export const DIAS_MINIMOS_SENAL = 30;
+/** Lo bueno sí se ve desde las 2 semanas: un ritmo alto no es casualidad de arranque. */
+export const DIAS_SENAL_POSITIVA = 14;
+/** Vende/aporta al menos lo típico de su familia: «va muy bien». */
+export const ACOGIDA_DESTACA = 100;
 /** Señal de acogida: lo que aporta contra lo típico de su familia (mediana de lo ya juzgado). */
 export const ACOGIDA_BUENA = 60;
 export const ACOGIDA_REGULAR = 30;
@@ -254,7 +264,14 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
     const ritmoPct = gananciaMes !== null && tipicoGanancia > 0 ? Math.round((gananciaMes / tipicoGanancia) * 100)
       : tipicoVenta > 0 ? Math.round((unidadesSemana / tipicoVenta) * 100) : null;
     const margen: PuntoPrueba["margen"] = margenUnidad === null || tipicoMargen <= 0 ? null : margenUnidad >= tipicoMargen ? "bien" : "poco";
-    const senal: SenalPrueba = dia < DIAS_MINIMOS_SENAL || ritmoPct === null ? "pronto" : ritmoPct >= ACOGIDA_BUENA ? "buena" : ritmoPct >= ACOGIDA_REGULAR ? "regular" : "poca";
+    const senal: SenalPrueba = dia < DIAS_SENAL_POSITIVA || ritmoPct === null ? "pronto"
+      : ritmoPct >= ACOGIDA_DESTACA ? "destaca"
+      : dia < DIAS_MINIMOS_SENAL ? "pronto"
+      : ritmoPct >= ACOGIDA_BUENA ? "buena" : ritmoPct >= ACOGIDA_REGULAR ? "regular" : "poca";
+    const cajaProvisional: Cuadrante | null = margenUnidad === null ? null
+      : unidadesSemana >= cortes.unidadesSemana ? (margenUnidad >= cortes.margenUnidad ? "estrella" : "vaca")
+      : (margenUnidad >= cortes.margenUnidad ? "interrogante" : "perro");
+    const cajaTxt = cajaProvisional !== null && (senal === "destaca" || senal === "buena") ? ` Si ya se juzgara caería en «${CUADRANTES[cajaProvisional].nombre}»: ${CUADRANTES[cajaProvisional].accion.toLowerCase()}.` : "";
     const vende = `Vende ~${unidadesSemana >= 10 ? unidadesSemana.toFixed(0) : unidadesSemana.toFixed(1)} por semana`;
     const ritmoTxt = gananciaMes !== null && tipicoGanancia > 0
       ? `${vende} y aporta ~S/${gananciaMes.toLocaleString("es-PE")} de ganancia al mes (${ritmoPct}% de lo típico de su familia).`
@@ -262,13 +279,13 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
     const margenTxt = margen === null ? "" : margen === "bien" ? ` Deja bien por venta (${soles(margenUnidad!)}).` : ` Deja poco por venta (${soles(margenUnidad!)}).`;
     const texto = senal === "pronto"
       ? `Lleva ${dia} días: es muy pronto para opinar. ${ritmoTxt}${margenTxt}`
-      : `${senal === "buena" ? "Buena acogida" : senal === "regular" ? "Acogida regular" : "Poca acogida por ahora"}. ${ritmoTxt}${margenTxt}`;
+      : `${senal === "destaca" ? "Va muy bien desde el inicio" : senal === "buena" ? "Buena acogida" : senal === "regular" ? "Acogida regular" : "Poca acogida por ahora"}. ${ritmoTxt}${margenTxt}${cajaTxt}`;
     return {
       clave: p.clave, nombre: p.nombre, familia: p.familia, dia, de: conPrueba[0].prueba!.de, inicio, evaluarEl,
       unidadesSemana, margenUnidad, gananciaMes,
-      ritmoPct, margen, senal, texto, serie: sumarSeries(sedes.map((x) => x.serie)),
+      ritmoPct, margen, senal, cajaProvisional, texto, serie: sumarSeries(sedes.map((x) => x.serie)),
     };
-  }).sort((a, b) => b.dia - a.dia);
+  }).sort((a, b) => Number(b.senal === "destaca") - Number(a.senal === "destaca") || b.dia - a.dia);
 
   const totalVenta = puntos.reduce((t, x) => t + x.ventaMes, 0) || 1;
   const totalGanancia = puntos.reduce((t, x) => t + x.gananciaMes, 0) || 1;
