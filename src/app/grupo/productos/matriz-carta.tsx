@@ -171,6 +171,7 @@ function Detalle({ p, veredicto }: { p: PuntoMatriz; veredicto: Veredicto | null
 // ── Productos nuevos ────────────────────────────────────────────────────
 const SENAL_TEXTO: Record<SenalPrueba, { corto: string; tono: "verde" | "ambar" | "rojo" | "gris" }> = {
   pronto: { corto: "muy pronto", tono: "gris" },
+  destaca: { corto: "va muy bien", tono: "verde" },
   buena: { corto: "buena acogida", tono: "verde" },
   regular: { corto: "acogida regular", tono: "ambar" },
   poca: { corto: "poca acogida", tono: "rojo" },
@@ -184,14 +185,14 @@ function EnPrueba({ items }: { items: PuntoPrueba[] }) {
         <h5 className="text-sm font-semibold text-gray-900">En período de prueba ({items.length})</h5>
         <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
           Productos que salieron hace menos de 3 meses. No se les pone caja ni se les dice «reemplazar»: no es lo mismo uno que en 6 meses no vende que uno de pocas semanas.
-          Aquí se ve qué señal dan, y el veredicto llega a los 90 días.
+          Aquí se ve qué señal dan, y el veredicto llega a los 90 días. Lo flojo espera (puede ser solo el arranque), pero si uno va muy bien se destaca desde las 2 semanas.
         </p>
       </div>
       <ul className="space-y-2.5">
         {items.map((p) => {
           const sg = SENAL_TEXTO[p.senal];
           return (
-            <li key={p.clave} className="rounded-xl bg-white border border-gray-200/80 px-3.5 py-3 space-y-1.5">
+            <li key={p.clave} className={`rounded-xl bg-white border px-3.5 py-3 space-y-1.5 ${p.senal === "destaca" ? "border-emerald-300 ring-1 ring-emerald-200" : "border-gray-200/80"}`}>
               <div className="flex flex-wrap items-start justify-between gap-2">
                 <span className="text-sm font-medium text-gray-900 inline-flex items-center gap-2"><PuntoFamilia familia={p.familia} />{p.nombre}</span>
                 <Pastilla tono={sg.tono}>{sg.corto}</Pastilla>
@@ -235,6 +236,7 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null 
   }, [m, cuadrante]);
   const visibles = todos ? lista : lista.slice(0, 10);
   const sel = m.puntos.find((p) => p.clave === elegido) ?? null;
+  const destacados = m.enPrueba.filter((p) => p.senal === "destaca");
   const alarmas = m.puntos.filter((p) => (p.cuadrante === "estrella" || p.cuadrante === "vaca") && p.tendencia.clase === "cayendo");
 
   return (
@@ -289,6 +291,16 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null 
                 <span key={a.clave}>{i > 0 ? ", " : ""}<button type="button" className="underline decoration-dotted font-medium" onClick={() => { setElegido(a.clave); setCuadrante(a.cuadrante); }}>{a.nombre} ({a.tendencia.cambioPct}%)</button></span>
               ))}
               {alarmas.length > 4 ? ` y ${alarmas.length - 4} más` : ""}.
+            </p>
+          )}
+
+          {destacados.length > 0 && (
+            <p className="text-xs text-emerald-900 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2 leading-relaxed">
+              <b>Buena noticia:</b> {destacados.length === 1 ? "un producto nuevo va" : `${destacados.length} productos nuevos van`} muy bien, aunque todavía {destacados.length === 1 ? "está" : "están"} en prueba:{" "}
+              {destacados.slice(0, 4).map((d, i) => (
+                <span key={d.clave}>{i > 0 ? ", " : ""}<b>{d.nombre}</b> (día {d.dia}, {d.ritmoPct}% de lo típico de su familia{d.cajaProvisional ? `, caería en ${CUADRANTES[d.cajaProvisional].nombre}` : ""})</span>
+              ))}
+              {destacados.length > 4 ? ` y ${destacados.length - 4} más` : ""}. Conviene cuidarlos y destacarlos mientras se confirma.
             </p>
           )}
 

@@ -154,7 +154,8 @@ describe("productos nuevos en prueba", () => {
   });
 
   it("pasadas las 3 semanas da su señal comparando con lo típico de su familia", () => {
-    const buena = armarMatriz([...base, nuevo(30, 40)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    // La mediana de ganancia de la familia en este ejemplo es ~S/210 al mes: 6.5 por semana a S/6 ≈ 80%.
+    const buena = armarMatriz([...base, nuevo(30, 6.5)], cartas, { sedeId: null, familia: null }).enPrueba[0];
     const poca = armarMatriz([...base, nuevo(30, 0.5)], cartas, { sedeId: null, familia: null }).enPrueba[0];
     expect(buena.senal).toBe("buena");
     expect(buena.texto).toMatch(/Buena acogida/);
@@ -186,7 +187,7 @@ describe("productos nuevos en prueba", () => {
     expect(html).toContain("En período de prueba (1)");
     expect(html).toContain("CUCHAREABLE DE CARROT");
     expect(html).toContain("Día 30 de 90");
-    expect(html).toContain("buena acogida");
+    expect(html).toContain("va muy bien");
     expect(html).toContain("Se evalúa a partir del 14 de diciembre");
     expect(html).toContain("producto nuevo en prueba");
   });
@@ -201,5 +202,38 @@ describe("productos nuevos en prueba", () => {
   it("antes de 30 días, aunque venda muy poco, no se opina", () => {
     const m = armarMatriz([...base, nuevo(29, 0.1)], cartas, { sedeId: null, familia: null }).enPrueba[0];
     expect(m.senal).toBe("pronto");
+  });
+
+  it("un nuevo que va muy bien se destaca desde las 2 semanas, sin esperar el mes", () => {
+    const m = armarMatriz([...base, nuevo(16, 40)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    expect(m.senal).toBe("destaca");
+    expect(m.texto).toMatch(/Va muy bien desde el inicio/);
+    expect(m.texto).toMatch(/caería en «Estrella»/);
+    expect(m.cajaProvisional).toBe("estrella");
+  });
+
+  it("lo flojo sí espera: con 16 días y poco ritmo sigue «muy pronto», sin juicio", () => {
+    const m = armarMatriz([...base, nuevo(16, 0.5)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    expect(m.senal).toBe("pronto");
+    expect(m.texto).not.toMatch(/Poca acogida/);
+  });
+
+  it("antes de las 2 semanas ni lo bueno se afirma", () => {
+    expect(armarMatriz([...base, nuevo(9, 40)], cartas, { sedeId: null, familia: null }).enPrueba[0].senal).toBe("pronto");
+  });
+
+  it("los que van muy bien salen primero en la lista y la pantalla los avisa como buena noticia", () => {
+    const flojo: ProductoMatriz = { ...nuevo(60, 0.5), clave: "flojo", nombre: "FLOJO" };
+    const m = armarMatriz([...base, flojo, nuevo(16, 40)], cartas, { sedeId: null, familia: null });
+    expect(m.enPrueba.map((p) => p.clave)).toEqual(["nuevo", "flojo"]);
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: [...base, flojo, nuevo(16, 40)], cartas, veredictos: new Map() }));
+    expect(html).toContain("Buena noticia");
+    expect(html).toContain("caería en Estrella");
+    expect(html).toContain("border-emerald-300");
+  });
+
+  it("sin nuevos que destaquen, no hay aviso de buena noticia", () => {
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: [...base, nuevo(16, 0.5)], cartas, veredictos: new Map() }));
+    expect(html).not.toContain("Buena noticia");
   });
 });

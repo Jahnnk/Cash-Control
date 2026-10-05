@@ -511,7 +511,7 @@ export function matrizDeLaCarta(ctx: Ctx, d: CandidatosReemplazo) {
   // ── Izquierda: el gráfico de puntos ──
   const cardW = 5.55, cardH = YMAX - Y0 - 0.02;
   tarjeta(s, MX, Y0, cardW, cardH);
-  const px = MX + 0.5, py = Y0 + 0.3, pw = cardW - 0.7, ph = cardH - 1.3;
+  const px = MX + 0.5, py = Y0 + 0.3, pw = cardW - 0.7, ph = cardH - 1.38;
   const e = escalasMatriz(m.puntos, m.cortes);
   const X = (v: number) => px + e.xFrac(v) * pw;
   const Y = (v: number) => py + (1 - e.yFrac(v)) * ph;
@@ -552,11 +552,13 @@ export function matrizDeLaCarta(ctx: Ctx, d: CandidatosReemplazo) {
 
   const nuevos = m.enPrueba;
   const nombresNuevos = nuevos.slice(0, 3).map((x) => nombreLegible(x.nombre)).join(", ") + (nuevos.length > 3 ? ` y ${nuevos.length - 3} más` : "");
+  const destacan = nuevos.filter((x) => x.senal === "destaca").map((x) => nombreLegible(x.nombre));
   texto(s, [
     { text: `▼ cae   ▲ sube   ● estable o poco   ·   línea punteada = mediana: se vende más de ${un1(m.cortes.unidadesSemana)} por semana y deja más de ${solesDeck(m.cortes.margenUnidad)} por venta`, options: { breakLine: true } },
     ...(e.arriba > 0 ? [{ text: `${e.arriba} productos que dejan más de S/${Math.round(e.yMax)} por venta se dibujan en el borde de arriba.`, options: { breakLine: nuevos.length > 0 } }] : []),
-    ...(nuevos.length > 0 ? [{ text: `${nuevos.length} ${nuevos.length === 1 ? "producto nuevo" : "productos nuevos"} (menos de 3 meses) no se ${nuevos.length === 1 ? "juzga" : "juzgan"} todavía: ${nombresNuevos}.`, options: { bold: true } }] : []),
-  ], { x: MX + 0.14, y: Y0 + cardH - 0.5, w: cardW - 0.28, h: 0.44, fontSize: 6, color: C.gris, valign: "top" });
+    ...(nuevos.length > 0 ? [{ text: `${nuevos.length} ${nuevos.length === 1 ? "producto nuevo" : "productos nuevos"} (menos de 3 meses) no se ${nuevos.length === 1 ? "juzga" : "juzgan"} todavía: ${nombresNuevos}.`, options: { bold: true, breakLine: destacan.length > 0 } }] : []),
+    ...(destacan.length > 0 ? [{ text: `Los nuevos que ya van muy bien: ${destacan.slice(0, 3).join(", ")}${destacan.length > 3 ? ` y ${destacan.length - 3} más` : ""}.`, options: { bold: true, color: C.verde } }] : []),
+  ], { x: MX + 0.14, y: Y0 + cardH - 0.56, w: cardW - 0.28, h: 0.5, fontSize: 6, color: C.gris, valign: "top" });
 
   // ── Derecha: las cuatro cajas, la alarma y los perros ──
   const rx = MX + cardW + 0.18, rw = ANCHO - cardW - 0.18;
