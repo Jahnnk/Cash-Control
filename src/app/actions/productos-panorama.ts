@@ -29,6 +29,7 @@ import {
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
+import { CAFETERIAS, IDS_CAFETERIAS, NOMBRE_CAFETERIAS, juntarFilas, juntarRango } from "@/lib/productos/cafeterias";
 import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
@@ -83,8 +84,19 @@ async function filasDelMes(bId: number, month: string): Promise<{ filas: FilaPro
   }
 }
 
+/**
+ * Las filas de UNA sede, o de Fonavi + Centro juntas si `bId` es CAFETERIAS (0): el mismo
+ * producto suma sus unidades e ingresos y el rango es del primer al último día cargado.
+ */
+async function filasPara(bId: number, month: string): Promise<{ filas: FilaProducto[]; desde: string | null; hasta: string | null }> {
+  if (bId !== CAFETERIAS) return filasDelMes(bId, month);
+  const partes = await Promise.all(IDS_CAFETERIAS.map((id) => filasDelMes(id, month)));
+  const r = juntarRango(partes);
+  return { filas: juntarFilas(partes.map((x) => x.filas)), desde: r?.desde ?? null, hasta: r?.hasta ?? null };
+}
+
 async function panoramaDe(bId: number, month: string): Promise<PanoramaProductos | null> {
-  const { filas, desde, hasta } = await filasDelMes(bId, month);
+  const { filas, desde, hasta } = await filasPara(bId, month);
   if (filas.length === 0 || !desde || !hasta) return null;
   return armarPanorama(filas, desde, hasta);
 }
@@ -147,6 +159,38 @@ export async function getPanoramaProductosGrupo(month: string): Promise<Res<{ se
   }
 }
 
+export type PanoramaCafeterias = PanoramaDeSede & {
+  /** Hasta qué día llega lo cargado de cada cafetería (si no coinciden, lo junto es parcial). */
+  cubre: { sede: string; desde: string | null; hasta: string | null }[];
+};
+
+/** Fonavi + Centro juntas (businessId 0): lo vendido por las dos cafeterías en el mes. Solo dirección. */
+export async function getPanoramaCafeterias(month: string): Promise<Res<{ data: PanoramaCafeterias }>> {
+  if (!mesValido(month)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  try {
+    const [partes, cargado] = await Promise.all([
+      Promise.all(IDS_CAFETERIAS.map((id) => filasDelMes(id, month))),
+      sql`SELECT MAX(imported_at)::text AS c FROM product_period_sales WHERE business_id = ANY(${IDS_CAFETERIAS}::int[]) AND month = ${month}` as unknown as Promise<{ c: string | null }[]>,
+    ]);
+    const r = juntarRango(partes);
+    const filas = juntarFilas(partes.map((x) => x.filas));
+    return {
+      ok: true,
+      data: {
+        businessId: CAFETERIAS, sede: NOMBRE_CAFETERIAS,
+        panorama: filas.length > 0 && r ? armarPanorama(filas, r.desde, r.hasta) : null,
+        cargadoEl: cargado[0]?.c ?? null,
+        cubre: IDS_CAFETERIAS.map((id, i) => ({ sede: SEDES.find((x) => x.id === id)!.nombre, desde: partes[i].desde, hasta: partes[i].hasta })),
+      },
+    };
+  } catch (e) {
+    console.error("[getPanoramaCafeterias] failed:", e);
+    return { ok: false, error: "No se pudo leer la rotación de las cafeterías." };
+  }
+}
+
 /* ─────────────────────── Informe trimestral ─────────────────────── */
 
 export type InformeTrimestralSede = {
@@ -166,20 +210,23 @@ export async function getInformeTrimestral(hastaMes: string, businessId?: number
   if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
   if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
-  const bId = businessId ?? 2;
+  const bId = businessId ?? CAFETERIAS;
   const lista = mesesAntes(hastaMes, Math.min(12, Math.max(1, meses)));
   try {
     const armar = async (sede: number) => {
       const datos = await Promise.all(lista.map(async (month) => {
-        const { filas, desde, hasta } = await filasDelMes(sede, month);
+        const { filas, desde, hasta } = await filasPara(sede, month);
         return { month, desde: desde ?? `${month}-01`, hasta: hasta ?? `${month}-01`, filas };
       }));
       return datos.some((d) => d.filas.length > 0) ? armarTrimestral(datos) : null;
     };
-    const [propio, ...resto] = await Promise.all([armar(bId), ...SEDES.filter((s) => s.id !== bId).map((s) => armar(s.id))]);
-    const otras = SEDES.filter((s) => s.id !== bId);
+    // «Fonavi + Centro» (0) también se compara con las demás, y siempre está en la tira de arriba.
+    const TODAS = [{ id: CAFETERIAS, nombre: NOMBRE_CAFETERIAS }, ...SEDES];
+    const nombreDe = (id: number) => TODAS.find((s) => s.id === id)?.nombre ?? `Sede ${id}`;
+    const otras = TODAS.filter((s) => s.id !== bId);
+    const [propio, ...resto] = await Promise.all([armar(bId), ...otras.map((s) => armar(s.id))]);
     const comparativo = [
-      { businessId: bId, sede: SEDES.find((s) => s.id === bId)?.nombre ?? `Sede ${bId}`, informe: propio },
+      { businessId: bId, sede: nombreDe(bId), informe: propio },
       ...otras.map((s, i) => ({ businessId: s.id, sede: s.nombre, informe: resto[i] })),
     ]
       .filter((x) => x.informe)
@@ -190,7 +237,7 @@ export async function getInformeTrimestral(hastaMes: string, businessId?: number
       }));
     return {
       ok: true,
-      sede: { businessId: bId, sede: SEDES.find((s) => s.id === bId)?.nombre ?? `Sede ${bId}`, meses: lista, informe: propio },
+      sede: { businessId: bId, sede: nombreDe(bId), meses: lista, informe: propio },
       comparativo,
     };
   } catch (e) {
@@ -219,29 +266,43 @@ export async function getReglaOchentaVeinte(hastaMes: string): Promise<Res<{ sed
   if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
   if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
-  const lista = mesesAntes(hastaMes, 3);
   try {
-    const sedes = await Promise.all(SEDES.map(async (s) => {
-      const datos = await Promise.all(lista.map(async (month) => {
-        const { filas, desde, hasta } = await filasDelMes(s.id, month);
-        return { month, desde: desde ?? `${month}-01`, hasta: hasta ?? `${month}-01`, filas };
-      }));
-      const actual = datos[datos.length - 1];
-      const panorama = actual.filas.length > 0 && actual.desde && actual.hasta ? armarPanorama(actual.filas, actual.desde, actual.hasta) : null;
-      const tri = datos.some((d) => d.filas.length > 0) ? armarTrimestral(datos) : null;
-      return {
-        businessId: s.id,
-        sede: s.nombre,
-        mes: panorama ? reglaOchentaVeinte(panorama.carta) : null,
-        tresMeses: tri ? reglaOchentaVeinte(tri.productosTodos) : null,
-        meses: lista,
-      };
-    }));
-    return { ok: true, sedes };
+    return { ok: true, sedes: await Promise.all(SEDES.map((s) => ochentaVeintePara(s.id, s.nombre, hastaMes))) };
   } catch (e) {
     console.error("[getReglaOchentaVeinte] failed:", e);
     return { ok: false, error: "No se pudo calcular la regla 80/20." };
   }
+}
+
+/** La regla 80/20 con Fonavi + Centro juntas (el mismo producto suma sus ventas). Solo dirección. */
+export async function getReglaOchentaVeinteCafeterias(hastaMes: string): Promise<Res<{ data: OchentaVeinteSede }>> {
+  if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  try {
+    return { ok: true, data: await ochentaVeintePara(CAFETERIAS, NOMBRE_CAFETERIAS, hastaMes) };
+  } catch (e) {
+    console.error("[getReglaOchentaVeinteCafeterias] failed:", e);
+    return { ok: false, error: "No se pudo calcular la regla 80/20 de las cafeterías." };
+  }
+}
+
+async function ochentaVeintePara(bId: number, nombre: string, hastaMes: string): Promise<OchentaVeinteSede> {
+  const lista = mesesAntes(hastaMes, 3);
+  const datos = await Promise.all(lista.map(async (month) => {
+    const { filas, desde, hasta } = await filasPara(bId, month);
+    return { month, desde: desde ?? `${month}-01`, hasta: hasta ?? `${month}-01`, filas };
+  }));
+  const actual = datos[datos.length - 1];
+  const panorama = actual.filas.length > 0 && actual.desde && actual.hasta ? armarPanorama(actual.filas, actual.desde, actual.hasta) : null;
+  const tri = datos.some((d) => d.filas.length > 0) ? armarTrimestral(datos) : null;
+  return {
+    businessId: bId,
+    sede: nombre,
+    mes: panorama ? reglaOchentaVeinte(panorama.carta) : null,
+    tresMeses: tri ? reglaOchentaVeinte(tri.productosTodos) : null,
+    meses: lista,
+  };
 }
 
 /* ─────────────────── Cruce de las dos fuentes ─────────────────── */
@@ -544,13 +605,13 @@ export async function getRentabilidadProductos(mes: string, businessId: number):
   if (!mesValido(mes)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
   if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
-  const sede = SEDES.find((s) => s.id === businessId && (s.id === 2 || s.id === 3));
+  const sede = businessId === CAFETERIAS ? { id: CAFETERIAS, nombre: NOMBRE_CAFETERIAS } : SEDES.find((s) => s.id === businessId && (s.id === 2 || s.id === 3));
   if (!sede) return { ok: false, error: "Solo Fonavi y Centro tienen carta con precio al público." };
   try {
     const [costos, vinculos, mesDatos] = await Promise.all([
       (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
       (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
-      filasDelMes(sede.id, mes),
+      filasPara(sede.id, mes),
     ]);
     if (mesDatos.filas.length === 0 || !mesDatos.desde || !mesDatos.hasta) return { ok: true, data: null };
     const p = armarPanorama(mesDatos.filas, mesDatos.desde, mesDatos.hasta);

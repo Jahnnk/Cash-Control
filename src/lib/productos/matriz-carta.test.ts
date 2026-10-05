@@ -267,3 +267,98 @@ describe("productos nuevos en prueba", () => {
     expect(est.fechaAnotada).toBe(false);
   });
 });
+
+import { buscarProductos, fichaDeProducto } from "./matriz-carta";
+
+describe("buscador y ficha de un producto", () => {
+  const roast = prod("roast", "ROAST BEEF", [sedeP(2, "Fonavi", plano(0.6), 22, 8.7), sedeP(3, "Centro", plano(1.2), 22, 8.7)], "Sánguches, platos y desayunos");
+  const pina = prod("pina", "POLLO CON PIÑA GRILL", [sedeP(2, "Fonavi", plano(2), 16, 5.6)], "Sánguches, platos y desayunos");
+  const todos = [...base, roast, pina];
+  const dosCartas = [carta(2, "Fonavi"), carta(3, "Centro")];
+
+  it("busca sin importar mayúsculas ni tildes, con todas las palabras", () => {
+    expect(buscarProductos(todos, "roast").map((p) => p.clave)).toEqual(["roast"]);
+    expect(buscarProductos(todos, "ROAST BEEF").map((p) => p.clave)).toEqual(["roast"]);
+    expect(buscarProductos(todos, "pina grill").map((p) => p.clave)).toEqual(["pina"]); // «piña» sin la ñ
+    expect(buscarProductos(todos, "beef roast").map((p) => p.clave)).toEqual(["roast"]); // en cualquier orden
+    expect(buscarProductos(todos, "zzz")).toEqual([]);
+    expect(buscarProductos(todos, "   ")).toEqual([]);
+  });
+
+  it("los que empiezan igual van primero y se limita la lista", () => {
+    const muchos = Array.from({ length: 20 }, (_, i) => prod(`k${i}`, `PAN ${i}`, [sedeP(2, "Fonavi", plano(1), 5, 2)]));
+    expect(buscarProductos(muchos, "pan", 5)).toHaveLength(5);
+    const mezcla = [prod("a", "MINI PAN", [sedeP(2, "Fonavi", plano(1), 5, 2)]), prod("b", "PAN DE MASA", [sedeP(2, "Fonavi", plano(1), 5, 2)])];
+    expect(buscarProductos(mezcla, "pan")[0].clave).toBe("b");
+  });
+
+  it("la ficha de un producto ubicado trae caja, puestos, qué tan grande es y el detalle por sede", () => {
+    const f = fichaDeProducto(todos, dosCartas, "roast")!;
+    expect(f.situacion).toBe("ubicado");
+    expect(f.punto?.cuadrante).toBeDefined();
+    expect(f.puestos!.ganancia.de).toBe(f.puestos!.unidades.de);
+    expect(f.puestos!.enCaja.n).toBeGreaterThanOrEqual(1);
+    expect(["grande", "mediana", "chica"]).toContain(f.tamano);
+    expect(f.porQue).toMatch(/mediana de la carta/);
+    expect(f.porQue).toMatch(/Entre los \d+ de «/);
+    expect(f.porSede.map((s) => s.sede)).toEqual(["Fonavi", "Centro"]);
+    // Lo de las sedes suma lo del producto.
+    const suma = f.porSede.reduce((t, s) => t + s.unidadesSemana, 0);
+    expect(suma).toBeCloseTo(f.punto!.unidadesSemana, 1);
+  });
+
+  it("no depende de los filtros de la pantalla: usa siempre la carta entera con las dos sedes", () => {
+    const f = fichaDeProducto(todos, dosCartas, "roast")!;
+    const m = armarMatriz(todos, dosCartas, { sedeId: null, familia: null });
+    expect(f.punto?.unidadesSemana).toBe(m.puntos.find((p) => p.clave === "roast")!.unidadesSemana);
+    expect(f.cortes).toEqual(m.cortes);
+  });
+
+  it("un nuevo, uno sin costo y uno fuera tienen ficha con su situación", () => {
+    const nuevo: ProductoMatriz = { ...prod("nuevo", "NUEVITO", [{ ...sedeP(2, "Fonavi", plano(0), 10, 4, "nuevo"), prueba: { inicio: "2026-09-15", dia: 21, de: 90, unidadesSemana: 3, origen: "estimada" } }]) };
+    const sinCosto = prod("sc", "SIN COSTO", [sedeP(2, "Fonavi", plano(2), 8, null)]);
+    const fuera = prod("fu", "YA NO SE VENDE", [sedeP(2, "Fonavi", plano(0), 10, 4, "dejo-de-venderse")]);
+    const t2 = [...base, nuevo, sinCosto, fuera];
+    expect(fichaDeProducto(t2, dosCartas.slice(0, 1), "nuevo")!.situacion).toBe("prueba");
+    expect(fichaDeProducto(t2, dosCartas.slice(0, 1), "sc")!.situacion).toBe("sin-costo");
+    const f = fichaDeProducto(t2, dosCartas.slice(0, 1), "fu")!;
+    expect(f.situacion).toBe("fuera");
+    expect(f.motivoFuera).toMatch(/Dejó de venderse/);
+  });
+
+  it("un producto que no existe no tiene ficha", () => {
+    expect(fichaDeProducto(todos, dosCartas, "nada")).toBeNull();
+  });
+
+  it("la pantalla trae el buscador y, abierta una ficha, muestra todas las métricas", () => {
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: todos, cartas: dosCartas, veredictos: new Map(), buscadoInicial: "roast" }));
+    expect(html).toContain("Buscar un producto");
+    expect(html).toContain("Ficha de ROAST BEEF");
+    expect(html).toContain("Vende por semana");
+    expect(html).toContain("Deja por venta");
+    expect(html).toContain("Gana al mes");
+    expect(html).toContain("Por sede");
+    expect(html).toContain("Fonavi");
+    expect(html).toContain("Centro");
+    expect(html).toContain("de la ganancia");
+    expect(html).toContain("Cerrar ficha");
+  });
+
+  it("sin ficha abierta solo se ve el buscador", () => {
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: todos, cartas: dosCartas, veredictos: new Map() }));
+    expect(html).toContain("Buscar un producto");
+    expect(html).not.toContain("Ficha de");
+  });
+
+  it("si el último mes cayó fuerte aunque el promedio se vea estable, la ficha y la lectura lo dicen", () => {
+    const porDia = [18.7, 11.5, 12.9, 13.1, 16.0, 8.9].map((v) => v / 7);
+    const roastCae = prod("roast", "ROAST BEEF", [sedeP(2, "Fonavi", porDia, 22, 8.7), sedeP(3, "Centro", porDia, 22, 8.7)], "Sánguches, platos y desayunos");
+    const f = fichaDeProducto([...base, roastCae], dosCartas, "roast")!;
+    expect(f.punto!.tendencia.clase).toBe("estable");
+    expect(f.punto!.tendencia.ultimoMes?.month).toBe("2026-09");
+    expect(f.punto!.lectura).toMatch(/Ojo: en setiembre bajó/);
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: [...base, roastCae], cartas: dosCartas, veredictos: new Map(), buscadoInicial: "roast" }));
+    expect(html).toContain("Demanda (las dos sedes juntas)");
+    expect(html).toContain("Ojo: en setiembre bajó");
+  });
+});

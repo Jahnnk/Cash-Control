@@ -37,6 +37,12 @@ export type Tendencia = {
   cartaPct: number | null;
   /** Meses seguidos de baja al terminar la serie. */
   mesesBajando: number;
+  /**
+   * El último mes completo contra el promedio de los dos anteriores, SOLO si cayó fuerte
+   * (≥30%) y no es porque cayó toda la carta. El promedio de 3 meses puede esconder una
+   * caída reciente (roast beef: agosto 16 por semana, setiembre 9, y el promedio «estable»).
+   */
+  ultimoMes: { month: string; cambioPct: number } | null;
   /** Meses usados para «antes» y «ahora» (AAAA-MM). */
   tramoAntes: string[];
   tramoAhora: string[];
@@ -49,14 +55,18 @@ export const CAMBIO_SIGNIFICATIVO = 25;
 export const CAIDA_VS_CARTA = 15;
 /** Menos de esto por semana (~6 al mes) no se considera una demanda que pueda caer. */
 export const SEMANAL_MINIMO = 1.4;
+/** Cuánto debe caer el último mes (contra los dos anteriores) para avisarlo aunque el promedio se vea estable. */
+export const CAIDA_ULTIMO_MES = 30;
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
 const mes = (m: string) => MESES[Number(m.slice(5, 7)) - 1];
+const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
+export const mesLargo = (m: string) => MESES_LARGOS[Number(m.slice(5, 7)) - 1];
 const tramoTexto = (ms: string[]) => (ms.length === 0 ? "" : ms.length === 1 ? mes(ms[0]) : `${mes(ms[0])}–${mes(ms[ms.length - 1])}`);
 const r1 = (n: number) => Math.round(n * 10) / 10;
 
 const SIN_DATOS = (resumen: string): Tendencia => ({
-  clase: "sin-datos", antes: null, ahora: null, cambioPct: null, cartaPct: null, mesesBajando: 0, tramoAntes: [], tramoAhora: [], resumen,
+  clase: "sin-datos", antes: null, ahora: null, cambioPct: null, cartaPct: null, mesesBajando: 0, ultimoMes: null, tramoAntes: [], tramoAhora: [], resumen,
 });
 
 /** Cómo se parte la serie: los últimos 3 meses son «ahora» (con menos de 6 meses, la mitad); lo anterior es «antes». */
@@ -88,7 +98,27 @@ export function calcularTendencia(serie: PuntoDia[], carta?: PuntoDia[]): Tenden
     cartaPct = cA > 0 ? Math.round(((cH - cA) / cA) * 100) : null;
   }
 
-  const base = { antes: r1(sAntes), ahora: r1(sAhora), cartaPct, mesesBajando, tramoAntes, tramoAhora };
+  // ¿Cayó fuerte el último mes completo, aunque el promedio de 3 meses se vea estable?
+  let ultimoMes: Tendencia["ultimoMes"] = null;
+  if (completos.length >= 3) {
+    const ult = completos[completos.length - 1];
+    const prev = completos.slice(-3, -1);
+    const prevSemanal = (prev.reduce((t, x) => t + x.porDia, 0) / prev.length) * 7;
+    if (prevSemanal >= SEMANAL_MINIMO) {
+      const cambio = Math.round(((ult.porDia * 7 - prevSemanal) / prevSemanal) * 100);
+      const cartaUlt = carta?.find((c) => c.completo && c.month === ult.month);
+      const cartaPrev = carta?.filter((c) => c.completo && prev.some((x) => x.month === c.month)) ?? [];
+      let cartaCambio = 0;
+      if (cartaUlt && cartaPrev.length > 0) {
+        const cp = cartaPrev.reduce((t, x) => t + x.porDia, 0) / cartaPrev.length;
+        cartaCambio = cp > 0 ? ((cartaUlt.porDia - cp) / cp) * 100 : 0;
+      }
+      const relativo = ((1 + cambio / 100) / (1 + cartaCambio / 100) - 1) * 100;
+      if (cambio <= -CAIDA_ULTIMO_MES && relativo <= -CAIDA_VS_CARTA) ultimoMes = { month: ult.month, cambioPct: cambio };
+    }
+  }
+  const ojo = (clase: string) => (ultimoMes && clase !== "cayendo" ? ` Ojo: en ${mesLargo(ultimoMes.month)} bajó ${Math.abs(ultimoMes.cambioPct)}% frente a los dos meses anteriores.` : "");
+  const base = { antes: r1(sAntes), ahora: r1(sAhora), cartaPct, mesesBajando, ultimoMes, tramoAntes, tramoAhora };
   if (sAntes < SEMANAL_MINIMO && sAhora < SEMANAL_MINIMO) {
     const alMes = Math.round(Math.max(sAntes, sAhora) * 30 / 7);
     return { ...base, clase: "poco-siempre", cambioPct: null, resumen: `Vende muy poco desde siempre (a lo sumo ~${alMes} al mes): no es una caída, nunca despegó.` };
@@ -106,10 +136,10 @@ export function calcularTendencia(serie: PuntoDia[], carta?: PuntoDia[]): Tenden
     return { ...base, clase: "cayendo", cambioPct, resumen: `Viene cayendo: de ${r1(sAntes)} a ${r1(sAhora)} por semana (${cambioPct}%) ${rango}.${seguidos}${cartaTxt}` };
   }
   if (cambioPct >= CAMBIO_SIGNIFICATIVO) {
-    return { ...base, clase: "subiendo", cambioPct, resumen: `Viene subiendo: de ${r1(sAntes)} a ${r1(sAhora)} por semana (+${cambioPct}%) ${rango}.${cartaTxt}` };
+    return { ...base, clase: "subiendo", cambioPct, resumen: `Viene subiendo: de ${r1(sAntes)} a ${r1(sAhora)} por semana (+${cambioPct}%) ${rango}.${cartaTxt}${ojo("subiendo")}` };
   }
   const explica = cambioPct <= -CAMBIO_SIGNIFICATIVO ? ` Bajó ${Math.abs(cambioPct)}%, pero casi igual que toda la carta: no es solo de este producto.` : "";
-  return { ...base, clase: "estable", cambioPct, resumen: `Se mantiene en ~${r1(sAhora)} por semana (${cambioPct > 0 ? "+" : ""}${cambioPct}% ${rango}).${explica}` };
+  return { ...base, clase: "estable", cambioPct, resumen: `Se mantiene en ~${r1(sAhora)} por semana (${cambioPct > 0 ? "+" : ""}${cambioPct}% ${rango}).${explica}${ojo("estable")}` };
 }
 
 export const TEXTO_TENDENCIA: Record<ClaseTendencia, { corto: string; tono: "rojo" | "verde" | "ambar" | "gris" }> = {

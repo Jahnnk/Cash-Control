@@ -38,7 +38,7 @@
 
 import type { Familia } from "./panorama";
 import type { ProductoEnSede, PruebaProducto } from "./candidatos";
-import { calcularTendencia, type PuntoDia, type Tendencia } from "./tendencia";
+import { calcularTendencia, mesLargo, type PuntoDia, type Tendencia } from "./tendencia";
 
 export type CartaSede = { businessId: number; sede: string; serie: PuntoDia[] };
 
@@ -248,7 +248,9 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
       unidadesSemana: r2(b.unidadesSemana), margenUnidad: r2(margen),
       margenPct: precio ? Math.round((margen / precio) * 100) : null, precio: precio !== null ? r2(precio) : null,
       gananciaMes: Math.round(b.gananciaDia! * 30), ventaMes: Math.round(b.ventaDia * 30),
-      tendencia, serie, lanzamiento: b.p.lanzamiento, lectura: lecturaDe(cuadrante, tendencia.clase),
+      tendencia, serie, lanzamiento: b.p.lanzamiento,
+      // Si el último mes cayó fuerte aunque el promedio se vea estable, la lectura lo dice.
+      lectura: lecturaDe(cuadrante, tendencia.clase) + (tendencia.ultimoMes && tendencia.clase !== "cayendo" ? ` Ojo: en ${mesLargo(tendencia.ultimoMes.month)} bajó ${Math.abs(tendencia.ultimoMes.cambioPct)}%.` : ""),
     };
   });
 
@@ -343,5 +345,117 @@ export function escalasMatriz(puntos: Pick<PuntoMatriz, "unidadesSemana" | "marg
     yFrac: (v) => (Math.min(v, yMax) - yMin) / (yMax - yMin || 1),
     xTicks: [0.5, 1, 2, 5, 10, 20, 50, 100].filter((t) => t >= xMin && t <= xMax),
     yTicks, yMax, arriba: ms.filter((v) => v > yMax).length,
+  };
+}
+
+// ─── Buscador y ficha de un producto ────────────────────────────────────────
+//
+// Pedido de Jahnn (5-oct-2026): «un buscador de producto: si quiero evaluar el
+// desempeño del roast beef, que pueda buscarlo y obtener todas las métricas».
+// La ficha SIEMPRE usa la carta entera con las dos sedes juntas (no depende de los
+// filtros de la pantalla) y dice, además de en qué caja cae, qué tan grande es ahí.
+
+const normalizar = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** Productos cuyo nombre contiene todas las palabras buscadas (sin tildes ni mayúsculas); primero los que empiezan igual. */
+export function buscarProductos(productos: ProductoMatriz[], texto: string, max = 8): ProductoMatriz[] {
+  const palabras = normalizar(texto).split(" ").filter(Boolean);
+  if (palabras.length === 0) return [];
+  const q = palabras.join(" ");
+  return productos
+    .map((p) => ({ p, n: normalizar(p.nombre) }))
+    .filter(({ n }) => palabras.every((w) => n.includes(w)))
+    .sort((a, b) => Number(b.n.startsWith(q)) - Number(a.n.startsWith(q)) || a.n.length - b.n.length || a.n.localeCompare(b.n))
+    .slice(0, max)
+    .map(({ p }) => p);
+}
+
+export type SituacionFicha = "ubicado" | "prueba" | "sin-costo" | "fuera";
+
+export type Puesto = { n: number; de: number };
+
+export type FichaPorSede = {
+  businessId: number;
+  sede: string;
+  unidadesSemana: number;
+  ventaMes: number;
+  gananciaMes: number | null;
+  tendencia: Tendencia;
+  serie: PuntoDia[];
+};
+
+export type FichaProducto = {
+  clave: string;
+  nombre: string;
+  familia: Familia;
+  situacion: SituacionFicha;
+  /** Solo si está «fuera»: por qué no se juzga. */
+  motivoFuera: string | null;
+  punto: PuntoMatriz | null;
+  prueba: PuntoPrueba | null;
+  /** Su lugar en la carta (solo ubicados). */
+  puestos: { ganancia: Puesto; unidades: Puesto; margen: Puesto; enFamilia: Puesto; enCaja: Puesto; pctGanancia: number } | null;
+  /** Qué tan grande es dentro de su caja, por ganancia: tercio de arriba, del medio o de abajo. */
+  tamano: "grande" | "mediana" | "chica" | null;
+  /** Por qué cae en esa caja, con los cortes a la vista. */
+  porQue: string | null;
+  cortes: Matriz["cortes"];
+  porSede: FichaPorSede[];
+  /** Lo que vende por semana y al mes aunque no se pueda ubicar (sin costo o fuera). */
+  unidadesSemana: number;
+  lanzamiento: string | null;
+};
+
+export function fichaDeProducto(productos: ProductoMatriz[], cartas: CartaSede[], clave: string): FichaProducto | null {
+  const prod = productos.find((p) => p.clave === clave);
+  if (!prod) return null;
+  const todo = armarMatriz(productos, cartas, { sedeId: null, familia: null });
+  const punto = todo.puntos.find((p) => p.clave === clave) ?? null;
+  const prueba = todo.enPrueba.find((p) => p.clave === clave) ?? null;
+  const sinCosto = todo.sinCosto.find((p) => p.clave === clave) ?? null;
+
+  const situacion: SituacionFicha = punto ? "ubicado" : prueba ? "prueba" : sinCosto ? "sin-costo" : "fuera";
+  const estados = prod.sedes.map((s) => s.estado);
+  const motivoFuera = situacion !== "fuera" ? null
+    : estados.every((e) => e === "dejo-de-venderse") ? "Dejó de venderse: dos meses seguidos sin ventas."
+    : estados.some((e) => e === "nuevo") ? "Es muy nuevo (menos de 2 meses con ventas): todavía no se puede juzgar."
+    : "No tiene ventas en los meses analizados.";
+
+  let puestos: FichaProducto["puestos"] = null;
+  let tamano: FichaProducto["tamano"] = null;
+  let porQue: string | null = null;
+  if (punto) {
+    const orden = (xs: PuntoMatriz[], f: (x: PuntoMatriz) => number) => [...xs].sort((a, b) => f(b) - f(a)).findIndex((x) => x.clave === clave) + 1;
+    const familia = todo.puntos.filter((x) => x.familia === punto.familia);
+    const caja = todo.puntos.filter((x) => x.cuadrante === punto.cuadrante);
+    const totalGanancia = todo.puntos.reduce((t, x) => t + x.gananciaMes, 0) || 1;
+    puestos = {
+      ganancia: { n: orden(todo.puntos, (x) => x.gananciaMes), de: todo.puntos.length },
+      unidades: { n: orden(todo.puntos, (x) => x.unidadesSemana), de: todo.puntos.length },
+      margen: { n: orden(todo.puntos, (x) => x.margenUnidad), de: todo.puntos.length },
+      enFamilia: { n: orden(familia, (x) => x.gananciaMes), de: familia.length },
+      enCaja: { n: orden(caja, (x) => x.gananciaMes), de: caja.length },
+      pctGanancia: Math.round((punto.gananciaMes / totalGanancia) * 1000) / 10,
+    };
+    const tercio = puestos.enCaja.de / 3;
+    tamano = puestos.enCaja.n <= tercio ? "grande" : puestos.enCaja.n <= tercio * 2 ? "mediana" : "chica";
+    porQue = `Vende ${punto.unidadesSemana >= 10 ? punto.unidadesSemana.toFixed(0) : punto.unidadesSemana.toFixed(1)} por semana (${punto.unidadesSemana >= todo.cortes.unidadesSemana ? "más" : "menos"} que la mediana de la carta, ${todo.cortes.unidadesSemana >= 10 ? todo.cortes.unidadesSemana.toFixed(0) : todo.cortes.unidadesSemana.toFixed(1)}) `
+      + `y deja ${soles(punto.margenUnidad)} por venta (${punto.margenUnidad >= todo.cortes.margenUnidad ? "más" : "menos"} que la mediana, ${soles(todo.cortes.margenUnidad)}). `
+      + `Entre los ${caja.length} de «${CUADRANTES[punto.cuadrante].nombre}» es el n.º ${puestos.enCaja.n} por ganancia: ${tamano === "grande" ? "de los grandes" : tamano === "mediana" ? "de tamaño mediano" : "de los chicos"}.`;
+  }
+
+  const porSede: FichaPorSede[] = prod.sedes.map((s) => {
+    const carta = cartas.find((c) => c.businessId === s.businessId);
+    const serie = s.serie;
+    return {
+      businessId: s.businessId, sede: s.sede, unidadesSemana: r2(s.unidadesSemana), ventaMes: Math.round(s.ventaDia * 30),
+      gananciaMes: s.gananciaDia !== null ? Math.round(s.gananciaDia * 30) : null,
+      tendencia: calcularTendencia(serie, carta?.serie), serie,
+    };
+  });
+
+  return {
+    clave, nombre: prod.nombre, familia: prod.familia, situacion, motivoFuera, punto, prueba, puestos, tamano, porQue,
+    cortes: todo.cortes, porSede, unidadesSemana: r2(prod.sedes.reduce((t, s) => t + s.unidadesSemana, 0)), lanzamiento: prod.lanzamiento,
   };
 }
