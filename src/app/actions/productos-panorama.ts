@@ -28,7 +28,7 @@ import {
 } from "@/lib/productos/candidatos";
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
-import { coberturaDeRangos, type Cobertura } from "@/lib/productos/cobertura-datos";
+import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
 import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
@@ -422,7 +422,10 @@ export type CandidatosReemplazo = ResultadoCandidatos & {
  */
 /** El cálculo de los candidatos, sin chequear permisos (lo hacen las actions que lo usan). */
 async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandidatos; hasta: CandidatosReemplazo["hasta"]; costos: CostoCarta[]; hoy: string }> {
-  const lista = mesesAntes(hastaMes, 6);
+  // Desde abril (el primer mes con reportes de dirección), entre 6 y 12 meses: la decisión sigue
+  // tomándose con los 3 más recientes, pero la tendencia y la matriz usan toda la historia.
+  const [yh, mh] = hastaMes.split("-").map(Number), [y0, m0] = PRIMER_MES_PRODUCTOS.split("-").map(Number);
+  const lista = mesesAntes(hastaMes, Math.min(12, Math.max(6, (yh - y0) * 12 + (mh - m0) + 1)));
   const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
   const [costos, vinculos, acompanamientos, archivos, decisiones, planes] = await Promise.all([
     (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),

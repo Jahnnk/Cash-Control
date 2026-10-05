@@ -17,6 +17,9 @@ import {
 import type { AccionPlan, Candidato, MotivoArchivo, PlanConResultado, ProductoEnSede, Veredicto } from "@/lib/productos/candidatos";
 import { ACCION_TEXTO, EstadoPlan } from "@/components/productos/plan-sede";
 import { UMBRAL_CANDIDATO, UMBRAL_OBSERVAR } from "@/lib/productos/candidatos";
+import { evidenciaDe, TEXTO_TENDENCIA } from "@/lib/productos/tendencia";
+import { GraficoDemanda, type SerieDemanda } from "@/components/productos/grafico-demanda";
+import { MatrizCarta } from "./matriz-carta";
 import { Barra, Pastilla, PuntoFamilia, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 import { useToast } from "@/components/toast-provider";
 
@@ -70,6 +73,7 @@ export function CandidatosReemplazo({ month }: { month: string }) {
     return c;
   }, [data]);
 
+  const veredictos = useMemo(() => new Map((data?.candidatos ?? []).map((c) => [c.clave, c.veredicto] as const)), [data]);
   const lista = (data?.candidatos ?? []).filter((c) => c.veredicto === filtro);
   const accion = ARCHIVAR[filtro];
   const sacar = (data?.candidatos ?? []).filter((c) => c.veredicto === "sacar");
@@ -117,7 +121,7 @@ export function CandidatosReemplazo({ month }: { month: string }) {
         data
           ? <>Fonavi y Centro juntas · decide con {periodo} · costos del Excel de pricing para el {data.coberturaCosto}% de lo vendido
             {data.semanas > 1 ? ` · ${data.semanas} semanas guardadas` : " · las semanas se ven desde las próximas cargas del sábado"}</>
-          : "Qué productos de la carta conviene sacar o revisar, por qué y cuándo."
+          : "La matriz de la carta (estrella, vaca, interrogante, perro) y qué productos conviene sacar o revisar, con su historia mes a mes."
       }
       resumen={data && (
         <div className="flex flex-wrap gap-1.5">
@@ -146,6 +150,10 @@ export function CandidatosReemplazo({ month }: { month: string }) {
         <div className="flex justify-center py-10 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
       ) : (
         <div className="space-y-5">
+          {/* La vista de toda la carta: dónde está la ganancia y quién la pone en riesgo (5-oct-2026). */}
+          <MatrizCarta matriz={data.matriz} cartas={data.cartas} veredictos={veredictos} />
+          <hr className="border-gray-200" />
+          <h4 className="text-sm font-semibold text-gray-900 -mb-2">Candidatos a reemplazo</h4>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
             {ORDEN.map((v) => {
               const meta = VEREDICTOS[v];
@@ -261,6 +269,8 @@ function Tarjeta({ c, carta, onVinculado, onDecidido, archivar, plan }: {
 
       <p className="text-[13px] text-gray-700 leading-relaxed">{c.razon}</p>
 
+      <Demanda c={c} />
+
       {(c.veredicto === "preparar" || c.veredicto === "revisar") && c.comparacionSedes && <CompararSedes c={c} />}
       {c.veredicto === "revisar" && <PlanRevisar c={c} plan={plan} onGuardado={onDecidido} />}
 
@@ -319,7 +329,10 @@ function Sede({ s }: { s: ProductoEnSede }) {
           <Pastilla tono={e.tono}>{e.texto}</Pastilla>
         </div>
       </div>
-      <Curva puntos={s.porMes.map((m) => ({ etiqueta: nombreMes(m.month, true), valor: m.ventaDia, detalle: `${m.unidades} und · ${soles(m.ingresos)}` }))} />
+      <p className="text-[11px] leading-snug text-gray-600 flex items-start gap-1.5">
+        <span className="shrink-0"><Pastilla tono={TEXTO_TENDENCIA[s.tendencia.clase].tono}>{TEXTO_TENDENCIA[s.tendencia.clase].corto}</Pastilla></span>
+        <span>{s.tendencia.resumen}</span>
+      </p>
       {s.porSemana.length >= 3 && <Semanas semanas={s.porSemana} />}
       <dl className="grid grid-cols-2 gap-x-3 gap-y-1 text-[11px]">
         <Dato t="Vende al día" v={soles(s.ventaDia)} />
@@ -331,49 +344,33 @@ function Sede({ s }: { s: ProductoEnSede }) {
   );
 }
 
+const COLOR_SEDE: Record<number, Pick<SerieDemanda, "color" | "forma">> = {
+  2: { color: "#098B5F", forma: "circulo" },
+  3: { color: "#6B4FA0", forma: "cuadrado" },
+};
+const TONO_EVIDENCIA = { rojo: "text-red-800 bg-red-50 border-red-200", verde: "text-emerald-800 bg-emerald-50 border-emerald-200", ambar: "text-amber-900 bg-amber-50 border-amber-200", gris: "text-gray-700 bg-gray-50 border-gray-200" };
+
+/** La historia de la demanda de un candidato: qué dice (confirma o frena) y el gráfico mes a mes. */
+function Demanda({ c }: { c: Candidato }) {
+  const ev = evidenciaDe(c.sedes.map((s) => ({ sede: s.sede, tendencia: s.tendencia })));
+  const series: SerieDemanda[] = c.sedes.map((s) => ({
+    nombre: s.sede,
+    ...(COLOR_SEDE[s.businessId] ?? { color: "#004C40", forma: "circulo" as const }),
+    puntos: s.porMes.map((m) => ({ month: m.month, completo: m.completo, porSemana: m.unidadesDia * 7 })),
+  }));
+  return (
+    <div className="rounded-xl border border-gray-200/80 p-3 space-y-2">
+      <p className={`text-xs font-medium rounded-lg border px-2.5 py-1.5 ${TONO_EVIDENCIA[ev.tono]}`}>{ev.titulo}</p>
+      <GraficoDemanda series={series} />
+    </div>
+  );
+}
+
 function Dato({ t, v }: { t: string; v: string }) {
   return (
     <div className="min-w-0">
       <dt className="text-gray-500">{t}</dt>
       <dd className="text-gray-900 font-medium tabular-nums truncate">{v}</dd>
-    </div>
-  );
-}
-
-/**
- * Venta por día de cada mes: línea de 2px con área suave, el último mes
- * marcado. Pasando el mouse por un punto se ve el mes y sus números.
- */
-function Curva({ puntos }: { puntos: { etiqueta: string; valor: number; detalle: string }[] }) {
-  const [activo, setActivo] = useState<number | null>(null);
-  if (puntos.length === 0) return null;
-  const W = 240, H = 44, pad = 4;
-  const max = Math.max(...puntos.map((p) => p.valor), 0.01);
-  const x = (i: number) => (puntos.length === 1 ? W / 2 : pad + (i * (W - pad * 2)) / (puntos.length - 1));
-  const y = (v: number) => H - pad - (v / max) * (H - pad * 2);
-  const linea = puntos.map((p, i) => `${i === 0 ? "M" : "L"}${x(i).toFixed(1)},${y(p.valor).toFixed(1)}`).join(" ");
-  const area = `${linea} L${x(puntos.length - 1).toFixed(1)},${H - pad} L${x(0).toFixed(1)},${H - pad} Z`;
-  const ult = puntos.length - 1;
-  const mostrar = activo ?? ult;
-  return (
-    <div>
-      <div className="flex items-baseline justify-between text-[10px] text-gray-500 mb-0.5">
-        <span>Venta por día</span>
-        <span className="tabular-nums text-gray-700">{puntos[mostrar].etiqueta}: {soles(puntos[mostrar].valor)} · {puntos[mostrar].detalle}</span>
-      </div>
-      <svg viewBox={`0 0 ${W} ${H}`} className="w-full h-11" role="img" aria-label={puntos.map((p) => `${p.etiqueta} ${soles(p.valor)}`).join(", ")} onMouseLeave={() => setActivo(null)}>
-        <line x1={pad} x2={W - pad} y1={H - pad} y2={H - pad} stroke="#E5E7EB" strokeWidth="1" />
-        <path d={area} fill="#098B5F" fillOpacity="0.1" />
-        <path d={linea} fill="none" stroke="#098B5F" strokeWidth="2" strokeLinejoin="round" strokeLinecap="round" />
-        {activo !== null && <line x1={x(activo)} x2={x(activo)} y1={pad} y2={H - pad} stroke="#9CA3AF" strokeWidth="1" strokeDasharray="2 2" />}
-        <circle cx={x(mostrar)} cy={y(puntos[mostrar].valor)} r="3.5" fill="#004C40" stroke="white" strokeWidth="1.5" />
-        {puntos.map((p, i) => (
-          <rect key={i} x={x(i) - (W / puntos.length) / 2} y={0} width={W / puntos.length} height={H} fill="transparent" onMouseEnter={() => setActivo(i)} />
-        ))}
-      </svg>
-      <div className="flex justify-between text-[10px] text-gray-400">
-        <span>{puntos[0].etiqueta}</span><span>{puntos[ult].etiqueta}</span>
-      </div>
     </div>
   );
 }
