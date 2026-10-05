@@ -21,13 +21,19 @@
  * decisión. Un perro que además viene cayendo se reemplaza con seguridad; una
  * estrella que cae es una alarma; un perro que sube se observa.
  *
- * No entran: acompañamientos, productos nuevos (menos de 2 meses) ni los que ya
- * dejaron de venderse (esos están en «Candidatos a reemplazo»); los que no tienen
- * costo se cuentan aparte, porque sin costo no hay eje vertical.
+ * No entran: acompañamientos, ni los que ya dejaron de venderse (esos están en
+ * «Candidatos a reemplazo»); los que no tienen costo se cuentan aparte, porque sin
+ * costo no hay eje vertical.
+ *
+ * PRODUCTOS NUEVOS (regla de Jahnn, 5-oct-2026): un producto que salió hace menos de
+ * 3 meses está «en prueba»: no se le pone caja ni se le dice «reemplazar» (no es lo
+ * mismo uno que en 6 meses no vende que uno de 2 semanas). Se muestra aparte, con
+ * cuántos días lleva, a qué ritmo vende contra lo típico de su familia y qué señal
+ * da: muy pronto / buena / regular / poca acogida. El veredicto llega a los 90 días.
  */
 
 import type { Familia } from "./panorama";
-import type { ProductoEnSede } from "./candidatos";
+import type { ProductoEnSede, PruebaProducto } from "./candidatos";
 import { calcularTendencia, type PuntoDia, type Tendencia } from "./tendencia";
 
 export type CartaSede = { businessId: number; sede: string; serie: PuntoDia[] };
@@ -42,6 +48,8 @@ export type ProductoMatrizSede = {
   precio: number | null;
   costo: number | null;
   gananciaDia: number | null;
+  /** Producto nuevo en su período de prueba (null = ya se puede juzgar). */
+  prueba: PruebaProducto | null;
   serie: PuntoDia[];
 };
 
@@ -87,13 +95,52 @@ export type Matriz = {
   cuadrantes: Record<Cuadrante, ResumenCuadrante>;
   /** Productos que se venden pero no tienen costo: no se pueden ubicar. */
   sinCosto: { clave: string; nombre: string; unidadesSemana: number }[];
-  /** Los que no se juzgan (nuevos, sin ventas, de una sola sede cuando se filtra). */
+  /** Los que no se juzgan (sin ventas, de una sola sede cuando se filtra). */
   fuera: number;
+  /** Productos nuevos en su período de prueba: sin caja, con su señal de acogida. */
+  enPrueba: PuntoPrueba[];
 };
+
+export type SenalPrueba = "pronto" | "buena" | "regular" | "poca";
+
+export type PuntoPrueba = {
+  clave: string;
+  nombre: string;
+  familia: Familia;
+  /** Día de la prueba en que va y de cuántos (90). */
+  dia: number;
+  de: number;
+  inicio: string;
+  /** Desde cuándo se puede juzgar (inicio + 90 días). */
+  evaluarEl: string;
+  unidadesSemana: number;
+  margenUnidad: number | null;
+  gananciaMes: number | null;
+  /** Lo que aporta como % de lo típico (mediana) de su familia: ganancia al mes si hay costo, si no unidades. */
+  ritmoPct: number | null;
+  /** Lo que deja por venta comparado con lo típico de su familia. */
+  margen: "bien" | "poco" | null;
+  senal: SenalPrueba;
+  /** Una frase para leer de corrido. */
+  texto: string;
+  serie: PuntoDia[];
+};
+
+/** Antes de este día de prueba (un mes) solo se muestra el ritmo: es muy pronto para opinar. */
+export const DIAS_MINIMOS_SENAL = 30;
+/** Señal de acogida: lo que aporta contra lo típico de su familia (mediana de lo ya juzgado). */
+export const ACOGIDA_BUENA = 60;
+export const ACOGIDA_REGULAR = 30;
 
 export type AlcanceMatriz = { sedeId: number | null; familia: Familia | null };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
+const soles = (n: number) => `S/${n.toFixed(2)}`;
+const sumarDiasISO = (iso: string, n: number) => {
+  const d = new Date(`${iso}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
 
 function mediana(valores: number[]): number {
   if (valores.length === 0) return 0;
@@ -140,11 +187,17 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
 
   type Base = { p: ProductoMatriz; sedes: ProductoMatrizSede[]; unidadesSemana: number; ventaDia: number; gananciaDia: number | null; unidadesDia: number };
   const juzgables: Base[] = [];
+  const nuevos: { p: ProductoMatriz; sedes: ProductoMatrizSede[] }[] = [];
   let fuera = 0;
   for (const p of productos) {
     if (alcance.familia !== null && p.familia !== alcance.familia) continue;
     const sedes = p.sedes.filter((s) => idsAlcance.has(s.businessId));
     if (sedes.length === 0) continue;
+    // Nuevo en todas las sedes donde se vende: está en prueba, no se juzga.
+    if (sedes.some((s) => s.prueba !== null) && !sedes.some((s) => s.prueba === null && (s.estado === "candidato" || s.estado === "observar" || s.estado === "bien"))) {
+      nuevos.push({ p, sedes });
+      continue;
+    }
     // Se juzga lo que está vivo en alguna de las sedes elegidas.
     const vivas = sedes.filter((s) => s.estado === "candidato" || s.estado === "observar" || s.estado === "bien");
     if (vivas.length === 0) { fuera++; continue; }
@@ -180,6 +233,43 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
     };
   });
 
+  // Lo típico de cada familia entre lo ya juzgado (si hay menos de 3, de toda la carta).
+  const tipico = (familia: Familia, f: (x: PuntoMatriz) => number) => {
+    const de = puntos.filter((x) => x.familia === familia);
+    return mediana((de.length >= 3 ? de : puntos).map(f));
+  };
+  const enPrueba: PuntoPrueba[] = nuevos.map(({ p, sedes }) => {
+    const conPrueba = sedes.filter((x) => x.prueba !== null);
+    const unidadesSemana = r2(conPrueba.reduce((t, x) => t + x.prueba!.unidadesSemana, 0));
+    const dia = Math.max(...conPrueba.map((x) => x.prueba!.dia));
+    const inicio = conPrueba.map((x) => x.prueba!.inicio).sort()[0];
+    const evaluarEl = sumarDiasISO(inicio, conPrueba[0].prueba!.de);
+    const conCosto = sedes.find((x) => x.precio !== null && x.costo !== null);
+    const margenUnidad = conCosto ? r2(conCosto.precio! - conCosto.costo!) : null;
+    const gananciaMes = margenUnidad !== null ? Math.round((unidadesSemana / 7) * 30 * margenUnidad) : null;
+    const tipicoVenta = puntos.length > 0 ? tipico(p.familia, (x) => x.unidadesSemana) : 0;
+    const tipicoMargen = puntos.length > 0 ? tipico(p.familia, (x) => x.margenUnidad) : 0;
+    const tipicoGanancia = puntos.length > 0 ? tipico(p.familia, (x) => x.gananciaMes) : 0;
+    // Se mide por lo que aporta al mes (una torta entera vende pocas, pero deja mucho cada una); sin costo, por unidades.
+    const ritmoPct = gananciaMes !== null && tipicoGanancia > 0 ? Math.round((gananciaMes / tipicoGanancia) * 100)
+      : tipicoVenta > 0 ? Math.round((unidadesSemana / tipicoVenta) * 100) : null;
+    const margen: PuntoPrueba["margen"] = margenUnidad === null || tipicoMargen <= 0 ? null : margenUnidad >= tipicoMargen ? "bien" : "poco";
+    const senal: SenalPrueba = dia < DIAS_MINIMOS_SENAL || ritmoPct === null ? "pronto" : ritmoPct >= ACOGIDA_BUENA ? "buena" : ritmoPct >= ACOGIDA_REGULAR ? "regular" : "poca";
+    const vende = `Vende ~${unidadesSemana >= 10 ? unidadesSemana.toFixed(0) : unidadesSemana.toFixed(1)} por semana`;
+    const ritmoTxt = gananciaMes !== null && tipicoGanancia > 0
+      ? `${vende} y aporta ~S/${gananciaMes.toLocaleString("es-PE")} de ganancia al mes (${ritmoPct}% de lo típico de su familia).`
+      : `${vende}${ritmoPct !== null ? ` (${ritmoPct}% de lo típico de su familia, en unidades)` : ""}.`;
+    const margenTxt = margen === null ? "" : margen === "bien" ? ` Deja bien por venta (${soles(margenUnidad!)}).` : ` Deja poco por venta (${soles(margenUnidad!)}).`;
+    const texto = senal === "pronto"
+      ? `Lleva ${dia} días: es muy pronto para opinar. ${ritmoTxt}${margenTxt}`
+      : `${senal === "buena" ? "Buena acogida" : senal === "regular" ? "Acogida regular" : "Poca acogida por ahora"}. ${ritmoTxt}${margenTxt}`;
+    return {
+      clave: p.clave, nombre: p.nombre, familia: p.familia, dia, de: conPrueba[0].prueba!.de, inicio, evaluarEl,
+      unidadesSemana, margenUnidad, gananciaMes,
+      ritmoPct, margen, senal, texto, serie: sumarSeries(sedes.map((x) => x.serie)),
+    };
+  }).sort((a, b) => b.dia - a.dia);
+
   const totalVenta = puntos.reduce((t, x) => t + x.ventaMes, 0) || 1;
   const totalGanancia = puntos.reduce((t, x) => t + x.gananciaMes, 0) || 1;
   const cuadrantes = Object.fromEntries(ORDEN_CUADRANTES.map((c) => {
@@ -188,7 +278,7 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
     return [c, { n: xs.length, ventaMes, gananciaMes, pctVenta: Math.round((ventaMes / totalVenta) * 100), pctGanancia: Math.round((gananciaMes / totalGanancia) * 100) }];
   })) as Record<Cuadrante, ResumenCuadrante>;
 
-  return { puntos, cortes, cuadrantes, sinCosto, fuera };
+  return { puntos, cortes, cuadrantes, sinCosto, fuera, enPrueba };
 }
 
 /**

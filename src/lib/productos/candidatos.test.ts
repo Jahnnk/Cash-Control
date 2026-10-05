@@ -311,3 +311,54 @@ describe("tendencia y matriz en el resultado (5-oct-2026)", () => {
     expect(m.sedes[0].serie[5].completo).toBe(false);
   });
 });
+
+describe("productos nuevos: 3 meses de prueba (5-oct-2026)", () => {
+  const SEIS = ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09", "2026-10"];
+  const dias = [30, 31, 30, 31, 31, 30, 3]; // octubre recién empieza
+  const sedeConOctubre = (id: number, nombre: string, filas: [string, Familia, number[], number][]): SedeCandidatos => {
+    const c = carta(filas);
+    return { businessId: id, sede: nombre, semanas: [], meses: SEIS.map((month, i) => ({ month, dias: dias[i], sospechoso: false, carta: c(i) })) };
+  };
+  // El «cuchareable» sale en setiembre (≈ 2 semanas antes de hoy); el pan de siempre vende todo el año.
+  const filas: [string, Familia, number[], number][] = [
+    ["CUCHAREABLE DE CARROT", "Postres y pastelería", [0, 0, 0, 0, 0, 12, 0], 10],
+    ["CAFE CORTADO", "Bebidas calientes", [60, 62, 58, 61, 59, 60, 6], 11],
+    ["SANGUCHE DE PAVO", "Sánguches, platos y desayunos", [80, 82, 79, 81, 80, 83, 8], 18],
+    ["BATIDO DE PAPAYA", "Bebidas frías", [50, 48, 52, 49, 51, 50, 5], 12],
+  ];
+  const sedes = [sedeConOctubre(2, "Fonavi", filas), sedeConOctubre(3, "Centro", filas)];
+  const r = armarCandidatos(sedes, COSTOS, new Map(), [], [], [], "2026-10-05");
+
+  it("aunque la sede ya cargó octubre, un producto de setiembre sigue «nuevo» (cuenta por días, no por meses)", () => {
+    const m = r.matriz.find((p) => /CUCHAREABLE/.test(p.nombre))!;
+    expect(m.sedes.every((s) => s.estado === "nuevo")).toBe(true);
+    expect(m.sedes[0].prueba).toMatchObject({ inicio: "2026-09-15", de: 90 });
+    expect(m.sedes[0].prueba!.dia).toBe(21); // 15-sep → 5-oct
+    expect(r.candidatos.some((c) => /CUCHAREABLE/.test(c.nombre))).toBe(false);
+  });
+
+  it("cuando pasan los 90 días ya se puede juzgar", () => {
+    const tarde = armarCandidatos(sedes, COSTOS, new Map(), [], [], [], "2026-12-20");
+    const m = tarde.matriz.find((p) => /CUCHAREABLE/.test(p.nombre))!;
+    expect(m.sedes[0].prueba).toBeNull();
+  });
+
+  it("lo que ya existía en abril no es «nuevo» (no se sabe cuándo salió)", () => {
+    const m = r.matriz.find((p) => /CORTADO/.test(p.nombre))!;
+    expect(m.sedes[0].prueba).toBeNull();
+    expect(m.sedes[0].estado).not.toBe("nuevo");
+  });
+
+  it("el ritmo de un nuevo se mide desde que salió, no promediado con los días de antes", () => {
+    const m = r.matriz.find((p) => /CUCHAREABLE/.test(p.nombre))!;
+    // 12 unidades desde el 15-sep hasta el 3-oct (19 días) ≈ 4.4 por semana, no 12/30×7 ≈ 2.8.
+    expect(m.sedes[0].prueba!.unidadesSemana).toBeGreaterThan(4);
+  });
+
+  it("uno que apareció este mes empieza el día 1 del mes, no el 15 (que todavía no llega)", () => {
+    const conOctubre: [string, Familia, number[], number][] = [...filas, ["CUCHAREABLE DE TURRON", "Postres y pastelería", [0, 0, 0, 0, 0, 0, 3], 20]];
+    const rr = armarCandidatos([sedeConOctubre(3, "Centro", conOctubre)], COSTOS, new Map(), [], [], [], "2026-10-05");
+    const m = rr.matriz.find((p) => /TURRON/.test(p.nombre))!;
+    expect(m.sedes[0].prueba).toMatchObject({ inicio: "2026-10-01", dia: 5 });
+  });
+});

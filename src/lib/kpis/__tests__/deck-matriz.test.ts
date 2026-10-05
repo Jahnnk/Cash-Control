@@ -9,7 +9,7 @@ const MESES = ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"]
 const serie = (v: number[]) => MESES.map((month, i) => ({ month, completo: true, porDia: v[i] }));
 const sede = (porDia: number[], precio: number, costo: number) => {
   const u = porDia.slice(-3).reduce((s, x) => s + x, 0) / 3;
-  return { businessId: 2, sede: "Fonavi", estado: "bien" as const, unidadesDia: u, unidadesSemana: u * 7, ventaDia: u * precio, precio, costo, gananciaDia: u * (precio - costo), serie: serie(porDia) };
+  return { businessId: 2, sede: "Fonavi", estado: "bien" as const, unidadesDia: u, unidadesSemana: u * 7, ventaDia: u * precio, precio, costo, gananciaDia: u * (precio - costo), prueba: null, serie: serie(porDia) };
 };
 const matriz: ProductoMatriz[] = [
   { clave: "a", nombre: "ESTRELLA GRANDE", familia: "Panadería", sedes: [sede([3, 3, 3, 3, 3, 3], 15, 5)] },

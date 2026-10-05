@@ -87,6 +87,8 @@ export type ProductoEnSede = {
   porMes: { month: string; ventaDia: number; unidadesDia: number; ingresos: number; unidades: number; dias: number; completo: boolean }[];
   /** Cómo viene la demanda a lo largo de los meses (ver tendencia.ts). */
   tendencia: Tendencia;
+  /** Producto nuevo en su período de prueba (3 meses): no se juzga todavía (ver pruebaDe). */
+  prueba: PruebaProducto | null;
   /** Unidades por día en la ventana de decisión (más fino que unidadesSemana, que se redondea). */
   unidadesDia: number;
   /** Unidades por semana de las semanas guardadas (vacío hasta que haya cargas semanales). */
@@ -292,6 +294,42 @@ export type Archivado = {
 };
 
 const MESES_VENTANA = 3;
+
+/** Un producto nuevo tiene 3 meses de prueba antes de juzgarlo (regla de Jahnn, 5-oct-2026). */
+export const DIAS_DE_PRUEBA = 90;
+/** Para saber que un producto es NUEVO la sede ya debía tener al menos 2 meses de datos antes de que apareciera. */
+const MESES_PREVIOS_MIN = 2;
+
+export type PruebaProducto = {
+  /** Día en que se estima que salió a la venta (el 15 del mes en que aparece: los reportes son mensuales). */
+  inicio: string;
+  /** Día de la prueba en que va (1 = el primero). */
+  dia: number;
+  de: number;
+  /** Unidades por semana desde que salió, no promediadas con los días de antes (mín. 7 días). */
+  unidadesSemana: number;
+};
+
+const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
+
+/**
+ * ¿Es un producto nuevo, todavía en prueba? Los reportes de rotación son mensuales: el día exacto
+ * en que salió no se sabe, así que se estima el 15 del primer mes con ventas (el 1 si es el mes
+ * en curso; error de ±15 días, a favor del producto). Solo cuenta como nuevo si la sede ya tenía datos de meses anteriores:
+ * lo que aparece desde el primer mes cargado (abril) no se puede saber si es nuevo.
+ */
+export function pruebaDe(porMes: { month: string; unidades: number }[], hoy: string, finDatos: string): PruebaProducto | null {
+  // porMes solo trae meses válidos: la posición del primer mes con ventas = cuántos meses de datos había antes.
+  const primer = porMes.findIndex((x) => x.unidades > 0);
+  if (primer < MESES_PREVIOS_MIN) return null;
+  // El mes en curso: salió dentro de lo que va del mes, no el 15 (que aún no llegó).
+  const inicio = porMes[primer].month === hoy.slice(0, 7) ? `${porMes[primer].month}-01` : `${porMes[primer].month}-15`;
+  const dia = diasEntre(inicio, hoy) + 1;
+  if (dia > DIAS_DE_PRUEBA) return null;
+  const unidades = porMes.slice(primer).reduce((t, x) => t + x.unidades, 0);
+  const observados = Math.max(7, diasEntre(inicio, finDatos) + 1);
+  return { inicio, dia: Math.max(1, dia), de: DIAS_DE_PRUEBA, unidadesSemana: Math.round((unidades / observados) * 7 * 10) / 10 };
+}
 /** Un mes con menos días cargados que esto es «a medias»: no entra en la tendencia. */
 export const DIAS_MES_COMPLETO = 25;
 export const UMBRAL_CANDIDATO = 55;
@@ -324,9 +362,12 @@ type Acum = {
 /** Complementos de otro plato: no compiten como producto propio. */
 const ES_COMPLEMENTO = /^(huevos? |humita|porcion )/;
 
-function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<string, string>, protegidos: Set<string>) {
+function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<string, string>, protegidos: Set<string>, hoy: string) {
   const validos = sede.meses.filter((m) => !m.sospechoso && m.dias > 0 && m.carta.length > 0);
   const ventana = validos.slice(-MESES_VENTANA);
+  // Hasta qué día llegan los datos de la sede (para medir el ritmo de un producto nuevo).
+  const ultimoMes = validos[validos.length - 1];
+  const finDatos = ultimoMes ? `${ultimoMes.month}-${String(Math.min(ultimoMes.dias, 31)).padStart(2, "0")}` : hoy;
   // Toda la carta de la sede, por mes: contra qué se compara la caída de un producto.
   const cartaSerie: PuntoDia[] = validos.map((m) => ({
     month: m.month, completo: m.dias >= DIAS_MES_COMPLETO, porDia: m.carta.reduce((t, c) => t + c.unidades, 0) / m.dias,
@@ -381,10 +422,11 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
     const previos = porMes.slice(-3, -1);
     const promPrevio = previos.length > 0 ? previos.reduce((s, x) => s + x.ventaDia, 0) / previos.length : 0;
     const primerMes = porMes.findIndex((x) => x.unidades > 0);
+    const prueba = pruebaDe(porMes, hoy, finDatos);
     const ultimosDos = porMes.slice(-2);
     const unidadesMesPrevio = previos.length > 0 ? previos.reduce((s, x) => s + x.unidadesDia, 0) / previos.length * 30 : 0;
     return {
-      clave, a, porMes, ventaDia, unidadesDia, precio, costo, margenUnidad,
+      clave, a, porMes, ventaDia, unidadesDia, precio, costo, margenUnidad, prueba,
       gananciaDia: margenUnidad !== null ? unidadesDia * margenUnidad : null,
       variacion: previos.length > 0 && promPrevio > 0 && ultimo && unidadesMesPrevio >= 6 ? ((ultimo.ventaDia - promPrevio) / promPrevio) * 100 : null,
       mesesVendiendo: primerMes === -1 ? 0 : porMes.length - primerMes,
@@ -423,7 +465,7 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
     const estado: ProductoEnSede["estado"] =
       b.acompanamiento ? "acompanamiento"
       : b.dejoDeVender ? "dejo-de-venderse"
-      : b.mesesVendiendo < 2 ? "nuevo"
+      : b.mesesVendiendo < 2 || b.prueba !== null ? "nuevo"
       : puntos >= UMBRAL_CANDIDATO ? "candidato"
       : puntos >= UMBRAL_OBSERVAR ? "observar" : "bien";
 
@@ -431,6 +473,7 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
       businessId: sede.businessId, sede: sede.sede, nombre: b.a.nombre, familia: b.a.familia, enlace: b.enlace,
       porMes: b.porMes.map((x) => ({ ...x, ventaDia: r2(x.ventaDia), unidadesDia: Math.round(x.unidadesDia * 100) / 100 })),
       tendencia: calcularTendencia(b.porMes.map((x) => ({ month: x.month, completo: x.completo, porDia: x.unidadesDia })), cartaSerie),
+      prueba: b.prueba,
       unidadesDia: Math.round(b.unidadesDia * 1000) / 1000,
       porSemana: semanasPorClave.get(b.clave) ?? [],
       ventaDia: r2(b.ventaDia), unidadesSemana: Math.round(unidadesSemana * 10) / 10,
@@ -488,7 +531,7 @@ export function armarCandidatos(
   planes: PlanSede[] = [],
 ): ResultadoCandidatos {
   const protegidos = new Set(acompanamientos.map(claveByte));
-  const porSede = sedes.map((s) => ({ sede: s, ...evaluarSede(s, costos, vinculos, protegidos) }));
+  const porSede = sedes.map((s) => ({ sede: s, ...evaluarSede(s, costos, vinculos, protegidos, hoy) }));
   const claves = new Set(porSede.flatMap((x) => [...x.evaluados.keys()]));
 
   // ¿Volvió a venderse después de archivarlo? Vendió algo en un mes posterior al del archivo.
@@ -596,7 +639,7 @@ export function armarCandidatos(
       const m = porClave.get(clave) ?? { clave, nombre: e.nombre, familia: e.familia, sedes: [] };
       m.sedes.push({
         businessId: e.businessId, sede: e.sede, estado: e.estado, unidadesDia: e.unidadesDia, unidadesSemana: e.unidadesSemana,
-        ventaDia: e.ventaDia, precio: e.precio, costo: e.costo, gananciaDia: e.gananciaDia,
+        ventaDia: e.ventaDia, precio: e.precio, costo: e.costo, gananciaDia: e.gananciaDia, prueba: e.prueba,
         serie: e.porMes.map((x) => ({ month: x.month, completo: x.completo, porDia: x.unidadesDia })),
       });
       porClave.set(clave, m);
