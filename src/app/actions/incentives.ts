@@ -17,6 +17,7 @@ import { evaluarCandadoVentas, type EstadoCandadoVentas } from "@/lib/incentives
 import { resumirSupervisionMes, situacionObservacion, type ResumenSupervisionMes } from "@/lib/supervisiones";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
+import { sedesConLosMismosNumeros, AVISO_COPIA_ENTRE_SEDES, type DiaDeOtraSede } from "@/lib/incentivos/copia-entre-sedes";
 import { refrescarRosterSiHaceFalta } from "./roster-sync";
 import { equipoDelBono } from "@/lib/incentives/equipo-del-bono";
 import { resolverHorasDelMes } from "@/lib/incentives/horas-trabajadas";
@@ -452,7 +453,9 @@ export async function saveDailyEntry(input: {
   /** Consumo del personal del día (20% dscto). null = sin consumo. */
   personalPedidos?: number | null;
   personalVenta?: number | null;
-}): Promise<{ ok: true; firmaAnulada: boolean } | { ok: false; error: string }> {
+  /** El administrador ya vio el aviso de «mismos números que otra sede» y confirmó. */
+  confirmarIgual?: boolean;
+}): Promise<{ ok: true; firmaAnulada: boolean } | { ok: false; error: string; confirmar?: boolean }> {
   const bId = await activeBusinessId();
   const access = await requireIncentivesAccess(bId);
   if (!access.ok) return access;
@@ -483,6 +486,19 @@ export async function saveDailyEntry(input: {
   }
   if ((dVen ?? 0) + (pVen ?? 0) > input.revenue) {
     return { ok: false, error: "Delivery + personal no pueden superar la venta total del día." };
+  }
+  // Freno contra números copiados de otra sede (3-oct-2026). No nombra la
+  // sede: un administrador no debe ver datos de otra.
+  if (!input.confirmarIgual) {
+    try {
+      const otras = (await sql`
+        SELECT revenue::float AS revenue, personas FROM upselling_daily
+        WHERE date = ${input.date} AND business_id <> ${bId} AND revenue IS NOT NULL
+      `) as DiaDeOtraSede[];
+      if (sedesConLosMismosNumeros({ revenue: input.revenue, personas: input.personas }, otras) > 0) {
+        return { ok: false, error: AVISO_COPIA_ENTRE_SEDES, confirmar: true };
+      }
+    } catch { /* si la consulta falla, el freno no debe impedir guardar */ }
   }
   try {
     // ¿Cambian los números firmados de un día ya existente?
