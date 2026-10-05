@@ -12,6 +12,7 @@ import { useEffect, useState } from "react";
 import { SeccionDesplegable } from "@/components/productos/ui";
 import { formatCurrency } from "@/lib/utils";
 import { getProductosSinVenta, type SinVentaSede, type ProductoSinVenta } from "@/app/actions/reportes-direccion";
+import { CAFETERIAS, juntarSinVenta, type SinVentaJunto } from "@/lib/productos/cafeterias";
 
 const GRUPOS: { clave: ProductoSinVenta["grupo"]; titulo: string; ayuda: string }[] = [
   { clave: "nunca", titulo: "Nunca vendidos", ayuda: "Están en Byte y nadie los pidió nunca." },
@@ -21,6 +22,74 @@ const GRUPOS: { clave: ProductoSinVenta["grupo"]; titulo: string; ayuda: string 
 
 const fecha = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}/${iso.slice(0, 4)}` : "—");
 const legible = (t: string) => t.charAt(0) + t.slice(1).toLowerCase();
+
+const ETIQUETA_GRUPO: Record<ProductoSinVenta["grupo"], string> = { nunca: "nunca vendido", dormido: "dormido", poco: "muy pocas ventas" };
+
+/** Cómo está un producto en una cafetería: «dormido · 0 vendidos» o «no está en su lista». */
+function Estado({ p }: { p: ProductoSinVenta | null }) {
+  if (!p) return <span className="text-gray-400">no está en su lista</span>;
+  return <span>{ETIQUETA_GRUPO[p.grupo]} · {p.vendido} vendidos</span>;
+}
+
+function ListaJunta({ titulo, ayuda, items }: { titulo: string; ayuda: string; items: SinVentaJunto[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div>
+      <h4 className="text-xs font-semibold text-gray-800">{titulo} · {items.length}</h4>
+      <p className="text-[11px] text-gray-500 mb-1.5">{ayuda}</p>
+      <div className="overflow-x-auto">
+        <table className="w-full text-sm tabular-nums">
+          <thead>
+            <tr className="text-[11px] uppercase tracking-wide text-gray-500 border-b border-gray-100">
+              <th className="text-left font-medium py-1.5 pr-3">Producto</th>
+              <th className="text-left font-medium py-1.5 pr-3">Fonavi</th>
+              <th className="text-left font-medium py-1.5 pr-3">Centro</th>
+              <th className="text-right font-medium py-1.5">Vendidos</th>
+            </tr>
+          </thead>
+          <tbody>
+            {items.map((p) => (
+              <tr key={p.producto} className="border-b border-gray-50 last:border-0">
+                <td className="py-1.5 pr-3 text-gray-900">{legible(p.producto)}</td>
+                <td className="py-1.5 pr-3 text-xs text-gray-600"><Estado p={p.fonavi} /></td>
+                <td className="py-1.5 pr-3 text-xs text-gray-600"><Estado p={p.centro} /></td>
+                <td className="py-1.5 text-right text-gray-700">{p.vendido}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function SinVentaCafeterias({ fonavi, centro }: { fonavi: SinVentaSede | null; centro: SinVentaSede | null }) {
+  const j = juntarSinVenta(fonavi, centro);
+  const rango = (s: SinVentaSede | null, n: string) => (s ? `${n} ${fecha(s.desde)} al ${fecha(s.hasta)}` : `${n}: sin lista`);
+  return (
+    <SeccionDesplegable
+      titulo="Productos que no se venden · Fonavi + Centro"
+      subtitulo={`Del reporte «Platos con menor rotación» de Byte (${rango(fonavi, "Fonavi")} · ${rango(centro, "Centro")}). Se cruzan las dos cafeterías: lo que casi no se vende en las dos es lo más claro para sacar.`}
+      resumen={(fonavi || centro) && (
+        <span className="text-xs text-gray-600">
+          <b className="text-gray-800">{j.ambas.length}</b> flojos en las dos · {j.soloFonavi.length} solo en Fonavi · {j.soloCentro.length} solo en Centro
+        </span>
+      )}
+    >
+      {!fonavi && !centro ? (
+        <p className="text-sm text-gray-500">Todavía no hay reporte de menor rotación de las cafeterías.</p>
+      ) : (
+        <div className="space-y-5">
+          {(!fonavi || !centro) && <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">Falta la lista de {!fonavi ? "Fonavi" : "Centro"}: lo que ves es solo de {!fonavi ? "Centro" : "Fonavi"}.</p>}
+          <ListaJunta titulo="No se venden en ninguna de las dos" ayuda="Están en la lista de menor rotación de Fonavi y de Centro: los candidatos más claros a sacar de la carta o de Byte." items={j.ambas} />
+          <ListaJunta titulo="Solo flojos en Fonavi" ayuda="En Centro se venden: puede ser un problema de la sede (vitrina, cómo se ofrece) y no del producto." items={j.soloFonavi} />
+          <ListaJunta titulo="Solo flojos en Centro" ayuda="En Fonavi se venden: puede ser un problema de la sede (vitrina, cómo se ofrece) y no del producto." items={j.soloCentro} />
+          {j.ambas.length + j.soloFonavi.length + j.soloCentro.length === 0 && <p className="text-sm text-gray-500">Ninguna cafetería tiene productos de la carta en su lista de menor rotación.</p>}
+        </div>
+      )}
+    </SeccionDesplegable>
+  );
+}
 
 export function ProductosSinVenta({ sede }: { sede: number }) {
   const [datos, setDatos] = useState<SinVentaSede[] | null>(null);
@@ -33,6 +102,10 @@ export function ProductosSinVenta({ sede }: { sede: number }) {
   }, []);
 
   if (error) return null;
+  if (sede === CAFETERIAS) {
+    if (!datos) return null;
+    return <SinVentaCafeterias fonavi={datos.find((x) => x.businessId === 2) ?? null} centro={datos.find((x) => x.businessId === 3) ?? null} />;
+  }
   const s = datos?.find((x) => x.businessId === sede) ?? null;
   const cuenta = (g: ProductoSinVenta["grupo"]) => s?.carta.filter((p) => p.grupo === g).length ?? 0;
 

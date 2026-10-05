@@ -9,9 +9,10 @@ import { getPortfolioStoryForSede } from "@/app/actions/portfolio-story";
 import type { PortfolioStory, Verdict } from "@/lib/portfolio/types";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import {
-  getPanoramaProductosGrupo, getInformeTrimestral, getCruceFuentes, getCoberturaRotacion,
-  type PanoramaDeSede, type InformeTrimestralSede, type CruceFuentes,
+  getPanoramaProductosGrupo, getPanoramaCafeterias, getInformeTrimestral, getCruceFuentes, getCoberturaRotacion,
+  type PanoramaDeSede, type PanoramaCafeterias, type InformeTrimestralSede, type CruceFuentes,
 } from "@/app/actions/productos-panorama";
+import { CAFETERIAS, NOMBRE_CAFETERIAS } from "@/lib/productos/cafeterias";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { CargasByte } from "./cargas-byte";
 import { CandidatosReemplazo } from "./candidatos-reemplazo";
@@ -62,12 +63,23 @@ type SedeStory = { sede: (typeof SEDES)[number]; story: PortfolioStory | null; e
 
 type Pestana = "mes" | "trimestre" | "decisiones" | "cargas";
 
-/** Orden en que se muestran las sedes en el selector (las cafeterías primero). */
+/** Orden en que se muestran las sedes en las tarjetas de decisión (las cafeterías primero). */
 const ORDEN_SEDES = [2, 3, 1];
+
+/** El selector de arriba: «Fonavi + Centro» (las dos cafeterías juntas) y cada sede. */
+const OPCIONES_SEDE: { id: number; name: string }[] = [
+  { id: CAFETERIAS, name: NOMBRE_CAFETERIAS },
+  { id: 2, name: "Fonavi" },
+  { id: 3, name: "Centro" },
+  { id: 1, name: "Atelier" },
+];
+const ORDEN_TIRA = OPCIONES_SEDE.map((x) => x.id);
+const nombreSede = (id: number) => OPCIONES_SEDE.find((x) => x.id === id)?.name ?? `Sede ${id}`;
 
 export function GrupoProductosClient() {
   const [month, setMonth] = useState(currentMonth());
-  const [sede, setSede] = useState(2);
+  // Por defecto las dos cafeterías juntas: la carta es la misma y se decide junta (5-oct-2026).
+  const [sede, setSede] = useState(CAFETERIAS);
   const [pestana, setPestana] = useState<Pestana>("mes");
   // Sube cuando se importan reportes: fuerza a recargar todo.
   const [version, setVersion] = useState(0);
@@ -80,8 +92,6 @@ export function GrupoProductosClient() {
     setAbriendo(false);
     setImportar({ periodos: r.ok ? r.periodos : [] });
   }
-
-  const sedesOrdenadas = ORDEN_SEDES.map((id) => SEDES.find((x) => x.id === id)!);
 
   return (
     <div className="space-y-6 max-w-[1400px] min-w-0">
@@ -96,7 +106,7 @@ export function GrupoProductosClient() {
             lleno
             valor={sede}
             onChange={setSede}
-            opciones={sedesOrdenadas.map((x) => ({ valor: x.id, etiqueta: x.name }))}
+            opciones={OPCIONES_SEDE.map((x) => ({ valor: x.id, etiqueta: x.name }))}
           />
           <div className="flex gap-3 w-full sm:w-auto">
             <input
@@ -155,7 +165,7 @@ export function GrupoProductosClient() {
 
       {importar && (
         <ImportarReportesModal
-          sedeInicial={sede}
+          sedeInicial={sede === CAFETERIAS ? 2 : sede}
           periodos={importar.periodos}
           onClose={() => setImportar(null)}
           onImportado={() => setVersion((v) => v + 1)}
@@ -165,14 +175,14 @@ export function GrupoProductosClient() {
   );
 }
 
-/** Las tres sedes en una tira: se comparan de un vistazo y se elige una. */
+/** Las dos cafeterías juntas y cada sede en una tira: se comparan de un vistazo y se elige una. */
 function TiraSedes({ items, activa, onSede }: {
   items: { id: number; nombre: string; valor: number | null; detalle: string }[];
   activa: number;
   onSede: (id: number) => void;
 }) {
   return (
-    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
       {items.map((x) => (
         <button
           key={x.id}
@@ -204,35 +214,44 @@ function Vacio({ children }: { children: React.ReactNode }) {
 }
 
 function PestanaMes({ month, sede, onSede }: { month: string; sede: number; onSede: (id: number) => void }) {
-  const [sedes, setSedes] = useState<PanoramaDeSede[] | null>(null);
+  const [datos, setDatos] = useState<{ sedes: PanoramaDeSede[]; cafeterias: PanoramaCafeterias | null } | null>(null);
   const [error, setError] = useState<string | null>(null);
 
   useEffect(() => {
     let vivo = true;
-    getPanoramaProductosGrupo(month).then((r) => {
+    Promise.all([getPanoramaProductosGrupo(month), getPanoramaCafeterias(month)]).then(([r, c]) => {
       if (!vivo) return;
-      if (r.ok) setSedes(r.sedes); else setError(r.error);
+      if (r.ok) setDatos({ sedes: r.sedes, cafeterias: c.ok ? c.data : null }); else setError(r.error);
     });
     return () => { vivo = false; };
   }, [month]);
 
   if (error) return <Vacio>{error}</Vacio>;
-  if (!sedes) return <Cargando />;
-  const sel = sedes.find((x) => x.businessId === sede);
+  if (!datos) return <Cargando />;
+  const { sedes, cafeterias } = datos;
+  const sel: PanoramaDeSede | null = sede === CAFETERIAS ? cafeterias : sedes.find((x) => x.businessId === sede) ?? null;
+  // Si las dos cafeterías no llegan al mismo día, lo junto es parcial: se avisa.
+  const hastas = (cafeterias?.cubre ?? []).filter((x) => x.hasta);
+  const distintas = sede === CAFETERIAS && new Set(hastas.map((x) => x.hasta)).size > 1;
 
   return (
     <div className="space-y-6">
       <TiraSedes
         activa={sede}
         onSede={onSede}
-        items={ORDEN_SEDES.map((id) => {
-          const x = sedes.find((y) => y.businessId === id)!;
+        items={ORDEN_TIRA.map((id) => {
+          const x: PanoramaDeSede | null | undefined = id === CAFETERIAS ? cafeterias : sedes.find((y) => y.businessId === id);
           return {
-            id, nombre: x.sede, valor: x.panorama?.ventas ?? null,
-            detalle: x.panorama ? `${fechaCorta(x.panorama.desde)} al ${fechaCorta(x.panorama.hasta)} · ${formatCurrency(x.panorama.ventaPorDia)} por día` : "Falta subir el reporte de este mes",
+            id, nombre: nombreSede(id), valor: x?.panorama?.ventas ?? null,
+            detalle: x?.panorama ? `${fechaCorta(x.panorama.desde)} al ${fechaCorta(x.panorama.hasta)} · ${formatCurrency(x.panorama.ventaPorDia)} por día` : "Falta subir el reporte de este mes",
           };
         })}
       />
+      {distintas && (
+        <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+          Ojo: las dos cafeterías no llegan al mismo día ({hastas.map((x) => `${x.sede} al ${fechaCorta(x.hasta!)}`).join(" · ")}), así que lo que ves junto es parcial. Sube el reporte que falta con «Subir Reportes Gerencia».
+        </p>
+      )}
       {sel?.panorama
         ? <VistaMes p={sel.panorama} cargadoEl={sel.cargadoEl} />
         : <Vacio>{sel?.sede ?? "Esta sede"} no tiene reporte de rotación de {monthLabel(month)}. Súbelo con «Subir Reportes Gerencia».</Vacio>}
@@ -274,10 +293,10 @@ function PestanaTrimestre({ month, sede, onSede }: { month: string; sede: number
       <TiraSedes
         activa={sede}
         onSede={onSede}
-        items={ORDEN_SEDES.map((id) => {
+        items={ORDEN_TIRA.map((id) => {
           const x = data.comparativo.find((y) => y.businessId === id);
           return {
-            id, nombre: SEDES.find((s) => s.id === id)!.name, valor: x?.ventas ?? null,
+            id, nombre: nombreSede(id), valor: x?.ventas ?? null,
             detalle: x ? `${x.unidades.toLocaleString("es-PE")} unidades · ${monthLabel(meses[0])} a ${monthLabel(meses[meses.length - 1])}` : "Sin reportes en esos meses",
           };
         })}

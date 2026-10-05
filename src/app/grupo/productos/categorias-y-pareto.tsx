@@ -21,9 +21,10 @@ import { formatCurrency } from "@/lib/utils";
 import type { PanoramaProductos, ProductoRanking } from "@/lib/productos/panorama";
 import { FAMILIA_OTROS } from "@/lib/productos/panorama";
 import { candidatosDeCategoria } from "@/lib/productos/por-categoria";
+import { CAFETERIAS, esCafeteria } from "@/lib/productos/cafeterias";
 import { tendenciaPareto, type Pareto } from "@/lib/productos/ochenta-veinte";
 import {
-  getCandidatosReemplazo, getReglaOchentaVeinte, type CandidatosReemplazo, type OchentaVeinteSede,
+  getCandidatosReemplazo, getReglaOchentaVeinte, getReglaOchentaVeinteCafeterias, type CandidatosReemplazo, type OchentaVeinteSede,
 } from "@/app/actions/productos-panorama";
 import { Barra, Pastilla, PuntoFamilia, Puesto, SeccionDesplegable, colorFamilia, nombreMes } from "@/components/productos/ui";
 
@@ -64,7 +65,7 @@ export function RankingPorCategoria({ p, sede, month }: { p: PanoramaProductos; 
   const [cand, setCand] = useState<CandidatosReemplazo | null>(null);
   const [cargando, setCargando] = useState(false);
   const [errorCand, setErrorCand] = useState<string | null>(null);
-  const cafeteria = sede === 2 || sede === 3;
+  const cafeteria = esCafeteria(sede);
 
   async function cargarCandidatos() {
     if (!cafeteria || cand || cargando) return;
@@ -81,7 +82,7 @@ export function RankingPorCategoria({ p, sede, month }: { p: PanoramaProductos; 
   const porCategoria = useMemo(() => {
     const m = new Map<string, number>();
     for (const c of cand?.candidatos ?? []) {
-      if (c.veredicto === "observar" || !c.sedes.some((x) => x.businessId === sede)) continue;
+      if (c.veredicto === "observar" || (sede !== CAFETERIAS && !c.sedes.some((x) => x.businessId === sede))) continue;
       m.set(c.familia, (m.get(c.familia) ?? 0) + 1);
     }
     return m;
@@ -227,9 +228,10 @@ export function ReglaOchentaVeinte({ month, sede }: { month: string; sede: numbe
 
   useEffect(() => {
     let vivo = true;
-    getReglaOchentaVeinte(month).then((r) => {
+    // Las dos cafeterías juntas van primero (el mismo producto suma sus ventas), luego cada sede.
+    Promise.all([getReglaOchentaVeinteCafeterias(month), getReglaOchentaVeinte(month)]).then(([c, r]) => {
       if (!vivo) return;
-      if (r.ok) setData(r.sedes); else setError(r.error);
+      if (r.ok) setData([...(c.ok ? [c.data] : []), ...r.sedes]); else setError(r.error);
     });
     return () => { vivo = false; };
   }, [month]);

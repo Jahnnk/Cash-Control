@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { getRentabilidadProductos } from "@/app/actions/productos-panorama";
+import { CAFETERIAS, NOMBRE_CAFETERIAS, esCafeteria } from "@/lib/productos/cafeterias";
 import { MIN_UNIDADES, PUNTOS_DEJA_POCO, PUNTOS_MARGEN_ALTO, type MarcaRentabilidad, type ProductoRentable, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { Pastilla, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 
@@ -162,7 +163,7 @@ export function RentabilidadProductos({ month, sede }: { month: string; sede: nu
   const clave = `${month}-${sede}`;
 
   useEffect(() => {
-    if (sede !== 2 && sede !== 3) return;
+    if (!esCafeteria(sede)) return;
     let vivo = true;
     getRentabilidadProductos(month, sede).then((r) => {
       if (!vivo) return;
@@ -171,7 +172,7 @@ export function RentabilidadProductos({ month, sede }: { month: string; sede: nu
     return () => { vivo = false; };
   }, [month, sede, clave]);
 
-  if (sede !== 2 && sede !== 3) {
+  if (!esCafeteria(sede)) {
     return <p className="text-xs text-gray-500 px-1">Atelier vende B2B y no tiene carta con precio al público: sus costos de receta están en Grupo → Recetas y costos.</p>;
   }
   const listo = estado && estado.clave === clave ? estado : null;
@@ -189,7 +190,7 @@ export function RentabilidadProductos({ month, sede }: { month: string; sede: nu
 
   return (
     <SeccionDesplegable
-      titulo={`¿Dónde ganamos plata? · ${d?.sede ?? (sede === 2 ? "Fonavi" : "Centro")} · ${nombreMes(month)}`}
+      titulo={`¿Dónde ganamos plata? · ${d?.sede ?? (sede === CAFETERIAS ? NOMBRE_CAFETERIAS : sede === 2 ? "Fonavi" : "Centro")} · ${nombreMes(month)}`}
       subtitulo="Qué deja cada producto: precio, costo y margen. Algunos venden mucho y dejan poco; otros venden poco y dejan mucho."
       resumen={resumen}
     >

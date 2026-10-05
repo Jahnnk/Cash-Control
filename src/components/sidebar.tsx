@@ -33,16 +33,19 @@ import { clearRole } from "@/app/actions/role";
 
 type ScopeKey = ScopeCode;
 
-type NavItem = {
+export type NavItem = {
   segment: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
   scopes: ScopeKey[];
 };
 
-const NAV: NavItem[] = [
+export const NAV: NavItem[] = [
   { segment: "dashboard",     label: "Dashboard",       icon: LayoutDashboard, scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "direccion",     label: "Sistema de Dirección", icon: Compass,    scopes: ["grupo"] },
+  // Grupo: Productos va justo debajo de Sistema de Dirección (pedido de Jahnn, 5-oct-2026). Las sedes
+  // lo mantienen en su lugar de siempre, más abajo.
+  { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["grupo"] },
   { segment: "highlight",     label: "Highlight",       icon: Target,          scopes: ["grupo"] },
   { segment: "supervisiones", label: "Supervisiones",   icon: ClipboardCheck,  scopes: ["grupo"] },
   { segment: "por-definir",   label: "Por definir",     icon: ListChecks,      scopes: ["grupo"] },
@@ -52,13 +55,18 @@ const NAV: NavItem[] = [
   { segment: "fonavi",        label: "Por cobrar",      icon: Handshake,       scopes: ["atelier"] },
   { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote,      scopes: ["atelier"] },
   { segment: "propinas",      label: "Propinas",        icon: HandCoins,       scopes: ["atelier", "fonavi", "centro"] },
-  { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["atelier", "fonavi", "centro", "grupo"] },
+  { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["atelier", "fonavi", "centro"] },
   { segment: "recetas",       label: "Recetas y costos", icon: ChefHat,        scopes: ["grupo"] },
   { segment: "panel",         label: "Panel de Sede",   icon: Trophy,          scopes: ["atelier", "fonavi", "centro"] },
   { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },
   { segment: "incentivos",    label: "Bonos e Incentivos", icon: Medal,        scopes: ["grupo"] },
   { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
 ];
+
+/** Las entradas del menú de un alcance, en su orden. */
+export function navPara(scope: ScopeKey): NavItem[] {
+  return NAV.filter((item) => item.scopes.includes(scope));
+}
 
 function scopeFromPathname(pathname: string): ScopeKey | null {
   const seg = pathname.split("/")[1];
@@ -116,7 +124,7 @@ export function Sidebar() {
   // useMemo SIEMPRE se llama en el mismo orden — no condicional.
   const items = useMemo(() => {
     if (!scope) return [];
-    const base = NAV.filter((item) => item.scopes.includes(scope));
+    const base = navPara(scope);
     // Admin de sede: solo su Panel — el resto del menú lo rebotaría.
     if (isScopedAdmin) return base.filter((i) => i.segment === "panel");
     if (isScopedHighlight) return base.filter((i) => i.segment === "highlight" || i.segment === "supervisiones");
