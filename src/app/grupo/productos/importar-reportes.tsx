@@ -84,10 +84,11 @@ export function CuadroReporte({ r, deshabilitado, cargados, estado, onArchivos }
       {cargados > 0 ? <CheckCircle2 className="w-5 h-5 mx-auto text-emerald-600 mb-1" /> : <Upload className="w-5 h-5 mx-auto text-gray-400 mb-1" />}
       <div className="text-sm font-semibold text-gray-900">{r.titulo}</div>
       {estado && (
-        <div className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${estado.estado === "completo" ? "bg-emerald-100 text-emerald-800" : estado.estado === "parcial" ? "bg-amber-100 text-amber-900" : "bg-red-100 text-red-800"}`}>
-          {estado.estado === "completo" ? `✓ ya está · ${estado.texto}` : estado.estado === "parcial" ? `! incompleto · ${estado.texto}` : "✕ falta subirlo"}
+        <div className={`mt-1 inline-block rounded-full px-2 py-0.5 text-[11px] font-semibold ${estado.estado === "completo" ? "bg-emerald-100 text-emerald-800" : estado.estado === "parcial" ? "bg-amber-100 text-amber-900" : estado.estado === "revisar" ? "bg-orange-100 text-orange-900" : "bg-red-100 text-red-800"}`}>
+          {estado.estado === "completo" ? `✓ ya está · ${estado.texto}` : estado.estado === "parcial" ? `! incompleto · ${estado.texto}` : estado.estado === "revisar" ? `≠ guardado · ${estado.texto}` : "✕ falta subirlo"}
         </div>
       )}
+      {estado?.estado === "revisar" && <div className="text-[10px] text-orange-800 mt-1">El archivo sí se guardó: no falta subir nada. Revisa el reporte en Byte.</div>}
       <div className="text-[11px] text-gray-600 mt-1">{r.ayuda}</div>
       <div className="text-[10px] text-gray-400 mt-1 break-words">Título en Byte: «{r.ejemplo}»</div>
       <div className="text-[11px] text-primary mt-1.5">{cargados > 0 ? `${cargados} archivo${cargados === 1 ? "" : "s"} · agregar otro` : "Click o arrastra el .xlsx"}</div>
