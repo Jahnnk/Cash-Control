@@ -13,7 +13,7 @@ function sedeP(id: number, sede: string, porDia: number[], precio: number, costo
   const ult = porDia.slice(-3).reduce((s, v) => s + v, 0) / 3;
   return {
     businessId: id, sede, estado, unidadesDia: ult, unidadesSemana: ult * 7, ventaDia: ult * precio, precio, costo,
-    gananciaDia: costo === null ? null : ult * (precio - costo), serie: serie(porDia),
+    gananciaDia: costo === null ? null : ult * (precio - costo), prueba: null, serie: serie(porDia),
   };
 }
 const prod = (clave: string, nombre: string, sedes: ProductoMatrizSede[], familia = "Panadería" as ProductoMatriz["familia"]): ProductoMatriz => ({ clave, nombre, familia, sedes });
@@ -128,5 +128,78 @@ describe("lo que se dibuja", () => {
     expect(html).toContain("<rect"); // la forma cuadrada de la segunda sede
     expect(html).toContain('fill="white"'); // punto hueco del mes a medias
     expect(html).toMatch(/aria-label="Unidades por semana\./);
+  });
+});
+
+describe("productos nuevos en prueba", () => {
+  const prueba = (dia: number, unidadesSemana: number) => ({ inicio: "2026-09-15", dia, de: 90, unidadesSemana });
+  const nuevo = (dia: number, porSemana: number, precio = 10, costo = 4): ProductoMatriz => ({
+    clave: "nuevo", nombre: "CUCHAREABLE DE CARROT", familia: "Panadería",
+    sedes: [{ ...sedeP(2, "Fonavi", plano(0), precio, costo, "nuevo"), prueba: prueba(dia, porSemana) }],
+  });
+
+  it("no recibe caja: no entra en las cuatro cajas ni mueve las medianas", () => {
+    const sin = armarMatriz(base, cartas, { sedeId: null, familia: null });
+    const con = armarMatriz([...base, nuevo(21, 5)], cartas, { sedeId: null, familia: null });
+    expect(con.puntos.map((p) => p.clave)).not.toContain("nuevo");
+    expect(con.cortes).toEqual(sin.cortes);
+    expect(con.enPrueba.map((p) => p.clave)).toEqual(["nuevo"]);
+    expect(con.fuera).toBe(sin.fuera);
+  });
+
+  it("antes de las 3 semanas solo da el ritmo: «muy pronto»", () => {
+    const m = armarMatriz([...base, nuevo(10, 5)], cartas, { sedeId: null, familia: null });
+    expect(m.enPrueba[0].senal).toBe("pronto");
+    expect(m.enPrueba[0].texto).toMatch(/muy pronto para opinar/);
+  });
+
+  it("pasadas las 3 semanas da su señal comparando con lo típico de su familia", () => {
+    const buena = armarMatriz([...base, nuevo(30, 40)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    const poca = armarMatriz([...base, nuevo(30, 0.5)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    expect(buena.senal).toBe("buena");
+    expect(buena.texto).toMatch(/Buena acogida/);
+    expect(poca.senal).toBe("poca");
+    expect(poca.texto).toMatch(/Poca acogida por ahora/);
+    expect(buena.evaluarEl).toBe("2026-12-14"); // 15-sep + 90 días
+    expect(buena.dia).toBe(30);
+  });
+
+  it("dice si deja bien o poco por venta frente a su familia", () => {
+    const bien = armarMatriz([...base, nuevo(30, 10, 30, 5)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    const poco = armarMatriz([...base, nuevo(30, 10, 5, 4.5)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    expect(bien.margen).toBe("bien");
+    expect(poco.margen).toBe("poco");
+  });
+
+  it("si es nuevo en una sede pero ya está establecido en la otra, se juzga con la establecida", () => {
+    const mixto: ProductoMatriz = {
+      clave: "mixto", nombre: "MIXTO", familia: "Panadería",
+      sedes: [{ ...sedeP(2, "Fonavi", plano(0), 10, 4, "nuevo"), prueba: prueba(20, 3) }, sedeP(3, "Centro", plano(2), 10, 4)],
+    };
+    const m = armarMatriz([...base, mixto], [carta(2, "Fonavi"), carta(3, "Centro")], { sedeId: null, familia: null });
+    expect(m.enPrueba).toHaveLength(0);
+    expect(m.puntos.map((p) => p.clave)).toContain("mixto");
+  });
+
+  it("se muestra en la pantalla con su avance y su señal", () => {
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: [...base, nuevo(30, 40)], cartas, veredictos: new Map() }));
+    expect(html).toContain("En período de prueba (1)");
+    expect(html).toContain("CUCHAREABLE DE CARROT");
+    expect(html).toContain("Día 30 de 90");
+    expect(html).toContain("buena acogida");
+    expect(html).toContain("Se evalúa a partir del 14 de diciembre");
+    expect(html).toContain("producto nuevo en prueba");
+  });
+
+  it("la acogida se mide por lo que aporta al mes: una torta entera vende pocas pero deja mucho cada una", () => {
+    // 0.4 por semana a S/38 cada una ≈ S/65 al mes: por unidades parecería «poca», por ganancia es «regular».
+    const torta = armarMatriz([...base, nuevo(40, 0.4, 85, 47)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    expect(torta.senal).toBe("regular");
+    expect(torta.texto).toMatch(/de ganancia al mes/);
+  });
+
+  it("antes de 30 días, aunque venda muy poco, no se opina", () => {
+    const m = armarMatriz([...base, nuevo(29, 0.1)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    expect(m.senal).toBe("pronto");
   });
 });

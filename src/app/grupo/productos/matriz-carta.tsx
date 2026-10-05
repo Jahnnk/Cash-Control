@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 import type { Familia } from "@/lib/productos/panorama";
-import { armarMatriz, CUADRANTES, escalasMatriz, ORDEN_CUADRANTES, type CartaSede, type Cuadrante, type ProductoMatriz, type PuntoMatriz } from "@/lib/productos/matriz-carta";
+import { armarMatriz, CUADRANTES, escalasMatriz, ORDEN_CUADRANTES, type CartaSede, type Cuadrante, type ProductoMatriz, type PuntoMatriz, type PuntoPrueba, type SenalPrueba } from "@/lib/productos/matriz-carta";
 import { TEXTO_TENDENCIA, type ClaseTendencia } from "@/lib/productos/tendencia";
 import type { Veredicto } from "@/lib/productos/candidatos";
 import { GraficoDemanda } from "@/components/productos/grafico-demanda";
@@ -25,8 +25,10 @@ const un = (n: number) => (n >= 10 ? n.toFixed(0) : n.toFixed(1));
 // ── El gráfico de puntos ────────────────────────────────────────────────
 const W = 720, H = 400, PL = 50, PR = 16, PT = 14, PB = 44;
 
-function Dispersion({ puntos, cortes, elegido, onElegir, veredictos }: {
+function Dispersion({ puntos, cortes, elegido, onElegir, veredictos, enPrueba }: {
   puntos: PuntoMatriz[];
+  /** Productos nuevos: se dibujan como rombos huecos, sin caja. */
+  enPrueba: PuntoPrueba[];
   cortes: { unidadesSemana: number; margenUnidad: number };
   elegido: string | null;
   onElegir: (clave: string) => void;
@@ -40,6 +42,7 @@ function Dispersion({ puntos, cortes, elegido, onElegir, veredictos }: {
   if (puntos.length === 0) return null;
   const cx = g.lx(cortes.unidadesSemana), cy = g.ly(cortes.margenUnidad);
   const h = puntos.find((p) => p.clave === hover);
+  const hp = enPrueba.find((p) => p.clave === hover);
 
   const forma = (p: PuntoMatriz, x: number, y: number, sel: boolean) => {
     const c = COLOR[p.cuadrante];
@@ -58,7 +61,9 @@ function Dispersion({ puntos, cortes, elegido, onElegir, veredictos }: {
   return (
     <div>
       <div className="h-5 text-xs tabular-nums text-gray-700" aria-live="polite">
-        {h ? <><b>{h.nombre}</b> · {un(h.unidadesSemana)} por semana · deja {soles(h.margenUnidad)} por venta · {TEXTO_TENDENCIA[h.tendencia.clase].corto}</> : <span className="text-gray-400">Toca un producto para ver su historia.</span>}
+        {h ? <><b>{h.nombre}</b> · {un(h.unidadesSemana)} por semana · deja {soles(h.margenUnidad)} por venta · {TEXTO_TENDENCIA[h.tendencia.clase].corto}</>
+          : hp ? <><b>{hp.nombre}</b> · producto nuevo en prueba (día {hp.dia} de {hp.de}) · {un(hp.unidadesSemana)} por semana{hp.margenUnidad !== null ? ` · deja ${soles(hp.margenUnidad)} por venta` : ""}</>
+          : <span className="text-gray-400">Toca un producto para ver su historia.</span>}
       </div>
       <div className="overflow-x-auto -mx-1 px-1">
       <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[620px]" role="img"
@@ -98,6 +103,15 @@ function Dispersion({ puntos, cortes, elegido, onElegir, veredictos }: {
             </g>
           );
         })}
+        {enPrueba.filter((p) => p.margenUnidad !== null && p.unidadesSemana > 0).map((p) => {
+          const x = g.lx(p.unidadesSemana), y = g.ly(Math.min(p.margenUnidad!, g.yMax));
+          return (
+            <g key={`n-${p.clave}`} onMouseEnter={() => setHover(p.clave)} onMouseLeave={() => setHover(null)}>
+              <circle cx={x} cy={y} r={10} fill="transparent" />
+              <path d={`M${x},${y - 6} L${x + 6},${y} L${x},${y + 6} L${x - 6},${y} Z`} fill="white" stroke="#6B7280" strokeWidth="1.6" strokeDasharray="2.5 1.5" />
+            </g>
+          );
+        })}
         {etiqueta("interrogante", PL + 8, PT + 15, "start")}
         {etiqueta("estrella", W - PR - 8, PT + 15, "end")}
         {etiqueta("perro", PL + 8, H - PB - 8, "start")}
@@ -109,6 +123,7 @@ function Dispersion({ puntos, cortes, elegido, onElegir, veredictos }: {
         <span className="inline-flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><path d="M1,10 L11,10 L6,1 Z" fill="#6B7280" /></svg> sube</span>
         <span className="inline-flex items-center gap-1"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden><circle cx="6" cy="6" r="4.5" fill="#6B7280" /></svg> estable, poco o sin historia</span>
         <span className="inline-flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><circle cx="7" cy="7" r="5" fill="none" stroke="#111827" strokeDasharray="2 2" /></svg> ya está en «Sacar de carta»</span>
+        {enPrueba.length > 0 && <span className="inline-flex items-center gap-1"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden><path d="M7,1 L13,7 L7,13 L1,7 Z" fill="white" stroke="#6B7280" strokeWidth="1.5" strokeDasharray="2.5 1.5" /></svg> producto nuevo en prueba (no se juzga)</span>}
         {g.arriba > 0 && <span>{g.arriba} que dejan más de S/{Math.round(g.yMax)} se dibujan en el borde de arriba</span>}
       </div>
     </div>
@@ -152,6 +167,53 @@ function Detalle({ p, veredicto }: { p: PuntoMatriz; veredicto: Veredicto | null
     </div>
   );
 }
+
+// ── Productos nuevos ────────────────────────────────────────────────────
+const SENAL_TEXTO: Record<SenalPrueba, { corto: string; tono: "verde" | "ambar" | "rojo" | "gris" }> = {
+  pronto: { corto: "muy pronto", tono: "gris" },
+  buena: { corto: "buena acogida", tono: "verde" },
+  regular: { corto: "acogida regular", tono: "ambar" },
+  poca: { corto: "poca acogida", tono: "rojo" },
+};
+
+function EnPrueba({ items }: { items: PuntoPrueba[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className="rounded-2xl border border-gray-200/80 bg-gray-50/60 p-4 space-y-3">
+      <div>
+        <h5 className="text-sm font-semibold text-gray-900">En período de prueba ({items.length})</h5>
+        <p className="text-xs text-gray-600 mt-0.5 leading-relaxed">
+          Productos que salieron hace menos de 3 meses. No se les pone caja ni se les dice «reemplazar»: no es lo mismo uno que en 6 meses no vende que uno de pocas semanas.
+          Aquí se ve qué señal dan, y el veredicto llega a los 90 días.
+        </p>
+      </div>
+      <ul className="space-y-2.5">
+        {items.map((p) => {
+          const sg = SENAL_TEXTO[p.senal];
+          return (
+            <li key={p.clave} className="rounded-xl bg-white border border-gray-200/80 px-3.5 py-3 space-y-1.5">
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <span className="text-sm font-medium text-gray-900 inline-flex items-center gap-2"><PuntoFamilia familia={p.familia} />{p.nombre}</span>
+                <Pastilla tono={sg.tono}>{sg.corto}</Pastilla>
+              </div>
+              <div className="flex items-center gap-3">
+                <div className="flex-1 h-1.5 rounded-full bg-gray-100 overflow-hidden" role="img" aria-label={`Día ${p.dia} de ${p.de} de prueba`}>
+                  <div className="h-full rounded-full bg-primary-light" style={{ width: `${Math.min(100, Math.round((p.dia / p.de) * 100))}%` }} />
+                </div>
+                <span className="text-[11px] text-gray-600 tabular-nums whitespace-nowrap">Día {p.dia} de {p.de}</span>
+              </div>
+              <p className="text-xs text-gray-700 leading-relaxed">{p.texto}</p>
+              <p className="text-[11px] text-gray-500">Se evalúa a partir del {fechaLarga(p.evaluarEl)}.</p>
+            </li>
+          );
+        })}
+      </ul>
+    </div>
+  );
+}
+
+const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
+const fechaLarga = (iso: string) => `${Number(iso.slice(8, 10))} de ${MESES_LARGOS[Number(iso.slice(5, 7)) - 1]}`;
 
 // ── Lo principal ────────────────────────────────────────────────────────
 const URGENCIA: Record<ClaseTendencia, number> = { cayendo: 0, "poco-siempre": 1, estable: 2, "sin-datos": 3, subiendo: 4 };
@@ -230,7 +292,7 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null 
             </p>
           )}
 
-          <Dispersion puntos={m.puntos} cortes={m.cortes} elegido={elegido} onElegir={(c) => { setElegido(c); const p = m.puntos.find((x) => x.clave === c); if (p) setCuadrante(p.cuadrante); }} veredictos={veredictos} />
+          <Dispersion puntos={m.puntos} enPrueba={m.enPrueba} cortes={m.cortes} elegido={elegido} onElegir={(c) => { setElegido(c); const p = m.puntos.find((x) => x.clave === c); if (p) setCuadrante(p.cuadrante); }} veredictos={veredictos} />
 
           {sel && <Detalle p={sel} veredicto={veredictos.get(sel.clave) ?? null} />}
 
@@ -265,10 +327,12 @@ export function MatrizCarta({ matriz, cartas, veredictos, elegidoInicial = null 
             )}
           </div>
 
+          <EnPrueba items={m.enPrueba} />
+
           <p className="text-[11px] text-gray-500 leading-relaxed">
             Cortes de esta vista: se vende más que {un(m.cortes.unidadesSemana)} por semana y deja más de {soles(m.cortes.margenUnidad)} por venta.
             {m.sinCosto.length > 0 && <> No se ubican {m.sinCosto.length} {m.sinCosto.length === 1 ? "producto" : "productos"} sin costo en el Excel de pricing.</>}
-            {m.fuera > 0 && <> Quedan fuera {m.fuera} que son nuevos, ya no se venden o son acompañamientos.</>}
+            {m.fuera > 0 && <> Quedan fuera {m.fuera} que ya no se venden o son acompañamientos.</>}
             {" "}La tendencia compara lo que vendía por semana antes contra los últimos 3 meses, solo con meses completos.
           </p>
         </>
