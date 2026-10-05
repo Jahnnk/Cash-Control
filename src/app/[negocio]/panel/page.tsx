@@ -156,7 +156,7 @@ function IncentivosPage() {
 
   async function handleSaveDay() {
     setSaving(true);
-    const r = await saveDailyEntry({
+    const dia = {
       date: fecha,
       personas: Number(personas),
       revenue: Number(venta),
@@ -165,7 +165,16 @@ function IncentivosPage() {
       deliveryVenta: delivVenta.trim() === "" ? null : Number(delivVenta),
       personalPedidos: persPedidos.trim() === "" ? null : Number(persPedidos),
       personalVenta: persVenta.trim() === "" ? null : Number(persVenta),
-    });
+    };
+    let r = await saveDailyEntry(dia);
+    // Mismos números que otra sede: se pregunta antes de guardar.
+    if (!r.ok && r.confirmar) {
+      if (!window.confirm(`${r.error}\n\n¿Los números de ${sedeLabel} son realmente estos? Aceptar = guardar igual. Cancelar = revisarlos.`)) {
+        setSaving(false);
+        return;
+      }
+      r = await saveDailyEntry({ ...dia, confirmarIgual: true });
+    }
     if (!r.ok) { setSaving(false); showToast(r.error, "error"); return; }
     // KPIs del mismo día (NPS, mermas, tiempos) — si se llenó alguno o se edita.
     if (editingDate !== null || nps.trim() !== "" || mermas.trim() !== "" || tiempo.trim() !== "" || tiempoMesa.trim() !== "" || tiempoDelivery.trim() !== "") {
