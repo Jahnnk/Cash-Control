@@ -17,7 +17,11 @@
 import type { CeldaCobertura, PeriodoCargado } from "./cobertura-rotacion";
 import type { Rango } from "./cobertura-datos";
 
-export type EstadoUnReporte = "completo" | "parcial" | "vacio";
+/**
+ * «revisar» = el archivo SÍ está guardado y cubre el periodo, pero su total no cuadra
+ * con las ventas: no falta subir nada, hay que mirar el reporte en Byte. No es «falta».
+ */
+export type EstadoUnReporte = "completo" | "parcial" | "vacio" | "revisar";
 export type DetalleReporte = { estado: EstadoUnReporte; texto: string };
 export type TresReportes = { ventas: DetalleReporte; mayor: DetalleReporte; menor: DetalleReporte };
 export type TipoReporte = keyof TresReportes;
@@ -99,7 +103,7 @@ export function estadoMayor(c: CeldaCobertura, periodos: PeriodoCargado[], month
   if (!enCurso && ventasTotal !== null && ventasTotal > 0) {
     const dif = (c.ventas - ventasTotal) / ventasTotal;
     if (Math.abs(dif) > TOLERANCIA_PRODUCTOS_VS_VENTAS) {
-      return { estado: "parcial", texto: `no cuadra con ventas (${dif > 0 ? "+" : "−"}${Math.round(Math.abs(dif) * 100)}%)` };
+      return { estado: "revisar", texto: `no cuadra con ventas (${dif > 0 ? "+" : "−"}${Math.round(Math.abs(dif) * 100)}%)` };
     }
   }
   return { estado: "completo", texto: enCurso ? "tuyo, al día" : "tuyo, mes completo" };
@@ -115,9 +119,14 @@ export function tresReportes(args: { celda: CeldaCobertura; periodos: PeriodoCar
   };
 }
 
-/** Qué reportes faltan (vacíos o incompletos) en un mes. */
+/** Qué reportes faltan por subir (vacíos o incompletos) en un mes. Un «revisar» no falta: ya está guardado. */
 export function reportesQueFaltan(t: TresReportes): TipoReporte[] {
-  return (Object.keys(t) as TipoReporte[]).filter((k) => t[k].estado !== "completo");
+  return (Object.keys(t) as TipoReporte[]).filter((k) => t[k].estado === "vacio" || t[k].estado === "parcial");
 }
 
-export const todoCompleto = (t: TresReportes) => reportesQueFaltan(t).length === 0;
+/** Reportes ya guardados cuyo total no cuadra con las ventas: no hay que subir nada, hay que revisar el archivo en Byte. */
+export function reportesPorRevisar(t: TresReportes): TipoReporte[] {
+  return (Object.keys(t) as TipoReporte[]).filter((k) => t[k].estado === "revisar");
+}
+
+export const todoCompleto = (t: TresReportes) => (Object.keys(t) as TipoReporte[]).every((k) => t[k].estado === "completo");

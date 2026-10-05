@@ -49,9 +49,9 @@ describe("cuál de los tres reportes falta", () => {
 
   it("si el total no cuadra con las ventas, avisa: Atelier abril (+42%) y Centro julio (−24%)", () => {
     const atelierAbril: PeriodoCargado[] = [{ businessId: 1, month: "2026-04", origen: "direccion", desde: "2026-04-01", hasta: "2026-04-30", ventas: 54897.23, cargadoEl: null }];
-    expect(estadoMayor(celdaCobertura(atelierAbril, "2026-04", HOY), atelierAbril, "2026-04", HOY, 38664.45)).toEqual({ estado: "parcial", texto: "no cuadra con ventas (+42%)" });
+    expect(estadoMayor(celdaCobertura(atelierAbril, "2026-04", HOY), atelierAbril, "2026-04", HOY, 38664.45)).toEqual({ estado: "revisar", texto: "no cuadra con ventas (+42%)" });
     const centroJulio: PeriodoCargado[] = [{ businessId: 3, month: "2026-07", origen: "direccion", desde: "2026-07-01", hasta: "2026-07-31", ventas: 31239.9, cargadoEl: null }];
-    expect(estadoMayor(celdaCobertura(centroJulio, "2026-07", HOY), centroJulio, "2026-07", HOY, 41025.38)).toEqual({ estado: "parcial", texto: "no cuadra con ventas (−24%)" });
+    expect(estadoMayor(celdaCobertura(centroJulio, "2026-07", HOY), centroJulio, "2026-07", HOY, 41025.38)).toEqual({ estado: "revisar", texto: "no cuadra con ventas (−24%)" });
   });
 
   it("las diferencias normales (+1% a +4%, y +12% de abril en las cafeterías) no alarman", () => {

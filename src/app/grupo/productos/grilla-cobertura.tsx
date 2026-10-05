@@ -12,7 +12,7 @@
 import { formatCurrency } from "@/lib/utils";
 import { celdaCobertura, marcarSospechosas, type CeldaCobertura, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { fechaCorta, mesesDesdeAbril } from "@/lib/productos/cobertura-datos";
-import { NOMBRE_REPORTE, reportesQueFaltan, todoCompleto, tresReportes, type DetalleReporte, type TipoReporte, type TresReportes, type VentasDelMes } from "@/lib/productos/estado-reportes";
+import { NOMBRE_REPORTE, reportesPorRevisar, reportesQueFaltan, todoCompleto, tresReportes, type DetalleReporte, type TipoReporte, type TresReportes, type VentasDelMes } from "@/lib/productos/estado-reportes";
 
 export const SEDES_GRILLA = [
   { id: 2, nombre: "Fonavi" },
@@ -53,12 +53,15 @@ const MARCA: Record<DetalleReporte["estado"], { s: string; clase: string }> = {
   completo: { s: "✓", clase: "text-emerald-700" },
   parcial: { s: "!", clase: "text-amber-700" },
   vacio: { s: "✕", clase: "text-red-600" },
+  revisar: { s: "≠", clase: "text-orange-700" },
 };
 const ETIQUETA_CORTA: Record<TipoReporte, string> = { ventas: "Ventas", mayor: "Mayor", menor: "Menor" };
 
 function tono(celda: CeldaCobertura, tres: TresReportes, enCurso: boolean): string {
   if (celda.sospechosa) return "bg-red-50 border-red-200 text-red-900";
   if (todoCompleto(tres)) return "bg-emerald-50 border-emerald-200 text-emerald-900";
+  // Subido pero que no cuadra con ventas: no falta nada por subir (naranja, distinto del amarillo de «falta»).
+  if (reportesQueFaltan(tres).length === 0) return "bg-orange-50 border-orange-300 text-orange-900";
   if (tres.mayor.estado === "vacio") return enCurso ? "bg-amber-50/60 border-amber-200 text-amber-900" : "bg-red-50 border-red-200 text-red-800";
   return "bg-amber-50 border-amber-300 text-amber-900";
 }
@@ -96,29 +99,33 @@ export function GrillaCobertura({ datos, compacto = false, elegido = null, onCel
                   const enCurso = c.month === hoy.slice(0, 7);
                   const { tres } = casilla(datos, s.id, c.month, c);
                   const falta = reportesQueFaltan(tres);
+                  const revisar = reportesPorRevisar(tres);
                   const esElegida = s.id === elegido?.sede && c.month === elegido?.mes;
-                  const resumenTitulo = falta.length === 0 ? "los 3 reportes completos" : `falta: ${falta.map((k) => `${NOMBRE_REPORTE[k].toLowerCase()} (${tres[k].texto})`).join(", ")}`;
+                  const resumenTitulo = [
+                    falta.length > 0 ? `falta: ${falta.map((k) => `${NOMBRE_REPORTE[k].toLowerCase()} (${tres[k].texto})`).join(", ")}` : "",
+                    revisar.length > 0 ? `subido, para revisar: ${revisar.map((k) => `${NOMBRE_REPORTE[k].toLowerCase()} (${tres[k].texto})`).join(", ")}` : "",
+                  ].filter(Boolean).join(" · ") || "los 3 reportes completos";
                   return (
                     <td key={c.month} className="align-top">
                       <button type="button" onClick={() => onCelda(s.id, c.month)} aria-pressed={esElegida} aria-label={`${s.nombre}, ${titulo(c.month)}: ${resumenTitulo}`} title={resumenTitulo}
                         className={`w-full text-left rounded-xl border hover:ring-2 hover:ring-primary/30 ${compacto ? "min-w-[5.75rem] px-2 py-1.5 text-[11px]" : "min-w-[9.5rem] px-3 py-2.5 text-xs"} ${tono(c, tres, enCurso)} ${esElegida ? "ring-2 ring-primary" : ""}`}>
                         <div className={`font-semibold tabular-nums ${compacto ? "text-xs" : "text-sm"}`}>
-                          {falta.length === 0 ? "✓ Completo" : `Falta${falta.length > 1 ? "n" : ""} ${falta.length} de 3`}
+                          {falta.length > 0 ? `Falta${falta.length > 1 ? "n" : ""} ${falta.length} de 3` : revisar.length > 0 ? "Subido · revisar" : "✓ Completo"}
                         </div>
                         <ul className={`mt-1 space-y-0.5 ${compacto ? "" : "text-[11px]"}`}>
                           {(Object.keys(tres) as TipoReporte[]).map((k) => (
                             <li key={k} className="flex items-baseline justify-between gap-1.5">
                               <span className="font-medium">{ETIQUETA_CORTA[k]}</span>
                               <span className={`font-bold ${MARCA[tres[k].estado].clase}`} aria-hidden>{MARCA[tres[k].estado].s}</span>
-                              <span className="sr-only">{tres[k].estado === "completo" ? "completo" : tres[k].estado === "parcial" ? "incompleto" : "falta"}</span>
+                              <span className="sr-only">{tres[k].estado === "completo" ? "completo" : tres[k].estado === "parcial" ? "incompleto" : tres[k].estado === "revisar" ? "subido, no cuadra con ventas" : "falta"}</span>
                             </li>
                           ))}
                         </ul>
                         {!compacto && c.estado !== "vacio" && (
                           <div className="mt-1.5 border-t border-black/10 pt-1 opacity-90">
                             <div className="tabular-nums">{formatCurrency(c.ventas)} en productos</div>
-                            {(Object.keys(tres) as TipoReporte[]).filter((k) => tres[k].estado === "parcial").map((k) => (
-                              <div key={k} className="font-medium">{ETIQUETA_CORTA[k]}: {tres[k].texto}</div>
+                            {(Object.keys(tres) as TipoReporte[]).filter((k) => tres[k].estado === "parcial" || tres[k].estado === "revisar").map((k) => (
+                              <div key={k} className="font-medium">{ETIQUETA_CORTA[k]}: {tres[k].estado === "revisar" ? `subido, ${tres[k].texto}` : tres[k].texto}</div>
                             ))}
                             {c.quien && <div className="opacity-80">{QUIEN[c.quien]}{c.cargadoEl ? ` · ${fechaCorta(c.cargadoEl)}` : ""}</div>}
                           </div>
@@ -161,8 +168,10 @@ export function FaltaSubir({ datos, soloSede = null }: { datos: DatosCobertura; 
         const porReporte: Record<TipoReporte, string[]> = { ventas: [], mayor: [], menor: [] };
         // Mayor rotación: se agrupan los meses que fallan por la misma razón («abril a junio: solo de la sede, falta el tuyo»).
         const mayorPorRazon = new Map<string, string[]>();
+        const porRevisar: string[] = [];
         for (const m of meses) {
           const { tres } = casilla(datos, s.id, m);
+          for (const k of reportesPorRevisar(tres)) porRevisar.push(`${NOMBRE_REPORTE[k]} de ${nombreMes(m)}: ${tres[k].texto}`);
           for (const k of reportesQueFaltan(tres)) {
             if (k === "mayor") {
               const razon = tres.mayor.estado === "vacio" ? "" : tres.mayor.texto;
@@ -175,6 +184,8 @@ export function FaltaSubir({ datos, soloSede = null }: { datos: DatosCobertura; 
         if (porReporte.ventas.length) lineas.push(`Reporte de ventas: ${mesesEnPalabras(porReporte.ventas)}`);
         if (detalleMayor.length) lineas.push(`Mayor rotación: ${detalleMayor.join(" · ")}`);
         if (porReporte.menor.length) lineas.push(`Menor rotación: ${mesesEnPalabras(porReporte.menor)}`);
+        // Ya están guardados: no hay que subirlos otra vez, hay que revisar el reporte en Byte.
+        if (porRevisar.length) lineas.push(`Ya subido, para revisar (no hay que volver a subirlo): ${porRevisar.join(" · ")}`);
         return (
           <li key={s.id}>
             <strong className="text-gray-800">{s.nombre}</strong>
