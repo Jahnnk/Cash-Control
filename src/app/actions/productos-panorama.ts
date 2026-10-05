@@ -383,16 +383,17 @@ export async function getCoberturaRotacion(meses = 6): Promise<Res<{
     `) as unknown as { business_id: number; month: string; origen: string; desde: string; hasta: string; ventas: number; cargado: string | null }[];
     const [ventas, menor] = await Promise.all([
       (sql`
-        SELECT business_id, to_char(date, 'YYYY-MM') AS month, MIN(date)::text AS desde, MAX(date)::text AS hasta, COUNT(*)::int AS dias
+        SELECT business_id, to_char(date, 'YYYY-MM') AS month, MIN(date)::text AS desde, MAX(date)::text AS hasta, COUNT(*)::int AS dias,
+               ROUND(SUM(total)::numeric, 2)::float AS total
         FROM byte_ventas_direccion WHERE business_id IN (1, 2, 3) GROUP BY 1, 2
-      ` as unknown as Promise<{ business_id: number; month: string; desde: string; hasta: string; dias: number }[]>).catch(() => []),
+      ` as unknown as Promise<{ business_id: number; month: string; desde: string; hasta: string; dias: number; total: number }[]>).catch(() => []),
       (sql`SELECT business_id, desde::text AS desde, hasta::text AS hasta FROM productos_menor_rotacion GROUP BY 1, 2, 3` as unknown as Promise<{ business_id: number; desde: string; hasta: string }[]>).catch(() => []),
     ]);
     return {
       ok: true,
       hoy,
       meses: lista,
-      ventas: ventas.map((v) => ({ businessId: v.business_id, month: v.month, desde: v.desde, hasta: v.hasta, dias: v.dias })),
+      ventas: ventas.map((v) => ({ businessId: v.business_id, month: v.month, desde: v.desde, hasta: v.hasta, dias: v.dias, total: v.total })),
       menor: menor.map((m) => ({ businessId: m.business_id, desde: m.desde, hasta: m.hasta })),
       periodos: filas.map((f) => ({
         businessId: f.business_id, month: f.month, origen: f.origen === "direccion" ? "direccion" : "sede",

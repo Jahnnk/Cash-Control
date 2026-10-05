@@ -22,13 +22,18 @@ describe("la grilla de reportes de Byte", () => {
     const datos: DatosCobertura = {
       hoy: HOY,
       periodos: [p(2, "2026-08", "2026-08-01", "2026-08-29"), p(2, "2026-09", "2026-09-01", "2026-09-30", "direccion")],
-      ventas: [{ businessId: 2, month: "2026-09", desde: "2026-09-01", hasta: "2026-09-30", dias: 30 }],
+      ventas: [{ businessId: 2, month: "2026-09", desde: "2026-09-01", hasta: "2026-09-30", dias: 30, total: 1000 }],
       menor: [{ businessId: 2, desde: "2026-09-01", hasta: "2026-09-30" }],
     };
     expect(reportesQueFaltan(casilla(datos, 2, "2026-08").tres)).toEqual(["ventas", "mayor", "menor"]);
     expect(reportesQueFaltan(casilla(datos, 2, "2026-09").tres)).toEqual([]);
     // Otra sede no hereda lo de Fonavi.
     expect(reportesQueFaltan(casilla(datos, 3, "2026-09").tres)).toEqual(["ventas", "mayor", "menor"]);
+  });
+
+  it("la mayor rotación que solo subió la sede no cuenta como completa (hay que subir la de gerencia)", () => {
+    const datos: DatosCobertura = { hoy: HOY, periodos: [p(2, "2026-05", "2026-05-01", "2026-05-31")], ventas: [], menor: [] };
+    expect(casilla(datos, 2, "2026-05").tres.mayor).toEqual({ estado: "parcial", texto: "solo de la sede, falta el tuyo" });
   });
 
   it("la menor rotación de seis meses completa todos esos meses a la vez", () => {

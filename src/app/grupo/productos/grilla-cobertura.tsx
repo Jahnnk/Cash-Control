@@ -39,9 +39,10 @@ const QUIEN: Record<NonNullable<CeldaCobertura["quien"]>, string> = {
 
 /** La información completa de una casilla: la cobertura de mayor rotación más el estado de los tres reportes. */
 export function casilla(datos: DatosCobertura, sedeId: number, month: string, celdaMayor?: CeldaCobertura): { celda: CeldaCobertura; tres: TresReportes } {
-  const celda = celdaMayor ?? celdaCobertura(datos.periodos.filter((p) => p.businessId === sedeId), month, datos.hoy);
+  const periodosSede = datos.periodos.filter((p) => p.businessId === sedeId);
+  const celda = celdaMayor ?? celdaCobertura(periodosSede, month, datos.hoy);
   const tres = tresReportes({
-    celda, month, hoy: datos.hoy,
+    celda, month, hoy: datos.hoy, periodos: periodosSede.filter((p) => p.month === month),
     ventas: datos.ventas.find((v) => v.businessId === sedeId && v.month === month),
     menor: datos.menor.filter((m) => m.businessId === sedeId),
   });
@@ -114,10 +115,12 @@ export function GrillaCobertura({ datos, compacto = false, elegido = null, onCel
                           ))}
                         </ul>
                         {!compacto && c.estado !== "vacio" && (
-                          <div className="mt-1.5 border-t border-black/10 pt-1 opacity-80">
+                          <div className="mt-1.5 border-t border-black/10 pt-1 opacity-90">
                             <div className="tabular-nums">{formatCurrency(c.ventas)} en productos</div>
-                            {c.faltan && <div className="font-medium">mayor: faltan {c.faltan}</div>}
-                            {c.quien && <div>{QUIEN[c.quien]}{c.cargadoEl ? ` · ${fechaCorta(c.cargadoEl)}` : ""}</div>}
+                            {(Object.keys(tres) as TipoReporte[]).filter((k) => tres[k].estado === "parcial").map((k) => (
+                              <div key={k} className="font-medium">{ETIQUETA_CORTA[k]}: {tres[k].texto}</div>
+                            ))}
+                            {c.quien && <div className="opacity-80">{QUIEN[c.quien]}{c.cargadoEl ? ` · ${fechaCorta(c.cargadoEl)}` : ""}</div>}
                           </div>
                         )}
                         {c.sospechosa && <div className="mt-0.5 font-semibold">vende muy poco: ¿carga parcial? vuelve a subirlo</div>}
@@ -156,14 +159,18 @@ export function FaltaSubir({ datos, soloSede = null }: { datos: DatosCobertura; 
     <ul className="space-y-1.5 text-[11px] leading-snug">
       {sedes.map((s) => {
         const porReporte: Record<TipoReporte, string[]> = { ventas: [], mayor: [], menor: [] };
-        const detalleMayor: string[] = [];
+        // Mayor rotación: se agrupan los meses que fallan por la misma razón («abril a junio: solo de la sede, falta el tuyo»).
+        const mayorPorRazon = new Map<string, string[]>();
         for (const m of meses) {
           const { tres } = casilla(datos, s.id, m);
           for (const k of reportesQueFaltan(tres)) {
-            if (k === "mayor") detalleMayor.push(tres.mayor.estado === "parcial" ? `${nombreMes(m)} (${tres.mayor.texto})` : nombreMes(m));
-            else porReporte[k].push(m);
+            if (k === "mayor") {
+              const razon = tres.mayor.estado === "vacio" ? "" : tres.mayor.texto;
+              mayorPorRazon.set(razon, [...(mayorPorRazon.get(razon) ?? []), m]);
+            } else porReporte[k].push(m);
           }
         }
+        const detalleMayor = [...mayorPorRazon.entries()].map(([razon, ms]) => (razon ? `${mesesEnPalabras(ms)}: ${razon}` : mesesEnPalabras(ms)));
         const lineas: string[] = [];
         if (porReporte.ventas.length) lineas.push(`Reporte de ventas: ${mesesEnPalabras(porReporte.ventas)}`);
         if (detalleMayor.length) lineas.push(`Mayor rotación: ${detalleMayor.join(" · ")}`);
