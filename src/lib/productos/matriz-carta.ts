@@ -57,7 +57,12 @@ export type ProductoMatrizSede = {
   serie: PuntoDia[];
 };
 
-export type ProductoMatriz = { clave: string; nombre: string; familia: Familia; sedes: ProductoMatrizSede[] };
+export type ProductoMatriz = {
+  clave: string; nombre: string; familia: Familia;
+  /** Fecha exacta de lanzamiento anotada por Jahnn (null = no anotada). */
+  lanzamiento: string | null;
+  sedes: ProductoMatrizSede[];
+};
 
 export type Cuadrante = "estrella" | "vaca" | "interrogante" | "perro";
 
@@ -85,6 +90,8 @@ export type PuntoMatriz = {
   gananciaMes: number;
   ventaMes: number;
   tendencia: Tendencia;
+  /** Fecha exacta de lanzamiento anotada (null = no anotada). */
+  lanzamiento: string | null;
   /** Unidades por día, mes a mes (suma de las sedes elegidas), para el gráfico. */
   serie: PuntoDia[];
   lectura: string;
@@ -115,6 +122,8 @@ export type PuntoPrueba = {
   dia: number;
   de: number;
   inicio: string;
+  /** La fecha de salida es la exacta que anotó Jahnn (si no, es una estimación). */
+  fechaAnotada: boolean;
   /** Desde cuándo se puede juzgar (inicio + 90 días). */
   evaluarEl: string;
   unidadesSemana: number;
@@ -239,7 +248,7 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
       unidadesSemana: r2(b.unidadesSemana), margenUnidad: r2(margen),
       margenPct: precio ? Math.round((margen / precio) * 100) : null, precio: precio !== null ? r2(precio) : null,
       gananciaMes: Math.round(b.gananciaDia! * 30), ventaMes: Math.round(b.ventaDia * 30),
-      tendencia, serie, lectura: lecturaDe(cuadrante, tendencia.clase),
+      tendencia, serie, lanzamiento: b.p.lanzamiento, lectura: lecturaDe(cuadrante, tendencia.clase),
     };
   });
 
@@ -281,7 +290,7 @@ export function armarMatriz(productos: ProductoMatriz[], cartas: CartaSede[], al
       ? `Lleva ${dia} días: es muy pronto para opinar. ${ritmoTxt}${margenTxt}`
       : `${senal === "destaca" ? "Va muy bien desde el inicio" : senal === "buena" ? "Buena acogida" : senal === "regular" ? "Acogida regular" : "Poca acogida por ahora"}. ${ritmoTxt}${margenTxt}${cajaTxt}`;
     return {
-      clave: p.clave, nombre: p.nombre, familia: p.familia, dia, de: conPrueba[0].prueba!.de, inicio, evaluarEl,
+      clave: p.clave, nombre: p.nombre, familia: p.familia, dia, de: conPrueba[0].prueba!.de, inicio, fechaAnotada: conPrueba.every((x) => x.prueba!.origen === "anotada"), evaluarEl,
       unidadesSemana, margenUnidad, gananciaMes,
       ritmoPct, margen, senal, cajaProvisional, texto, serie: sumarSeries(sedes.map((x) => x.serie)),
     };

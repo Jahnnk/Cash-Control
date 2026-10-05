@@ -427,7 +427,7 @@ async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandi
   const [yh, mh] = hastaMes.split("-").map(Number), [y0, m0] = PRIMER_MES_PRODUCTOS.split("-").map(Number);
   const lista = mesesAntes(hastaMes, Math.min(12, Math.max(6, (yh - y0) * 12 + (mh - m0) + 1)));
   const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
-  const [costos, vinculos, acompanamientos, archivos, decisiones, planes] = await Promise.all([
+  const [costos, vinculos, acompanamientos, archivos, decisiones, planes, lanzamientos] = await Promise.all([
     (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
     (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
     (sql`SELECT DISTINCT regexp_replace(name, '\\s*\\((Fonavi|Centro)\\)\\s*$', '') AS name FROM products WHERE es_acompanamiento = true` as unknown as Promise<{ name: string }[]>).catch(() => []),
@@ -453,6 +453,8 @@ async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandi
              venta_dia_antes::float AS "ventaDiaAntes", creado_por AS "creadoPor"
       FROM planes_sede WHERE estado = 'activo'
     ` as unknown as Promise<PlanSede[]>).catch(() => [] as PlanSede[]),
+    // Fecha exacta de lanzamiento de productos nuevos (antes de la migración: sin fechas, se estiman).
+    (sql`SELECT clave, fecha::text AS fecha FROM productos_lanzamiento` as unknown as Promise<{ clave: string; fecha: string }[]>).catch(() => [] as { clave: string; fecha: string }[]),
   ]);
   const hasta: { sede: string; hasta: string | null }[] = [];
   const sedes: SedeCandidatos[] = await Promise.all(cafeterias.map(async (s) => {
@@ -484,7 +486,7 @@ async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandi
     };
   }));
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-  const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos, decisiones, hoy, planes);
+  const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos, decisiones, hoy, planes, new Map(lanzamientos.map((l) => [l.clave, l.fecha])));
   return { r, hasta, costos, hoy };
 }
 
@@ -633,6 +635,50 @@ export async function archivarProductos(items: {
   } catch (e) {
     console.error("[archivarProductos] failed:", e);
     return { ok: false, error: "No se pudieron archivar." };
+  }
+}
+
+/**
+ * Anota la fecha exacta en que un producto salió a la venta (pedido de Jahnn, 5-oct-2026).
+ * Con ella, los 90 días de prueba y la señal desde los 14 días se cuentan exactos, no estimados.
+ * Una fecha por producto (la carta de Fonavi y Centro es la misma). Solo dirección.
+ */
+export async function guardarLanzamiento(input: { nombre: string; fecha: string }): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const clave = claveByte(input?.nombre ?? "");
+  if (!clave) return { ok: false, error: "Producto inválido." };
+  const fecha = input?.fecha ?? "";
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha) || Number.isNaN(Date.parse(`${fecha}T12:00:00Z`)) || new Date(`${fecha}T12:00:00Z`).toISOString().slice(0, 10) !== fecha) {
+    return { ok: false, error: "Elige una fecha válida." };
+  }
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  if (fecha > hoy) return { ok: false, error: "La fecha de lanzamiento no puede ser futura." };
+  if (fecha < "2024-01-01") return { ok: false, error: "Esa fecha es muy antigua para un producto nuevo." };
+  try {
+    await sql`
+      INSERT INTO productos_lanzamiento (clave, nombre, fecha, registrado_por)
+      VALUES (${clave}, ${input.nombre.trim()}, ${fecha}, ${role.quien})
+      ON CONFLICT (clave) DO UPDATE SET fecha = EXCLUDED.fecha, nombre = EXCLUDED.nombre, registrado_por = EXCLUDED.registrado_por, registrado_el = NOW()`;
+    return { ok: true };
+  } catch (e) {
+    console.error("[guardarLanzamiento] failed:", e);
+    return { ok: false, error: "No se pudo guardar la fecha." };
+  }
+}
+
+/** Quita la fecha anotada: el producto vuelve a estimarse por los reportes. */
+export async function quitarLanzamiento(nombre: string): Promise<Res<object>> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const clave = claveByte(nombre ?? "");
+  if (!clave) return { ok: false, error: "Producto inválido." };
+  try {
+    await sql`DELETE FROM productos_lanzamiento WHERE clave = ${clave}`;
+    return { ok: true };
+  } catch (e) {
+    console.error("[quitarLanzamiento] failed:", e);
+    return { ok: false, error: "No se pudo quitar la fecha." };
   }
 }
 

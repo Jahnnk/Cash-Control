@@ -308,6 +308,8 @@ export type PruebaProducto = {
   de: number;
   /** Unidades por semana desde que salió, no promediadas con los días de antes (mín. 7 días). */
   unidadesSemana: number;
+  /** «anotada» = Jahnn registró la fecha exacta; «estimada» = el 15 del primer mes con ventas. */
+  origen: "anotada" | "estimada";
 };
 
 const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
@@ -318,17 +320,26 @@ const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:0
  * en curso; error de ±15 días, a favor del producto). Solo cuenta como nuevo si la sede ya tenía datos de meses anteriores:
  * lo que aparece desde el primer mes cargado (abril) no se puede saber si es nuevo.
  */
-export function pruebaDe(porMes: { month: string; unidades: number }[], hoy: string, finDatos: string): PruebaProducto | null {
-  // porMes solo trae meses válidos: la posición del primer mes con ventas = cuántos meses de datos había antes.
-  const primer = porMes.findIndex((x) => x.unidades > 0);
-  if (primer < MESES_PREVIOS_MIN) return null;
-  // El mes en curso: salió dentro de lo que va del mes, no el 15 (que aún no llegó).
-  const inicio = porMes[primer].month === hoy.slice(0, 7) ? `${porMes[primer].month}-01` : `${porMes[primer].month}-15`;
+export function pruebaDe(porMes: { month: string; unidades: number }[], hoy: string, finDatos: string, anotada: string | null = null): PruebaProducto | null {
+  let inicio: string;
+  let origen: PruebaProducto["origen"];
+  let desdeMes: string;
+  if (anotada) {
+    // La fecha exacta que anotó Jahnn manda sobre la estimación, aunque el producto aparezca desde abril.
+    inicio = anotada; origen = "anotada"; desdeMes = anotada.slice(0, 7);
+  } else {
+    // porMes solo trae meses válidos: la posición del primer mes con ventas = cuántos meses de datos había antes.
+    const primer = porMes.findIndex((x) => x.unidades > 0);
+    if (primer < MESES_PREVIOS_MIN) return null;
+    // El mes en curso: salió dentro de lo que va del mes, no el 15 (que aún no llegó).
+    inicio = porMes[primer].month === hoy.slice(0, 7) ? `${porMes[primer].month}-01` : `${porMes[primer].month}-15`;
+    origen = "estimada"; desdeMes = porMes[primer].month;
+  }
   const dia = diasEntre(inicio, hoy) + 1;
   if (dia > DIAS_DE_PRUEBA) return null;
-  const unidades = porMes.slice(primer).reduce((t, x) => t + x.unidades, 0);
+  const unidades = porMes.filter((x) => x.month >= desdeMes).reduce((t, x) => t + x.unidades, 0);
   const observados = Math.max(7, diasEntre(inicio, finDatos) + 1);
-  return { inicio, dia: Math.max(1, dia), de: DIAS_DE_PRUEBA, unidadesSemana: Math.round((unidades / observados) * 7 * 10) / 10 };
+  return { inicio, dia: Math.max(1, dia), de: DIAS_DE_PRUEBA, unidadesSemana: Math.round((unidades / observados) * 7 * 10) / 10, origen };
 }
 /** Un mes con menos días cargados que esto es «a medias»: no entra en la tendencia. */
 export const DIAS_MES_COMPLETO = 25;
@@ -362,7 +373,7 @@ type Acum = {
 /** Complementos de otro plato: no compiten como producto propio. */
 const ES_COMPLEMENTO = /^(huevos? |humita|porcion )/;
 
-function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<string, string>, protegidos: Set<string>, hoy: string) {
+function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<string, string>, protegidos: Set<string>, hoy: string, lanzamientos: Map<string, string>) {
   const validos = sede.meses.filter((m) => !m.sospechoso && m.dias > 0 && m.carta.length > 0);
   const ventana = validos.slice(-MESES_VENTANA);
   // Hasta qué día llegan los datos de la sede (para medir el ritmo de un producto nuevo).
@@ -422,11 +433,12 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
     const previos = porMes.slice(-3, -1);
     const promPrevio = previos.length > 0 ? previos.reduce((s, x) => s + x.ventaDia, 0) / previos.length : 0;
     const primerMes = porMes.findIndex((x) => x.unidades > 0);
-    const prueba = pruebaDe(porMes, hoy, finDatos);
+    const anotada = lanzamientos.get(clave) ?? null;
+    const prueba = pruebaDe(porMes, hoy, finDatos, anotada);
     const ultimosDos = porMes.slice(-2);
     const unidadesMesPrevio = previos.length > 0 ? previos.reduce((s, x) => s + x.unidadesDia, 0) / previos.length * 30 : 0;
     return {
-      clave, a, porMes, ventaDia, unidadesDia, precio, costo, margenUnidad, prueba,
+      clave, a, porMes, ventaDia, unidadesDia, precio, costo, margenUnidad, prueba, anotada,
       gananciaDia: margenUnidad !== null ? unidadesDia * margenUnidad : null,
       variacion: previos.length > 0 && promPrevio > 0 && ultimo && unidadesMesPrevio >= 6 ? ((ultimo.ventaDia - promPrevio) / promPrevio) * 100 : null,
       mesesVendiendo: primerMes === -1 ? 0 : porMes.length - primerMes,
@@ -462,10 +474,12 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
     if (unidadesSemana < 3) { puntos += 15; senales.push("rota-lento"); } else if (unidadesSemana < 7) puntos += 8;
     puntos = Math.min(100, puntos);
 
+    // Con fecha anotada manda ella (pasados los 90 días ya se juzga); sin ella, la estimación.
+    const esNuevo = b.anotada ? b.prueba !== null : b.mesesVendiendo < 2 || b.prueba !== null;
     const estado: ProductoEnSede["estado"] =
       b.acompanamiento ? "acompanamiento"
       : b.dejoDeVender ? "dejo-de-venderse"
-      : b.mesesVendiendo < 2 || b.prueba !== null ? "nuevo"
+      : esNuevo ? "nuevo"
       : puntos >= UMBRAL_CANDIDATO ? "candidato"
       : puntos >= UMBRAL_OBSERVAR ? "observar" : "bien";
 
@@ -529,9 +543,11 @@ export function armarCandidatos(
   /** Hoy (AAAA-MM-DD, Lima): para saber si una salida ya venció o un "mantener" expiró. */
   hoy: string = new Date().toISOString().slice(0, 10),
   planes: PlanSede[] = [],
+  /** Fecha exacta de lanzamiento anotada por Jahnn: clave del producto → AAAA-MM-DD. */
+  lanzamientos: Map<string, string> = new Map(),
 ): ResultadoCandidatos {
   const protegidos = new Set(acompanamientos.map(claveByte));
-  const porSede = sedes.map((s) => ({ sede: s, ...evaluarSede(s, costos, vinculos, protegidos, hoy) }));
+  const porSede = sedes.map((s) => ({ sede: s, ...evaluarSede(s, costos, vinculos, protegidos, hoy, lanzamientos) }));
   const claves = new Set(porSede.flatMap((x) => [...x.evaluados.keys()]));
 
   // ¿Volvió a venderse después de archivarlo? Vendió algo en un mes posterior al del archivo.
@@ -636,7 +652,7 @@ export function armarCandidatos(
   for (const { evaluados } of porSede) {
     for (const [clave, e] of evaluados) {
       if (e.estado === "acompanamiento") continue;
-      const m = porClave.get(clave) ?? { clave, nombre: e.nombre, familia: e.familia, sedes: [] };
+      const m = porClave.get(clave) ?? { clave, nombre: e.nombre, familia: e.familia, lanzamiento: lanzamientos.get(clave) ?? null, sedes: [] };
       m.sedes.push({
         businessId: e.businessId, sede: e.sede, estado: e.estado, unidadesDia: e.unidadesDia, unidadesSemana: e.unidadesSemana,
         ventaDia: e.ventaDia, precio: e.precio, costo: e.costo, gananciaDia: e.gananciaDia, prueba: e.prueba,

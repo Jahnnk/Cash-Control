@@ -16,7 +16,7 @@ function sedeP(id: number, sede: string, porDia: number[], precio: number, costo
     gananciaDia: costo === null ? null : ult * (precio - costo), prueba: null, serie: serie(porDia),
   };
 }
-const prod = (clave: string, nombre: string, sedes: ProductoMatrizSede[], familia = "Panadería" as ProductoMatriz["familia"]): ProductoMatriz => ({ clave, nombre, familia, sedes });
+const prod = (clave: string, nombre: string, sedes: ProductoMatrizSede[], familia = "Panadería" as ProductoMatriz["familia"]): ProductoMatriz => ({ clave, nombre, familia, lanzamiento: null, sedes });
 const plano = (v: number) => MESES.map(() => v);
 
 // Cuatro productos que caen cada uno en una caja (mediana de 4 → 2 y 2).
@@ -132,9 +132,9 @@ describe("lo que se dibuja", () => {
 });
 
 describe("productos nuevos en prueba", () => {
-  const prueba = (dia: number, unidadesSemana: number) => ({ inicio: "2026-09-15", dia, de: 90, unidadesSemana });
+  const prueba = (dia: number, unidadesSemana: number) => ({ inicio: "2026-09-15", dia, de: 90, unidadesSemana, origen: "estimada" as const });
   const nuevo = (dia: number, porSemana: number, precio = 10, costo = 4): ProductoMatriz => ({
-    clave: "nuevo", nombre: "CUCHAREABLE DE CARROT", familia: "Panadería",
+    clave: "nuevo", nombre: "CUCHAREABLE DE CARROT", familia: "Panadería", lanzamiento: null,
     sedes: [{ ...sedeP(2, "Fonavi", plano(0), precio, costo, "nuevo"), prueba: prueba(dia, porSemana) }],
   });
 
@@ -174,7 +174,7 @@ describe("productos nuevos en prueba", () => {
 
   it("si es nuevo en una sede pero ya está establecido en la otra, se juzga con la establecida", () => {
     const mixto: ProductoMatriz = {
-      clave: "mixto", nombre: "MIXTO", familia: "Panadería",
+      clave: "mixto", nombre: "MIXTO", familia: "Panadería", lanzamiento: null,
       sedes: [{ ...sedeP(2, "Fonavi", plano(0), 10, 4, "nuevo"), prueba: prueba(20, 3) }, sedeP(3, "Centro", plano(2), 10, 4)],
     };
     const m = armarMatriz([...base, mixto], [carta(2, "Fonavi"), carta(3, "Centro")], { sedeId: null, familia: null });
@@ -235,5 +235,35 @@ describe("productos nuevos en prueba", () => {
   it("sin nuevos que destaquen, no hay aviso de buena noticia", () => {
     const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: [...base, nuevo(16, 0.5)], cartas, veredictos: new Map() }));
     expect(html).not.toContain("Buena noticia");
+  });
+
+  it("con las acciones de lanzamiento, cada nuevo muestra su fecha estimada y cómo anotar la exacta", () => {
+    const acciones = { guardar: async () => true, quitar: async () => true };
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: [...base, nuevo(30, 6.5)], cartas, veredictos: new Map(), lanzamiento: acciones }));
+    expect(html).toContain("Salió hacia el 15 de setiembre");
+    expect(html).toContain("estimada: los reportes son mensuales");
+    expect(html).toContain("Anotar la fecha exacta");
+  });
+
+  it("con fecha anotada la muestra como tal y deja cambiarla o quitarla", () => {
+    const conFecha: ProductoMatriz = { ...nuevo(30, 6.5), lanzamiento: "2026-09-21", sedes: [{ ...nuevo(30, 6.5).sedes[0], prueba: { inicio: "2026-09-21", dia: 15, de: 90, unidadesSemana: 6.5, origen: "anotada" } }] };
+    const acciones = { guardar: async () => true, quitar: async () => true };
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: [...base, conFecha], cartas, veredictos: new Map(), lanzamiento: acciones }));
+    expect(html).toContain("Salió el");
+    expect(html).toContain("21 de setiembre");
+    expect(html).toContain("fecha anotada");
+    expect(html).toContain("Cambiar");
+    expect(html).toContain("Quitar");
+    expect(html).not.toContain("estimada: los reportes");
+  });
+
+  it("sin las acciones (vista de solo lectura) no hay editor", () => {
+    const html = renderToStaticMarkup(createElement(MatrizCarta, { matriz: [...base, nuevo(30, 6.5)], cartas, veredictos: new Map() }));
+    expect(html).not.toContain("Anotar la fecha exacta");
+  });
+
+  it("el producto en prueba sabe si su fecha es anotada o estimada", () => {
+    const est = armarMatriz([...base, nuevo(30, 6.5)], cartas, { sedeId: null, familia: null }).enPrueba[0];
+    expect(est.fechaAnotada).toBe(false);
   });
 });

@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Archive, ArchiveRestore, CalendarClock, ChevronDown, ClipboardList, Hand, Link2, Loader2, Pencil, Timer } from "lucide-react";
 import {
-  anotarReemplazo, archivarProductos, cerrarPlanSede, crearPlanSede, getCandidatosReemplazo, mantenerProducto, programarSalida,
+  anotarReemplazo, archivarProductos, guardarLanzamiento, quitarLanzamiento, cerrarPlanSede, crearPlanSede, getCandidatosReemplazo, mantenerProducto, programarSalida,
   quitarDecision, restaurarProducto,
   vincularCostoCarta, type CandidatosReemplazo,
 } from "@/app/actions/productos-panorama";
@@ -102,6 +102,24 @@ export function CandidatosReemplazo({ month }: { month: string }) {
     void cargar();
   }
 
+  // Fecha exacta de lanzamiento de un producto nuevo (la matriz muestra el editor).
+  const lanzamiento = useMemo(() => ({
+    guardar: async (nombre: string, fecha: string) => {
+      const r = await guardarLanzamiento({ nombre, fecha });
+      if (!r.ok) { showToast(r.error, "error"); return false; }
+      showToast(`Fecha de lanzamiento de «${nombre}» anotada.`, "success");
+      void cargar();
+      return true;
+    },
+    quitar: async (nombre: string) => {
+      const r = await quitarLanzamiento(nombre);
+      if (!r.ok) { showToast(r.error, "error"); return false; }
+      showToast(`Quité la fecha de «${nombre}»: vuelve a estimarse.`, "success");
+      void cargar();
+      return true;
+    },
+  }), [cargar, showToast]);
+
   async function restaurar(clave: string, nombre: string) {
     setArchivando(clave);
     const r = await restaurarProducto(clave);
@@ -162,7 +180,7 @@ export function CandidatosReemplazo({ month }: { month: string }) {
       ) : (
         <div className="space-y-5">
           {/* La vista de toda la carta: dónde está la ganancia y quién la pone en riesgo (5-oct-2026). */}
-          <MatrizCarta matriz={data.matriz} cartas={data.cartas} veredictos={veredictos} />
+          <MatrizCarta matriz={data.matriz} cartas={data.cartas} veredictos={veredictos} lanzamiento={lanzamiento} />
           <hr className="border-gray-200" />
           <h4 className="text-sm font-semibold text-gray-900 -mb-2">Candidatos a reemplazo</h4>
           <div className="grid grid-cols-2 lg:grid-cols-5 gap-2.5">
