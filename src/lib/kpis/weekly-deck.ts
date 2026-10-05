@@ -1,7 +1,7 @@
 /**
  * KPIs · Renderer del deck de la Reunión Semanal (renderer tonto).
  *
- * Estructura (rediseño de Jahnn, 24-sep-2026; gastos el 25-sep; venta→ganancia el 3-oct): 19 diapositivas.
+ * Estructura (rediseño de Jahnn, 24-sep-2026; gastos el 25-sep; venta→ganancia el 3-oct; matriz el 5-oct): 20 diapositivas.
  *   1 · Portada                       11 · Categorías que más pesan
  *   2 · La semana en una mirada       12 · Piso mensual y pagos grandes
  *   3 · Ventas del mes (Byte)         13 · Qué rota más en cada sede
@@ -10,8 +10,8 @@
  *   6 · Atelier: detalle B2B          16 · Centro: ranking por categoría
  *   7 · Meta de ticket e incentivos   17 · Atelier: ranking por categoría
  *   8 · Punto de equilibrio           18 · Regla 80/20
- *   9 · De la venta a la ganancia     19 · Candidatos a reemplazo
- *  10 · ¿A dónde se fue la plata?
+ *   9 · De la venta a la ganancia     19 · La carta en una matriz
+ *  10 · ¿A dónde se fue la plata?     20 · Candidatos a reemplazo
  *
  * Salieron (pedido de Jahnn): "¿el bono por ticket se paga solo?", las
  * láminas de portafolio, "qué mejoró / qué empeoró" y Kaizen. Los productos
@@ -24,7 +24,7 @@ import type { BoardDeckData } from "@/app/actions/kpis";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import type { PanoramaDeSede, CandidatosReemplazo, OchentaVeinteSede } from "@/app/actions/productos-panorama";
 import { contexto, portada, laSemanaEnUnaMirada, ventasDelMes, detalleCafeteria, detalleAtelier, incentivos, puntoDeEquilibrio } from "./deck-semanal";
-import { rotacionPorSede, topFacturacion, categoriasDeSede, reglaOchentaVeinteSlide, candidatosReemplazo } from "./deck-productos";
+import { rotacionPorSede, topFacturacion, categoriasDeSede, reglaOchentaVeinteSlide, matrizDeLaCarta, candidatosReemplazo } from "./deck-productos";
 import { aDondeSeFueLaPlata, categoriasQueMasPesan, pisoYPagosGrandes } from "./deck-gastos";
 import { delaVentaALaGanancia } from "./deck-venta-ganancia";
 import type { InformeGastos } from "@/app/actions/informe-gastos";
@@ -82,7 +82,10 @@ export async function renderWeeklyKpiDeck(
     }
   }
   if (ochentaVeinte) reglaOchentaVeinteSlide(ctx, ochentaVeinte);
-  if (candidatos) candidatosReemplazo(ctx, candidatos);
+  if (candidatos) {
+    matrizDeLaCarta(ctx, candidatos);
+    candidatosReemplazo(ctx, candidatos);
+  }
 
   const blob = (await pptx.write({ outputType: "blob" })) as Blob;
   const filename = `KPIs_Yayis_${data.weekStart}_${data.weekEnd}.pptx`;

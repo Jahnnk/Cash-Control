@@ -8,7 +8,7 @@
 
 import { useMemo, useState } from "react";
 import type { Familia } from "@/lib/productos/panorama";
-import { armarMatriz, CUADRANTES, ORDEN_CUADRANTES, type CartaSede, type Cuadrante, type ProductoMatriz, type PuntoMatriz } from "@/lib/productos/matriz-carta";
+import { armarMatriz, CUADRANTES, escalasMatriz, ORDEN_CUADRANTES, type CartaSede, type Cuadrante, type ProductoMatriz, type PuntoMatriz } from "@/lib/productos/matriz-carta";
 import { TEXTO_TENDENCIA, type ClaseTendencia } from "@/lib/productos/tendencia";
 import type { Veredicto } from "@/lib/productos/candidatos";
 import { GraficoDemanda } from "@/components/productos/grafico-demanda";
@@ -34,22 +34,8 @@ function Dispersion({ puntos, cortes, elegido, onElegir, veredictos }: {
 }) {
   const [hover, setHover] = useState<string | null>(null);
   const g = useMemo(() => {
-    const us = puntos.map((p) => p.unidadesSemana).filter((v) => v > 0);
-    const ms = puntos.map((p) => p.margenUnidad);
-    const xMin = Math.max(0.1, Math.min(...us, cortes.unidadesSemana) * 0.7), xMax = Math.max(...us, cortes.unidadesSemana) * 1.25;
-    // Unos pocos productos dejan muchísimo (tortas enteras) y aplastarían al resto: la escala llega hasta
-    // cerca del percentil 95 y los que pasan se dibujan en el borde de arriba (su valor real sale al tocarlos).
-    const orden = [...ms].sort((a, b) => a - b);
-    const p95 = orden[Math.min(orden.length - 1, Math.floor(orden.length * 0.95))] ?? 0;
-    const yMin = Math.min(0, ...ms), yMax = Math.min(Math.max(...ms, cortes.margenUnidad) * 1.1, Math.max(p95 * 1.2, cortes.margenUnidad * 2.2));
-    const arriba = ms.filter((v) => v > yMax).length;
-    const lx = (v: number) => PL + ((Math.log10(Math.max(v, xMin)) - Math.log10(xMin)) / (Math.log10(xMax) - Math.log10(xMin))) * (W - PL - PR);
-    const ly = (v: number) => H - PB - ((v - yMin) / (yMax - yMin || 1)) * (H - PT - PB);
-    const xTicks = [0.5, 1, 2, 5, 10, 20, 50, 100].filter((t) => t >= xMin && t <= xMax);
-    const paso = yMax > 40 ? 10 : yMax > 15 ? 5 : 2;
-    const yTicks: number[] = [];
-    for (let t = Math.ceil(yMin / paso) * paso; t <= yMax; t += paso) yTicks.push(t);
-    return { lx, ly, xTicks, yTicks, yMax, arriba };
+    const e = escalasMatriz(puntos, cortes);
+    return { ...e, lx: (v: number) => PL + e.xFrac(v) * (W - PL - PR), ly: (v: number) => H - PB - e.yFrac(v) * (H - PT - PB) };
   }, [puntos, cortes]);
   if (puntos.length === 0) return null;
   const cx = g.lx(cortes.unidadesSemana), cy = g.ly(cortes.margenUnidad);
