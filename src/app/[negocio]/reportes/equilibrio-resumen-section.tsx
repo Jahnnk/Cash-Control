@@ -44,7 +44,8 @@ export function EquilibrioResumenSection({ month }: { month: string }) {
           <Scale className="w-4 h-4 text-primary" /> Punto de equilibrio por mes
         </h3>
         <p className="text-xs text-gray-500 mt-0.5">
-          Lista única de categorías (la misma del Excel) y ventas de su Control de VTAS. Cada mes con sus propios números.
+          Lista única de categorías (la misma del Excel) y la venta oficial (la misma del dashboard). Cada mes cerrado con sus propios números;
+          el mes en curso, con el promedio de los meses cerrados (sus gastos todavía no están completos).
           «Incluyendo deudas» suma las cuotas de préstamos y tarjetas: lo que hay que vender para pagarlas también.
         </p>
       </div>
@@ -75,12 +76,15 @@ export function EquilibrioResumenSection({ month }: { month: string }) {
                     {formatCurrency(f.fijos)}
                     {f.sinTipo >= 0.01 && <span className="block text-[10px] text-amber-700">+{formatCurrency(f.sinTipo)} sin clasificar</span>}
                   </td>
-                  <td className="px-3 py-2 text-right tabular-nums font-semibold">{f.puntoEquilibrio === null ? "—" : formatCurrency(f.puntoEquilibrio)}</td>
+                  <td className="px-3 py-2 text-right tabular-nums font-semibold">
+                    {f.puntoEquilibrio === null ? "—" : formatCurrency(f.puntoEquilibrio)}
+                    {f.porReferencia && f.mesesReferencia && <span className="block text-[10px] font-normal text-gray-400">promedio de {f.mesesReferencia.length} meses cerrados</span>}
+                  </td>
                   <td className="px-3 py-2 text-right tabular-nums text-gray-600">
                     {f.puntoEquilibrioConDeudas === null ? "—" : formatCurrency(f.puntoEquilibrioConDeudas)}
                     {f.financiamiento >= 0.01 && <span className="block text-[10px] text-gray-400">cuotas {formatCurrency(f.financiamiento)}</span>}
                   </td>
-                  <td className={`px-3 py-2 text-right tabular-nums ${f.utilidadOperativa < 0 ? "text-red-600" : ""}`}>{formatCurrency(f.utilidadOperativa)}</td>
+                  <td className={`px-3 py-2 text-right tabular-nums ${f.utilidadOperativa !== null && f.utilidadOperativa < 0 ? "text-red-600" : ""}`}>{f.utilidadOperativa === null ? <span className="text-gray-400">—</span> : formatCurrency(f.utilidadOperativa)}</td>
                   <td className="px-3 py-2 text-xs whitespace-nowrap">
                     {f.sobreEquilibrio === null ? <span className="text-gray-400">—</span>
                       : f.sobreEquilibrio ? <span className="text-emerald-700">✔ Sobre el equilibrio</span>

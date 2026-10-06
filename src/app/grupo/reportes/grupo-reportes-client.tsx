@@ -14,6 +14,7 @@ import { SelectorMes } from "../dashboard/selector-mes";
 import { VentaAGanancia } from "./venta-a-ganancia";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { DosMargenes } from "./dos-margenes";
+import { PuntoEquilibrio } from "./punto-equilibrio";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
@@ -66,6 +67,8 @@ export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, 
       <VentaAGanancia cifras={cifras} periodo={nombreMes(selectedMonth)} />
       <FlujoDeCaja flujo={flujo} periodo={nombreMes(selectedMonth)} />
       <DosMargenes cifras={cifras} periodo={nombreMes(selectedMonth)} />
+      {/* El piso de cada sede, como lo enseña el libro (5-oct-2026). */}
+      <PuntoEquilibrio mes={selectedMonth} periodo={nombreMes(selectedMonth)} />
 
       <div>
         <h2 className="text-sm font-semibold text-gray-700">Comparativo financiero del mes</h2>
