@@ -11,13 +11,14 @@ import type { DatosPresupuesto, SedePresupuesto } from "@/app/actions/presupuest
 
 const sede = (o: Partial<SedePresupuesto> = {}): SedePresupuesto => ({
   businessId: 2, sede: "Fonavi",
-  cabecera: { ventaEsperada: 40000, aprobadoEl: null, aprobadoPor: null, actualizadoEl: "2026-09-28 10:00:00", actualizadoPor: "jahnn" },
+  cabecera: { ventaEsperada: 40000, aprobadoEl: null, aprobadoPor: null, actualizadoEl: "2026-09-28 10:00:00", actualizadoPor: "jahnn", cajaEnviadoEl: null, cajaError: null },
   lineas: [{ categoria: "PLANILLA", modo: "soles", valor: 10000 }, { categoria: "INSUMOS", modo: "pct", valor: 20 }],
   real: { PLANILLA: 12000, INSUMOS: 7000, LIMPIEZA: 200 }, ventaReal: 38000, corte: "2026-09-30",
   historial: [{ mes: "2026-08", ventas: 40000, real: { PLANILLA: 10000, INSUMOS: 8000 } }],
-  mesAnterior: { ventaEsperada: null, lineas: [] }, ...o,
+  mesAnterior: { ventaEsperada: null, lineas: [] },
+  caja: { meses: ["2026-08", "2026-09"], porCategoria: { INSUMOS: { "2026-08": 2100, "2026-09": 1900 } } }, ...o,
 });
-const datos = (sedes: SedePresupuesto[]): DatosPresupuesto => ({ mes: "2026-09", hoy: "2026-10-06", enCurso: false, avanceMes: 100, sedes });
+const datos = (sedes: SedePresupuesto[]): DatosPresupuesto => ({ mes: "2026-09", hoy: "2026-10-06", enCurso: false, avanceMes: 100, sedes, controlCaja: { configurado: true, error: null } });
 const render = (d: DatosPresupuesto, sedeFija = false) => renderToStaticMarkup(createElement(ToastProvider, null,
   createElement(Contenido, { datos: d, sedeFija, onIrAMes: () => {}, onAbrirEditor: () => {}, editor: createElement(EditorPresupuesto, { datos: d, onGuardado: () => {} }) })));
 
