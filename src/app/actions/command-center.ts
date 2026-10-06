@@ -26,7 +26,7 @@ import { elegirFuenteVentas, type FuenteVenta } from "@/lib/ventas-mes-sql";
 import { compareMonths } from "@/lib/kpis/month-compare";
 import { activeBusinessId } from "@/lib/active-business";
 import { getUnifiedBankBalance, getCashBalance } from "./bank-balance";
-import { getBudgetDashboard } from "./budgets";
+import { categoriasPresupuestadas, colorDe, NOMBRE_SEDE, presupuestoDeSede } from "@/lib/presupuesto-datos";
 import {
   computeIntel,
   OVERDUE_DAYS,
@@ -231,16 +231,13 @@ export async function getCommandCenter(): Promise<CommandCenterData> {
     partnerLoanPending = Math.max(0, Math.round(Number(loan.p) * 100) / 100);
   }
 
-  // ── Presupuesto (reusa el dashboard de presupuesto: % del ingreso + semáforo) ──
+  // ── Presupuesto: el plan del mes (Presupuesto rediseñado, 6-oct-2026) contra lo real ──
   let budgets: BudgetStatus[] = [];
   try {
-    const bd = await getBudgetDashboard(today.slice(0, 7));
-    budgets = bd.operativos.map((c) => ({
-      category: c.name,
-      budgetSoles: c.budgetSoles,
-      spent: c.spent,
-      color: c.color,
-    }));
+    const p = await presupuestoDeSede(bId, NOMBRE_SEDE[bId] ?? "", today.slice(0, 7));
+    budgets = p ? categoriasPresupuestadas(p)
+      .filter((c) => (c.presupuestado ?? 0) > 0)
+      .map((c) => ({ category: c.categoria, budgetSoles: c.presupuestado!, spent: c.real, color: colorDe(c.semaforo) })) : [];
   } catch {
     budgets = [];
   }
