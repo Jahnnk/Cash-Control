@@ -21,6 +21,9 @@ export type CabeceraPresupuesto = {
   aprobadoPor: string | null;
   actualizadoEl: string;
   actualizadoPor: string | null;
+  /** Cuándo se mandaron los topes a Control de Caja y, si falló, por qué. */
+  cajaEnviadoEl: string | null;
+  cajaError: string | null;
 };
 
 /**
@@ -49,9 +52,10 @@ export async function ventasPorMes(bId: number, desde: string, hasta: string): P
 export async function planDe(bId: number, mes: string): Promise<{ cab: CabeceraPresupuesto | null; lineas: Linea[] }> {
   const [cab, lin] = await Promise.all([
     sql`SELECT venta_esperada::float AS "ventaEsperada", aprobado_el::text AS "aprobadoEl", aprobado_por AS "aprobadoPor",
-               actualizado_el::text AS "actualizadoEl", actualizado_por AS "actualizadoPor"
+               actualizado_el::text AS "actualizadoEl", actualizado_por AS "actualizadoPor",
+               caja_enviado_el::text AS "cajaEnviadoEl", caja_error AS "cajaError"
         FROM presupuesto_mes WHERE business_id = ${bId} AND mes = ${mes}` as unknown as Promise<CabeceraPresupuesto[]>,
-    sql`SELECT categoria, modo, valor::float AS valor FROM presupuesto_linea WHERE business_id = ${bId} AND mes = ${mes}` as unknown as Promise<Linea[]>,
+    sql`SELECT categoria, modo, valor::float AS valor, tope_caja::float AS "topeCaja" FROM presupuesto_linea WHERE business_id = ${bId} AND mes = ${mes}` as unknown as Promise<Linea[]>,
   ]);
   return { cab: cab[0] ?? null, lineas: lin };
 }

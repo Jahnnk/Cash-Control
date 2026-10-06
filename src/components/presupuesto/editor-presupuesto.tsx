@@ -5,12 +5,16 @@
  * de la venta esperada (decisión de Jahnn, 6-oct-2026). Al lado de cada categoría: lo sugerido
  * (promedio de los 3 últimos meses cerrados) y lo que salió el último mes cerrado, para decidir
  * con números y no de memoria.
+ *
+ * «Lo maneja el admin» (6-oct-2026): de cada categoría, la parte que pasa por las manos del
+ * administrador de la sede. Al aprobar, se manda a Control de Caja como el tope de su barra.
+ * Lo que se propone es lo que de verdad pasó por Control de Caja en los meses cerrados.
  */
 
 import { useMemo, useState } from "react";
 import { Loader2, CheckCircle2 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
-import { aprobarPresupuesto, guardarPresupuesto, type DatosPresupuesto, type SedePresupuesto } from "@/app/actions/presupuesto";
+import { aprobarPresupuesto, guardarPresupuesto, reenviarAControlCaja, type DatosPresupuesto, type SedePresupuesto } from "@/app/actions/presupuesto";
 import { AREAS, descripcionDe, modoPorDefecto, montoDe, sugerir, type Linea, type Modo } from "@/lib/presupuesto";
 import { Segmentado } from "@/components/productos/ui";
 
@@ -25,15 +29,30 @@ const mesAnterior = (mes: string) => {
 const bonito = (c: string) => c.charAt(0) + c.slice(1).toLowerCase();
 const num = (t: string) => { const v = Number(t.replace(/,/g, "").trim()); return t.trim() === "" || !Number.isFinite(v) ? null : v; };
 
-type Borrador = { venta: string; lineas: Record<string, { modo: Modo; valor: string }> };
+type Campos = { modo: Modo; valor: string; caja: string };
+type Borrador = { venta: string; lineas: Record<string, Campos> };
 
 const AREAS_PLAN = AREAS.filter((a) => a.bloque !== "fuera");
 
-function desdeLineas(venta: number | null, lineas: Linea[]): Borrador {
+function desdeLineas(venta: number | null, lineas: Linea[], cajaPrevia?: Borrador): Borrador {
   const b: Borrador = { venta: venta ? String(venta) : "", lineas: {} };
-  for (const a of AREAS_PLAN) for (const c of a.categorias) b.lineas[c] = { modo: modoPorDefecto(c), valor: "" };
-  for (const l of lineas) b.lineas[l.categoria] = { modo: l.modo, valor: String(l.valor) };
+  for (const a of AREAS_PLAN) for (const c of a.categorias) b.lineas[c] = { modo: modoPorDefecto(c), valor: "", caja: cajaPrevia?.lineas[c]?.caja ?? "" };
+  for (const l of lineas) b.lineas[l.categoria] = { modo: l.modo, valor: String(l.valor), caja: l.topeCaja ? String(l.topeCaja) : cajaPrevia?.lineas[l.categoria]?.caja ?? "" };
   return b;
+}
+
+/** Lo que pasó por Control de Caja por categoría: promedio de los meses cerrados con datos y el mes elegido. */
+function cajaDe(s: SedePresupuesto, mes: string) {
+  const out = new Map<string, { promedio: number | null; esteMes: number }>();
+  if (!s.caja) return out;
+  const cerrados = s.caja.meses.filter((m) => m < mes);
+  // Solo cuentan los meses en que la sede ya usaba Control de Caja (algún gasto registrado).
+  const conDatos = cerrados.filter((m) => Object.values(s.caja!.porCategoria).some((x) => (x[m] ?? 0) > 0));
+  for (const [c, x] of Object.entries(s.caja.porCategoria)) {
+    const promedio = conDatos.length ? Math.round(conDatos.reduce((t, m) => t + (x[m] ?? 0), 0) / conDatos.length / 10) * 10 : null;
+    out.set(c, { promedio: promedio && promedio > 0 ? promedio : null, esteMes: x[mes] ?? 0 });
+  }
+  return out;
 }
 
 function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; onGuardado: () => void }) {
@@ -45,19 +64,42 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
   const sugDe = new Map(sug.lineas.map((l) => [l.categoria, l]));
   const ultimo = [...s.historial].reverse().find((h) => Object.keys(h.real).length > 0) ?? null;
   const sucio = JSON.stringify(b) !== JSON.stringify(inicial);
+  const caja = useMemo(() => cajaDe(s, mes), [s, mes]);
+  const hayCaja = [...caja.values()].some((x) => x.promedio);
 
   const venta = num(b.venta);
   const lineas: Linea[] = Object.entries(b.lineas)
-    .map(([categoria, x]) => ({ categoria, modo: x.modo, valor: num(x.valor) ?? 0 }))
+    .map(([categoria, x]) => ({ categoria, modo: x.modo, valor: num(x.valor) ?? 0, topeCaja: num(x.caja) }))
     .filter((l) => l.valor > 0);
+  const totalCaja = lineas.reduce((t, l) => t + (l.topeCaja ?? 0), 0);
   const totalDe = (bloque: string) => lineas.filter((l) => AREAS.find((a) => a.categorias.includes(l.categoria))?.bloque === bloque)
     .reduce((t, l) => t + (montoDe(l, venta) ?? 0), 0);
   const operacion = totalDe("operacion");
   const resto = totalDe("deudas") + totalDe("inversion") + totalDe("ahorro");
 
-  const set = (c: string, x: Partial<{ modo: Modo; valor: string }>) => setB((v) => ({ ...v, lineas: { ...v.lineas, [c]: { ...v.lineas[c], ...x } } }));
-  const usarSugerido = () => setB(desdeLineas(sug.ventaEsperada ?? venta, sug.lineas));
-  const copiarAnterior = () => setB(desdeLineas(s.mesAnterior.ventaEsperada ?? venta, s.mesAnterior.lineas));
+  const set = (c: string, x: Partial<Campos>) => setB((v) => ({ ...v, lineas: { ...v.lineas, [c]: { ...v.lineas[c], ...x } } }));
+  // Llenar con lo sugerido o copiar el mes anterior no borra la parte del admin ya escrita.
+  const usarSugerido = () => setB(desdeLineas(sug.ventaEsperada ?? venta, sug.lineas, b));
+  const copiarAnterior = () => setB(desdeLineas(s.mesAnterior.ventaEsperada ?? venta, s.mesAnterior.lineas, b));
+  /** La parte del admin = lo que pasó por Control de Caja en promedio (sin pasar el presupuesto de la categoría). */
+  const llenarCaja = () => setB((v) => {
+    const lineasN = { ...v.lineas };
+    for (const [c, x] of caja) {
+      if (!x.promedio || !lineasN[c]) continue;
+      const tope = montoDe({ categoria: c, modo: lineasN[c].modo, valor: num(lineasN[c].valor) ?? 0 }, num(v.venta));
+      lineasN[c] = { ...lineasN[c], caja: String(tope !== null && tope > 0 ? Math.min(x.promedio, Math.round(tope)) : x.promedio) };
+    }
+    return { ...v, lineas: lineasN };
+  });
+  const [reenviando, setReenviando] = useState(false);
+  async function reenviar() {
+    setReenviando(true);
+    const r = await reenviarAControlCaja({ businessId: s.businessId, mes });
+    setReenviando(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(`Topes de ${s.sede} enviados a Control de Caja (${r.categorias} categorías).`, "success");
+    onGuardado();
+  }
 
   async function guardar(): Promise<boolean> {
     setBusy("guardar");
@@ -73,7 +115,9 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
     const r = await aprobarPresupuesto({ businessId: s.businessId, mes, aprobar });
     setBusy(null);
     if (!r.ok) { showToast(r.error, "error"); return; }
-    showToast(aprobar ? `Presupuesto de ${s.sede} aprobado.` : `Presupuesto de ${s.sede} reabierto.`, "success");
+    if (!aprobar) showToast(`Presupuesto de ${s.sede} reabierto.`, "success");
+    else if (r.caja?.enviado) showToast(`Presupuesto de ${s.sede} aprobado. Los administradores ya ven sus topes en Control de Caja (${r.caja.categorias} categorías).`, "success");
+    else showToast(`Presupuesto de ${s.sede} aprobado, pero no llegó a Control de Caja: ${r.caja?.error ?? "error desconocido"}`, "error");
     onGuardado();
   }
 
@@ -89,6 +133,7 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
         <div className="flex flex-wrap gap-1.5">
           {sug.lineas.length > 0 && <button type="button" onClick={usarSugerido} className="rounded-lg px-3 py-1.5 text-xs font-medium ring-1 ring-inset ring-gray-300 hover:bg-gray-50">Llenar con lo sugerido</button>}
           {s.mesAnterior.lineas.length > 0 && <button type="button" onClick={copiarAnterior} className="rounded-lg px-3 py-1.5 text-xs font-medium ring-1 ring-inset ring-gray-300 hover:bg-gray-50">Copiar el de {mesCorto(mesAnterior(mes))}</button>}
+          {hayCaja && <button type="button" onClick={llenarCaja} className="rounded-lg px-3 py-1.5 text-xs font-medium ring-1 ring-inset ring-sky-300 text-sky-800 hover:bg-sky-50">Llenar la parte del admin con Control de Caja</button>}
         </div>
       </div>
 
@@ -99,13 +144,14 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
               <th className="text-left font-medium py-2">Categoría</th>
               <th className="text-left font-medium py-2 px-2">En</th>
               <th className="text-right font-medium py-2 px-2">Presupuesto</th>
+              <th className="text-right font-medium py-2 px-2" title="La parte que maneja el administrador: su tope en Control de Caja">Lo maneja el admin</th>
               <th className="text-right font-medium py-2 px-2">Sugerido</th>
               <th className="text-right font-medium py-2 pl-2">{ultimo ? `Salió en ${mesCorto(ultimo.mes)}` : "Último mes"}</th>
             </tr>
           </thead>
           <tbody>
             {AREAS_PLAN.map((a) => (
-              <FilasArea key={a.id} nombre={a.nombre} categorias={a.categorias} b={b} set={set} venta={venta} sugDe={sugDe} ultimo={ultimo} />
+              <FilasArea key={a.id} nombre={a.nombre} categorias={a.categorias} b={b} set={set} venta={venta} sugDe={sugDe} ultimo={ultimo} caja={caja} />
             ))}
           </tbody>
         </table>
@@ -120,6 +166,7 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
               : <>Falta <b className="text-red-700">{soles(venta - operacion - resto)}</b>: el plan gasta más de lo que esperas vender.</>}
           </>
         ) : <>Escribe la venta esperada para ver cuánto queda después del plan.</>}
+        {totalCaja > 0 && <> De todo eso, <b>{soles(totalCaja)}</b> pasan por las manos del administrador (sus topes en Control de Caja).</>}
       </div>
 
       <div className="flex flex-wrap items-center gap-2">
@@ -140,17 +187,38 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
         )}
         {sucio && <span className="text-xs text-amber-700">Hay cambios sin guardar.</span>}
       </div>
+      <EstadoCaja s={s} reenviando={reenviando} onReenviar={reenviar} />
     </div>
   );
 }
 
-function FilasArea({ nombre, categorias, b, set, venta, sugDe, ultimo }: {
-  nombre: string; categorias: string[]; b: Borrador; set: (c: string, x: Partial<{ modo: Modo; valor: string }>) => void;
+/** Si los topes de este presupuesto ya están en Control de Caja (o por qué no). */
+function EstadoCaja({ s, reenviando, onReenviar }: { s: SedePresupuesto; reenviando: boolean; onReenviar: () => void }) {
+  const c = s.cabecera;
+  if (!c?.aprobadoEl) return <p className="text-xs text-gray-500">Los topes llegan a Control de Caja cuando apruebas el presupuesto.</p>;
+  const desactualizado = c.cajaEnviadoEl && c.actualizadoEl > c.cajaEnviadoEl;
+  const fecha = (iso: string) => new Date(iso.replace(" ", "T")).toLocaleString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  const boton = (
+    <button type="button" onClick={onReenviar} disabled={reenviando} className="inline-flex items-center gap-1 font-semibold underline underline-offset-2 disabled:opacity-50">
+      {reenviando && <Loader2 className="w-3 h-3 animate-spin" />} Volver a enviar
+    </button>
+  );
+  if (c.cajaError) {
+    return <p className="text-xs text-red-700">No llegó a Control de Caja: {c.cajaError}. {boton}</p>;
+  }
+  if (!c.cajaEnviadoEl) return <p className="text-xs text-amber-700">Aprobado, pero los topes todavía no están en Control de Caja. {boton}</p>;
+  if (desactualizado) return <p className="text-xs text-amber-700">Cambiaste el presupuesto después de enviarlo: Control de Caja todavía tiene los topes del {fecha(c.cajaEnviadoEl)}. {boton}</p>;
+  return <p className="text-xs text-emerald-700">Topes en Control de Caja desde el {fecha(c.cajaEnviadoEl)}: cada administrador ya ve sus barras.</p>;
+}
+
+function FilasArea({ nombre, categorias, b, set, venta, sugDe, ultimo, caja }: {
+  nombre: string; categorias: string[]; b: Borrador; set: (c: string, x: Partial<Campos>) => void;
   venta: number | null; sugDe: Map<string, Linea>; ultimo: { ventas: number | null; real: Record<string, number> } | null;
+  caja: Map<string, { promedio: number | null; esteMes: number }>;
 }) {
   return (
     <>
-      <tr><td colSpan={5} className="pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">{nombre}</td></tr>
+      <tr><td colSpan={6} className="pt-4 pb-1 text-[11px] font-semibold uppercase tracking-wider text-gray-500">{nombre}</td></tr>
       {categorias.map((c) => {
         const x = b.lineas[c];
         const v = num(x.valor);
@@ -176,6 +244,16 @@ function FilasArea({ nombre, categorias, b, set, venta, sugDe, ultimo }: {
                 aria-label={`Presupuesto de ${bonito(c)}`}
                 className="w-24 rounded-md border border-gray-300 px-2 py-1 text-sm text-right tabular-nums focus:outline-2 focus:outline-primary" />
               {enSoles !== null && <div className="text-[11px] text-gray-500 tabular-nums">= {soles(enSoles)}</div>}
+            </td>
+            <td className="py-1.5 px-2 text-right">
+              <input inputMode="decimal" value={x.caja} onChange={(e) => set(c, { caja: e.target.value })} placeholder="—"
+                aria-label={`Parte de ${bonito(c)} que maneja el administrador`}
+                className={`w-20 rounded-md border px-2 py-1 text-sm text-right tabular-nums focus:outline-2 focus:outline-primary ${
+                  num(x.caja) !== null && (enSoles ?? (x.modo === "soles" ? v : null)) !== null && num(x.caja)! > (enSoles ?? v ?? 0) + 0.005 ? "border-red-400" : "border-sky-200"}`} />
+              {caja.get(c)?.promedio ? (
+                <button type="button" onClick={() => set(c, { caja: String(caja.get(c)!.promedio) })} title="Usar lo que pasó por Control de Caja en promedio"
+                  className="block ml-auto text-[11px] text-sky-700 underline decoration-dotted underline-offset-2 tabular-nums">Caja: {soles(caja.get(c)!.promedio!)}/mes</button>
+              ) : null}
             </td>
             <td className="py-1.5 px-2 text-right tabular-nums text-xs text-gray-600">
               {sg ? (

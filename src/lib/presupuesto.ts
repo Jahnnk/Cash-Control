@@ -54,7 +54,11 @@ export const modoPorDefecto = (categoria: string): Modo => (tipoDeCategoria(cate
 
 export const descripcionDe = (categoria: string) => CATEGORIAS_GASTO.find((c) => c.nombre === categoria)?.descripcion ?? "";
 
-export type Linea = { categoria: string; modo: Modo; valor: number };
+export type Linea = {
+  categoria: string; modo: Modo; valor: number;
+  /** La parte de esta categoría que maneja el administrador de la sede (su tope en Control de Caja). */
+  topeCaja?: number | null;
+};
 
 /** Margen de tolerancia en un mes cerrado: hasta 10% por encima es precaución, más es rojo. */
 export const TOLERANCIA_PCT = 10;
