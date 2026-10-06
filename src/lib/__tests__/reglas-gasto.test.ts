@@ -83,4 +83,9 @@ describe("al importar el Excel", () => {
     expect(resolverGrupoDelGasto("DONACIONES", "PECHUGAS DE POLLO", "", "expense").canonica).toBe("INSUMOS");
     expect(resolverGrupoDelGasto("DONACIONES", "XYZ", "", "expense").confianza).toBe("desconocida");
   });
+  it("el débito del día 22 de Atelier es el sueldo de Jahnn y Juani, aunque diga «préstamo(s) vehicular» (Jahnn, 6-oct-2026)", () => {
+    expect(clasificarGasto("PRESTAMO VEHICULAR")).toBe("PLANILLA");
+    expect(clasificarGasto("PRESTAMOS VEHICULAR")).toBe("PLANILLA");
+    expect(clasificarGasto("PRÉSTAMO DINERS")).toBe("PRÉSTAMOS Y TARJETAS");
+  });
 });
