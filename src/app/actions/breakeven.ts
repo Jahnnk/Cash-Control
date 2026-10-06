@@ -26,6 +26,8 @@ import { gastosDevueltos, MARCA_PAGO_ERRADO, DIAS_MAX, type IngresoCandidato } f
 import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
 import { formatCurrency } from "@/lib/utils";
 import { computeBreakeven, type BreakevenResult, type BreakevenReference } from "@/lib/breakeven";
+import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
+import type { BaseEquilibrio } from "@/lib/equilibrio";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -55,7 +57,23 @@ function monthMeta(month: string) {
  * lib/ventas-mes-sql.ts — no reimplementarla acá.
  */
 async function monthSales(bId: number, start: string, end: string): Promise<number> {
-  return (await ventasDelMesConFuente(bId, start, end)).total;
+  return (await ventasOficiales(bId, start, end)).total;
+}
+
+/**
+ * La venta OFICIAL del período: la misma de todo el sistema (seis cifras, dashboard, deck),
+ * día por día con la regla de dos de tres entre Byte, el Excel y el administrador
+ * (lib/kpis/ventas-loader.ts). Decisión de Jahnn, 5-oct-2026: el punto de equilibrio deja
+ * de usar la copia de Byte del Excel de Kelly; el Excel queda como control.
+ */
+async function ventasOficiales(bId: number, start: string, end: string): Promise<{ total: number; dias: number; ultimoDia: string | null }> {
+  const { rows } = await loadVentaRowsBlended(sql as never, bId, start, end);
+  const conVenta = rows.filter((r) => r.total > 0);
+  return {
+    total: Math.round(conVenta.reduce((t, r) => t + r.total, 0) * 100) / 100,
+    dias: conVenta.length,
+    ultimoDia: conVenta.length > 0 ? conVenta[conVenta.length - 1].date : null,
+  };
 }
 
 async function ventasDelMesConFuente(bId: number, start: string, end: string): Promise<VentasMes> {
@@ -105,33 +123,34 @@ async function ventasDelMesConFuente(bId: number, start: string, end: string): P
  * categorías: todas las sedes se calculan con el catálogo del sistema.
  */
 
-/**
- * Ventas del mes para el punto de equilibrio: las mismas que usa el Excel
- * de Kelly — el total de Byte de su Control de VTAS (celda E194, que el
- * sistema guarda día por día). Si ese mes no la tiene, las de siempre.
- */
+/** Ventas del mes para el punto de equilibrio: la venta oficial (ver ventasOficiales). */
 async function ventasParaEquilibrio(bId: number, start: string, end: string): Promise<{ total: number; dias: number }> {
-  const r = (await sql`
-    SELECT COALESCE(SUM(total_pos_excel), 0)::float AS total,
-           COUNT(*) FILTER (WHERE total_pos_excel > 0)::int AS dias
-    FROM byte_sales_daily WHERE business_id = ${bId} AND date BETWEEN ${start} AND ${end}
-  `) as { total: number; dias: number }[];
-  if (r[0] && r[0].total > 0) return { total: Math.round(r[0].total * 100) / 100, dias: r[0].dias };
-  const v = await ventasDelMesConFuente(bId, start, end);
+  const v = await ventasOficiales(bId, start, end);
   return { total: v.total, dias: v.dias };
 }
 
 /** Primer mes cuyo Excel calcula con la lista única (antes usaba otra clasificación). */
 const PRIMER_MES_LISTA_UNICA = "2026-09";
 
-/** Lo que calculó el Excel de Kelly para ese mes (el control), solo con la lista única. */
+/**
+ * Lo que calculó el Excel de Kelly para ese mes (el control), solo con la lista única y solo
+ * para meses cerrados. El Excel trae la hoja del mes siguiente con los números del anterior
+ * («PE OCT26» = setiembre, 5-oct-2026): si un mes repite exacto al anterior, no es un cálculo
+ * propio y no se muestra.
+ */
 async function peDelExcel(bId: number, month: string): Promise<number | null> {
-  if (month < PRIMER_MES_LISTA_UNICA) return null;
+  if (month < PRIMER_MES_LISTA_UNICA || month >= todayLima().slice(0, 7)) return null;
   try {
+    const anterior = prevMonths(month, 1)[0];
     const r = (await sql`
-      SELECT punto_equilibrio::float AS pe FROM pe_mensual_excel WHERE business_id = ${bId} AND month = ${month}
-    `) as { pe: number | null }[];
-    return r[0]?.pe ?? null;
+      SELECT month, punto_equilibrio::float AS pe, ventas::float AS ventas, costos_fijos::float AS fijos
+      FROM pe_mensual_excel WHERE business_id = ${bId} AND month IN (${month}, ${anterior})
+    `) as { month: string; pe: number | null; ventas: number | null; fijos: number | null }[];
+    const este = r.find((x) => x.month === month);
+    const prev = r.find((x) => x.month === anterior);
+    if (!este) return null;
+    if (prev && prev.ventas === este.ventas && prev.fijos === este.fijos) return null;
+    return este.pe;
   } catch {
     return null;
   }
@@ -312,9 +331,8 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
 async function breakevenOf(bId: number, month: string): Promise<BreakevenResult> {
   const { start, end, daysInMonth, daysElapsed, isCurrent } = monthMeta(month);
   const [ventas, costs, reference] = await Promise.all([
-    // Mes en curso: lo vendido a la fecha (la fuente más al día). Mes
-    // cerrado: las mismas ventas que usa el Excel de Kelly.
-    isCurrent ? monthSales(bId, start, end) : ventasParaEquilibrio(bId, start, end).then((v) => v.total),
+    // La venta oficial: a la fecha en el mes en curso, del mes entero si está cerrado.
+    monthSales(bId, start, end),
     monthCosts(bId, start, end),
     isCurrent ? buildReference(bId, month) : Promise.resolve(null),
   ]);
@@ -385,14 +403,12 @@ export async function getGroupBreakeven(month: string): Promise<
     const ids = [1, 2, 3];
     const perSede = await Promise.all(
       ids.map(async (bId) => {
-        const [v, costs, reference, cerrado] = await Promise.all([
-          ventasDelMesConFuente(bId, start, end),
+        const [v, costs, reference] = await Promise.all([
+          ventasOficiales(bId, start, end),
           monthCosts(bId, start, end),
           isCurrent ? buildReference(bId, month) : Promise.resolve(null),
-          // Mes cerrado: las mismas ventas que el punto de equilibrio de la sede.
-          isCurrent ? Promise.resolve(null) : ventasParaEquilibrio(bId, start, end),
         ]);
-        return { bId, ventas: cerrado?.total ?? v.total, ventasHasta: v.ultimoDia, reference, ...costs };
+        return { bId, ventas: v.total, ventasHasta: v.ultimoDia, reference, ...costs };
       }),
     );
     const sedes = perSede.map((s) => {
@@ -608,8 +624,14 @@ export type FilaResumenEquilibrio = {
   variables: number;
   fijos: number;
   puntoEquilibrio: number | null;
-  /** Ventas − variables − fijos. */
-  utilidadOperativa: number;
+  /** Ventas − variables − fijos (null en el mes en curso: los gastos todavía no están completos). */
+  utilidadOperativa: number | null;
+  /**
+   * Mes en curso: el punto de equilibrio sale de la referencia de meses cerrados (sus gastos
+   * todavía no están completos y darían un piso falso: Centro, 5-oct-2026, S/172).
+   */
+  porReferencia: boolean;
+  mesesReferencia: string[] | null;
   /** null = el mes todavía no terminó. */
   sobreEquilibrio: boolean | null;
   enCurso: boolean;
@@ -629,19 +651,37 @@ export type FilaResumenEquilibrio = {
  * de acá: sale de juntar los meses completos (ver buildReference), porque
  * un mes solo salta mucho (Fonavi 2026: mayo S/21,384, agosto S/37,493).
  */
-export async function getResumenEquilibrio(hastaMonth: string, meses = 6): Promise<
+export async function getResumenEquilibrio(hastaMonth: string, meses = 6, businessId?: number): Promise<
   | { ok: true; filas: FilaResumenEquilibrio[] }
   | { ok: false; error: string }
 > {
   if (!(await requireFullSession())) return { ok: false, error: "Sin acceso." };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(hastaMonth)) return { ok: false, error: "Mes inválido." };
   try {
-    const bId = await activeBusinessId();
+    const bId = businessId ?? (await activeBusinessId());
     const lista = [hastaMonth, ...prevMonths(hastaMonth, meses - 1)].reverse();
     const filas = await Promise.all(lista.map(async (m): Promise<FilaResumenEquilibrio | null> => {
       const { start, end, isCurrent } = monthMeta(m);
-      const [v, c, excel] = await Promise.all([ventasParaEquilibrio(bId, start, end), monthCosts(bId, start, end), peDelExcel(bId, m)]);
+      const [v, c, excel, ref] = await Promise.all([
+        ventasParaEquilibrio(bId, start, end), monthCosts(bId, start, end), peDelExcel(bId, m),
+        isCurrent ? buildReference(bId, m) : Promise.resolve(null),
+      ]);
       if (v.total === 0 && c.fijos === 0 && c.variables === 0) return null;
+      if (isCurrent) {
+        // Con la referencia de los meses cerrados, igual que la tarjeta del dashboard.
+        const mc = ref ? 1 - ref.varRatio : 0;
+        return {
+          month: m, ventas: v.total,
+          variables: ref ? Math.round(v.total * ref.varRatio * 100) / 100 : Math.round(c.variables * 100) / 100,
+          fijos: ref ? Math.round(ref.fijos * 100) / 100 : Math.round(c.fijos * 100) / 100,
+          puntoEquilibrio: ref && mc > 0 ? Math.round((ref.fijos / mc) * 100) / 100 : null,
+          puntoEquilibrioConDeudas: null,
+          financiamiento: Math.round(c.financiamiento * 100) / 100,
+          utilidadOperativa: null, sobreEquilibrio: null, enCurso: true, excel: null,
+          sinTipo: Math.round(c.sinClasificar * 100) / 100,
+          porReferencia: ref !== null, mesesReferencia: ref?.monthsUsed ?? null,
+        };
+      }
       const margen = v.total > 0 ? (v.total - c.variables) / v.total : 0;
       const pe = margen > 0 ? Math.round((c.fijos / margen) * 100) / 100 : null;
       const peDeudas = margen > 0 ? Math.round(((c.fijos + c.financiamiento) / margen) * 100) / 100 : null;
@@ -654,15 +694,136 @@ export async function getResumenEquilibrio(hastaMonth: string, meses = 6): Promi
         puntoEquilibrioConDeudas: peDeudas,
         financiamiento: Math.round(c.financiamiento * 100) / 100,
         utilidadOperativa: Math.round((v.total - c.variables - c.fijos) * 100) / 100,
-        sobreEquilibrio: isCurrent || pe === null ? null : v.total >= pe,
-        enCurso: isCurrent,
+        sobreEquilibrio: pe === null ? null : v.total >= pe,
+        enCurso: false,
         excel,
         sinTipo: Math.round(c.sinClasificar * 100) / 100,
+        porReferencia: false,
+        mesesReferencia: null,
       };
     }));
     return { ok: true, filas: filas.filter((f): f is FilaResumenEquilibrio => f !== null) };
   } catch (err) {
     console.error("[getResumenEquilibrio] failed:", err);
     return { ok: false, error: "No se pudo calcular el resumen del punto de equilibrio." };
+  }
+}
+
+/* ─────────────────────────────────────────────────────────────────────
+   Punto de equilibrio rediseñado (Grupo → Reportes, 5-oct-2026)
+   ───────────────────────────────────────────────────────────────────── */
+
+export type EquilibrioSede = {
+  businessId: number;
+  sede: string;
+  mes: string;
+  enCurso: boolean;
+  /** Los números que entran a la fórmula (null = no alcanza para calcular). */
+  base: BaseEquilibrio | null;
+  /** Mes en curso: lo vendido a la fecha. */
+  ventasALaFecha: number;
+  /**
+   * De dónde sale base.ventas: el mes cerrado, la proyección al cierre (mes en curso con 7 días
+   * o más cargados) o la venta promedio de los meses cerrados (mes en curso que recién empieza).
+   */
+  ventasBase: "mes" | "proyeccion" | "promedio";
+  /** Hasta qué día llega la venta cargada. */
+  ventasHasta: string | null;
+  /** De qué mes sale el ticket promedio (si el mes no tiene el reporte de ventas de Byte, el último que lo tenga). */
+  ticketDe: string | null;
+  /** «ventas» en las cafeterías (tickets de Byte), «pedidos» en Atelier. */
+  unidad: "ventas" | "pedidos";
+  /** El piso estable: con el promedio de los meses cerrados anteriores (null sin referencia). */
+  referencia: { pe: number; meses: string[] } | null;
+  historial: FilaResumenEquilibrio[];
+  avisos: string[];
+};
+
+/**
+ * El precio promedio por venta (ticket) del mes: total ÷ número de ventas del reporte de Byte
+ * que sube dirección. Si el mes no lo tiene (el mes en curso, casi siempre), el del último mes
+ * que lo tenga.
+ */
+async function ticketDelMes(bId: number, month: string): Promise<{ ticket: number; mes: string } | null> {
+  const meses = [month, ...prevMonths(month, 3)];
+  try {
+    const r = (await sql`
+      SELECT to_char(date, 'YYYY-MM') AS m, SUM(pedidos)::float AS pedidos, SUM(total)::float AS total
+      FROM byte_ventas_direccion WHERE business_id = ${bId} AND to_char(date, 'YYYY-MM') = ANY(${meses}::text[])
+      GROUP BY 1
+    `) as { m: string; pedidos: number; total: number }[];
+    for (const m of meses) {
+      const x = r.find((y) => y.m === m);
+      if (x && x.pedidos > 0 && x.total > 0) return { ticket: Math.round((x.total / x.pedidos) * 100) / 100, mes: m };
+    }
+  } catch { /* sin la tabla: solo soles */ }
+  return null;
+}
+
+/** Con menos días cargados que esto, el mes en curso no se proyecta (sería ruido). */
+const MIN_DIAS_PROYECCION = 7;
+
+/** Todo lo que necesita la sección «Punto de equilibrio» de una sede en un mes. Solo dirección. */
+export async function getEquilibrioSede(mes: string, businessId: number): Promise<{ ok: true; data: EquilibrioSede } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return { ok: false, error: "Mes inválido." };
+  if (![1, 2, 3].includes(businessId)) return { ok: false, error: "Sede inválida." };
+  try {
+    const { start, end, daysInMonth, isCurrent } = monthMeta(mes);
+    const [v, costs, ref, tk, resumen] = await Promise.all([
+      ventasOficiales(businessId, start, end),
+      monthCosts(businessId, start, end),
+      buildReference(businessId, mes),
+      ticketDelMes(businessId, mes),
+      getResumenEquilibrio(mes, 6, businessId),
+    ]);
+    const avisos: string[] = [];
+    const referencia = ref && ref.varRatio < 1 ? { pe: Math.round((ref.fijos / (1 - ref.varRatio)) * 100) / 100, meses: ref.monthsUsed } : null;
+    let base: BaseEquilibrio | null = null;
+    let ventasBase: EquilibrioSede["ventasBase"] = "mes";
+    if (isCurrent) {
+      // Mes en curso: fijos y % de variables de los meses cerrados; las ventas, proyectadas al cierre
+      // con el ritmo de los días que ya tienen venta cargada.
+      const diasCubiertos = v.ultimoDia ? Number(v.ultimoDia.slice(8, 10)) : 0;
+      if (!ref) avisos.push("Todavía no hay meses cerrados completos para calcular el punto de equilibrio del mes en curso.");
+      else {
+        // Con pocos días la proyección es ruido (Fonavi, 2 días → S/46,198): se compara contra la
+        // venta promedio de los meses cerrados hasta tener una semana cargada.
+        const proyeccion = diasCubiertos >= MIN_DIAS_PROYECCION ? Math.round((v.total / diasCubiertos) * daysInMonth * 100) / 100 : null;
+        ventasBase = proyeccion !== null ? "proyeccion" : "promedio";
+        base = {
+          fijos: ref.fijos, varRatio: ref.varRatio,
+          ventas: proyeccion ?? Math.round((ref.sumVentas / ref.monthsUsed.length) * 100) / 100,
+          ticket: tk?.ticket ?? null, diasDelMes: daysInMonth,
+          // Las cuotas del mes en curso todavía no están completas: no se suman.
+          financiamiento: 0,
+        };
+        avisos.push(proyeccion !== null
+          ? `Mes en curso: el piso usa el promedio de ${ref.monthsUsed.length} meses cerrados y las ventas se proyectan al cierre con el ritmo de los ${diasCubiertos} días cargados.`
+          : `Mes en curso con ${diasCubiertos} ${diasCubiertos === 1 ? "día cargado" : "días cargados"}: todavía es pronto para proyectar, así que se compara con la venta promedio de los meses cerrados.`);
+      }
+    } else if (v.total > 0 && costs.fijos > 0) {
+      base = {
+        fijos: costs.fijos, varRatio: costs.variables / v.total, ventas: v.total,
+        ticket: tk?.ticket ?? null, diasDelMes: daysInMonth, financiamiento: costs.financiamiento,
+      };
+    } else {
+      avisos.push("Ese mes no tiene ventas o gastos fijos cargados.");
+    }
+    if (costs.porAclarar > 0 && !isCurrent) avisos.push(`Incluye S/${costs.porAclarar.toFixed(2)} de gastos por aclarar, contados como fijos.`);
+    if (tk && tk.mes !== mes) avisos.push(`El ticket promedio es de ${tk.mes} (el mes elegido todavía no tiene el reporte de ventas de Byte).`);
+    if (!tk) avisos.push("No hay reporte de ventas de Byte para saber cuántas ventas hubo: el punto de equilibrio sale solo en soles.");
+    return {
+      ok: true,
+      data: {
+        businessId, sede: SEDE_NAMES[businessId], mes, enCurso: isCurrent, base,
+        ventasALaFecha: v.total, ventasBase, ventasHasta: v.ultimoDia, ticketDe: tk?.mes ?? null,
+        unidad: businessId === 1 ? "pedidos" : "ventas",
+        referencia, historial: resumen.ok ? resumen.filas : [], avisos,
+      },
+    };
+  } catch (err) {
+    console.error("[getEquilibrioSede] failed:", err);
+    return { ok: false, error: "No se pudo calcular el punto de equilibrio." };
   }
 }
