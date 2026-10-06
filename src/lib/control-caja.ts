@@ -47,3 +47,19 @@ export async function gastoCajaMensual(desde: string, hasta: string): Promise<Ga
   const filas = await rpc<{ sede: string; mes: string; categoria: string; monto: number | string }[]>("gasto_caja_mensual", { p_desde: desde, p_hasta: hasta });
   return filas.map((f) => ({ ...f, monto: Number(f.monto) }));
 }
+
+export type PorPagarCaja = { sede: string; proveedor: string; fecha: string; vencimiento: string | null; total: number };
+
+/** Facturas a crédito de Control de Caja que Finanzas todavía no paga (con su vencimiento). */
+export async function cuentasPorPagarCaja(): Promise<PorPagarCaja[]> {
+  const filas = await rpc<{ sede: string; proveedor: string; fecha: string; vencimiento: string | null; total: number | string }[]>("cuentas_por_pagar_caja", {});
+  return filas.map((f) => ({ ...f, total: Number(f.total) }));
+}
+
+export type SobreTopeCaja = { tipo: "gasto" | "lista"; sede: string; fecha: string; descripcion: string; monto: number | null; motivo: string };
+
+/** Gastos y listas registrados pasando el tope del presupuesto, desde una fecha (con su motivo). */
+export async function sobreTopeCaja(desde: string): Promise<SobreTopeCaja[]> {
+  const filas = await rpc<(Omit<SobreTopeCaja, "monto"> & { monto: number | string | null })[]>("sobre_tope_caja", { p_desde: desde });
+  return filas.map((f) => ({ ...f, monto: f.monto === null ? null : Number(f.monto) }));
+}
