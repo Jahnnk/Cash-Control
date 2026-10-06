@@ -3,14 +3,14 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
+import { getLiquidezGrupo } from "./liquidez";
 
 /**
  * Datos consolidados para la vista /grupo/dashboard.
  *
  * Convenciones:
- * - Saldo BCP por negocio = método híbrido (último anchor + flujo).
- *   Reusamos la misma fórmula que getUnifiedBankBalance() pero ejecutada
- *   3 veces (una por negocio) y agregada.
+ * - Saldo BCP por negocio = el de getLiquidezGrupo (lectura del banco del
+ *   Excel o registrada por dirección; estimado solo si no hay ninguna).
  * - Ingresos del mes = SUM(bank_income_items.amount) por negocio.
  * - Gastos del mes = SUM(expenses) por negocio. **Para evitar contar
  *   doble los gastos compartidos**, se usa atelier_amount cuando
@@ -157,42 +157,15 @@ export async function getGroupDashboard(monthInput?: string) {
     SELECT id, code, name FROM businesses WHERE active = true ORDER BY id
   `);
 
+  const liquidez = await getLiquidezGrupo();
   const summaries: BusinessSummary[] = [];
   for (const b of businesses.rows as Array<{ id: number; code: string; name: string }>) {
-    // Saldo BCP — método híbrido por negocio (MISMA lógica que
-    // getUnifiedBankBalance): último saldo real registrado o, si no
-    // hay, el saldo inicial del corte (Fonavi/Centro con reset). Sin
-    // este respaldo, al limpiar las anclas basura (auditoría 27-jul)
-    // el Grupo mostraba S/0.00 mientras la sede mostraba el saldo bien.
-    const anchorRes = await db.execute(sql`
-      SELECT bank_balance_real::text AS anchor, date::text AS date FROM daily_records
-      WHERE business_id = ${b.id} AND bank_balance_real IS NOT NULL AND date <= ${today}
-        AND archived = false
-      ORDER BY date DESC LIMIT 1
-    `);
-    let anchorRow = anchorRes.rows[0] as { anchor: string; date: string } | undefined;
-    if (!anchorRow) {
-      const cfgRes = await db.execute(sql`
-        SELECT initial_bcp_balance::text AS anchor, initial_balance_date::text AS date
-        FROM businesses
-        WHERE id = ${b.id} AND system_start_date IS NOT NULL AND initial_balance_date IS NOT NULL
-      `);
-      anchorRow = cfgRes.rows[0] as { anchor: string; date: string } | undefined;
-    }
-    let bankBalance = 0;
-    if (anchorRow) {
-      const anchor = parseFloat(anchorRow.anchor);
-      const anchorDate = anchorRow.date;
-      const incRes = await db.execute(sql`
-        SELECT COALESCE(SUM(amount), 0) AS t FROM bank_income_items
-        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND (is_special_loan = false OR loan_via_bank = true) AND payment_method <> 'efectivo' AND archived = false
-      `);
-      const expRes = await db.execute(sql`
-        SELECT COALESCE(SUM(amount), 0) AS t FROM expenses
-        WHERE business_id = ${b.id} AND date > ${anchorDate} AND date <= ${today} AND payment_method NOT IN ('efectivo','pendiente_atelier','socio') AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
-      `);
-      bankBalance = Math.round((anchor + parseFloat(incRes.rows[0].t as string) - parseFloat(expRes.rows[0].t as string)) * 100) / 100;
-    }
+    // Saldo BCP (6-oct-2026, pedido de Jahnn): el de getLiquidezGrupo, la
+    // ÚNICA fuente — la lectura del banco que viene en el Excel (o la que
+    // registra dirección) y, solo si no hay, el estimado desde el ancla.
+    // Antes esta tabla arrastraba movimientos por su cuenta y a Centro le
+    // daba −S/2,389 mientras la tarjeta de liquidez decía otra cosa.
+    const bankBalance = liquidez?.sedes.find((x) => x.businessId === b.id)?.banco ?? 0;
 
     // Ingresos, gastos y deuda del mes: la definición única (totales-mes-sede.ts),
     // la misma contra la que se verifica el Excel de Kelly.
