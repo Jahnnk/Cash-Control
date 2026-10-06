@@ -1,9 +1,7 @@
 import { getCategories } from "@/app/actions/categories";
-import { getBudgets } from "@/app/actions/budgets";
 import { getSharedRules } from "@/app/actions/shared-expense-rules";
 import { getBusinessInitialConfig } from "@/app/actions/business-config";
 import { CategoriesManager } from "./categories-manager";
-import { BudgetConfig } from "./budget-config";
 import { SharedExpensesSection } from "./shared-expenses-section";
 import { InitialConfigSection } from "./initial-config-section";
 import { ExcelImportButton } from "./excel-import-button";
@@ -18,9 +16,8 @@ export default async function ConfiguracionPage({
   const { negocio } = await params;
   const isAtelier = negocio === "atelier";
 
-  const [categories, budgets, sharedRules, initialConfig] = await Promise.all([
+  const [categories, sharedRules, initialConfig] = await Promise.all([
     getCategories(false),
-    getBudgets(false),
     // Reglas compartidas solo aplican a Atelier; evitamos cargarlas en otro negocio.
     isAtelier ? getSharedRules() : Promise.resolve([]),
     // Configuración inicial NO aplica a Atelier — guard de servidor también.
@@ -42,7 +39,6 @@ export default async function ConfiguracionPage({
       {isAtelier && (
         <SharedExpensesSection rules={sharedRules} categories={activeCategories} />
       )}
-      <BudgetConfig budgets={budgets} />
       <CategoriesManager categories={categories} />
     </div>
   );
