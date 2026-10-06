@@ -308,13 +308,13 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
 
     autoTable(doc, {
       startY: y,
-      head: [["Categoría", "Presupuesto", "Real", "% Cumplimiento", "Estado"]],
+      head: [["Categoría", "Presupuestado", "Real", "% de ejecución", "Estado"]],
       body: data.budgetVsReal.map((b) => [
         b.category,
         b.budgeted !== null ? fmtMoney(b.budgeted) : "—",
         fmtMoney(b.real),
         b.budgeted !== null ? fmtPct(b.pct) : "—",
-        b.status === "ok" ? "Bajo" : b.status === "near" ? "Cerca" : b.status === "over" ? "Sobre" : "—",
+        b.status === "ok" ? "En plan" : b.status === "near" ? "Ojo" : b.status === "over" ? "Pasado" : "Sin presupuesto",
       ]),
       headStyles: { fillColor: PRIMARY, textColor: "#FFFFFF" },
       alternateRowStyles: { fillColor: CREAM },
@@ -322,9 +322,9 @@ export async function generatePdf(data: ReportData, filename: string): Promise<v
       didParseCell: (data2) => {
         if (data2.section === "body" && data2.column.index === 4) {
           const v = data2.cell.raw as string;
-          if (v === "Sobre") data2.cell.styles.textColor = "#DC2626";
-          else if (v === "Cerca") data2.cell.styles.textColor = "#EAB308";
-          else if (v === "Bajo") data2.cell.styles.textColor = PRIMARY_LIGHT;
+          if (v === "Pasado") data2.cell.styles.textColor = "#DC2626";
+          else if (v === "Ojo") data2.cell.styles.textColor = "#EAB308";
+          else if (v === "En plan") data2.cell.styles.textColor = PRIMARY_LIGHT;
         }
       },
     });

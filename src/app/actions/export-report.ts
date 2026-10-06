@@ -4,6 +4,7 @@ import { neon } from "@neondatabase/serverless";
 import { splitExpenses, type ExpenseLike } from "@/lib/expense-split";
 import { splitIncomes, type IncomeLike } from "@/lib/income-base";
 import { normalizeCategory } from "@/lib/category-normalize";
+import { categoriasPresupuestadas, NOMBRE_SEDE, presupuestoDeSede } from "@/lib/presupuesto-datos";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -326,33 +327,35 @@ export async function getReportData(
     }))
     .sort((a, b) => b.totalAtelier - a.totalAtelier);
 
-  // Presupuesto vs Real
-  // budgets.budget_percentage = % sobre ingresos ajustados; el monto presupuestado se calcula así
-  const budgetsRows = (await sql`
-    SELECT category_name, budget_percentage::float as pct,
-           threshold_green::int as t_green, threshold_yellow::int as t_yellow
-    FROM budgets WHERE is_active = true
-      AND (${businessId}::int IS NULL OR business_id = ${businessId})
-  `) as { category_name: string; pct: number; t_green: number; t_yellow: number }[];
-  console.log(`[export] active budgets: ${budgetsRows.length}`);
-  const budgetMap = new Map(budgetsRows.map((b) => [normalizeCategory(b.category_name), b]));
-  const allCats = new Set([...catMap.keys(), ...budgetMap.keys()]);
-  const budgetVsReal = Array.from(allCats).map((category) => {
-    const b = budgetMap.get(category) ?? null;
-    const budgeted = b ? Math.round((incomeAdjusted * b.pct) / 100 * 100) / 100 : null;
-    const real = catMap.get(category)?.atelier ?? 0;
-    const diff = budgeted !== null ? real - budgeted : 0;
-    const pct = budgeted !== null && budgeted > 0 ? (real / budgeted) * 100 : 0;
-    let status: "ok" | "near" | "over" | "no-budget" = "no-budget";
-    if (b) {
-      const tGreen = b.t_green ?? 70;
-      const tYellow = b.t_yellow ?? 90;
-      if (pct <= tGreen) status = "ok";
-      else if (pct <= tYellow) status = "near";
-      else status = "over";
+  // Presupuesto vs Real: el presupuesto rediseñado (6-oct-2026), el mismo de la pantalla.
+  // Solo para un mes: el plan es mensual y no se puede repartir en un rango cualquiera.
+  // En Grupo (businessId null) se suman las tres sedes por categoría.
+  const budgetVsReal: { category: string; budgeted: number | null; real: number; diff: number; pct: number; status: "ok" | "near" | "over" | "no-budget" }[] = [];
+  if (period.isMonth) {
+    const ids = businessId !== null ? [businessId] : [2, 3, 1];
+    const planes = (await Promise.all(ids.map((id) => presupuestoDeSede(id, NOMBRE_SEDE[id] ?? "", start.slice(0, 7))))).filter((p) => p !== null);
+    const porCat = new Map<string, { budgeted: number | null; real: number; peor: "ok" | "near" | "over" | "no-budget" }>();
+    const rango = { "no-budget": 0, ok: 1, near: 2, over: 3 } as const;
+    for (const p of planes) for (const c of categoriasPresupuestadas(p)) {
+      const st = c.semaforo === "rojo" ? "over" : c.semaforo === "ambar" ? "near" : c.semaforo === "verde" ? "ok" : "no-budget";
+      const acc = porCat.get(c.categoria) ?? { budgeted: null, real: 0, peor: "no-budget" as const };
+      acc.budgeted = c.presupuestado ? (acc.budgeted ?? 0) + c.presupuestado : acc.budgeted;
+      acc.real += c.real;
+      if (rango[st] > rango[acc.peor]) acc.peor = st;
+      porCat.set(c.categoria, acc);
     }
-    return { category, budgeted, real, diff, pct, status };
-  }).sort((a, b) => b.real - a.real);
+    for (const [category, v] of porCat) {
+      const budgeted = v.budgeted !== null ? Math.round(v.budgeted * 100) / 100 : null;
+      const real = Math.round(v.real * 100) / 100;
+      budgetVsReal.push({
+        category, budgeted, real,
+        diff: budgeted !== null ? Math.round((real - budgeted) * 100) / 100 : 0,
+        pct: budgeted ? (real / budgeted) * 100 : 0,
+        status: budgeted === null ? "no-budget" : v.peor,
+      });
+    }
+    budgetVsReal.sort((a, b) => b.real - a.real);
+  }
 
   // Flujo de caja diario
   const flowRows = (await sql`

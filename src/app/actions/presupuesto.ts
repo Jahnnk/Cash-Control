@@ -14,7 +14,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
-import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
+import { gastoPorCategoria, planDe, ventasPorMes, type CabeceraPresupuesto } from "@/lib/presupuesto-datos";
 import { CATEGORIAS_PRESUPUESTABLES, type Linea, type MesHistorial, type Modo } from "@/lib/presupuesto";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -30,14 +30,6 @@ const mesMas = (mes: string, n: number) => {
   const [y, m] = mes.split("-").map(Number);
   const d = new Date(Date.UTC(y, m - 1 + n, 1));
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
-};
-
-export type CabeceraPresupuesto = {
-  ventaEsperada: number | null;
-  aprobadoEl: string | null;
-  aprobadoPor: string | null;
-  actualizadoEl: string;
-  actualizadoPor: string | null;
 };
 
 export type SedePresupuesto = {
@@ -57,35 +49,6 @@ export type SedePresupuesto = {
 
 export type DatosPresupuesto = { mes: string; hoy: string; enCurso: boolean; avanceMes: number; sedes: SedePresupuesto[] };
 
-async function gastoPorCategoria(bId: number, desde: string, hasta: string): Promise<{ mes: string; categoria: string; monto: number }[]> {
-  return (await sql`
-    SELECT to_char(date, 'YYYY-MM') AS mes, category AS categoria,
-           SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS monto
-    FROM expenses
-    WHERE business_id = ${bId} AND date BETWEEN ${desde} AND ${hasta} AND archived = false
-      AND is_internal_transfer = false AND (is_special_loan = false OR loan_via_bank = true)
-      AND payment_method NOT IN ('pendiente_atelier', 'socio')
-    GROUP BY 1, 2
-  `) as { mes: string; categoria: string; monto: number }[];
-}
-
-async function ventasPorMes(bId: number, desde: string, hasta: string): Promise<Map<string, number>> {
-  const v = await loadVentaRowsBlended(sql, bId, desde, hasta);
-  const m = new Map<string, number>();
-  for (const r of v.rows) m.set(r.date.slice(0, 7), (m.get(r.date.slice(0, 7)) ?? 0) + r.total);
-  return m;
-}
-
-async function lineasDe(bId: number, mes: string): Promise<{ cab: CabeceraPresupuesto | null; lineas: Linea[] }> {
-  const [cab, lin] = await Promise.all([
-    sql`SELECT venta_esperada::float AS "ventaEsperada", aprobado_el::text AS "aprobadoEl", aprobado_por AS "aprobadoPor",
-               actualizado_el::text AS "actualizadoEl", actualizado_por AS "actualizadoPor"
-        FROM presupuesto_mes WHERE business_id = ${bId} AND mes = ${mes}` as unknown as Promise<CabeceraPresupuesto[]>,
-    sql`SELECT categoria, modo, valor::float AS valor FROM presupuesto_linea WHERE business_id = ${bId} AND mes = ${mes}` as unknown as Promise<Linea[]>,
-  ]);
-  return { cab: cab[0] ?? null, lineas: lin };
-}
-
 async function datosSede(bId: number, sede: string, mes: string, hoy: string): Promise<SedePresupuesto> {
   const mesActual = hoy.slice(0, 7);
   const hasta = finDeMes(mes) < hoy ? finDeMes(mes) : hoy;
@@ -95,8 +58,8 @@ async function datosSede(bId: number, sede: string, mes: string, hoy: string): P
   const hastaHist = finDeMes(ultimoCerrado);
 
   const [plan, anterior, gastoMes, gastoHist, ventasMes, ventasHist, corte] = await Promise.all([
-    lineasDe(bId, mes),
-    lineasDe(bId, mesMas(mes, -1)),
+    planDe(bId, mes),
+    planDe(bId, mesMas(mes, -1)),
     mes <= mesActual ? gastoPorCategoria(bId, `${mes}-01`, hasta) : Promise.resolve([]),
     gastoPorCategoria(bId, desdeHist, hastaHist),
     mes <= mesActual ? ventasPorMes(bId, `${mes}-01`, hasta) : Promise.resolve(new Map<string, number>()),

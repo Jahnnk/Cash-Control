@@ -148,10 +148,10 @@ export async function generateExcel(data: ReportData, filename: string): Promise
 
   // ─────────── Pestaña 5: Presupuesto vs Real ───────────
   const ws5 = wb.addWorksheet("Presupuesto vs Real", { views: [{ state: "frozen", ySplit: 1 }] });
-  const r5h = ws5.addRow(["Categoría", "Presupuestado", `Real (${data.scopeLabel})`, "Diferencia", "% Cumplimiento", "Estado"]);
+  const r5h = ws5.addRow(["Categoría", "Presupuestado", `Real (${data.scopeLabel})`, "Variación", "% de ejecución", "Estado"]);
   r5h.eachCell((c) => styleHeader(c));
   data.budgetVsReal.forEach((b, i) => {
-    const status = b.status === "ok" ? "✅ Bajo" : b.status === "near" ? "⚠️ Cerca" : b.status === "over" ? "🔴 Sobre" : "—";
+    const status = b.status === "ok" ? "En plan" : b.status === "near" ? "Ojo" : b.status === "over" ? "Pasado" : "Sin presupuesto";
     const r = ws5.addRow([b.category, b.budgeted ?? "—", b.real, b.budgeted !== null ? b.diff : "—", b.budgeted !== null ? b.pct / 100 : "—", status]);
     if (typeof b.budgeted === "number") r.getCell(2).numFmt = CURRENCY;
     r.getCell(3).numFmt = CURRENCY;

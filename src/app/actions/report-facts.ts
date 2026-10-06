@@ -20,6 +20,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
 import { salesInRange, opExpensesInRange } from "./command-center";
 import { evaluarCobertura } from "@/lib/report/cobertura";
+import { categoriasPresupuestadas, colorDe, NOMBRE_SEDE, presupuestoDeSede } from "@/lib/presupuesto-datos";
 import type {
   ReportFacts,
   ReportScope,
@@ -224,24 +225,11 @@ export async function collectUnitFacts(unit: BusinessUnitRef, month: string): Pr
     topMovements: topByCat.get(cat) ?? [],
   }));
 
-  // ── Presupuesto del mes (inline, scoped a la unidad — no al negocio activo) ──
-  const grossIncome = (await db.execute(sql`
-    SELECT COALESCE(SUM(bank_income), 0)::float AS t FROM daily_records
-    WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end} AND archived = false
-  `)).rows[0] as { t: number };
-  const budgetRows = (await db.execute(sql`
-    SELECT category_name, budget_percentage::float AS pct, threshold_green, threshold_yellow
-    FROM budgets WHERE business_id = ${bId} AND is_active = true AND has_traffic_light = true
-  `)).rows as { category_name: string; pct: number | null; threshold_green: number; threshold_yellow: number }[];
-  const spentByCat = new Map(catMonth.map((c) => [c.category, Number(c.t)]));
-  const budget: BudgetFact[] = budgetRows.map((b) => {
-    const budgetSoles = r2(Number(grossIncome.t) * ((b.pct ?? 0) / 100));
-    const spent = r2(spentByCat.get(b.category_name) ?? 0);
-    const consumed = budgetSoles > 0 ? (spent / budgetSoles) * 100 : spent > 0 ? 100 : 0;
-    const color: BudgetFact["color"] =
-      consumed >= b.threshold_yellow ? "red" : consumed >= b.threshold_green ? "yellow" : "green";
-    return { category: b.category_name, budgetSoles, spent, color };
-  });
+  // ── Presupuesto del mes (el rediseñado, 6-oct-2026): plan de la unidad contra lo real ──
+  const plan = await presupuestoDeSede(bId, NOMBRE_SEDE[bId] ?? unit.name, month);
+  const budget: BudgetFact[] = plan ? categoriasPresupuestadas(plan)
+    .filter((c) => (c.presupuestado ?? 0) > 0)
+    .map((c) => ({ category: c.categoria, budgetSoles: c.presupuestado!, spent: c.real, color: colorDe(c.semaforo) })) : [];
 
   // ── CxC (solo la unidad propietaria del modelo actual) ──
   let receivables: UnitFacts["receivables"] = null;

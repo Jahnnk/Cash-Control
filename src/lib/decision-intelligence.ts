@@ -32,7 +32,7 @@ export type CategoryTrend = {
 
 export type BudgetStatus = {
   category: string;
-  /** Presupuesto del mes en soles (según % del ingreso del mes). */
+  /** Presupuesto del mes en soles (Grupo/sede → Presupuesto: fijos en S/, variables en % de la venta). */
   budgetSoles: number;
   spent: number;
   color: "green" | "yellow" | "red";
