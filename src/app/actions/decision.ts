@@ -4,7 +4,7 @@
  * Matriz de decisión del Sistema de Dirección · acciones (pedido de Jahnn, 6-oct-2026).
  *
  * Junta, por sede, los números que responden las preguntas del dueño (lib/decisiones.ts):
- *   · Lectura REAL del banco: la que Kelly anota en su Excel (import_batches.excel_saldo_banco).
+ *   · Lectura REAL del banco: la de getLiquidezGrupo (celda del banco del Excel de Kelly).
  *     No el saldo que el sistema reconstruye sumando movimientos: a Centro le daba −S/2,389.
  *   · Fondos mutuos: el saldo que anota Jahnn (fondos_mutuos_saldo).
  *   · Costos fijos, % de variables, venta de un mes y ticket: el mismo cálculo del punto de
@@ -18,6 +18,8 @@ import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { getEquilibrioSede, getResumenEquilibrio } from "./breakeven";
+import { getLiquidezGrupo } from "./liquidez";
+import type { LiquidezGrupo } from "@/lib/liquidez";
 import { reservaDe, type DatosDecision } from "@/lib/decisiones";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -34,20 +36,17 @@ export type SedeDecision = {
   reservaConfig: { semanas: number | null; monto: number | null } | null;
 };
 
-/** La última lectura del banco que anotó Kelly en el Excel de la sede. */
-async function lecturaBanco(bId: number): Promise<{ banco: number; efectivo: number; al: string } | null> {
-  try {
-    const r = (await sql`
-      SELECT excel_saldo_banco::float AS banco, COALESCE(excel_saldo_efectivo, 0)::float AS efectivo,
-             to_char(imported_at AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS al
-      FROM import_batches
-      WHERE business_id = ${bId} AND excel_saldo_banco IS NOT NULL AND COALESCE(status, '') <> 'rolled_back'
-      ORDER BY date_range_end DESC NULLS LAST, imported_at DESC LIMIT 1
-    `) as { banco: number; efectivo: number; al: string }[];
-    return r[0] ?? null;
-  } catch {
-    return null;
-  }
+/**
+ * La lectura REAL del banco de la sede: la de getLiquidezGrupo (única fuente, la misma del
+ * dashboard), que es la celda del banco que Kelly copia del BCP en su Excel (o la que registra
+ * dirección). Solo vale si es declarada: un estimado arrastrando movimientos no sirve para
+ * decidir. OJO: import_batches.excel_saldo_banco NO es esa lectura, es el saldo que el parser
+ * calcula con el libro (a Centro le daba S/349 con el banco en S/2,853).
+ */
+async function lecturaBanco(liq: LiquidezGrupo | null, bId: number): Promise<{ banco: number; efectivo: number; al: string } | null> {
+  const s = liq?.sedes.find((x) => x.businessId === bId);
+  if (!s || s.origen !== "declarado" || !s.fecha) return null;
+  return { banco: s.banco, efectivo: s.caja, al: s.fecha };
 }
 
 async function ultimoFondo(bId: number): Promise<{ saldo: number; fecha: string } | null> {
@@ -74,9 +73,9 @@ async function configReserva(bId: number): Promise<{ semanas: number | null; mon
 const diasEntre = (a: string, b: string) => Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / 86_400_000);
 const promedio = (xs: number[]) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : null);
 
-async function datosDeSede(bId: number, nombre: string, mes: string): Promise<SedeDecision> {
+async function datosDeSede(bId: number, nombre: string, mes: string, liq: LiquidezGrupo | null): Promise<SedeDecision> {
   const [eq, resumen, banco, fondo, cfg] = await Promise.all([
-    getEquilibrioSede(mes, bId), getResumenEquilibrio(mes, 7, bId), lecturaBanco(bId), ultimoFondo(bId), configReserva(bId),
+    getEquilibrioSede(mes, bId), getResumenEquilibrio(mes, 7, bId), lecturaBanco(liq, bId), ultimoFondo(bId), configReserva(bId),
   ]);
   const avisos: string[] = [];
   if (!eq.ok || !eq.data.base) {
@@ -115,7 +114,8 @@ export async function getMatrizDecision(): Promise<{ ok: true; mes: string; sede
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
   try {
     const mes = hoyLima().slice(0, 7);
-    const sedes = await Promise.all(SEDES.map((s) => datosDeSede(s.id, s.nombre, mes)));
+    const liq = await getLiquidezGrupo();
+    const sedes = await Promise.all(SEDES.map((s) => datosDeSede(s.id, s.nombre, mes, liq)));
     return { ok: true, mes, sedes };
   } catch (e) {
     console.error("[getMatrizDecision] failed:", e);

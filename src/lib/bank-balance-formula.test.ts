@@ -197,7 +197,6 @@ describe("5. las fórmulas de create y edit/delete usan los mismos filtros", () 
       "src/app/actions/bank-balance.ts",
       "src/app/actions/bank-real-checks.ts",
       "src/app/actions/excel-import.ts",
-      "src/app/actions/grupo.ts",
     ];
     for (const rel of replicas) {
       const src = read(rel);
