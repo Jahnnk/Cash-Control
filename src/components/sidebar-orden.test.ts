@@ -27,4 +27,18 @@ describe("menú lateral", () => {
       expect(m.indexOf("productos")).toBeLessThan(m.indexOf("panel"));
     }
   });
+
+  it("Grupo: Reportes va justo debajo de Dashboard, una sola vez", () => {
+    const g = segmentos("grupo");
+    expect(g.slice(0, 4)).toEqual(["dashboard", "reportes", "direccion", "productos"]);
+    expect(g.filter((x) => x === "reportes")).toHaveLength(1);
+  });
+
+  it("las sedes siguen con Reportes donde estaba (después del Panel)", () => {
+    for (const sede of ["fonavi", "centro", "atelier"] as const) {
+      const m = segmentos(sede);
+      expect(m.filter((x) => x === "reportes")).toHaveLength(1);
+      expect(m.indexOf("reportes")).toBeGreaterThan(m.indexOf("panel"));
+    }
+  });
 });

@@ -42,6 +42,8 @@ export type NavItem = {
 
 export const NAV: NavItem[] = [
   { segment: "dashboard",     label: "Dashboard",       icon: LayoutDashboard, scopes: ["atelier", "fonavi", "centro", "grupo"] },
+  // Grupo: Reportes justo debajo de Dashboard (pedido de Jahnn, 5-oct-2026). Las sedes lo mantienen más abajo.
+  { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["grupo"] },
   { segment: "direccion",     label: "Sistema de Dirección", icon: Compass,    scopes: ["grupo"] },
   // Grupo: Productos va justo debajo de Sistema de Dirección (pedido de Jahnn, 5-oct-2026). Las sedes
   // lo mantienen en su lugar de siempre, más abajo.
@@ -58,7 +60,7 @@ export const NAV: NavItem[] = [
   { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["atelier", "fonavi", "centro"] },
   { segment: "recetas",       label: "Recetas y costos", icon: ChefHat,        scopes: ["grupo"] },
   { segment: "panel",         label: "Panel de Sede",   icon: Trophy,          scopes: ["atelier", "fonavi", "centro"] },
-  { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro", "grupo"] },
+  { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro"] },
   { segment: "incentivos",    label: "Bonos e Incentivos", icon: Medal,        scopes: ["grupo"] },
   { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
 ];
