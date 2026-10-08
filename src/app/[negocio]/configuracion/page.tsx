@@ -5,6 +5,7 @@ import { CategoriesManager } from "./categories-manager";
 import { SharedExpensesSection } from "./shared-expenses-section";
 import { InitialConfigSection } from "./initial-config-section";
 import { ExcelImportButton } from "./excel-import-button";
+import { SeccionDesplegable } from "@/components/productos/ui";
 
 export const dynamic = "force-dynamic";
 
@@ -33,8 +34,11 @@ export default async function ConfiguracionPage({
       <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
       {/* Importación del Excel de Kelly: solo Fonavi/Centro (Atelier usa Byte POS). */}
       {!isAtelier && <ExcelImportButton negocio={negocio} />}
+      {/* Rara vez se toca y mueve los saldos de apertura: plegada (UX, 8-oct-2026). */}
       {!isAtelier && initialConfig && (
-        <InitialConfigSection initial={initialConfig} />
+        <SeccionDesplegable titulo="Configuración inicial del sistema" subtitulo="Fecha de inicio y saldos de apertura. Casi nunca se cambia.">
+          <InitialConfigSection initial={initialConfig} />
+        </SeccionDesplegable>
       )}
       {isAtelier && (
         <SharedExpensesSection rules={sharedRules} categories={activeCategories} />

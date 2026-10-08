@@ -57,6 +57,11 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
     }) === "sin_clasificar",
   );
 
+  // Solo las activas a la vista; las desactivadas, a un toque (UX, 8-oct-2026: eran ~50 filas).
+  const [verInactivas, setVerInactivas] = useState(false);
+  const inactivas = categories.filter((c) => !(c.is_active as boolean)).length;
+  const visibles = verInactivas ? categories : categories.filter((c) => c.is_active as boolean);
+
   async function handleDelete(id: string) {
     await deleteCategory(id);
     router.refresh();
@@ -105,7 +110,7 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
 
       {/* List */}
       <div className="divide-y divide-gray-100">
-        {categories.map((cat) => {
+        {visibles.map((cat) => {
           const isActive = cat.is_active as boolean;
           const id = cat.id as string;
           const name = cat.name as string;
@@ -215,6 +220,11 @@ export function CategoriesManager({ categories }: { categories: Category[] }) {
           );
         })}
       </div>
+      {inactivas > 0 && (
+        <button type="button" onClick={() => setVerInactivas((v) => !v)} className="w-full px-6 py-3 text-left text-xs font-medium text-gray-500 hover:text-gray-800 border-t border-gray-100">
+          {verInactivas ? "Ocultar las desactivadas" : `Ver ${inactivas} ${inactivas === 1 ? "desactivada" : "desactivadas"}`}
+        </button>
+      )}
     </div>
   );
 }

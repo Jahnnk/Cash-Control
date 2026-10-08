@@ -2,7 +2,7 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Settings2, Save, Loader2 } from "lucide-react";
+import { Save, Loader2 } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { updateBusinessInitialConfig, type BusinessInitialConfig } from "@/app/actions/business-config";
 
@@ -58,22 +58,13 @@ export function InitialConfigSection({ initial }: { initial: BusinessInitialConf
   })();
 
   return (
-    <div className="bg-white rounded-xl border border-gray-200 p-6 space-y-4">
-      <div className="flex items-start gap-3">
-        <div className="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
-          <Settings2 className="w-5 h-5 text-blue-600" />
-        </div>
-        <div>
-          <h3 className="text-sm font-semibold text-gray-900">
-            Configuración inicial del sistema
-          </h3>
-          <p className="text-xs text-gray-500 mt-1">
-            Define la fecha desde la que este negocio empieza a operar en el sistema y los
-            saldos de cierre del día anterior. Los movimientos previos a esta fecha
-            quedan archivados (no se borran).
-          </p>
-        </div>
-      </div>
+    // Va dentro de una sección plegable que ya trae el título (UX, 8-oct-2026): aquí solo la explicación.
+    <div className="space-y-4">
+      <p className="text-xs text-gray-500">
+        Define la fecha desde la que este negocio empieza a operar en el sistema y los
+        saldos de cierre del día anterior. Los movimientos previos a esta fecha
+        quedan archivados (no se borran).
+      </p>
 
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
