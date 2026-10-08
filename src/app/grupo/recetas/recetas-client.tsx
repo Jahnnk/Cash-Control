@@ -88,8 +88,7 @@ export function RecetasClient() {
         <div className="min-w-0 max-w-2xl">
           <h2 className="text-[15px] font-semibold text-gray-900">Recetas de Atelier</h2>
           <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-            Crea una receta o sub-receta nueva, o abre una del Excel y cámbiale ingredientes o pesos: el costo se recalcula con los
-            precios vigentes y se usa de inmediato en las mermas. No hace falta volver a subir el Excel por una receta.
+            Crea una receta o abre una y cambia ingredientes o pesos: el costo se recalcula solo, sin volver a subir el Excel.
           </p>
         </div>
         <button type="button" onClick={nueva} disabled={!cat}

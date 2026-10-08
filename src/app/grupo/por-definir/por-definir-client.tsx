@@ -14,6 +14,7 @@
 
 import { useMemo, useState, useTransition } from "react";
 import { ListChecks, Copy, Loader2, Check, HelpCircle, Scissors, ChevronDown, ChevronUp, Undo2 } from "lucide-react";
+import { SeccionDesplegable } from "@/components/productos/ui";
 import { useToast } from "@/components/toast-provider";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -514,9 +515,7 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
           <ListChecks className="w-5 h-5 text-primary" /> Por definir {cargando && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
         </h1>
         <p className="text-xs text-gray-500 mt-1">
-          Lo que el clasificador de egresos no puede decidir solo: gastos en los que el Excel, el registro y las reglas se contradicen
-          (fijo, variable, inversión…), gastos que nadie reconoce y montos fuera de lo normal. Tu decisión se aplica ya y, si enseñas la
-          regla, vale para los gastos parecidos y los que lleguen. Si contradice el Excel, queda en «Correcciones para el Excel».
+          Gastos que el sistema no puede clasificar solo. Tu decisión se aplica ya; si enseñas la regla, vale también para los que lleguen.
         </p>
       </div>
 
@@ -539,10 +538,15 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
           : <TarjetaGasto key={i.id} item={i} categorias={data.categorias[i.businessId] ?? []} conListaKelly={data.sedesConListaKelly.includes(i.businessId)} onHecho={recargar} />)}
       </section>
 
+      {/* Plegadas con su resumen (UX, 8-oct-2026): la lista para el Excel es larga y se usa al
+          pasársela a quien lleva el Excel, no cada vez que se entra. */}
       {data.paraKelly.length > 0 && (
-        <section className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-          <h2 className="text-sm font-semibold text-gray-900">Correcciones para el Excel</h2>
-          <p className="text-xs text-gray-500">Cada punto se cierra solo cuando llega un Excel que ya lo trae corregido.</p>
+        <SeccionDesplegable
+          titulo="Correcciones para el Excel"
+          subtitulo="Cada punto se cierra solo cuando llega un Excel que ya lo trae corregido."
+          resumen={<p className="text-xs text-gray-600">{data.paraKelly.map((k) => `${k.sede} ${k.lineas.length + k.reglas.length}`).join(" · ")} puntos por corregir</p>}
+        >
+        <div className="space-y-3">
           {data.paraKelly.map((k) => {
             const texto = `Correcciones para el Excel de ${k.sede}:\n${[...k.lineas, ...k.reglas].join("\n")}`;
             return (
@@ -564,13 +568,16 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
               </div>
             );
           })}
-        </section>
+        </div>
+        </SeccionDesplegable>
       )}
 
       {data.resueltasRecientes.length > 0 && (
-        <section className="bg-white rounded-xl border border-gray-200">
-          <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-900">Decidido en los últimos 30 días</div>
-          <ul className="divide-y divide-gray-100">
+        <SeccionDesplegable
+          titulo="Decidido en los últimos 30 días"
+          resumen={<p className="text-xs text-gray-600">{data.resueltasRecientes.length} {data.resueltasRecientes.length === 1 ? "decisión" : "decisiones"}</p>}
+        >
+          <ul className="divide-y divide-gray-100 -mx-1">
             {data.resueltasRecientes.map((i) => {
               const d = i.datos as { grupo?: string; concepto?: string; categoria?: string; monto?: number; texto?: string };
               const dec = i.decision as { tipoPE?: TipoPE; accion?: string; categoriaDestino?: string | null } | null;
@@ -588,7 +595,7 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
               );
             })}
           </ul>
-        </section>
+        </SeccionDesplegable>
       )}
     </div>
   );
