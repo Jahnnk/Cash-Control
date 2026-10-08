@@ -99,7 +99,17 @@ describe("informe de gastos por sede", () => {
       ...cadaMes("ALQUILER", 900, "ALQUILER (PRODUCTOS SALUDABLES YAYIS)"),
     ]);
     const nuevos = r.alertas.filter((a) => a.titulo.startsWith("Gasto nuevo"));
+    // Un solo aviso, y solo por lo que no es sueldo (los S/750 de planilla no cuentan).
     expect(nuevos.map((a) => a.titulo)).toEqual(["Gasto nuevo: SOLANGE ALVAREZ"]);
-    expect(nuevos[0].detalle).toContain("S/1,292");
+    expect(nuevos[0].detalle).toContain("S/542");
+  });
+
+  it("los sueldos no son «gasto nuevo» aunque el nombre aparezca escrito distinto", () => {
+    const r = base([
+      g("2026-08", "PLANILLA", 1227, "SUELDO SETIEMBRE 2026 (Junior Alexander Llanos Flores)"),
+      g("2026-08", "INSUMOS", 900, "CARNES (FRIGORIFICO NUEVO)"),
+      ...cadaMes("ALQUILER", 900, "ALQUILER (PRODUCTOS SALUDABLES YAYIS)"),
+    ]);
+    expect(r.alertas.filter((a) => a.titulo.startsWith("Gasto nuevo")).map((a) => a.titulo)).toEqual(["Gasto nuevo: FRIGORIFICO NUEVO"]);
   });
 });

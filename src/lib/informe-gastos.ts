@@ -349,8 +349,19 @@ export function construirInformeSede(input: {
     }
   }
   if (comparables.length >= 2) {
-    for (const p of proveedores) {
-      if (p.meses === 1 && p.monto >= ALERTA_NUEVO_DESDE) porMonto.push({ titulo: `Gasto nuevo: ${p.nombre}`, detalle: `${soles(p.monto)} este mes y nada en los meses anteriores.`, soles: p.monto });
+    // «Gasto nuevo» es para proveedores: los sueldos no cuentan (decisión de Jahnn, 8-oct-2026). Un
+    // trabajador nuevo, o uno cuyo nombre el Excel empezó a escribir completo, no es un gasto a revisar.
+    const sinSueldos = new Map<string, number>();
+    for (const g of operacionMes) {
+      if (g.categoria === "PLANILLA") continue;
+      const k = clave(g.concepto);
+      sinSueldos.set(k, (sinSueldos.get(k) ?? 0) + g.propio);
+    }
+    for (const [k, monto] of sinSueldos) {
+      const meses = [mes, ...comparables].filter((m) => mesesDe.get(k)?.has(m)).length;
+      if (meses === 1 && monto >= ALERTA_NUEVO_DESDE) {
+        porMonto.push({ titulo: `Gasto nuevo: ${nombreDe.get(k) ?? k}`, detalle: `${soles(monto)} este mes y nada en los meses anteriores.`, soles: monto });
+      }
     }
   }
   alertas.push(...porMonto.sort((a, b) => b.soles - a.soles).slice(0, MAX_ALERTAS - alertas.length).map(({ titulo, detalle }) => ({ titulo, detalle })));
