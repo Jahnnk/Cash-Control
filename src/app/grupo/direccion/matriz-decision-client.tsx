@@ -6,9 +6,13 @@
  * —¿puedo retirar?, ¿puedo contratar?, ¿ajusto precios?, ¿puedo reinvertir?, ¿compro
  * inventario?— respondida por sede con sus números, siempre en el orden del libro:
  * NÚMERO → INTERPRETACIÓN → ACCIÓN. Cálculo: lib/decisiones.ts · datos: actions/decision.ts.
+ *
+ * Rediseño UX (8-oct-2026): cada casilla dice la respuesta y el dato que la sostiene (sin repetir
+ * la cifra que ya está en el veredicto); en el celular se elige la sede y se ven sus 5 respuestas
+ * sin deslizar de lado; las reglas verde/precaución y las fuentes quedan a un toque.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, AlertTriangle } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { getMatrizDecision, guardarFondosMutuos, type SedeDecision } from "@/app/actions/decision";
@@ -33,6 +37,41 @@ function Punto({ s }: { s: Semaforo }) {
 }
 
 // ── La matriz: preguntas × sedes ─────────────────────────────────────────
+
+/** Lo que aclara la pregunta en la fila (solo cuando hace falta). */
+const ACLARA: Partial<Record<Pregunta, string>> = { contratar: "Con un sueldo de S/1,500" };
+
+/** El dato que sostiene la respuesta, con su nombre; nada si el veredicto ya trae la cifra. */
+function datoCorto(r: Respuesta): string | null {
+  if (r.semaforo === "gris") return null;
+  switch (r.pregunta) {
+    case "retirar":
+    case "inventario": return r.veredicto.includes("S/") ? null : `libre ${r.numero}`;
+    case "contratar": return `nuevo equilibrio ${r.numero}`;
+    case "precios": return `margen ${r.numero}`;
+    case "reinvertir": return `${r.numero} de reserva`;
+  }
+}
+
+function Celda({ r, activa, onClick }: { r: Respuesta | undefined; activa: boolean; onClick: () => void }) {
+  const s: Semaforo = r?.semaforo ?? "gris";
+  const dato = r ? datoCorto(r) : null;
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-pressed={activa}
+      className={`w-full h-full text-left rounded-xl px-3 py-2.5 transition-colors focus-visible:outline-2 focus-visible:outline-primary ${TONO[s].celda} ${activa ? "ring-2 ring-primary" : "ring-1 ring-inset ring-black/5"}`}
+    >
+      <span className="flex items-center gap-2">
+        <Punto s={s} />
+        <span className={`font-semibold leading-tight ${TONO[s].texto}`}>{r?.veredicto ?? "Sin datos"}</span>
+      </span>
+      {dato && <span className="block text-xs text-gray-600 tabular-nums mt-1 pl-[18px]">{dato}</span>}
+    </button>
+  );
+}
+
 function Matriz({ sedes, matrices, sel, onSel }: {
   sedes: SedeDecision[];
   matrices: (Record<Pregunta, Respuesta> | null)[];
@@ -40,11 +79,12 @@ function Matriz({ sedes, matrices, sel, onSel }: {
   onSel: (p: Pregunta, i: number) => void;
 }) {
   return (
-    <div className="overflow-x-auto -mx-1 px-1">
-      <table className="w-full min-w-[640px] border-separate border-spacing-1.5 text-sm">
+    <>
+      {/* Computadora: las 3 sedes lado a lado. */}
+      <table className="hidden sm:table w-full border-separate border-spacing-1.5 text-sm">
         <thead>
           <tr>
-            <th className="text-left text-[11px] font-medium uppercase tracking-wide text-gray-500 px-2 pb-1 w-[34%]">Pregunta</th>
+            <th className="w-[34%]"><span className="sr-only">Pregunta</span></th>
             {sedes.map((s) => (
               <th key={s.businessId} className="text-left text-[11px] font-medium uppercase tracking-wide text-gray-500 px-3 pb-1">{s.sede}</th>
             ))}
@@ -53,36 +93,36 @@ function Matriz({ sedes, matrices, sel, onSel }: {
         <tbody>
           {ORDEN_PREGUNTAS.map((p) => (
             <tr key={p}>
-              <th scope="row" className="text-left align-top px-2 py-2">
+              <th scope="row" className="text-left align-top font-normal px-2 py-2.5">
                 <div className="font-semibold text-gray-900 leading-snug">{PREGUNTAS[p].titulo}</div>
-                <div className="text-[11px] text-gray-500 mt-0.5">Mira: {PREGUNTAS[p].numeroClave.toLowerCase()}</div>
+                {ACLARA[p] && <div className="text-[11px] text-gray-500 mt-0.5">{ACLARA[p]}</div>}
               </th>
-              {matrices.map((m, i) => {
-                const r = m?.[p];
-                const s: Semaforo = r?.semaforo ?? "gris";
-                const activa = sel.p === p && sel.i === i;
-                return (
-                  <td key={i} className="align-top p-0">
-                    <button
-                      type="button"
-                      onClick={() => onSel(p, i)}
-                      aria-pressed={activa}
-                      className={`w-full h-full text-left rounded-xl px-3 py-2.5 transition-colors focus-visible:outline-2 focus-visible:outline-primary ${TONO[s].celda} ${activa ? "ring-2 ring-primary" : "ring-1 ring-inset ring-black/5"}`}
-                    >
-                      <span className="flex items-center gap-2">
-                        <Punto s={s} />
-                        <span className={`font-semibold leading-tight ${TONO[s].texto}`}>{r?.veredicto ?? "Sin datos"}</span>
-                      </span>
-                      <span className="block text-xs text-gray-600 tabular-nums mt-1 pl-[18px]">{r?.numero ?? "—"}</span>
-                    </button>
-                  </td>
-                );
-              })}
+              {matrices.map((m, i) => (
+                <td key={i} className="align-top p-0">
+                  <Celda r={m?.[p]} activa={sel.p === p && sel.i === i} onClick={() => onSel(p, i)} />
+                </td>
+              ))}
             </tr>
           ))}
         </tbody>
       </table>
-    </div>
+
+      {/* Celular: se elige la sede y se ven sus 5 respuestas, sin deslizar de lado. */}
+      <div className="sm:hidden space-y-3">
+        <Segmentado lleno tamano="sm" opciones={sedes.map((s, i) => ({ valor: i, etiqueta: s.sede }))} valor={sel.i} onChange={(i) => onSel(sel.p, i)} />
+        <ul className="space-y-2">
+          {ORDEN_PREGUNTAS.map((p) => (
+            <li key={p} className="grid grid-cols-[1fr_minmax(0,46%)] items-center gap-3">
+              <div className="min-w-0">
+                <div className="text-sm font-semibold text-gray-900 leading-snug">{PREGUNTAS[p].titulo}</div>
+                {ACLARA[p] && <div className="text-[11px] text-gray-500 mt-0.5">{ACLARA[p]}</div>}
+              </div>
+              <Celda r={matrices[sel.i]?.[p]} activa={sel.p === p} onClick={() => onSel(p, sel.i)} />
+            </li>
+          ))}
+        </ul>
+      </div>
+    </>
   );
 }
 
@@ -140,10 +180,15 @@ function Detalle({ sede, r }: { sede: SedeDecision; r: Respuesta }) {
           <div className="text-[11px] font-medium uppercase tracking-wide text-gray-500 mb-1">3 · Qué hacer</div>
           <p className="text-sm text-gray-900 font-medium leading-relaxed">{r.accion}</p>
         </div>
-        <div className="grid gap-2 sm:grid-cols-2 text-xs">
-          <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-900"><b>Verde:</b> {q.verde.charAt(0).toLowerCase() + q.verde.slice(1)}.</div>
-          <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900"><b>Precaución:</b> {q.precaucion.charAt(0).toLowerCase() + q.precaucion.slice(1)}.</div>
-        </div>
+        <details className="group text-xs">
+          <summary className="cursor-pointer list-none text-gray-500 hover:text-gray-800">
+            ¿Cuándo sale en verde? <span className="group-open:hidden">Ver la regla</span>
+          </summary>
+          <div className="grid gap-2 sm:grid-cols-2 mt-2">
+            <div className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-900"><b>Verde:</b> {q.verde.charAt(0).toLowerCase() + q.verde.slice(1)}.</div>
+            <div className="rounded-lg bg-amber-50 px-3 py-2 text-amber-900"><b>Precaución:</b> {q.precaucion.charAt(0).toLowerCase() + q.precaucion.slice(1)}.</div>
+          </div>
+        </details>
       </div>
     </div>
   );
@@ -304,55 +349,55 @@ export function VistaMatriz({ sedes, onRecargar }: { sedes: SedeDecision[]; onRe
   const [sel, setSel] = useState<{ p: Pregunta; i: number }>({ p: "retirar", i: 0 });
   const matrices = useMemo(() => sedes.map((s) => (s.datos ? matrizDeSede(s.datos) : null)), [sedes]);
   const r = matrices[sel.i]?.[sel.p];
-  const conteo = (s: Semaforo) => matrices.reduce((t, m) => t + (m ? ORDEN_PREGUNTAS.filter((p) => m[p].semaforo === s).length : 0), 0);
+  const detalle = useRef<HTMLElement>(null);
+  const avisos = sedes.reduce((t, s) => t + s.avisos.length, 0);
+
+  function elegir(p: Pregunta, i: number) {
+    const otraPregunta = p !== sel.p;
+    setSel({ p, i });
+    // En el celular el detalle queda debajo de la lista: se lleva la vista hasta él.
+    if (otraPregunta && window.matchMedia("(max-width: 639px)").matches) {
+      requestAnimationFrame(() => detalle.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
+    }
+  }
 
   return (
-    <div className="space-y-5 max-w-6xl">
+    <div className="space-y-5 max-w-6xl min-w-0">
       <header>
         <h1 className="text-xl font-semibold text-gray-900">Matriz de decisión</h1>
-        <p className="text-sm text-gray-600 mt-1 max-w-3xl leading-relaxed">
-          Cada pregunta que te haces como dueño tiene una respuesta en tus números. Toca una casilla para ver
-          el número, qué significa y qué hacer.
-        </p>
-        <div className="flex flex-wrap gap-1.5 mt-3">
-          <Pastilla tono="verde">{conteo("verde")} en verde</Pastilla>
-          <Pastilla tono="ambar">{conteo("ambar")} con precaución</Pastilla>
-          <Pastilla tono="rojo">{conteo("rojo")} en alto</Pastilla>
-          {conteo("gris") > 0 && <Pastilla>{conteo("gris")} sin datos</Pastilla>}
-        </div>
+        <p className="text-sm text-gray-500 mt-1">Cinco preguntas de dueño, respondidas con tus números. Toca una respuesta para ver la cuenta.</p>
       </header>
 
       <section className="bg-white rounded-2xl border border-gray-200/80 p-3 sm:p-5">
-        <Matriz sedes={sedes} matrices={matrices} sel={sel} onSel={(p, i) => setSel({ p, i })} />
-        <p className="text-[11px] text-gray-500 mt-2 px-2">
-          «¿Puedo contratar?» se calcula con un sueldo de S/1,500; para otro monto usa la calculadora de abajo.
-        </p>
+        <Matriz sedes={sedes} matrices={matrices} sel={sel} onSel={elegir} />
       </section>
 
       {r && (
-        <section className="bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-6">
+        <section ref={detalle} className="bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-6 scroll-mt-4">
           <Detalle sede={sedes[sel.i]} r={r} />
         </section>
       )}
 
       <SeccionDesplegable
         titulo="¿Y si sumo un gasto fijo?"
-        subtitulo="Contratar, publicidad, un software: cuánto hay que vender de más y si la sede lo aguanta."
+        subtitulo="Contratar, publicidad, un software: cuánto hay que vender de más."
       >
         <Calculadora sedes={sedes} />
       </SeccionDesplegable>
 
       <SeccionDesplegable
         titulo="De dónde salen los números"
-        subtitulo="Banco del Excel, fondos mutuos que anotas tú, costos y ventas del punto de equilibrio."
-        resumen={sedes.some((s) => s.avisos.length) ? <Pastilla tono="ambar">{sedes.reduce((t, s) => t + s.avisos.length, 0)} avisos</Pastilla> : undefined}
+        subtitulo="Banco del Excel, fondos mutuos y las reglas de cada respuesta."
+        resumen={avisos ? <Pastilla tono="ambar">{avisos} {avisos === 1 ? "aviso" : "avisos"}</Pastilla> : undefined}
       >
-        <Fuentes sedes={sedes} onGuardado={onRecargar} />
-        <p className="text-[11px] text-gray-500 mt-3">La reserva mínima de cada sede se cambia en Grupo → Configuración.</p>
-      </SeccionDesplegable>
-
-      <SeccionDesplegable titulo="La matriz del libro" subtitulo="Qué número mirar en cada decisión y qué señal es verde o de precaución.">
-        <MatrizLibro />
+        <div className="space-y-6">
+          <Fuentes sedes={sedes} onGuardado={onRecargar} />
+          <p className="text-[11px] text-gray-500">La reserva mínima de cada sede se cambia en Grupo → Configuración.</p>
+          <div>
+            <h4 className="text-[11px] font-medium uppercase tracking-wide text-gray-500 mb-1">Las reglas de la matriz</h4>
+            <MatrizLibro />
+          </div>
+        </div>
       </SeccionDesplegable>
     </div>
   );

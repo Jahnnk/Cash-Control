@@ -123,7 +123,7 @@ const todas = (n: number, m: EstadoMes, que: string) =>
   ({ listo: n >= m.totalSedes, detalle: n >= m.totalSedes ? `${que} de las ${m.totalSedes} sedes` : `Falta en ${m.totalSedes - n} de ${m.totalSedes} sedes` });
 
 export const CHECKLIST: ItemChecklist[] = [
-  { id: "ventas", grupo: "cierre", texto: "Calculé las ventas totales del mes", donde: "Cierre de mes → ¿Cuánto vendí?",
+  { id: "ventas", grupo: "cierre", texto: "Calculé las ventas totales del mes", donde: "Cierre de mes → Estado de resultados",
     datos: (m) => todas(m.sedesConVentas, m, "Ventas cargadas") },
   { id: "costos", grupo: "cierre", texto: "Registré todos los costos de venta", donde: "Excel de cada sede",
     datos: (m) => todas(m.sedesConExcelCompleto, m, "Excel completo") },
@@ -137,7 +137,7 @@ export const CHECKLIST: ItemChecklist[] = [
     datos: (m) => todas(m.sedesConResultado, m, "Ganancia calculada") },
   { id: "flujo", grupo: "cierre", texto: "Revisé el flujo de caja del mes", donde: "Cierre de mes → Flujo de caja", datos: null },
   { id: "comparacion", grupo: "cierre", texto: "Comparé con el mes anterior", donde: "Cierre de mes → Comparación", datos: null },
-  { id: "equilibrio", grupo: "analisis", texto: "Verifiqué si superé el punto de equilibrio", donde: "Cierre de mes → Punto de equilibrio", datos: null },
+  { id: "equilibrio", grupo: "analisis", texto: "Verifiqué si superé el punto de equilibrio", donde: "Cierre de mes → Estado de resultados (equilibrio)", datos: null },
   { id: "margenes", grupo: "analisis", texto: "Revisé los márgenes por producto", donde: "Productos → ¿Dónde ganamos plata?", datos: null },
   { id: "liquidez", grupo: "analisis", texto: "Calculé mi liquidez libre disponible", donde: "Matriz de decisión → ¿Puedo retirar?", datos: null },
   { id: "reducir", grupo: "analisis", texto: "Identifiqué costos que puedo reducir", donde: "Presupuesto → desvíos y Grupo → Gastos", datos: null },
