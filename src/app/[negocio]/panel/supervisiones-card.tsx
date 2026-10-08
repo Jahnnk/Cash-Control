@@ -45,9 +45,10 @@ export function SupervisionesCard({ month, onCambio }: { month: string; onCambio
   if (!data) return null;
   const r = data.resumen;
   const pendientes = data.observaciones.filter((o) => o.estado !== "confirmada");
-  // Sin visitas y sin nada pendiente, la tarjeta no tiene nada que pedir:
-  // queda como una línea para que el administrador sepa que existe.
-  const compacta = r.visitas === 0 && pendientes.length === 0;
+  // Sin visitas y sin nada pendiente, la tarjeta no tiene nada que pedir. Antes quedaba como una
+  // línea; desde el rediseño (8-oct-2026) eso ya lo dice «Tu bono de este mes» (requisito 3), así
+  // que no se repite: la tarjeta aparece cuando Juani visita.
+  if (r.visitas === 0 && pendientes.length === 0) return null;
 
   return (
     <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
@@ -66,13 +67,11 @@ export function SupervisionesCard({ month, onCambio }: { month: string; onCambio
         <span className={`text-[11px] rounded-full px-2.5 py-1 border ${CHIP[r.estado]}`}>{ETIQUETA_ESTADO_MES[r.estado]}</span>
       </div>
 
-      {!compacta && (
-        <div className="text-xs text-gray-600">
-          {r.visitas} visita(s) este mes
-          {r.puntajePromedio !== null && <> · puntaje promedio <strong>{r.puntajePromedio}%</strong></>}
-          {r.criticas.total > 0 && <> · críticas: {r.criticas.cumplidas} corregidas a tiempo{r.criticas.fueraDePlazo > 0 && <>, <strong className="text-red-700">{r.criticas.fueraDePlazo} fuera de plazo</strong></>}</>}
-        </div>
-      )}
+      <div className="text-xs text-gray-600">
+        {r.visitas} visita(s) este mes
+        {r.puntajePromedio !== null && <> · puntaje promedio <strong>{r.puntajePromedio}%</strong></>}
+        {r.criticas.total > 0 && <> · críticas: {r.criticas.cumplidas} corregidas a tiempo{r.criticas.fueraDePlazo > 0 && <>, <strong className="text-red-700">{r.criticas.fueraDePlazo} fuera de plazo</strong></>}</>}
+      </div>
 
       {pendientes.length > 0 ? (
         <div className="space-y-2">

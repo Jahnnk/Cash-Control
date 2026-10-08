@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef, useCallback } from "react";
-import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance, updateCurrentBankBalance } from "@/app/actions/daily-records";
+import { upsertDailyRecord, getDailyRecord, getLastBankBalance, updateBankBalance, updateDailyTotals, recalcBankBalance } from "@/app/actions/daily-records";
 import { getSharedRules, type SharedRule } from "@/app/actions/shared-expense-rules";
 import { computeThreeWaySplit } from "@/lib/shared-split";
 import { NON_OPERATIVE_CATEGORIES } from "@/lib/income-base";
@@ -80,7 +80,10 @@ export function RegistroForm({
   initialTxType,
   initialTxAmount,
   initialTxMethod,
+  bancoExcel = null,
 }: {
+  /** La lectura del banco del Excel (la MISMA cifra de toda la app: getLiquidezGrupo). */
+  bancoExcel?: { banco: number | null; caja: number; fecha: string | null } | null;
   initialDate?: string | null;
   categories: string[];
   clients: ClientOption[];
@@ -110,8 +113,6 @@ export function RegistroForm({
   const { showToast } = useToast();
   const [loading, setLoading] = useState(false);
   const [date, setDate] = useState(initialDate || getToday());
-  const [editingSaldo, setEditingSaldo] = useState(false);
-  const saldoInputRef = useRef<HTMLInputElement>(null);
 
   // Confirmación destructiva (solo Atelier, según preferencia local)
   const pathname = usePathname();
@@ -241,14 +242,9 @@ export function RegistroForm({
   // Dynamic bank balance = previous balance + today's bank income - today's bank expenses
   const dynamicBalance = prevBalance !== null ? prevBalance + bankIncomeTotal - expensesBankTotal : null;
 
-  // Saldo BCP HOY — fuente única vía hook unificado (también usado por Dashboard y Conciliación)
-  const { current: currentBalanceVal, hasAnchor, refresh: refreshBankBalance } = useBankBalance();
-  const currentBalance = hasAnchor ? currentBalanceVal : null;
-  const [currentBalanceInput, setCurrentBalanceInput] = useState("");
-  // Sincroniza el input editable cuando el hook resuelve / cambia el valor
-  useEffect(() => {
-    setCurrentBalanceInput(hasAnchor ? String(currentBalanceVal) : "");
-  }, [currentBalanceVal, hasAnchor]);
+  // El saldo derivado (ancla + movimientos) ya no se muestra arriba: manda la lectura del Excel
+  // (`bancoExcel`). El hook se mantiene porque guardar recalcula el saldo del día.
+  const { refresh: refreshBankBalance } = useBankBalance();
 
   // Reglas de gastos compartidos (cargadas una vez)
   const [sharedRules, setSharedRules] = useState<SharedRule[]>([]);
@@ -319,8 +315,6 @@ export function RegistroForm({
       getInternalTransfersByDate(date),
     ]).then(([record, items, lastBalance, existingExpenses, transfers]) => {
       setInternalTransfers(transfers as InternalTransfer[]);
-      // currentBalance ya viene del hook useBankBalance(), no necesitamos cargarlo acá.
-      if (currentBalance !== null) setCurrentBalanceInput(String(currentBalance));
       if (record) {
         setByteCashPhysical(String(record.byte_cash_physical || 0));
         setByteDigital(String(record.byte_digital || 0));
@@ -754,7 +748,10 @@ export function RegistroForm({
     <div className="space-y-6">
       {/* Header */}
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Registro Diario</h1>
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Registro manual</h1>
+          <p className="text-xs text-gray-500 mt-0.5">Los movimientos entran con el Excel; aquí solo se anota lo que haga falta a mano.</p>
+        </div>
         <div className="flex items-center gap-3">
           {isAtelier && (
             <button
@@ -781,53 +778,22 @@ export function RegistroForm({
 
       {/* Saldo BCP */}
       <div className="bg-primary text-white rounded-xl p-5">
-        {/* Saldo HOY (no depende de la fecha seleccionada) */}
-        <div className="flex items-center justify-between">
+        {/* El banco HOY = la lectura del Excel, la misma cifra del Dashboard y del Sistema de Dirección
+            (8-oct-2026). Antes era un saldo viejo + movimientos anotados aquí, que desde agosto ya no se
+            anotan: Fonavi mostraba S/15,724 con S/11,763 en el banco. */}
+        <div className="flex items-center justify-between gap-3">
           <div>
-            <div className="text-sm text-white/70">Saldo BCP HOY</div>
+            <div className="text-sm text-white/70">Banco{bancoExcel?.fecha ? ` al ${bancoExcel.fecha.split("-").reverse().slice(0, 2).join("/")}` : ""} (lectura del Excel)</div>
             <div className="text-3xl font-bold">
-              {currentBalance !== null ? formatCurrency(currentBalance) : "—"}
+              {bancoExcel?.banco != null ? formatCurrency(bancoExcel.banco) : "—"}
             </div>
           </div>
-          <div className="flex items-center gap-3">
-            {editingSaldo ? (
-              <div className="flex items-center gap-2">
-                <input
-                  ref={saldoInputRef}
-                  type="number" inputMode="decimal"
-                  step="0.01"
-                  value={currentBalanceInput}
-                  onChange={(e) => setCurrentBalanceInput(e.target.value)}
-                  placeholder="0.00"
-                  onKeyDown={async (e) => {
-                    if (e.key === "Enter" || e.key === "Escape") {
-                      setEditingSaldo(false);
-                      if (currentBalanceInput) {
-                        await updateCurrentBankBalance(parseFloat(currentBalanceInput));
-                        await refreshBankBalance();
-                      }
-                    }
-                  }}
-                  onBlur={async () => {
-                    setEditingSaldo(false);
-                    if (currentBalanceInput) {
-                      await updateCurrentBankBalance(parseFloat(currentBalanceInput));
-                      await refreshBankBalance();
-                    }
-                  }}
-                  className="bg-white/10 border border-white/20 rounded-lg px-4 py-2 text-white placeholder-white/40 text-right text-lg w-48 focus:bg-white/20"
-                  autoFocus
-                />
-              </div>
-            ) : (
-              <button
-                onClick={() => { setEditingSaldo(true); setTimeout(() => saldoInputRef.current?.focus(), 50); }}
-                className="bg-white/10 hover:bg-white/20 border border-white/20 rounded-lg px-4 py-2 text-sm text-white/80 transition-colors"
-              >
-                Editar saldo
-              </button>
-            )}
-          </div>
+          {bancoExcel && bancoExcel.caja > 0 && (
+            <div className="text-right">
+              <div className="text-sm text-white/70">Efectivo</div>
+              <div className="text-lg font-semibold">{formatCurrency(bancoExcel.caja)}</div>
+            </div>
+          )}
         </div>
 
         {/* Saldo al cierre de la fecha seleccionada (histórico) */}

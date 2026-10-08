@@ -31,6 +31,8 @@ describe("menú lateral", () => {
     }
     expect(segmentos("atelier")).toEqual(expect.arrayContaining(["clientes", "fonavi", "prestamos-socio"]));
     expect(segmentos("fonavi")).not.toContain("clientes");
+    // Registro manual, abajo del todo (antes de Configuración): desde agosto todo entra con el Excel.
+    for (const sede of ["fonavi", "centro", "atelier"] as const) expect(segmentos(sede).slice(-2)).toEqual(["registro", "configuracion"]);
     expect(segmentos("centro")).toHaveLength(8);
     expect(segmentos("atelier")).toHaveLength(11);
   });
