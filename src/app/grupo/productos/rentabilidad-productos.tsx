@@ -10,7 +10,7 @@
 
 import { useEffect, useState } from "react";
 import { getRentabilidadProductos } from "@/app/actions/productos-panorama";
-import { CAFETERIAS, NOMBRE_CAFETERIAS, esCafeteria } from "@/lib/productos/cafeterias";
+import { esCafeteria } from "@/lib/productos/cafeterias";
 import { MIN_UNIDADES, PUNTOS_DEJA_POCO, PUNTOS_MARGEN_ALTO, type MarcaRentabilidad, type ProductoRentable, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { Pastilla, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 
@@ -190,14 +190,14 @@ export function RentabilidadProductos({ month, sede }: { month: string; sede: nu
 
   return (
     <SeccionDesplegable
-      titulo={`¿Dónde ganamos plata? · ${d?.sede ?? (sede === CAFETERIAS ? NOMBRE_CAFETERIAS : sede === 2 ? "Fonavi" : "Centro")} · ${nombreMes(month)}`}
-      subtitulo="Qué deja cada producto: precio, costo y margen. Algunos venden mucho y dejan poco; otros venden poco y dejan mucho."
+      titulo="¿Dónde ganamos plata?"
+      subtitulo="Qué deja cada producto: precio, costo y margen."
       resumen={resumen}
     >
       {listo?.error ? <p className="text-sm text-gray-500">{listo.error}</p>
         : !listo ? <p className="text-sm text-gray-400">Calculando…</p>
         : d ? <Cuerpo d={d} />
-        : <p className="text-sm text-gray-500">Esta sede no tiene reporte de rotación de {nombreMes(month)}. Súbelo con «Subir Reportes Gerencia».</p>}
+        : <p className="text-sm text-gray-500">Esta sede no tiene reporte de rotación de {nombreMes(month)}. Súbelo con «Subir reportes de Byte».</p>}
     </SeccionDesplegable>
   );
 }

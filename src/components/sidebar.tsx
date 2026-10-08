@@ -159,6 +159,9 @@ export function Sidebar() {
     readScopeHintCookie,
     () => null,
   );
+  // Igual con el rol (Jahnn/Kelly): leerlo directo al dibujar daba «Usuario» en el servidor y
+  // «Jahnn» en el navegador, y React rehacía la página entera al cargar.
+  const role = useSyncExternalStore(subscribeNever, readRoleCookie, () => null);
 
   const scope = scopeFromPathname(pathname);
   const isScopedAdmin = scopeHint?.startsWith("admin-") ?? false;
@@ -182,7 +185,6 @@ export function Sidebar() {
 
   const theme = BUSINESS_THEMES[scope];
   const ScopeIcon = theme.icon;
-  const role = readRoleCookie();
   const isKelly = role === "kelly";
 
   function hrefFor(segment: string) {

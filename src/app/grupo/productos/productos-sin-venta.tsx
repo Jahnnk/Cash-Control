@@ -68,8 +68,8 @@ function SinVentaCafeterias({ fonavi, centro }: { fonavi: SinVentaSede | null; c
   const rango = (s: SinVentaSede | null, n: string) => (s ? `${n} ${fecha(s.desde)} al ${fecha(s.hasta)}` : `${n}: sin lista`);
   return (
     <SeccionDesplegable
-      titulo="Productos que no se venden · Fonavi + Centro"
-      subtitulo={`Del reporte «Platos con menor rotación» de Byte (${rango(fonavi, "Fonavi")} · ${rango(centro, "Centro")}). Se cruzan las dos cafeterías: lo que casi no se vende en las dos es lo más claro para sacar.`}
+      titulo="Productos que no se venden"
+      subtitulo={`Lo que casi no se vende en las dos cafeterías es lo más claro para sacar. Byte: ${rango(fonavi, "Fonavi")} · ${rango(centro, "Centro")}.`}
       resumen={(fonavi || centro) && (
         <span className="text-xs text-gray-600">
           <b className="text-gray-800">{j.ambas.length}</b> flojos en las dos · {j.soloFonavi.length} solo en Fonavi · {j.soloCentro.length} solo en Centro
@@ -113,8 +113,8 @@ export function ProductosSinVenta({ sede }: { sede: number }) {
     <SeccionDesplegable
       titulo="Productos que no se venden"
       subtitulo={s
-        ? `Del reporte «Platos con menor rotación» de Byte (${fecha(s.desde)} al ${fecha(s.hasta)}, subido el ${fecha(s.subidoEl)}). Candidatos a sacar de la carta o de Byte.`
-        : "Sube el reporte «Platos con menor rotación» de Byte de esta sede con «Subir Reportes Gerencia»."}
+        ? `Candidatos a sacar de la carta o de Byte. Byte: ${fecha(s.desde)} al ${fecha(s.hasta)}.`
+        : "Sube el reporte «Platos con menor rotación» de Byte de esta sede con «Subir reportes de Byte»."}
       resumen={s && (
         <span className="text-xs text-gray-600">
           {cuenta("nunca")} nunca vendidos · {cuenta("dormido")} dormidos · {cuenta("poco")} con muy pocas ventas

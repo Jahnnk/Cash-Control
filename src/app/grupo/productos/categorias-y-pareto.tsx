@@ -245,18 +245,15 @@ export function ReglaOchentaVeinte({ month, sede }: { month: string; sede: numbe
   return (
     <SeccionDesplegable
       titulo="Regla 80/20"
-      subtitulo="¿El 80% de la venta sale del 20% de los productos? El mes contra los últimos 3 meses."
+      subtitulo="¿Cuántos productos hacen casi toda la venta? El mes contra los últimos 3 meses."
       resumen={
         error ? <span className="text-xs text-red-700">{error}</span>
         : !data ? <span className="text-xs text-gray-400">Calculando…</span>
         : (
-          <div className="flex flex-wrap gap-1.5">
-            {data.filter((x) => x.mes).map((x) => (
-              <span key={x.businessId} className="inline-flex items-center gap-1 rounded-full border border-gray-200 px-2.5 py-0.5 text-[11px] text-gray-600">
-                {x.sede}: el 80% sale de <b className="tabular-nums text-gray-900">{x.mes!.nucleo}</b> productos ({x.mes!.pctNucleo}%)
-              </span>
-            ))}
-          </div>
+          // Solo la sede elegida arriba: las otras se ven al cambiar de sede (UX, 8-oct-2026).
+          sel?.mes
+            ? <p className="text-xs text-gray-600">El 80% de la venta sale de <b className="tabular-nums text-gray-900">{sel.mes.nucleo}</b> productos ({sel.mes.pctNucleo}% de la carta).</p>
+            : <span className="text-xs text-gray-400">Sin reporte de este mes.</span>
         )
       }
     >

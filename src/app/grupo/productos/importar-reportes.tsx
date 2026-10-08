@@ -338,7 +338,7 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-primary" /> Subir Reportes Gerencia
+            <FileSpreadsheet className="w-5 h-5 text-primary" /> Subir reportes de Byte
           </h2>
           <button onClick={onClose} disabled={subiendo} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100" aria-label="Cerrar">
             <X className="w-4 h-4" />

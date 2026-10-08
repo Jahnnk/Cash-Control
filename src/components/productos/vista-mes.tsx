@@ -4,12 +4,16 @@
  * "El mes" — qué se vendió en el período cargado de una sede: indicadores,
  * qué familias pesan, los 10 que más facturan y el ranking de postres.
  * La misma vista para el panel de Grupo y el del administrador.
+ * UX (8-oct-2026): montos sin céntimos (el precio por unidad, solo si los tiene); las notas
+ * técnicas del reporte, a un toque.
  */
 
 import { useState } from "react";
-import { formatCurrency } from "@/lib/utils";
 import type { PanoramaProductos, ProductoRanking } from "@/lib/productos/panorama";
 import { Seccion, Kpi, Barra, PuntoFamilia, Puesto, colorFamilia, fechaCorta } from "./ui";
+
+const soles = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
+const precio = (n: number) => (Number.isInteger(n) ? soles(n) : `S/${n.toFixed(2)}`);
 
 function FilaRanking({ n, x, max, conFamilia = false }: { n: number; x: ProductoRanking; max: number; conFamilia?: boolean }) {
   return (
@@ -24,9 +28,9 @@ function FilaRanking({ n, x, max, conFamilia = false }: { n: number; x: Producto
             </div>
           </div>
           <div className="text-right shrink-0">
-            <div className="text-sm font-semibold text-gray-900 tabular-nums">{formatCurrency(x.ingresos)}</div>
+            <div className="text-sm font-semibold text-gray-900 tabular-nums">{soles(x.ingresos)}</div>
             <div className="text-xs text-gray-500 tabular-nums mt-0.5">
-              {x.unidades} u{x.precio !== null && <span className="hidden sm:inline"> · {formatCurrency(x.precio)} c/u</span>}
+              {x.unidades} u{x.precio !== null && <span className="hidden sm:inline"> · {precio(x.precio)} c/u</span>}
             </div>
           </div>
         </div>
@@ -46,15 +50,15 @@ export function VistaMes({ p, cargadoEl, conKpis = true }: { p: PanoramaProducto
     <div className="space-y-5">
       {conKpis && (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          <Kpi etiqueta="Ventas de carta" valor={formatCurrency(p.ventas)} detalle={`${fechaCorta(p.desde)} al ${fechaCorta(p.hasta)} · ${p.dias} días`} />
-          <Kpi etiqueta="Venta por día" valor={formatCurrency(p.ventaPorDia)} detalle={cargadoEl ? `reporte cargado el ${fechaCorta(cargadoEl.slice(0, 10))}` : undefined} />
+          <Kpi etiqueta="Ventas de carta" valor={soles(p.ventas)} detalle={`${fechaCorta(p.desde)} al ${fechaCorta(p.hasta)} · ${p.dias} días`} />
+          <Kpi etiqueta="Venta por día" valor={soles(p.ventaPorDia)} detalle={cargadoEl ? `reporte cargado el ${fechaCorta(cargadoEl.slice(0, 10))}` : undefined} />
           <Kpi etiqueta="Unidades" valor={p.unidades.toLocaleString("es-PE")} detalle={`${p.productos} productos distintos`} />
           <Kpi etiqueta="Los 10 primeros" valor={`${p.concentracionTop10}%`} detalle="de lo que se vendió" />
         </div>
       )}
 
       {/* Qué familias pesan: una franja a lo ancho */}
-      <Seccion titulo="Qué se vende" subtitulo="Ventas de carta por familia de producto">
+      <Seccion titulo="Qué se vende" subtitulo={conKpis ? "Ventas de carta por familia de producto" : `Ventas de carta por familia · ${p.unidades.toLocaleString("es-PE")} unidades de ${p.productos} productos`}>
         <div className="flex h-3 rounded-full overflow-hidden mb-6 gap-0.5">
           {p.familias.map((f) => (
             <div key={f.familia} style={{ width: `${f.pct}%`, backgroundColor: colorFamilia(f.familia) }} title={`${f.familia}: ${f.pct}%`} />
@@ -67,7 +71,7 @@ export function VistaMes({ p, cargadoEl, conKpis = true }: { p: PanoramaProducto
                 <span className="mt-1"><PuntoFamilia familia={f.familia} /></span>
                 <span>{f.familia}</span>
               </div>
-              <div className="text-lg font-semibold text-gray-900 tabular-nums mt-1">{formatCurrency(f.ventas)}</div>
+              <div className="text-lg font-semibold text-gray-900 tabular-nums mt-1">{soles(f.ventas)}</div>
               <div className="text-xs text-gray-500 tabular-nums mt-0.5">{f.pct}% · {f.unidades} unidades</div>
             </li>
           ))}
@@ -104,21 +108,30 @@ export function VistaMes({ p, cargadoEl, conKpis = true }: { p: PanoramaProducto
         )}
       </div>
 
-      {/* Notas al pie */}
+      {/* Notas al pie: la cola larga a la vista (es accionable); lo técnico del reporte, a un toque. */}
       <div className="text-xs text-gray-500 leading-relaxed space-y-1 px-1">
         <p>{p.colaLarga} productos vendieron 3 unidades o menos en el período: la cola larga que conviene revisar en la carta.</p>
-        {p.fueraDeCarta.ventas > 0 && (
-          <p>
-            Fuera de los rankings, {formatCurrency(p.fueraDeCarta.ventas)} que no es carta (delivery, extras, packaging, retail).
-            Con eso, el período suma {formatCurrency(p.ventasTotales)}.
-          </p>
-        )}
-        {p.eliminadas.lineas > 0 && (
-          <p>
-            Byte trajo {p.eliminadas.lineas} línea(s) «eliminadas» (productos editados o renombrados):
-            {" "}{p.eliminadas.unidasAlProducto} se sumaron a su producto, {p.eliminadas.propias} quedaron como producto propio
-            y {p.eliminadas.ajustes} son ajustes de caja.
-          </p>
+        {(p.fueraDeCarta.ventas > 0 || p.eliminadas.lineas > 0) && (
+          <details className="group">
+            <summary className="cursor-pointer list-none text-gray-400 hover:text-gray-700">
+              <span className="group-open:hidden">Más detalles del reporte</span><span className="hidden group-open:inline">Ocultar detalles</span>
+            </summary>
+            <div className="mt-1 space-y-1">
+              {p.fueraDeCarta.ventas > 0 && (
+                <p>
+                  Fuera de los rankings, {soles(p.fueraDeCarta.ventas)} que no es carta (delivery, extras, packaging, retail).
+                  Con eso, el período suma {soles(p.ventasTotales)}.
+                </p>
+              )}
+              {p.eliminadas.lineas > 0 && (
+                <p>
+                  Byte trajo {p.eliminadas.lineas} línea(s) «eliminadas» (productos editados o renombrados):
+                  {" "}{p.eliminadas.unidasAlProducto} se sumaron a su producto, {p.eliminadas.propias} quedaron como producto propio
+                  y {p.eliminadas.ajustes} son ajustes de caja.
+                </p>
+              )}
+            </div>
+          </details>
         )}
       </div>
     </div>
