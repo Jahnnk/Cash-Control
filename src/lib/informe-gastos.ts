@@ -168,6 +168,23 @@ function claveCorta(concepto: string | null): string {
   return claveProveedor(concepto).split(" ").slice(0, 2).join(" ");
 }
 
+/**
+ * Junta los nombres cortos con su versión completa: «SOLANGE» y «SOLANGE ALVAREZ» son la misma
+ * persona (la administradora de Fonavi, 8-oct-2026: salían como dos «gastos nuevos»). Un nombre de
+ * UNA palabra se une al único nombre más largo que empieza igual; si hay dos o más candidatos
+ * (dos «LUIS» distintos), no se junta: es preferible un aviso de más que mezclar personas.
+ */
+export function unirNombresCortos(claves: string[]): Map<string, string> {
+  const unicas = [...new Set(claves)];
+  const destino = new Map<string, string>();
+  for (const k of unicas) {
+    if (k.includes(" ")) continue;
+    const largos = unicas.filter((x) => x.startsWith(`${k} `));
+    if (largos.length === 1) destino.set(k, largos[0]);
+  }
+  return destino;
+}
+
 function bolsillosDe(gastos: GastoInforme[]): Bolsillos {
   const b: Bolsillos = { operacion: 0, fijo: 0, variable: 0, desconocido: 0, deudas: 0, inversion: 0, noEsGasto: 0, otrasSedes: 0, total: 0 };
   for (const g of gastos) {
@@ -263,14 +280,16 @@ export function construirInformeSede(input: {
     return gs.filter((g) => g.deExcel).length * 2 >= gs.length;
   };
   const comparables = previosConDatos.filter((m) => fuente(m) === fuente(mes));
+  const unidos = unirNombresCortos(input.gastos.map((g) => claveCorta(g.concepto)));
+  const clave = (concepto: string | null) => { const k = claveCorta(concepto); return unidos.get(k) ?? k; };
   const mesesDe = new Map<string, Set<string>>();
   for (const g of input.gastos) {
-    const k = claveCorta(g.concepto);
+    const k = clave(g.concepto);
     if (!mesesDe.has(k)) mesesDe.set(k, new Set());
     mesesDe.get(k)!.add(g.mes);
   }
   const vecesAntes = (k: string) => comparables.filter((m) => mesesDe.get(k)?.has(m)).length;
-  const esRecurrente = (concepto: string | null) => vecesAntes(claveCorta(concepto)) >= Math.min(2, comparables.length);
+  const esRecurrente = (concepto: string | null) => vecesAntes(clave(concepto)) >= Math.min(2, comparables.length);
 
   const pagos: PagoGrande[] = [...delMes]
     .sort((a, b) => b.propio - a.propio)
@@ -286,7 +305,7 @@ export function construirInformeSede(input: {
   // Se muestra el nombre más largo con que aparece (el más completo).
   const nombreDe = new Map<string, string>();
   for (const g of operacionMes) {
-    const k = claveCorta(g.concepto);
+    const k = clave(g.concepto);
     provMes.set(k, (provMes.get(k) ?? 0) + g.propio);
     const largo = claveProveedor(g.concepto);
     if ((nombreDe.get(k) ?? "").length < largo.length) nombreDe.set(k, largo);

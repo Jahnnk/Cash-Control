@@ -80,13 +80,15 @@ type Props = {
   cifras: SeisCifras | null;
   /** Metas de venta del presupuesto, revisión semanal pendiente y cobros de Atelier. */
   extra: ResumenExtra;
+  /** Pestaña con la que abre (?pestana=equipo, p. ej. desde Reportes). */
+  pestanaInicial?: "resumen" | "equipo" | "gastos" | "kelly";
 };
 
 export function GrupoDashboardClient({
   selectedMonth, mesActual, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas,
-  atelierB2B, cuadreKelly, cifras, extra,
+  atelierB2B, cuadreKelly, cifras, extra, pestanaInicial = "resumen",
 }: Props) {
-  const [pestana, setPestana] = useState<"resumen" | "equipo" | "gastos" | "kelly">("resumen");
+  const [pestana, setPestana] = useState<"resumen" | "equipo" | "gastos" | "kelly">(pestanaInicial);
 
   const [y, m] = selectedMonth.split("-").map(Number);
   const periodo = `${MESES[m - 1]} ${y}`;
@@ -344,7 +346,7 @@ export function GrupoDashboardClient({
           {/* ¿Está todo el equipo al día con sus registros? */}
           <CumplimientoEquipo />
           {/* Los KPIs de la semana de cada sede */}
-          <GroupKpisSection showDeck={false} />
+          <GroupKpisSection />
         </div>
       )}
 
