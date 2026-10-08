@@ -107,15 +107,21 @@ function DetalleSede({ s }: { s: InformeGastosSede }) {
   const top3 = s.categorias.slice(0, 3).map((c) => c.categoria.toLowerCase()).join(", ");
   return (
     <div className="space-y-4">
+      {/* Lo que llama la atención: una lista compacta (UX, 8-oct-2026), no un muro de recuadros amarillos. */}
       {s.alertas.length > 0 && (
-        <ul className="space-y-2">
-          {s.alertas.map((a, i) => (
-            <li key={i} className="flex gap-2.5 rounded-xl border border-amber-200 bg-amber-50 px-3.5 py-2.5 text-sm text-amber-950">
-              <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5 text-amber-600" />
-              <div><div className="font-medium">{a.titulo}</div><div className="text-xs text-amber-900 mt-0.5">{a.detalle}</div></div>
-            </li>
-          ))}
-        </ul>
+        <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5">
+          <h4 className="flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wider text-gray-500">
+            <AlertTriangle className="w-3.5 h-3.5 text-amber-500" /> Lo que llama la atención · {s.alertas.length}
+          </h4>
+          <ul className="mt-1.5 divide-y divide-gray-100">
+            {s.alertas.map((a, i) => (
+              <li key={i} className="flex items-start gap-2.5 py-2 text-sm">
+                <span aria-hidden className="mt-1.5 w-1.5 h-1.5 rounded-full bg-amber-400 shrink-0" />
+                <span className="min-w-0"><span className="font-medium text-gray-900">{a.titulo}</span> <span className="text-gray-500">— {a.detalle}</span></span>
+              </li>
+            ))}
+          </ul>
+        </section>
       )}
 
       <SeccionDesplegable
