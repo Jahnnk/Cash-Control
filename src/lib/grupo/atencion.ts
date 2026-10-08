@@ -56,6 +56,7 @@ export const DIAS_COBROS = 8;
 /** Cuántos avisos se ven sin abrir «ver más». */
 export const VISIBLES = 4;
 
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
 const soles = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
 const fecha = (iso: string) => `${Number(iso.slice(8, 10))}/${iso.slice(5, 7)}`;
 
@@ -121,15 +122,14 @@ export function construirAtencion(e: EntradaAtencion): Atencion[] {
     out.push({ id: "excel", nivel: "medio", titulo: "Falta el Excel de Finanzas", detalle: e.excelPendiente, href: "#excel", accion: "Ver cargas" });
   }
 
-  // Las diferencias con el Excel: un solo aviso, con el total y quiénes.
+  // Las diferencias con el Excel: un solo aviso, contado en CARGAS (sede y mes), igual que la pestaña Excel.
   const conDiferencias = e.cuadres.filter((c) => c.alertas > 0);
   if (conDiferencias.length) {
-    const total = conDiferencias.reduce((t, c) => t + c.alertas, 0);
-    const sedes = [...new Set(conDiferencias.map((c) => c.sede))];
+    const n = conDiferencias.length;
     out.push({
       id: "cuadre", nivel: "medio",
-      titulo: `${total} ${total === 1 ? "diferencia" : "diferencias"} entre el sistema y el Excel`,
-      detalle: `${sedes.join(", ")}. Conviene aclararlas antes de confiar en el cierre.`,
+      titulo: `${n} ${n === 1 ? "carga del Excel" : "cargas del Excel"} con diferencias`,
+      detalle: `${conDiferencias.map((c) => `${c.sede} ${MESES[Number(c.mes.slice(5, 7)) - 1]}`).join(", ")}. Conviene aclararlas antes de confiar en el cierre.`,
       href: "#excel", accion: "Revisar",
     });
   }

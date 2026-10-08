@@ -1,13 +1,9 @@
 "use client";
 
 import { useState } from "react";
-import Link from "next/link";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
-import { DataTable } from "@/components/ui/DataTable";
-import { formatCurrency } from "@/lib/utils";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
-import { BreakevenBody } from "@/components/breakeven-card";
 import { GroupKpisSection } from "./group-kpis-section";
 import { AtelierB2BCard } from "./atelier-b2b-card";
 import type { AtelierB2BResumen } from "@/app/actions/atelier-b2b";
@@ -41,8 +37,8 @@ import type { ScopeCode } from "@/lib/business-theme";
  * repetía en dos lugares).
  *
  * Cabecera: dónde estamos, hasta cuándo hay datos (una pastilla) y "Subir
- * Excel de Kelly", siempre a mano. Pestañas: Resumen · Sedes y equipo ·
- * Finanzas · Excel de Kelly.
+ * Excel de Kelly", siempre a mano. Pestañas: Resumen · Equipo ·
+ * Gastos · Excel (8-oct-2026: «Finanzas» se quitó; su punto de equilibrio y su caja ya estaban en Reportes).
  *
  * La pantalla responde CUATRO preguntas en este orden, y nada más:
  *   1. ¿Cómo estamos?          → el hero, un número dominante.
@@ -90,7 +86,7 @@ export function GrupoDashboardClient({
   selectedMonth, mesActual, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas,
   atelierB2B, cuadreKelly, cifras, extra,
 }: Props) {
-  const [pestana, setPestana] = useState<"resumen" | "equipo" | "finanzas" | "gastos" | "kelly">("resumen");
+  const [pestana, setPestana] = useState<"resumen" | "equipo" | "gastos" | "kelly">("resumen");
 
   const [y, m] = selectedMonth.split("-").map(Number);
   const periodo = `${MESES[m - 1]} ${y}`;
@@ -273,8 +269,7 @@ export function GrupoDashboardClient({
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {([
             ["resumen", "Resumen"],
-            ["equipo", "Sedes y equipo"],
-            ["finanzas", "Finanzas"],
+            ["equipo", "Equipo"],
             ["gastos", "Gastos"],
             ["kelly", "Excel"],
           ] as const).map(([k, label]) => (
@@ -300,7 +295,7 @@ export function GrupoDashboardClient({
               periodo={periodo} enCurso={isCurrentMonth} dia={diaHoy} diasDelMes={diasDelMes}
               ventas={ventasMes} deltaPct={deltaGrupo} meta={metaGrupo} proyeccion={proyeccion}
               liquidez={liquidez ? liquidez.total : null} equilibrio={equilibrio} ganancia={ganancia}
-              flujo={cg?.caja.flujo ?? null} onLiquidez={() => setPestana("finanzas")}
+              flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion"
             />
             {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
           </div>
@@ -355,82 +350,11 @@ export function GrupoDashboardClient({
 
       {pestana === "gastos" && <InformeGastosGrupo mes={isCurrentMonth ? undefined : selectedMonth} />}
 
-      {pestana === "finanzas" && (
-        <div className="space-y-6">
-          {/* ¿Cuánto confiar en el punto de equilibrio? Lo que vale la clasificación. */}
-          <SelloClasificacionGrupo month={selectedMonth} />
-          {breakeven && (
-            <section className="space-y-3">
-              <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Punto de equilibrio · {periodo}</h2>
-              <div className="grid gap-5" style={{ gridTemplateColumns: "repeat(auto-fit, minmax(260px, 1fr))" }}>
-                {breakeven.sedes.map((s) => {
-                  const code = SEDE_CODE[s.businessId];
-                  return (
-                    <div key={s.businessId} className="bg-white rounded-2xl border border-gray-200/80 p-5">
-                      <Link href={code ? `/${code}/dashboard` : "#"} className="text-sm font-semibold text-gray-900 hover:text-primary transition-colors">
-                        {s.name}
-                      </Link>
-                      <div className="mt-3">
-                        <BreakevenBody r={s.result} isCurrent={breakeven.isCurrent} compact />
-                      </div>
-                    </div>
-                  );
-                })}
-                <div className="bg-white rounded-2xl border border-gray-200/80 p-5">
-                  <div className="text-sm font-semibold text-gray-900">Grupo Yayi&apos;s</div>
-                  <div className="mt-3">
-                    <BreakevenBody r={breakeven.grupo} isCurrent={breakeven.isCurrent} compact />
-                  </div>
-                </div>
-              </div>
-            </section>
-          )}
-
-          <section className="space-y-3">
-            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Caja del mes: lo que entró y salió</h2>
-            <DataTable
-              rowKey={(r) => r.code}
-              data={summaries}
-              columns={[
-                {
-                  key: "name", header: "Negocio",
-                  render: (r) => (
-                    <Link href={`/${r.code}/dashboard`} className="font-medium text-primary-light hover:underline">
-                      {r.name}
-                    </Link>
-                  ),
-                },
-                { key: "bankBalance", header: isCurrentMonth ? "Saldo BCP" : "Saldo BCP (hoy)", align: "right", render: (r) => formatCurrency(r.bankBalance) },
-                { key: "monthlyIncome", header: "Entró (caja)", align: "right", cellClassName: "text-primary-light", render: (r) => formatCurrency(r.monthlyIncome) },
-                { key: "monthlyExpenses", header: "Salió (caja)", align: "right", cellClassName: "text-red-600", render: (r) => formatCurrency(r.monthlyExpenses) },
-                {
-                  key: "margin", header: "Flujo (caja)", align: "right",
-                  render: (r) => (
-                    <span className={`font-semibold ${r.margin >= 0 ? "text-primary-light" : "text-red-600"}`}>
-                      {formatCurrency(r.margin)}
-                    </span>
-                  ),
-                },
-              ]}
-              footer={
-                <tr className="bg-gray-50 font-semibold">
-                  <td className="px-4 py-3">Total grupo</td>
-                  <td className="px-4 py-3 text-right">{formatCurrency(t.bankBalance)}</td>
-                  <td className="px-4 py-3 text-right text-primary-light">{formatCurrency(t.monthlyIncome)}</td>
-                  <td className="px-4 py-3 text-right text-red-600">{formatCurrency(t.monthlyExpenses)}</td>
-                  <td className={`px-4 py-3 text-right ${t.margin >= 0 ? "text-primary-light" : "text-red-600"}`}>
-                    {formatCurrency(t.margin)}
-                  </td>
-                </tr>
-              }
-            />
-          </section>
-        </div>
-      )}
-
       {pestana === "kelly" && (
         <div className="space-y-6">
           {frescura && <BandaFrescura frescura={frescura} />}
+          {/* ¿Cuánto confiar en la clasificación de los gastos del Excel? (venía de la pestaña Finanzas) */}
+          <SelloClasificacionGrupo month={selectedMonth} />
           <CuadreKellySeccion items={cuadreKelly} />
           <CargasKelly />
         </div>

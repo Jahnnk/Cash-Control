@@ -9,6 +9,7 @@
  */
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { Delta } from "./executive-hero";
 
 const soles = (n: number) => `S/${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
@@ -29,12 +30,13 @@ export type EstadoMesProps = {
   equilibrio: { texto: string; detalle: string; tono: "bien" | "ojo" | "mal" | "neutro" };
   ganancia: { valor: number | null; detalle: string };
   flujo: number | null;
-  onLiquidez?: () => void;
+  /** A dónde lleva tocar la liquidez (el detalle de banco y efectivo por sede). */
+  liquidezHref?: string;
 };
 
 const TONO = { bien: "text-emerald-700", ojo: "text-amber-700", mal: "text-red-700", neutro: "text-gray-900" };
 
-function Dato({ titulo, valor, detalle, tono = "neutro", onClick }: { titulo: string; valor: ReactNode; detalle: string; tono?: keyof typeof TONO; onClick?: () => void }) {
+function Dato({ titulo, valor, detalle, tono = "neutro", href }: { titulo: string; valor: ReactNode; detalle: string; tono?: keyof typeof TONO; href?: string }) {
   const cuerpo = (
     <>
       <div className="text-[10px] sm:text-[11px] font-medium uppercase tracking-wider text-gray-500">{titulo}</div>
@@ -42,8 +44,8 @@ function Dato({ titulo, valor, detalle, tono = "neutro", onClick }: { titulo: st
       <div className="text-[11px] sm:text-xs text-gray-500 mt-1 leading-snug">{detalle}</div>
     </>
   );
-  return onClick
-    ? <button type="button" onClick={onClick} className="text-left min-w-0 rounded-lg -m-2 p-2 hover:bg-gray-50 transition-colors">{cuerpo}</button>
+  return href
+    ? <Link href={href} className="block text-left min-w-0 rounded-lg -m-2 p-2 hover:bg-gray-50 transition-colors">{cuerpo}</Link>
     : <div className="min-w-0">{cuerpo}</div>;
 }
 
@@ -89,7 +91,7 @@ export function EstadoMes(p: EstadoMesProps) {
 
       <div className="mt-6 pt-5 border-t border-gray-100 grid grid-cols-3 gap-3 sm:gap-5">
         {p.enCurso ? (
-          <Dato titulo="Liquidez" valor={p.liquidez !== null ? soles(p.liquidez) : "—"} detalle="Banco + caja hoy, las 3 sedes" onClick={p.onLiquidez} />
+          <Dato titulo="Liquidez" valor={p.liquidez !== null ? soles(p.liquidez) : "—"} detalle="Banco + caja hoy, las 3 sedes" href={p.liquidezHref} />
         ) : (
           <Dato titulo="Caja" valor={p.flujo !== null ? `${p.flujo < 0 ? "−" : ""}${soles(p.flujo)}` : "—"} tono={p.flujo !== null && p.flujo < 0 ? "mal" : "neutro"} detalle="Lo que entró menos lo que salió" />
         )}

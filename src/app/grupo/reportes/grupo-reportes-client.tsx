@@ -94,14 +94,6 @@ export function GrupoReportesClient({ selectedMonth, mesActual, isCurrentMonth, 
         ]}
       />
 
-      <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 text-sm text-amber-900">
-        <p className="font-medium mb-1">Notas sobre la consolidación</p>
-        <ul className="list-disc list-inside text-xs space-y-0.5 text-amber-800">
-          <li>Los gastos compartidos (Atelier ↔ Fonavi) se cuentan SOLO una vez (parte Atelier).</li>
-          <li>Reembolsos Fonavi se excluyen de los ingresos operativos del grupo.</li>
-          <li>Mientras Fonavi y Centro estén vacíos, los totales reflejan solo Atelier.</li>
-        </ul>
-      </div>
       {showEirs && (
         <GenerateReportModal
           isAtelier={true}

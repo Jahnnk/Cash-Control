@@ -19,8 +19,8 @@ describe("necesita tu atención", () => {
     const a = construirAtencion(base);
     const cuadre = a.filter((x) => x.id === "cuadre");
     expect(cuadre).toHaveLength(1);
-    expect(cuadre[0].titulo).toBe("4 diferencias entre el sistema y el Excel");
-    expect(cuadre[0].detalle).toContain("Fonavi, Centro, Atelier");
+    expect(cuadre[0].titulo).toBe("3 cargas del Excel con diferencias");
+    expect(cuadre[0].detalle).toContain("Fonavi octubre, Centro setiembre, Atelier setiembre");
   });
   it("no avisa caídas con menos de una semana comparada ni faltas de un solo día", () => {
     const a = construirAtencion(base);
