@@ -112,6 +112,23 @@ export type ProductoEnSede = {
 
 export type Veredicto = "sacar" | "preparar" | "revisar" | "observar" | "confirmar";
 
+export type OrigenCarta = "tienda" | "atelier" | "reventa" | "por-definir";
+
+/**
+ * Lo que cuesta MANTENER un producto en la carta, más allá de cuánto vende (8-oct-2026): lo que
+ * se prepara en tienda usa tiempo de barra o cocina; lo que hace Atelier, un turno de producción;
+ * una reventa solo ocupa vitrina. Cada insumo propio (que nada más usa) suma: se vence o se oxida
+ * esperando una venta.
+ */
+export function esfuerzoDe(carta: Pick<CostoCarta, "origen" | "insumos"> | null): { origen: OrigenCarta | null; exclusivos: string[]; esfuerzo: number } {
+  const o = (carta?.origen ?? "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+  const origen: OrigenCarta | null = !carta?.origen ? null
+    : o.startsWith("cafeter") ? "tienda" : o.startsWith("atelier") ? "atelier" : o.startsWith("extern") ? "reventa" : "por-definir";
+  const exclusivos = (carta?.insumos ?? []).filter((i) => i.exclusivo).map((i) => i.nombre);
+  const base = origen === "tienda" ? 3 : origen === "atelier" ? 2 : origen === "reventa" ? 0 : 1;
+  return { origen, exclusivos, esfuerzo: base + Math.min(exclusivos.length, 2) * 0.5 };
+}
+
 export type Candidato = {
   clave: string;
   nombre: string;
@@ -127,6 +144,12 @@ export type Candidato = {
   /** El que mejor le va en su familia, como referencia para el reemplazo. */
   referencia: { nombre: string; gananciaDia: number | null; ventaDia: number } | null;
   costoEnlazado: "manual" | "nombre" | null;
+  /** De dónde sale, según el Excel de pricing: se prepara en tienda, lo hace Atelier o es reventa. */
+  origen: OrigenCarta | null;
+  /** Insumos que solo usa este producto (sin empaques): sacarlo libera esa compra y esa merma. */
+  exclusivos: string[];
+  /** Cuánto cuesta mantenerlo en la carta, de 0 (reventa) a 4 (tienda + insumos propios). */
+  esfuerzo: number;
   /** Lo había archivado y volvió a venderse después. */
   volvioAVenderse: Archivado | null;
   /** Si se saca: venta y ganancia de un mes entre las sedes (ganancia null si falta el costo en alguna). */
@@ -445,6 +468,7 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
       dejoDeVender: ultimosDos.length === 2 && ultimosDos.every((x) => x.unidades === 0) && porMes.some((x) => x.unidades > 0),
       acompanamiento: protegidos.has(clave) || ES_COMPLEMENTO.test(palabras(a.nombre).join(" ") + " "),
       enlace: enlace?.como ?? null,
+      carta: enlace?.item ?? null,
     };
   });
 
@@ -457,7 +481,7 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
   const ventaTipica = mediana(ventas);
   const gananciaTipica = mediana(ganancias);
 
-  const evaluados = new Map<string, ProductoEnSede & { familia: Familia; nombre: string; enlace: "manual" | "nombre" | null }>();
+  const evaluados = new Map<string, ProductoEnSede & { familia: Familia; nombre: string; enlace: "manual" | "nombre" | null; carta: CostoCarta | null }>();
   for (const b of base) {
     const percentilVenta = b.ventaDia > 0 ? percentil(b.ventaDia, ventas) : 0;
     const percentilGanancia = b.gananciaDia !== null && b.ventaDia > 0 ? percentil(b.gananciaDia, ganancias) : null;
@@ -484,7 +508,7 @@ function evaluarSede(sede: SedeCandidatos, costos: CostoCarta[], vinculos: Map<s
       : puntos >= UMBRAL_OBSERVAR ? "observar" : "bien";
 
     evaluados.set(b.clave, {
-      businessId: sede.businessId, sede: sede.sede, nombre: b.a.nombre, familia: b.a.familia, enlace: b.enlace,
+      businessId: sede.businessId, sede: sede.sede, nombre: b.a.nombre, familia: b.a.familia, enlace: b.enlace, carta: b.carta,
       porMes: b.porMes.map((x) => ({ ...x, ventaDia: r2(x.ventaDia), unidadesDia: Math.round(x.unidadesDia * 100) / 100 })),
       tendencia: calcularTendencia(b.porMes.map((x) => ({ month: x.month, completo: x.completo, porDia: x.unidadesDia })), cartaSerie),
       prueba: b.prueba,
@@ -619,9 +643,10 @@ export function armarCandidatos(
       razon: veredicto === "confirmar" ? "No vendió nada en los dos últimos meses y antes sí." : razonDe(enSedes),
       sedeRevisar,
       // eslint-disable-next-line @typescript-eslint/no-unused-vars -- se quitan los campos internos
-      sedes: enSedes.map(({ nombre: _n, familia: _f, enlace: _e, ...x }) => x),
+      sedes: enSedes.map(({ nombre: _n, familia: _f, enlace: _e, carta: _c, ...x }) => x),
       referencia: lider && lider.nombre !== primero.nombre ? { nombre: lider.nombre, gananciaDia: lider.gananciaDia, ventaDia: lider.ventaDia } : null,
       costoEnlazado: enSedes.find((x) => x.enlace)?.enlace ?? null,
+      ...esfuerzoDe(enSedes.find((x) => x.carta)?.carta ?? null),
       volvioAVenderse: archivo.get(clave) ?? null,
       impactoMes: {
         venta: Math.round(enSedes.reduce((s, x) => s + x.ventaDia, 0) * 30),
@@ -635,7 +660,11 @@ export function armarCandidatos(
   }
 
   const orden: Record<Veredicto, number> = { sacar: 0, preparar: 1, revisar: 2, confirmar: 3, observar: 4 };
-  candidatos.sort((a, b) => orden[a.veredicto] - orden[b.veredicto] || b.puntos - a.puntos);
+  // En «Sacar de carta», primero lo que más cuesta mantener (pedido de Jahnn, 8-oct-2026): lo que
+  // se prepara en tienda con insumos propios antes que una reventa que se va sola con el stock.
+  candidatos.sort((a, b) => orden[a.veredicto] - orden[b.veredicto]
+    || (a.veredicto === "sacar" ? b.esfuerzo - a.esfuerzo : 0)
+    || b.puntos - a.puntos);
 
   // Cuánto de lo analizado tiene costo.
   let total = 0, conCosto = 0;

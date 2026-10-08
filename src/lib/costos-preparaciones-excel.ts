@@ -9,7 +9,7 @@
 import * as XLSX from "xlsx";
 import { claveNombre, type CostoPreparacion, type DetalleReceta, type Ingrediente, type LecturaPricing, type UnidadBase } from "@/lib/costos-preparaciones";
 import { costoDeReceta } from "@/lib/recetas";
-import type { CostoCarta } from "@/lib/productos/costos-carta";
+import { palabras, type CostoCarta, type InsumoCarta } from "@/lib/productos/costos-carta";
 
 const HOJA_PRICING = "PRICING";
 const HOJA_SUBRECETAS = "ATE · Sub-Recetas";
@@ -80,7 +80,7 @@ function leerCarta(rows: Fila[], avisos: string[]): CostoCarta[] {
   const cab = rows[h].map((c) => (typeof c === "string" ? c.trim() : ""));
   const col = (nombre: string) => cab.findIndex((c) => c === nombre);
   const cId = col("ID"), cCat = col("Categoría"), cNom = col("Producto maestro"), cCarta = col("Nombre en carta");
-  const cCosto = col("Costo para cafetería"), cPrecio = col("Precio público carta"), cVig = col("Vigente");
+  const cCosto = col("Costo para cafetería"), cPrecio = col("Precio público carta"), cVig = col("Vigente"), cOri = col("Origen");
   console.log(`[costos-carta] ${HOJA_PRICING}: header=${h} costo=${cCosto} precio=${cPrecio} carta=${cCarta}`);
   if (cCosto === -1 || cNom === -1) {
     avisos.push(`La hoja ${HOJA_PRICING} no tiene la columna "Costo para cafetería": la rentabilidad de las cafeterías no se actualiza.`);
@@ -104,6 +104,7 @@ function leerCarta(rows: Fila[], avisos: string[]): CostoCarta[] {
       categoria: cCat !== -1 && typeof r[cCat] === "string" ? (r[cCat] as string).trim() : null,
       costo,
       precio: precio && precio > 0 ? precio : null,
+      origen: cOri !== -1 && typeof r[cOri] === "string" ? (r[cOri] as string).trim() : null,
     });
   }
   // Dos productos con el mismo "Nombre en carta" confunden el enlace con Byte
@@ -305,6 +306,53 @@ function leerInsumos(rows: Fila[], avisos: string[]): { items: CostoPreparacion[
 /** Lee el Excel maestro de pricing y arma la lista de costos de Atelier. */
 /** Hojas con recetas de productos (los bloques "▼" que PRICING costea). */
 const HOJAS_RECETAS = ["ATE · Empanadas", "ATE · Pastelería", "ATE · Panadería", "ATE · Cuchareables", "ATE · Croissant"];
+/** Recetas que se preparan en las cafeterías (mismo formato de bloques "▼"). */
+const HOJAS_CAFETERIA = ["CAF · Sánguches", "CAF · Bebidas", "CAF · Desayunos", "CAF · Sub-Recetas", "CAF · Adicional GRAND"];
+
+/** Palabras de tamaño o presentación: «Cake de Chocolate - Porción» y «- Torta Entera» son la misma línea. */
+const TAMANO = /^(grand|oz|porcion|entero|entera|mini|chico|grande|mediano|kg|manga|\d+)$/;
+const lineaDe = (nombre: string) => palabras(nombre).filter((w) => !TAMANO.test(w)).join(" ");
+/** Los empaques (vasos, tapas, bolsas) los comparte todo: no cuentan como insumo exclusivo. */
+const esEmpaque = (sku: string | null) => !!sku && /^PK/i.test(sku.trim());
+
+/**
+ * Los insumos de cada producto de la carta y cuáles usa SOLO él (pedido de Jahnn, 8-oct-2026:
+ * sacar de la carta un producto con insumos propios ahorra más que uno que comparte todo).
+ * Un insumo es exclusivo si una sola línea de producto del Excel lo usa (las presentaciones de
+ * un mismo producto cuentan como una; una sub-receta cuenta como un usuario más).
+ */
+export function insumosDeCarta(carta: CostoCarta[], atelier: Bloque[], cafeteria: Bloque[]): void {
+  const todos = [...atelier, ...cafeteria].filter((b) => !b.archivado && b.ingredientes.length > 0);
+  const clave = (g: Bloque["ingredientes"][number]) => (g.sku?.trim() ? g.sku.trim().toUpperCase() : `N:${nombreSinKg(g.nombre)}`);
+  const usuarios = new Map<string, Set<string>>();
+  for (const b of todos) {
+    const linea = lineaDe(b.nombre);
+    for (const g of b.ingredientes) {
+      if (esEmpaque(g.sku)) continue;
+      const k = clave(g);
+      usuarios.set(k, (usuarios.get(k) ?? new Set()).add(linea));
+    }
+  }
+  const mismo = (a: string, b: string) => nombreSinKg(a) === nombreSinKg(b) || palabras(a).sort().join(" ") === palabras(b).sort().join(" ");
+  for (const c of carta) {
+    if (c.origen === "Externo") { c.insumos = []; continue; }
+    // Lo que produce Atelier, primero en sus hojas; lo de la cafetería, en las suyas.
+    const orden = c.origen === "Atelier" ? [...atelier, ...cafeteria] : [...cafeteria, ...atelier];
+    const vivos = orden.filter((x) => !x.archivado && x.ingredientes.length > 0);
+    const nombres = [c.nombre, ...(c.nombreCarta ? [c.nombreCarta] : [])];
+    // Primero el mismo nombre; si no, la misma línea sin tamaños («Focaccia Clásica 1/4» = «Focaccia Clásica»).
+    const b = vivos.find((x) => nombres.some((n) => mismo(x.nombre, n)))
+      ?? vivos.find((x) => nombres.some((n) => lineaDe(n) !== "" && lineaDe(x.nombre) === lineaDe(n)));
+    if (!b) { c.insumos = null; continue; }
+    const vistos = new Set<string>();
+    c.insumos = b.ingredientes.filter((g) => !esEmpaque(g.sku)).flatMap((g): InsumoCarta[] => {
+      const k = clave(g);
+      if (vistos.has(k)) return [];
+      vistos.add(k);
+      return [{ sku: g.sku?.trim() || null, nombre: g.nombre, exclusivo: (usuarios.get(k)?.size ?? 0) <= 1 }];
+    });
+  }
+}
 
 export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
   const wb = XLSX.read(data, { type: "array" });
@@ -421,5 +469,9 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
     i.detalle = detalle;
   }
   unicos.push(...extra.filter((e) => !unicos.some((u) => u.ref === e.ref)));
+
+  // Insumos de cada producto de la carta y cuáles son solo suyos (Candidatos a reemplazo).
+  const deCafeteria = HOJAS_CAFETERIA.flatMap((h) => { const f = filas(wb, h); return f ? leerBloques(f, h, primeraFila(wb, h)) : []; });
+  insumosDeCarta(carta, [...subRecetas.bloques, ...deProductos], deCafeteria);
   return { items: unicos, avisos, sinPricing, carta };
 }

@@ -489,7 +489,10 @@ async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandi
   const lista = mesesAntes(hastaMes, Math.min(12, Math.max(6, (yh - y0) * 12 + (mh - m0) + 1)));
   const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
   const [costos, vinculos, acompanamientos, archivos, decisiones, planes, lanzamientos] = await Promise.all([
-    (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
+    (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>)
+      // Antes de la migración de origen e insumos (8-oct-2026): sin esas dos columnas.
+      .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>))
+      .catch(() => [] as CostoCarta[]),
     (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
     (sql`SELECT DISTINCT regexp_replace(name, '\\s*\\((Fonavi|Centro)\\)\\s*$', '') AS name FROM products WHERE es_acompanamiento = true` as unknown as Promise<{ name: string }[]>).catch(() => []),
     (sql`
@@ -609,7 +612,10 @@ export async function getRentabilidadProductos(mes: string, businessId: number):
   if (!sede) return { ok: false, error: "Solo Fonavi y Centro tienen carta con precio al público." };
   try {
     const [costos, vinculos, mesDatos] = await Promise.all([
-      (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>).catch(() => [] as CostoCarta[]),
+      (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>)
+      // Antes de la migración de origen e insumos (8-oct-2026): sin esas dos columnas.
+      .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>))
+      .catch(() => [] as CostoCarta[]),
       (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
       filasPara(sede.id, mes),
     ]);

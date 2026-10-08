@@ -95,12 +95,14 @@ async function guardarCarta(carta: CostoCarta[], archivo: string): Promise<void>
     await sql.transaction([
       sql`DELETE FROM costos_carta`,
       sql`
-        INSERT INTO costos_carta (ref, nombre, nombre_carta, categoria, costo, precio, archivo)
-        SELECT t.ref, t.nombre, t.nombre_carta, t.categoria, t.costo, t.precio, ${archivo}
+        INSERT INTO costos_carta (ref, nombre, nombre_carta, categoria, costo, precio, archivo, origen, insumos)
+        SELECT t.ref, t.nombre, t.nombre_carta, t.categoria, t.costo, t.precio, ${archivo}, t.origen, t.insumos::jsonb
         FROM unnest(
           ${ok.map((c) => c.ref.trim())}::text[], ${ok.map((c) => c.nombre.trim())}::text[], ${ok.map((c) => c.nombreCarta ?? null)}::text[],
-          ${ok.map((c) => c.categoria ?? null)}::text[], ${ok.map((c) => c.costo)}::numeric[], ${ok.map((c) => (c.precio && Number.isFinite(c.precio) ? c.precio : null))}::numeric[]
-        ) AS t(ref, nombre, nombre_carta, categoria, costo, precio)
+          ${ok.map((c) => c.categoria ?? null)}::text[], ${ok.map((c) => c.costo)}::numeric[], ${ok.map((c) => (c.precio && Number.isFinite(c.precio) ? c.precio : null))}::numeric[],
+          ${ok.map((c) => (typeof c.origen === "string" ? c.origen.slice(0, 40) : null))}::text[],
+          ${ok.map((c) => (Array.isArray(c.insumos) ? JSON.stringify(c.insumos.slice(0, 60).map((i) => ({ sku: i.sku ?? null, nombre: String(i.nombre).slice(0, 120), exclusivo: !!i.exclusivo }))) : null))}::text[]
+        ) AS t(ref, nombre, nombre_carta, categoria, costo, precio, origen, insumos)
         ON CONFLICT (ref) DO NOTHING`,
     ]);
   } catch (e) {

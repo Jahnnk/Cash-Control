@@ -24,7 +24,16 @@ export type CostoCarta = {
   costo: number;
   /** Precio de carta; null si no se vende al público. */
   precio: number | null;
+  /**
+   * De dónde sale (columna «Origen» de PRICING): «Cafetería» (se prepara en tienda), «Atelier»
+   * (lo produce Atelier), «Externo» (reventa, se compra hecho) o «Por definir» (8-oct-2026).
+   */
+  origen?: string | null;
+  /** Insumos de su receta (sin empaques); `exclusivo` = ningún otro producto del Excel lo usa. */
+  insumos?: InsumoCarta[] | null;
 };
+
+export type InsumoCarta = { sku: string | null; nombre: string; exclusivo: boolean };
 
 const RELLENO = new Set([
   "de", "del", "con", "y", "la", "el", "los", "las", "al", "a", "en", "x",

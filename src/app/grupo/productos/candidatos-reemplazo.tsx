@@ -25,7 +25,7 @@ import { Barra, Pastilla, PuntoFamilia, SeccionDesplegable, fechaCorta, nombreMe
 import { useToast } from "@/components/toast-provider";
 
 const VEREDICTOS: Record<Veredicto, { titulo: string; corto: string; tono: "rojo" | "ambar" | "azul" | "gris"; barra: string; ayuda: string }> = {
-  sacar: { titulo: "Sacar de carta", corto: "Sacar", tono: "rojo", barra: "#C2412D", ayuda: "Flojo en las dos sedes" },
+  sacar: { titulo: "Sacar de carta", corto: "Sacar", tono: "rojo", barra: "#C2412D", ayuda: "Flojo en las dos sedes · primero lo que más cuesta mantener" },
   preparar: { titulo: "Preparar reemplazo", corto: "Preparar", tono: "ambar", barra: "#C8893B", ayuda: "Flojo en una, en duda en la otra" },
   revisar: { titulo: "Revisar en una sede", corto: "Revisar", tono: "azul", barra: "#3F8DAE", ayuda: "Mal en una, bien en la otra" },
   confirmar: { titulo: "¿Ya salieron?", corto: "Confirmar", tono: "gris", barra: "#8A948F", ayuda: "Dos meses sin ventas" },
@@ -247,6 +247,11 @@ export function CandidatosReemplazo({ month }: { month: string }) {
   );
 }
 
+/** De dónde sale cada producto (columna «Origen» del Excel de pricing). */
+const ORIGEN_TEXTO: Record<NonNullable<Candidato["origen"]>, string> = {
+  tienda: "se prepara en tienda", atelier: "lo hace Atelier", reventa: "reventa (se compra hecho)", "por-definir": "origen por definir",
+};
+
 function Tarjeta({ c, carta, onVinculado, onDecidido, archivar, plan }: {
   c: Candidato;
   plan: PlanConResultado | null;
@@ -265,10 +270,21 @@ function Tarjeta({ c, carta, onVinculado, onDecidido, archivar, plan }: {
             <span className="mt-1.5"><PuntoFamilia familia={c.familia} /></span>
             <span className="break-words">{c.nombre}</span>
           </h4>
-          <p className="text-[11px] text-gray-500 mt-0.5 pl-[18px]">{c.familia}</p>
+          <p className="text-[11px] text-gray-500 mt-0.5 pl-[18px]">
+            {c.familia}
+            {c.origen && <> · <span className="text-gray-700">{ORIGEN_TEXTO[c.origen]}</span></>}
+          </p>
         </div>
         <Pastilla tono={meta.tono}>{meta.corto}</Pastilla>
       </header>
+
+      {/* Cuánto cuesta mantenerlo, además de cuánto vende (8-oct-2026). */}
+      {c.exclusivos.length > 0 && (
+        <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5">
+          Usa {c.exclusivos.length === 1 ? "un insumo" : `${c.exclusivos.length} insumos`} que nada más en la carta usa: <b>{c.exclusivos.slice(0, 3).join(", ")}</b>
+          {c.exclusivos.length > 3 ? ` y ${c.exclusivos.length - 3} más` : ""}. Sacarlo libera esa compra y su merma.
+        </p>
+      )}
 
       <div className="flex items-center gap-3">
         <div className="flex-1"><Barra pct={c.puntos} color={meta.barra} alto="h-2" /></div>
