@@ -7,7 +7,7 @@
  * libro. Cálculo: lib/equilibrio.ts · datos: getEquilibrioSede (actions/breakeven.ts).
  */
 
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Loader2 } from "lucide-react";
 import { getEquilibrioSede, type EquilibrioSede } from "@/app/actions/breakeven";
 import { analizarEquilibrio, curvaEquilibrio, simular, ESCENARIO_BASE, type AnalisisEquilibrio, type BaseEquilibrio, type CurvaEquilibrio, type Escenario } from "@/lib/equilibrio";
@@ -103,9 +103,9 @@ function Grafica({ c, d, a }: { c: CurvaEquilibrio; d: EquilibrioSede; a: Analis
         <span className="inline-flex items-center gap-1.5"><span className="w-4 h-0.5 rounded" style={{ backgroundColor: COL.costos }} />Costos totales</span>
         <span className="inline-flex items-center gap-1.5"><svg width="16" height="4" aria-hidden><line x1="0" y1="2" x2="16" y2="2" stroke={COL.fijos} strokeWidth="2" strokeDasharray="4 3" /></svg>Costos fijos</span>
       </div>
-      <div className="h-5 text-xs tabular-nums text-gray-700" aria-live="polite">
+      <div className="min-h-5 text-xs tabular-nums text-gray-700 mb-1" aria-live="polite">
         {h ? <>Con {etX(h.x)} {unidad === "soles" ? "vendidos" : unidad}: ingresos {soles(h.ingresos)} · costos {soles(h.costos)} · <b className={h.ingresos - h.costos >= 0 ? "text-emerald-700" : "text-red-700"}>{h.ingresos - h.costos >= 0 ? "gana" : "pierde"} {soles(h.ingresos - h.costos)}</b></>
-          : <span className="text-gray-400">Pasa el mouse por la gráfica para ver cuánto se gana o se pierde con cada nivel de ventas.</span>}
+          : <span className="text-gray-400">Pasa el dedo o el mouse por la gráfica: cuánto se gana o se pierde con cada nivel de ventas.</span>}
       </div>
       <div className="overflow-x-auto">
         <svg viewBox={`0 0 ${W} ${H}`} className="w-full min-w-[560px]" role="img" onMouseLeave={() => setHover(null)}
@@ -299,6 +299,18 @@ function Historial({ d }: { d: EquilibrioSede }) {
   );
 }
 
+function Plegable({ titulo, children }: { titulo: string; children: ReactNode }) {
+  return (
+    <details className="group py-3">
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-gray-900">
+        {titulo}
+        <span className="text-xs font-medium text-primary"><span className="group-open:hidden">Ver</span><span className="hidden group-open:inline">Ocultar</span></span>
+      </summary>
+      <div className="mt-3">{children}</div>
+    </details>
+  );
+}
+
 // ── La sección ──────────────────────────────────────────────────────────
 export function PuntoEquilibrio({ mes, periodo }: { mes: string; periodo: string }) {
   const [datos, setDatos] = useState<Record<number, EquilibrioSede | null> | null>(null);
@@ -339,8 +351,8 @@ export function VistaPuntoEquilibrio({ datos, periodo, abiertaAlInicio = false, 
   return (
     <SeccionDesplegable
       abiertaAlInicio={abiertaAlInicio}
-      titulo={`Punto de equilibrio · ${periodo}`}
-      subtitulo="El mínimo que cada sede tiene que vender en el mes para no perder plata. Por encima de ese piso, cada venta deja ganancia."
+      titulo="Punto de equilibrio"
+      subtitulo={`Lo mínimo que cada sede tiene que vender en ${periodo.split(" ")[0]} para no perder plata.`}
       resumen={resumen}
     >
       <div className="space-y-5">
@@ -354,15 +366,10 @@ export function VistaPuntoEquilibrio({ datos, periodo, abiertaAlInicio = false, 
               <Lectura d={d} a={a} />
               <Cifras d={d} a={a} />
               {c && <Grafica c={c} d={d} a={a} />}
-              <div className="grid gap-4 xl:grid-cols-2 items-start">
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold text-gray-900">Cómo se calcula, con los números de {d.sede}</h4>
-                  <ComoSeCalcula d={d} a={a} b={b} />
-                </div>
-                <div className="space-y-2">
-                  <h4 className="text-sm font-semibold text-gray-900">Mes a mes</h4>
-                  <Historial d={d} />
-                </div>
+              {/* Lo de consulta, a un toque: la cuenta del libro y el historial. */}
+              <div className="divide-y divide-gray-100 border-y border-gray-100">
+                <Plegable titulo={`Cómo se calcula, con los números de ${d.sede}`}><ComoSeCalcula d={d} a={a} b={b} /></Plegable>
+                {d.historial.length > 0 && <Plegable titulo="Mes a mes"><Historial d={d} /></Plegable>}
               </div>
               <Simulador key={`${d.businessId}-${d.mes}`} d={d} b={b} />
               {d.avisos.length > 0 && <ul className="space-y-1 text-[11px] text-gray-500">{d.avisos.map((x) => <li key={x}>· {x}</li>)}</ul>}
