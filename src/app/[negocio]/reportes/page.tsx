@@ -4,27 +4,22 @@ import { Suspense, useState } from "react";
 import { useSearchParams, useParams } from "next/navigation";
 import { Download, Sparkles } from "lucide-react";
 import { GenerateReportModal } from "./generate-report-modal";
-import { WeeklyReport } from "./weekly-report";
 import { MonthlyReport } from "./monthly-report";
 import { DailyMovementsReport } from "./daily-movements-report";
-import { ReconciliationSection } from "./reconciliation-section";
-import { BcpReconciliationSection } from "./bcp-reconciliation-section";
 import { ExportModal } from "./export-modal";
 
-type Tab = "semanal" | "mensual" | "movimientos" | "cuadre-bcp" | "conciliacion";
-
-const VALID_TABS: Tab[] = ["semanal", "mensual", "movimientos", "cuadre-bcp", "conciliacion"];
+/**
+ * Reportes de una sede (UX, 8-oct-2026, decisión de Jahnn: «dejar solo lo vivo»). Quedan dos
+ * pestañas: «El mes» y «Movimientos». Se ocultaron Semanal, Cuadre BCP y Cuadre Byte ↔ banco:
+ * dependían del cierre diario de Byte y del saldo del banco anotados a mano, que nadie llena
+ * desde agosto (todo entra con el Excel). El equilibrio y el flujo viven en Grupo → Reportes.
+ */
+type Tab = "mensual" | "movimientos";
 
 function ReportesContent() {
   const searchParams = useSearchParams();
   const rawTab = searchParams.get("tab");
-  // Redirecciones suaves para links viejos:
-  //   - antigüedad → conciliacion (Ola 1)
-  //   - ultimos7   → semanal (Ola 3, ahora con edit inline en filas <7 días)
-  const initialTab: Tab =
-    rawTab === "antigüedad" || rawTab === "antiguedad" || rawTab === "ultimos7"
-      ? rawTab === "ultimos7" ? "semanal" : "conciliacion"
-      : (VALID_TABS.includes(rawTab as Tab) ? (rawTab as Tab) : "movimientos");
+  const initialTab: Tab = rawTab === "movimientos" ? "movimientos" : "mensual";
   const [activeTab, setActiveTab] = useState<Tab>(initialTab);
   const [showExport, setShowExport] = useState(false);
   const [showEirs, setShowEirs] = useState(false);
@@ -33,23 +28,15 @@ function ReportesContent() {
   const activeUnitId = negocio === "fonavi" ? 2 : negocio === "centro" ? 3 : 1;
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "semanal", label: "Semanal" },
-    { key: "mensual", label: "Mensual" },
-    { key: "movimientos", label: "Movimientos diarios" },
-    // Dos cuadres distintos, a propósito: "Cuadre BCP" verifica el extracto
-    // del banco contra lo registrado (auditoría de las socias, ago-2026);
-    // "Cuadre Byte ↔ banco" verifica que las ventas del POS lleguen al banco.
-    { key: "cuadre-bcp", label: "Cuadre BCP" },
-    // Slug interno "conciliacion" intacto (deep-links del Dashboard);
-    // solo cambia la etiqueta visible (Fase B — naming).
-    { key: "conciliacion", label: "Cuadre Byte ↔ banco" },
+    { key: "mensual", label: "El mes" },
+    { key: "movimientos", label: "Movimientos" },
   ];
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold text-gray-900">Reportes</h1>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <button
             onClick={() => setShowEirs(true)}
             className="bg-primary text-white px-4 py-2 rounded-lg hover:bg-primary-light flex items-center gap-2 text-sm font-medium"
@@ -91,11 +78,8 @@ function ReportesContent() {
         ))}
       </div>
 
-      {activeTab === "semanal" && <WeeklyReport />}
       {activeTab === "mensual" && <MonthlyReport />}
       {activeTab === "movimientos" && <DailyMovementsReport />}
-      {activeTab === "cuadre-bcp" && <BcpReconciliationSection />}
-      {activeTab === "conciliacion" && <ReconciliationSection />}
     </div>
   );
 }

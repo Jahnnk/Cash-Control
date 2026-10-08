@@ -338,7 +338,7 @@ export function buildInsights(f: BusinessFacts): Insight[] {
         ? "Suele ser un ingreso registrado de más o un egreso que falta registrar."
         : "Suele ser un ingreso que falta registrar o un egreso duplicado.",
       consequence: "Mientras no cuadre, las demás cifras del tablero heredan este error.",
-      action: { label: "Investigar el cuadre", href: "reportes?tab=conciliacion" },
+      action: { label: "Revisar el cuadre en Movimientos", href: "reportes?tab=movimientos" },
       benefit: `Recuperas confianza total en tus cifras (hoy hay ${fmtS(Math.abs(d))} sin explicar).`,
       inactionCost: "Cierras el mes con información financiera inconsistente y cada decisión hereda el error.",
     });
