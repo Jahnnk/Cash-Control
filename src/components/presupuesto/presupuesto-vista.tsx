@@ -128,7 +128,7 @@ function Arbol({ empresa, sedes, avance, sedeFija }: {
       <table className="w-full sm:min-w-[720px] text-sm">
         <thead>
           <tr className="text-[11px] uppercase tracking-wide text-gray-500">
-            <th className="text-left font-medium py-2 pl-2"><span className="hidden sm:inline">Empresa → sede → área → categoría</span></th>
+            <th className="text-left font-medium py-2 pl-2"><span className="hidden sm:inline">{sedeFija ? "Sede → área → categoría" : "Empresa → sede → área → categoría"}</span></th>
             <th className="hidden sm:table-cell text-right font-medium py-2 px-3">Presupuestado</th>
             <th className="text-right font-medium py-2 px-2 sm:px-3">Real</th>
             <th className="hidden sm:table-cell text-right font-medium py-2 px-3">{avance !== null ? "Queda" : "Variación"}</th>
@@ -257,7 +257,9 @@ export function Contenido({ datos, sedeFija, onIrAMes, onAbrirEditor, editor }: 
   }, ctx)), [datos]); // eslint-disable-line react-hooks/exhaustive-deps
   const empresa = useMemo(() => armarEmpresa(sedes, ctx), [sedes]); // eslint-disable-line react-hooks/exhaustive-deps
   const total = sedeFija ? sedes[0] : empresa;
-  const desvios = useMemo(() => mayoresDesvios(sedes), [sedes]);
+  // Un mes SIN presupuesto no tiene «fuera del plan»: todo saldría como «sin presupuestar» y la
+  // lista no diría nada (Atelier setiembre). Solo se miran las sedes que tienen plan (8-oct-2026).
+  const desvios = useMemo(() => mayoresDesvios(sedes.filter((s, i) => datos.sedes[i]?.cabecera)), [sedes, datos.sedes]);
   const interno = empresa.areas.find((a) => a.area.id === "produccion")?.categorias.find((c) => c.categoria === "PRODUCTOS ATELIER")?.real ?? 0;
   const avance = datos.enCurso ? datos.avanceMes : null;
   const sinPlan = datos.sedes.filter((s) => !s.lineas.length);

@@ -10,6 +10,7 @@ import { ReservaMinimaAdmin } from "./reserva-admin";
 export default function GrupoConfiguracionPage() {
   return (
     <div className="space-y-6">
+      <h1 className="text-2xl font-bold text-gray-900">Configuración</h1>
       <UsersAdmin />
       <CutoffAdmin />
       <ReservaMinimaAdmin />
