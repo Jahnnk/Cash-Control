@@ -45,22 +45,22 @@ function Ejecucion({ f, avance }: { f: FilaPresupuesto; avance: number | null })
   const ancho = Math.min(f.ejecucion, 125) / 1.25;
   return (
     <div className="flex items-center gap-2 justify-end">
-      <div className="relative h-2 w-24 rounded-full bg-gray-100 overflow-hidden" aria-hidden>
+      <div className="relative h-2 w-12 sm:w-24 rounded-full bg-gray-100 overflow-hidden" aria-hidden>
         <div className={`absolute inset-y-0 left-0 rounded-full ${TONO[f.semaforo].barra}`} style={{ width: `${ancho}%` }} />
         <div className="absolute inset-y-0 w-px bg-gray-500" style={{ left: "80%" }} title="100%" />
         {avance !== null && <div className="absolute -inset-y-0.5 w-0.5 bg-sky-500" style={{ left: `${Math.min(avance, 125) / 1.25}%` }} title="Avance del mes" />}
       </div>
-      <span className={`w-14 text-right tabular-nums text-xs font-medium ${TONO[f.semaforo].texto}`}>{pct(f.ejecucion)}</span>
+      <span className={`w-11 sm:w-14 text-right tabular-nums text-xs font-medium ${TONO[f.semaforo].texto}`}>{pct(f.ejecucion)}</span>
     </div>
   );
 }
 
-function Variacion({ f }: { f: FilaPresupuesto }) {
+/** Mes en curso: cuánto QUEDA del plan (no «de menos»: el mes no terminó). Mes cerrado: de más / de menos. */
+function Variacion({ f, enCurso }: { f: FilaPresupuesto; enCurso: boolean }) {
   if (f.variacion === null) return <span className="text-gray-300">—</span>;
   if (Math.abs(f.variacion) < 0.5) return <span className="text-gray-500">S/0</span>;
-  return f.variacion > 0
-    ? <span className="text-red-700 font-medium">+{soles(f.variacion)} de más</span>
-    : <span className="text-gray-600">−{soles(f.variacion)} de menos</span>;
+  if (f.variacion > 0) return <span className="text-red-700 font-medium">+{soles(f.variacion)} de más</span>;
+  return enCurso ? <span className="text-gray-600">{soles(f.variacion)}</span> : <span className="text-gray-600">−{soles(f.variacion)} de menos</span>;
 }
 
 function Cifras({ f, nivel, nombre, detalle, abierto, onToggle, avance, atenuado = false }: {
@@ -76,12 +76,16 @@ function Cifras({ f, nivel, nombre, detalle, abierto, onToggle, avance, atenuado
             {nombre}
           </button>
         ) : <span className={`pl-5 inline-block ${pesos[nivel]}`}>{nombre}</span>}
-        {detalle && <div className="text-[11px] text-gray-500 pl-5 leading-tight">{detalle}</div>}
+        {detalle && <div className="hidden sm:block text-[11px] text-gray-500 pl-5 leading-tight">{detalle}</div>}
       </td>
-      <td className="py-2 px-3 text-right tabular-nums text-gray-700">{f.presupuestado === null ? "—" : soles(f.presupuestado)}</td>
-      <td className="py-2 px-3 text-right tabular-nums text-gray-900">{soles(f.real)}</td>
-      <td className="py-2 px-3 text-right tabular-nums text-xs whitespace-nowrap"><Variacion f={f} /></td>
-      <td className="py-2 pl-3"><Ejecucion f={f} avance={avance} /></td>
+      <td className="hidden sm:table-cell py-2 px-3 text-right tabular-nums text-gray-700">{f.presupuestado === null ? "—" : soles(f.presupuestado)}</td>
+      <td className="py-2 px-2 sm:px-3 text-right tabular-nums text-gray-900 whitespace-nowrap">
+        {soles(f.real)}
+        {/* En el celular no hay columna de presupuesto: va debajo de lo real. */}
+        {f.presupuestado !== null && <div className="sm:hidden text-[11px] text-gray-500">de {soles(f.presupuestado)}</div>}
+      </td>
+      <td className="hidden sm:table-cell py-2 px-3 text-right tabular-nums text-xs whitespace-nowrap"><Variacion f={f} enCurso={avance !== null} /></td>
+      <td className="py-2 pl-2 sm:pl-3"><Ejecucion f={f} avance={avance} /></td>
     </tr>
   );
 }
@@ -121,14 +125,14 @@ function Arbol({ empresa, sedes, avance, sedeFija }: {
   const toggle = (k: string) => setAbiertos((s) => { const n = new Set(s); if (n.has(k)) n.delete(k); else n.add(k); return n; });
   return (
     <div className="overflow-x-auto -mx-1 px-1">
-      <table className="w-full min-w-[720px] text-sm">
+      <table className="w-full sm:min-w-[720px] text-sm">
         <thead>
           <tr className="text-[11px] uppercase tracking-wide text-gray-500">
-            <th className="text-left font-medium py-2 pl-2">Empresa → sede → área → categoría</th>
-            <th className="text-right font-medium py-2 px-3">Presupuestado</th>
-            <th className="text-right font-medium py-2 px-3">Real</th>
-            <th className="text-right font-medium py-2 px-3">Variación</th>
-            <th className="text-right font-medium py-2 pl-3">% de ejecución</th>
+            <th className="text-left font-medium py-2 pl-2"><span className="hidden sm:inline">Empresa → sede → área → categoría</span></th>
+            <th className="hidden sm:table-cell text-right font-medium py-2 px-3">Presupuestado</th>
+            <th className="text-right font-medium py-2 px-2 sm:px-3">Real</th>
+            <th className="hidden sm:table-cell text-right font-medium py-2 px-3">{avance !== null ? "Queda" : "Variación"}</th>
+            <th className="text-right font-medium py-2 pl-2 sm:pl-3">Ejecución</th>
           </tr>
         </thead>
         <tbody>
@@ -149,15 +153,42 @@ function Arbol({ empresa, sedes, avance, sedeFija }: {
   );
 }
 
-function Kpi({ titulo, valor, detalle, tono }: { titulo: string; valor: string; detalle?: ReactNode; tono?: string }) {
+/**
+ * Una frase en vez de cuatro tarjetas (UX, 8-oct-2026): cuánto del plan se usó, cuánto queda y cuánto
+ * del mes pasó. En un mes cerrado, si se gastó de más o de menos.
+ */
+function ResumenPlan({ total, enCurso, avanceMes, corte }: { total: FilaPresupuesto; enCurso: boolean; avanceMes: number; corte: string | null }) {
+  if (total.presupuestado === null) return null;
+  const usado = total.ejecucion ?? 0;
+  const ancho = Math.min(usado, 125) / 1.25;
+  const pasado = (total.variacion ?? 0) > 0;
   return (
-    <div className="rounded-xl border border-gray-200/80 bg-white px-4 py-3 min-w-0">
-      <div className="text-[11px] font-medium uppercase tracking-wide text-gray-500">{titulo}</div>
-      <div className={`text-xl font-semibold tabular-nums mt-1 ${tono ?? "text-gray-900"}`}>{valor}</div>
-      {detalle && <div className="text-[11px] text-gray-500 mt-1 leading-snug">{detalle}</div>}
-    </div>
+    <section className="bg-white rounded-2xl border border-gray-200/80 p-5 sm:p-6">
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-1">
+        <div>
+          <div className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{enCurso ? "Usado del plan" : "Se gastó"}</div>
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-2">
+            <span className="text-3xl font-semibold tabular-nums text-gray-900">{soles(total.real)}</span>
+            <span className="text-sm text-gray-500">de {soles(total.presupuestado)} · {pct(usado)}</span>
+          </div>
+        </div>
+        <div className={`text-sm font-medium ${pasado ? "text-red-700" : enCurso ? "text-gray-700" : "text-emerald-700"}`}>
+          {pasado ? `${soles(total.variacion!)} por encima del plan` : enCurso ? `Quedan ${soles(-(total.variacion ?? 0))} para el resto del mes` : `${soles(-(total.variacion ?? 0))} por debajo del plan`}
+        </div>
+      </div>
+      <div className="relative mt-4 h-2.5 rounded-full bg-gray-100 overflow-hidden" aria-hidden>
+        <div className={`absolute inset-y-0 left-0 rounded-full ${TONO[total.semaforo === "neutro" ? "verde" : total.semaforo].barra}`} style={{ width: `${ancho}%` }} />
+        <div className="absolute inset-y-0 w-px bg-gray-500" style={{ left: "80%" }} />
+        {enCurso && <div className="absolute -inset-y-0.5 w-0.5 bg-sky-500" style={{ left: `${Math.min(avanceMes, 125) / 1.25}%` }} />}
+      </div>
+      <p className="mt-2 text-xs text-gray-500">
+        {enCurso ? `Van ${pct(avanceMes)} del mes (raya celeste). ` : ""}
+        {corte ? `Gastos del Excel hasta el ${Number(corte.slice(8, 10))}/${corte.slice(5, 7)}.` : "Todavía no hay gastos cargados."}
+      </p>
+    </section>
   );
 }
+
 
 // ── La pantalla ─────────────────────────────────────────────────────────
 export function PresupuestoVista({ sedeFija = null, mesInicial }: { sedeFija?: number | null; mesInicial?: string }) {
@@ -268,27 +299,19 @@ export function Contenido({ datos, sedeFija, onIrAMes, onAbrirEditor, editor }: 
         <p className="text-sm text-gray-600">Este mes todavía no empieza: aquí se arma el plan. Lo real aparece cuando entren los gastos.</p>
       ) : (
         <>
-          <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-            <Kpi titulo="Presupuestado" valor={total.presupuestado === null ? "—" : soles(total.presupuestado)} detalle="Operación, deudas, inversión y ahorro" />
-            <Kpi titulo={datos.enCurso ? "Real a la fecha" : "Real"} valor={soles(total.real)}
-              detalle={datos.sedes.some((s) => s.corte) ? `Gastos cargados hasta el ${datos.sedes.map((s) => s.corte).filter(Boolean).sort()[0]!.slice(8)}/${datos.mes.slice(5)}` : "Todavía no hay gastos cargados"} />
-            <Kpi titulo="Variación" valor={total.variacion === null ? "—" : `${total.variacion > 0 ? "+" : "−"}${soles(total.variacion)}`}
-              tono={total.variacion !== null && total.variacion > 0 ? "text-red-700" : undefined}
-              detalle={total.variacion === null ? "" : total.variacion > 0 ? "Se gastó más de lo presupuestado" : datos.enCurso ? "Lo que queda del plan para el resto del mes" : "Por debajo de lo presupuestado"} />
-            <Kpi titulo="% de ejecución" valor={total.ejecucion === null ? "—" : pct(total.ejecucion)}
-              tono={total.ejecucion !== null ? (total.ejecucion > 100 ? "text-red-700" : "text-gray-900") : undefined}
-              detalle={datos.enCurso ? `Van ${pct(datos.avanceMes)} del mes` : undefined} />
-          </div>
+          <ResumenPlan total={total} enCurso={datos.enCurso} avanceMes={datos.avanceMes}
+            corte={datos.sedes.map((x) => x.corte).filter((x): x is string => !!x).sort()[0] ?? null} />
 
           <section className="bg-white rounded-2xl border border-gray-200/80 p-3 sm:p-5">
             <Arbol empresa={empresa} sedes={sedes} avance={avance} sedeFija={sedeFija} />
-            <p className="text-[11px] text-gray-500 mt-3 px-2 leading-relaxed">
+            <details className="mt-3 px-2 text-[11px] text-gray-500 leading-relaxed">
+              <summary className="cursor-pointer font-medium text-gray-600 hover:text-gray-900">¿Cómo se calcula?</summary>
               {datos.enCurso
                 ? "Mes en curso: los % se calculan sobre la venta esperada. La raya celeste marca cuánto del mes ya pasó; un costo variable que va muy por delante de ella está gastando más rápido de lo planeado."
                 : "Mes cerrado: los % se calculan sobre la venta real, así un buen mes de ventas no pinta de rojo los insumos. Hasta 10% de más es «ojo»; más es «pasado»."}
               {" "}Real = lo que salió de la sede (de un gasto compartido, solo su parte).
               {!sedeFija && interno > 0 && <> En el total de la empresa van {soles(interno)} que las cafeterías le pagan a Atelier: esa plata no sale de Yayi&apos;s.</>}
-            </p>
+            </details>
           </section>
 
           {desvios.length > 0 && (

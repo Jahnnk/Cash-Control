@@ -65,6 +65,11 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
   const ultimo = [...s.historial].reverse().find((h) => Object.keys(h.real).length > 0) ?? null;
   const sucio = JSON.stringify(b) !== JSON.stringify(inicial);
   const caja = useMemo(() => cajaDe(s, mes), [s, mes]);
+  // Revelación progresiva: se ven las categorías con presupuesto, sugerencia o gasto; las vacías, a un toque.
+  const [todas, setTodas] = useState(false);
+  const conAlgo = (c: string) => (num(b.lineas[c]?.valor ?? "") ?? 0) > 0 || (num(b.lineas[c]?.caja ?? "") ?? 0) > 0
+    || sugDe.has(c) || (ultimo?.real[c] ?? 0) > 0 || !!caja.get(c)?.promedio;
+  const vacias = AREAS_PLAN.flatMap((a) => a.categorias).filter((c) => !conAlgo(c)).length;
   const hayCaja = [...caja.values()].some((x) => x.promedio);
 
   const venta = num(b.venta);
@@ -150,12 +155,18 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
             </tr>
           </thead>
           <tbody>
-            {AREAS_PLAN.map((a) => (
-              <FilasArea key={a.id} nombre={a.nombre} categorias={a.categorias} b={b} set={set} venta={venta} sugDe={sugDe} ultimo={ultimo} caja={caja} />
-            ))}
+            {AREAS_PLAN.map((a) => {
+              const cats = todas ? a.categorias : a.categorias.filter(conAlgo);
+              return cats.length ? <FilasArea key={a.id} nombre={a.nombre} categorias={cats} b={b} set={set} venta={venta} sugDe={sugDe} ultimo={ultimo} caja={caja} /> : null;
+            })}
           </tbody>
         </table>
       </div>
+      {vacias > 0 && (
+        <button type="button" onClick={() => setTodas(!todas)} className="text-xs font-medium text-gray-500 hover:text-gray-800">
+          {todas ? "Ocultar las categorías vacías" : `Mostrar ${vacias} ${vacias === 1 ? "categoría" : "categorías"} sin presupuesto ni historial`}
+        </button>
+      )}
 
       <div className="rounded-xl bg-gray-50 px-4 py-3 text-sm text-gray-800 leading-relaxed">
         {venta ? (
@@ -197,7 +208,8 @@ function EstadoCaja({ s, reenviando, onReenviar }: { s: SedePresupuesto; reenvia
   const c = s.cabecera;
   if (!c?.aprobadoEl) return <p className="text-xs text-gray-500">Los topes llegan a Control de Caja cuando apruebas el presupuesto.</p>;
   const desactualizado = c.cajaEnviadoEl && c.actualizadoEl > c.cajaEnviadoEl;
-  const fecha = (iso: string) => new Date(iso.replace(" ", "T")).toLocaleString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
+  // Postgres entrega «2026-10-06 16:57:42.48+00»: se pasa a ISO («…T…+00:00») para que el navegador lo entienda.
+  const fecha = (iso: string) => new Date(iso.replace(" ", "T").replace(/([+-]\d{2})$/, "$1:00")).toLocaleString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
   const boton = (
     <button type="button" onClick={onReenviar} disabled={reenviando} className="inline-flex items-center gap-1 font-semibold underline underline-offset-2 disabled:opacity-50">
       {reenviando && <Loader2 className="w-3 h-3 animate-spin" />} Volver a enviar
