@@ -190,6 +190,9 @@ export async function getHighlightSede(): Promise<HighlightSede> {
              reflect_ayudo, reflect_distrajo, reflect_manana
       FROM highlights
       WHERE business_id = ${bId} AND fecha <= ${hoy}
+        -- La misma ventana que Grupo → Highlight (últimos 30 días): sin ella, el panel decía
+        -- «100% cumplido en 30 días» con días de agosto y Grupo decía «sin historial» (8-oct-2026).
+        AND fecha >= ${hoy}::date - 30
       ORDER BY fecha DESC
       LIMIT 30
     `) as FilaDB[];

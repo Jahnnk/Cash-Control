@@ -108,60 +108,65 @@ export function ControlCumplimiento({ version = 0 }: { version?: number }) {
         </div>
       )}
 
-      {/* 2 · Cómo va hoy */}
-      <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-        <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
-          <div>
-            <h3 className="text-sm font-semibold text-gray-900">Cumplimiento de hoy</h3>
-            <p className="text-[11px] text-gray-500 mt-0.5">
-              {conHighlightHoy === 0
-                ? "Todavía no asignaste ningún Highlight para hoy."
-                : `${cerraronHoy} de ${conHighlightHoy} ${
-                    conHighlightHoy === 1 ? "sede cerró" : "sedes cerraron"
-                  } su Highlight.`}
-            </p>
+      {/* 2 · Cómo va hoy. Sin nada asignado no se muestra: las tarjetas de abajo ya dicen
+          «Falta asignar» y tienen el formulario (UX, 8-oct-2026: antes salían tres «Sin
+          Highlight asignado» encima de los tres formularios vacíos). */}
+      {conHighlightHoy > 0 && (
+        <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+          <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
+            <div>
+              <h3 className="text-sm font-semibold text-gray-900">Cumplimiento de hoy</h3>
+              <p className="text-[11px] text-gray-500 mt-0.5">
+                {conHighlightHoy === 0
+                  ? "Todavía no asignaste ningún Highlight para hoy."
+                  : `${cerraronHoy} de ${conHighlightHoy} ${
+                      conHighlightHoy === 1 ? "sede cerró" : "sedes cerraron"
+                    } su Highlight.`}
+              </p>
+            </div>
+            {data.sinCerrar.length === 0 && conHighlightHoy > 0 && cerraronHoy === conHighlightHoy && (
+              <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">
+                Todo al día
+              </span>
+            )}
           </div>
-          {data.sinCerrar.length === 0 && conHighlightHoy > 0 && cerraronHoy === conHighlightHoy && (
-            <span className="text-[11px] font-medium text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-2.5 py-1">
-              Todo al día
-            </span>
-          )}
-        </div>
 
-        <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
-          {data.estadoHoy.map((s) => {
-            const hora = horaDe(s.cerradoEn);
-            return (
-              <div key={s.businessId} className="px-4 py-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs font-semibold text-gray-900">{s.sede}</span>
-                  {s.estado === "logrado" && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5">
-                      <Check className="w-2.5 h-2.5" /> Logrado
-                    </span>
-                  )}
-                  {s.estado === "no_logrado" && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded-full px-1.5 py-0.5">
-                      <X className="w-2.5 h-2.5" /> No se logró
-                    </span>
-                  )}
-                  {s.estado === "pendiente" && (
-                    <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5">
-                      <Clock className="w-2.5 h-2.5" /> En curso
-                    </span>
+          <div className="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-100">
+            {data.estadoHoy.map((s) => {
+              const hora = horaDe(s.cerradoEn);
+              return (
+                <div key={s.businessId} className="px-4 py-3">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-semibold text-gray-900">{s.sede}</span>
+                    {s.estado === "logrado" && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-emerald-700 bg-emerald-50 border border-emerald-200 rounded-full px-1.5 py-0.5">
+                        <Check className="w-2.5 h-2.5" /> Logrado
+                      </span>
+                    )}
+                    {s.estado === "no_logrado" && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-gray-600 bg-gray-100 border border-gray-200 rounded-full px-1.5 py-0.5">
+                        <X className="w-2.5 h-2.5" /> No se logró
+                      </span>
+                    )}
+                    {s.estado === "pendiente" && (
+                      <span className="inline-flex items-center gap-1 text-[10px] font-bold uppercase tracking-wide text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-1.5 py-0.5">
+                        <Clock className="w-2.5 h-2.5" /> En curso
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[11px] text-gray-600 mt-1 line-clamp-2">
+                    {s.texto ?? <span className="text-gray-400">Sin Highlight asignado</span>}
+                  </p>
+                  {hora && (
+                    <p className="text-[10px] text-gray-400 mt-1">Cerrado a las {hora}</p>
                   )}
                 </div>
-                <p className="text-[11px] text-gray-600 mt-1 line-clamp-2">
-                  {s.texto ?? <span className="text-gray-400">Sin Highlight asignado</span>}
-                </p>
-                {hora && (
-                  <p className="text-[10px] text-gray-400 mt-1">Cerrado a las {hora}</p>
-                )}
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
         </div>
-      </div>
+
+      )}
 
       {/* 3 · Qué pasó últimamente */}
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">

@@ -17,6 +17,8 @@
  */
 
 import { neon } from "@neondatabase/serverless";
+import { equipoDelBono } from "@/lib/incentives/equipo-del-bono";
+import { resolverHorasDelMes } from "@/lib/incentives/horas-trabajadas";
 import { getEntradaCandadoVentas } from "./breakeven";
 import { requireFullSession } from "@/lib/session-access";
 import { filasVentasTrabajador } from "@/lib/incentivos/ventas-trabajador-sql";
@@ -25,7 +27,6 @@ import {
   computeProgress,
   type IncentiveConfigT,
   type IncentiveProgress,
-  type StaffMember,
   type DailyEntry,
 } from "@/lib/incentives/engine";
 import { computeMejorVendedor, type MejorVendedorResult } from "@/lib/mejor-vendedor";
@@ -133,10 +134,15 @@ export async function getGroupIncentives(
         };
         ticketBase = config.ticketBase;
 
-        const staff = (await sql`
-          SELECT name, jornada, area, horas_semanales::float AS "horasSemanales"
-            FROM staff WHERE business_id = ${bId} AND active = true
-        `) as { name: string; jornada: StaffMember["jornada"]; area: string; horasSemanales: number | null }[];
+        // El MISMO equipo y las MISMAS horas que el Panel de Sede y la liquidación (Planilla).
+        // Antes se leía la tabla staff sin Planilla y Grupo decía «bonos S/460» donde el panel
+        // de Fonavi decía S/489 para el mismo nivel (8-oct-2026).
+        const equipo = await equipoDelBono(sql as never, bId, month);
+        const horasPlanilla = new Map((equipo.deLaPlanilla ?? []).map((p) => [p.dni, p.horas]));
+        const staff = resolverHorasDelMes(equipo.staff.map((x) => ({ ...x, active: true })), horasPlanilla).staff.map((x) => ({
+          name: x.name, jornada: x.jornada, area: x.area, horasSemanales: x.horasSemanales,
+          horasMesTrabajadas: x.horasMesTrabajadas, horasMes: x.horasMesTrabajadas,
+        }));
 
         try {
           dailies = (await sql`
