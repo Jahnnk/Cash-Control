@@ -99,12 +99,11 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-2xl">
           <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
-            <Calculator className="w-4 h-4 text-primary" /> Costos de Atelier para las mermas
+            <Calculator className="w-4 h-4 text-primary" /> Excel maestro de pricing
           </h2>
           <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-            Sube tu Excel maestro de pricing cuando cambien precios o varias recetas a la vez: la administradora de Atelier
-            elige en sus mermas el producto, la preparación o el insumo, y el sistema pone solo el costo en insumos. Para una
-            sola receta no hace falta: créala o modifícala abajo. Las mermas ya registradas no cambian.
+            Súbelo cuando cambien precios o varias recetas a la vez. Para una sola receta, edítala abajo. Las mermas ya
+            registradas no cambian.
           </p>
         </div>
         <label className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg cursor-pointer whitespace-nowrap ${

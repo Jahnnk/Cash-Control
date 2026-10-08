@@ -34,6 +34,14 @@ export type TipsSummary = {
   pagadasMonto: number;
 };
 
+/**
+ * Lo que NO es propina: la tabla tips_pending también guarda las «Ventas al Crédito» del Control
+ * de VTAS (decisión histórica del modelo; los reportes las leen como crédito). La pantalla de
+ * Propinas las mostraba como propinas por repartir: Atelier sumaba S/76,258 en 50 «propinas» que
+ * eran ventas a crédito a empresas (8-oct-2026). Aquí solo entran las propinas de verdad.
+ */
+const SOLO_PROPINAS = sql`COALESCE(source_concept, '') NOT IN ('Ventas al Crédito', 'Ventas al Credito')`;
+
 export async function getTips(filter: {
   status?: "pending" | "paid" | "cancelled" | "all";
   month?: string; // YYYY-MM
@@ -47,6 +55,7 @@ export async function getTips(filter: {
            note_text, collaborator_name, status, paid_at::text, created_at::text
     FROM tips_pending
     WHERE business_id = ${bId}
+      AND ${SOLO_PROPINAS}
       AND ${status === "all" ? sql`true` : sql`status = ${status}`}
       AND ${monthFilter ? sql`date_trunc('month', date) = ${monthFilter + "-01"}::date` : sql`true`}
     ORDER BY date DESC, created_at DESC
@@ -70,6 +79,7 @@ export async function getTipsSummary(month?: string): Promise<TipsSummary> {
       COUNT(*) FILTER (WHERE status = 'paid')::int AS paid_count
     FROM tips_pending
     WHERE business_id = ${bId}
+      AND ${SOLO_PROPINAS}
       AND ${monthFilter ? sql`date_trunc('month', date) = ${monthFilter + "-01"}::date` : sql`true`}
   `);
   const row = r.rows[0] as Record<string, number>;
