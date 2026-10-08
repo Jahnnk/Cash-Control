@@ -25,7 +25,7 @@ const render = (d: DatosPresupuesto, sedeFija = false) => renderToStaticMarkup(c
 describe("Presupuesto (pantalla)", () => {
   test("muestra la jerarquía, las cuatro columnas, los desvíos y el editor", () => {
     const html = render(datos([sede(), sede({ businessId: 3, sede: "Centro", lineas: [], cabecera: null })]));
-    for (const t of ["Yayi&#x27;s (las tres sedes)", "Presupuestado", "Real", "Variación", "% de ejecución", "Fonavi", "Centro"]) expect(html).toContain(t);
+    for (const t of ["Yayi&#x27;s (las tres sedes)", "Presupuestado", "Real", "Variación", "Ejecución", "Se gastó", "Fonavi", "Centro"]) expect(html).toContain(t);
     expect(html).toContain("sin presupuesto en Centro");
     expect(html).toContain("Dónde se está yendo la plata fuera del plan");
     expect(html).toContain("Venta esperada del mes");
@@ -34,5 +34,12 @@ describe("Presupuesto (pantalla)", () => {
     const html = render(datos([sede()]), true);
     expect(html).not.toContain("las tres sedes");
     expect(html).toContain("Fonavi");
+  });
+  test("mes en curso: dice cuánto QUEDA, no «de menos»", () => {
+    const html = render({ ...datos([sede({ real: { PLANILLA: 3000 } })]), mes: "2026-10", enCurso: true, avanceMes: 26 }, true);
+    expect(html).toContain("Usado del plan");
+    expect(html).toContain("para el resto del mes");
+    expect(html).toContain("Queda");
+    expect(html).not.toContain("de menos");
   });
 });
