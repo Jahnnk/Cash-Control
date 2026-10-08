@@ -18,6 +18,13 @@ import { ReceivablesImportModal } from "./receivables-import-modal";
 import { MermaDetailModal } from "./merma-detail-modal";
 import { ReceivablesSection } from "./receivables-section";
 import { getReceivables, type ReceivablesData } from "@/app/actions/receivables";
+import { SeccionDesplegable } from "@/components/productos/ui";
+
+/** 2026-08-08 → «08/08». */
+const fechaDM = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+/** Un reporte semanal con más de 8 días ya se pasó de su sábado. */
+const viejo = (iso: string) =>
+  (Date.parse(`${new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" })}T12:00:00Z`) - Date.parse(`${iso.slice(0, 10)}T12:00:00Z`)) / 86_400_000 > 8;
 
 /**
  * Panel de Sede · Atelier (supervisora operativa).
@@ -166,34 +173,15 @@ export function AtelierPanel() {
 
   return (
     <div className="space-y-6">
-      {/* Lo más importante del día — va primero a propósito: si
-          compitiera con los KPIs, dejaría de ser lo más importante. */}
-      <HighlightSlot />
-
-      {/* ¿Ya quedó registrado el día? Mismo aviso que ven Fonavi y
-          Centro, con las palabras de Atelier: acá el día normal llega
-          con el reporte de Byte, aunque también se puede teclear. */}
-      <EstadoKpisCard refrescar={refrescarAviso} onRegistrar={irAlRegistro} />
-
-      {/* Luis también propone: la operación de Atelier la ve él. */}
-      <ProponerHighlight />
-
-      {/* Luis sube lo mismo: el reporte de rotación cada sábado. */}
-      <MiRutina esProduccion refrescar={refrescarAviso} onSubirReporte={() => setShowRotacion(true)} />
-
-      {/* Header */}
+      {/* Cabecera arriba (UX, 8-oct-2026: antes quedaba en medio de la página). */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <ClipboardList className="w-5 h-5 text-primary" />
             Panel de Sede · Atelier
           </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Registro diario del cierre de Byte: venta, pedidos y mermas. El ticket promedio se
-            calcula solo. Estos números salen en el deck de la reunión semanal.
-          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             type="month"
             value={month}
@@ -209,6 +197,20 @@ export function AtelierPanel() {
         </div>
       </div>
 
+      {/* Lo más importante del día — va primero a propósito: si
+          compitiera con los KPIs, dejaría de ser lo más importante. */}
+      <HighlightSlot />
+
+      {/* ¿Ya quedó registrado el día? Mismo aviso que ven Fonavi y
+          Centro, con las palabras de Atelier: acá el día normal llega
+          con el reporte de Byte, aunque también se puede teclear. */}
+      <EstadoKpisCard refrescar={refrescarAviso} onRegistrar={irAlRegistro} />
+
+      {/* Luis sube lo mismo: el reporte de rotación cada sábado. */}
+      <MiRutina esProduccion refrescar={refrescarAviso} onSubirReporte={() => setShowRotacion(true)} />
+
+      {/* Luis también propone: la operación de Atelier la ve él. Después de lo que toca hoy. */}
+      <ProponerHighlight />
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Cargando…</div>
@@ -371,31 +373,36 @@ export function AtelierPanel() {
         </>
       )}
 
-      {/* 4 · Clientes B2B — del reporte "Ventas por Cliente" de Byte */}
-      <div className="pt-2">
-        {clientes ? (
-          <ClientSalesSection data={clientes} onSubir={() => setShowClientImport(true)} />
-        ) : (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">
-            Cargando clientes…
-          </div>
-        )}
-      </div>
+      {/* 4 y 5 · Clientes B2B y cuentas por cobrar, plegados (UX, 8-oct-2026): el resumen dice la
+          cifra y, si el reporte está viejo, lo avisa en ámbar para que se suba el sábado. */}
+      <SeccionDesplegable
+        titulo="Clientes de Atelier"
+        subtitulo="Quién compró, quién creció o cayó y a quién conviene llamar."
+        resumen={clientes?.hayDatos && clientes.periodo ? (
+          <p className="text-xs text-gray-600">
+            Venta a clientes <b className="text-gray-900">{formatCurrency(clientes.ventasExternas)}</b> · semana al {fechaDM(clientes.periodo.fin)}
+            {viejo(clientes.periodo.fin) && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">reporte viejo: súbelo el sábado</span>}
+          </p>
+        ) : <p className="text-xs text-gray-500">{clientes ? "Falta subir el reporte «Ventas por Cliente» de Byte." : "Cargando…"}</p>}
+      >
+        {clientes ? <ClientSalesSection data={clientes} onSubir={() => setShowClientImport(true)} /> : <p className="text-sm text-gray-400">Cargando clientes…</p>}
+      </SeccionDesplegable>
 
-      {/* 5 · Cuentas por cobrar — de los reportes de ventas y facturas */}
-      <div className="pt-2">
+      <SeccionDesplegable
+        titulo="Cuentas por cobrar"
+        subtitulo="Cuánto te deben, desde cuándo y quién."
+        resumen={cobranza ? (
+          <p className="text-xs text-gray-600">
+            Te deben <b className="text-gray-900">{formatCurrency(cobranza.porCobrar)}</b>
+            {cobranza.ultimaCarga.ventas && <> · datos al {fechaDM(cobranza.ultimaCarga.ventas)}</>}
+            {(!cobranza.ultimaCarga.ventas || viejo(cobranza.ultimaCarga.ventas)) && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">reporte viejo: súbelo el sábado</span>}
+          </p>
+        ) : <p className="text-xs text-gray-500">Cargando…</p>}
+      >
         {cobranza ? (
-          <ReceivablesSection
-            data={cobranza}
-            onSubir={() => setShowCobranzaImport(true)}
-            onRecargar={loadCobranza}
-          />
-        ) : (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">
-            Cargando cuentas por cobrar…
-          </div>
-        )}
-      </div>
+          <ReceivablesSection data={cobranza} onSubir={() => setShowCobranzaImport(true)} onRecargar={loadCobranza} />
+        ) : <p className="text-sm text-gray-400">Cargando cuentas por cobrar…</p>}
+      </SeccionDesplegable>
 
       {showImport && (
         <VentasImportModal

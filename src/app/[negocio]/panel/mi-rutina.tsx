@@ -108,7 +108,7 @@ export function MiRutina({
       `En Byte exporta la lista COMPLETA, no el Top 10.`;
   } else if (alDia) {
     titulo = "Reportes de Byte: subidos";
-    detalle = `Los subiste el ${e.ultimaCarga ? fechaCorta(e.ultimaCarga) : "—"} · ${e.productosUltimaCarga} platos. Nada pendiente.`;
+    detalle = `Los subiste el ${e.ultimaCarga ? fechaCorta(e.ultimaCarga) : "—"} · ${e.productosUltimaCarga} platos. Lo siguiente toca el sábado.`;
   } else if (e.estado === "nunca") {
     titulo = "Faltan los reportes de Byte";
     detalle = "Todavía no se ha subido ninguno en esta sede.";

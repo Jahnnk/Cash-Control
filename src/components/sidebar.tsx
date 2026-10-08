@@ -57,7 +57,7 @@ const I = {
   recetas: { segment: "recetas", label: "Recetas y costos", icon: ChefHat },
   porDefinir: { segment: "por-definir", label: "Por definir", icon: ListChecks },
   panel: { segment: "panel", label: "Panel de Sede", icon: Trophy },
-  registro: { segment: "registro", label: "Registro Diario", icon: PenLine },
+  registro: { segment: "registro", label: "Registro manual", icon: PenLine },
   propinas: { segment: "propinas", label: "Propinas", icon: HandCoins },
   clientes: { segment: "clientes", label: "Clientes", icon: Users },
   porCobrar: { segment: "fonavi", label: "Por cobrar", icon: Handshake },
@@ -74,9 +74,11 @@ export const CONFIGURACION: NavItem = { segment: "configuracion", label: "Config
  */
 const SEDE = (atelier: boolean): NavSeccion[] => [
   { titulo: null, items: [I.dashboard, I.panel] },
-  { titulo: "Día a día", items: [I.registro, I.propinas] },
+  { titulo: "Día a día", items: [I.propinas] },
   { titulo: "Análisis", items: [I.reportes, I.productos, I.presupuesto] },
   ...(atelier ? [{ titulo: "Clientes", items: [I.clientes, I.porCobrar, I.prestamos] }] : []),
+  // Desde agosto todo entra con el Excel: el registro a mano queda abajo, para casos sueltos (8-oct-2026).
+  { titulo: "Datos", items: [I.registro] },
 ];
 
 export const MENU: Record<ScopeKey, NavSeccion[]> = {

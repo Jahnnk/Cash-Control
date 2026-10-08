@@ -38,6 +38,7 @@ import { ProductosCard } from "./productos-card";
 import { TrimestreCard } from "./trimestre-card";
 import { RevisarSedeCard } from "./revisar-sede-card";
 import { SupervisionesCard } from "./supervisiones-card";
+import { SeccionDesplegable } from "@/components/productos/ui";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -214,44 +215,15 @@ function IncentivosPage() {
 
   return (
     <div className="space-y-6">
-      {/* Lo más importante del día — va primero a propósito: si
-          compitiera con los KPIs, dejaría de ser lo más importante. */}
-      <HighlightSlot />
-
-      {/* Tu bono de este mes: los 3 activadores (ticket, ventas,
-          supervisiones). Justo después de lo más importante del día. */}
-      {data && <BonoDelMesCard data={data} month={month} />}
-
-      {/* ¿Ya registré los KPIs de hoy? Va debajo del Highlight y arriba
-          de todo lo demás: es lo que no se les puede pasar. */}
-      <EstadoKpisCard refrescar={weekRefresh} onRegistrar={irAlRegistro} />
-
-      {/* Lo que le toca subir y cómo va. La guía va pegada al estado a
-          propósito: una guía aparte se lee una vez y se olvida. */}
-      <MiRutina refrescar={weekRefresh} onSubirReporte={() => setShowImport(true)} />
-
-      {/* Días que no cuentan (corte de luz, feriado). Va pegado al
-          estado de KPIs porque es la respuesta a "¿por qué ese día está
-          distinto?". El administrador solo la ve si hay algo marcado. */}
-      <DiasNoOperativosCard onCambio={() => { setWeekRefresh((n) => n + 1); void load(month); }} />
-
-      {/* Proponer va después del Highlight y del aviso de KPIs: primero
-          lo que hay que hacer hoy, después lo que uno sugiere. */}
-      <ProponerHighlight />
-
-      {/* Header */}
+      {/* Cabecera: el título y lo que se sube (UX, 8-oct-2026: antes quedaba en medio de la página). */}
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
             <Trophy className="w-5 h-5 text-primary" />
             Panel de Sede
           </h1>
-          <p className="text-xs text-gray-500 mt-1">
-            Registro diario, KPIs, incentivos por upselling y controles — todo en un solo lugar.
-            El bono se paga solo con la venta nueva, nunca con la utilidad de hoy.
-          </p>
         </div>
-        <div className="flex items-center gap-2">
+        <div className="flex flex-wrap items-center gap-2">
           <input
             type="month"
             value={month}
@@ -280,10 +252,35 @@ function IncentivosPage() {
             className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
           >
             <Upload className="w-3.5 h-3.5" />
-            Subir Reportes Administración
+            Subir reportes de Byte
           </button>
         </div>
       </div>
+
+      {/* Lo más importante del día — va primero a propósito: si
+          compitiera con los KPIs, dejaría de ser lo más importante. */}
+      <HighlightSlot />
+
+      {/* ¿Ya registré los KPIs de hoy? Va debajo del Highlight y arriba
+          de todo lo demás: es lo que no se les puede pasar. */}
+      <EstadoKpisCard refrescar={weekRefresh} onRegistrar={irAlRegistro} />
+
+      {/* Lo que le toca subir y cómo va. La guía va pegada al estado a
+          propósito: una guía aparte se lee una vez y se olvida. */}
+      <MiRutina refrescar={weekRefresh} onSubirReporte={() => setShowImport(true)} />
+
+      {/* Días que no cuentan (corte de luz, feriado). Va pegado al
+          estado de KPIs porque es la respuesta a "¿por qué ese día está
+          distinto?". El administrador solo la ve si hay algo marcado. */}
+      <DiasNoOperativosCard onCambio={() => { setWeekRefresh((n) => n + 1); void load(month); }} />
+
+      {/* Proponer va después del Highlight y del aviso de KPIs: primero
+          lo que hay que hacer hoy, después lo que uno sugiere. */}
+      <ProponerHighlight />
+
+      {/* Tu bono de este mes: los 3 activadores (ticket, ventas, supervisiones), después de lo
+          que hay que hacer hoy. */}
+      {data && <BonoDelMesCard data={data} month={month} />}
 
       {loading ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Cargando…</div>
@@ -291,165 +288,10 @@ function IncentivosPage() {
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-sm text-gray-500">{error}</div>
       ) : (
         <>
-          {/* 1 · Avance del ticket */}
-          <div className={`grid grid-cols-1 gap-4 ${p.traffic.floor !== null ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500">Ticket promedio del programa ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
-              <div className="text-2xl font-black text-gray-900">
-                {p.ticketActual !== null ? formatCurrency(p.ticketActual) : "—"}
-              </div>
-              <div className="text-[11px] text-gray-500">
-                Base {formatCurrency(data.config.ticketBase)}
-                {p.deltaActual !== null && (
-                  <span className={`ml-1 font-semibold ${p.deltaActual > 0 ? "text-emerald-600" : "text-red-600"}`}>
-                    ({p.deltaActual >= 0 ? "+" : ""}{formatCurrency(p.deltaActual)})
-                  </span>
-                )}
-                <span className="block text-gray-400">Clientes de mostrador + mesa — los dos mueven el bono</span>
-                {p.delivery && (
-                  <span className="block text-gray-400">
-                    🛵 Delivery aparte: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (no cuenta)
-                  </span>
-                )}
-                {p.personal && (
-                  <span className="block text-gray-400">
-                    👥 Personal aparte: {formatCurrency(p.personal.ticket ?? 0)} × {p.personal.pedidos} compras (no cuenta)
-                  </span>
-                )}
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500">Nivel alcanzado</div>
-              <div className={`text-lg font-bold ${p.nivelAlcanzado ? "text-emerald-600" : "text-gray-400"}`}>
-                {p.nivelAlcanzado?.nombre ?? "Aún sin nivel"}
-              </div>
-              {p.proximoNivel && (
-                <div className="text-[11px] text-gray-500">
-                  Para {p.proximoNivel.level.nombre}: faltan <strong>{formatCurrency(p.proximoNivel.faltaSoles)}</strong> de ticket
-                </div>
-              )}
-            </div>
-            {p.traffic.floor !== null && (
-              <div className="bg-white rounded-xl border border-gray-200 p-4">
-                <div className="text-[11px] uppercase text-gray-500">Piso de tráfico</div>
-                <div className={`text-lg font-bold flex items-center gap-1.5 ${p.traffic.cumple ? "text-emerald-600" : "text-red-600"}`}>
-                  {p.traffic.cumple ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
-                  {p.traffic.personasPorDia ?? "—"} personas/día
-                </div>
-                <div className="text-[11px] text-gray-500">
-                  {p.traffic.floor === null
-                    ? "Sin piso de tráfico este mes"
-                    : `Mínimo ${p.traffic.floor}/día — ${p.traffic.cumple ? "cumple: la meta cuenta" : "sin el piso, la meta NO cuenta"}`}
-                </div>
-              </div>
-            )}
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500">Items por persona</div>
-              <div className="text-2xl font-black text-gray-900">{p.itemsPorPersona ?? "—"}</div>
-              <div className="text-[11px] text-gray-500">El upselling real sube ticket E items</div>
-            </div>
-          </div>
-
           {/* 1b · Las observaciones de Juani con su plazo y la foto de la
               corrección (el resumen de ventas y supervisiones está arriba,
               en "Tu bono de este mes"). */}
           <SupervisionesCard month={month} onCambio={() => void load(month)} />
-
-          {/* 2 · Tabla de niveles y pozo */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
-              <span className="text-sm font-semibold text-gray-900">
-                Niveles y pozo (proyección al cierre con el ritmo actual)
-              </span>
-              {/* La base la mueve solo la dirección: el bono del admin
-                  depende de ella. */}
-              {!data.isAdminSession && (
-                <button
-                  onClick={() => setShowBase(true)}
-                  className="text-xs px-2.5 py-1 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 flex items-center gap-1 shrink-0"
-                >
-                  <Settings2 className="w-3.5 h-3.5" /> Base
-                </button>
-              )}
-            </div>
-            <table className="w-full text-sm">
-              <thead>
-                <tr className="text-[11px] uppercase text-gray-500 bg-gray-50">
-                  <th className="text-left px-4 py-2 font-medium">Nivel</th>
-                  <th className="text-right px-4 py-2 font-medium">Ticket meta</th>
-                  <th className="text-right px-4 py-2 font-medium">Bonos a pagar</th>
-                  <th className="text-right px-4 py-2 font-medium">Pozo (techo 40%)</th>
-                  <th className="text-right px-4 py-2 font-medium">Colchón</th>
-                </tr>
-              </thead>
-              <tbody>
-                {p.porNivel.map((n) => {
-                  const isCurrent = p.nivelAlcanzado?.nombre === n.level.nombre;
-                  return (
-                    <tr key={n.level.nombre} className={`border-t border-gray-100 ${isCurrent ? "bg-emerald-50/60" : ""}`}>
-                      <td className="px-4 py-2 font-medium text-gray-900">
-                        {isCurrent && "✅ "}{n.level.nombre} <span className="text-gray-400">(+{formatCurrency(n.level.delta)})</span>
-                      </td>
-                      <td className="px-4 py-2 text-right text-gray-700">{formatCurrency(data.config.ticketBase + n.level.delta)}</td>
-                      <td className="px-4 py-2 text-right font-semibold">{formatCurrency(n.sumaBonos)}</td>
-                      <td className="px-4 py-2 text-right text-gray-700">{n.pozoNivel !== null ? formatCurrency(n.pozoNivel) : "—"}</td>
-                      <td className={`px-4 py-2 text-right font-medium ${n.colchon !== null && n.colchon >= 0 ? "text-emerald-600" : "text-red-600"}`}>
-                        {n.colchon !== null ? formatCurrency(n.colchon) : "—"}
-                      </td>
-                    </tr>
-                  );
-                })}
-              </tbody>
-            </table>
-            <div className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
-              El pozo es el techo; se paga la tabla fija por rol. Equipo: {data.staff.filter((s) => s.jornada === "tiempo_completo").length} tiempo completo · {data.staff.filter((s) => s.jornada === "medio_turno").length} medio turno · 1 admin.
-            </div>
-          </div>
-
-          {/* 2a · Cuánto gana el equipo en cada nivel (informativo; solo de ESTA sede). */}
-          <CuantoGanaCard
-            staff={data.staff}
-            levels={p.porNivel.map((n) => n.level)}
-            ticketBase={data.config.ticketBase}
-            month={month}
-            nivelAlcanzado={p.nivelAlcanzado?.nombre ?? null}
-          />
-
-          {/* 2c · El admin es la cara del programa: resumen copiable para
-              su equipo, con la misma lib de texto que usa la dirección. */}
-          <ShareSummary
-            sedeLabel={sedeLabel}
-            month={month}
-            progress={p}
-            ticketBase={data.config.ticketBase}
-            ventas={data.equilibrio}
-            supervision={data.supervisionMes}
-            practica={!data.tresActivadores}
-          />
-
-          {/* 2b · Foco de upselling sugerido (datos del PIC de esta sede) */}
-          {focus && focus.candidates.length > 0 && (
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-sm font-semibold text-gray-900 mb-1">
-                💡 Candidatos para el foco del día
-              </div>
-              <div className="text-[11px] text-gray-400 mb-2">
-                Lo que más deja por unidad vendida (carta de esta sede, datos de {focus.month} — se refrescan con el reporte de rotación semanal).
-                💎 = alta contribución con poca rotación: los ideales para empujar. Tú decides según stock y ocasión.
-              </div>
-              <div className="flex flex-wrap gap-1.5">
-                {focus.candidates.map((c) => (
-                  <span
-                    key={c.name}
-                    className={`text-[11px] rounded-full px-2.5 py-1 border ${c.hiddenGem ? "bg-primary/5 border-primary/30 text-primary font-medium" : "bg-gray-50 border-gray-200 text-gray-700"}`}
-                    title={`${c.unitsLastMonth} und en ese periodo${c.category ? ` · ${c.category}` : ""}`}
-                  >
-                    {c.hiddenGem ? "💎 " : ""}{c.name} · deja {formatCurrency(c.unitContribution)}/und
-                  </span>
-                ))}
-              </div>
-            </div>
-          )}
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
             {/* 3 · Registro diario */}
@@ -626,15 +468,196 @@ function IncentivosPage() {
           {/* 4b · KPIs de la semana (reemplaza el cuadro de Notion) */}
           <KpisWeekSection key={weekRefresh} fullSession={!data.isAdminSession} />
 
+          {/* ── Lo de consulta, plegado (UX, 8-oct-2026): se abre cuando se necesita. ── */}
+          <SeccionDesplegable
+            titulo="El bono en detalle"
+            subtitulo="Ticket del programa, niveles y pozo, y el resumen para compartir con el equipo."
+            resumen={
+              <p className="text-xs text-gray-600">
+                Ticket <b className="text-gray-900">{p.ticketActual !== null ? formatCurrency(p.ticketActual) : "—"}</b>
+                {" · "}{p.nivelAlcanzado?.nombre ?? "aún sin nivel"}
+                {p.proximoNivel ? <> · para {p.proximoNivel.level.nombre} faltan <b className="text-gray-900">{formatCurrency(p.proximoNivel.faltaSoles)}</b></> : null}
+              </p>
+            }
+          >
+            <div className="space-y-4">
+          {/* 1 · Avance del ticket */}
+          <div className={`grid grid-cols-1 gap-4 ${p.traffic.floor !== null ? "md:grid-cols-4" : "md:grid-cols-3"}`}>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="text-[11px] uppercase text-gray-500">Ticket promedio del programa ({p.daysLoaded} día{p.daysLoaded === 1 ? "" : "s"})</div>
+              <div className="text-2xl font-black text-gray-900">
+                {p.ticketActual !== null ? formatCurrency(p.ticketActual) : "—"}
+              </div>
+              <div className="text-[11px] text-gray-500">
+                Base {formatCurrency(data.config.ticketBase)}
+                {p.deltaActual !== null && (
+                  <span className={`ml-1 font-semibold ${p.deltaActual > 0 ? "text-emerald-600" : "text-red-600"}`}>
+                    ({p.deltaActual >= 0 ? "+" : ""}{formatCurrency(p.deltaActual)})
+                  </span>
+                )}
+                <span className="block text-gray-400">Clientes de mostrador + mesa — los dos mueven el bono</span>
+                {p.delivery && (
+                  <span className="block text-gray-400">
+                    🛵 Delivery aparte: {formatCurrency(p.delivery.ticket ?? 0)} × {p.delivery.pedidos} pedidos (no cuenta)
+                  </span>
+                )}
+                {p.personal && (
+                  <span className="block text-gray-400">
+                    👥 Personal aparte: {formatCurrency(p.personal.ticket ?? 0)} × {p.personal.pedidos} compras (no cuenta)
+                  </span>
+                )}
+              </div>
+            </div>
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="text-[11px] uppercase text-gray-500">Nivel alcanzado</div>
+              <div className={`text-lg font-bold ${p.nivelAlcanzado ? "text-emerald-600" : "text-gray-400"}`}>
+                {p.nivelAlcanzado?.nombre ?? "Aún sin nivel"}
+              </div>
+              {p.proximoNivel && (
+                <div className="text-[11px] text-gray-500">
+                  Para {p.proximoNivel.level.nombre}: faltan <strong>{formatCurrency(p.proximoNivel.faltaSoles)}</strong> de ticket
+                </div>
+              )}
+            </div>
+            {p.traffic.floor !== null && (
+              <div className="bg-white rounded-xl border border-gray-200 p-4">
+                <div className="text-[11px] uppercase text-gray-500">Piso de tráfico</div>
+                <div className={`text-lg font-bold flex items-center gap-1.5 ${p.traffic.cumple ? "text-emerald-600" : "text-red-600"}`}>
+                  {p.traffic.cumple ? <CheckCircle2 className="w-4 h-4" /> : <XCircle className="w-4 h-4" />}
+                  {p.traffic.personasPorDia ?? "—"} personas/día
+                </div>
+                <div className="text-[11px] text-gray-500">
+                  {p.traffic.floor === null
+                    ? "Sin piso de tráfico este mes"
+                    : `Mínimo ${p.traffic.floor}/día — ${p.traffic.cumple ? "cumple: la meta cuenta" : "sin el piso, la meta NO cuenta"}`}
+                </div>
+              </div>
+            )}
+            <div className="bg-white rounded-xl border border-gray-200 p-4">
+              <div className="text-[11px] uppercase text-gray-500">Items por persona</div>
+              <div className="text-2xl font-black text-gray-900">{p.itemsPorPersona ?? "—"}</div>
+              <div className="text-[11px] text-gray-500">El upselling real sube ticket E items</div>
+            </div>
+          </div>
+
+          {/* 2 · Tabla de niveles y pozo */}
+          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
+            <div className="px-4 py-3 border-b border-gray-100 flex items-center justify-between gap-2">
+              <span className="text-sm font-semibold text-gray-900">
+                Niveles y pozo (proyección al cierre con el ritmo actual)
+              </span>
+              {/* La base la mueve solo la dirección: el bono del admin
+                  depende de ella. */}
+              {!data.isAdminSession && (
+                <button
+                  onClick={() => setShowBase(true)}
+                  className="text-xs px-2.5 py-1 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 flex items-center gap-1 shrink-0"
+                >
+                  <Settings2 className="w-3.5 h-3.5" /> Base
+                </button>
+              )}
+            </div>
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[11px] uppercase text-gray-500 bg-gray-50">
+                  <th className="text-left px-4 py-2 font-medium">Nivel</th>
+                  <th className="text-right px-4 py-2 font-medium">Ticket meta</th>
+                  <th className="text-right px-4 py-2 font-medium">Bonos a pagar</th>
+                  <th className="text-right px-4 py-2 font-medium">Pozo (techo 40%)</th>
+                  <th className="text-right px-4 py-2 font-medium">Colchón</th>
+                </tr>
+              </thead>
+              <tbody>
+                {p.porNivel.map((n) => {
+                  const isCurrent = p.nivelAlcanzado?.nombre === n.level.nombre;
+                  return (
+                    <tr key={n.level.nombre} className={`border-t border-gray-100 ${isCurrent ? "bg-emerald-50/60" : ""}`}>
+                      <td className="px-4 py-2 font-medium text-gray-900">
+                        {isCurrent && "✅ "}{n.level.nombre} <span className="text-gray-400">(+{formatCurrency(n.level.delta)})</span>
+                      </td>
+                      <td className="px-4 py-2 text-right text-gray-700">{formatCurrency(data.config.ticketBase + n.level.delta)}</td>
+                      <td className="px-4 py-2 text-right font-semibold">{formatCurrency(n.sumaBonos)}</td>
+                      <td className="px-4 py-2 text-right text-gray-700">{n.pozoNivel !== null ? formatCurrency(n.pozoNivel) : "—"}</td>
+                      <td className={`px-4 py-2 text-right font-medium ${n.colchon !== null && n.colchon >= 0 ? "text-emerald-600" : "text-red-600"}`}>
+                        {n.colchon !== null ? formatCurrency(n.colchon) : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+            <div className="px-4 py-2 text-[11px] text-gray-400 border-t border-gray-100">
+              El pozo es el techo; se paga la tabla fija por rol. Equipo: {data.staff.filter((s) => s.jornada === "tiempo_completo").length} tiempo completo · {data.staff.filter((s) => s.jornada === "medio_turno").length} medio turno · 1 admin.
+            </div>
+          </div>
+
+          {/* 2c · El admin es la cara del programa: resumen copiable para
+              su equipo, con la misma lib de texto que usa la dirección. */}
+          <ShareSummary
+            sedeLabel={sedeLabel}
+            month={month}
+            progress={p}
+            ticketBase={data.config.ticketBase}
+            ventas={data.equilibrio}
+            supervision={data.supervisionMes}
+            practica={!data.tresActivadores}
+          />
+
+            </div>
+          </SeccionDesplegable>
+
+          {/* 2a · Cuánto gana el equipo en cada nivel (informativo; solo de ESTA sede). */}
+          <CuantoGanaCard
+            staff={data.staff}
+            levels={p.porNivel.map((n) => n.level)}
+            ticketBase={data.config.ticketBase}
+            month={month}
+            nivelAlcanzado={p.nivelAlcanzado?.nombre ?? null}
+          />
+
+          {/* 2b · Foco de upselling sugerido (datos del PIC de esta sede) */}
+          {focus && focus.candidates.length > 0 && (
+            <SeccionDesplegable
+              titulo="💡 Ideas para el foco del día"
+              subtitulo="Lo que más deja por unidad vendida. Tú decides según stock y ocasión."
+              resumen={<p className="text-xs text-gray-600">{focus.candidates.slice(0, 3).map((c) => c.name).join(" · ")}{focus.candidates.length > 3 ? ` y ${focus.candidates.length - 3} más` : ""}</p>}
+            >
+              <div className="text-[11px] text-gray-400 mb-2">
+                Lo que más deja por unidad vendida (carta de esta sede, datos de {focus.month} — se refrescan con el reporte de rotación semanal).
+                💎 = alta contribución con poca rotación: los ideales para empujar. Tú decides según stock y ocasión.
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {focus.candidates.map((c) => (
+                  <span
+                    key={c.name}
+                    className={`text-[11px] rounded-full px-2.5 py-1 border ${c.hiddenGem ? "bg-primary/5 border-primary/30 text-primary font-medium" : "bg-gray-50 border-gray-200 text-gray-700"}`}
+                    title={`${c.unitsLastMonth} und en ese periodo${c.category ? ` · ${c.category}` : ""}`}
+                  >
+                    {c.hiddenGem ? "💎 " : ""}{c.name} · deja {formatCurrency(c.unitContribution)}/und
+                  </span>
+                ))}
+              </div>
+            </SeccionDesplegable>
+          )}
+
+
+          <SeccionDesplegable titulo="Qué se vendió" subtitulo="El mes y los últimos 3 meses, del reporte de rotación de Byte.">
+            <div className="space-y-4">
           {/* 4c · Qué se vendió este mes (reporte de rotación de Byte) */}
           <ProductosCard month={month} />
 
           {/* 4d · Cómo va la carta en los últimos 3 meses (versión corta) */}
           <TrimestreCard month={month} />
 
+            </div>
+          </SeccionDesplegable>
+
+
           {/* 4e · Productos flojos solo en esta sede + plan de acción de dirección (plegado) */}
           <RevisarSedeCard month={month} />
 
+          <SeccionDesplegable titulo="Mejor vendedor por turno" subtitulo="Quién más levanta su ticket sobre lo normal de su turno, y las ventas por trabajador.">
+            <div className="space-y-4">
           {/* 5 · Mejor vendedor por turno (hándicap) — el veredicto real */}
           <MejorVendedorSection month={month} />
 
@@ -667,6 +690,9 @@ function IncentivosPage() {
               </table>
             </div>
           )}
+            </div>
+          </SeccionDesplegable>
+
         </>
       )}
 
