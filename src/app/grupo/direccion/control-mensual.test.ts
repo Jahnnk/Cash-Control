@@ -48,17 +48,25 @@ const render = (x: ReturnType<typeof h>) => renderToStaticMarkup(h(ToastProvider
 describe("Control mensual (pantalla)", () => {
   test("las 4 tarjetas semanales del libro, con el aviso de cobros sin carga", () => {
     const html = render(h(VistaSemana, { d: semana, onCambio: () => {} }));
-    for (const t of ["Saldo bancario vs. compromisos", "Cobros pendientes", "Ventas de la semana", "Gastos no previstos", "No vende al crédito", "hace 59 días", "Anotar pago"]) expect(html).toContain(t);
+    for (const t of ["Saldo bancario vs. compromisos", "Cobros pendientes", "Ventas de la semana", "Gastos no previstos", "No vende al crédito", "tiene 59 días", "Anotar pago"]) expect(html).toContain(t);
   });
-  test("cierre: las 6 preguntas y los 5 pasos", () => {
+  test("liquidez: la conclusión no suma ventas futuras al saldo del banco", () => {
+    const html = render(h(VistaSemana, { d: semana, onCambio: () => {} }));
+    expect(html).toContain("Saldo S/11,954 · cubre los pagos de 14 días (S/3,512)");
+    expect(html).not.toContain("quedan S/26,825");
+    expect(html).toContain("quedarían S/26,825");
+  });
+  test("cierre: las 6 preguntas en una tabla y los pasos del libro", () => {
     const html = render(h(VistaCierre, { c: cierre }));
     for (const t of ["¿Cuánto vendí este mes?", "¿Cuánto me costó vender eso?", "¿Cuánto gasté en operar el negocio?", "¿Cuánto gané realmente?", "¿Cuánto tengo libre en caja?", "¿Superé mi punto de equilibrio?",
-      "Estado de resultados simplificado", "Comparación vs. agosto", "Flujo de caja del mes", "Revisión de punto de equilibrio", "Proyección de octubre"]) expect(html).toContain(t);
+      "Estado de resultados simplificado", "Comparación vs. agosto", "Flujo de caja del mes", "Proyección de octubre"]) expect(html).toContain(t);
+    expect((html.match(/<table/g) ?? []).length).toBe(1);
+    expect(html).toMatch(/Sí<span class="hidden sm:inline"> · <\/span><span class="block sm:inline">S\/11,591/); // equilibrio: ventas − piso, en la misma tabla
   });
   test("checklist: 12 puntos, lo marcado y lo que falta", () => {
     const html = render(h(Checklist, { c: cierre, onCambio: () => {} }));
     expect((html.match(/type="checkbox"/g) ?? []).length).toBe(12);
     expect(html).toContain("POR ACLARAR");
-    expect(html).toContain("Lo decides tú");
+    expect(html).not.toContain("Lo decides tú");
   });
 });
