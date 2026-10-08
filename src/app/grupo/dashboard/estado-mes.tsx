@@ -32,6 +32,10 @@ export type EstadoMesProps = {
   flujo: number | null;
   /** A dónde lleva tocar la liquidez (el detalle de banco y efectivo por sede). */
   liquidezHref?: string;
+  /** Qué se vendió: «vendido en las 3 sedes» (Grupo) o «vendido en Fonavi» (sede). */
+  etiquetaVentas?: string;
+  /** Detalle de la liquidez («Banco + caja hoy, las 3 sedes»). */
+  detalleLiquidez?: string;
 };
 
 const TONO = { bien: "text-emerald-700", ojo: "text-amber-700", mal: "text-red-700", neutro: "text-gray-900" };
@@ -64,7 +68,7 @@ export function EstadoMes(p: EstadoMesProps) {
       <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
         <div className="text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums text-gray-900 leading-none">{soles(p.ventas)}</div>
         <div className="pb-1 text-sm text-gray-500 flex flex-wrap items-center gap-2">
-          vendido en las 3 sedes
+          {p.etiquetaVentas ?? "vendido en las 3 sedes"}
           {p.deltaPct !== null && <span className="inline-flex items-center gap-1"><Delta pct={p.deltaPct} /> <span className="text-xs">vs. mismos días del mes pasado</span></span>}
         </div>
       </div>
@@ -91,7 +95,7 @@ export function EstadoMes(p: EstadoMesProps) {
 
       <div className="mt-6 pt-5 border-t border-gray-100 grid grid-cols-3 gap-3 sm:gap-5">
         {p.enCurso ? (
-          <Dato titulo="Liquidez" valor={p.liquidez !== null ? soles(p.liquidez) : "—"} detalle="Banco + caja hoy, las 3 sedes" href={p.liquidezHref} />
+          <Dato titulo="Liquidez" valor={p.liquidez !== null ? soles(p.liquidez) : "—"} detalle={p.detalleLiquidez ?? "Banco + caja hoy, las 3 sedes"} href={p.liquidezHref} />
         ) : (
           <Dato titulo="Caja" valor={p.flujo !== null ? `${p.flujo < 0 ? "−" : ""}${soles(p.flujo)}` : "—"} tono={p.flujo !== null && p.flujo < 0 ? "mal" : "neutro"} detalle="Lo que entró menos lo que salió" />
         )}

@@ -27,6 +27,7 @@ import { SeccionDesplegable } from "@/components/productos/ui";
 import type { ResumenExtra } from "@/app/actions/resumen-grupo";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
 import { construirAtencion } from "@/lib/grupo/atencion";
+import { proyeccionSede, textoEquilibrio, textoGanancia } from "@/lib/grupo/estado-mes";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { ScopeCode } from "@/lib/business-theme";
 
@@ -200,22 +201,10 @@ export function GrupoDashboardClient({
   const metas = [1, 2, 3].map((id) => extra.metas[id] ?? null);
   const metaGrupo = metas.every((x) => x !== null) ? metas.reduce((t, x) => t + (x ?? 0), 0) : null;
   // Al ritmo actual: con menos de 7 días del mes, el de los últimos 7 días con venta (el inicio de mes engaña).
-  const proyeccion = isCurrentMonth && ventasDelMes.length ? Math.round(ventasDelMes.reduce((t, v) => {
-    const dia = Number(v.hasta!.slice(8, 10));
-    const ult7 = v.serie14.slice(-7);
-    return t + (dia >= 7 || ult7.length < 7 ? (v.mes / dia) * diasDelMes : (ult7.reduce((a, x) => a + x, 0) / 7) * diasDelMes);
-  }, 0)) : null;
-  const g = breakeven?.grupo ?? null;
-  const equilibrio = !g || g.estado === "sin_datos" ? { texto: "—", detalle: "Sin datos suficientes", tono: "neutro" as const }
-    : g.estado === "superado" ? { texto: "Cubierto", detalle: isCurrentMonth ? "Las ventas ya pagan los costos del mes" : "Las ventas pagaron los costos del mes", tono: "bien" as const }
-    : g.estado === "en_riesgo" ? { texto: isCurrentMonth ? "En riesgo" : "No se cubrió", detalle: isCurrentMonth ? `Al ritmo actual no se cubre (va en ${Math.round(g.avancePct ?? 0)}%)` : `Se llegó al ${Math.round(g.avancePct ?? 0)}%`, tono: "mal" as const }
-    : { texto: g.diaEstimadoCruce ? `Se cubre el día ${g.diaEstimadoCruce}` : `${Math.round(g.avancePct ?? 0)}% cubierto`, detalle: `Va en ${Math.round(g.avancePct ?? 0)}% al ritmo actual`, tono: "neutro" as const };
+  const proyeccion = isCurrentMonth && ventasDelMes.length ? Math.round(ventasDelMes.reduce((t, v) => t + proyeccionSede(v, diasDelMes), 0)) : null;
+  const equilibrio = textoEquilibrio(breakeven?.grupo ?? null, isCurrentMonth);
   const cg = cifras?.grupo ?? null;
-  const ganancia = {
-    valor: cg?.ganancia ?? null,
-    detalle: cg?.ganancia == null ? "Se calcula con el Excel desde el día 10"
-      : `${cg.gananciaPct !== null ? `${cg.gananciaPct.toLocaleString("es-PE", { maximumFractionDigits: 1 })}% de lo vendido` : ""}${cg.provisional ? " · provisional" : ""}`,
-  };
+  const ganancia = textoGanancia(cg);
 
   // ── Necesita tu atención: lo que pide una acción, agrupado y ordenado ──
   const diasSinRegistrar = (hasta: string | null) => hasta
