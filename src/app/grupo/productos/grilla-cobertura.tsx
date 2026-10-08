@@ -9,7 +9,6 @@
  * Byte» y la ventana «Subir Reportes Gerencia». Lógica: lib/productos/estado-reportes.ts.
  */
 
-import { formatCurrency } from "@/lib/utils";
 import { celdaCobertura, marcarSospechosas, type CeldaCobertura, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { fechaCorta, mesesDesdeAbril } from "@/lib/productos/cobertura-datos";
 import { NOMBRE_REPORTE, reportesPorRevisar, reportesQueFaltan, todoCompleto, tresReportes, type DetalleReporte, type TipoReporte, type TresReportes, type VentasDelMes } from "@/lib/productos/estado-reportes";
@@ -77,7 +76,9 @@ export function GrillaCobertura({ datos, compacto = false, elegido = null, onCel
   const { hoy } = datos;
   const meses = mesesDesdeAbril(hoy);
   return (
-    <div className="overflow-x-auto">
+    // «relative»: sin él, los textos sr-only (posición absoluta) de las casillas escapan del
+    // deslizador y hacían correr la página de lado en el celular.
+    <div className="relative overflow-x-auto">
       <table className="w-full border-separate border-spacing-1.5">
         <thead>
           <tr>
@@ -112,7 +113,8 @@ export function GrillaCobertura({ datos, compacto = false, elegido = null, onCel
                         <div className={`font-semibold tabular-nums ${compacto ? "text-xs" : "text-sm"}`}>
                           {falta.length > 0 ? `Falta${falta.length > 1 ? "n" : ""} ${falta.length} de 3` : revisar.length > 0 ? "Subido · revisar" : "✓ Completo"}
                         </div>
-                        <ul className={`mt-1 space-y-0.5 ${compacto ? "" : "text-[11px]"}`}>
+                        {/* Completo: basta el «✓ Completo»; las 3 marcas solo cuando algo falta o hay que revisar. */}
+                        {(falta.length > 0 || revisar.length > 0) && <ul className={`mt-1 space-y-0.5 ${compacto ? "" : "text-[11px]"}`}>
                           {(Object.keys(tres) as TipoReporte[]).map((k) => (
                             <li key={k} className="flex items-baseline justify-between gap-1.5">
                               <span className="font-medium">{ETIQUETA_CORTA[k]}</span>
@@ -120,10 +122,10 @@ export function GrillaCobertura({ datos, compacto = false, elegido = null, onCel
                               <span className="sr-only">{tres[k].estado === "completo" ? "completo" : tres[k].estado === "parcial" ? "incompleto" : tres[k].estado === "revisar" ? "subido, no cuadra con ventas" : "falta"}</span>
                             </li>
                           ))}
-                        </ul>
+                        </ul>}
                         {!compacto && c.estado !== "vacio" && (
                           <div className="mt-1.5 border-t border-black/10 pt-1 opacity-90">
-                            <div className="tabular-nums">{formatCurrency(c.ventas)} en productos</div>
+                            <div className="tabular-nums">S/{Math.round(c.ventas).toLocaleString("es-PE")} en productos</div>
                             {(Object.keys(tres) as TipoReporte[]).filter((k) => tres[k].estado === "parcial" || tres[k].estado === "revisar").map((k) => (
                               <div key={k} className="font-medium">{ETIQUETA_CORTA[k]}: {tres[k].estado === "revisar" ? `subido, ${tres[k].texto}` : tres[k].texto}</div>
                             ))}

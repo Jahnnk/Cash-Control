@@ -11,7 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
-import { Upload, Loader2, Table2 } from "lucide-react";
+import { Loader2, Table2 } from "lucide-react";
 import { getCoberturaRotacion } from "@/app/actions/productos-panorama";
 import { GrillaCobertura, FaltaSubir, type DatosCobertura } from "./grilla-cobertura";
 import { ImportarReportesModal } from "./importar-reportes";
@@ -35,21 +35,12 @@ export function CargasByte({ onImportado }: { onImportado: () => void }) {
   }, [cargar]);
 
   return (
-    <section className="bg-white rounded-xl border-2 border-primary/30 p-4 space-y-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
-            <Table2 className="w-4 h-4 text-primary" /> Reportes de Byte · rotación de productos
-          </h2>
-          <p className="text-[11px] text-gray-500 mt-0.5 max-w-3xl">
-            Qué días de cada mes están cargados y quién los subió. Sube varios archivos a la vez —meses completos o lo
-            que va del mes—; antes de guardar te dice qué va a pasar con cada uno. Click en una casilla para subir a esa sede.
-          </p>
-        </div>
-        <button type="button" onClick={() => setModal({ sede: null, mes: null })}
-          className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg shrink-0">
-          <Upload className="w-4 h-4" /> Subir Reportes Gerencia
-        </button>
+    <section className="bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-5 space-y-3">
+      <div className="min-w-0">
+        <h2 className="text-sm font-semibold text-gray-900 flex items-center gap-1.5">
+          <Table2 className="w-4 h-4 text-primary" /> Qué reportes de Byte están cargados
+        </h2>
+        <p className="text-xs text-gray-500 mt-0.5">Toca una casilla para subir los reportes de esa sede y ese mes.</p>
       </div>
 
       {cargando && !datos ? (

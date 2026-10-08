@@ -94,8 +94,8 @@ export function ControlCargasProductos() {
           <div className="min-w-0">
             <div className={`text-xs font-semibold ${hayProblema ? "text-red-900" : "text-emerald-900"}`}>
               {hayProblema
-                ? `Reporte de productos: falta subir en ${resumen.pendientes.length} ${resumen.pendientes.length === 1 ? "sede" : "sedes"}`
-                : "Reporte de productos al día en las 3 sedes"}
+                ? `Carga del sábado de las sedes: falta en ${resumen.pendientes.length} ${resumen.pendientes.length === 1 ? "sede" : "sedes"}`
+                : "Carga del sábado de las sedes: al día"}
             </div>
             <div className={`text-[11px] mt-0.5 ${hayProblema ? "text-red-800/90" : "text-emerald-800/80"}`}>
               {hayProblema
@@ -137,9 +137,8 @@ export function ControlCargasProductos() {
           ))}
 
           <p className="text-[10px] text-gray-400 pt-1">
-            Este es el reporte <strong>&ldquo;Productos con mayor rotación&rdquo;</strong> de Byte, que
-            alimenta Inteligencia Comercial. Lo sube dirección desde Productos — los administradores
-            no tienen acceso a esta pantalla.
+            Es el reporte <strong>&ldquo;Productos con mayor rotación&rdquo;</strong> de Byte que cada sede
+            sube los sábados desde su panel. Lo que subes tú se ve arriba, en la grilla.
           </p>
         </div>
       )}

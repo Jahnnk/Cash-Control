@@ -143,8 +143,7 @@ export function CandidatosReemplazo({ month }: { month: string }) {
       titulo="Candidatos a reemplazo"
       subtitulo={
         data
-          ? <>Fonavi y Centro juntas · decide con {periodo} · costos del Excel de pricing para el {data.coberturaCosto}% de lo vendido
-            {data.semanas > 1 ? ` · ${data.semanas} semanas guardadas` : " · las semanas se ven desde las próximas cargas del sábado"}</>
+          ? <>Fonavi y Centro deciden juntas · {periodo} · costo conocido del {data.coberturaCosto}% de lo vendido</>
           : "La matriz de la carta (estrella, vaca, interrogante, perro) y qué productos conviene sacar o revisar, con su historia mes a mes."
       }
       resumen={data && (
