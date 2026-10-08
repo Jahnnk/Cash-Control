@@ -25,11 +25,13 @@ import type { HeroStats } from "./executive-hero";
 import { SeisCifrasPanel } from "./seis-cifras-panel";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SedePulseCard, type SedePulse } from "./sede-pulse-card";
-import { TodayActionsCard } from "./today-actions-card";
+import { AtencionCard } from "./atencion-card";
+import { EstadoMes } from "./estado-mes";
+import { SeccionDesplegable } from "@/components/productos/ui";
+import type { ResumenExtra } from "@/app/actions/resumen-grupo";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
-import { buildTodayActions } from "@/lib/grupo/today-actions";
+import { construirAtencion } from "@/lib/grupo/atencion";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
-import type { KellyLoadStatus } from "@/app/actions/grupo";
 import type { ScopeCode } from "@/lib/business-theme";
 
 /**
@@ -75,17 +77,18 @@ type Props = {
   frescura: FrescuraGrupo | null;
   liquidez: LiquidezGrupo | null;
   ventas: GroupVentasSede[] | null;
-  kellyLoads: KellyLoadStatus[];
   atelierB2B: AtelierB2BResumen;
   /** Verificación automática contra el Excel de Kelly; null si falló. */
   cuadreKelly: VerificacionSedeMes[] | null;
   /** Las seis cifras del mes (ventas, costos, gastos, caja, margen, ganancia real); null si falló. */
   cifras: SeisCifras | null;
+  /** Metas de venta del presupuesto, revisión semanal pendiente y cobros de Atelier. */
+  extra: ResumenExtra;
 };
 
 export function GrupoDashboardClient({
-  selectedMonth, mesActual, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas, kellyLoads,
-  atelierB2B, cuadreKelly, cifras,
+  selectedMonth, mesActual, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas,
+  atelierB2B, cuadreKelly, cifras, extra,
 }: Props) {
   const [pestana, setPestana] = useState<"resumen" | "equipo" | "finanzas" | "gastos" | "kelly">("resumen");
 
@@ -174,6 +177,7 @@ export function GrupoDashboardClient({
         serie: v?.serie14 ?? [],
         // "Al día hasta…" solo vale para el mes en curso.
         hasta: isCurrentMonth ? v?.hasta ?? null : null,
+        meta: extra.metas[s.businessId] ?? null,
         flag: null,
       };
     })
@@ -189,52 +193,71 @@ export function GrupoDashboardClient({
     }
   }
 
-  // ── Acciones de hoy (motor puro y testeado) ──
-  const actions = buildTodayActions({
-    // Solo el mes elegido y el anterior: lo más viejo se ve en la sección
-    // del cuadre (pestaña Excel de Kelly) sin llenar las acciones de hoy.
-    cuadres: (cuadreKelly ?? [])
-      .filter((v) => v.month >= mesAnterior(selectedMonth))
-      .map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
-    cargas: kellyLoads.map((k) => ({
-      nombre: k.name.replace("Yayi's ", ""),
-      nivel: k.level,
-      diasDesdeCarga: k.daysSinceImport,
-    })),
+  const alDia = frescura?.estado === "al_dia";
+
+  // ── ¿Cómo vamos? Una sola cifra de ventas (Byte, la misma de las sedes), su meta y su ritmo ──
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const diasDelMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  const diaHoy = isCurrentMonth ? Number(hoy.slice(8, 10)) : diasDelMes;
+  const metas = [1, 2, 3].map((id) => extra.metas[id] ?? null);
+  const metaGrupo = metas.every((x) => x !== null) ? metas.reduce((t, x) => t + (x ?? 0), 0) : null;
+  // Al ritmo actual: con menos de 7 días del mes, el de los últimos 7 días con venta (el inicio de mes engaña).
+  const proyeccion = isCurrentMonth && ventasDelMes.length ? Math.round(ventasDelMes.reduce((t, v) => {
+    const dia = Number(v.hasta!.slice(8, 10));
+    const ult7 = v.serie14.slice(-7);
+    return t + (dia >= 7 || ult7.length < 7 ? (v.mes / dia) * diasDelMes : (ult7.reduce((a, x) => a + x, 0) / 7) * diasDelMes);
+  }, 0)) : null;
+  const g = breakeven?.grupo ?? null;
+  const equilibrio = !g || g.estado === "sin_datos" ? { texto: "—", detalle: "Sin datos suficientes", tono: "neutro" as const }
+    : g.estado === "superado" ? { texto: "Cubierto", detalle: isCurrentMonth ? "Las ventas ya pagan los costos del mes" : "Las ventas pagaron los costos del mes", tono: "bien" as const }
+    : g.estado === "en_riesgo" ? { texto: isCurrentMonth ? "En riesgo" : "No se cubrió", detalle: isCurrentMonth ? `Al ritmo actual no se cubre (va en ${Math.round(g.avancePct ?? 0)}%)` : `Se llegó al ${Math.round(g.avancePct ?? 0)}%`, tono: "mal" as const }
+    : { texto: g.diaEstimadoCruce ? `Se cubre el día ${g.diaEstimadoCruce}` : `${Math.round(g.avancePct ?? 0)}% cubierto`, detalle: `Va en ${Math.round(g.avancePct ?? 0)}% al ritmo actual`, tono: "neutro" as const };
+  const cg = cifras?.grupo ?? null;
+  const ganancia = {
+    valor: cg?.ganancia ?? null,
+    detalle: cg?.ganancia == null ? "Se calcula con el Excel desde el día 10"
+      : `${cg.gananciaPct !== null ? `${cg.gananciaPct.toLocaleString("es-PE", { maximumFractionDigits: 1 })}% de lo vendido` : ""}${cg.provisional ? " · provisional" : ""}`,
+  };
+
+  // ── Necesita tu atención: lo que pide una acción, agrupado y ordenado ──
+  const diasSinRegistrar = (hasta: string | null) => hasta
+    ? Math.max(0, Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${hasta}T12:00:00Z`)) / 86_400_000) - 1) : null;
+  const atencion = isCurrentMonth ? construirAtencion({
+    hoy,
     sedes: pulses.map((p) => ({
-      nombre: p.nombre,
-      code: p.code,
-      deltaPct: p.deltaPct,
-      diasComparados: p.diasComparados,
-      coberturaBaja: p.coberturaBaja,
-      equilibrioPct: p.equilibrioPct,
-      // El motor de equilibrio ya decide el estado: solo "en_riesgo"
-      // amerita interrumpir (superado y en_camino no son problema).
+      nombre: p.nombre, code: p.code, deltaPct: p.deltaPct, diasComparados: p.diasComparados, coberturaBaja: p.coberturaBaja,
+      diasSinRegistrar: diasSinRegistrar(p.hasta), equilibrioPct: p.equilibrioPct,
+      diasConDatos: p.hasta?.startsWith(selectedMonth) ? Number(p.hasta.slice(8, 10)) : 0,
       equilibrioEnRiesgo: beById.get(p.businessId)?.estado === "en_riesgo",
     })),
-  });
-
-  const alDia = frescura?.estado === "al_dia";
+    cuadres: (cuadreKelly ?? []).filter((v) => v.month >= mesAnterior(selectedMonth)).map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
+    excelPendiente: frescura && !alDia ? frescura.accion ?? frescura.titular : null,
+    revisionSemanal: extra.revisionSemanal,
+    cobrosAtelier: extra.cobrosAtelier,
+  }) : [];
+  // Los avisos que se resuelven en esta misma pantalla no navegan: cambian de pestaña o bajan a las sedes.
+  const irA = (href: string) => {
+    if (href === "#excel") { setPestana("kelly"); return true; }
+    if (href.endsWith("#sedes")) { document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth" }); return true; }
+    return false;
+  };
   const chipFrescura = frescura?.hasta
-    ? `Datos hasta el ${fechaLarga(frescura.hasta)}${frescura.diasAtraso ? ` · hace ${frescura.diasAtraso} días` : ""}`
+    ? `Excel al ${fechaLarga(frescura.hasta)}`
     : "Sin datos cargados";
 
   return (
     <div className="space-y-6 pb-4 max-w-[1400px] min-w-0">
       {/* Cabecera: identidad, hasta cuándo hay datos y la acción de siempre */}
-      <header className="flex flex-wrap items-end justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Grupo Yayi&apos;s</h1>
-          <p className="text-sm text-gray-500 mt-1">{isCurrentMonth ? "Mes en curso" : "Mes cerrado"} · {periodo}</p>
-        </div>
-        <div className="flex flex-wrap items-center gap-3 w-full sm:w-auto">
+      <header className="flex flex-wrap items-center justify-between gap-3">
+        <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Grupo Yayi&apos;s</h1>
+        <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <SelectorMes mes={selectedMonth} mesActual={mesActual} />
           {isCurrentMonth && frescura && (
             <button
               type="button"
               onClick={() => setPestana("kelly")}
               title="Ver qué Excel están cargados"
-              className={`inline-flex items-center gap-2 rounded-xl border px-3 py-2 text-sm ${
+              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs sm:text-sm ${
                 alDia ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"
               }`}
             >
@@ -242,7 +265,7 @@ export function GrupoDashboardClient({
               {chipFrescura}
             </button>
           )}
-          <SubirExcelKelly className="flex-1 sm:flex-none" />
+          <SubirExcelKelly />
         </div>
       </header>
 
@@ -271,49 +294,53 @@ export function GrupoDashboardClient({
 
       {pestana === "resumen" && (
         <div className="space-y-6">
-          {/* Solo si hay algo que pedirle a Kelly: con todo al día basta la
-              pastilla verde de la cabecera (un aviso que aparece siempre deja
-              de leerse). */}
-          {isCurrentMonth && frescura && !alDia && <BandaFrescura frescura={frescura} />}
-
-          {/* Un mes anterior se mira para saber cómo nos fue: lo que solo vale
-              hoy (saldos, acciones, cobranza) lo dice o no se muestra. */}
-          {!isCurrentMonth && (
-            <div className="rounded-xl border border-sky-200 bg-sky-50 px-4 py-2.5 text-sm text-sky-900">
-              Estás viendo <strong>{periodo}</strong>, un mes cerrado. Ventas, costos, gastos, caja, margen, ganancia y punto de equilibrio son de ese mes;
-              los saldos de liquidez son los de hoy (el saldo al cierre de cada mes no se guarda).
-            </div>
-          )}
-
-          {/* ¿Cómo estamos?  ·  ¿Qué debo hacer hoy? */}
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5 items-start">
-            <div className={`${isCurrentMonth ? "lg:col-span-2" : "lg:col-span-3"} min-w-0`}>
-              <SeisCifrasPanel
-                cifras={cifras}
-                periodo={periodo}
-                apoyo={{
-                  serie: hero.serie,
-                  ventasDeltaPct: hero.ventasDeltaPct,
-                  liquidez: hero.liquidez,
-                  liquidezSedes: hero.liquidezSedes.map((x) => ({ businessId: x.businessId, nombre: x.nombre, total: x.total })),
-                  equilibrioPct: hero.equilibrioPct,
-                  mesCerrado: !isCurrentMonth,
-                }}
-              />
-            </div>
-            {isCurrentMonth && <TodayActionsCard actions={actions} />}
+          {/* ¿Cómo vamos?  ·  ¿Qué necesita mi atención? */}
+          <div className={`grid grid-cols-1 gap-5 items-start ${isCurrentMonth ? "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
+            <EstadoMes
+              periodo={periodo} enCurso={isCurrentMonth} dia={diaHoy} diasDelMes={diasDelMes}
+              ventas={ventasMes} deltaPct={deltaGrupo} meta={metaGrupo} proyeccion={proyeccion}
+              liquidez={liquidez ? liquidez.total : null} equilibrio={equilibrio} ganancia={ganancia}
+              flujo={cg?.caja.flujo ?? null} onLiquidez={() => setPestana("finanzas")}
+            />
+            {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
           </div>
 
-          {/* ¿Qué sede preocupa, cuál va mejor? — ordenadas por desempeño */}
-          <section className="space-y-3">
-            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{isCurrentMonth ? "Las sedes este mes" : `Las sedes en ${periodo}`}</h2>
+          {/* ¿Cómo va cada sede? — ordenadas por desempeño; cada tarjeta abre su sede */}
+          <section id="sedes" className="space-y-3 scroll-mt-4">
+            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Las sedes</h2>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
               {pulses.map((p) => <SedePulseCard key={p.businessId} s={p} />)}
             </div>
           </section>
 
+          {/* El detalle, para cuando se pide (revelación progresiva) */}
+          <SeccionDesplegable
+            titulo={`Las seis cifras de ${periodo.toLowerCase()}`}
+            subtitulo="Ventas, costos, gastos, caja, margen y ganancia real, sede por sede."
+            resumen={!isCurrentMonth ? (
+              <div className="text-xs text-gray-500">Los saldos de liquidez son los de hoy: el saldo al cierre de cada mes no se guarda.</div>
+            ) : undefined}
+          >
+            <SeisCifrasPanel
+              cifras={cifras}
+              periodo={periodo}
+              apoyo={{
+                serie: hero.serie,
+                ventasDeltaPct: hero.ventasDeltaPct,
+                liquidez: hero.liquidez,
+                liquidezSedes: hero.liquidezSedes.map((x) => ({ businessId: x.businessId, nombre: x.nombre, total: x.total })),
+                equilibrioPct: hero.equilibrioPct,
+                mesCerrado: !isCurrentMonth,
+              }}
+            />
+          </SeccionDesplegable>
+
           {/* Atelier B2B — lo que se debe HOY: no tiene versión por mes. */}
-          {isCurrentMonth && <AtelierB2BCard resumen={atelierB2B} />}
+          {isCurrentMonth && (
+            <SeccionDesplegable titulo="Clientes de Atelier" subtitulo="Venta a empresas y lo que te deben.">
+              <AtelierB2BCard resumen={atelierB2B} />
+            </SeccionDesplegable>
+          )}
         </div>
       )}
 

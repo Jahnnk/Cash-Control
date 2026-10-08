@@ -411,11 +411,21 @@ export async function getGroupBreakeven(month: string): Promise<
         return { bId, ventas: v.total, ventasHasta: v.ultimoDia, reference, ...costs };
       }),
     );
+    // Mes en curso: cada sede se mide con los días que TIENE cargados, no con los del calendario.
+    // Con los del calendario, Atelier con ventas hasta el 3 se veía «en riesgo» un día 8 (8-oct-2026).
+    const diasDe = (s: (typeof perSede)[number]) =>
+      isCurrent && s.ventasHasta?.startsWith(month) ? Math.min(daysElapsed, Number(s.ventasHasta.slice(8, 10))) : daysElapsed;
+    /** Días equivalentes del grupo: los que hacen que su ritmo sea la suma de los ritmos de cada sede. */
+    const diasGrupo = (incluidas: typeof perSede) => {
+      const ritmo = incluidas.reduce((t, s) => t + (s.ventas > 0 ? s.ventas / diasDe(s) : 0), 0);
+      const ventas = incluidas.reduce((t, s) => t + s.ventas, 0);
+      return ritmo > 0 ? ventas / ritmo : daysElapsed;
+    };
     const sedes = perSede.map((s) => {
       if (isCurrent && !s.reference) {
         const r = computeBreakeven({
           fijos: 0, variables: s.variables, sinClasificar: s.sinClasificar,
-          ventas: s.ventas, daysElapsed, daysInMonth,
+          ventas: s.ventas, daysElapsed: diasDe(s), daysInMonth,
         });
         r.warnings = [
           ...r.warnings.filter((w) => !w.includes("No hay costos fijos clasificados")),
@@ -435,7 +445,7 @@ export async function getGroupBreakeven(month: string): Promise<
           variables: s.variables,
           sinClasificar: s.sinClasificar,
           ventas: s.ventas,
-          daysElapsed,
+          daysElapsed: diasDe(s),
           daysInMonth,
           reference: s.reference,
         }),
@@ -475,7 +485,7 @@ export async function getGroupBreakeven(month: string): Promise<
         variables: withRef.reduce((t, s) => t + s.variables, 0) - internoMes.variables,
         sinClasificar: perSede.reduce((t, s) => t + s.sinClasificar, 0),
         ventas: withRef.reduce((t, s) => t + s.ventas, 0) - internoMes.ventas,
-        daysElapsed,
+        daysElapsed: diasGrupo(withRef),
         daysInMonth,
         reference: groupRef,
       });

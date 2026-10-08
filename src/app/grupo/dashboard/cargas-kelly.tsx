@@ -73,7 +73,7 @@ export function SubirExcelKelly({ sede, onCerrar, className = "" }: {
           onClick={abrirSelector}
           className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl whitespace-nowrap ${className}`}
         >
-          <Upload className="w-4 h-4" /> Subir Excel de Gerencia de Finanzas
+          <Upload className="w-4 h-4" /> Subir Excel<span className="hidden lg:inline">&nbsp;de Gerencia de Finanzas</span>
         </button>
       )}
 
