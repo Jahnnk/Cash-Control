@@ -344,9 +344,23 @@ export function LoansClient({ summary, capitalReconocido }: { summary: LoansSumm
         </div>
       </div>
 
-      {/* Cómo funciona — el ciclo completo en una franja */}
-      <div className="bg-white rounded-xl border border-gray-200 p-4">
-        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 text-xs">
+      {/* Lo primero: cuánto te debe Atelier hoy (prestado − devuelto). Ya se calculaba
+          (pendingBalance) pero no se mostraba: la pantalla abría con el aporte de capital y
+          la respuesta a «¿cuánto me falta cobrar?» no estaba a la vista (UX, 8-oct-2026). */}
+      <div className="bg-white rounded-2xl border border-gray-200/80 p-5">
+        <div className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Atelier te debe hoy</div>
+        <div className={`text-3xl font-semibold tabular-nums mt-1 ${summary.pendingBalance > 0 ? "text-amber-700" : "text-emerald-700"}`}>{formatCurrency(Math.max(summary.pendingBalance, 0))}</div>
+        <div className="text-xs text-gray-500 mt-1">
+          Prestado {formatCurrency(summary.totalLoaned)} − devuelto {formatCurrency(summary.totalRefunded)}. Lo condonado no se cobra.
+        </div>
+      </div>
+
+      {/* Cómo funciona — el ciclo completo en una franja, a un toque */}
+      <details className="group bg-white rounded-xl border border-gray-200 p-4">
+        <summary className="cursor-pointer list-none text-xs font-medium text-gray-600 hover:text-gray-900">
+          ¿Cómo funciona? <span className="text-gray-400 group-open:hidden">Ver</span>
+        </summary>
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2 text-xs mt-3">
           <div className="flex-1 flex items-center gap-2 rounded-lg bg-emerald-50 border border-emerald-200 px-3 py-2">
             <ArrowDownCircle className="w-4 h-4 text-emerald-600 shrink-0" />
             <div>
@@ -371,7 +385,7 @@ export function LoansClient({ summary, capitalReconocido }: { summary: LoansSumm
             </div>
           </div>
         </div>
-      </div>
+      </details>
 
       {/* Resumen — rediseño visual (auditoría de las socias, ago-2026):
           Jahnn recordaba haber puesto "más de 10 mil" y esta pantalla

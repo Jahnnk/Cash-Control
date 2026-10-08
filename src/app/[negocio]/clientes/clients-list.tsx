@@ -10,7 +10,7 @@ import { useRouter } from "next/navigation";
 
 type ClientRow = Record<string, unknown>;
 
-export function ClientsList({ clients }: { clients: ClientRow[] }) {
+export function ClientsList({ clients, embebida = false }: { clients: ClientRow[]; embebida?: boolean }) {
   const router = useRouter();
   const [showForm, setShowForm] = useState(false);
   const [name, setName] = useState("");
@@ -33,7 +33,7 @@ export function ClientsList({ clients }: { clients: ClientRow[] }) {
   return (
     <div className="space-y-6">
       <div className="flex items-center justify-between">
-        <h1 className="text-2xl font-bold text-gray-900">Clientes</h1>
+        {embebida ? <span /> : <h1 className="text-2xl font-bold text-gray-900">Clientes</h1>}
         <button
           onClick={() => setShowForm(!showForm)}
           className="bg-primary text-white rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 flex items-center gap-2"

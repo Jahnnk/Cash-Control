@@ -22,7 +22,7 @@ describe("menú lateral", () => {
     expect(g).toHaveLength(11);
   });
 
-  it("las sedes: lo principal arriba y Configuración al final; solo Atelier tiene Clientes", () => {
+  it("las sedes: lo principal arriba y Configuración al final; solo Atelier tiene Clientes y lo de antes va en Datos", () => {
     for (const sede of ["fonavi", "centro", "atelier"] as const) {
       const m = segmentos(sede);
       expect(m.slice(0, 2)).toEqual(["dashboard", "panel"]);
@@ -32,7 +32,9 @@ describe("menú lateral", () => {
     expect(segmentos("atelier")).toEqual(expect.arrayContaining(["clientes", "fonavi", "prestamos-socio"]));
     expect(segmentos("fonavi")).not.toContain("clientes");
     // Registro manual, abajo del todo (antes de Configuración): desde agosto todo entra con el Excel.
-    for (const sede of ["fonavi", "centro", "atelier"] as const) expect(segmentos(sede).slice(-2)).toEqual(["registro", "configuracion"]);
+    for (const sede of ["fonavi", "centro"] as const) expect(segmentos(sede).slice(-2)).toEqual(["registro", "configuracion"]);
+    expect(segmentos("atelier").slice(-4)).toEqual(["registro", "fonavi", "prestamos-socio", "configuracion"]);
+    expect(MENU.atelier.map((s) => s.titulo)).not.toContain("Clientes");
     expect(segmentos("centro")).toHaveLength(8);
     expect(segmentos("atelier")).toHaveLength(11);
   });

@@ -60,7 +60,7 @@ const I = {
   registro: { segment: "registro", label: "Registro manual", icon: PenLine },
   propinas: { segment: "propinas", label: "Propinas", icon: HandCoins },
   clientes: { segment: "clientes", label: "Clientes", icon: Users },
-  porCobrar: { segment: "fonavi", label: "Por cobrar", icon: Handshake },
+  porCobrar: { segment: "fonavi", label: "Cobros entre sedes", icon: Handshake },
   prestamos: { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote },
 } satisfies Record<string, NavItem>;
 
@@ -75,10 +75,11 @@ export const CONFIGURACION: NavItem = { segment: "configuracion", label: "Config
 const SEDE = (atelier: boolean): NavSeccion[] => [
   { titulo: null, items: [I.dashboard, I.panel] },
   { titulo: "Día a día", items: [I.propinas] },
-  { titulo: "Análisis", items: [I.reportes, I.productos, I.presupuesto] },
-  ...(atelier ? [{ titulo: "Clientes", items: [I.clientes, I.porCobrar, I.prestamos] }] : []),
-  // Desde agosto todo entra con el Excel: el registro a mano queda abajo, para casos sueltos (8-oct-2026).
-  { titulo: "Datos", items: [I.registro] },
+  // Atelier: Clientes es lo de Byte (quién compra y cuánto te deben), junto a los análisis (8-oct-2026).
+  { titulo: "Análisis", items: atelier ? [I.reportes, I.productos, I.clientes, I.presupuesto] : [I.reportes, I.productos, I.presupuesto] },
+  // Desde agosto todo entra con el Excel: lo de la época del registro manual queda abajo, para
+  // casos sueltos (8-oct-2026). En Atelier, también los cobros entre sedes y los préstamos del socio.
+  { titulo: "Datos", items: atelier ? [I.registro, I.porCobrar, I.prestamos] : [I.registro] },
 ];
 
 export const MENU: Record<ScopeKey, NavSeccion[]> = {
