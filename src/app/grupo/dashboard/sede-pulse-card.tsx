@@ -41,6 +41,8 @@ export type SedePulse = {
   equilibrioPct: number | null;
   serie: number[];
   hasta: string | null;
+  /** Meta de ventas del mes (venta esperada del presupuesto aprobado); null sin presupuesto. */
+  meta: number | null;
   /** Etiqueta destacada: la sede que más preocupa o la que va mejor. */
   flag: "atencion" | "mejor" | null;
 };
@@ -86,6 +88,7 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
             <Icon className="w-4 h-4" />
           </span>
           <span className="text-sm font-semibold text-gray-900 truncate">{s.nombre}</span>
+          <ArrowUpRight className="w-3.5 h-3.5 text-gray-300 transition-colors group-hover:text-primary" aria-hidden />
         </div>
         {s.flag === "atencion" && (
           <span className="shrink-0 text-[10px] font-medium uppercase tracking-wide px-2 py-0.5 rounded-full bg-red-50 text-red-700">
@@ -101,7 +104,7 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
 
       {/* El número de la sede */}
       <div className="mt-5">
-        <div className="text-[10px] font-medium uppercase tracking-[0.09em] text-gray-400 mb-1.5">Vendido del mes (Byte)</div>
+        <div className="text-[10px] font-medium uppercase tracking-[0.09em] text-gray-400 mb-1.5">Vendido del mes</div>
         <div className="text-3xl font-semibold text-gray-900 tabular-nums tracking-[-0.03em] leading-none">
           {formatCurrency(s.ventasMes)}
         </div>
@@ -128,50 +131,26 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
         </div>
       )}
 
-      {/* Equilibrio + saldo, en voz baja */}
-      <div className="mt-5 space-y-2.5">
-        {eq !== null && (
-          <div>
+      {/* Una sola barra: contra la meta del presupuesto si hay; si no, el punto de equilibrio. */}
+      <div className="mt-5">
+        {s.meta ? (
+          <>
             <div className="flex items-baseline justify-between text-[11px] mb-1.5">
-              <span className="text-gray-400">Equilibrio</span>
-              <span className="font-medium text-gray-600 tabular-nums">{Math.round(eq)}%</span>
+              <span className="text-gray-500">Meta {formatCurrency(s.meta)}</span>
+              <span className="font-medium text-gray-700 tabular-nums">{Math.round((s.ventasMes / s.meta) * 100)}%</span>
+            </div>
+            <ProgressBar pct={(s.ventasMes / s.meta) * 100} tone={s.ventasMes >= s.meta ? "positive" : "neutral"} />
+            {eq !== null && <div className="mt-2 text-[11px] text-gray-500">Punto de equilibrio: <span className={`font-medium tabular-nums ${eq >= 100 ? "text-emerald-700" : "text-gray-700"}`}>{Math.round(eq)}% cubierto</span></div>}
+          </>
+        ) : eq !== null ? (
+          <>
+            <div className="flex items-baseline justify-between text-[11px] mb-1.5">
+              <span className="text-gray-500">Punto de equilibrio</span>
+              <span className="font-medium text-gray-700 tabular-nums">{Math.round(eq)}%</span>
             </div>
             <ProgressBar pct={eq} tone={eqTone} />
-          </div>
-        )}
-        <div className="flex items-baseline justify-between text-[11px] pt-1">
-          <span className="text-gray-400">Entró a caja</span>
-          <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.ingresosMes)}</span>
-        </div>
-        <div className="flex items-baseline justify-between text-[11px]">
-          <span className="text-gray-400">Salió de caja</span>
-          <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.gastosMes)}</span>
-        </div>
-        {s.deudaAhorro > 0 && (
-          <div className="flex items-baseline justify-between text-[10px] text-gray-400">
-            <span>de los cuales, deuda y ahorro</span>
-            <span className="tabular-nums">{formatCurrency(s.deudaAhorro)}</span>
-          </div>
-        )}
-        {s.excelKelly && (
-          <div className={`text-[10px] ${s.excelKelly.igual ? "text-emerald-700" : "text-amber-700"}`}>
-            {s.excelKelly.igual
-              ? "✓ Igual al Excel"
-              : `⚠ Excel: ingresos ${formatCurrency(s.excelKelly.ingresos)} · gastos ${formatCurrency(s.excelKelly.gastos)}`}
-          </div>
-        )}
-        <div className="flex items-baseline justify-between text-[11px]">
-          <span className="text-gray-400">Liquidez (banco + caja)</span>
-          <span className="font-medium text-gray-600 tabular-nums">{formatCurrency(s.saldo)}</span>
-        </div>
-      </div>
-
-      {/* Microinteracción: el pie aparece al pasar el mouse */}
-      <div className="mt-4 pt-3 border-t border-gray-100 flex items-center justify-end">
-        <span className="inline-flex items-center gap-0.5 text-[11px] font-medium text-gray-400 group-hover:text-primary transition-colors">
-          Abrir
-          <ArrowUpRight className="w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5 group-hover:-translate-y-0.5" />
-        </span>
+          </>
+        ) : null}
       </div>
     </Link>
   );
