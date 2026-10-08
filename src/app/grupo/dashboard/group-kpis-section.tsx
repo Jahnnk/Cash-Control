@@ -6,7 +6,6 @@ import { formatCurrency } from "@/lib/utils";
 import { getBoardDeckData, type BoardDeckData } from "@/app/actions/kpis";
 import { weekStartOf, weekEndOf, type KpiTraffic } from "@/lib/kpis/engine";
 import { KpiDeckButton } from "@/components/kpi-deck-button";
-import Link from "next/link";
 import { EstadoLlenadoReportes } from "./estado-llenado";
 
 const DOT: Record<KpiTraffic, string> = {
@@ -38,9 +37,10 @@ function shiftWeek(ws: string, weeks: number): string {
  * KPIs de la semana en el panel del GRUPO (pedido de Jahnn): la salud de
  * las 3 sedes sin tener que entrar a cada una. Misma fuente que el deck
  * (getBoardDeckData, solo dirección) + botón del deck con rango
- * personalizado.
+ * personalizado. Vive solo en Dashboard → Equipo; Reportes tiene solo el botón
+ * del deck (UX, 8-oct-2026: la misma tabla salía en los dos lugares).
  */
-export function GroupKpisSection({ showDeck = true }: { showDeck?: boolean } = {}) {
+export function GroupKpisSection() {
   const today = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const [weekStart, setWeekStart] = useState(weekStartOf(today));
   const [data, setData] = useState<BoardDeckData | null>(null);
@@ -81,13 +81,7 @@ export function GroupKpisSection({ showDeck = true }: { showDeck?: boolean } = {
           >
             <ChevronRight className="w-4 h-4" />
           </button>
-          {showDeck ? (
-            <KpiDeckButton defaultStart={weekStart} defaultEnd={weekEndOf(weekStart)} />
-          ) : (
-            <Link href="/grupo/reportes" className="text-xs font-medium text-primary hover:underline">
-              Generar reporte →
-            </Link>
-          )}
+          <KpiDeckButton defaultStart={weekStart} defaultEnd={weekEndOf(weekStart)} />
         </div>
       </div>
 

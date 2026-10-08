@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { construirInformeSede, claveProveedor, type GastoInforme } from "../informe-gastos";
+import { construirInformeSede, claveProveedor, unirNombresCortos, type GastoInforme } from "../informe-gastos";
 
 const g = (mes: string, categoria: string, monto: number, concepto: string, extra: Partial<GastoInforme> = {}): GastoInforme => ({
   mes, fecha: `${mes}-10`, categoria, concepto, monto, propio: monto, deExcel: true, ...extra,
@@ -87,5 +87,19 @@ describe("informe de gastos por sede", () => {
     ]);
     expect(r.recurrencia.proveedores).toHaveLength(1);
     expect(r.recurrencia.proveedores[0].monto).toBe(300);
+  });
+
+  it("«SOLANGE» y «SOLANGE ALVAREZ» son la misma persona: un solo gasto nuevo (8-oct-2026)", () => {
+    expect(unirNombresCortos(["SOLANGE", "SOLANGE ALVAREZ", "METRO"])).toEqual(new Map([["SOLANGE", "SOLANGE ALVAREZ"]]));
+    // Dos candidatos posibles: no se mezcla.
+    expect(unirNombresCortos(["LUIS", "LUIS PISCO", "LUIS LINAN"]).size).toBe(0);
+    const r = base([
+      g("2026-08", "PLANILLA", 750, "SUELDO SETIEMBRE 2026 (SOLANGE ALVAREZ)"),
+      g("2026-08", "INSUMOS", 542, "FRUTAS Y VERDURAS (SOLANGE)"),
+      ...cadaMes("ALQUILER", 900, "ALQUILER (PRODUCTOS SALUDABLES YAYIS)"),
+    ]);
+    const nuevos = r.alertas.filter((a) => a.titulo.startsWith("Gasto nuevo"));
+    expect(nuevos.map((a) => a.titulo)).toEqual(["Gasto nuevo: SOLANGE ALVAREZ"]);
+    expect(nuevos[0].detalle).toContain("S/1,292");
   });
 });
