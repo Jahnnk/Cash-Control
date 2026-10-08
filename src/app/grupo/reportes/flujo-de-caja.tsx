@@ -39,6 +39,7 @@ const H = MT + P1 + GAP + P2 + MB;
 const soles0 = (n: number) => `${n < 0 ? "−" : ""}S/ ${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const miles = (n: number) => `${n < 0 ? "−" : ""}${(Math.abs(n) / 1000).toLocaleString("es-PE", { maximumFractionDigits: 1 })}k`;
 const con = (n: number) => (n >= 0 ? "+" : "−") + formatCurrency(Math.abs(n));
+const conEntero = (n: number) => `${n >= 0 ? "+" : "−"}S/${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 
 /** Una escala "redonda" (1, 2, 5 × 10^k) con unas 4 marcas. */
 function escala(min: number, max: number): { min: number; max: number; marcas: number[] } {
@@ -151,12 +152,13 @@ function Grafico({ puntos }: { puntos: PuntoFlujo[] }) {
         );
       })()}
 
-      {/* Para lectores de pantalla: los mismos números en una tabla */}
-      <table className="sr-only">
+      {/* Para lectores de pantalla: los mismos números en una tabla. Envuelta en un div: una tabla
+          «sr-only» igual mide su ancho natural y hacía deslizar la página de lado en el celular. */}
+      <div className="sr-only"><table>
         <caption>Flujo de caja por mes</caption>
         <thead><tr><th>Mes</th><th>Entró</th><th>Salió</th><th>Flujo</th><th>Flujo sin mover el ahorro</th><th>Acumulado</th></tr></thead>
         <tbody>{puntos.map((p) => <tr key={p.mes}><td>{largo(p.mes)}</td><td>{soles0(p.entro)}</td><td>{soles0(p.salio)}</td><td>{soles0(p.flujo)}</td><td>{soles0(p.neto)}</td><td>{soles0(p.acumulado)}</td></tr>)}</tbody>
-      </table>
+      </table></div>
     </div>
   );
 }
@@ -212,13 +214,13 @@ export function FlujoDeCaja({ flujo, periodo }: { flujo: FlujoCaja | null; perio
   const ultimo = grupo[grupo.length - 1];
   const resumen = ultimo
     ? <p className="text-xs text-gray-600">
-        {periodo}: entró {soles0(ultimo.entro)} · salió {soles0(ultimo.salio)}. Sin mover el ahorro, el flujo del mes fue <strong className={ultimo.neto < 0 ? "text-red-600" : "text-gray-800"}>{con(ultimo.neto)}</strong> y el acumulado va en <strong className="text-gray-800">{con(ultimo.acumulado)}</strong>.
+        Sin contar el ahorro, el mes deja <strong className={ultimo.neto < 0 ? "text-red-600" : "text-gray-900"}>{conEntero(ultimo.neto)}</strong> · acumulado <strong className="text-gray-900">{conEntero(ultimo.acumulado)}</strong> (Grupo).
       </p>
     : <p className="text-xs text-gray-500">Sin movimientos para {periodo}.</p>;
   return (
     <SeccionDesplegable
-      titulo={`Flujo de caja · hasta ${periodo}`}
-      subtitulo="Lo que entró y salió cada mes, y cuánto va juntando el negocio sin contar lo que se manda al ahorro."
+      titulo="Flujo de caja"
+      subtitulo={`Lo que entró y salió cada mes, hasta ${periodo}.`}
       resumen={resumen}
     >
       <BarrasFlujoDeCaja flujo={flujo} />

@@ -4,7 +4,8 @@
  * Los dos márgenes por sede y por mes (pedido de Jahnn, 4-oct-2026): el de
  * ganancia (¿ganó o perdió?) y el de caja (¿alcanzó el dinero?, el que Kelly
  * escribe en su Excel), con una cartilla para leerlos. Números y fórmulas:
- * src/lib/margenes-del-mes.ts. La cartilla va plegada; la tabla, a la vista.
+ * src/lib/margenes-del-mes.ts. UX (8-oct-2026): plegado como los otros reportes, con los dos
+ * márgenes del Grupo a la vista; montos sin céntimos; la cartilla, a un toque dentro.
  */
 
 import { Scale, Wallet } from "lucide-react";
@@ -18,6 +19,7 @@ const pct = (n: number | null, dec = 1, signo = true) =>
   n === null ? "—" : `${signo && n > 0 ? "+" : n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("es-PE", { minimumFractionDigits: dec, maximumFractionDigits: dec })}%`;
 const dd = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 const color = (n: number | null) => (n === null ? "text-gray-400" : n < 0 ? "text-red-600" : "text-gray-900");
+const soles = (n: number) => `S/${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 
 function Fila({ f, finDeMes }: { f: FilaMargenes; finDeMes: string }) {
   const aMedias = !f.mesCompleto && (f.esGrupo || (f.corte !== null && f.corte < finDeMes));
@@ -32,17 +34,17 @@ function Fila({ f, finDeMes }: { f: FilaMargenes; finDeMes: string }) {
         <div className="text-[10px] font-normal text-gray-400 leading-tight">
           {f.gananciaPct === null
             ? (f.sinGananciaPorque ?? "Sin datos")
-            : f.ganancia !== null && f.ventas !== null ? `${f.ganancia < 0 ? "−" : ""}${formatCurrency(Math.abs(f.ganancia))} de ${formatCurrency(f.ventas)} vendidos` : ""}
+            : f.ganancia !== null && f.ventas !== null ? `${f.ganancia < 0 ? "−" : ""}${soles(f.ganancia)} de ${soles(f.ventas)} vendidos` : ""}
         </div>
       </td>
       <td className="py-3 px-3 text-right align-top">
         <div className={`tabular-nums ${color(f.margenCajaPct)}`}>{pct(f.margenCajaPct, 2)}</div>
         <div className="text-[10px] font-normal text-gray-400 leading-tight">
-          {f.margenCajaPct === null ? (f.sinGananciaPorque ?? "Sin ingresos") : `${f.flujo < 0 ? "−" : "+"}${formatCurrency(Math.abs(f.flujo))} de ${formatCurrency(f.entro)} que entraron`}
+          {f.margenCajaPct === null ? (f.sinGananciaPorque ?? "Sin ingresos") : `${f.flujo < 0 ? "−" : "+"}${soles(f.flujo)} de ${soles(f.entro)} que entraron`}
         </div>
       </td>
       <td className="py-3 pl-3 pr-4 text-right align-top tabular-nums text-gray-600 font-normal hidden sm:table-cell">
-        {f.salioPor100 === null ? "—" : formatCurrency(f.salioPor100)}
+        {f.salioPor100 === null ? "—" : `S/${f.salioPor100.toFixed(2)}`}
       </td>
     </tr>
   );
@@ -109,31 +111,36 @@ export function DosMargenes({ cifras, periodo }: { cifras: SeisCifras | null; pe
   const [y, m] = cifras.mes.split("-").map(Number);
   const finDeMes = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
   const provisional = filas.some((f) => !f.esGrupo && f.corte !== null && f.corte < finDeMes);
+  const g = filas.find((f) => f.esGrupo);
+  const resumen = g && (g.gananciaPct !== null || g.margenCajaPct !== null)
+    ? <p className="text-xs text-gray-600">Grupo: ganancia <b className={g.gananciaPct !== null && g.gananciaPct < 0 ? "text-red-700" : "text-gray-900"}>{pct(g.gananciaPct)}</b> · caja <b className={g.margenCajaPct !== null && g.margenCajaPct < 0 ? "text-red-700" : "text-gray-900"}>{pct(g.margenCajaPct, 2)}</b></p>
+    : <p className="text-xs text-gray-500">Todavía sin márgenes para {periodo}.</p>;
   return (
-    <section className="space-y-3">
-      <div>
-        <h2 className="text-sm font-semibold text-gray-700">Los dos márgenes · {periodo}</h2>
-        <p className="text-xs text-gray-500 mt-0.5">Uno dice si la sede ganó; el otro, si alcanzó el dinero.</p>
+    <SeccionDesplegable titulo="Los dos márgenes" subtitulo="Uno dice si la sede ganó; el otro, si alcanzó el dinero." resumen={resumen}>
+      <div className="space-y-3">
+        <div className="-mx-4 sm:mx-0 sm:rounded-xl sm:border sm:border-gray-200/80 overflow-x-auto">
+          <table className="w-full text-sm">
+            <thead>
+              <tr className="text-[10px] sm:text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
+                <th className="text-left font-medium py-2.5 pl-4 pr-3">Sede</th>
+                <th className="text-right font-medium py-2.5 px-3">De ganancia</th>
+                <th className="text-right font-medium py-2.5 px-3">De caja <span className="hidden sm:inline normal-case tracking-normal text-gray-400">(el del Excel)</span></th>
+                <th className="text-right font-medium py-2.5 pl-3 pr-4 hidden sm:table-cell">Salió por cada S/ 100</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-gray-100">
+              {filas.map((f) => <Fila key={f.etiqueta} f={f} finDeMes={finDeMes} />)}
+            </tbody>
+          </table>
+        </div>
+        {provisional && <p className="text-[11px] text-amber-700">Mes a medias: ambos márgenes llegan hasta el último día con Excel de cada sede.</p>}
+        <details className="group">
+          <summary className="cursor-pointer list-none text-xs font-medium text-primary hover:underline">
+            <span className="group-open:hidden">¿Cómo leer los dos márgenes?</span><span className="hidden group-open:inline">Ocultar la explicación</span>
+          </summary>
+          <div className="mt-3"><Cartilla cifras={cifras} /></div>
+        </details>
       </div>
-      <div className="bg-white rounded-2xl border border-gray-200/80 overflow-x-auto">
-        <table className="w-full text-sm min-w-[460px]">
-          <thead>
-            <tr className="text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
-              <th className="text-left font-medium py-2.5 pl-4 pr-3">Sede</th>
-              <th className="text-right font-medium py-2.5 px-3">Margen de ganancia</th>
-              <th className="text-right font-medium py-2.5 px-3">Margen de caja <span className="normal-case tracking-normal text-gray-400">(el del Excel)</span></th>
-              <th className="text-right font-medium py-2.5 pl-3 pr-4 hidden sm:table-cell">Salió por cada S/ 100</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-gray-100">
-            {filas.map((f) => <Fila key={f.etiqueta} f={f} finDeMes={finDeMes} />)}
-          </tbody>
-        </table>
-      </div>
-      {provisional && <p className="text-[11px] text-amber-700">Mes a medias: ambos márgenes llegan hasta el último día con Excel de cada sede.</p>}
-      <SeccionDesplegable titulo="¿Cómo leer los dos márgenes?" subtitulo="Qué mide cada uno, qué cuenta y por qué no coinciden.">
-        <Cartilla cifras={cifras} />
-      </SeccionDesplegable>
-    </section>
+    </SeccionDesplegable>
   );
 }

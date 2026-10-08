@@ -90,12 +90,12 @@ export function VentaAGanancia({ cifras, periodo }: { cifras: SeisCifras | null;
   const barras = cifras ? barrasDelMes(cifras.sedes) : [];
   const conGanancia = barras.filter((b) => b.gananciaPct !== null);
   const resumen = conGanancia.length > 0
-    ? <p className="text-xs text-gray-600">{conGanancia.map((b) => `${b.sede} ${pct(b.gananciaPct!)}`).join(" · ")} de la venta queda como ganancia.</p>
+    ? <p className="text-xs text-gray-600">De cada S/100 vendidos queda de ganancia: {conGanancia.map((b) => <span key={b.businessId} className="whitespace-nowrap"><b className={b.gananciaPct! < 0 ? "text-red-700" : "text-gray-900"}>{b.sede} {pct(b.gananciaPct!)}</b>{b !== conGanancia[conGanancia.length - 1] ? " · " : ""}</span>)}</p>
     : <p className="text-xs text-gray-500">Todavía no hay ganancia calculada para {periodo}.</p>;
   return (
     <SeccionDesplegable
-      titulo={`De la venta a la ganancia · ${periodo}`}
-      subtitulo="Vender no es cobrar, y cobrar no es ganar: tres números distintos por sede."
+      titulo="De la venta a la ganancia"
+      subtitulo="Vender no es cobrar, y cobrar no es ganar."
       resumen={resumen}
     >
       <BarrasVentaAGanancia cifras={cifras} periodo={periodo} />
