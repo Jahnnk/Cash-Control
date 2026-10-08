@@ -75,7 +75,7 @@ function TarjetaSede({ s, activa, onElegir }: { s: InformeGastosSede; activa: bo
       </div>
       <div>
         <div className="text-[10px] font-medium uppercase tracking-[0.09em] text-gray-400">Salió en el mes</div>
-        <div className="text-2xl font-semibold text-gray-900 tabular-nums leading-none mt-1">{formatCurrency(s.bolsillos.total)}</div>
+        <div className="text-2xl font-semibold text-gray-900 tabular-nums leading-none mt-1">{soles0(s.bolsillos.total)}</div>
         <div className="text-xs text-gray-500 mt-1.5">
           Operación {soles0(s.bolsillos.operacion)}
           {cambio !== null && (
@@ -252,10 +252,16 @@ export function InformeGastosVista({ data }: { data: InformeGastos }) {
       <div>
         <h2 className="text-[15px] font-semibold text-gray-900">¿A dónde se va la plata? · {monthLabel(data.mes)}</h2>
         <p className="text-xs text-gray-500 mt-1 max-w-3xl leading-relaxed">
-          Último mes cerrado{previos.length > 0 ? `, comparado con el promedio de ${previos.map((m) => monthLabel(m).split(" ")[0].toLowerCase()).reverse().join(", ")}` : ""}.
-          Lo que salió es la misma cifra del Excel. Semáforo con referencias del rubro para cafeterías: costo de lo vendido (Atelier + insumos + empaques)
-          ≤ 35% de la venta, planilla ≤ 30%, costo primo (la suma) ≤ 65%. Toca una sede para ver su detalle.
+          Último mes cerrado{previos.length > 0 ? `, comparado con el promedio de ${previos.map((m) => monthLabel(m).split(" ")[0].toLowerCase()).reverse().join(", ")}` : ""}. Toca una sede para ver su detalle.
         </p>
+        {/* Las referencias del semáforo, a un toque (UX, 8-oct-2026: iban en el párrafo de cabecera). */}
+        <details className="group mt-1 text-xs text-gray-500 max-w-3xl">
+          <summary className="cursor-pointer list-none hover:text-gray-800"><span className="group-open:hidden">¿Cómo se lee el semáforo?</span><span className="hidden group-open:inline">Ocultar</span></summary>
+          <p className="mt-1 leading-relaxed">
+            Referencias del rubro para cafeterías: costo de lo vendido (Atelier + insumos + empaques) ≤ 35% de la venta, planilla ≤ 30%,
+            costo primo (la suma) ≤ 65%. Lo que salió es la misma cifra del Excel.
+          </p>
+        </details>
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
         {data.sedes.map((s) => <TarjetaSede key={s.businessId} s={s} activa={s.businessId === elegida.businessId} onElegir={() => setSede(s.businessId)} />)}

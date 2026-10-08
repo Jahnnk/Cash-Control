@@ -19,6 +19,11 @@ export function CuadreKellySeccion({ items }: { items: VerificacionSedeMes[] | n
   if (!items) return null;
   const conAlerta = items.filter((v) => v.estado === "alerta");
   const meses = [...new Set(items.map((v) => v.month))];
+  // Las recientes (este mes y el anterior) son las MISMAS que cuenta «Necesita tu atención» en el
+  // Resumen; las más viejas se nombran aparte. Antes el Resumen decía 3 y esta pestaña 6 (8-oct-2026).
+  const recientesMeses = [...meses].sort().reverse().slice(0, 2);
+  const recientes = conAlerta.filter((v) => recientesMeses.includes(v.month));
+  const viejas = conAlerta.length - recientes.length;
   return (
     <SeccionDesplegable
       titulo="Cuadre con el Excel"
@@ -26,7 +31,12 @@ export function CuadreKellySeccion({ items }: { items: VerificacionSedeMes[] | n
       resumen={
         conAlerta.length === 0
           ? <span className="text-xs font-medium text-emerald-700">✓ Las {items.length} cargas de los últimos {meses.length} meses cuadran con el Excel</span>
-          : <span className="text-xs font-medium text-red-700">⚠ {conAlerta.length} de {items.length} cargas tienen diferencias: {conAlerta.map((v) => `${v.sede} ${monthLabel(v.month)}`).join(", ")}</span>
+          : <span className="text-xs font-medium text-red-700">
+              ⚠ {recientes.length > 0
+                ? <>{recientes.length} {recientes.length === 1 ? "carga reciente" : "cargas recientes"} con diferencias: {recientes.map((v) => `${v.sede} ${monthLabel(v.month)}`).join(", ")}</>
+                : "Sin diferencias en las cargas recientes"}
+              {viejas > 0 && <span className="font-normal text-red-700/80"> · y {viejas} de meses anteriores</span>}
+            </span>
       }
     >
       <div className="space-y-6">

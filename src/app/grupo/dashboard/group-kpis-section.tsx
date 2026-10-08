@@ -88,7 +88,9 @@ export function GroupKpisSection() {
       {/* ¿Están al día los reportes? Va ARRIBA de los KPIs a propósito:
           si faltan días, los promedios de abajo están incompletos y hay
           que leerlos sabiéndolo. */}
-      <EstadoLlenadoReportes weekStart={weekStart} />
+      {/* La semana en curso ya la cubre «Cumplimiento del equipo», justo arriba en la pestaña
+          Equipo (UX, 8-oct-2026: salía dos veces lo mismo). Al mirar una semana pasada sí se muestra. */}
+      {weekStart !== weekStartOf(today) && <EstadoLlenadoReportes weekStart={weekStart} />}
 
       <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
         {loading ? (

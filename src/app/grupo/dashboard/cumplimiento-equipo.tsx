@@ -169,9 +169,7 @@ export function CumplimientoEquipo() {
           })}
 
           <p className="text-[10px] text-gray-400 pt-1">
-            KPIs de los últimos 7 días · los reportes de Byte se suben cada sábado (Atelier solo
-            sube rotación: como área de producción no da cortesías y su único vendedor es el propio
-            administrador). Es lo mismo que ve cada administrador en su panel.
+            Últimos 7 días. Los reportes de Byte se suben cada sábado. Es lo mismo que ve cada administrador en su panel.
           </p>
         </div>
       )}
