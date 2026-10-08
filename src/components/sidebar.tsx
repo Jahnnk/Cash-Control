@@ -37,37 +37,63 @@ export type NavItem = {
   segment: string;
   label: string;
   icon: React.ComponentType<{ className?: string }>;
-  scopes: ScopeKey[];
 };
 
-export const NAV: NavItem[] = [
-  { segment: "dashboard",     label: "Dashboard",       icon: LayoutDashboard, scopes: ["atelier", "fonavi", "centro", "grupo"] },
-  // Grupo: Reportes justo debajo de Dashboard (pedido de Jahnn, 5-oct-2026). Las sedes lo mantienen más abajo.
-  { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["grupo"] },
-  { segment: "direccion",     label: "Sistema de Dirección", icon: Compass,    scopes: ["grupo"] },
-  // Grupo: Productos va justo debajo de Sistema de Dirección (pedido de Jahnn, 5-oct-2026). Las sedes
-  // lo mantienen en su lugar de siempre, más abajo.
-  { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["grupo"] },
-  { segment: "highlight",     label: "Highlight",       icon: Target,          scopes: ["grupo"] },
-  { segment: "supervisiones", label: "Supervisiones",   icon: ClipboardCheck,  scopes: ["grupo"] },
-  { segment: "por-definir",   label: "Por definir",     icon: ListChecks,      scopes: ["grupo"] },
-  { segment: "registro",      label: "Registro Diario", icon: PenLine,         scopes: ["atelier", "fonavi", "centro"] },
-  { segment: "presupuesto",   label: "Presupuesto",     icon: PieChart,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
-  { segment: "clientes",      label: "Clientes",        icon: Users,           scopes: ["atelier"] },
-  { segment: "fonavi",        label: "Por cobrar",      icon: Handshake,       scopes: ["atelier"] },
-  { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote,      scopes: ["atelier"] },
-  { segment: "propinas",      label: "Propinas",        icon: HandCoins,       scopes: ["atelier", "fonavi", "centro"] },
-  { segment: "productos",     label: "Productos",       icon: Package,         scopes: ["atelier", "fonavi", "centro"] },
-  { segment: "recetas",       label: "Recetas y costos", icon: ChefHat,        scopes: ["grupo"] },
-  { segment: "panel",         label: "Panel de Sede",   icon: Trophy,          scopes: ["atelier", "fonavi", "centro"] },
-  { segment: "reportes",      label: "Reportes",        icon: BarChart3,       scopes: ["atelier", "fonavi", "centro"] },
-  { segment: "incentivos",    label: "Bonos e Incentivos", icon: Medal,        scopes: ["grupo"] },
-  { segment: "configuracion", label: "Configuración",   icon: Settings,        scopes: ["atelier", "fonavi", "centro", "grupo"] },
+export type NavSeccion = {
+  /** Título chico de la sección (null = sin título: lo principal, arriba). */
+  titulo: string | null;
+  items: NavItem[];
+};
+
+const I = {
+  dashboard: { segment: "dashboard", label: "Dashboard", icon: LayoutDashboard },
+  reportes: { segment: "reportes", label: "Reportes", icon: BarChart3 },
+  direccion: { segment: "direccion", label: "Sistema de Dirección", icon: Compass },
+  productos: { segment: "productos", label: "Productos", icon: Package },
+  presupuesto: { segment: "presupuesto", label: "Presupuesto", icon: PieChart },
+  highlight: { segment: "highlight", label: "Highlight", icon: Target },
+  supervisiones: { segment: "supervisiones", label: "Supervisiones", icon: ClipboardCheck },
+  incentivos: { segment: "incentivos", label: "Bonos e Incentivos", icon: Medal },
+  recetas: { segment: "recetas", label: "Recetas y costos", icon: ChefHat },
+  porDefinir: { segment: "por-definir", label: "Por definir", icon: ListChecks },
+  panel: { segment: "panel", label: "Panel de Sede", icon: Trophy },
+  registro: { segment: "registro", label: "Registro Diario", icon: PenLine },
+  propinas: { segment: "propinas", label: "Propinas", icon: HandCoins },
+  clientes: { segment: "clientes", label: "Clientes", icon: Users },
+  porCobrar: { segment: "fonavi", label: "Por cobrar", icon: Handshake },
+  prestamos: { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote },
+} satisfies Record<string, NavItem>;
+
+/** Configuración va aparte, abajo del todo: es de vez en cuando, no del día a día. */
+export const CONFIGURACION: NavItem = { segment: "configuracion", label: "Configuración", icon: Settings };
+
+/**
+ * El menú por secciones, agrupado por PARA QUÉ se entra (rediseño UX, 8-oct-2026: once opciones
+ * en una sola lista obligaban a leerlas todas). Órdenes pedidos por Jahnn que se respetan:
+ * en Grupo, Reportes justo debajo de Dashboard y Productos justo debajo de Sistema de Dirección.
+ */
+const SEDE = (atelier: boolean): NavSeccion[] => [
+  { titulo: null, items: [I.dashboard, I.panel] },
+  { titulo: "Día a día", items: [I.registro, I.propinas] },
+  { titulo: "Análisis", items: [I.reportes, I.productos, I.presupuesto] },
+  ...(atelier ? [{ titulo: "Clientes", items: [I.clientes, I.porCobrar, I.prestamos] }] : []),
 ];
 
-/** Las entradas del menú de un alcance, en su orden. */
+export const MENU: Record<ScopeKey, NavSeccion[]> = {
+  grupo: [
+    { titulo: null, items: [I.dashboard, I.reportes] },
+    { titulo: "Dirección", items: [I.direccion, I.productos, I.presupuesto] },
+    { titulo: "Equipo", items: [I.highlight, I.supervisiones, I.incentivos] },
+    { titulo: "Datos", items: [I.recetas, I.porDefinir] },
+  ],
+  atelier: SEDE(true),
+  fonavi: SEDE(false),
+  centro: SEDE(false),
+};
+
+/** Las entradas del menú de un alcance, en su orden (Configuración al final). */
 export function navPara(scope: ScopeKey): NavItem[] {
-  return NAV.filter((item) => item.scopes.includes(scope));
+  return [...MENU[scope].flatMap((s) => s.items), CONFIGURACION];
 }
 
 function scopeFromPathname(pathname: string): ScopeKey | null {
@@ -106,6 +132,22 @@ function subscribeNever(): () => void {
   return () => {};
 }
 
+function ItemMenu({ item, href, activo, onClick }: { item: NavItem; href: string; activo: boolean; onClick: () => void }) {
+  return (
+    <Link
+      href={href}
+      onClick={onClick}
+      aria-current={activo ? "page" : undefined}
+      className={`flex items-center gap-3 px-3 py-2 rounded-lg text-sm transition-colors ${
+        activo ? "bg-white/[0.18] text-white font-semibold" : "text-white/80 font-medium hover:bg-white/10 hover:text-white"
+      }`}
+    >
+      <item.icon className="w-[18px] h-[18px] shrink-0" />
+      {item.label}
+    </Link>
+  );
+}
+
 export function Sidebar() {
   const pathname = usePathname();
   const [open, setOpen] = useState(false);
@@ -124,14 +166,15 @@ export function Sidebar() {
   // Juani: el middleware solo le abre Highlight y Supervisiones.
   const isScopedHighlight = scopeHint === "highlight";
   // useMemo SIEMPRE se llama en el mismo orden — no condicional.
-  const items = useMemo(() => {
+  const secciones = useMemo((): NavSeccion[] => {
     if (!scope) return [];
-    const base = navPara(scope);
-    // Admin de sede: solo su Panel — el resto del menú lo rebotaría.
-    if (isScopedAdmin) return base.filter((i) => i.segment === "panel");
-    if (isScopedHighlight) return base.filter((i) => i.segment === "highlight" || i.segment === "supervisiones");
-    return base;
+    // Admin de sede: solo su Panel — el resto del menú lo rebotaría. Juani: Highlight y Supervisiones.
+    const permitido = isScopedAdmin ? ["panel"] : isScopedHighlight ? ["highlight", "supervisiones"] : null;
+    if (!permitido) return MENU[scope];
+    const items = MENU[scope].flatMap((s) => s.items).filter((i) => permitido.includes(i.segment));
+    return [{ titulo: null, items }];
   }, [scope, isScopedAdmin, isScopedHighlight]);
+  const conConfiguracion = !isScopedAdmin && !isScopedHighlight;
 
   // Verificador: su única pantalla (/[sede]/verificacion) no está en el
   // menú — un sidebar vacío solo estorba en el celular.
@@ -250,57 +293,36 @@ export function Sidebar() {
           </button>
         </div>
 
-        {/* Indicador de rol activo (no aplica a sesiones con alcance) */}
-        {role && !isScopedAdmin && (
-          <div className="px-4 py-2 border-b border-white/10 flex items-center gap-2 text-[11px] text-white/60">
-            <User className="w-3 h-3" />
-            <span>Usuario: <span className="font-medium text-white/80">{role === "admin" ? "Jahnn" : "Kelly"}</span></span>
-          </div>
-        )}
-
-        <nav className="flex-1 p-3 space-y-1 overflow-y-auto">
-          {items.map((item) => {
-            const active = isActive(item.segment);
-            return (
-              <Link
-                key={item.segment}
-                href={hrefFor(item.segment)}
-                onClick={() => setOpen(false)}
-                className={`flex items-center gap-3 px-4 py-3 rounded-lg text-sm font-medium transition-colors ${
-                  active
-                    ? "text-white bg-black/25 border-l-[3px] border-white/80"
-                    : "text-white/75 hover:bg-white/10 hover:text-white border-l-[3px] border-transparent"
-                }`}
-                style={{ paddingLeft: "calc(1rem - 3px)" }}
-              >
-                <item.icon className="w-5 h-5 shrink-0" />
-                {item.label}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 px-3 py-3 overflow-y-auto" aria-label="Menú">
+          {secciones.map((sec, k) => (
+            <div key={sec.titulo ?? k} className={k > 0 ? "mt-4" : ""}>
+              {sec.titulo && (
+                <div className="px-3 pb-1 text-[10px] font-semibold uppercase tracking-[0.12em] text-white/45">{sec.titulo}</div>
+              )}
+              <div className="space-y-0.5">
+                {sec.items.map((item) => <ItemMenu key={item.segment} item={item} href={hrefFor(item.segment)} activo={isActive(item.segment)} onClick={() => setOpen(false)} />)}
+              </div>
+            </div>
+          ))}
         </nav>
 
-        {/* Footer: cambiar usuario. "Cambiar negocio" vive en el switcher
-            del header (siempre visible) — se quitó de aquí para evitar el
-            doble acceso al mismo destino. */}
-        {!isScopedAdmin && (
-        <div className="border-t border-white/10 p-3 space-y-1">
-          <form action={clearRole}>
-            <button
-              type="submit"
-              className="w-full flex items-center gap-3 px-4 py-2.5 rounded-lg text-sm text-white/70 hover:bg-white/10 hover:text-white transition-colors text-left"
-            >
-              <LogOut className="w-4 h-4 shrink-0" />
-              Cambiar usuario
-            </button>
-          </form>
-        </div>
+        {/* Abajo, lo de vez en cuando: Configuración y quién está usando el sistema. */}
+        {conConfiguracion && (
+          <div className="border-t border-white/10 px-3 py-2 space-y-0.5">
+            <ItemMenu item={CONFIGURACION} href={hrefFor(CONFIGURACION.segment)} activo={isActive(CONFIGURACION.segment)} onClick={() => setOpen(false)} />
+            <form action={clearRole}>
+              <button
+                type="submit"
+                title="Cambiar usuario"
+                className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-white/65 hover:bg-white/10 hover:text-white transition-colors text-left"
+              >
+                <User className="w-4 h-4 shrink-0" />
+                <span className="truncate">{role ? (role === "admin" ? "Jahnn" : "Kelly") : "Usuario"}</span>
+                <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-white/45"><LogOut className="w-3.5 h-3.5" />Cambiar</span>
+              </button>
+            </form>
+          </div>
         )}
-
-        <div className="p-4 border-t border-white/10">
-          <p className="text-xs text-white/40">{theme.label}</p>
-          <p className="text-xs text-white/40">Cajamarca, Perú</p>
-        </div>
       </aside>
     </>
   );
