@@ -27,6 +27,7 @@ function dayLabel(date: string): string {
 export default function VerificacionPage() {
   const { showToast } = useToast();
   const [days, setDays] = useState<VerificationDay[]>([]);
+  const [verFirmados, setVerFirmados] = useState(false);
   const [canSign, setCanSign] = useState(false);
   const [tableReady, setTableReady] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -59,6 +60,10 @@ export default function VerificacionPage() {
     await load();
   }
 
+  const pendientes = days.filter((d) => !d.verification).length;
+  const firmados = days.length - pendientes;
+  const visibles = verFirmados ? days : days.filter((d) => !d.verification);
+
   return (
     <div className="max-w-2xl mx-auto space-y-6">
       <div>
@@ -67,8 +72,7 @@ export default function VerificacionPage() {
           Encargado de salón
         </h1>
         <p className="text-xs text-gray-500 mt-1">
-          Dos herramientas: durante el turno, cronometra los tiempos de atención;
-          al cierre, firma que el conteo de personas cuadra con la realidad.
+          Durante el turno, cronometra la atención. Al cierre, firma el conteo de personas.
         </p>
       </div>
 
@@ -82,9 +86,8 @@ export default function VerificacionPage() {
           Verificación del conteo diario
         </h2>
         <p className="text-xs text-gray-500 mt-1">
-          Tu firma confirma que las <strong>personas atendidas</strong> registradas cuadran con el
-          salón y el cierre de Byte. Si algo no cuadra, obsérvalo con una nota — se resuelve antes
-          de la liquidación del mes. Ese número define el ticket promedio y los bonos de todos.
+          Confirma que las <strong>personas atendidas</strong> cuadran con el salón y con Byte. Si no, obsérvalo con una nota:
+          ese número define el ticket y los bonos de todos.
         </p>
       </div>
 
@@ -105,7 +108,10 @@ export default function VerificacionPage() {
             </div>
           ) : (
             <div className="space-y-3">
-              {days.map((d) => (
+              {/* Primero lo que falta firmar; lo ya firmado, a un toque (UX, 8-oct-2026: eran 10
+                  tarjetas «Confirmado» y los pendientes se perdían entre ellas). */}
+              {pendientes === 0 && <div className="bg-white rounded-xl border border-gray-200 p-4 text-sm text-emerald-700">✓ Todos los días están firmados.</div>}
+              {visibles.map((d) => (
                 <div key={d.date} className="bg-white rounded-xl border border-gray-200 p-4">
                   <div className="flex flex-wrap items-center justify-between gap-3">
                     <div>
@@ -164,6 +170,11 @@ export default function VerificacionPage() {
                   )}
                 </div>
               ))}
+              {firmados > 0 && (
+                <button type="button" onClick={() => setVerFirmados((v) => !v)} className="w-full text-xs font-medium text-gray-500 hover:text-gray-800 py-2">
+                  {verFirmados ? "Ocultar los días firmados" : `Ver los ${firmados} días ya firmados`}
+                </button>
+              )}
             </div>
           )}
         </>

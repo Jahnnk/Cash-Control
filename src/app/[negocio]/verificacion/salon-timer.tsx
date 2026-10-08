@@ -121,10 +121,8 @@ export function SalonTimer() {
           Cronómetro de atención
         </div>
         <div className="text-[11px] text-gray-500 mt-0.5">
-          Mostrador: comanda → despacho (meta &lt;{metas.mostrador ?? "—"} min).
-          Mesa: pedido → servido (meta &lt;{metas.mesa ?? "—"} min).
-          Delivery: registro del pedido → entrega al motorizado (meta &lt;{metas.delivery ?? "—"} min).
-          Puedes tener varios a la vez. El promedio del día alimenta solo el KPI.
+          Metas: mostrador &lt;{metas.mostrador ?? "—"} min · mesa &lt;{metas.mesa ?? "—"} min · delivery &lt;{metas.delivery ?? "—"} min.
+          Puedes tener varios a la vez.
         </div>
       </div>
 
@@ -221,7 +219,7 @@ export function SalonTimer() {
               {s.avgMin !== null && <span className={`inline-block w-2 h-2 rounded-full ${DOT[s.traffic]}`} />}
             </div>
             <div className="text-[10px] text-gray-400">
-              {s.count} atención{s.count === 1 ? "" : "es"}
+              {s.count} {s.count === 1 ? "atención" : "atenciones"}
               {s.overMeta > 0 && <span className="text-red-500"> · {s.overMeta} sobre meta</span>}
             </div>
             {/* Ayer: la prueba de que lo medido quedó guardado — el admin
@@ -233,7 +231,7 @@ export function SalonTimer() {
               ) : (
                 "sin mediciones"
               )}
-              {view.ayer[s.kind] && ` · ${view.ayer[s.kind]!.n} atención${view.ayer[s.kind]!.n === 1 ? "" : "es"} ✓ guardado`}
+              {view.ayer[s.kind] && ` · ${view.ayer[s.kind]!.n} ${view.ayer[s.kind]!.n === 1 ? "atención" : "atenciones"} ✓ guardado`}
             </div>
           </div>
         ))}

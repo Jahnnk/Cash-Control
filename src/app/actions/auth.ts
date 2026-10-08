@@ -38,8 +38,8 @@ function passwordMatches(input: string, expected: string): boolean {
 
 /**
  * Login con la contraseña compartida (APP_PASSWORD). Si es correcta,
- * setea la cookie de sesión firmada (30 días) y redirige al selector
- * de rol. La cookie es httpOnly: el cliente nunca ve el token.
+ * setea la cookie de sesión firmada (30 días) y entra directo como Jahnn
+ * al Dashboard de Grupo. La cookie es httpOnly: el cliente nunca ve el token.
  */
 export async function loginWithPassword(
   _prevState: { error: string } | null,
@@ -76,7 +76,11 @@ export async function loginWithPassword(
     // Limpia el indicador de sesión con alcance de un login anterior
     // en este navegador — si queda, el menú se esconde para Jahnn/Kelly.
     c.delete(SCOPE_HINT_COOKIE);
-    redirect("/");
+    // La llave maestra es la de Jahnn (Kelly tiene la suya): entra directo como Jahnn, sin el
+    // selector «¿Quién está usando?» (decisión de Jahnn, 8-oct-2026). El selector sigue a un toque
+    // con «Cambiar» en la barra lateral. Misma cookie y mismas opciones que selectRole.
+    c.set("yayis_role", "admin", { path: "/", maxAge: SESSION_DAYS * 24 * 60 * 60, sameSite: "lax" });
+    redirect("/grupo/dashboard");
   }
 
   // 1b) Contraseña PROPIA de Kelly (jul-2026: asume las finanzas de las
