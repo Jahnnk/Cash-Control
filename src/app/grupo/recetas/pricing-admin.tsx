@@ -102,8 +102,8 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
             <Calculator className="w-4 h-4 text-primary" /> Excel maestro de pricing
           </h2>
           <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-            Súbelo cuando cambien precios o varias recetas a la vez. Para una sola receta, edítala abajo. Las mermas ya
-            registradas no cambian.
+            Súbelo cada vez que cambien precios, insumos o recetas: actualiza los costos de Atelier, la carta de las cafeterías
+            (costo, precio, origen e insumos de cada producto) y lo que usan Productos y las mermas. Las mermas ya registradas no cambian.
           </p>
         </div>
         <label className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg cursor-pointer whitespace-nowrap ${
