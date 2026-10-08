@@ -7,7 +7,6 @@ import { deleteByteRecord } from "@/app/actions/byte-sales";
 import { AlertTriangle, Loader2 } from "lucide-react";
 import { getCategories } from "@/app/actions/categories";
 import { FixedVariableSection } from "./fixed-variable-section";
-import { EquilibrioResumenSection } from "./equilibrio-resumen-section";
 import { getClients } from "@/app/actions/clients";
 import { getAvailableMonthRange } from "@/app/actions/month-range";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
@@ -178,7 +177,7 @@ export function MonthlyReport() {
         value={month}
         onChange={setMonth}
         minMonth={monthRange?.minMonth}
-        maxMonth={monthRange?.maxMonth}
+        maxMonth={monthRange?.currentMonth}
         currentMonth={monthRange?.currentMonth}
         loading={loading}
       />
@@ -409,25 +408,9 @@ export function MonthlyReport() {
             );
           })()}
 
-          {/* Puente: del resultado del mes al movimiento real del banco */}
-          {(() => {
-            const ingresos = parseFloat((data.totals.total_income as string) || "0");
-            const egresos = parseFloat((data.totals.total_expenses as string) || "0");
-            const resultado = data.bridge?.resultadoDelMes ?? ingresos - egresos;
-            const variation =
-              typeof data.bankVariation === "number"
-                ? data.bankVariation
-                : data.bankEndBalance - data.bankStartBalance;
-            return (
-              <ReconciliationBridge
-                resultado={resultado}
-                bridge={data.bridge}
-                bankVariation={variation}
-                expanded={showDetail === "bank_variation"}
-                onToggle={() => handleCardClick("bank_variation")}
-              />
-            );
-          })()}
+          {/* El puente «resultado del mes → movimiento del banco» se quitó (8-oct-2026): usaba los
+              saldos del banco anotados a mano cada mañana, que ya no se anotan. El banco real es la
+              lectura del Excel (Dashboard y Sistema de Dirección). */}
 
           {/* Alertas de redondeo (Control de VTAS) */}
           <RoundingAlertsSection month={month} />
@@ -928,9 +911,12 @@ export function MonthlyReport() {
               />
             </div>
 
-            {/* Análisis Fijo vs Variable (clasificación configurable de categorías) */}
-            <EquilibrioResumenSection month={month} />
+            {/* Análisis Fijo vs Variable (clasificación configurable de categorías). El punto de
+                equilibrio vive solo en Grupo → Reportes: un solo cálculo (8-oct-2026). */}
             <FixedVariableSection month={month} />
+            <p className="text-xs text-gray-500">
+              ¿Punto de equilibrio o flujo de caja? Están en <a href="/grupo/reportes" className="font-medium text-primary hover:underline">Grupo → Reportes</a>, con un solo cálculo para las 3 sedes.
+            </p>
           </div>
         </>
       ) : null}
@@ -958,119 +944,6 @@ export function MonthlyReport() {
           onDeleted={refreshAfterMutation}
         />
       )}
-    </div>
-  );
-}
-
-/**
- * Puente entre "Resultado del mes" y "Variación del saldo del banco".
- *
- * Nació de una crítica de las socias (ago-2026) que era correcta: en la
- * pantalla se veía Ingresos, Egresos y Variación del banco, uno al lado
- * del otro. Cualquiera resta los dos primeros, no le da el tercero, y
- * concluye que los datos están mal. No estaban mal — respondían
- * preguntas distintas, pero eso solo lo sabía quien construyó el
- * sistema. Este bloque hace visible la diferencia, línea por línea,
- * para que la resta cierre a la vista de cualquiera.
- *
- * Las tres partidas que separan una cifra de la otra:
- *  - Efectivo: se gastó o cobró, pero nunca tocó el banco.
- *  - No operativo: entró al banco (reembolsos de otras sedes, aportes,
- *    venta de un activo) pero no es venta del mes.
- *  - Adelantos a otras sedes: salió de esta cuenta, pero el costo es
- *    de Fonavi o Centro, no de aquí.
- */
-function ReconciliationBridge({
-  resultado,
-  bridge,
-  bankVariation,
-  expanded,
-  onToggle,
-}: {
-  resultado: number;
-  bridge?: {
-    resultadoDelMes: number;
-    efectivoNeto: number;
-    noOperativoBanco: number;
-    compartidoOtrasSedes: number;
-  };
-  bankVariation: number;
-  expanded: boolean;
-  onToggle: () => void;
-}) {
-  // Sin datos del puente (versión anterior del servidor) no inventamos
-  // una explicación: mostramos solo las dos cifras.
-  const ajustes = bridge
-    ? [
-        {
-          label: "Efectivo — cobrado o pagado sin pasar por el banco",
-          valor: -bridge.efectivoNeto,
-          ayuda:
-            bridge.efectivoNeto < 0
-              ? "Se pagó en efectivo, así que el banco no bajó por esto."
-              : "Se cobró en efectivo, así que el banco no subió por esto.",
-        },
-        {
-          label: "Entró al banco pero no es venta del mes",
-          valor: bridge.noOperativoBanco,
-          ayuda: "Reembolsos de otras sedes, aportes o venta de activos.",
-        },
-        {
-          label: "Adelantado por cuenta de otras sedes",
-          valor: -bridge.compartidoOtrasSedes,
-          ayuda: "Salió de esta cuenta, pero el costo es de Fonavi o Centro.",
-        },
-      ].filter((a) => Math.abs(a.valor) > 0.005)
-    : [];
-
-  const fmt = (n: number) => `${n >= 0 ? "+" : "−"}${formatCurrency(Math.abs(n))}`;
-
-  return (
-    <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-      <div className="px-4 py-3 border-b border-gray-100">
-        <h3 className="text-sm font-semibold text-gray-900">
-          Del resultado del mes al movimiento del banco
-        </h3>
-        <p className="text-[11px] text-gray-500 mt-0.5">
-          {ajustes.length === 0
-            ? "Este mes las dos cifras coinciden: todo el movimiento pasó por el banco."
-            : "Las dos cifras no son iguales, y esta es la razón exacta. Cada línea suma o resta hasta llegar al saldo del banco."}
-        </p>
-      </div>
-
-      <div className="px-4 py-3 space-y-1.5 text-sm">
-        <div className="flex items-baseline justify-between gap-3">
-          <span className="text-gray-900 font-medium">Resultado del mes</span>
-          <span className={`font-semibold tabular-nums ${resultado >= 0 ? "text-emerald-700" : "text-red-600"}`}>
-            {formatCurrency(resultado)}
-          </span>
-        </div>
-
-        {ajustes.map((a) => (
-          <div key={a.label} className="flex items-baseline justify-between gap-3 pl-3">
-            <span className="text-gray-600 text-[13px]">
-              {a.label}
-              <span className="block text-[11px] text-gray-400">{a.ayuda}</span>
-            </span>
-            <span className="tabular-nums text-gray-700 text-[13px] whitespace-nowrap">{fmt(a.valor)}</span>
-          </div>
-        ))}
-
-        <div className="flex items-baseline justify-between gap-3 border-t border-gray-200 pt-2 mt-1">
-          <button
-            onClick={onToggle}
-            className="text-left text-gray-900 font-medium hover:text-primary"
-          >
-            Variación del saldo del banco
-            <span className="block text-[11px] text-primary font-normal">
-              {expanded ? "Click para cerrar" : "Ver detalle diario"}
-            </span>
-          </button>
-          <span className={`font-semibold tabular-nums ${bankVariation >= 0 ? "text-emerald-700" : "text-red-600"}`}>
-            {formatCurrency(bankVariation)}
-          </span>
-        </div>
-      </div>
     </div>
   );
 }

@@ -84,14 +84,14 @@ describe("buildInsights — reglas", () => {
     expect(ins.filter((i) => i.severity === "aviso")).toHaveLength(0);
   });
 
-  it("descuadre con el banco → crítico con acción a conciliación", () => {
+  it("descuadre con el banco → crítico con acción a Movimientos (la pestaña de cuadre se retiró, 8-oct-2026)", () => {
     const ins = buildInsights(
       healthyFacts({ bank: { balance: 8000, hasDiscrepancy: true, discrepancyAmount: 118.2 } }),
     );
     const d = ins.find((i) => i.id === "descuadre-banco");
     expect(d?.severity).toBe("critico");
     expect(d?.impact).toBeCloseTo(118.2, 2);
-    expect(d?.action?.href).toContain("conciliacion");
+    expect(d?.action?.href).toContain("movimientos");
   });
 
   it("caja negativa → crítico (dato imposible)", () => {

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect, useCallback, useMemo, type ReactNode, type CSSProperties } from "react";
-import { useSearchParams } from "next/navigation";
+import { useParams, useSearchParams } from "next/navigation";
 import { getDailyBreakdown } from "@/app/actions/reports";
 import { getCategories } from "@/app/actions/categories";
 import { getClients } from "@/app/actions/clients";
@@ -28,7 +28,7 @@ import {
   type ExpenseGroupView,
 } from "@/lib/expense-group-view";
 import { useBankBalance } from "@/hooks/useBankBalance";
-import { BankCheckInline } from "@/components/banking/BankCheckInline";
+import { getLiquidezGrupo } from "@/app/actions/liquidez";
 import { formatCurrency, formatDateShort } from "@/lib/utils";
 import { MonthSelector } from "@/components/ui/MonthSelector";
 import { Pencil, Trash2, Plus, CheckCircle2, Paperclip, GripVertical, X as XIcon, ShieldCheck, ChevronDown, ChevronRight, Layers, Ungroup } from "lucide-react";
@@ -166,6 +166,15 @@ export function DailyMovementsReport() {
   // BCP, independiente del mes navegado. Tras cada mutación se llama
   // bank.refresh() (mismo patrón que Dashboard/BankBalanceCard).
   const bank = useBankBalance();
+  const [bancoExcel, setBancoExcel] = useState<{ banco: number | null; fecha: string | null } | null>(null);
+  const negocio = useParams<{ negocio?: string }>()?.negocio ?? "atelier";
+  useEffect(() => {
+    const id = negocio === "fonavi" ? 2 : negocio === "centro" ? 3 : 1;
+    void getLiquidezGrupo().then((l) => {
+      const x = l?.sedes.find((y) => y.businessId === id);
+      setBancoExcel(x ? { banco: x.banco, fecha: x.fecha } : null);
+    });
+  }, [negocio]);
   const [monthRange, setMonthRange] = useState<{
     minMonth: string;
     maxMonth: string;
@@ -644,7 +653,7 @@ export function DailyMovementsReport() {
         value={month}
         onChange={setMonth}
         minMonth={monthRange?.minMonth}
-        maxMonth={monthRange?.maxMonth}
+        maxMonth={monthRange?.currentMonth}
         currentMonth={monthRange?.currentMonth}
         loading={loading}
       />
@@ -713,18 +722,17 @@ export function DailyMovementsReport() {
                   <span className="text-xs ml-1">({monthVerifiedPct}%)</span>
                 </div>
               </div>
-              <div title="Saldo actual del banco — no cambia con el mes navegado">
+              {/* El banco = lectura del Excel, la misma cifra de toda la app (8-oct-2026). Antes
+                  era el saldo viejo + movimientos (Fonavi: S/15,724 con S/11,763 en el banco) y
+                  al lado se anotaba el saldo real a mano, cosa que ya no se hace. */}
+              <div title="Lectura del banco del último Excel cargado — no cambia con el mes navegado">
                 <div className="text-gray-500 text-xs uppercase tracking-wide">
-                  Saldo banco hoy
+                  Banco{bancoExcel?.fecha ? ` al ${bancoExcel.fecha.slice(8, 10)}/${bancoExcel.fecha.slice(5, 7)}` : ""} (Excel)
                 </div>
                 <div className="font-semibold text-base text-gray-900">
-                  {bank.isLoading ? "—" : formatCurrency(bank.current)}
+                  {bancoExcel?.banco != null ? formatCurrency(bancoExcel.banco) : "—"}
                 </div>
               </div>
-              {/* Diferencia automática vs el saldo real del banco (pedido
-                  de Jahnn): registra lo que ve en su app BCP y el sistema
-                  calcula y muestra la diferencia aquí mismo. */}
-              <BankCheckInline onSaved={() => bank.refresh()} />
             </div>
             <div className="flex items-center gap-2">
               <button
