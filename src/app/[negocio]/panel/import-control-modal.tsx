@@ -9,6 +9,8 @@ import { importControlReport } from "@/app/actions/incentives";
 import { importProductSalesFromPanel } from "@/app/actions/product-sales-import";
 import { parseVentasReport } from "@/lib/incentives/byte-ventas-parser";
 import { importVentasByte } from "@/app/actions/byte-ventas";
+import { detectarTipoReporte, parseReceivablesFile } from "@/lib/receivables-parser";
+import { importReceivablesReport } from "@/app/actions/receivables";
 
 function currentMonthLima(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
@@ -40,10 +42,10 @@ export function ImportControlModal({
   onClose: () => void;
   onImported: () => void;
   /**
-   * Atelier es producción: solo sube Platos con Mayor Rotación. Los
-   * otros tres archivos no existen en su operación (no da cortesías,
-   * no cambia precios en caja, y su único vendedor es el propio
-   * administrador). Ver REPORTES_POR_SEDE.
+   * Atelier (el nombre quedó de cuando solo subía la rotación). Es
+   * producción: sube Reporte de Ventas, Consolidado de Facturas y Platos con
+   * Mayor Rotación (10-oct-2026). Cortesías y Ventas por Trabajador no
+   * existen en su operación. Ver REPORTES_POR_SEDE.
    */
   soloRotacion?: boolean;
 }) {
@@ -57,11 +59,59 @@ export function ImportControlModal({
   async function handleFiles(files: FileList | File[]) {
     setBusy(true);
     const out: FileResult[] = [];
+    // Se leen todos primero para poder ordenarlos: en Atelier el «Reporte de
+    // Ventas» entra antes que el «Consolidado», así el consolidado encuentra
+    // los documentos ya creados y solo les agrega el RUC.
+    const leidos: { file: File; rows: unknown[][] | null }[] = [];
     for (const file of Array.from(files)) {
       try {
         const XLSX = await import("xlsx");
         const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
-        const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null }) as unknown[][];
+        leidos.push({ file, rows: XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null }) as unknown[][] });
+      } catch {
+        leidos.push({ file, rows: null });
+      }
+    }
+    const orden = (rows: unknown[][] | null) => {
+      const t = soloRotacion && rows ? detectarTipoReporte(rows) : null;
+      return t === "ventas" ? 0 : t === "facturas" ? 1 : 2;
+    };
+    leidos.sort((a, b) => orden(a.rows) - orden(b.rows));
+
+    for (const { file, rows } of leidos) {
+      try {
+        if (!rows) throw new Error("ilegible");
+        // Atelier (10-oct-2026): sus dos reportes de cobros entran por esta
+        // misma caja. El «Reporte de Ventas» además actualiza la venta de cada
+        // día y el ranking de clientes (ya no se suben «Ventas de <MES>» ni
+        // «Ventas por Cliente»).
+        if (soloRotacion && detectarTipoReporte(rows)) {
+          const rc = parseReceivablesFile(rows);
+          if (rc.errores.length > 0 || !rc.periodo.inicio || !rc.periodo.fin) {
+            out.push({ name: file.name, status: "error", detail: rc.errores.join(" ") || "No encontré el período del reporte." });
+            continue;
+          }
+          const ri = await importReceivablesReport({
+            tipoReporte: rc.tipoReporte, docs: rc.docs,
+            periodo: { inicio: rc.periodo.inicio, fin: rc.periodo.fin }, archivo: file.name,
+          });
+          if (!ri.ok) {
+            out.push({ name: file.name, status: "error", detail: ri.error });
+            continue;
+          }
+          setDidImport(true);
+          const der = ri.derivado;
+          out.push({
+            name: file.name,
+            status: "ok",
+            detail: rc.tipoReporte === "ventas"
+              ? `Reporte de Ventas · ${rc.periodo.inicio} → ${rc.periodo.fin} · S/${rc.totales.total.toFixed(2)} · cobros al día` +
+                (der && !der.error ? ` · ${der.dias} día${der.dias === 1 ? "" : "s"} de venta${der.semanas > 0 ? ` · clientes de ${der.semanas} semana${der.semanas === 1 ? "" : "s"}` : ""}` : "")
+              : `Consolidado de Facturas · ${rc.periodo.inicio} → ${rc.periodo.fin} · RUC y anulaciones al día`,
+          });
+          if (der?.error) out.push({ name: file.name, status: "error", detail: der.error });
+          continue;
+        }
         // «Ventas de <MES>» (venta de cada día). Desde el 10-oct-2026 entra por
         // esta misma caja: la sube la sede cada sábado con los demás (antes iba
         // por un botón aparte que la rutina no vigilaba).
@@ -170,13 +220,14 @@ export function ImportControlModal({
 
         <div className="p-6 space-y-4">
           <p className="text-xs text-gray-500">
-            <strong>Rutina semanal (~5 min)</strong> — para banderas de control, ranking y el foco
-            de upselling; el avance diario de la meta sale del registro del día, no de estos
-            archivos. Exporta de Byte {soloRotacion ? "los 2 reportes" : "los 4 reportes"} con el rango{" "}
+            <strong>Rutina semanal (~5 min)</strong> —{" "}
+            {soloRotacion
+              ? "la venta de cada día, los clientes, los cobros y qué productos se venden."
+              : "para banderas de control, ranking y el foco de upselling; el avance diario de la meta sale del registro del día, no de estos archivos."} Exporta de Byte {soloRotacion ? "los 3 reportes" : "los 4 reportes"} con el rango{" "}
             <strong>desde el día 1 del mes hasta hoy</strong> y suéltalos aquí todos juntos:{" "}
             <strong>
               {soloRotacion
-                ? "Ventas del mes · Productos con Mayor Rotación"
+                ? "Reporte de Ventas · Consolidado de Facturas · Productos con Mayor Rotación"
                 : "Ventas del mes · Productos con Mayor Rotación · Cortesías · Ventas por Trabajador"}
             </strong>. Cada subida
             <strong> reemplaza</strong> la anterior (no duplica) y el sistema reconoce cada archivo

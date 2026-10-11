@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import {
   REPORTES_SEMANALES, claveDesdeNota, evaluarReportesSemanales,
-  sabadoDeLaSemana, nombrarFaltantes, reportesDeLaSede, cargaDeVentas, type CargaRegistrada,
+  sabadoDeLaSemana, nombrarFaltantes, reportesDeLaSede, cargaDeVentas, cargasDeCobros, type CargaRegistrada,
 } from "./reportes-semanales";
 
 // Sábado 22 de agosto de 2026. El sábado anterior fue el 15.
@@ -151,9 +151,24 @@ describe("nombrarFaltantes", () => {
 
 describe("qué reportes le tocan a cada sede", () => {
   // Decisión de Jahnn (24-ago-2026): Atelier es producción, no cafetería.
-  it("a Atelier le tocan la venta del mes y la rotación (10-oct-2026)", () => {
+  it("a Atelier le tocan Reporte de Ventas, Consolidado y rotación (10-oct-2026)", () => {
+    // El Reporte de Ventas trae la venta del día y los clientes: ya no se
+    // piden «Ventas de <MES>» ni «Ventas por Cliente».
     const r = reportesDeLaSede(1).map((x) => x.clave);
-    expect(r).toEqual(["ventas_mes", "rotacion"]);
+    expect(r).toEqual(["reporte_ventas", "consolidado", "rotacion"]);
+    expect(reportesDeLaSede(1).map((x) => x.nombre)).toEqual(["Reporte de Ventas", "Consolidado de Facturas", "Platos con Mayor Rotación"]);
+  });
+
+  it("las cafeterías no ven los reportes de cobros de Atelier", () => {
+    for (const sede of [undefined, 2, 3]) {
+      expect(reportesDeLaSede(sede).map((r) => r.clave)).not.toContain("reporte_ventas");
+    }
+  });
+
+  it("las subidas de cobros cuentan para la rutina de Atelier", () => {
+    const cargas = [...cargasDeCobros([{ tipo: "ventas", fecha: "2026-08-22" }, { tipo: "facturas", fecha: "2026-08-22" }]), c("rotacion", "2026-08-22")];
+    expect(evaluarReportesSemanales(cargas, "2026-08-22", 1).completo).toBe(true);
+    expect(cargasDeCobros([{ tipo: "ventas", fecha: null }])).toEqual([]);
   });
 
   it("a Fonavi y Centro les tocan los cuatro: venta del mes, rotación, cortesías y ventas por trabajador", () => {
@@ -168,7 +183,7 @@ describe("qué reportes le tocan a cada sede", () => {
 
   it("la venta del mes cuenta desde la última vez que entró a byte_ventas_daily", () => {
     expect(cargaDeVentas(null)).toEqual([]);
-    const e = evaluarReportesSemanales([...cargaDeVentas("2026-08-22"), c("rotacion", "2026-08-22")], "2026-08-22", 1);
+    const e = evaluarReportesSemanales([...cargaDeVentas("2026-08-22"), c("rotacion", "2026-08-22"), c("cortesias", "2026-08-22"), c("ventas_trabajador", "2026-08-22")], "2026-08-22", 2);
     expect(e.completo).toBe(true);
   });
 
@@ -182,24 +197,24 @@ describe("qué reportes le tocan a cada sede", () => {
     expect(claveDesdeNota("Incentivos · cambios_precio")).toBe("cambios_precio");
   });
 
-  it("Atelier queda COMPLETO con venta del mes y rotación", () => {
+  it("Atelier queda COMPLETO con sus tres archivos", () => {
     // Con la regla vieja, Luis quedaba en rojo para siempre por
     // archivos que su operación no genera.
-    const cargas = [c("ventas_mes", "2026-08-22"), c("rotacion", "2026-08-22")];
+    const cargas = [c("reporte_ventas", "2026-08-22"), c("consolidado", "2026-08-22"), c("rotacion", "2026-08-22")];
     const atelier = evaluarReportesSemanales(cargas, "2026-08-22", 1);
     expect(atelier.completo).toBe(true);
     expect(atelier.faltan).toHaveLength(0);
     expect(atelier.nuncaSubidos).toHaveLength(0);
 
-    // La misma subida en Centro deja dos pendientes.
+    // La misma subida en Centro deja tres pendientes (solo cuenta la rotación).
     const centro = evaluarReportesSemanales(cargas, "2026-08-22", 3);
     expect(centro.completo).toBe(false);
-    expect(centro.faltan).toHaveLength(2);
+    expect(centro.faltan).toHaveLength(3);
   });
 
   it("Atelier sin subir nada sigue quedando en falta", () => {
     const a = evaluarReportesSemanales([], "2026-08-22", 1);
     expect(a.completo).toBe(false);
-    expect(a.nuncaSubidos.map((r) => r.clave)).toEqual(["ventas_mes", "rotacion"]);
+    expect(a.nuncaSubidos.map((r) => r.clave)).toEqual(["reporte_ventas", "consolidado", "rotacion"]);
   });
 });

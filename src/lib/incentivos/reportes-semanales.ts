@@ -52,7 +52,12 @@
  * clasificar, y el archivo se sigue aceptando si un administrador lo
  * sube por su cuenta.
  */
-export type ClaveReporte = "ventas_mes" | "rotacion" | "cortesias" | "cambios_precio" | "ventas_trabajador";
+export type ClaveReporte =
+  | "ventas_mes" | "rotacion" | "cortesias" | "cambios_precio" | "ventas_trabajador"
+  // Solo Atelier (10-oct-2026): sus dos archivos de cobros. El «Reporte de
+  // Ventas» además trae la venta de cada día y los clientes, así que Luis ya
+  // no sube «Ventas de <MES>» ni «Ventas por Cliente».
+  | "reporte_ventas" | "consolidado";
 
 export const REPORTES_SEMANALES: {
   clave: ClaveReporte;
@@ -107,8 +112,28 @@ export const REPORTES_SEMANALES: {
  * lo demás sigue funcionando igual.
  */
 export const REPORTES_POR_SEDE: Record<number, ClaveReporte[]> = {
-  1: ["ventas_mes", "rotacion"],   // Atelier — producción
+  1: ["reporte_ventas", "consolidado", "rotacion"],   // Atelier — producción
 };
+
+/** Los de Atelier que no existen en las cafeterías (no van en la lista por defecto). */
+const SOLO_ATELIER: typeof REPORTES_SEMANALES = [
+  { clave: "reporte_ventas", nombre: "Reporte de Ventas", porQue: "la venta de cada día, los clientes y los cobros" },
+  { clave: "consolidado", nombre: "Consolidado de Facturas", porQue: "el RUC de cada cliente y las facturas anuladas" },
+];
+
+/**
+ * Las subidas de los reportes de cobros de Atelier (tabla invoice_imports,
+ * `tipo_reporte` 'ventas' o 'facturas', con la fecha de Lima de la subida).
+ */
+export function cargasDeCobros(filas: { tipo: string; fecha: string | null }[]): CargaRegistrada[] {
+  const out: CargaRegistrada[] = [];
+  for (const f of filas) {
+    if (!f.fecha) continue;
+    if (f.tipo === "ventas") out.push({ clave: "reporte_ventas", fecha: f.fecha });
+    else if (f.tipo === "facturas") out.push({ clave: "consolidado", fecha: f.fecha });
+  }
+  return out;
+}
 
 /**
  * La subida de "Ventas del mes" como carga de la rutina. El import de ese
@@ -119,11 +144,12 @@ export function cargaDeVentas(ultimaSubida: string | null | undefined): CargaReg
   return ultimaSubida ? [{ clave: "ventas_mes", fecha: ultimaSubida }] : [];
 }
 
-/** Los reportes que aplican a una sede. Por defecto, los cuatro. */
+/** Los reportes que aplican a una sede, en el orden en que se le piden. Por defecto, los cuatro de las cafeterías. */
 export function reportesDeLaSede(businessId?: number) {
   const claves = businessId != null ? REPORTES_POR_SEDE[businessId] : undefined;
   if (!claves) return REPORTES_SEMANALES;
-  return REPORTES_SEMANALES.filter((r) => claves.includes(r.clave));
+  const catalogo = [...REPORTES_SEMANALES, ...SOLO_ATELIER];
+  return claves.map((k) => catalogo.find((r) => r.clave === k)!).filter(Boolean);
 }
 
 /**

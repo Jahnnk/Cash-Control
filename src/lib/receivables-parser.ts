@@ -51,6 +51,8 @@ export type DocumentoParseado = {
   estadoCuota: EstadoCuota;
   vencimiento: string | null;
   estadoFactura: "EMITIDO" | "ANULADO" | null;
+  /** Descuento de la venta (columna DESC del reporte de ventas; el consolidado no lo trae). */
+  descuento?: number;
 };
 
 export type ReceivablesParseResult = {
@@ -290,6 +292,7 @@ export function parseVentasReport(rows: unknown[][]): ReceivablesParseResult {
     medios: findColExacta(h, "medios"),
     total: findColExacta(h, "total"),
     credito: findColExacta(h, "credito"),
+    desc: findColExacta(h, "desc"),
     efectivo: findCol(h, "efectivo"),
     tarjeta: findCol(h, "tarjeta"),
     yape: findCol(h, "yape"),
@@ -346,6 +349,7 @@ export function parseVentasReport(rows: unknown[][]): ReceivablesParseResult {
       estadoCuota: estado,
       vencimiento,
       estadoFactura: null,         // solo lo sabe el consolidado
+      descuento: col.desc >= 0 ? r2(toNum(row[col.desc])) : 0,
     });
   }
 
