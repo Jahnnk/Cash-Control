@@ -1,5 +1,6 @@
 "use client";
 
+import { TuSemanaCeo } from "./tu-semana-ceo";
 import { useState } from "react";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 import type { BusinessSummary } from "@/app/actions/grupo";
@@ -290,6 +291,9 @@ export function GrupoDashboardClient({
             />
             {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
           </div>
+
+          {/* ¿Qué me toca a mí? Rastreador de la semana y del mes, estilo delivery (11-oct-2026). */}
+          {isCurrentMonth && <TuSemanaCeo />}
 
           {/* ¿Cómo va cada sede? — ordenadas por desempeño; cada tarjeta abre su sede */}
           <section id="sedes" className="space-y-3 scroll-mt-4">

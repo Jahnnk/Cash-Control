@@ -19,6 +19,7 @@ import {
 import { useToast } from "@/components/toast-provider";
 import { HighlightPhotos } from "@/components/highlight-photos";
 import { HistorialHighlights } from "./historial-highlights";
+import { avisarSeguimiento } from "@/components/seguimiento/tracker";
 import { conReintento } from "@/lib/con-reintento";
 import {
   cerrarHighlight, getHighlightSede,
@@ -86,11 +87,12 @@ export function HighlightCard({
       );
       setCerrando(null);
       onRecargar?.();
+      avisarSeguimiento();
     });
   }
 
   return (
-    <div className="rounded-2xl overflow-hidden border border-gray-200 bg-white">
+    <div id="highlight" className="rounded-2xl overflow-hidden border border-gray-200 bg-white scroll-mt-4">
       {/* Banda de guía — como la app de Make Time */}
       <div className="bg-[#CFF0EA] px-5 pt-4 pb-3">
         <div className="flex items-start justify-between gap-3">
