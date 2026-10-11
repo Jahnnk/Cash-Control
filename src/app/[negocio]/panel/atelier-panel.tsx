@@ -5,13 +5,11 @@ import { ClipboardList, Upload, Loader2, Save, Pencil, TrendingUp, Receipt, Tras
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getAtelierPanel, saveAtelierDay, type AtelierPanelData, type AtelierDaily } from "@/app/actions/byte-ventas";
 import { useToast } from "@/components/toast-provider";
-import { VentasImportModal } from "./ventas-import-modal";
 import { HighlightSlot } from "./highlight-card";
 import { EstadoKpisCard } from "./estado-kpis-card";
 import { ProponerHighlight } from "./proponer-highlight";
 import { MiRutina } from "./mi-rutina";
 import { ImportControlModal } from "./import-control-modal";
-import { ClientSalesImportModal } from "./client-sales-import-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
 import { ReceivablesImportModal } from "./receivables-import-modal";
@@ -49,17 +47,15 @@ export function AtelierPanel() {
   const [data, setData] = useState<AtelierPanelData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
-  const [showImport, setShowImport] = useState(false);
   // Detalle de mermas: Atelier solo podía anotar el importe total, y
   // en producción es donde MÁS interesa saber QUÉ se mermó (Jahnn,
   // 31-ago-2026). Mismo modal y misma tabla que Fonavi y Centro.
   const [showMermaDetail, setShowMermaDetail] = useState(false);
-  // Atelier NO tenía forma de subir el reporte de rotación desde su
-  // panel: por eso su última carga era del 3-jul, hecha desde Grupo.
+  // La caja única de Luis (10-oct-2026): Reporte de Ventas, Consolidado de
+  // Facturas y rotación, todo junto. El Reporte de Ventas trae también la
+  // venta de cada día y los clientes: ya no hay botones aparte para
+  // «Ventas de <MES>» ni «Ventas por Cliente».
   const [showRotacion, setShowRotacion] = useState(false);
-  // Ventas por cliente (reporte semanal de Byte). Va aparte del panel
-  // diario: es otro archivo, otra rutina y otro análisis.
-  const [showClientImport, setShowClientImport] = useState(false);
   const [clientes, setClientes] = useState<ClientSalesAnalisis | null>(null);
   // Cuentas por cobrar: se alimenta de otros dos reportes de Byte
   // (ventas + consolidado de facturas), con su propia rutina semanal.
@@ -189,10 +185,10 @@ export function AtelierPanel() {
             className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
           />
           <button
-            onClick={() => setShowImport(true)}
+            onClick={() => setShowRotacion(true)}
             className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-dark"
           >
-            <Upload className="w-3.5 h-3.5" /> Subir ventas Byte
+            <Upload className="w-3.5 h-3.5" /> Subir reportes de Byte
           </button>
         </div>
       </div>
@@ -328,7 +324,7 @@ export function AtelierPanel() {
             </div>
             {data.dailies.length === 0 ? (
               <div className="p-6 text-center text-sm text-gray-400">
-                Sin días registrados este mes. Registra el cierre de ayer o sube el reporte de ventas de Byte.
+                Sin días registrados este mes. Registra el cierre de ayer o sube el «Reporte de Ventas» de Byte.
               </div>
             ) : (
               <div className="overflow-x-auto">
@@ -383,9 +379,9 @@ export function AtelierPanel() {
             Venta a clientes <b className="text-gray-900">{formatCurrency(clientes.ventasExternas)}</b> · semana al {fechaDM(clientes.periodo.fin)}
             {viejo(clientes.periodo.fin) && <span className="ml-1.5 rounded-full bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-800 ring-1 ring-inset ring-amber-200">reporte viejo: súbelo el sábado</span>}
           </p>
-        ) : <p className="text-xs text-gray-500">{clientes ? "Falta subir el reporte «Ventas por Cliente» de Byte." : "Cargando…"}</p>}
+        ) : <p className="text-xs text-gray-500">{clientes ? "Sale del «Reporte de Ventas» de Byte, semana por semana: aparece cuando se suba una semana completa." : "Cargando…"}</p>}
       >
-        {clientes ? <ClientSalesSection data={clientes} onSubir={() => setShowClientImport(true)} /> : <p className="text-sm text-gray-400">Cargando clientes…</p>}
+        {clientes ? <ClientSalesSection data={clientes} /> : <p className="text-sm text-gray-400">Cargando clientes…</p>}
       </SeccionDesplegable>
 
       <SeccionDesplegable
@@ -404,35 +400,31 @@ export function AtelierPanel() {
         ) : <p className="text-sm text-gray-400">Cargando cuentas por cobrar…</p>}
       </SeccionDesplegable>
 
-      {showImport && (
-        <VentasImportModal
-          onClose={() => setShowImport(false)}
-          onImported={() => {
-            // El reporte de Byte es el camino principal de Atelier: si
-            // el aviso no se entera, seguiría reclamando días que
-            // acaban de llegar.
-            setRefrescarAviso((v) => v + 1);
-            return load(month);
-          }}
-        />
-      )}
       {showRotacion && (
         <ImportControlModal
           soloRotacion
           onClose={() => setShowRotacion(false)}
-          onImported={() => setRefrescarAviso((v) => v + 1)}
-        />
-      )}
-      {showClientImport && (
-        <ClientSalesImportModal
-          onClose={() => setShowClientImport(false)}
-          onImported={loadClientes}
+          onImported={() => {
+            // El Reporte de Ventas trae la venta del día, los clientes y los
+            // cobros: si el aviso y las secciones no se enteran, seguirían
+            // reclamando lo que acaba de llegar.
+            setRefrescarAviso((v) => v + 1);
+            void loadClientes();
+            void loadCobranza();
+            return load(month);
+          }}
         />
       )}
       {showCobranzaImport && (
         <ReceivablesImportModal
           onClose={() => setShowCobranzaImport(false)}
-          onImported={loadCobranza}
+          onImported={() => {
+            // El Reporte de Ventas también trae la venta del día y los clientes.
+            setRefrescarAviso((v) => v + 1);
+            void loadClientes();
+            void loadCobranza();
+            return load(month);
+          }}
         />
       )}
       {showMermaDetail && (

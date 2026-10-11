@@ -22,6 +22,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import type { ClientSalesRow } from "@/lib/client-sales-parser";
+import { guardarSnapshotClientes } from "@/lib/client-sales-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -81,48 +82,9 @@ export async function importClientSales(input: {
     }
   }
 
-  const ventas = r2(filas.reduce((s, f) => s + f.totalVentas, 0));
-  const ventasSedes = r2(filas.filter((f) => f.esSede).reduce((s, f) => s + f.totalVentas, 0));
-
   try {
-    const previo = await sql`
-      SELECT id FROM client_sales_snapshots
-      WHERE business_id = ${bId} AND periodo_inicio = ${periodo.inicio} AND periodo_fin = ${periodo.fin}
-    `;
-    const reemplazo = previo.length > 0;
-
-    console.log(
-      `[importClientSales] bId=${bId} periodo=${periodo.inicio}..${periodo.fin} filas=${filas.length} reemplazo=${reemplazo}`,
-    );
-
-    // Reimportar el mismo rango reemplaza: se borra el snapshot anterior
-    // (las filas caen por ON DELETE CASCADE) y se vuelve a insertar.
-    if (reemplazo) {
-      await sql`DELETE FROM client_sales_snapshots WHERE id = ${previo[0].id}`;
-    }
-
-    const [snap] = await sql`
-      INSERT INTO client_sales_snapshots
-        (business_id, periodo_inicio, periodo_fin, archivo,
-         total_ventas, total_pedidos, total_clientes, ventas_externas, ventas_sedes)
-      VALUES (${bId}, ${periodo.inicio}, ${periodo.fin}, ${input.archivo},
-              ${ventas}, ${filas.reduce((s, f) => s + f.totalPedidos, 0)}, ${filas.length},
-              ${r2(ventas - ventasSedes)}, ${ventasSedes})
-      RETURNING id
-    `;
-
-    for (const f of filas) {
-      await sql`
-        INSERT INTO client_sales_rows
-          (snapshot_id, documento, tipo_doc, cliente, es_sede, sede_id,
-           total_pedidos, con_comprobante, sin_comprobante,
-           total_ventas, ticket_promedio, primera_compra, ultima_compra)
-        VALUES (${snap.id}, ${f.documento}, ${f.tipoDoc}, ${f.cliente.trim()},
-                ${f.esSede}, ${f.sedeId},
-                ${f.totalPedidos}, ${f.conComprobante}, ${f.sinComprobante},
-                ${f.totalVentas}, ${f.ticketPromedio}, ${f.primeraCompra}, ${f.ultimaCompra})
-      `;
-    }
+    console.log(`[importClientSales] bId=${bId} periodo=${periodo.inicio}..${periodo.fin} filas=${filas.length}`);
+    const { reemplazo } = await guardarSnapshotClientes(sql, bId, filas, periodo, input.archivo);
 
     revalidatePath("/", "layout");
     return { ok: true, clientes: filas.length, reemplazo, periodo };

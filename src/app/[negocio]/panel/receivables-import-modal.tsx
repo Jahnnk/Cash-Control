@@ -81,9 +81,14 @@ export function ReceivablesImportModal({
               r.actualizados === 1 ? "" : "s"
             } · ${formatCurrency(parsed.totales.total)}` +
             (parsed.tipoReporte === "ventas"
-              ? ` · ${formatCurrency(parsed.totales.pendiente)} por cobrar`
+              ? ` · ${formatCurrency(parsed.totales.pendiente)} por cobrar` +
+                (r.derivado && !r.derivado.error
+                  ? ` · ${r.derivado.dias} día${r.derivado.dias === 1 ? "" : "s"} de venta` +
+                    (r.derivado.semanas > 0 ? ` · clientes de ${r.derivado.semanas} semana${r.derivado.semanas === 1 ? "" : "s"}` : "")
+                  : "")
               : ""),
         });
+        if (r.derivado?.error) out.push({ name: file.name, status: "warn", detail: r.derivado.error });
         for (const w of parsed.warnings) {
           out.push({ name: file.name, status: "warn", detail: w });
         }

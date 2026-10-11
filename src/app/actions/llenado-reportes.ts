@@ -17,7 +17,7 @@ import { getSessionRole } from "@/lib/session-access";
 import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
 import {
-  claveDesdeNota, evaluarReportesSemanales, cargaDeVentas, type CargaRegistrada,
+  claveDesdeNota, evaluarReportesSemanales, cargaDeVentas, cargasDeCobros, type CargaRegistrada,
 } from "@/lib/incentivos/reportes-semanales";
 import {
   evaluarCumplimiento, type SedeCumplimiento, type ControlCumplimiento,
@@ -336,6 +336,14 @@ export async function getCumplimientoEquipo(): Promise<EstadoCumplimiento> {
     `) as { business_id: number; fecha: string | null }[];
     for (const v of ventas) {
       porSede.set(v.business_id, [...(porSede.get(v.business_id) ?? []), ...cargaDeVentas(v.fecha)]);
+    }
+    // Atelier: sus dos reportes de cobros (invoice_imports).
+    const cobros = (await sql`
+      SELECT business_id, tipo_reporte AS tipo, (MAX(creado_en) AT TIME ZONE 'America/Lima')::date::text AS fecha
+      FROM invoice_imports GROUP BY business_id, tipo_reporte
+    `.catch(() => [])) as { business_id: number; tipo: string; fecha: string | null }[];
+    for (const c of cobros) {
+      porSede.set(c.business_id, [...(porSede.get(c.business_id) ?? []), ...cargasDeCobros([c])]);
     }
 
     // ── 3. Juntar ─────────────────────────────────────────────────────

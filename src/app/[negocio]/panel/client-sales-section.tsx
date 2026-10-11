@@ -84,8 +84,8 @@ export function ClientSalesSection({
         <h3 className="text-sm font-semibold text-gray-900">Aún no hay reportes de clientes</h3>
         <p className="text-xs text-gray-500 mt-1 max-w-md mx-auto">
           {onSubir
-            ? "Sube el reporte «Ventas por Cliente» de Byte y acá vas a ver quiénes son los mejores clientes, quién creció y quién dejó de comprar."
-            : "Cuando Luis suba el primer reporte «Ventas por Cliente» de Byte, el análisis aparece acá."}
+            ? "Sube el «Reporte de Ventas» de Byte y acá vas a ver quiénes son los mejores clientes, quién creció y quién dejó de comprar."
+            : "Sale del «Reporte de Ventas» de Byte, semana por semana: aparece cuando se suba una semana completa (de lunes a sábado)."}
         </p>
         {onSubir && (
           <button

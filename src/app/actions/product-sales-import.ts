@@ -33,7 +33,7 @@ import {
 import { getToday } from "@/lib/utils";
 import { elegirFuenteVentas, type FuenteVenta } from "@/lib/ventas-mes-sql";
 import {
-  claveDesdeNota, evaluarReportesSemanales, cargaDeVentas,
+  claveDesdeNota, evaluarReportesSemanales, cargaDeVentas, cargasDeCobros,
   type CargaRegistrada, type EstadoSemanal,
 } from "@/lib/incentivos/reportes-semanales";
 
@@ -588,6 +588,14 @@ export async function getCargaProductosSede(): Promise<CargaSedePropia> {
         FROM byte_ventas_daily WHERE business_id = ${bId} AND source = 'import'
       `) as { fecha: string | null }[];
       cargas.push(...cargaDeVentas(ventas[0]?.fecha));
+      // Atelier: sus dos reportes de cobros (invoice_imports).
+      if (bId === 1) {
+        const cobros = (await sql`
+          SELECT tipo_reporte AS tipo, (MAX(creado_en) AT TIME ZONE 'America/Lima')::date::text AS fecha
+          FROM invoice_imports WHERE business_id = ${bId} GROUP BY tipo_reporte
+        `.catch(() => [])) as { tipo: string; fecha: string | null }[];
+        cargas.push(...cargasDeCobros(cobros));
+      }
       semanal = evaluarReportesSemanales(cargas, hoy, bId);
     } catch (e) {
       console.error("[getCargaProductosSede] semanal:", e);

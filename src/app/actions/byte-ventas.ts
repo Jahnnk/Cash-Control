@@ -21,6 +21,7 @@ import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import type { ParsedVentaDay } from "@/lib/incentives/byte-ventas-parser";
+import { guardarVentasDiarias } from "@/lib/byte-ventas-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -60,27 +61,7 @@ export async function importVentasByte(input: {
     const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
     const cerrados = input.days.filter((d) => d.date < hoy);
     if (cerrados.length === 0) return { ok: false, error: "El archivo solo trae el día de hoy, que todavía no cierra." };
-    for (const d of cerrados) {
-      // El reporte oficial de Byte siempre manda (source='import').
-      await sql`
-        INSERT INTO byte_ventas_daily (business_id, date, pedidos, descuentos, total, source, updated_at)
-        VALUES (${bId}, ${d.date}, ${d.pedidos}, ${d.descuentos}, ${d.total}, 'import', NOW())
-        ON CONFLICT (business_id, date) DO UPDATE
-          SET pedidos = EXCLUDED.pedidos, descuentos = EXCLUDED.descuentos,
-              total = EXCLUDED.total, source = 'import', updated_at = NOW()
-      `;
-      if (bId === 1) {
-        // Atelier: venta y pedidos SON sus KPIs diarios. El reporte
-        // oficial pisa lo tecleado; las mermas (otra fuente) se respetan.
-        await sql`
-          INSERT INTO upselling_daily (business_id, date, personas, revenue, source, updated_at)
-          VALUES (1, ${d.date}, ${d.pedidos}, ${d.total}, 'import', NOW())
-          ON CONFLICT (business_id, date) DO UPDATE
-            SET personas = EXCLUDED.personas, revenue = EXCLUDED.revenue,
-                source = 'import', updated_at = NOW()
-        `;
-      }
-    }
+    await guardarVentasDiarias(sql, bId, cerrados);
     revalidatePath("/[negocio]/panel", "page");
     return { ok: true, imported: cerrados.length };
   } catch (err) {

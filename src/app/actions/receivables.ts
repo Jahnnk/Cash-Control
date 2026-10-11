@@ -16,6 +16,10 @@
  *
  * Ver `scripts/migrations/2026-08-09-cuentas-por-cobrar.sql` para el
  * porqué del modelo y el hallazgo del cuadre a tres bandas.
+ *
+ * Desde el 10-oct-2026 el reporte de VENTAS además alimenta la venta de
+ * cada día (lo que traía «Ventas de <MES>») y el ranking de clientes por
+ * semana (lo que traía «Ventas por Cliente»): ver `derivarDelReporte`.
  */
 
 import { neon } from "@neondatabase/serverless";
@@ -24,6 +28,9 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
 import type { DocumentoParseado, TipoReporte } from "@/lib/receivables-parser";
+import { ventasPorDia, semanasCubiertas, clientesDeLaSemana } from "@/lib/atelier-reporte-ventas";
+import { guardarVentasDiarias } from "@/lib/byte-ventas-sql";
+import { guardarSnapshotClientes } from "@/lib/client-sales-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -74,7 +81,11 @@ export async function importReceivablesReport(input: {
   periodo: { inicio: string; fin: string };
   archivo: string | null;
 }): Promise<
-  | { ok: true; nuevos: number; actualizados: number; tipoReporte: TipoReporte }
+  | {
+      ok: true; nuevos: number; actualizados: number; tipoReporte: TipoReporte;
+      /** Solo el reporte de ventas: días de venta y semanas de clientes que se actualizaron. */
+      derivado?: { dias: number; semanas: number; error?: string };
+    }
   | { ok: false; error: string }
 > {
   const bId = await activeBusinessId();
@@ -175,15 +186,72 @@ export async function importReceivablesReport(input: {
               ${r2(docs.filter((d) => d.estadoFactura !== "ANULADO").reduce((s, d) => s + d.total, 0))})
     `;
 
+    const derivado = tipoReporte === "ventas" ? await derivarDelReporte(bId, docs, periodo, input.archivo) : undefined;
+
     const nuevos = docs.filter((d) => !yaEstaban.has(d.docKey)).length;
     revalidatePath("/", "layout");
-    return { ok: true, nuevos, actualizados: docs.length - nuevos, tipoReporte };
+    return { ok: true, nuevos, actualizados: docs.length - nuevos, tipoReporte, derivado };
   } catch (e) {
     console.error("[importReceivables] failed:", e);
     if (faltaMigracion(e)) {
       return { ok: false, error: "Falta correr la migración de la base de datos. Avísale a Jahnn." };
     }
     return { ok: false, error: "No pude guardar el reporte. Intenta de nuevo." };
+  }
+}
+
+/**
+ * Lo que el reporte de ventas reemplaza (auditoría de fricción, 10-oct-2026):
+ *   1. la venta de cada día → byte_ventas_daily (antes, «Ventas de <MES>»);
+ *   2. el ranking de clientes de cada semana entera → client_sales_snapshots
+ *      (antes, «Ventas por Cliente»). La semana se arma con TODOS los pedidos
+ *      guardados (libro vivo), no solo los de este archivo: así la semana que
+ *      cruza dos meses junta lo de los dos reportes.
+ * Si algo falla acá, los cobros ya quedaron guardados: se avisa, no se tumba.
+ */
+async function derivarDelReporte(
+  bId: number,
+  docs: DocumentoParseado[],
+  periodo: { inicio: string; fin: string },
+  archivo: string | null,
+): Promise<{ dias: number; semanas: number; error?: string }> {
+  try {
+    const dias = ventasPorDia(docs, getToday());
+    await guardarVentasDiarias(sql, bId, dias);
+
+    const subidos = (await sql`
+      SELECT periodo_inicio::text AS inicio, periodo_fin::text AS fin
+      FROM invoice_imports WHERE business_id = ${bId} AND tipo_reporte = 'ventas'
+    `) as { inicio: string; fin: string }[];
+    const semanas = semanasCubiertas(subidos, periodo, getToday());
+    if (semanas.length === 0) return { dias: dias.length, semanas: 0 };
+
+    // El RUC/DNI no viene en el reporte de ventas: se toma del consolidado y
+    // de los rankings anteriores, para que «creció / dejó de comprar» siga
+    // encontrando a cada cliente.
+    const conocidos = (await sql`
+      SELECT UPPER(TRIM(cliente)) AS k, documento FROM invoice_documents
+      WHERE business_id = ${bId} AND documento IS NOT NULL AND documento <> ''
+      UNION ALL
+      SELECT UPPER(TRIM(r.cliente)), r.documento FROM client_sales_rows r
+      JOIN client_sales_snapshots s ON s.id = r.snapshot_id
+      WHERE s.business_id = ${bId} AND r.documento IS NOT NULL AND r.documento <> ''
+    `) as { k: string; documento: string }[];
+    const documentos = new Map(conocidos.map((c) => [c.k, c.documento]));
+
+    for (const sem of semanas) {
+      const pedidos = (await sql`
+        SELECT fecha::text AS fecha, cliente, tipo, total::float AS total, es_sede AS "esSede", sede_id AS "sedeId"
+        FROM invoice_documents
+        WHERE business_id = ${bId} AND origen_ventas = true AND fecha BETWEEN ${sem.inicio} AND ${sem.fin}
+      `) as Parameters<typeof clientesDeLaSemana>[0];
+      if (pedidos.length === 0) continue;
+      await guardarSnapshotClientes(sql, bId, clientesDeLaSemana(pedidos, documentos), sem, archivo);
+    }
+    return { dias: dias.length, semanas: semanas.length };
+  } catch (e) {
+    console.error("[importReceivables] derivar:", e);
+    return { dias: 0, semanas: 0, error: "Los cobros se guardaron, pero no pude actualizar la venta diaria ni el ranking de clientes." };
   }
 }
 
