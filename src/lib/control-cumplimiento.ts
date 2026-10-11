@@ -56,6 +56,8 @@ export type SedeEvaluada = {
   archivosNunca: string[];
   /** Frase corta lista para mostrar. */
   resumen: string;
+  /** Los reportes que le tocan y la última vez que se subió cada uno (para el rastreador de la semana). */
+  reportes: { nombre: string; ultimaCarga: string | null }[];
 };
 
 export type ControlCumplimiento = {
@@ -109,6 +111,7 @@ export function evaluarSede(s: SedeCumplimiento): SedeEvaluada {
     archivosFaltantes,
     archivosNunca,
     resumen: partes.length > 0 ? partes.join(" · ") : "Todo al día",
+    reportes: (s.semanal?.reportes ?? []).map((r) => ({ nombre: r.nombre, ultimaCarga: r.ultimaCarga })),
   };
 }
 

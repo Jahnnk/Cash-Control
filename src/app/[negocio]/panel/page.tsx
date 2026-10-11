@@ -26,10 +26,9 @@ import { MejorVendedorSection } from "./mejor-vendedor-section";
 import { BaseModal } from "./base-modal";
 import { AtelierPanel } from "./atelier-panel";
 import { HighlightSlot } from "./highlight-card";
-import { EstadoKpisCard } from "./estado-kpis-card";
 import { DiasNoOperativosCard } from "./dias-no-operativos-card";
 import { ProponerHighlight } from "./proponer-highlight";
-import { MiRutina } from "./mi-rutina";
+import { TuSemana } from "./tu-semana";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 import { BonoDelMesCard } from "./bono-del-mes-card";
@@ -257,17 +256,13 @@ function IncentivosPage() {
         </div>
       </div>
 
-      {/* Lo más importante del día — va primero a propósito: si
+      {/* Lo más importante de la semana — va primero a propósito: si
           compitiera con los KPIs, dejaría de ser lo más importante. */}
       <HighlightSlot />
 
-      {/* ¿Ya registré los KPIs de hoy? Va debajo del Highlight y arriba
-          de todo lo demás: es lo que no se les puede pasar. */}
-      <EstadoKpisCard refrescar={weekRefresh} onRegistrar={irAlRegistro} />
-
-      {/* Lo que le toca subir y cómo va. La guía va pegada al estado a
-          propósito: una guía aparte se lee una vez y se olvida. */}
-      <MiRutina refrescar={weekRefresh} onSubirReporte={() => setShowImport(true)} />
+      {/* «Tu semana» (11-oct-2026): qué toca, en qué paso vas y qué sigue, estilo pedido de
+          delivery. El registro del día y la rutina del sábado quedan como su detalle. */}
+      <TuSemana refrescar={weekRefresh} onRegistrar={irAlRegistro} onSubirReporte={() => setShowImport(true)} />
 
       {/* Días que no cuentan (corte de luz, feriado). Va pegado al
           estado de KPIs porque es la respuesta a "¿por qué ese día está
