@@ -4,12 +4,12 @@
  * Bandeja de propuestas — lo que sugieren los administradores.
  *
  * Pedido de Jahnn (17-ago-2026). Va arriba en la consola porque una
- * propuesta sin responder tiene fecha de vencimiento: si llega el día
- * propuesto y nadie contestó, se pierde.
+ * propuesta sin responder tiene fecha de vencimiento: si pasa la semana
+ * propuesta y nadie contestó, se pierde. (Semanal desde el 10-oct-2026.)
  *
  * Dos decisiones que sostienen la idea:
  *
- *  1. El choque se avisa ANTES de aprobar. Si ese día ya tiene
+ *  1. El choque se avisa ANTES de aprobar. Si esa semana ya tiene
  *     Highlight, la tarjeta lo muestra y pregunta a dónde correr el que
  *     estaba. Mover la tarea de otro en silencio es como se pierde la
  *     confianza entre quienes asignan.
@@ -29,25 +29,23 @@ import {
   type BandejaPropuestas, type PropuestaEnBandeja,
 } from "@/app/actions/highlight-propuestas";
 import { ETIQUETA_PROPUESTA, MAX_MOTIVO } from "@/lib/highlight-propuestas";
+import { etiquetaSemana, lunesDe, sumarDias } from "@/lib/highlight";
 
+/** «la semana del 12 al 18 oct» (las propuestas viejas, diarias, caen en su semana). */
 function fechaCorta(iso: string) {
-  const [, m, d] = iso.split("-").map(Number);
-  const meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
-  return `${d} ${meses[m - 1]}`;
+  return `la semana ${etiquetaSemana(iso)}`;
 }
 
 function diaRelativo(iso: string, hoy: string) {
-  if (iso === hoy) return "hoy";
-  const [y, m, d] = hoy.split("-").map(Number);
-  const manana = new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
-  if (iso === manana) return "mañana";
+  const sem = lunesDe(iso);
+  if (sem === lunesDe(hoy)) return "esta semana";
+  if (sem === sumarDias(lunesDe(hoy), 7)) return "la próxima semana";
   return fechaCorta(iso);
 }
 
-/** El día siguiente a `iso` — valor inicial al abrir "aprobar para otro día". */
+/** La semana siguiente a `iso` (su lunes) — valor inicial al abrir "aprobar para otra semana". */
 function diaSiguiente(iso: string): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + 1)).toISOString().slice(0, 10);
+  return sumarDias(lunesDe(iso), 7);
 }
 
 export function BandejaPropuestas({
@@ -91,7 +89,7 @@ export function BandejaPropuestas({
   }
 
   const { pendientes, caducadas, resueltas, hoy } = data;
-  const paraHoy = pendientes.filter((p) => p.fecha === hoy).length;
+  const paraHoy = pendientes.filter((p) => lunesDe(p.fecha) === lunesDe(hoy)).length;
 
   if (pendientes.length === 0 && caducadas.length === 0 && resueltas.length === 0) {
     return null;
@@ -110,7 +108,7 @@ export function BandejaPropuestas({
             </div>
             <p className="text-[11px] text-gray-500 mt-0.5">
               {paraHoy > 0
-                ? `${paraHoy} ${paraHoy === 1 ? "es para HOY" : "son para HOY"}: si no respondes, se pierden.`
+                ? `${paraHoy} ${paraHoy === 1 ? "es para ESTA semana" : "son para ESTA semana"}: si no respondes, se pierden.`
                 : "Ellos ven la operación todos los días. Responder rápido es lo que hace que sigan proponiendo."}
             </p>
           </div>
@@ -186,7 +184,7 @@ function TarjetaPropuesta({
   const [pendiente, startTransition] = useTransition();
   const [rechazando, setRechazando] = useState(false);
   const [motivo, setMotivo] = useState("");
-  // Para qué día se aprueba: por defecto el propuesto, pero se puede
+  // Para qué semana se aprueba (cualquier día de ella): por defecto la propuesta, pero se puede
   // cambiar ANTES de aprobar — por ejemplo si hoy ya tiene otro
   // Highlight y prefiero correr ESTA a mañana en vez de mover el que
   // ya estaba. `null` = usando el día propuesto sin abrir el selector.
@@ -215,8 +213,8 @@ function TarjetaPropuesta({
       }
       showToast(
         r.movido
-          ? `Aprobada para el ${fechaCorta(fecha)}. "${r.movido.texto}" se corrió al ${fechaCorta(r.movido.a)}.`
-          : `Aprobada para el ${fechaCorta(fecha)}.`,
+          ? `Aprobada para ${fechaCorta(fecha)}. "${r.movido.texto}" se corrió a ${fechaCorta(r.movido.a)}.`
+          : `Aprobada para ${fechaCorta(fecha)}.`,
         "success",
       );
       setConflicto(null);
@@ -238,7 +236,7 @@ function TarjetaPropuesta({
     });
   }
 
-  const esHoy = p.fecha === hoy;
+  const esHoy = lunesDe(p.fecha) === lunesDe(hoy);
 
   return (
     <div className={`px-4 py-3 ${esHoy ? "bg-amber-50/40" : ""}`}>
@@ -257,17 +255,17 @@ function TarjetaPropuesta({
           {p.porQue && <p className="text-xs text-gray-600 mt-1">{p.porQue}</p>}
 
           {/* El choque se ve ANTES de decidir, no después. Solo aplica
-              al día propuesto: si Jahnn ya está eligiendo otro día, este
-              aviso hablaría de un día que ya no es el que se va a usar. */}
+              a la semana propuesta: si Jahnn ya está eligiendo otra, este
+              aviso hablaría de una semana que ya no es la que se va a usar. */}
           {p.choqueCon && !conflicto && otroDia === null && (
             <div className="mt-2 text-[11px] text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-2.5 py-1.5 flex items-start gap-1.5">
               <AlertTriangle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
               <span>
-                Ese día ya tiene Highlight: «{p.choqueCon.texto}»
+                Esa semana ya tiene Highlight: «{p.choqueCon.texto}»
                 {p.choqueCon.asignadoPor && ` (${p.choqueCon.asignadoPor})`}.
                 {p.choqueCon.cerrado
-                  ? " Ya está cerrado, así que habría que aprobar esta para otro día."
-                  : " Si apruebas esta, decides a qué día correr la que estaba — o apruébala para otro día sin tocar la de hoy."}
+                  ? " Ya está cerrado, así que habría que aprobar esta para otra semana."
+                  : " Si apruebas esta, decides a qué semana correr la que estaba — o apruébala para otra semana sin tocar la actual."}
               </span>
             </div>
           )}
@@ -295,8 +293,8 @@ function TarjetaPropuesta({
         )}
       </div>
 
-      {/* Aprobar para OTRO día: sin conflicto todavía, sin mover nada —
-          solo cambia dónde aterriza ESTA propuesta. Si el día elegido
+      {/* Aprobar para OTRA semana: sin conflicto todavía, sin mover nada —
+          solo cambia dónde aterriza ESTA propuesta. Si la semana elegida
           también choca, se cae en el mismo flujo de conflicto de abajo. */}
       {!rechazando && !conflicto && otroDia === null && (
         <button
@@ -305,7 +303,7 @@ function TarjetaPropuesta({
           className="mt-1.5 inline-flex items-center gap-1 text-[11px] text-gray-500 hover:text-gray-700 underline decoration-dotted underline-offset-2"
         >
           <CalendarCog className="w-3 h-3" />
-          Aprobar para otro día
+          Aprobar para otra semana
         </button>
       )}
 
@@ -313,18 +311,18 @@ function TarjetaPropuesta({
         <div className="mt-2 rounded-lg border border-gray-200 bg-gray-50 px-3 py-2.5">
           <div className="text-xs font-semibold text-gray-800 flex items-center gap-1.5">
             <CalendarCog className="w-4 h-4" />
-            ¿Para qué día apruebo «{p.texto}»?
+            ¿Para qué semana apruebo «{p.texto}»? <span className="font-normal text-gray-500">(elige cualquier día de ella)</span>
           </div>
           <p className="text-[11px] text-gray-500 mt-1">
             {p.choqueCon
               ? `Así el Highlight de ${diaRelativo(p.fecha, hoy)} (${p.choqueCon.texto}) queda como está.`
-              : "Se aprueba igual, solo que para esta otra fecha en vez de la propuesta."}
+              : `Se aprueba igual, solo que para la semana ${etiquetaSemana(otroDia)} en vez de la propuesta.`}
           </p>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <input
               type="date"
               value={otroDia}
-              min={hoy}
+              min={lunesDe(hoy)}
               onChange={(e) => setOtroDia(e.target.value)}
               className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
             />
@@ -334,7 +332,7 @@ function TarjetaPropuesta({
               className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50"
             >
               {pendiente ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Check className="w-3.5 h-3.5" />}
-              Aprobar para ese día
+              Aprobar para esa semana
             </button>
             <button
               onClick={() => setOtroDia(null)}
@@ -346,24 +344,24 @@ function TarjetaPropuesta({
         </div>
       )}
 
-      {/* Choque: a dónde corro el que ya estaba. Puede venir del día
-          propuesto o del día que Jahnn eligió a mano en "otro día" —
+      {/* Choque: a dónde corro el que ya estaba. Puede venir de la semana
+          propuesta o de la que Jahnn eligió a mano en "otra semana" —
           `conflicto.fecha` es siempre el que de verdad se está usando. */}
       {conflicto && (
         <div className="mt-3 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5">
           <div className="text-xs font-semibold text-amber-900 flex items-center gap-1.5">
             <CalendarClock className="w-4 h-4" />
-            ¿A qué día corro «{conflicto.existente.texto}»?
+            ¿A qué semana corro «{conflicto.existente.texto}»?
           </div>
           <p className="text-[11px] text-amber-800/90 mt-1">
-            Lo asignó {conflicto.existente.asignadoPor ?? "dirección"}. No se pierde: se mueve al día
-            que elijas y la propuesta de {p.propuestaPor} toma el {diaRelativo(conflicto.fecha, hoy)}.
+            Lo asignó {conflicto.existente.asignadoPor ?? "dirección"}. No se pierde: se mueve a la semana
+            que elijas{conflicto.mover ? ` (${etiquetaSemana(conflicto.mover)})` : ""} y la propuesta de {p.propuestaPor} toma {diaRelativo(conflicto.fecha, hoy)}.
           </p>
           <div className="flex items-center gap-2 mt-2 flex-wrap">
             <input
               type="date"
               value={conflicto.mover}
-              min={hoy}
+              min={lunesDe(hoy)}
               onChange={(e) => setConflicto({ ...conflicto, mover: e.target.value })}
               className="border border-amber-300 rounded-lg px-2 py-1.5 text-xs bg-white"
             />

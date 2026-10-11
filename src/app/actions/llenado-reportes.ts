@@ -17,7 +17,7 @@ import { getSessionRole } from "@/lib/session-access";
 import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
 import {
-  claveDesdeNota, evaluarReportesSemanales, type CargaRegistrada,
+  claveDesdeNota, evaluarReportesSemanales, cargaDeVentas, type CargaRegistrada,
 } from "@/lib/incentivos/reportes-semanales";
 import {
   evaluarCumplimiento, type SedeCumplimiento, type ControlCumplimiento,
@@ -328,6 +328,14 @@ export async function getCumplimientoEquipo(): Promise<EstadoCumplimiento> {
       const lista = porSede.get(s.business_id) ?? [];
       lista.push({ clave, fecha: s.fecha });
       porSede.set(s.business_id, lista);
+    }
+    // "Ventas del mes" no deja fila en import_batches: se lee de byte_ventas_daily.
+    const ventas = (await sql`
+      SELECT business_id, (MAX(updated_at) AT TIME ZONE 'America/Lima')::date::text AS fecha
+      FROM byte_ventas_daily WHERE source = 'import' GROUP BY business_id
+    `) as { business_id: number; fecha: string | null }[];
+    for (const v of ventas) {
+      porSede.set(v.business_id, [...(porSede.get(v.business_id) ?? []), ...cargaDeVentas(v.fecha)]);
     }
 
     // ── 3. Juntar ─────────────────────────────────────────────────────

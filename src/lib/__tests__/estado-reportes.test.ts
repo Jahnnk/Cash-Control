@@ -30,9 +30,12 @@ describe("cuál de los tres reportes falta", () => {
     expect(estadoMenor([{ desde: "2026-09-01", hasta: "2026-09-30" }], "2026-08", HOY).estado).toBe("vacio");
   });
 
-  it("mayor rotación: lo de la sede no basta, tiene que ser de gerencia", () => {
+  it("mayor rotación: lo que sube la sede cuenta igual que lo de dirección (10-oct-2026)", () => {
     const p: PeriodoCargado[] = [{ businessId: 1, month: "2026-05", origen: "sede", desde: "2026-05-01", hasta: "2026-05-31", ventas: 40000, cargadoEl: null }];
-    expect(estadoMayor(celdaCobertura(p, "2026-05", HOY), p, "2026-05", HOY, 40000)).toEqual({ estado: "parcial", texto: "solo de la sede, falta el tuyo" });
+    expect(estadoMayor(celdaCobertura(p, "2026-05", HOY), p, "2026-05", HOY, 40000)).toEqual({ estado: "completo", texto: "mes completo" });
+    // Sede hasta el 15 + dirección del 16 al 31: juntos cubren el mes.
+    const juntos: PeriodoCargado[] = [{ ...p[0], hasta: "2026-05-15", ventas: 20000 }, { ...p[0], origen: "direccion", desde: "2026-05-16", ventas: 20000 }];
+    expect(estadoMayor(celdaCobertura(juntos, "2026-05", HOY), juntos, "2026-05", HOY, 40000).estado).toBe("completo");
     expect(estadoMayor(celdaCobertura([], "2026-05", HOY), [], "2026-05", HOY, 40000)).toEqual({ estado: "vacio", texto: "sin subir" });
   });
 
@@ -62,10 +65,10 @@ describe("cuál de los tres reportes falta", () => {
   });
 
   it("dice exactamente cuáles faltan (el caso de agosto en Fonavi)", () => {
-    const p: PeriodoCargado[] = [{ businessId: 2, month: "2026-08", origen: "sede", desde: "2026-08-01", hasta: "2026-08-29", ventas: 36844, cargadoEl: null }];
+    const p: PeriodoCargado[] = [{ businessId: 2, month: "2026-08", origen: "sede", desde: "2026-08-01", hasta: "2026-08-20", ventas: 36844, cargadoEl: null }];
     const t = tresReportes({ celda: celdaCobertura(p, "2026-08", HOY), periodos: p, ventas: undefined, menor: [{ desde: "2026-09-01", hasta: "2026-09-30" }], month: "2026-08", hoy: HOY });
     expect(reportesQueFaltan(t)).toEqual(["ventas", "mayor", "menor"]);
-    const g: PeriodoCargado[] = [{ ...p[0], origen: "direccion", hasta: "2026-08-31", ventas: 37000 }];
+    const g: PeriodoCargado[] = [{ ...p[0], hasta: "2026-08-31", ventas: 37000 }];
     const ok = tresReportes({ celda: celdaCobertura(g, "2026-08", HOY), periodos: g, ventas: ventas("2026-08", "2026-08-01", "2026-08-31", 31, 36900), menor: [{ desde: "2026-04-01", hasta: "2026-09-30" }], month: "2026-08", hoy: HOY });
     expect(reportesQueFaltan(ok)).toEqual([]);
   });

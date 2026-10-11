@@ -6,14 +6,17 @@
  *
  * El administrador propone; dirección aprueba. Un Highlight propuesto
  * NO es un Highlight hasta que Jahnn o Juani lo aprueban — por eso vive
- * en su propia tabla y no toca la regla de "uno por sede y día".
+ * en su propia tabla y no toca la regla de "uno por sede y semana".
+ *
+ * Desde el 10-oct-2026 el Highlight es semanal: la propuesta se hace para
+ * una semana y se guarda con la fecha de su lunes (ver lib/highlight.ts).
  *
  * Acá va la lógica pura: qué estado tiene una propuesta, si es válida,
  * y a qué día correr el Highlight que se desplaza. Sin base de datos,
  * para poder probar cada regla suelta.
  */
 
-import { MAX_TEXTO, MAX_POR_QUE, validarTexto } from "./highlight";
+import { MAX_TEXTO, MAX_POR_QUE, validarTexto, lunesDe, sumarDias } from "./highlight";
 
 export type EstadoPropuesta = "pendiente" | "aprobada" | "rechazada" | "caducada";
 
@@ -35,8 +38,8 @@ export type Propuesta = {
 /**
  * El estado que se MUESTRA, que no siempre es el guardado.
  *
- * "Caducada" no se guarda en la base a propósito: es (pendiente + el
- * día ya pasó). Guardarla obligaría a un proceso que barra la tabla
+ * "Caducada" no se guarda en la base a propósito: es (pendiente + la
+ * semana ya pasó). Guardarla obligaría a un proceso que barra la tabla
  * cada madrugada, y un estado que depende del reloj empieza a mentir
  * apenas ese proceso falle un día. Deducirlo no puede desincronizarse.
  *
@@ -48,7 +51,7 @@ export function estadoEfectivo(
   p: { estado: "pendiente" | "aprobada" | "rechazada"; fecha: string },
   hoy: string,
 ): EstadoPropuesta {
-  if (p.estado === "pendiente" && p.fecha < hoy) return "caducada";
+  if (p.estado === "pendiente" && p.fecha < lunesDe(hoy)) return "caducada";
   return p.estado;
 }
 
@@ -62,9 +65,9 @@ export const ETIQUETA_PROPUESTA: Record<EstadoPropuesta, string> = {
 /**
  * ¿Sirve esta propuesta para guardarla?
  *
- * La fecha puede ser HOY o más adelante (decisión de Jahnn): si el
- * administrador ve algo a las 10am, tiene que poder proponerlo para el
- * mismo día. Hacia atrás no: no se propone mejorar el martes pasado.
+ * La semana puede ser ESTA o una siguiente (decisión de Jahnn): si el
+ * administrador ve algo a las 10am, tiene que poder proponerlo para la
+ * semana en curso. Hacia atrás no: no se propone mejorar la semana pasada.
  */
 export function validarPropuesta(input: {
   texto: string;
@@ -76,10 +79,10 @@ export function validarPropuesta(input: {
   if (!t.ok) return t;
 
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.fecha)) {
-    return { ok: false, error: "Elige para qué día es la propuesta." };
+    return { ok: false, error: "Elige para qué semana es la propuesta." };
   }
-  if (input.fecha < input.hoy) {
-    return { ok: false, error: "No se puede proponer un Highlight para un día que ya pasó." };
+  if (lunesDe(input.fecha) < lunesDe(input.hoy)) {
+    return { ok: false, error: "No se puede proponer un Highlight para una semana que ya pasó." };
   }
 
   const pq = (input.porQue ?? "").trim();
@@ -102,39 +105,32 @@ export function validarMotivo(motivo: string): { ok: true; motivo: string | null
 }
 
 /**
- * A qué día correr el Highlight que se desplaza.
+ * A qué semana correr el Highlight que se desplaza (devuelve su lunes).
  *
  * Jahnn dijo: "si considero que el highlight propuesto tiene mayor
  * prioridad que alguno que yo haya programado, lo colocaré y correré a
- * otro día el que ya estaba". Esto solo SUGIERE el primer día libre —
+ * otro día el que ya estaba". Esto solo SUGIERE la primera semana libre —
  * la última palabra es de él, porque mover una tarea de sitio es una
  * decisión de negocio, no un hueco de calendario.
  *
- * Nunca sugiere un día anterior a `desde`: correr una tarea hacia atrás
- * sería crearla ya vencida.
+ * Nunca sugiere una semana anterior a `desde`: correr una tarea hacia
+ * atrás sería crearla ya vencida.
  */
-export function siguienteDiaLibre(desde: string, ocupados: string[], maxDias = 30): string | null {
-  const tomados = new Set(ocupados);
-  for (let i = 1; i <= maxDias; i++) {
-    const cand = sumarDias(desde, i);
+export function siguienteSemanaLibre(desde: string, ocupados: string[], maxSemanas = 8): string | null {
+  const tomados = new Set(ocupados.map(lunesDe));
+  const base = lunesDe(desde);
+  for (let i = 1; i <= maxSemanas; i++) {
+    const cand = sumarDias(base, 7 * i);
     if (!tomados.has(cand)) return cand;
   }
   return null;
 }
 
-function sumarDias(fecha: string, n: number): string {
-  const [y, m, d] = fecha.split("-").map(Number);
-  const f = new Date(Date.UTC(y, m - 1, d + n));
-  return `${f.getUTCFullYear()}-${String(f.getUTCMonth() + 1).padStart(2, "0")}-${String(
-    f.getUTCDate(),
-  ).padStart(2, "0")}`;
-}
-
 export type ResumenBandeja = {
   /** Lo que hay que responder ahora. */
   porRevisar: number;
-  /** De esas, las que son para HOY: si no se responden, se pierden. */
-  paraHoy: number;
+  /** De esas, las que son para ESTA semana: si no se responden, se pierden. */
+  paraEstaSemana: number;
   /** Las que ya se pasaron de fecha sin respuesta. El espejo honesto. */
   caducadas: number;
 };
@@ -147,17 +143,17 @@ export type ResumenBandeja = {
  * nadie le contesta, deja de proponer — y esta feature se muere sola.
  */
 export function resumenBandeja(propuestas: Propuesta[], hoy: string): ResumenBandeja {
-  let porRevisar = 0, paraHoy = 0, caducadas = 0;
+  let porRevisar = 0, paraEstaSemana = 0, caducadas = 0;
   for (const p of propuestas) {
     const e = estadoEfectivo(p, hoy);
     if (e === "pendiente") {
       porRevisar++;
-      if (p.fecha === hoy) paraHoy++;
+      if (lunesDe(p.fecha) === lunesDe(hoy)) paraEstaSemana++;
     } else if (e === "caducada") {
       caducadas++;
     }
   }
-  return { porRevisar, paraHoy, caducadas };
+  return { porRevisar, paraEstaSemana, caducadas };
 }
 
 export { MAX_TEXTO, MAX_POR_QUE };

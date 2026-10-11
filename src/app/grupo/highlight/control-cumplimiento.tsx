@@ -7,11 +7,11 @@
  *
  * Orden deliberado, de lo urgente a lo informativo:
  *
- *   1. SIN RESPUESTA — Highlights de días pasados que nadie cerró. Es
+ *   1. SIN RESPUESTA — Highlights de semanas pasadas que nadie cerró. Es
  *      lo primero porque es lo único que exige acción. Un "no lo logré"
  *      es información honesta; el SILENCIO no dice nada, y es
  *      justamente lo que se escapa del control.
- *   2. CÓMO VA HOY — las tres sedes de un vistazo.
+ *   2. CÓMO VA LA SEMANA — las tres sedes de un vistazo (semanal desde el 10-oct-2026).
  *   3. QUÉ PASÓ — los últimos cierres, con hora.
  *
  * Cuando todo está en orden el bloque 1 desaparece: la pantalla solo
@@ -26,10 +26,13 @@ import {
   getControlCumplimiento, type ControlCumplimiento,
 } from "@/app/actions/highlight";
 import { conReintento } from "@/lib/con-reintento";
+import { etiquetaSemana, esSemanal } from "@/lib/highlight";
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
 
 function fechaCorta(iso: string) {
+  // Los semanales se guardan con su lunes; los diarios viejos, con su día.
+  if (esSemanal(iso)) return `sem. ${etiquetaSemana(iso)}`;
   const [, m, d] = iso.split("-");
   return `${Number(d)} ${MESES[Number(m) - 1]}`;
 }
@@ -108,17 +111,17 @@ export function ControlCumplimiento({ version = 0 }: { version?: number }) {
         </div>
       )}
 
-      {/* 2 · Cómo va hoy. Sin nada asignado no se muestra: las tarjetas de abajo ya dicen
+      {/* 2 · Cómo va la semana. Sin nada asignado no se muestra: las tarjetas de abajo ya dicen
           «Falta asignar» y tienen el formulario (UX, 8-oct-2026: antes salían tres «Sin
           Highlight asignado» encima de los tres formularios vacíos). */}
       {conHighlightHoy > 0 && (
         <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
           <div className="px-4 py-3 border-b border-gray-100 flex flex-wrap items-center justify-between gap-2">
             <div>
-              <h3 className="text-sm font-semibold text-gray-900">Cumplimiento de hoy</h3>
+              <h3 className="text-sm font-semibold text-gray-900">Cumplimiento de esta semana</h3>
               <p className="text-[11px] text-gray-500 mt-0.5">
                 {conHighlightHoy === 0
-                  ? "Todavía no asignaste ningún Highlight para hoy."
+                  ? "Todavía no asignaste ningún Highlight para esta semana."
                   : `${cerraronHoy} de ${conHighlightHoy} ${
                       conHighlightHoy === 1 ? "sede cerró" : "sedes cerraron"
                     } su Highlight.`}
@@ -180,7 +183,7 @@ export function ControlCumplimiento({ version = 0 }: { version?: number }) {
               {data.resumen
                 .map((r) => `${r.sede} ${r.pct === null ? "—" : r.pct + "%"}`)
                 .join(" · ")}{" "}
-              · últimos 30 días
+              · últimas 8 semanas
             </p>
           </div>
           <ChevronDown

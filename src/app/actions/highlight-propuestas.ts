@@ -11,10 +11,12 @@
  *
  *  1. Una propuesta NO es un Highlight. Vive en otra tabla y solo se
  *     convierte al aprobarla. Así la regla de "un Highlight por sede y
- *     día" no necesita ninguna excepción.
+ *     semana" no necesita ninguna excepción. Desde el 10-oct-2026 el
+ *     Highlight es semanal: propuestas y Highlights se guardan con la
+ *     fecha del lunes de su semana (lunesDe).
  *  2. Aprueban Jahnn y Juani (decisión de Jahnn). Los administradores
  *     proponen para SU sede y nada más.
- *  3. Pisar un día ya programado NUNCA es silencioso: la acción devuelve
+ *  3. Pisar una semana ya programada NUNCA es silencioso: la acción devuelve
  *     el conflicto y espera una segunda llamada con a dónde correr el
  *     que estaba. Es lo que pidió Jahnn y es lo correcto: mover la
  *     tarea de otro sin avisar es cómo se pierde la confianza.
@@ -26,9 +28,9 @@ import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
-import { MAX_POR_QUE } from "@/lib/highlight";
+import { MAX_POR_QUE, lunesDe } from "@/lib/highlight";
 import {
-  validarPropuesta, validarMotivo, siguienteDiaLibre, estadoEfectivo,
+  validarPropuesta, validarMotivo, siguienteSemanaLibre, estadoEfectivo,
   type Propuesta, type EstadoPropuesta,
 } from "@/lib/highlight-propuestas";
 
@@ -117,7 +119,7 @@ export async function proponerHighlight(input: {
   try {
     const filas = (await sql`
       INSERT INTO highlight_propuestas (business_id, fecha, texto, por_que, propuesta_por)
-      VALUES (${quien.businessId}, ${input.fecha}, ${v.texto}, ${v.porQue}, ${quien.nombre})
+      VALUES (${quien.businessId}, ${lunesDe(input.fecha)}, ${v.texto}, ${v.porQue}, ${quien.nombre})
       RETURNING id
     `) as { id: string }[];
 
@@ -128,12 +130,12 @@ export async function proponerHighlight(input: {
     if (faltaMigracion(e)) {
       return { ok: false, error: "Falta correr la migración de la base de datos." };
     }
-    // El índice parcial impide dos propuestas pendientes para el mismo día.
+    // El índice parcial impide dos propuestas pendientes para la misma semana (misma fecha de lunes).
     const msg = e instanceof Error ? e.message : String(e);
     if (/highlight_propuestas_una_por_dia|duplicate key/i.test(msg)) {
       return {
         ok: false,
-        error: "Ya tienes una propuesta esperando respuesta para ese día. Puedes retirarla y mandar otra.",
+        error: "Ya tienes una propuesta esperando respuesta para esa semana. Puedes retirarla y mandar otra.",
       };
     }
     return { ok: false, error: "No pude guardar la propuesta." };
@@ -214,7 +216,7 @@ export async function getPropuestasSede(): Promise<PropuestasSede> {
 
 export type PropuestaEnBandeja = Propuesta & {
   estadoEfectivo: EstadoPropuesta;
-  /** Qué hay ya programado ese día en esa sede, si hay algo. */
+  /** Qué hay ya programado esa semana en esa sede, si hay algo. */
   choqueCon: { id: string; texto: string; asignadoPor: string | null; cerrado: boolean } | null;
 };
 
@@ -249,19 +251,19 @@ export async function getBandejaPropuestas(): Promise<BandejaPropuestas> {
 
     const props = filas.map(aPropuesta);
 
-    // Qué días ya tienen Highlight, para avisar del choque ANTES de que
+    // Qué semanas ya tienen Highlight, para avisar del choque ANTES de que
     // dirección apruebe. Solo hacen falta los de las propuestas vivas.
     const vivas = props.filter((p) => estadoEfectivo(p, hoy) === "pendiente");
     const ocupados = vivas.length
       ? ((await sql`
           SELECT id, business_id, fecha::text AS fecha, texto, asignado_por, estado
           FROM highlights
-          WHERE fecha = ANY(${vivas.map((p) => p.fecha)}::date[])
+          WHERE fecha = ANY(${vivas.map((p) => lunesDe(p.fecha))}::date[])
         `) as { id: string; business_id: number; fecha: string; texto: string; asignado_por: string | null; estado: string }[])
       : [];
 
     const conChoque = (p: Propuesta): PropuestaEnBandeja => {
-      const h = ocupados.find((o) => o.business_id === p.businessId && o.fecha === p.fecha);
+      const h = ocupados.find((o) => o.business_id === p.businessId && o.fecha === lunesDe(p.fecha));
       return {
         ...p,
         estadoEfectivo: estadoEfectivo(p, hoy),
@@ -294,25 +296,25 @@ export type ResultadoAprobar =
   | { ok: false; error: string }
   | {
       ok: false;
-      /** Ese día ya tiene Highlight: dirección decide a dónde correrlo. */
+      /** Esa semana ya tiene Highlight: dirección decide a dónde correrlo. */
       conflicto: true;
       existente: { texto: string; asignadoPor: string | null };
       sugerido: string | null;
     };
 
 /**
- * Aprobar una propuesta y convertirla en el Highlight de ese día.
+ * Aprobar una propuesta y convertirla en el Highlight de esa semana.
  *
- * Si el día ya tiene Highlight, la primera llamada NO hace nada: avisa
+ * Si la semana ya tiene Highlight, la primera llamada NO hace nada: avisa
  * del choque y sugiere a dónde correr el que estaba. La segunda llamada
  * llega con `moverExistenteA` y recién ahí se toca la base. Es la
  * decisión de Jahnn — él corre el que ya estaba, no el sistema.
  */
 export async function aprobarPropuesta(input: {
   id: string;
-  /** Aprobar para otro día distinto al propuesto. */
+  /** Aprobar para otra semana distinta a la propuesta (cualquier fecha de ella). */
   fecha?: string | null;
-  /** A dónde correr el Highlight que ocupaba ese día. */
+  /** A qué semana correr el Highlight que ocupaba esa (cualquier fecha de ella). */
   moverExistenteA?: string | null;
 }): Promise<ResultadoAprobar> {
   const firma = await quienAprueba();
@@ -334,12 +336,12 @@ export async function aprobarPropuesta(input: {
       return { ok: false, error: "Esa propuesta ya fue respondida." };
     }
 
-    const fecha = input.fecha && esFecha(input.fecha) ? input.fecha : p.fecha;
-    if (fecha < hoy) {
-      return { ok: false, error: "No se puede aprobar para un día que ya pasó." };
+    const fecha = lunesDe(input.fecha && esFecha(input.fecha) ? input.fecha : p.fecha);
+    if (fecha < lunesDe(hoy)) {
+      return { ok: false, error: "No se puede aprobar para una semana que ya pasó." };
     }
 
-    // ¿Ese día ya tiene Highlight en esa sede?
+    // ¿Esa semana ya tiene Highlight en esa sede?
     const previo = (await sql`
       SELECT id, texto, asignado_por, estado FROM highlights
       WHERE business_id = ${p.businessId} AND fecha = ${fecha}
@@ -351,7 +353,7 @@ export async function aprobarPropuesta(input: {
       if (previo[0].estado !== "pendiente") {
         return {
           ok: false,
-          error: "Ese día ya tiene un Highlight cerrado. Aprueba la propuesta para otro día.",
+          error: "Esa semana ya tiene un Highlight cerrado. Aprueba la propuesta para otra semana.",
         };
       }
       if (!input.moverExistenteA) {
@@ -364,23 +366,24 @@ export async function aprobarPropuesta(input: {
           ok: false,
           conflicto: true,
           existente: { texto: previo[0].texto, asignadoPor: previo[0].asignado_por },
-          sugerido: siguienteDiaLibre(fecha, tomados.map((t) => t.fecha)),
+          sugerido: siguienteSemanaLibre(fecha, tomados.map((t) => t.fecha)),
         };
       }
-      if (!esFecha(input.moverExistenteA) || input.moverExistenteA < hoy) {
-        return { ok: false, error: "El día al que mueves el Highlight no es válido." };
+      const destino = esFecha(input.moverExistenteA) ? lunesDe(input.moverExistenteA) : null;
+      if (!destino || destino < lunesDe(hoy)) {
+        return { ok: false, error: "La semana a la que mueves el Highlight no es válida." };
       }
-      if (input.moverExistenteA === fecha) {
-        return { ok: false, error: "Ese es el mismo día: elige otro para el Highlight que estaba." };
+      if (destino === fecha) {
+        return { ok: false, error: "Esa es la misma semana: elige otra para el Highlight que estaba." };
       }
       const destinoOcupado = (await sql`
         SELECT 1 FROM highlights
-        WHERE business_id = ${p.businessId} AND fecha = ${input.moverExistenteA}
+        WHERE business_id = ${p.businessId} AND fecha = ${destino}
       `) as unknown[];
       if (destinoOcupado.length > 0) {
-        return { ok: false, error: "Ese día también tiene Highlight. Elige uno libre." };
+        return { ok: false, error: "Esa semana también tiene Highlight. Elige una libre." };
       }
-      mover = { id: previo[0].id, texto: previo[0].texto, a: input.moverExistenteA };
+      mover = { id: previo[0].id, texto: previo[0].texto, a: destino };
     }
 
     // Todo en una transacción: mover el viejo, crear el nuevo y marcar

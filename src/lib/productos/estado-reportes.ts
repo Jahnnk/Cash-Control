@@ -4,8 +4,13 @@
  * Pedido de Jahnn (4-oct-2026): «son 3 archivos por mes por sede; ¿hay manera de
  * saber cuál falta o está incompleto, para no subir los tres siempre?».
  *
- *   · Reporte de ventas    — venta de cada día (byte_ventas_direccion).
+ *   · Reporte de ventas    — venta de cada día (byte_ventas_efectiva: lo que sube la sede o dirección).
  *   · Mayor rotación       — ventas por producto del mes (product_period_sales; ver cobertura-rotacion.ts).
+ *
+ * Desde el 10-oct-2026 (auditoría de fricción, decisión de Jahnn) la venta del mes y la
+ * mayor rotación las sube la SEDE cada sábado: el mismo archivo de Byte subido dos veces no
+ * es un cruce de fuentes, es una copia. Dirección solo sube la menor rotación (puede seguir
+ * subiendo las otras si a una sede le falta algo; su carga manda).
  *   · Menor rotación       — foto por sede de un rango de fechas (productos_menor_rotacion): un mes
  *                            «está» si el rango guardado lo cubre.
  *
@@ -77,25 +82,22 @@ export function estadoMenor(rangos: Rango[], month: string, hoy: string): Detall
 }
 
 /**
- * Mayor rotación. Cuenta como completo solo si:
- *   1. lo subió gerencia (dirección) y cubre el mes —lo que subió la sede no basta:
- *      dice «solo de la sede»—, y
+ * Mayor rotación. Cuenta como completo si:
+ *   1. lo subido (por la sede o por dirección, juntos) cubre el mes sin huecos, y
  *   2. en un mes cerrado, su total cuadra con el reporte de ventas del mismo mes
  *      (tolerancia ±15%); si no, avisa cuánto se aparta.
  */
 export function estadoMayor(c: CeldaCobertura, periodos: PeriodoCargado[], month: string, hoy: string, ventasTotal: number | null = null): DetalleReporte {
-  if (c.estado === "vacio") return { estado: "vacio", texto: "sin subir" };
-  const dir = periodos.filter((p) => p.origen === "direccion");
-  if (dir.length === 0) return { estado: "parcial", texto: "solo de la sede, falta el tuyo" };
+  if (c.estado === "vacio" || periodos.length === 0) return { estado: "vacio", texto: "sin subir" };
 
-  // ¿Cubre el mes lo de gerencia? (junta sus períodos)
-  const orden = dir.map((p) => ({ desde: p.desde, hasta: p.hasta })).sort((a, b) => a.desde.localeCompare(b.desde));
+  // ¿Cubre el mes? (junta los períodos de la sede y de dirección)
+  const orden = periodos.map((p) => ({ desde: p.desde, hasta: p.hasta })).sort((a, b) => a.desde.localeCompare(b.desde));
   const desde = orden[0].desde;
   const hasta = orden.reduce((m, r) => (r.hasta > m ? r.hasta : m), orden[0].hasta);
   const huecos = orden.slice(1).some((r, i) => dia(r.desde) > dia(orden.slice(0, i + 1).reduce((m, x) => (x.hasta > m ? x.hasta : m), orden[0].hasta)) + 1);
   const cobertura = contra(desde, hasta, month, hoy);
   if (cobertura.estado !== "completo" || huecos) {
-    return { estado: "parcial", texto: huecos ? "tuyo con huecos" : `tuyo ${cobertura.texto}` };
+    return { estado: "parcial", texto: huecos ? "con huecos" : cobertura.texto };
   }
 
   // Cruce con las ventas del mes (solo meses cerrados: en el en curso los totales no llegan al mismo día).
@@ -106,7 +108,7 @@ export function estadoMayor(c: CeldaCobertura, periodos: PeriodoCargado[], month
       return { estado: "revisar", texto: `no cuadra con ventas (${dif > 0 ? "+" : "−"}${Math.round(Math.abs(dif) * 100)}%)` };
     }
   }
-  return { estado: "completo", texto: enCurso ? "tuyo, al día" : "tuyo, mes completo" };
+  return { estado: "completo", texto: enCurso ? "al día" : "mes completo" };
 }
 
 export const NOMBRE_REPORTE: Record<TipoReporte, string> = { ventas: "Reporte de ventas", mayor: "Mayor rotación", menor: "Menor rotación" };

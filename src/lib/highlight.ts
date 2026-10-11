@@ -1,5 +1,14 @@
 /**
- * Highlight diario — metodología "Make Time" (Jake Knapp / John Zeratsky).
+ * Highlight semanal — metodología "Make Time" (Jake Knapp / John Zeratsky).
+ *
+ * Era DIARIO hasta el 10-oct-2026. La auditoría de fricción (El Algoritmo:
+ * cuestionar cada requisito) mostró que no se sostenía: el sistema esperaba
+ * 21 asignaciones por semana y en Fonavi y Centro no hubo ninguna desde
+ * agosto. Jahnn decidió UNO POR SEMANA por sede, asignado en la revisión
+ * del lunes. Se guarda en la misma tabla, con la fecha del LUNES de su
+ * semana (ver `lunesDe`): la regla "uno por sede y fecha" pasa a ser "uno
+ * por sede y semana" sin tocar la base. Los Highlights diarios viejos
+ * quedan como historia.
  *
  * "No se trata de hacer más cosas; se trata de asegurarte de hacer las
  * cosas que más importan."
@@ -12,7 +21,7 @@
 export type EstadoHighlight = "pendiente" | "logrado" | "no_logrado";
 
 export type HighlightDia = {
-  fecha: string; // YYYY-MM-DD
+  fecha: string; // YYYY-MM-DD (el lunes de su semana; los viejos, su día)
   estado: EstadoHighlight;
 };
 
@@ -24,13 +33,13 @@ export const GUIA_HIGHLIGHT = [
   {
     titulo: "¿Qué es un Highlight?",
     cuerpo:
-      "Cada día se te asigna una única actividad para priorizar y proteger en tu calendario. " +
-      "Por supuesto, tu Highlight no será lo único que hagas durante el día, pero sí será tu prioridad.",
+      "Cada semana se te asigna una única actividad para priorizar y proteger en tu calendario. " +
+      "Por supuesto, tu Highlight no será lo único que hagas en la semana, pero sí será tu prioridad.",
   },
   {
-    titulo: "Protégelo en tu día",
+    titulo: "Protégelo en tu semana",
     cuerpo:
-      "Elige a qué hora lo vas a hacer y resérvale ese espacio. Un Highlight sin hora " +
+      "Elige qué día y a qué hora lo vas a hacer y resérvale ese espacio. Un Highlight sin hora " +
       "termina siendo lo que se hace “si sobra tiempo”, y nunca sobra.",
   },
   {
@@ -42,7 +51,7 @@ export const GUIA_HIGHLIGHT = [
   {
     titulo: "Reflect: mejora continua",
     cuerpo:
-      "Al cerrar el día respondes tres preguntas cortas. No existe un sistema perfecto: " +
+      "Al cerrar la semana respondes tres preguntas cortas. No existe un sistema perfecto: " +
       "lo importante es experimentar continuamente y quedarte con lo que a ti te funciona.",
   },
 ] as const;
@@ -51,7 +60,7 @@ export const PREGUNTAS_REFLECT = {
   logrado: "¿Logré mi Highlight?",
   ayudo: "¿Qué me ayudó?",
   distrajo: "¿Qué me distrajo?",
-  manana: "¿Qué puedo probar mañana?",
+  manana: "¿Qué puedo probar la próxima semana?",
 } as const;
 
 export const CIERRE_REFLECT =
@@ -63,13 +72,52 @@ export const MAX_POR_QUE = 300;
 export const MAX_REFLECT = 500;
 
 // ─────────────────────────────────────────────────────────────────
+// La semana (desde el 10-oct-2026 el Highlight es semanal)
+// ─────────────────────────────────────────────────────────────────
+
+/** Suma (o resta) días a una fecha YYYY-MM-DD, sin husos horarios de por medio. */
+export function sumarDias(fecha: string, n: number): string {
+  const [y, m, d] = fecha.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
+}
+
+/** El lunes de la semana de una fecha: con esa fecha se guarda el Highlight. */
+export function lunesDe(fecha: string): string {
+  const [y, m, d] = fecha.split("-").map(Number);
+  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay(); // 0 = domingo
+  return sumarDias(fecha, dow === 0 ? -6 : 1 - dow);
+}
+
+/** Primera semana con Highlight semanal. Lo anterior era diario. */
+export const INICIO_SEMANAL = "2026-10-05";
+
+/** ¿Es un Highlight semanal (fecha = su lunes, desde INICIO_SEMANAL) o uno diario viejo? */
+export function esSemanal(fecha: string): boolean {
+  return fecha >= INICIO_SEMANAL && fecha === lunesDe(fecha);
+}
+
+const MESES_CORTOS = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
+
+/** «del 12 al 18 oct» · «del 28 set al 4 oct». */
+export function etiquetaSemana(fecha: string): string {
+  const ini = lunesDe(fecha);
+  const fin = sumarDias(ini, 6);
+  const mi = MESES_CORTOS[Number(ini.slice(5, 7)) - 1];
+  const mf = MESES_CORTOS[Number(fin.slice(5, 7)) - 1];
+  return mi === mf
+    ? `del ${Number(ini.slice(8, 10))} al ${Number(fin.slice(8, 10))} ${mf}`
+    : `del ${Number(ini.slice(8, 10))} ${mi} al ${Number(fin.slice(8, 10))} ${mf}`;
+}
+
+// ─────────────────────────────────────────────────────────────────
 // Cálculos
 // ─────────────────────────────────────────────────────────────────
 
 /**
- * Racha de días cumplidos, contando desde el más reciente hacia atrás.
+ * Racha de Highlights cumplidos (semanas; antes del 10-oct-2026, días),
+ * contando desde el más reciente hacia atrás.
  *
- * Solo cuentan los días que TUVIERON Highlight: si un sábado no se
+ * Solo cuentan las semanas que TUVIERON Highlight: si una semana no se
  * asignó nada, no es culpa del administrador y no debe cortarle la
  * racha. Un `no_logrado` sí la corta; un `pendiente` también (aún no
  * está cerrado, así que no se puede afirmar que se cumplió).
@@ -131,7 +179,7 @@ export function tieneReflect(r: {
 /** Valida el texto que escribe Jahnn antes de guardar. */
 export function validarTexto(texto: string): { ok: true; texto: string } | { ok: false; error: string } {
   const t = (texto ?? "").trim().replace(/\s+/g, " ");
-  if (!t) return { ok: false, error: "Escribe cuál es lo más importante del día." };
+  if (!t) return { ok: false, error: "Escribe cuál es lo más importante de la semana." };
   if (t.length > MAX_TEXTO) {
     return {
       ok: false,

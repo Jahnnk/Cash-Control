@@ -6,9 +6,10 @@
  * Pedido de Jahnn (17-ago-2026): "quién mejor que ellos que están en la
  * operación diaria para darse cuenta en lo que se debe mejorar".
  *
- * Va DEBAJO del Highlight del día y cerrado por defecto: proponer es
+ * Va DEBAJO del Highlight de la semana y cerrado por defecto: proponer es
  * importante, pero no puede competir en tamaño con la tarea que ya
- * tiene asignada para hoy.
+ * tiene asignada. Desde el 10-oct-2026 se propone para una SEMANA (esta
+ * o la próxima), como el Highlight.
  *
  * Lo que más cuida esta pantalla es la respuesta: el administrador ve
  * en qué quedó cada propuesta suya, y con el motivo cuando fue que no.
@@ -27,13 +28,10 @@ import {
 import {
   ETIQUETA_PROPUESTA, MAX_TEXTO, MAX_POR_QUE, type EstadoPropuesta,
 } from "@/lib/highlight-propuestas";
-
-function sumarDias(fecha: string, n: number) {
-  const [y, m, d] = fecha.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1, d + n)).toISOString().slice(0, 10);
-}
+import { esSemanal, etiquetaSemana, lunesDe, sumarDias } from "@/lib/highlight";
 
 function fechaCorta(iso: string) {
+  if (esSemanal(iso)) return `semana ${etiquetaSemana(iso)}`;
   const [, m, d] = iso.split("-").map(Number);
   const meses = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
   return `${d} ${meses[m - 1]}`;
@@ -63,9 +61,9 @@ export function ProponerHighlight({ onCambio }: { onCambio?: () => void }) {
     try {
       const d = await conReintento(() => getPropuestasSede());
       setData(d);
-      // Sugerir mañana: es el caso normal y le da tiempo a dirección de
-      // responder. Para hoy también se puede, pero lo elige él.
-      setFecha((f) => f || sumarDias(d.hoy, 1));
+      // Sugerir la próxima semana: le da tiempo a dirección de responder.
+      // Para esta semana también se puede, pero lo elige él.
+      setFecha((f) => f || sumarDias(lunesDe(d.hoy), 7));
     } catch (e) {
       console.error("[ProponerHighlight] cargar:", e);
     }
@@ -163,14 +161,15 @@ export function ProponerHighlight({ onCambio }: { onCambio?: () => void }) {
 
           <div className="flex items-end gap-2 flex-wrap">
             <div>
-              <label className="block text-[11px] font-medium text-gray-700 mb-1">¿Para qué día?</label>
-              <input
-                type="date"
+              <label className="block text-[11px] font-medium text-gray-700 mb-1">¿Para qué semana?</label>
+              <select
                 value={fecha}
-                min={data.hoy}
                 onChange={(e) => setFecha(e.target.value)}
-                className="border border-gray-300 rounded-lg px-2.5 py-2 text-xs"
-              />
+                className="border border-gray-300 rounded-lg px-2.5 py-2 text-xs bg-white"
+              >
+                <option value={lunesDe(data.hoy)}>Esta semana ({etiquetaSemana(data.hoy)})</option>
+                <option value={sumarDias(lunesDe(data.hoy), 7)}>La próxima ({etiquetaSemana(sumarDias(lunesDe(data.hoy), 7))})</option>
+              </select>
             </div>
             <button
               onClick={enviar}
@@ -182,7 +181,7 @@ export function ProponerHighlight({ onCambio }: { onCambio?: () => void }) {
             </button>
           </div>
           <p className="text-[10px] text-gray-400">
-            Dirección la revisa y decide. Si ese día ya tenía otro Highlight, ellos deciden cuál va
+            Dirección la revisa y decide. Si esa semana ya tenía otro Highlight, ellos deciden cuál va
             primero.
           </p>
 

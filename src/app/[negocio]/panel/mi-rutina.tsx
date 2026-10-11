@@ -123,7 +123,7 @@ export function MiRutina({
     // forma de equivocarse.
     detalle = cuantos === 1
       ? `Exporta Platos con Mayor Rotación ${describirPeriodo(data.rangoQueToca)}.`
-      : `Exporta ${nArchivos} ${describirPeriodo(data.rangoQueToca)} y suéltalos juntos.`;
+      : `Exporta ${nArchivos} (${nombrarFaltantes(sem?.reportes ?? [])}) ${describirPeriodo(data.rangoQueToca)} y suéltalos juntos.`;
   } else {
     titulo = "Reportes de Byte pendientes";
     detalle = cuantos === 1
@@ -251,11 +251,10 @@ export function MiRutina({
                 <li key={r.clave}>{r.nombre}</li>
               ))}
             </ul>
-            {cuantos > 1 && (
+            {sem?.reportes.some((r) => r.clave === "cortesias") && (
               <p className="mt-1.5">
-                Los tres últimos son el <strong>control del bono</strong> de ticket promedio: sin
-                ellos el sistema no puede separar el upselling real de una cortesía o un cambio de
-                precio.
+                Cortesías y Ventas por Trabajador son el <strong>control del bono</strong> de ticket
+                promedio: sin ellos el sistema no puede separar el upselling real de una cortesía.
               </p>
             )}
             <ul className="mt-1 space-y-0.5 list-disc pl-4">

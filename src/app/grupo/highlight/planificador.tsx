@@ -1,17 +1,18 @@
 "use client";
 
 /**
- * Planificador semanal del Highlight: 3 sedes × 7 días.
+ * Planificador del Highlight: 3 sedes × las próximas 4 semanas.
+ * (Era 3 sedes × 7 días hasta el 10-oct-2026, cuando el Highlight pasó a
+ * ser semanal: ver lib/highlight.ts.)
  *
- * Nace de cómo se trabaja de verdad: el domingo ya está claro qué tiene
- * que hacer cada sede el lunes, el martes y el miércoles. Con la vista
- * de un solo día había que entrar fecha por fecha, y en la práctica no
- * se programaba nada.
+ * Nace de cómo se trabaja de verdad: ya está claro qué tiene que hacer
+ * cada sede las próximas semanas. Ir fecha por fecha hacía que en la
+ * práctica no se programara nada.
  *
  * Ver los huecos es la mitad del valor: una celda vacía en la
- * cuadrícula es un día sin rumbo para esa sede.
+ * cuadrícula es una semana sin rumbo para esa sede.
  *
- * Lo programado NO le llega al administrador hasta el día que toca.
+ * Lo programado NO le llega al administrador hasta el lunes que toca.
  */
 
 import { useCallback, useEffect, useState, useTransition } from "react";
@@ -20,21 +21,22 @@ import { useToast } from "@/components/toast-provider";
 import {
   getPlanSemana, asignarHighlight, type PlanSemana, type CeldaPlan,
 } from "@/app/actions/highlight";
-import { MAX_TEXTO, MAX_POR_QUE } from "@/lib/highlight";
+import { MAX_TEXTO, MAX_POR_QUE, lunesDe, sumarDias } from "@/lib/highlight";
 import { HighlightPhotos } from "@/components/highlight-photos";
 import { conReintento } from "@/lib/con-reintento";
 
-const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
 
+/** La columna de una semana (`iso` es su lunes). */
 function etiquetaDia(iso: string, hoy: string) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dow = new Date(Date.UTC(y, m - 1, d)).getUTCDay();
+  const esta = lunesDe(hoy);
+  const fin = sumarDias(iso, 6);
+  const corto = (f: string) => `${Number(f.slice(8, 10))} ${MESES[Number(f.slice(5, 7)) - 1]}`;
   return {
-    dia: iso === hoy ? "hoy" : DIAS_CORTOS[dow],
-    fecha: `${d} ${MESES[m - 1]}`,
-    esHoy: iso === hoy,
-    esFinde: dow === 0,
+    dia: iso === esta ? "esta semana" : iso === sumarDias(esta, 7) ? "la próxima" : "semana",
+    fecha: `${corto(iso)} – ${corto(fin)}`,
+    esHoy: iso === esta,
+    esFinde: false,
   };
 }
 
@@ -127,22 +129,22 @@ export function Planificador({
         <div>
           <h3 className="text-sm font-semibold text-gray-900 flex items-center gap-2">
             <CalendarDays className="w-4 h-4 text-gray-400" />
-            Programar la semana
+            Programar las próximas semanas
           </h3>
           <p className="text-[11px] text-gray-500 mt-0.5">
-            Toca una casilla para dejar el Highlight de ese día. Cada sede lo recibe
-            recién el día que le toca.
+            Toca una casilla para dejar el Highlight de esa semana. Cada sede lo recibe
+            recién el lunes que le toca.
           </p>
         </div>
         {vacias > 0 && (
           <span className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1">
-            {vacias} día{vacias === 1 ? "" : "s"} sin asignar
+            {vacias} semana{vacias === 1 ? "" : "s"} sin asignar
           </span>
         )}
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-sm min-w-[720px]">
+        <table className="w-full text-sm min-w-[560px]">
           <thead>
             <tr className="bg-gray-50">
               <th className="px-3 py-2 text-left text-[10px] uppercase tracking-wide text-gray-500 font-semibold w-24">
@@ -231,10 +233,10 @@ export function Planificador({
           {choque && (
             <div className="mb-2 bg-amber-50 border border-amber-200 rounded-lg p-2.5">
               <div className="text-[11px] font-semibold text-amber-900">
-                {choque.asignadoPor} ya asignó ese día: «{choque.textoActual}»
+                {choque.asignadoPor} ya asignó esa semana: «{choque.textoActual}»
               </div>
               <p className="text-[11px] text-amber-800/80 mt-0.5">
-                Solo puede haber uno por día. Si lo reemplazas, verán el tuyo.
+                Solo puede haber uno por semana. Si lo reemplazas, verán el tuyo.
               </p>
               <div className="flex gap-2 mt-1.5">
                 <button
@@ -274,7 +276,7 @@ export function Planificador({
           </div>
 
           <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
-            Por qué importa hoy <span className="normal-case font-normal">(opcional)</span>
+            Por qué importa <span className="normal-case font-normal">(opcional)</span>
           </label>
           <textarea
             value={porQue}

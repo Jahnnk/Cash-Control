@@ -7,6 +7,8 @@ import { parseControlReport } from "@/lib/incentives/byte-control-parsers";
 import { parseByteRotacion } from "@/lib/byte-rotacion-parser";
 import { importControlReport } from "@/app/actions/incentives";
 import { importProductSalesFromPanel } from "@/app/actions/product-sales-import";
+import { parseVentasReport } from "@/lib/incentives/byte-ventas-parser";
+import { importVentasByte } from "@/app/actions/byte-ventas";
 
 function currentMonthLima(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
@@ -60,6 +62,25 @@ export function ImportControlModal({
         const XLSX = await import("xlsx");
         const wb = XLSX.read(new Uint8Array(await file.arrayBuffer()), { type: "array" });
         const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: null }) as unknown[][];
+        // «Ventas de <MES>» (venta de cada día). Desde el 10-oct-2026 entra por
+        // esta misma caja: la sube la sede cada sábado con los demás (antes iba
+        // por un botón aparte que la rutina no vigilaba).
+        const ventas = parseVentasReport(rows);
+        if (ventas.errores.length === 0 && ventas.days.length > 0) {
+          const rv = await importVentasByte({ days: ventas.days, fileName: file.name });
+          if (!rv.ok) {
+            out.push({ name: file.name, status: "error", detail: rv.error });
+          } else {
+            setDidImport(true);
+            const total = ventas.days.reduce((a, d) => a + d.total, 0);
+            out.push({
+              name: file.name,
+              status: "ok",
+              detail: `Ventas del mes · ${rv.imported} día${rv.imported === 1 ? "" : "s"} · ${ventas.periodStart} → ${ventas.periodEnd} · S/${total.toFixed(2)}`,
+            });
+          }
+          continue;
+        }
         const parsed = parseControlReport(rows);
         if (!parsed.ok) {
           // ¿Es el reporte de Rotación de productos? (4to de la rutina —
@@ -151,16 +172,15 @@ export function ImportControlModal({
           <p className="text-xs text-gray-500">
             <strong>Rutina semanal (~5 min)</strong> — para banderas de control, ranking y el foco
             de upselling; el avance diario de la meta sale del registro del día, no de estos
-            archivos. Exporta de Byte {soloRotacion ? "el reporte" : "los 3 reportes"} con el rango{" "}
-            <strong>desde el día 1 del mes hasta hoy</strong> y suéltalo{soloRotacion ? "" : "s"} aquí
-            {soloRotacion ? " " : " todos juntos: "}
+            archivos. Exporta de Byte {soloRotacion ? "los 2 reportes" : "los 4 reportes"} con el rango{" "}
+            <strong>desde el día 1 del mes hasta hoy</strong> y suéltalos aquí todos juntos:{" "}
             <strong>
               {soloRotacion
-                ? "Productos con Mayor Rotación"
-                : "Productos con Mayor Rotación · Cortesías · Ventas por Trabajador"}
+                ? "Ventas del mes · Productos con Mayor Rotación"
+                : "Ventas del mes · Productos con Mayor Rotación · Cortesías · Ventas por Trabajador"}
             </strong>. Cada subida
             <strong> reemplaza</strong> la anterior (no duplica) y el sistema reconoce cada archivo
-            solo. Puedes subirlo{soloRotacion ? "" : "s"} más seguido si algo te huele raro.
+            solo. Puedes subirlos más seguido si algo te huele raro.
           </p>
           <p className="text-[11px] text-gray-400">
             Ya no hace falta subir <strong>Cambios de Precio</strong>: los asesores y caja no pueden

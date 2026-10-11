@@ -1,14 +1,15 @@
 "use client";
 
 /**
- * Highlight del día — lo primero que ve el administrador en su panel.
+ * Highlight de la semana — lo primero que ve el administrador en su panel.
+ * (Era diario hasta el 10-oct-2026; ver lib/highlight.ts.)
  *
  * Diseño inspirado en la app "Make Time" (Knapp/Zeratsky) que usa
  * Jahnn: banda de guía arriba, tarjeta amarilla grande e imposible de
  * ignorar, y el Reflect al cerrarla.
  *
  * Es deliberadamente lo más grande de la pantalla: si compitiera en
- * tamaño con los KPIs, dejaría de ser "lo más importante del día".
+ * tamaño con los KPIs, dejaría de ser "lo más importante de la semana".
  */
 
 import { useCallback, useEffect, useState, useTransition } from "react";
@@ -25,6 +26,7 @@ import {
 } from "@/app/actions/highlight";
 import {
   GUIA_HIGHLIGHT, PREGUNTAS_REFLECT, CIERRE_REFLECT, MAX_REFLECT, etiquetaEstado,
+  etiquetaSemana, esSemanal,
 } from "@/lib/highlight";
 
 const AMARILLO = "#F5DF4D";
@@ -38,6 +40,9 @@ function fechaLarga(iso: string) {
   return `${dias[f.getUTCDay()]} ${d} de ${meses[m - 1]}`;
 }
 
+/** Los semanales se guardan con su lunes; los diarios viejos, con su día. */
+const cuando = (iso: string) => (esSemanal(iso) ? `semana ${etiquetaSemana(iso)}` : fechaLarga(iso));
+
 export function HighlightCard({
   data,
   onRecargar,
@@ -48,7 +53,7 @@ export function HighlightCard({
   const { showToast } = useToast();
   const [verGuia, setVerGuia] = useState(false);
   const [guiaAbierta, setGuiaAbierta] = useState<number | null>(null);
-  // Qué Highlight se está cerrando: el de hoy o uno de un día anterior.
+  // Qué Highlight se está cerrando: el de esta semana o uno anterior.
   // Antes esto era un booleano atado al de hoy, y por eso los atrasados
   // no tenían forma de cerrarse.
   const [cerrando, setCerrando] = useState<Highlight | null>(null);
@@ -76,7 +81,7 @@ export function HighlightCard({
         return;
       }
       showToast(
-        estado === "logrado" ? "¡Highlight logrado!" : "Anotado. Mañana es otro día.",
+        estado === "logrado" ? "¡Highlight logrado!" : "Anotado. La próxima semana es otra oportunidad.",
         "success",
       );
       setCerrando(null);
@@ -92,14 +97,14 @@ export function HighlightCard({
           <div>
             <h2 className="text-xl font-bold text-[#004C40] tracking-tight">Highlight</h2>
             <p className="text-[11px] text-[#004C40]/70 mt-0.5">
-              Lo más importante del día · {fechaLarga(data.fecha)}
+              Lo más importante de la semana · {etiquetaSemana(data.semana)}
             </p>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             {data.racha > 0 && (
               <span
                 className="inline-flex items-center gap-1 text-xs font-semibold text-[#004C40] bg-white/70 rounded-full px-2.5 py-1"
-                title={`${data.racha} día${data.racha === 1 ? "" : "s"} seguidos cumpliendo tu Highlight`}
+                title={`${data.racha} Highlight${data.racha === 1 ? "" : "s"} seguidos cumplidos`}
               >
                 <Flame className="w-3.5 h-3.5" /> {data.racha}
               </span>
@@ -143,10 +148,10 @@ export function HighlightCard({
           <div className="text-center py-8">
             <Sun className="w-8 h-8 text-gray-300 mx-auto mb-2" />
             <div className="text-sm font-medium text-gray-500">
-              Todavía no hay Highlight para hoy
+              Todavía no hay Highlight para esta semana
             </div>
             <p className="text-xs text-gray-400 mt-1 max-w-sm mx-auto">
-              Dirección lo asigna cada mañana. Mientras tanto, sigue con tu rutina normal.
+              Dirección lo asigna los lunes. Mientras tanto, sigue con tu rutina normal.
             </p>
           </div>
         ) : (
@@ -214,7 +219,7 @@ export function HighlightCard({
               />
             </div>
 
-            {/* Cerrar el día */}
+            {/* Cerrar la semana */}
             {h.estado === "pendiente" && cerrando?.id !== h.id && (
               <div className="mt-4 flex flex-wrap gap-2">
                 <button
@@ -244,7 +249,7 @@ export function HighlightCard({
             {/* Ya cerrado y con Reflect escrito */}
             {h.estado !== "pendiente" && h.tieneReflect && (
               <div className="mt-4 bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
-                <div className="text-xs font-semibold text-gray-700">Tu Reflect de hoy</div>
+                <div className="text-xs font-semibold text-gray-700">Tu Reflect de esta semana</div>
                 {h.reflectAyudo && (
                   <div className="text-xs">
                     <span className="text-gray-500">{PREGUNTAS_REFLECT.ayudo} </span>
@@ -268,7 +273,7 @@ export function HighlightCard({
           </>
         )}
 
-        {/* Días anteriores, en dos partes que NO son lo mismo:
+        {/* Semanas anteriores, en dos partes que NO son lo mismo:
             lo que falta cerrar pide una acción y va desplegado; lo ya
             cerrado es historia y va en el calendario. */}
         {(() => {
@@ -283,8 +288,8 @@ export function HighlightCard({
                     <div>
                       <div className="text-xs font-semibold text-gray-900">
                         {sinCerrar.length === 1
-                          ? "Tienes un Highlight de otro día sin cerrar"
-                          : `Tienes ${sinCerrar.length} Highlights de otros días sin cerrar`}
+                          ? "Tienes un Highlight anterior sin cerrar"
+                          : `Tienes ${sinCerrar.length} Highlights anteriores sin cerrar`}
                       </div>
                       <p className="text-[11px] text-gray-500 mt-0.5">
                         Ciérralo aunque sea tarde: así queda constancia de lo que pasó.
@@ -298,7 +303,7 @@ export function HighlightCard({
                         <div className="flex items-start justify-between gap-3">
                           <div className="min-w-0">
                             <span className="text-[10px] uppercase tracking-wide font-semibold text-amber-700">
-                              {fechaLarga(p.fecha)}
+                              {cuando(p.fecha)}
                               {p.asignadoPor && <> · te lo dejó {p.asignadoPor}</>}
                             </span>
                             <div className="text-sm font-semibold mt-0.5 text-gray-900">{p.texto}</div>
@@ -402,8 +407,8 @@ export function HighlightSlot() {
 /**
  * Formulario del Reflect + los botones de cierre.
  *
- * Se extrajo para poder cerrar TAMBIÉN los Highlights de días
- * anteriores: antes vivía incrustado dentro de la tarjeta de hoy, así
+ * Se extrajo para poder cerrar TAMBIÉN los Highlights de semanas
+ * anteriores: antes vivía incrustado dentro de la tarjeta actual, así
  * que los atrasados no tenían con qué cerrarse.
  */
 function ReflectForm({
