@@ -425,7 +425,7 @@ export async function getTrimestreSede(hastaMes: string): Promise<Res<{ data: Tr
  */
 export async function getCoberturaRotacion(meses = 6): Promise<Res<{
   hoy: string; meses: string[]; periodos: PeriodoCargado[];
-  /** Reporte de ventas de dirección por sede y mes, y la foto de menor rotación de cada sede (para saber cuál de los 3 reportes falta). */
+  /** Reporte de ventas de Byte por sede y mes (lo subido por la sede o por dirección), y las listas de menor rotación (para saber cuál de los 3 reportes falta). */
   ventas: VentasDelMes[]; menor: { businessId: number; desde: string; hasta: string }[];
 }>> {
   const role = await getSessionRole();
@@ -443,10 +443,12 @@ export async function getCoberturaRotacion(meses = 6): Promise<Res<{
       ORDER BY 1, 2, 4
     `) as unknown as { business_id: number; month: string; origen: string; desde: string; hasta: string; ventas: number; cargado: string | null }[];
     const [ventas, menor] = await Promise.all([
+      // Desde el 10-oct-2026 la venta del mes la sube la sede: vale el archivo de Byte de
+      // cualquiera de los dos (vista byte_ventas_efectiva), nunca lo tecleado a mano.
       (sql`
         SELECT business_id, to_char(date, 'YYYY-MM') AS month, MIN(date)::text AS desde, MAX(date)::text AS hasta, COUNT(*)::int AS dias,
                ROUND(SUM(total)::numeric, 2)::float AS total
-        FROM byte_ventas_direccion WHERE business_id IN (1, 2, 3) GROUP BY 1, 2
+        FROM byte_ventas_efectiva WHERE business_id IN (1, 2, 3) AND source = 'import' GROUP BY 1, 2
       ` as unknown as Promise<{ business_id: number; month: string; desde: string; hasta: string; dias: number; total: number }[]>).catch(() => []),
       (sql`SELECT business_id, desde::text AS desde, hasta::text AS hasta FROM productos_menor_rotacion GROUP BY 1, 2, 3` as unknown as Promise<{ business_id: number; desde: string; hasta: string }[]>).catch(() => []),
     ]);

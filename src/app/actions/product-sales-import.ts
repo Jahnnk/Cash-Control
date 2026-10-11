@@ -33,7 +33,7 @@ import {
 import { getToday } from "@/lib/utils";
 import { elegirFuenteVentas, type FuenteVenta } from "@/lib/ventas-mes-sql";
 import {
-  claveDesdeNota, evaluarReportesSemanales,
+  claveDesdeNota, evaluarReportesSemanales, cargaDeVentas,
   type CargaRegistrada, type EstadoSemanal,
 } from "@/lib/incentivos/reportes-semanales";
 
@@ -582,6 +582,12 @@ export async function getCargaProductosSede(): Promise<CargaSedePropia> {
         const clave = claveDesdeNota(x.notes);
         if (clave) cargas.push({ clave, fecha: x.fecha });
       }
+      // "Ventas del mes" no deja fila en import_batches: se lee de byte_ventas_daily.
+      const ventas = (await sql`
+        SELECT (MAX(updated_at) AT TIME ZONE 'America/Lima')::date::text AS fecha
+        FROM byte_ventas_daily WHERE business_id = ${bId} AND source = 'import'
+      `) as { fecha: string | null }[];
+      cargas.push(...cargaDeVentas(ventas[0]?.fecha));
       semanal = evaluarReportesSemanales(cargas, hoy, bId);
     } catch (e) {
       console.error("[getCargaProductosSede] semanal:", e);

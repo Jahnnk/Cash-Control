@@ -52,7 +52,7 @@
  * clasificar, y el archivo se sigue aceptando si un administrador lo
  * sube por su cuenta.
  */
-export type ClaveReporte = "rotacion" | "cortesias" | "cambios_precio" | "ventas_trabajador";
+export type ClaveReporte = "ventas_mes" | "rotacion" | "cortesias" | "cambios_precio" | "ventas_trabajador";
 
 export const REPORTES_SEMANALES: {
   clave: ClaveReporte;
@@ -60,6 +60,17 @@ export const REPORTES_SEMANALES: {
   /** Para qué sirve. El admin cumple mejor cuando entiende el para qué. */
   porQue: string;
 }[] = [
+  // Desde el 10-oct-2026 la venta del mes de Byte la sube SOLO la sede
+  // (auditoría de fricción: antes también la subía Jahnn, el mismo archivo
+  // dos veces). Hasta entonces iba por un botón aparte que la rutina no
+  // vigilaba, y Fonavi llevaba sin subirla desde el 19-set sin que nadie lo
+  // notara. Su "subida" no se lee de import_batches sino de byte_ventas_daily
+  // (ver `cargaDeVentas`).
+  {
+    clave: "ventas_mes",
+    nombre: "Ventas del mes",
+    porQue: "la venta oficial de cada día",
+  },
   {
     clave: "rotacion",
     nombre: "Platos con Mayor Rotación",
@@ -96,8 +107,17 @@ export const REPORTES_SEMANALES: {
  * lo demás sigue funcionando igual.
  */
 export const REPORTES_POR_SEDE: Record<number, ClaveReporte[]> = {
-  1: ["rotacion"],   // Atelier — producción
+  1: ["ventas_mes", "rotacion"],   // Atelier — producción
 };
+
+/**
+ * La subida de "Ventas del mes" como carga de la rutina. El import de ese
+ * reporte no deja fila en import_batches: se toma la última vez que entró
+ * un reporte oficial a byte_ventas_daily (source = 'import', fecha de Lima).
+ */
+export function cargaDeVentas(ultimaSubida: string | null | undefined): CargaRegistrada[] {
+  return ultimaSubida ? [{ clave: "ventas_mes", fecha: ultimaSubida }] : [];
+}
 
 /** Los reportes que aplican a una sede. Por defecto, los cuatro. */
 export function reportesDeLaSede(businessId?: number) {

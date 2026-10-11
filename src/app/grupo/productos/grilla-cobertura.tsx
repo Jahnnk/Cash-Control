@@ -7,6 +7,7 @@
  * Pedido de Jahnn, 4-oct-2026: «una vista tipo calendario» y «saber qué archivo
  * es el que falta, para no estar subiendo los tres siempre». La usan «Cargas de
  * Byte» y la ventana «Subir Reportes Gerencia». Lógica: lib/productos/estado-reportes.ts.
+ * Desde el 10-oct-2026 la venta y la mayor rotación cuentan igual si las subió la sede.
  */
 
 import { celdaCobertura, marcarSospechosas, type CeldaCobertura, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
@@ -168,7 +169,7 @@ export function FaltaSubir({ datos, soloSede = null }: { datos: DatosCobertura; 
     <ul className="space-y-1.5 text-[11px] leading-snug">
       {sedes.map((s) => {
         const porReporte: Record<TipoReporte, string[]> = { ventas: [], mayor: [], menor: [] };
-        // Mayor rotación: se agrupan los meses que fallan por la misma razón («abril a junio: solo de la sede, falta el tuyo»).
+        // Mayor rotación: se agrupan los meses que fallan por la misma razón («abril a junio: con huecos»).
         const mayorPorRazon = new Map<string, string[]>();
         const porRevisar: string[] = [];
         for (const m of meses) {

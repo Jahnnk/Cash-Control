@@ -9,11 +9,11 @@
 import { describe, it, expect } from "vitest";
 import {
   estadoEfectivo, validarPropuesta, validarMotivo,
-  siguienteDiaLibre, resumenBandeja,
+  siguienteSemanaLibre, resumenBandeja,
   type Propuesta,
 } from "./highlight-propuestas";
 
-const HOY = "2026-08-17";
+const HOY = "2026-08-17"; // lunes
 
 const prop = (over: Partial<Propuesta> = {}): Propuesta => ({
   id: "p1", businessId: 2, sede: "Fonavi", fecha: HOY,
@@ -107,50 +107,53 @@ describe("validarMotivo", () => {
   });
 });
 
-describe("siguienteDiaLibre — a dónde correr el que se desplaza", () => {
-  it("sugiere el día siguiente si está libre", () => {
-    expect(siguienteDiaLibre("2026-08-17", [])).toBe("2026-08-18");
+describe("siguienteSemanaLibre — a qué semana correr el que se desplaza (10-oct-2026: semanal)", () => {
+  it("sugiere la semana siguiente si está libre (devuelve su lunes)", () => {
+    expect(siguienteSemanaLibre("2026-08-19", [])).toBe("2026-08-24");
   });
 
-  it("salta los días que ya tienen Highlight", () => {
-    expect(siguienteDiaLibre("2026-08-17", ["2026-08-18", "2026-08-19"])).toBe("2026-08-20");
+  it("salta las semanas que ya tienen Highlight", () => {
+    expect(siguienteSemanaLibre("2026-08-17", ["2026-08-24", "2026-08-31"])).toBe("2026-09-07");
   });
 
   it("nunca sugiere hacia atrás: correr una tarea al pasado la crea vencida", () => {
-    const r = siguienteDiaLibre("2026-08-17", []);
+    const r = siguienteSemanaLibre("2026-08-17", []);
     expect(r! > "2026-08-17").toBe(true);
   });
 
   it("cruza bien el cambio de mes", () => {
-    expect(siguienteDiaLibre("2026-08-31", [])).toBe("2026-09-01");
+    expect(siguienteSemanaLibre("2026-08-31", [])).toBe("2026-09-07");
   });
 
-  it("se rinde si el mes entero está ocupado, en vez de buscar para siempre", () => {
-    const todos = Array.from({ length: 40 }, (_, i) => {
-      const f = new Date(Date.UTC(2026, 7, 18 + i));
-      return f.toISOString().slice(0, 10);
-    });
-    expect(siguienteDiaLibre("2026-08-17", todos)).toBeNull();
+  it("se rinde si las próximas semanas están ocupadas, en vez de buscar para siempre", () => {
+    const todas = Array.from({ length: 10 }, (_, i) => new Date(Date.UTC(2026, 7, 24 + 7 * i)).toISOString().slice(0, 10));
+    expect(siguienteSemanaLibre("2026-08-17", todas)).toBeNull();
+  });
+});
+
+describe("validarPropuesta — semanas", () => {
+  it("acepta proponer para esta semana aunque el día elegido ya haya pasado", () => {
+    expect(validarPropuesta({ texto: "Cambiar el cartel", fecha: "2026-08-17", hoy: "2026-08-20" }).ok).toBe(true);
   });
 });
 
 describe("resumenBandeja — el espejo honesto de dirección", () => {
   it("cuenta lo que hay que responder ahora", () => {
     const r = resumenBandeja([
-      prop({ id: "a", fecha: "2026-08-18" }),
-      prop({ id: "b", fecha: "2026-08-19" }),
+      prop({ id: "a", fecha: "2026-08-24" }),
+      prop({ id: "b", fecha: "2026-08-31" }),
     ], HOY);
     expect(r.porRevisar).toBe(2);
-    expect(r.paraHoy).toBe(0);
+    expect(r.paraEstaSemana).toBe(0);
   });
 
-  it("separa las de HOY: si no se responden hoy, se pierden", () => {
+  it("separa las de ESTA semana: si no se responden, se pierden", () => {
     const r = resumenBandeja([
       prop({ id: "a", fecha: HOY }),
-      prop({ id: "b", fecha: "2026-08-20" }),
+      prop({ id: "b", fecha: "2026-08-24" }),
     ], HOY);
     expect(r.porRevisar).toBe(2);
-    expect(r.paraHoy).toBe(1);
+    expect(r.paraEstaSemana).toBe(1);
   });
 
   it("cuenta aparte las que se pasaron sin respuesta", () => {
@@ -170,6 +173,6 @@ describe("resumenBandeja — el espejo honesto de dirección", () => {
       prop({ id: "a", fecha: "2026-08-10", estado: "aprobada" }),
       prop({ id: "b", fecha: "2026-08-11", estado: "rechazada" }),
     ], HOY);
-    expect(r).toEqual({ porRevisar: 0, paraHoy: 0, caducadas: 0 });
+    expect(r).toEqual({ porRevisar: 0, paraEstaSemana: 0, caducadas: 0 });
   });
 });

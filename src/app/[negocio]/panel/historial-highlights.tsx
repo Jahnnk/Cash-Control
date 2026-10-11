@@ -24,6 +24,7 @@ import { Check, X, Camera, CalendarDays } from "lucide-react";
 import { HighlightPhotos } from "@/components/highlight-photos";
 import { contarFotosHighlights } from "@/app/actions/highlight-photos";
 import type { Highlight } from "@/app/actions/highlight";
+import { etiquetaSemana, esSemanal } from "@/lib/highlight";
 
 const DIAS_CORTOS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
@@ -32,10 +33,11 @@ const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
 function partes(iso: string) {
   const [y, m, d] = iso.split("-").map(Number);
   const f = new Date(Date.UTC(y, m - 1, d));
-  return { dow: DIAS_CORTOS[f.getUTCDay()], dia: d, mes: MESES[m - 1] };
+  return { dow: esSemanal(iso) ? "sem" : DIAS_CORTOS[f.getUTCDay()], dia: d, mes: MESES[m - 1] };
 }
 
 function fechaLarga(iso: string) {
+  if (esSemanal(iso)) return `semana ${etiquetaSemana(iso)}`;
   const p = partes(iso);
   return `${p.dow} ${p.dia} de ${p.mes}`;
 }
@@ -85,16 +87,16 @@ export function HistorialHighlights({
         <div className="flex items-start gap-2">
           <CalendarDays className="w-4 h-4 text-gray-400 mt-0.5 shrink-0" />
           <div>
-            <div className="text-xs font-semibold text-gray-900">Tus días anteriores</div>
+            <div className="text-xs font-semibold text-gray-900">Tus Highlights anteriores</div>
             <p className="text-[11px] text-gray-500 mt-0.5">
               {sinEvidencia > 0
-                ? `Toca un día para ver el detalle. ${sinEvidencia === 1 ? "Uno" : sinEvidencia} sin foto de evidencia — todavía puedes subirla.`
-                : "Toca un día para ver el detalle y sus fotos."}
+                ? `Toca uno para ver el detalle. ${sinEvidencia === 1 ? "Uno" : sinEvidencia} sin foto de evidencia — todavía puedes subirla.`
+                : "Toca uno para ver el detalle y sus fotos."}
             </p>
           </div>
         </div>
         {pct !== null && (
-          <div className="text-[11px] text-gray-400 shrink-0">{pct}% cumplido en 30 días</div>
+          <div className="text-[11px] text-gray-400 shrink-0">{pct}% cumplido en 8 semanas</div>
         )}
       </div>
 

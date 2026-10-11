@@ -239,14 +239,14 @@ function PestanaMes({ month, sede, onSede, onMes }: { month: string; sede: numbe
       )}
       {distintas && (
         <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Ojo: las dos cafeterías no llegan al mismo día ({hastas.map((x) => `${x.sede} al ${fechaCorta(x.hasta!)}`).join(" · ")}), así que lo que ves junto es parcial. Sube el reporte que falta con «Subir reportes de Byte».
+          Ojo: las dos cafeterías no llegan al mismo día ({hastas.map((x) => `${x.sede} al ${fechaCorta(x.hasta!)}`).join(" · ")}), así que lo que ves junto es parcial. Cada sede lo sube los sábados; si urge, súbelo tú con «Subir reportes de Byte».
         </p>
       )}
       {sel?.panorama
         ? <VistaMes p={sel.panorama} cargadoEl={sel.cargadoEl} conKpis={!onSede} />
         : (
           <Vacio>
-            {sel?.sede ?? "Esta sede"} todavía no tiene reporte de rotación de {monthLabel(month).toLowerCase()}. Súbelo con «Subir reportes de Byte»
+            {sel?.sede ?? "Esta sede"} todavía no tiene reporte de rotación de {monthLabel(month).toLowerCase()}. Lo sube la sede los sábados (o tú, con «Subir reportes de Byte»)
             {" "}o <button type="button" onClick={() => onMes(mesAnterior(month))} className="font-medium text-primary hover:underline">mira {monthLabel(mesAnterior(month)).toLowerCase()}</button>.
           </Vacio>
         )}

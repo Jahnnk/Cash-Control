@@ -13,6 +13,9 @@ import {
   tieneReflect,
   validarTexto,
   etiquetaEstado,
+  lunesDe,
+  etiquetaSemana,
+  esSemanal,
   MAX_TEXTO,
   type HighlightDia,
 } from "./highlight";
@@ -118,5 +121,30 @@ describe("etiquetaEstado", () => {
     expect(etiquetaEstado("logrado")).toBe("Logrado");
     expect(etiquetaEstado("no_logrado")).toBe("No se logró");
     expect(etiquetaEstado("pendiente")).toBe("Pendiente");
+  });
+});
+
+describe("la semana del Highlight (semanal desde el 10-oct-2026)", () => {
+  it("cualquier día cae en el lunes de su semana; el domingo es del lunes anterior", () => {
+    expect(lunesDe("2026-10-12")).toBe("2026-10-12"); // lunes
+    expect(lunesDe("2026-10-15")).toBe("2026-10-12"); // jueves
+    expect(lunesDe("2026-10-18")).toBe("2026-10-12"); // domingo
+    expect(lunesDe("2026-10-11")).toBe("2026-10-05"); // domingo anterior
+  });
+
+  it("cruza el cambio de mes y de año", () => {
+    expect(lunesDe("2026-10-01")).toBe("2026-09-28");
+    expect(lunesDe("2027-01-02")).toBe("2026-12-28");
+  });
+
+  it("un diario viejo que cayó lunes no se confunde con uno semanal", () => {
+    expect(esSemanal("2026-08-17")).toBe(false); // lunes, pero de cuando era diario
+    expect(esSemanal("2026-10-12")).toBe(true);
+    expect(esSemanal("2026-10-14")).toBe(false);
+  });
+
+  it("dice la semana en palabras", () => {
+    expect(etiquetaSemana("2026-10-14")).toBe("del 12 al 18 oct");
+    expect(etiquetaSemana("2026-10-01")).toBe("del 28 set al 4 oct");
   });
 });

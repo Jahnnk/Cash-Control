@@ -10,6 +10,11 @@
  * uno por su título — "Ventas de <MES>", "Platos con mayor rotación" y
  * "Platos con menor rotación". Ver src/lib/productos/reportes-direccion.ts.
  *
+ * Desde el 10-oct-2026 (auditoría de fricción) la venta del mes y la mayor
+ * rotación las sube la SEDE cada sábado; a Jahnn solo le toca la menor
+ * rotación. Los otros dos cuadros siguen, plegados, para cuando a una sede le
+ * falte un reporte (su carga sigue mandando).
+ *
  * Se elige la sede (el reporte de Byte no dice de qué local es; si el nombre
  * del archivo lo dice, se propone), se sueltan los archivos y, ANTES de
  * guardar, cada uno muestra qué cubre y qué va a pasar: nuevo, reemplaza tu
@@ -37,7 +42,7 @@ const SEDES = [
 
 const NOMBRE_TIPO: Record<TipoReporteByte, string> = { ventas: "Ventas del mes", mayor: "Mayor rotación", menor: "Menor rotación" };
 
-/** Los tres reportes de Byte que sube gerencia: uno por cuadro. */
+/** Los tres reportes de Byte que acepta esta ventana: uno por cuadro (a gerencia solo le toca la menor rotación). */
 type DefReporte = { tipo: TipoReporteByte; titulo: string; ejemplo: string; ayuda: string };
 
 const MES_BYTE = ["ENERO", "FEBRERO", "MARZO", "ABRIL", "MAYO", "JUNIO", "JULIO", "AGOSTO", "SEPTIEMBRE", "OCTUBRE", "NOVIEMBRE", "DICIEMBRE"];
@@ -369,7 +374,7 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
 
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-xs font-semibold text-gray-700">2 · Sube cada reporte en su cuadro</div>
+              <div className="text-xs font-semibold text-gray-700">2 · Sube la menor rotación</div>
               {mes && sede !== null && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
                   {nombreSede} · {monthLabel(mes)}
@@ -377,14 +382,31 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {reportesPara(mes ?? cobertura?.hoy.slice(0, 7) ?? "2026-10", cobertura?.hoy ?? new Date().toISOString().slice(0, 10)).map((r) => (
+            {(() => {
+              const defs = reportesPara(mes ?? cobertura?.hoy.slice(0, 7) ?? "2026-10", cobertura?.hoy ?? new Date().toISOString().slice(0, 10));
+              const cuadro = (r: DefReporte) => (
                 <CuadroReporte key={r.tipo} r={r} deshabilitado={subiendo}
                   cargados={archivos.filter((a) => a.tipo === r.tipo && a.estado !== "error").length}
-                  estado={cobertura && sede !== null && mes ? casilla(cobertura, sede, mes).tres[r.tipo === "ventas" ? "ventas" : r.tipo === "mayor" ? "mayor" : "menor"] : null}
+                  estado={cobertura && sede !== null && mes ? casilla(cobertura, sede, mes).tres[r.tipo] : null}
                   onArchivos={(files) => void agregar(files, r.tipo)} />
-              ))}
-            </div>
+              );
+              const deLaSede = defs.filter((r) => r.tipo !== "menor");
+              const yaSubioAlgo = archivos.some((a) => a.tipo === "ventas" || a.tipo === "mayor");
+              return (
+                <>
+                  {defs.filter((r) => r.tipo === "menor").map(cuadro)}
+                  {/* La venta del mes y la mayor rotación las sube la sede cada sábado (10-oct-2026). */}
+                  <details className="group rounded-xl border border-gray-200" open={yaSubioAlgo || undefined}>
+                    <summary className="cursor-pointer list-none px-3 py-2.5 text-xs text-gray-600 flex items-center justify-between gap-2">
+                      <span><span className="font-medium text-gray-800">Venta del mes y mayor rotación</span> · las sube cada sede los sábados. Ábrelo solo si a una le falta algo.</span>
+                      <span className="text-primary shrink-0 group-open:hidden">Abrir</span>
+                      <span className="text-primary shrink-0 hidden group-open:inline">Cerrar</span>
+                    </summary>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 px-3 pb-3">{deLaSede.map(cuadro)}</div>
+                  </details>
+                </>
+              );
+            })()}
             <p className="text-[11px] text-gray-500">
               {mes ? "Cada cuadro muestra qué título debe traer el archivo de ese mes y si ese reporte ya está. " : "Toca la tarjeta de un mes para que los cuadros pidan los archivos de ese mes. "}
               Si sueltas uno equivocado, te avisa.

@@ -12,7 +12,7 @@
 import { describe, it, expect } from "vitest";
 import {
   REPORTES_SEMANALES, claveDesdeNota, evaluarReportesSemanales,
-  sabadoDeLaSemana, nombrarFaltantes, reportesDeLaSede, type CargaRegistrada,
+  sabadoDeLaSemana, nombrarFaltantes, reportesDeLaSede, cargaDeVentas, type CargaRegistrada,
 } from "./reportes-semanales";
 
 // Sábado 22 de agosto de 2026. El sábado anterior fue el 15.
@@ -67,7 +67,7 @@ describe("el estado los mira TODOS, no uno", () => {
     // miraba uno, y con ese uno se apagaba.
     const e = evaluarReportesSemanales([c("rotacion", SABADO)], SABADO);
     expect(e.completo).toBe(false);
-    expect(e.faltan).toHaveLength(2);
+    expect(e.faltan).toHaveLength(3);
   });
 
   it("con todos subidos, completo", () => {
@@ -79,7 +79,7 @@ describe("el estado los mira TODOS, no uno", () => {
   it("reproduce el caso real de Fonavi del sábado 15", () => {
     // Subió rotación y ventas por trabajador; le faltó cortesías.
     const e = evaluarReportesSemanales(
-      [c("rotacion", "2026-08-15"), c("ventas_trabajador", "2026-08-15")],
+      [c("ventas_mes", "2026-08-15"), c("rotacion", "2026-08-15"), c("ventas_trabajador", "2026-08-15")],
       "2026-08-15",
     );
     expect(e.completo).toBe(false);
@@ -89,7 +89,7 @@ describe("el estado los mira TODOS, no uno", () => {
   it("Centro, que ese sábado subió los tres, queda completo", () => {
     // Antes le faltaba Cambios de Precio y nunca se ponía en verde.
     const e = evaluarReportesSemanales(
-      [c("rotacion", "2026-08-15"), c("cortesias", "2026-08-15"), c("ventas_trabajador", "2026-08-15")],
+      [c("ventas_mes", "2026-08-15"), c("rotacion", "2026-08-15"), c("cortesias", "2026-08-15"), c("ventas_trabajador", "2026-08-15")],
       "2026-08-15",
     );
     expect(e.completo).toBe(true);
@@ -107,7 +107,7 @@ describe("la ventana de la semana", () => {
     // Es lo que hace que el aviso reaparezca cada sábado.
     const e = evaluarReportesSemanales(TODOS("2026-08-15"), SABADO);
     expect(e.completo).toBe(false);
-    expect(e.faltan).toHaveLength(3);
+    expect(e.faltan).toHaveLength(4);
   });
 
   it("marca si hoy es sábado, para levantar la voz solo ese día", () => {
@@ -121,7 +121,7 @@ describe("nunca subidos", () => {
     // Un archivo que no se subió jamás no es lo mismo que un olvido de
     // una semana, y el aviso tiene que distinguirlos.
     const e = evaluarReportesSemanales(
-      [c("rotacion", "2026-08-15"), c("cortesias", "2026-07-06")],
+      [c("ventas_mes", "2026-08-15"), c("rotacion", "2026-08-15"), c("cortesias", "2026-07-06")],
       SABADO,
     );
     expect(e.nuncaSubidos.map((r) => r.clave)).toEqual(["ventas_trabajador"]);
@@ -140,7 +140,7 @@ describe("nunca subidos", () => {
 
 describe("nombrarFaltantes", () => {
   it("junta dos con 'y'", () => {
-    const e = evaluarReportesSemanales([c("rotacion", SABADO)], SABADO);
+    const e = evaluarReportesSemanales([c("ventas_mes", SABADO), c("rotacion", SABADO)], SABADO);
     expect(nombrarFaltantes(e.faltan)).toBe("Cortesías y Ventas por Trabajador");
   });
 
@@ -151,19 +151,25 @@ describe("nombrarFaltantes", () => {
 
 describe("qué reportes le tocan a cada sede", () => {
   // Decisión de Jahnn (24-ago-2026): Atelier es producción, no cafetería.
-  it("a Atelier solo le toca rotación", () => {
+  it("a Atelier le tocan la venta del mes y la rotación (10-oct-2026)", () => {
     const r = reportesDeLaSede(1).map((x) => x.clave);
-    expect(r).toEqual(["rotacion"]);
+    expect(r).toEqual(["ventas_mes", "rotacion"]);
   });
 
-  it("a Fonavi y Centro les tocan los tres", () => {
-    expect(reportesDeLaSede(2)).toHaveLength(3);
-    expect(reportesDeLaSede(3)).toHaveLength(3);
+  it("a Fonavi y Centro les tocan los cuatro: venta del mes, rotación, cortesías y ventas por trabajador", () => {
+    expect(reportesDeLaSede(2)).toHaveLength(4);
+    expect(reportesDeLaSede(3)).toHaveLength(4);
   });
 
   it("sin sede conocida los pide todos: no relaja el control por accidente", () => {
-    expect(reportesDeLaSede()).toHaveLength(3);
-    expect(reportesDeLaSede(999)).toHaveLength(3);
+    expect(reportesDeLaSede()).toHaveLength(4);
+    expect(reportesDeLaSede(999)).toHaveLength(4);
+  });
+
+  it("la venta del mes cuenta desde la última vez que entró a byte_ventas_daily", () => {
+    expect(cargaDeVentas(null)).toEqual([]);
+    const e = evaluarReportesSemanales([...cargaDeVentas("2026-08-22"), c("rotacion", "2026-08-22")], "2026-08-22", 1);
+    expect(e.completo).toBe(true);
   });
 
   it("ya no se pide Cambios de Precio en ninguna sede", () => {
@@ -176,10 +182,10 @@ describe("qué reportes le tocan a cada sede", () => {
     expect(claveDesdeNota("Incentivos · cambios_precio")).toBe("cambios_precio");
   });
 
-  it("Atelier queda COMPLETO subiendo solo rotación", () => {
+  it("Atelier queda COMPLETO con venta del mes y rotación", () => {
     // Con la regla vieja, Luis quedaba en rojo para siempre por
     // archivos que su operación no genera.
-    const cargas = [{ clave: "rotacion" as const, fecha: "2026-08-22" }];
+    const cargas = [c("ventas_mes", "2026-08-22"), c("rotacion", "2026-08-22")];
     const atelier = evaluarReportesSemanales(cargas, "2026-08-22", 1);
     expect(atelier.completo).toBe(true);
     expect(atelier.faltan).toHaveLength(0);
@@ -194,6 +200,6 @@ describe("qué reportes le tocan a cada sede", () => {
   it("Atelier sin subir nada sigue quedando en falta", () => {
     const a = evaluarReportesSemanales([], "2026-08-22", 1);
     expect(a.completo).toBe(false);
-    expect(a.nuncaSubidos.map((r) => r.clave)).toEqual(["rotacion"]);
+    expect(a.nuncaSubidos.map((r) => r.clave)).toEqual(["ventas_mes", "rotacion"]);
   });
 });

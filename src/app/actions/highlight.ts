@@ -1,7 +1,12 @@
 "use server";
 
 /**
- * Highlight diario — "Make Time" (ver src/lib/highlight.ts).
+ * Highlight semanal — "Make Time" (ver src/lib/highlight.ts).
+ *
+ * Desde el 10-oct-2026 es UNO POR SEMANA por sede. Cada Highlight se guarda
+ * con la fecha del lunes de su semana (`lunesDe`): toda escritura normaliza
+ * la fecha a ese lunes y toda lectura busca la semana. Los diarios viejos
+ * (ago–set 2026) quedan como historia.
  *
  * Dos lados bien separados:
  *
@@ -24,6 +29,9 @@ import {
   validarTexto,
   calcularRacha,
   calcularCumplimiento,
+  lunesDe,
+  sumarDias,
+  esSemanal,
   MAX_POR_QUE,
   MAX_REFLECT,
   type EstadoHighlight,
@@ -39,6 +47,9 @@ const SEDES = [
 ] as const;
 
 const esFecha = (d: string) => /^\d{4}-\d{2}-\d{2}$/.test(d);
+
+/** Cuántas semanas hacia atrás se miran para la racha y el cumplimiento. */
+const VENTANA_SEMANAS = 8;
 
 function faltaMigracion(e: unknown): boolean {
   const msg = e instanceof Error ? e.message : String(e);
@@ -87,10 +98,10 @@ export type HighlightSede = {
   faltaMigracion?: boolean;
   /** La pantalla la ve dirección (no el administrador de la sede). */
   esDireccion: boolean;
-  /** El de hoy, que es el que el admin tiene que cumplir. */
+  /** El de esta semana, que es el que el admin tiene que cumplir. */
   hoy: Highlight | null;
   /**
-   * Highlights de los últimos 7 días (sin contar hoy), cerrados o no.
+   * Highlights de las semanas anteriores (las últimas 4), cerrados o no.
    *
    * Se entregan COMPLETOS —no un resumen— por dos razones que costaron
    * un reporte cada una:
@@ -102,7 +113,9 @@ export type HighlightSede = {
    */
   diasAnteriores: Highlight[];
   fecha: string;
-  /** Días cerrados hacia atrás, para la racha y el historial corto. */
+  /** El lunes de esta semana. */
+  semana: string;
+  /** Semanas cerradas hacia atrás, para la racha y el historial corto. */
   racha: number;
   cumplimiento: Cumplimiento;
 };
@@ -117,9 +130,10 @@ export type HighlightGrupoSede = {
 
 export type HighlightGrupo = {
   faltaMigracion?: boolean;
+  /** El lunes de la semana que se mira. */
   fecha: string;
   sedes: HighlightGrupoSede[];
-  /** Cuántas sedes aún no tienen Highlight para esa fecha. */
+  /** Cuántas sedes aún no tienen Highlight para esa semana. */
   sinAsignar: number;
 };
 
@@ -152,12 +166,13 @@ function aHighlight(f: FilaDB): Highlight {
 // Lado del administrador
 // ─────────────────────────────────────────────────────────────────
 
-/** El Highlight de MI sede para hoy, con la racha y el historial corto. */
+/** El Highlight de MI sede para esta semana, con la racha y el historial corto. */
 export async function getHighlightSede(): Promise<HighlightSede> {
   const hoy = getToday();
+  const semana = lunesDe(hoy);
   const vacio: HighlightSede = {
     esDireccion: false,
-    hoy: null, diasAnteriores: [], fecha: hoy, racha: 0,
+    hoy: null, diasAnteriores: [], fecha: hoy, semana, racha: 0,
     cumplimiento: { cerrados: 0, logrados: 0, pendientes: 0, pct: null },
   };
 
@@ -190,31 +205,32 @@ export async function getHighlightSede(): Promise<HighlightSede> {
              reflect_ayudo, reflect_distrajo, reflect_manana
       FROM highlights
       WHERE business_id = ${bId} AND fecha <= ${hoy}
-        -- La misma ventana que Grupo → Highlight (últimos 30 días): sin ella, el panel decía
-        -- «100% cumplido en 30 días» con días de agosto y Grupo decía «sin historial» (8-oct-2026).
-        AND fecha >= ${hoy}::date - 30
+        -- La misma ventana que Grupo → Highlight (las últimas 8 semanas): sin ella, el panel decía
+        -- «100% cumplido» con días de agosto y Grupo decía «sin historial» (8-oct-2026).
+        AND fecha >= ${sumarDias(semana, -7 * VENTANA_SEMANAS)}
       ORDER BY fecha DESC
-      LIMIT 30
+      LIMIT 60
     `) as FilaDB[];
 
     const dias = filas.map((f) => ({ fecha: f.fecha, estado: f.estado as EstadoHighlight }));
-    // La racha se mide sobre días YA cerrados: si el de hoy sigue
-    // pendiente, no debe aparecer como si hubiera cortado la racha.
+    // La racha se mide sobre semanas YA cerradas: si el de esta semana
+    // sigue pendiente, no debe aparecer como si hubiera cortado la racha.
     const cerrados = dias.filter((d) => d.estado !== "pendiente");
 
     return {
       esDireccion: role.kind === "full",
-      hoy: filas[0]?.fecha === hoy ? aHighlight(filas[0]) : null,
-      // Últimos 7 días sin contar hoy, cerrados o no: los pendientes
-      // para poder cerrarlos, y los cerrados para poder adjuntarles la
-      // foto de evidencia después. Dirección siempre ve la fecha real
-      // del Highlight y la hora real del cierre, así que un cierre o
-      // una foto tardía se notan.
+      hoy: filas[0] && filas[0].fecha >= semana ? aHighlight(filas[0]) : null,
+      // Las 4 semanas anteriores, cerradas o no: los pendientes para
+      // poder cerrarlos, y los cerrados para poder adjuntarles la foto de
+      // evidencia después. Dirección siempre ve la fecha real del
+      // Highlight y la hora real del cierre, así que un cierre o una
+      // foto tardía se notan.
       diasAnteriores: filas
-        .filter((f) => f.fecha !== hoy)
-        .slice(0, 7)
+        .filter((f) => f.fecha < semana)
+        .slice(0, 4)
         .map(aHighlight),
       fecha: hoy,
+      semana,
       racha: calcularRacha(cerrados),
       cumplimiento: calcularCumplimiento(dias),
     };
@@ -296,9 +312,9 @@ export async function cerrarHighlight(input: {
 // Lado de Jahnn (dirección)
 // ─────────────────────────────────────────────────────────────────
 
-/** Las 3 sedes para una fecha: qué asignó, cómo va, y qué falta asignar. */
+/** Las 3 sedes para una semana: qué asignó, cómo va, y qué falta asignar. */
 export async function getHighlightGrupo(fecha?: string): Promise<HighlightGrupo> {
-  const dia = fecha && esFecha(fecha) ? fecha : getToday();
+  const dia = lunesDe(fecha && esFecha(fecha) ? fecha : getToday());
   const vacio: HighlightGrupo = {
     fecha: dia,
     sedes: SEDES.map((s) => ({
@@ -312,17 +328,20 @@ export async function getHighlightGrupo(fecha?: string): Promise<HighlightGrupo>
   if (role?.kind !== "full" && role?.kind !== "highlight") return vacio;
 
   try {
+    // Toda la semana (no solo el lunes): así una semana vieja, de cuando
+    // el Highlight era diario, muestra el último que tuvo.
     const delDia = (await sql`
       SELECT id, business_id, fecha::text AS fecha, texto, por_que, asignado_por, estado,
              reflect_ayudo, reflect_distrajo, reflect_manana
-      FROM highlights WHERE fecha = ${dia}
+      FROM highlights WHERE fecha >= ${dia} AND fecha <= ${sumarDias(dia, 6)}
+      ORDER BY fecha DESC
     `) as FilaDB[];
 
-    // Historial de los últimos 30 días para racha y cumplimiento.
+    // Historial de las últimas 8 semanas para racha y cumplimiento.
     const hist = (await sql`
       SELECT business_id, fecha::text AS fecha, estado
       FROM highlights
-      WHERE fecha <= ${dia} AND fecha >= ${dia}::date - 30
+      WHERE fecha <= ${sumarDias(dia, 6)} AND fecha >= ${sumarDias(dia, -7 * VENTANA_SEMANAS)}
       ORDER BY fecha DESC
     `) as { business_id: number; fecha: string; estado: string }[];
 
@@ -349,9 +368,10 @@ export async function getHighlightGrupo(fecha?: string): Promise<HighlightGrupo>
 }
 
 /**
- * Jahnn asigna (o corrige) el Highlight de una sede para una fecha.
+ * Jahnn asigna (o corrige) el Highlight de una sede para una semana
+ * (cualquier fecha de la semana sirve: se guarda con la de su lunes).
  *
- * Reasignar el mismo día SOBRESCRIBE el texto pero NO toca el estado ni
+ * Reasignar la misma semana SOBRESCRIBE el texto pero NO toca el estado ni
  * el Reflect: si el admin ya lo cerró y Jahnn corrige una palabra, sería
  * absurdo borrarle su reflexión.
  */
@@ -375,19 +395,20 @@ export async function asignarHighlight(input: {
     return { ok: false, error: "Sede inválida." };
   }
   if (!esFecha(input.fecha)) return { ok: false, error: "Fecha inválida." };
+  const semana = lunesDe(input.fecha);
 
   const v = validarTexto(input.texto);
   if (!v.ok) return { ok: false, error: v.error };
 
   try {
-    // Solo hay UN Highlight por sede y día (lo garantiza el UNIQUE). Con
+    // Solo hay UN Highlight por sede y semana (lo garantiza el UNIQUE sobre la fecha del lunes). Con
     // varias personas asignando, pisar el de otro en silencio sería el
     // peor error posible: el administrador vería una tarea distinta a la
     // que su jefe cree haberle dejado. Se avisa y se pide confirmación.
     const previo = (await sql`
       SELECT texto, COALESCE(asignado_por, 'otra persona') AS asignado_por
       FROM highlights
-      WHERE business_id = ${input.businessId} AND fecha = ${input.fecha}
+      WHERE business_id = ${input.businessId} AND fecha = ${semana}
     `) as { texto: string; asignado_por: string }[];
 
     if (previo[0] && previo[0].asignado_por !== firma && !input.reemplazarDe) {
@@ -401,7 +422,7 @@ export async function asignarHighlight(input: {
 
     await sql`
       INSERT INTO highlights (business_id, fecha, texto, por_que, asignado_por)
-      VALUES (${input.businessId}, ${input.fecha}, ${v.texto},
+      VALUES (${input.businessId}, ${semana}, ${v.texto},
               ${recorta(input.porQue, MAX_POR_QUE)}, ${firma})
       ON CONFLICT (business_id, fecha) DO UPDATE SET
         texto = EXCLUDED.texto,
@@ -476,7 +497,7 @@ export async function borrarHighlight(
 }
 
 // ─────────────────────────────────────────────────────────────────
-// Planificador: varios días de un tirón
+// Planificador: varias semanas de un tirón
 // ─────────────────────────────────────────────────────────────────
 
 export type CeldaPlan = {
@@ -500,30 +521,23 @@ export type PlanSemana = {
 };
 
 /**
- * Los próximos N días × las 3 sedes, para programar por adelantado.
+ * Las próximas N semanas × las 3 sedes, para programar por adelantado.
+ * `dias` trae el LUNES de cada semana (el nombre quedó de cuando el
+ * Highlight era diario).
  *
- * Nace de cómo trabaja Jahnn de verdad: el domingo ya sabe qué tienen
- * que hacer el lunes, el martes y el miércoles. Ir fecha por fecha hacía
- * que en la práctica no se programara nada.
+ * Nace de cómo trabaja Jahnn de verdad: ya sabe qué tienen que hacer las
+ * próximas semanas. Ir fecha por fecha hacía que en la práctica no se
+ * programara nada.
  *
- * El administrador NO ve los días futuros (getHighlightSede filtra por
- * fecha <= hoy): lo programado le llega recién el día que toca.
+ * El administrador NO ve las semanas futuras (getHighlightSede filtra
+ * por fecha <= hoy): lo programado le llega recién el lunes que toca.
  */
-export async function getPlanSemana(desde?: string, dias = 7): Promise<PlanSemana> {
+export async function getPlanSemana(desde?: string, semanas = 4): Promise<PlanSemana> {
   const hoy = getToday();
-  const inicio = desde && esFecha(desde) ? desde : hoy;
-  const n = Math.min(Math.max(dias, 1), 14);
+  const inicio = lunesDe(desde && esFecha(desde) ? desde : hoy);
+  const n = Math.min(Math.max(semanas, 1), 8);
 
-  const fechas: string[] = [];
-  const [y, m, d] = inicio.split("-").map(Number);
-  for (let i = 0; i < n; i++) {
-    const f = new Date(Date.UTC(y, m - 1, d + i));
-    fechas.push(
-      `${f.getUTCFullYear()}-${String(f.getUTCMonth() + 1).padStart(2, "0")}-${String(
-        f.getUTCDate(),
-      ).padStart(2, "0")}`,
-    );
-  }
+  const fechas: string[] = Array.from({ length: n }, (_, i) => sumarDias(inicio, 7 * i));
 
   const vacio: PlanSemana = {
     hoy,
@@ -539,7 +553,7 @@ export async function getPlanSemana(desde?: string, dias = 7): Promise<PlanSeman
     const filas = (await sql`
       SELECT id, business_id, fecha::text AS fecha, texto, por_que, asignado_por, estado
       FROM highlights
-      WHERE fecha >= ${fechas[0]} AND fecha <= ${fechas[fechas.length - 1]}
+      WHERE fecha = ANY(${fechas}::date[])
     `) as { id: string; business_id: number; fecha: string; texto: string; por_que: string | null; asignado_por: string | null; estado: string }[];
 
     return {
@@ -583,14 +597,14 @@ export type SinCerrar = {
   sede: string;
   fecha: string;
   texto: string;
-  /** Días que lleva sin respuesta. */
+  /** Días que lleva sin respuesta desde que terminó su semana. */
   diasEnSilencio: number;
 };
 
 export type EstadoHoySede = {
   businessId: number;
   sede: string;
-  /** null = no se le asignó nada hoy. */
+  /** null = no se le asignó nada esta semana. */
   estado: EstadoHighlight | null;
   texto: string | null;
   cerradoEn: string | null;
@@ -599,17 +613,19 @@ export type EstadoHoySede = {
 export type ControlCumplimiento = {
   faltaMigracion?: boolean;
   hoy: string;
-  /** Cómo va el día, sede por sede. */
+  /** El lunes de esta semana. */
+  semana: string;
+  /** Cómo va la semana, sede por sede. */
   estadoHoy: EstadoHoySede[];
   /**
-   * Highlights de días PASADOS que el administrador nunca cerró. Es la
+   * Highlights de semanas PASADAS que el administrador nunca cerró. Es la
    * señal más importante: un "no lo logré" es información, pero el
    * silencio no dice nada y es lo que hay que perseguir.
    */
   sinCerrar: SinCerrar[];
   /** Lo último que cerró cada sede, para enterarse de un vistazo. */
   cierresRecientes: CierreReciente[];
-  /** Resumen de los últimos 30 días por sede. */
+  /** Resumen de las últimas 8 semanas por sede. */
   resumen: {
     businessId: number;
     sede: string;
@@ -624,14 +640,16 @@ export type ControlCumplimiento = {
  * Todo lo que dirección necesita para controlar el cumplimiento.
  *
  * Se separa en tres preguntas distintas a propósito:
- *   1. ¿Cómo va HOY?           → estadoHoy
+ *   1. ¿Cómo va ESTA SEMANA?   → estadoHoy
  *   2. ¿Qué quedó en silencio? → sinCerrar (lo que hay que perseguir)
  *   3. ¿Qué pasó últimamente?  → cierresRecientes + resumen
  */
 export async function getControlCumplimiento(): Promise<ControlCumplimiento> {
   const hoy = getToday();
+  const semana = lunesDe(hoy);
   const vacio: ControlCumplimiento = {
     hoy,
+    semana,
     estadoHoy: SEDES.map((s) => ({
       businessId: s.id, sede: s.nombre, estado: null, texto: null, cerradoEn: null,
     })),
@@ -652,7 +670,7 @@ export async function getControlCumplimiento(): Promise<ControlCumplimiento> {
              (reflect_ayudo IS NOT NULL OR reflect_distrajo IS NOT NULL
               OR reflect_manana IS NOT NULL) AS tiene_reflect
       FROM highlights
-      WHERE fecha <= ${hoy} AND fecha >= ${hoy}::date - 30
+      WHERE fecha <= ${hoy} AND fecha >= ${sumarDias(semana, -7 * VENTANA_SEMANAS)}
       ORDER BY fecha DESC, business_id
     `) as {
       id: string; business_id: number; fecha: string; texto: string;
@@ -662,7 +680,7 @@ export async function getControlCumplimiento(): Promise<ControlCumplimiento> {
     const nombre = (id: number) => SEDES.find((s) => s.id === id)?.nombre ?? `Sede ${id}`;
 
     const estadoHoy: EstadoHoySede[] = SEDES.map((s) => {
-      const f = filas.find((x) => x.business_id === s.id && x.fecha === hoy);
+      const f = filas.find((x) => x.business_id === s.id && x.fecha >= semana);
       return {
         businessId: s.id,
         sede: s.nombre,
@@ -672,9 +690,9 @@ export async function getControlCumplimiento(): Promise<ControlCumplimiento> {
       };
     });
 
-    // Silencio: asignado en un día ya pasado y nunca cerrado.
+    // Silencio: asignado en una semana ya pasada y nunca cerrado.
     const sinCerrar: SinCerrar[] = filas
-      .filter((f) => f.fecha < hoy && f.estado === "pendiente")
+      .filter((f) => f.fecha < semana && f.estado === "pendiente")
       .map((f) => ({
         id: f.id,
         businessId: f.business_id,
@@ -683,7 +701,8 @@ export async function getControlCumplimiento(): Promise<ControlCumplimiento> {
         texto: f.texto,
         diasEnSilencio: Math.round(
           (Date.UTC(...(hoy.split("-").map(Number) as [number, number, number])) -
-            Date.UTC(...(f.fecha.split("-").map(Number) as [number, number, number]))) /
+            // Los viejos (diarios) terminaban ese mismo día; los semanales, el domingo.
+            Date.UTC(...((esSemanal(f.fecha) ? sumarDias(f.fecha, 6) : f.fecha).split("-").map(Number) as [number, number, number]))) /
             86_400_000,
         ),
       }))
@@ -707,8 +726,8 @@ export async function getControlCumplimiento(): Promise<ControlCumplimiento> {
       const suyas = filas.filter((f) => f.business_id === s.id);
       const logrados = suyas.filter((f) => f.estado === "logrado").length;
       const noLogrados = suyas.filter((f) => f.estado === "no_logrado").length;
-      // El de HOY todavía puede cerrarse: no cuenta como silencio.
-      const silencio = suyas.filter((f) => f.estado === "pendiente" && f.fecha < hoy).length;
+      // El de ESTA semana todavía puede cerrarse: no cuenta como silencio.
+      const silencio = suyas.filter((f) => f.estado === "pendiente" && f.fecha < semana).length;
       const cerrados = logrados + noLogrados;
       return {
         businessId: s.id,
@@ -720,7 +739,7 @@ export async function getControlCumplimiento(): Promise<ControlCumplimiento> {
       };
     });
 
-    return { hoy, estadoHoy, sinCerrar, cierresRecientes, resumen };
+    return { hoy, semana, estadoHoy, sinCerrar, cierresRecientes, resumen };
   } catch (e) {
     console.error("[getControlCumplimiento] failed:", e);
     if (faltaMigracion(e)) return { ...vacio, faltaMigracion: true };

@@ -1,15 +1,16 @@
 "use client";
 
 /**
- * Consola del Highlight — donde Jahnn asigna "lo más importante del día"
- * a cada sede y verifica que se cumpla.
+ * Consola del Highlight — donde Jahnn asigna "lo más importante de la
+ * semana" a cada sede y verifica que se cumpla. (Diario hasta el
+ * 10-oct-2026: ver lib/highlight.ts.)
  *
  * Una columna por sede, siempre las tres a la vista: el trabajo de
  * Jahnn acá es decidir tres cosas, y verlas juntas obliga a preguntarse
  * si de verdad son LAS más importantes.
  *
- * Hoy / Mañana en un toque, porque el Highlight se piensa la noche
- * antes: si hay que asignarlo a las 6 a.m., no se asigna.
+ * Esta semana / La próxima en un toque: el Highlight se asigna en la
+ * revisión del lunes, o el domingo pensando en la semana que viene.
  */
 
 import { useState, useTransition } from "react";
@@ -28,23 +29,8 @@ import {
 } from "@/app/actions/highlight";
 import {
   GUIA_HIGHLIGHT, PREGUNTAS_REFLECT, MAX_TEXTO, MAX_POR_QUE, etiquetaEstado,
+  etiquetaSemana, lunesDe, sumarDias,
 } from "@/lib/highlight";
-
-function fechaLarga(iso: string) {
-  const [y, m, d] = iso.split("-").map(Number);
-  const dias = ["domingo", "lunes", "martes", "miércoles", "jueves", "viernes", "sábado"];
-  const meses = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio",
-    "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
-  return `${dias[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d} de ${meses[m - 1]}`;
-}
-
-function sumarDias(iso: string, n: number): string {
-  const [y, m, d] = iso.split("-").map(Number);
-  const f = new Date(Date.UTC(y, m - 1, d + n));
-  return `${f.getUTCFullYear()}-${String(f.getUTCMonth() + 1).padStart(2, "0")}-${String(
-    f.getUTCDate(),
-  ).padStart(2, "0")}`;
-}
 
 export function HighlightConsole({
   inicial,
@@ -63,9 +49,11 @@ export function HighlightConsole({
   const [version, setVersion] = useState(0);
   const [cargando, startTransition] = useTransition();
 
-  const manana = sumarDias(hoy, 1);
+  const estaSemana = lunesDe(hoy);
+  const proxima = sumarDias(estaSemana, 7);
 
-  function irA(nuevaFecha: string) {
+  function irA(cualquierDia: string) {
+    const nuevaFecha = lunesDe(cualquierDia);
     setFecha(nuevaFecha);
     startTransition(async () => setData(await conReintento(() => getHighlightGrupo(nuevaFecha))));
   }
@@ -93,7 +81,7 @@ export function HighlightConsole({
             <h1 className="text-2xl font-bold text-[#004C40] tracking-tight">Highlight</h1>
             <p className="text-xs text-[#004C40]/80 mt-1 max-w-xl">
               No se trata de hacer más cosas; se trata de asegurarte de hacer las que más importan.
-              Asigna a cada sede <strong>una sola</strong> actividad para el día.
+              Asigna a cada sede <strong>una sola</strong> actividad para la semana.
             </p>
           </div>
           <button
@@ -124,35 +112,36 @@ export function HighlightConsole({
           propuesta sin responder tiene fecha de vencimiento. */}
       <BandejaPropuestas version={version} onCambio={recargar} />
 
-      {/* Qué día estoy asignando */}
+      {/* Qué semana estoy asignando */}
       <div className="flex flex-wrap items-center gap-2">
         <button
-          onClick={() => irA(hoy)}
+          onClick={() => irA(estaSemana)}
           className={`text-xs font-medium rounded-lg px-3 py-1.5 border transition-colors ${
-            fecha === hoy
+            fecha === estaSemana
               ? "bg-primary text-white border-primary"
               : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
           }`}
         >
-          Hoy
+          Esta semana
         </button>
         <button
-          onClick={() => irA(manana)}
+          onClick={() => irA(proxima)}
           className={`text-xs font-medium rounded-lg px-3 py-1.5 border transition-colors ${
-            fecha === manana
+            fecha === proxima
               ? "bg-primary text-white border-primary"
               : "bg-white text-gray-600 border-gray-300 hover:bg-gray-50"
           }`}
         >
-          Mañana
+          La próxima
         </button>
         <input
           type="date"
           value={fecha}
           onChange={(e) => e.target.value && irA(e.target.value)}
+          aria-label="Elegir otra semana (cualquier día de ella)"
           className="text-xs border border-gray-300 rounded-lg px-2.5 py-1.5 focus:outline-none focus:ring-2 focus:ring-primary/30"
         />
-        <span className="text-xs text-gray-500 ml-1">{fechaLarga(fecha)}</span>
+        <span className="text-xs text-gray-500 ml-1">Semana {etiquetaSemana(fecha)}</span>
         {cargando && <Loader2 className="w-3.5 h-3.5 animate-spin text-gray-400" />}
         {data.sinAsignar > 0 && (
           <span className="text-[11px] font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full px-2.5 py-1 ml-auto">
@@ -168,7 +157,7 @@ export function HighlightConsole({
         ))}
       </div>
 
-      {/* Programar varios días de un tirón */}
+      {/* Programar varias semanas de un tirón */}
       <Planificador onCambio={recargar} version={version} />
     </div>
   );
@@ -202,7 +191,7 @@ function SedeCard({
         reemplazarDe: reemplazar ? "si" : null,
       });
       if (!r.ok) {
-        // Ya había un Highlight de OTRA persona para ese día: se avisa
+        // Ya había un Highlight de OTRA persona para esa semana: se avisa
         // en vez de pisarlo callado.
         if ("confirmar" in r) {
           setChoque({ asignadoPor: r.asignadoPor, textoActual: r.textoActual });
@@ -243,14 +232,14 @@ function SedeCard({
           <h3 className="text-sm font-semibold text-gray-900">{sede.sede}</h3>
           <p className="text-[11px] text-gray-500">
             {sede.cumplimiento.pct !== null
-              ? `${sede.cumplimiento.pct}% cumplido · ${sede.cumplimiento.cerrados} día${sede.cumplimiento.cerrados === 1 ? "" : "s"}`
+              ? `${sede.cumplimiento.pct}% cumplido · ${sede.cumplimiento.cerrados} cerrado${sede.cumplimiento.cerrados === 1 ? "" : "s"}`
               : "sin historial todavía"}
           </p>
         </div>
         {sede.racha > 0 && (
           <span
             className="inline-flex items-center gap-1 text-xs font-semibold text-[#004C40] bg-[#CFF0EA] rounded-full px-2 py-1 shrink-0"
-            title={`${sede.racha} días seguidos cumpliendo`}
+            title={`${sede.racha} Highlights seguidos cumplidos`}
           >
             <Flame className="w-3.5 h-3.5" /> {sede.racha}
           </span>
@@ -261,7 +250,7 @@ function SedeCard({
         {enBlanco ? (
           <>
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
-              Lo más importante del día
+              Lo más importante de la semana
             </label>
             <textarea
               value={texto}
@@ -285,7 +274,7 @@ function SedeCard({
             </div>
 
             <label className="block text-[11px] font-semibold uppercase tracking-wide text-gray-500 mb-1.5">
-              Por qué importa hoy <span className="normal-case font-normal">(opcional)</span>
+              Por qué importa <span className="normal-case font-normal">(opcional)</span>
             </label>
             <textarea
               value={porQue}
@@ -298,13 +287,13 @@ function SedeCard({
             {choque && (
               <div className="mb-3 bg-amber-50 border border-amber-200 rounded-lg p-3">
                 <div className="text-xs font-semibold text-amber-900">
-                  {choque.asignadoPor} ya asignó el Highlight de este día
+                  {choque.asignadoPor} ya asignó el Highlight de esta semana
                 </div>
                 <p className="text-[11px] text-amber-800/90 mt-1">
                   «{choque.textoActual}»
                 </p>
                 <p className="text-[11px] text-amber-800/80 mt-1.5">
-                  Solo puede haber uno por día. Si lo reemplazas, {sede.sede} verá
+                  Solo puede haber uno por semana. Si lo reemplazas, {sede.sede} verá
                   el tuyo y no el de {choque.asignadoPor}.
                 </p>
                 <div className="flex gap-2 mt-2">
