@@ -8,6 +8,7 @@ import { useToast } from "@/components/toast-provider";
 import { HighlightSlot } from "./highlight-card";
 import { ProponerHighlight } from "./proponer-highlight";
 import { TuSemana } from "./tu-semana";
+import { Proposito } from "@/components/proposito";
 import { ImportControlModal } from "./import-control-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
@@ -169,27 +170,31 @@ export function AtelierPanel() {
   return (
     <div className="space-y-6">
       {/* Cabecera arriba (UX, 8-oct-2026: antes quedaba en medio de la página). */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <ClipboardList className="w-5 h-5 text-primary" />
-            Panel de Sede · Atelier
-          </h1>
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <ClipboardList className="w-5 h-5 text-primary" />
+              Panel de Sede · Atelier
+            </h1>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
+            />
+            <button
+              onClick={() => setShowRotacion(true)}
+              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-dark"
+            >
+              <Upload className="w-3.5 h-3.5" /> Subir reportes de Byte
+            </button>
+          </div>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
-          />
-          <button
-            onClick={() => setShowRotacion(true)}
-            className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-dark"
-          >
-            <Upload className="w-3.5 h-3.5" /> Subir reportes de Byte
-          </button>
-        </div>
+        {/* Nuestro propósito: para recordar por qué hacemos lo que hacemos (13-oct-2026). */}
+        <Proposito />
       </div>
 
       {/* Lo más importante de la semana — va primero a propósito: si
