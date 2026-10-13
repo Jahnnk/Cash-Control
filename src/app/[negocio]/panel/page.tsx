@@ -29,6 +29,7 @@ import { HighlightSlot } from "./highlight-card";
 import { DiasNoOperativosCard } from "./dias-no-operativos-card";
 import { ProponerHighlight } from "./proponer-highlight";
 import { TuSemana } from "./tu-semana";
+import { Proposito } from "@/components/proposito";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 import { BonoDelMesCard } from "./bono-del-mes-card";
@@ -215,45 +216,49 @@ function IncentivosPage() {
   return (
     <div className="space-y-6">
       {/* Cabecera: el título y lo que se sube (UX, 8-oct-2026: antes quedaba en medio de la página). */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-            <Trophy className="w-5 h-5 text-primary" />
-            Panel de Sede
-          </h1>
-        </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <input
-            type="month"
-            value={month}
-            onChange={(e) => setMonth(e.target.value)}
-            className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
-          />
-          {data && !data.isAdminSession && (
+      <div className="space-y-1.5">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <Trophy className="w-5 h-5 text-primary" />
+              Panel de Sede
+            </h1>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <input
+              type="month"
+              value={month}
+              onChange={(e) => setMonth(e.target.value)}
+              className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
+            />
+            {data && !data.isAdminSession && (
+              <button
+                onClick={() => setShowLiquidation(true)}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
+                title="Liquidación del mes: congela el resultado y genera el acta de pago (solo dirección)"
+              >
+                🔒 Liquidación
+              </button>
+            )}
             <button
-              onClick={() => setShowLiquidation(true)}
+              onClick={() => setShowVentas(true)}
               className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
-              title="Liquidación del mes: congela el resultado y genera el acta de pago (solo dirección)"
+              title="Reporte semanal de Ventas de Byte — alimenta el acumulado del mes y los comparativos del deck"
             >
-              🔒 Liquidación
+              <Upload className="w-3.5 h-3.5" />
+              Ventas Byte
             </button>
-          )}
-          <button
-            onClick={() => setShowVentas(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
-            title="Reporte semanal de Ventas de Byte — alimenta el acumulado del mes y los comparativos del deck"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Ventas Byte
-          </button>
-          <button
-            onClick={() => setShowImport(true)}
-            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
-          >
-            <Upload className="w-3.5 h-3.5" />
-            Subir reportes de Byte
-          </button>
+            <button
+              onClick={() => setShowImport(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
+            >
+              <Upload className="w-3.5 h-3.5" />
+              Subir reportes de Byte
+            </button>
+          </div>
         </div>
+        {/* Nuestro propósito: para recordar por qué hacemos lo que hacemos (13-oct-2026). */}
+        <Proposito />
       </div>
 
       {/* Lo más importante de la semana — va primero a propósito: si
