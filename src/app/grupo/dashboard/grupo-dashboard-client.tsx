@@ -1,6 +1,7 @@
 "use client";
 
 import { TuSemanaCeo } from "./tu-semana-ceo";
+import { CajaExcel } from "./caja-excel";
 import { useState } from "react";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
 import type { BusinessSummary } from "@/app/actions/grupo";
@@ -281,6 +282,9 @@ export function GrupoDashboardClient({
 
       {pestana === "resumen" && (
         <div className="space-y-6">
+          {/* Lo primero que Jahnn mira en los Excel de finanzas: el pie de cada hoja Ing&Gtos (14-oct-2026). */}
+          <CajaExcel cifras={cifras} periodo={periodo} mesesHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
+
           {/* ¿Cómo vamos?  ·  ¿Qué necesita mi atención? */}
           <div className={`grid grid-cols-1 gap-5 items-start ${isCurrentMonth ? "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
             <EstadoMes
