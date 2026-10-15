@@ -36,6 +36,8 @@ export type EstadoMesProps = {
   etiquetaVentas?: string;
   /** Detalle de la liquidez («Banco + caja hoy, las 3 sedes»). */
   detalleLiquidez?: string;
+  /** El EBITDA del grupo contra la regla 33-33-33 (null = aún sin resultado); lleva a Reportes. */
+  ebitda?: { pct: number; metaPct: number; etiqueta: string; tono: "bien" | "ojo" | "mal"; href: string } | null;
 };
 
 const TONO = { bien: "text-emerald-700", ojo: "text-amber-700", mal: "text-red-700", neutro: "text-gray-900" };
@@ -104,6 +106,14 @@ export function EstadoMes(p: EstadoMesProps) {
           valor={p.ganancia.valor !== null ? `${p.ganancia.valor < 0 ? "−" : ""}${soles(p.ganancia.valor)}` : <span className="text-gray-400">—</span>}
           tono={p.ganancia.valor === null ? "neutro" : p.ganancia.valor < 0 ? "mal" : "bien"} detalle={p.ganancia.detalle} />
       </div>
+
+      {p.ebitda && (
+        <Link href={p.ebitda.href} className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border-t border-gray-100 pt-3 text-xs text-gray-500 hover:text-gray-800">
+          <span className="font-medium uppercase tracking-wider text-[10px] sm:text-[11px]">EBITDA</span>
+          <span className={`text-sm font-semibold tabular-nums ${TONO[p.ebitda.tono]}`}>{p.ebitda.pct.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%</span>
+          <span>de la venta · meta {p.ebitda.metaPct}% · {p.ebitda.etiqueta} · ver la regla 33-33-33 →</span>
+        </Link>
+      )}
     </section>
   );
 }
