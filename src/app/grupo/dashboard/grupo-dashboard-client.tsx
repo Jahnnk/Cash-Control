@@ -2,7 +2,6 @@
 
 import { CajaExcel } from "./caja-excel";
 import { useState } from "react";
-import { CheckCircle2, AlertTriangle } from "lucide-react";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { GroupKpisSection } from "./group-kpis-section";
@@ -12,12 +11,12 @@ import { BandaFrescura } from "@/components/banda-frescura";
 import { DIAS_SALDO_FRESCO, type LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { CargasKelly, SubirExcelKelly } from "./cargas-kelly";
+import { BotonSubirByte, DatosCargados } from "./importables";
 import { SelloClasificacionGrupo } from "@/components/sello-clasificacion";
 import { InformeGastosGrupo } from "./informe-gastos";
 import { SelectorMes } from "./selector-mes";
 import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
 import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
-import { fechaLarga } from "@/lib/frescura-datos";
 import type { HeroStats } from "./executive-hero";
 import { SeisCifrasPanel } from "./seis-cifras-panel";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
@@ -92,6 +91,8 @@ export function GrupoDashboardClient({
   atelierB2B, cuadreKelly, cifras, extra, pestanaInicial = "resumen",
 }: Props) {
   const [pestana, setPestana] = useState<"resumen" | "equipo" | "gastos" | "kelly">(pestanaInicial);
+  // Sube con cada carga (Byte o Excel) para que la franja «Datos cargados» se actualice sola.
+  const [versionCargas, setVersionCargas] = useState(0);
 
   const [y, m] = selectedMonth.split("-").map(Number);
   const periodo = `${MESES[m - 1]} ${y}`;
@@ -260,9 +261,6 @@ export function GrupoDashboardClient({
     if (href.endsWith("#sedes")) { document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth" }); return true; }
     return false;
   };
-  const chipFrescura = frescura?.hasta
-    ? `Excel al ${fechaLarga(frescura.hasta)}`
-    : "Sin datos cargados";
 
   return (
     <div className="space-y-6 pb-4 max-w-[1400px] min-w-0">
@@ -271,22 +269,13 @@ export function GrupoDashboardClient({
         <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Grupo Yayi&apos;s</h1>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <SelectorMes mes={selectedMonth} mesActual={mesActual} />
-          {isCurrentMonth && frescura && (
-            <button
-              type="button"
-              onClick={() => setPestana("kelly")}
-              title="Ver qué Excel están cargados"
-              className={`inline-flex items-center gap-1.5 rounded-xl border px-3 py-2 text-xs sm:text-sm ${
-                alDia ? "border-emerald-200 bg-emerald-50 text-emerald-900" : "border-amber-200 bg-amber-50 text-amber-900"
-              }`}
-            >
-              {alDia ? <CheckCircle2 className="w-4 h-4" /> : <AlertTriangle className="w-4 h-4" />}
-              {chipFrescura}
-            </button>
-          )}
-          <SubirExcelKelly />
+          {/* Los dos importables (15-oct-2026): Byte, que Jahnn sube cada semana, y el Excel de finanzas. */}
+          <BotonSubirByte onCambio={() => setVersionCargas((v) => v + 1)} />
+          <SubirExcelKelly onCerrar={() => setVersionCargas((v) => v + 1)} />
         </div>
       </header>
+
+      <DatosCargados version={versionCargas} onVerExcel={() => setPestana("kelly")} />
 
       <div className="border-b border-gray-200">
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
