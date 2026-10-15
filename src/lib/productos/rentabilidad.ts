@@ -40,6 +40,12 @@ export type ProductoRentable = {
   ingresos: number;
   precio: number | null;
   costo: number | null;
+  /** De dónde sale el costo («Cafetería», «Atelier», «Externo»…): si es «Atelier», el costo es el precio interno de Atelier. */
+  origen: string | null;
+  /** Lo que cuesta en insumos (el food cost real); en lo que hace Atelier, el costo de Atelier y no su precio interno. null = no se conoce. */
+  costoInsumos: number | null;
+  /** Lo produce Atelier (su costo para la cafetería es un precio interno). */
+  deAtelier: boolean;
   margenUnidad: number | null;
   margenPct: number | null;
   /** margen $ × unidades. null = sin costo. */
@@ -96,11 +102,14 @@ export function rentabilidadDeSede(input: {
 
   const productos: ProductoRentable[] = [...juntos.values()].map((a) => {
     const precio = a.unidades > 0 ? a.ingresos / a.unidades : null;
-    const costo = enlazarCosto(a.nombre, input.costos, input.vinculos, precio)?.item.costo ?? null;
+    const enlace = enlazarCosto(a.nombre, input.costos, input.vinculos, precio);
+    const costo = enlace?.item.costo ?? null;
     const margenUnidad = precio !== null && costo !== null ? precio - costo : null;
     return {
       nombre: a.nombre, familia: a.familia, unidades: a.unidades, ingresos: r2(a.ingresos),
-      precio: precio !== null ? r2(precio) : null, costo: costo !== null ? r2(costo) : null,
+      precio: precio !== null ? r2(precio) : null, costo: costo !== null ? r2(costo) : null, origen: enlace?.item.origen ?? null,
+      costoInsumos: enlace?.item.costoInsumos != null ? r2(enlace.item.costoInsumos) : null,
+      deAtelier: enlace?.item.ref.startsWith("AT-") ?? false,
       margenUnidad: margenUnidad !== null ? r2(margenUnidad) : null,
       margenPct: margenUnidad !== null && precio ? r1((margenUnidad / precio) * 100) : null,
       deja: margenUnidad !== null ? r2(margenUnidad * a.unidades) : null,
