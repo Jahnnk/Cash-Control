@@ -29,6 +29,7 @@ import type { ResumenExtra } from "@/app/actions/resumen-grupo";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
 import { construirAtencion } from "@/lib/grupo/atencion";
 import { proyeccionSede, textoEquilibrio, textoGanancia } from "@/lib/grupo/estado-mes";
+import { regla33, ETIQUETA_TERMOMETRO, META_BLOQUE_PCT } from "@/lib/regla-33";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { ScopeCode } from "@/lib/business-theme";
 
@@ -239,6 +240,15 @@ export function GrupoDashboardClient({
   const equilibrio = textoEquilibrio(breakeven?.grupo ?? null, isCurrentMonth);
   const cg = cifras?.grupo ?? null;
   const ganancia = textoGanancia(cg);
+  // El EBITDA del grupo contra la regla 33-33-33 (la regla completa vive en Reportes).
+  const reglaGrupo = cifras ? regla33(cifras).find((x) => x.esGrupo) : undefined;
+  const ebitda = reglaGrupo?.ebitda && reglaGrupo.termometro
+    ? {
+        pct: reglaGrupo.ebitda.pct, metaPct: Math.round(META_BLOQUE_PCT), etiqueta: ETIQUETA_TERMOMETRO[reglaGrupo.termometro].toLowerCase(),
+        tono: ({ fragil: "mal", en_camino: "ojo", eficiente: "bien" } as const)[reglaGrupo.termometro],
+        href: `/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`,
+      }
+    : null;
 
   // ── Necesita tu atención: lo que pide una acción, agrupado y ordenado ──
   const atencion = isCurrentMonth ? construirAtencion({
@@ -316,7 +326,7 @@ export function GrupoDashboardClient({
               periodo={periodo} enCurso={isCurrentMonth} dia={diaHoy} diasDelMes={diasDelMes}
               ventas={ventasMes} deltaPct={deltaGrupo} meta={metaGrupo} proyeccion={proyeccion}
               liquidez={liquidez ? liquidez.total : null} equilibrio={equilibrio} ganancia={ganancia}
-              flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion"
+              flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion" ebitda={ebitda}
             />
             {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
           </div>
