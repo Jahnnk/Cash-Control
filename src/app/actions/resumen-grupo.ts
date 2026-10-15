@@ -3,7 +3,8 @@
 /**
  * Lo que el Resumen de Grupo rediseñado (8-oct-2026) necesita y que no traía antes:
  *   · La meta de ventas del mes de cada sede: la venta esperada del presupuesto APROBADO.
- *   · Si la revisión semanal del lunes está pendiente (Sistema de Dirección → Control mensual).
+ *   · Lo que el sistema comprueba solo: sedes sin Highlight esta semana y presupuesto sin aprobar
+ *     (15-oct-2026: reemplazan a la revisión del lunes y al checklist, que uno mismo marcaba).
  *   · Hace cuánto se subió el reporte de cobros de Atelier y cuánto decía por cobrar.
  * Solo lectura, solo dirección. Nunca lanza: el Resumen se arma igual sin estas señales.
  */
@@ -11,29 +12,37 @@
 import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
 import { planDe } from "@/lib/presupuesto-datos";
-import { semanaEnRevision } from "@/lib/control-mensual";
+import { lunesDe, sumarDias } from "@/lib/highlight";
 
 const sql = neon(process.env.DATABASE_URL!);
 const hoyLima = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-/** La rutina semanal empezó el lunes 5-oct-2026: antes no hay revisión que pedir. */
-const INICIO_RUTINA = "2026-09-28";
+const SEDES = [{ id: 2, nombre: "Fonavi" }, { id: 3, nombre: "Centro" }, { id: 1, nombre: "Atelier" }];
+const mesMas = (mes: string, n: number) => {
+  const [y, m] = mes.split("-").map(Number);
+  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
+};
 
 export type ResumenExtra = {
   /** Meta de ventas por sede (businessId → S/); null si el mes no tiene presupuesto aprobado. */
   metas: Record<number, number | null>;
-  revisionSemanal: { pendiente: boolean; desde: string; hasta: string } | null;
+  /** Nombres de las sedes sin Highlight esta semana (solo en el mes en curso). */
+  highlightsSinAsignar: string[] | null;
+  presupuesto: { mesActualSinAprobar: number; siguienteSinAprobar: number; totalSedes: number; diasRestantes: number; mesSiguiente: string } | null;
   cobrosAtelier: { diasDesdeCarga: number | null; porCobrar: number } | null;
 };
 
 export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
-  const vacio: ResumenExtra = { metas: {}, revisionSemanal: null, cobrosAtelier: null };
+  const vacio: ResumenExtra = { metas: {}, highlightsSinAsignar: null, presupuesto: null, cobrosAtelier: null };
   if (!(await requireFullSession())) return vacio;
   try {
     const hoy = hoyLima();
-    const semana = semanaEnRevision(hoy);
-    const [planes, rev, cobros] = await Promise.all([
+    const enCurso = mes === hoy.slice(0, 7);
+    const lunes = lunesDe(hoy);
+    const siguiente = mesMas(mes, 1);
+    const [planes, hls, aprobados, cobros] = await Promise.all([
       Promise.all([1, 2, 3].map(async (id) => [id, await planDe(id, mes)] as const)),
-      sql`SELECT 1 FROM revision_semanal WHERE semana = ${semana.desde}`.catch(() => null),
+      (enCurso ? sql`SELECT DISTINCT business_id FROM highlights WHERE fecha >= ${lunes} AND fecha <= ${sumarDias(lunes, 6)}` : Promise.resolve([])).catch(() => null) as Promise<{ business_id: number }[] | null>,
+      (enCurso ? sql`SELECT mes, COUNT(*)::int AS n FROM presupuesto_mes WHERE mes IN (${mes}, ${siguiente}) AND aprobado_el IS NOT NULL GROUP BY mes` : Promise.resolve([])).catch(() => null) as Promise<{ mes: string; n: number }[] | null>,
       sql`SELECT max(actualizado_en)::date::text AS ultima,
                  COALESCE(SUM(CASE WHEN estado_cuota = 'PENDIENTE' AND NOT COALESCE(cobrado_manual, false) THEN credito ELSE 0 END), 0)::float AS por_cobrar
           FROM invoice_documents`.catch(() => null) as Promise<{ ultima: string | null; por_cobrar: number }[] | null>,
@@ -42,8 +51,14 @@ export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
     const ultima = cobros?.[0]?.ultima ?? null;
     return {
       metas,
-      revisionSemanal: rev && semana.desde >= INICIO_RUTINA && mes === hoy.slice(0, 7)
-        ? { pendiente: rev.length === 0, ...semana } : null,
+      highlightsSinAsignar: enCurso && hls ? SEDES.filter((x) => !hls.some((h) => h.business_id === x.id)).map((x) => x.nombre) : null,
+      presupuesto: enCurso && aprobados ? {
+        mesActualSinAprobar: SEDES.length - (aprobados.find((a) => a.mes === mes)?.n ?? 0),
+        siguienteSinAprobar: SEDES.length - (aprobados.find((a) => a.mes === siguiente)?.n ?? 0),
+        totalSedes: SEDES.length,
+        diasRestantes: new Date(Date.UTC(Number(mes.slice(0, 4)), Number(mes.slice(5, 7)), 0)).getUTCDate() - Number(hoy.slice(8, 10)),
+        mesSiguiente: siguiente,
+      } : null,
       cobrosAtelier: cobros ? {
         diasDesdeCarga: ultima ? Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${ultima}T12:00:00Z`)) / 86_400_000) : null,
         porCobrar: cobros[0]?.por_cobrar ?? 0,

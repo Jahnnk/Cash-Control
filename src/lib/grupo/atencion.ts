@@ -41,8 +41,16 @@ export type EntradaAtencion = {
   cuadres: { sede: string; mes: string; alertas: number }[];
   /** Qué pedirle al Excel de Finanzas (null = está al día). */
   excelPendiente: string | null;
-  /** La revisión semanal del lunes (null = no aplica todavía). */
-  revisionSemanal: { pendiente: boolean; desde: string; hasta: string } | null;
+  /**
+   * Sedes sin Highlight esta semana (el sistema lo comprueba: no hay casilla que marcar).
+   * undefined/null = no aplica (p. ej. el dashboard de una sede).
+   */
+  highlightsSinAsignar?: string[] | null;
+  /**
+   * Presupuesto aprobado: de este mes y del siguiente (el sistema lo comprueba).
+   * `diasRestantes` = días que faltan para fin de mes.
+   */
+  presupuesto?: { mesActualSinAprobar: number; siguienteSinAprobar: number; totalSedes: number; diasRestantes: number; mesSiguiente: string } | null;
   /** Cobros de Atelier: días desde la última carga del reporte de Byte. */
   cobrosAtelier: { diasDesdeCarga: number | null; porCobrar: number } | null;
 };
@@ -53,12 +61,13 @@ export const DIAS_MINIMOS_COMPARACION = 7;
 /** Días sin registrar ventas a partir de los cuales se avisa (1 = solo falta ayer: normal). */
 export const DIAS_SIN_REGISTRAR = 2;
 export const DIAS_COBROS = 8;
+/** Cuántos días antes de fin de mes avisa que falta aprobar el presupuesto del siguiente. */
+export const DIAS_AVISO_PRESUPUESTO = 5;
 /** Cuántos avisos se ven sin abrir «ver más». */
 export const VISIBLES = 4;
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
 const soles = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
-const fecha = (iso: string) => `${Number(iso.slice(8, 10))}/${iso.slice(5, 7)}`;
 
 export function construirAtencion(e: EntradaAtencion): Atencion[] {
   const out: Atencion[] = [];
@@ -85,12 +94,33 @@ export function construirAtencion(e: EntradaAtencion): Atencion[] {
     }
   }
 
-  if (e.revisionSemanal?.pendiente) {
+  // Lo que el SISTEMA comprueba (15-oct-2026: se quitó la revisión del lunes y el checklist, que eran
+  // casillas que uno mismo marca y no medían nada).
+  if (e.highlightsSinAsignar && e.highlightsSinAsignar.length) {
+    const n = e.highlightsSinAsignar;
     out.push({
-      id: "revision-semanal", nivel: "medio",
-      titulo: "Haz la revisión de la semana",
-      detalle: `Del ${fecha(e.revisionSemanal.desde)} al ${fecha(e.revisionSemanal.hasta)}: saldo vs. pagos, cobros, ventas y gastos fuera del plan (20 min).`,
-      href: "/grupo/direccion?vista=control", accion: "Revisar",
+      id: "highlight", nivel: "medio",
+      titulo: "Asigna el Highlight de esta semana",
+      detalle: n.length === 3 ? "Ninguna sede tiene su prioridad de la semana." : `Falta en ${n.join(" y ")}.`,
+      href: "/grupo/highlight", accion: "Asignar",
+    });
+  }
+
+  const pr = e.presupuesto;
+  if (pr && pr.mesActualSinAprobar > 0) {
+    out.push({
+      id: "presupuesto-mes", nivel: "medio",
+      titulo: "El presupuesto de este mes no está aprobado",
+      detalle: `Falta en ${pr.mesActualSinAprobar} de ${pr.totalSedes} sedes: sin él, el control del mes no tiene contra qué comparar.`,
+      href: "/grupo/presupuesto", accion: "Aprobar",
+    });
+  }
+  if (pr && pr.siguienteSinAprobar > 0 && pr.diasRestantes <= DIAS_AVISO_PRESUPUESTO) {
+    out.push({
+      id: "presupuesto-siguiente", nivel: "medio",
+      titulo: `Aprueba el presupuesto de ${MESES[Number(pr.mesSiguiente.slice(5, 7)) - 1]}`,
+      detalle: `Faltan ${pr.diasRestantes} ${pr.diasRestantes === 1 ? "día" : "días"} para que empiece y no está aprobado en ${pr.siguienteSinAprobar} de ${pr.totalSedes} sedes.`,
+      href: "/grupo/presupuesto", accion: "Aprobar",
     });
   }
 

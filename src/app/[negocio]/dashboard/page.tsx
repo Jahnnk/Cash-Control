@@ -71,7 +71,6 @@ export default async function DashboardPage({ params, searchParams }: {
       .map((x) => ({ sede: nombreCorto, mes: x.month, alertas: x.alertas.length })),
     excelPendiente: fr && (fr.diasAtraso ?? 0) >= DIAS_EXCEL
       ? `El Excel de ${nombreCorto} llega hasta el ${fr.lastDate ? `${Number(fr.lastDate.slice(8, 10))}/${fr.lastDate.slice(5, 7)}` : "—"} (hace ${fr.diasAtraso} días).` : null,
-    revisionSemanal: null,
     cobrosAtelier: sede.id === 1 ? extra.cobrosAtelier : null,
   }).map((a) => ({
     ...a,

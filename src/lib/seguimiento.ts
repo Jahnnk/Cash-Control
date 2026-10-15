@@ -6,19 +6,16 @@
  * toca, qué subir y cuándo, y que el sistema le muestre en todo momento en
  * qué paso va ("visibilidad del estado del sistema", Nielsen).
  *
- * Tres recorridos, con reglas a la vista para poder explicarlas:
+ * Un recorrido, con reglas a la vista para poder explicarlas:
  *
  *   ADMINISTRADOR (semana de lunes a domingo)
  *     Highlight recibido (lunes) → Registro diario (cada día) →
  *     Reportes de Byte (sábado) → Semana cerrada (Reflect del Highlight)
  *
- *   CEO · SEMANA
- *     Revisión del lunes → Highlight asignado (lunes) →
- *     Pendientes respondidos (en la semana) → Sedes al día (sábado)
- *
- *   CEO · MES
- *     Presupuesto del mes (antes del 1) → Cierre del mes anterior (1 al 10) →
- *     Menor rotación del mes anterior → Presupuesto del mes siguiente (antes del 1)
+ * Había también «Tu semana» y «Tu mes» del CEO (11-oct-2026); salieron el
+ * 15-oct-2026: Jahnn marcaba «por marcar» y una lista que uno mismo marca no
+ * mide nada. Lo que sí comprueba el sistema (Highlight sin asignar, presupuesto
+ * sin aprobar) va ahora en «Necesita tu atención» (lib/grupo/atencion.ts).
  *
  * Lógica pura: los datos los trae actions/seguimiento.ts de las MISMAS
  * funciones que ya usan el panel y Grupo (un solo cerebro).
@@ -63,24 +60,12 @@ export type Seguimiento = {
 type PasoEntrada = Omit<PasoSeguimiento, "estado"> & { hecho: boolean };
 
 const DIAS = ["dom", "lun", "mar", "mié", "jue", "vie", "sáb"];
-const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
-const MESES_LARGOS = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
 
 /** «jue 8». */
 export function diaCorto(fecha: string): string {
   const [y, m, d] = fecha.split("-").map(Number);
   return `${DIAS[new Date(Date.UTC(y, m - 1, d)).getUTCDay()]} ${d}`;
 }
-const nombreMes = (mes: string) => MESES_LARGOS[Number(mes.slice(5, 7)) - 1];
-const mesCorto = (mes: string) => MESES[Number(mes.slice(5, 7)) - 1];
-const mesMas = (mes: string, n: number) => {
-  const [y, m] = mes.split("-").map(Number);
-  return new Date(Date.UTC(y, m - 1 + n, 1)).toISOString().slice(0, 7);
-};
-const ultimoDia = (mes: string) => {
-  const [y, m] = mes.split("-").map(Number);
-  return new Date(Date.UTC(y, m, 0)).getUTCDate();
-};
 const enumerar = (xs: string[]) => (xs.length <= 1 ? xs.join("") : `${xs.slice(0, -1).join(", ")} y ${xs[xs.length - 1]}`);
 
 /** Arma el seguimiento: el primer paso sin hacer es el actual; `fraccion` es cuánto lleva ese paso (0 a 1). */
@@ -176,175 +161,4 @@ export function seguimientoAdministrador(e: EntradaSemanaSede): Seguimiento {
   // Cuánto lleva el paso actual: del registro, los días al día; de los reportes, los subidos.
   const fraccion = !registroAlDia ? 0 : !reportesListos && total > 0 ? subidos / total : 0;
   return armar("Tu semana", pasos, mensaje, tono, fraccion);
-}
-
-// ─────────────────────────────────────────────────────────────────
-// CEO · semana
-// ─────────────────────────────────────────────────────────────────
-
-export type EntradaSemanaCeo = {
-  hoy: string;
-  /** La semana que se revisa este lunes (la última completa). */
-  semanaRevision: { desde: string; hasta: string };
-  revisada: boolean;
-  /** Sedes con Highlight asignado esta semana. */
-  highlights: { sede: string; asignado: boolean }[];
-  porDefinir: number;
-  propuestas: number;
-  /** El seguimiento de cada sede (el mismo que ve su administrador). */
-  sedes: { sede: string; seguimiento: Seguimiento }[];
-};
-
-const rango = (r: { desde: string; hasta: string }) => {
-  const [a, b] = [r.desde, r.hasta];
-  return a.slice(5, 7) === b.slice(5, 7)
-    ? `${Number(a.slice(8, 10))} al ${Number(b.slice(8, 10))} ${mesCorto(b)}`
-    : `${Number(a.slice(8, 10))} ${mesCorto(a)} al ${Number(b.slice(8, 10))} ${mesCorto(b)}`;
-};
-
-/** ¿La sede está al día? Registro sin huecos y, desde el sábado, los reportes subidos. */
-function sedeAlDia(s: Seguimiento, hoy: string): boolean {
-  const reg = s.pasos.find((p) => p.clave === "registro");
-  const rep = s.pasos.find((p) => p.clave === "reportes");
-  const sabado = sumarDias(lunesDe(hoy), 5);
-  return reg?.estado === "hecho" && (hoy < sabado || rep?.estado === "hecho");
-}
-
-export function seguimientoCeoSemana(e: EntradaSemanaCeo): Seguimiento {
-  const lunes = lunesDe(e.hoy);
-  const sabado = sumarDias(lunes, 5);
-  const yaPasoLunes = e.hoy > lunes;
-  const sinHl = e.highlights.filter((h) => !h.asignado).map((h) => h.sede);
-  const pendientes = e.porDefinir + e.propuestas;
-  const alDia = e.sedes.filter((s) => sedeAlDia(s.seguimiento, e.hoy));
-  const atrasadas = e.sedes.filter((s) => !sedeAlDia(s.seguimiento, e.hoy));
-  const equipoListo = atrasadas.length === 0 && e.hoy >= sabado;
-
-  const pasos: PasoEntrada[] = [
-    {
-      clave: "revision", titulo: "Revisión del lunes", cuando: "Lunes", hecho: e.revisada, alerta: !e.revisada && yaPasoLunes,
-      detalle: e.revisada ? "hecha" : `sem. ${rango(e.semanaRevision)}`,
-      accion: { tipo: "ir", href: "/grupo/direccion?vista=control", texto: "Hacer la revisión" },
-    },
-    {
-      clave: "highlight", titulo: "Highlight asignado", cuando: "Lunes", hecho: sinHl.length === 0, alerta: sinHl.length > 0 && yaPasoLunes,
-      detalle: `${e.highlights.length - sinHl.length} de ${e.highlights.length}`,
-      accion: { tipo: "ir", href: "/grupo/highlight", texto: "Asignar Highlight" },
-    },
-    {
-      clave: "bandeja", titulo: "Pendientes respondidos", cuando: "En la semana", hecho: pendientes === 0, alerta: false,
-      detalle: pendientes === 0 ? "nada pendiente" : [e.porDefinir > 0 ? `${e.porDefinir} por definir` : "", e.propuestas > 0 ? `${e.propuestas} propuesta${e.propuestas === 1 ? "" : "s"}` : ""].filter(Boolean).join(" · "),
-      accion: e.porDefinir > 0
-        ? { tipo: "ir", href: "/grupo/por-definir", texto: "Responder Por definir" }
-        : { tipo: "ir", href: "/grupo/highlight", texto: "Responder propuestas" },
-    },
-    {
-      clave: "equipo", titulo: "Sedes al día", cuando: diaCorto(sabado).replace(/^./, (c) => c.toUpperCase()),
-      hecho: equipoListo, alerta: atrasadas.length > 0,
-      detalle: atrasadas.length > 0 ? `${alDia.length} de ${e.sedes.length}` : e.hoy < sabado ? "suben el sábado" : "todas",
-      accion: { tipo: "ir", href: "/grupo/dashboard?pestana=equipo", texto: "Ver el equipo" },
-    },
-  ];
-
-  let mensaje: string;
-  let tono: Tono = "normal";
-  if (!e.revisada && yaPasoLunes) {
-    tono = "alerta";
-    mensaje = `Te falta la revisión de la semana del ${rango(e.semanaRevision)}: son 4 tarjetas, toma 10 minutos.`;
-  } else if (sinHl.length > 0 && yaPasoLunes) {
-    tono = "alerta";
-    mensaje = `${enumerar(sinHl)} ${sinHl.length === 1 ? "no tiene" : "no tienen"} Highlight esta semana: asígnalo para que sepan cuál es su prioridad.`;
-  } else if (!e.revisada || sinHl.length > 0) {
-    mensaje = `Hoy es lunes: revisa la semana del ${rango(e.semanaRevision)} y deja el Highlight de cada sede.`;
-  } else if (atrasadas.length > 0) {
-    tono = "alerta";
-    mensaje = `${enumerar(atrasadas.map((s) => s.sede))} ${atrasadas.length === 1 ? "está" : "están"} atrasad${atrasadas.length === 1 ? "a" : "as"}: ${atrasadas.map((s) => `${s.sede}, ${s.seguimiento.pasos.find((p) => p.alerta)?.detalle ?? "pendiente"}`).join(" · ")}.`;
-  } else if (pendientes > 0) {
-    mensaje = `Tienes ${pasos[2].detalle} esperando tu respuesta.`;
-  } else if (!equipoListo) {
-    mensaje = `Todo en orden. El sábado ${Number(sabado.slice(8, 10))} las sedes suben sus reportes de Byte.`;
-  } else {
-    mensaje = "Semana en orden: revisada, con Highlight y el equipo al día.";
-  }
-  return armar("Tu semana", pasos, mensaje, tono, e.sedes.length ? alDia.length / e.sedes.length : 0);
-}
-
-// ─────────────────────────────────────────────────────────────────
-// CEO · mes
-// ─────────────────────────────────────────────────────────────────
-
-export type EntradaMesCeo = {
-  hoy: string;
-  totalSedes: number;
-  /** Sedes con el presupuesto aprobado de este mes y del siguiente. */
-  presupuestoMes: number;
-  presupuestoSiguiente: number;
-  /** Puntos marcados del cierre del mes anterior (de 12). */
-  cierreMarcados: number;
-  cierreTotal: number;
-  /** Sedes con la menor rotación del mes anterior completa. */
-  menorAnterior: number;
-};
-
-/** Hasta qué día del mes se espera el cierre del anterior. */
-export const DIA_LIMITE_CIERRE = 10;
-/** Cuántos días antes de fin de mes avisa que falta aprobar el presupuesto siguiente. */
-export const DIAS_AVISO_PRESUPUESTO = 5;
-
-export function seguimientoCeoMes(e: EntradaMesCeo): Seguimiento {
-  const mes = e.hoy.slice(0, 7);
-  const anterior = mesMas(mes, -1);
-  const siguiente = mesMas(mes, 1);
-  const dia = Number(e.hoy.slice(8, 10));
-  const n = e.totalSedes;
-  const cierreListo = e.cierreMarcados >= e.cierreTotal;
-  const cierreVencido = !cierreListo && dia > DIA_LIMITE_CIERRE;
-  const avisoSiguiente = dia > ultimoDia(mes) - DIAS_AVISO_PRESUPUESTO;
-
-  const pasos: PasoEntrada[] = [
-    {
-      clave: "presupuesto", titulo: `Presupuesto de ${mesCorto(mes)}`, cuando: "Antes del 1",
-      hecho: e.presupuestoMes >= n, alerta: e.presupuestoMes < n, detalle: `${e.presupuestoMes} de ${n} sedes`,
-      accion: { tipo: "ir", href: "/grupo/presupuesto", texto: `Aprobar el de ${nombreMes(mes)}` },
-    },
-    {
-      clave: "cierre", titulo: `Cierre de ${mesCorto(anterior)}`, cuando: `Del 1 al ${DIA_LIMITE_CIERRE}`,
-      hecho: cierreListo, alerta: cierreVencido, detalle: `${e.cierreMarcados} de ${e.cierreTotal}`,
-      accion: { tipo: "ir", href: "/grupo/direccion?vista=control", texto: `Cerrar ${nombreMes(anterior)}` },
-    },
-    {
-      clave: "menor", titulo: "Menor rotación", cuando: `De ${mesCorto(anterior)}`,
-      hecho: e.menorAnterior >= n, alerta: e.menorAnterior < n && dia > DIA_LIMITE_CIERRE, detalle: `${e.menorAnterior} de ${n} sedes`,
-      accion: { tipo: "ir", href: "/grupo/productos", texto: "Subir menor rotación" },
-    },
-    {
-      clave: "siguiente", titulo: `Presupuesto de ${mesCorto(siguiente)}`, cuando: `Antes del 1 ${mesCorto(siguiente)}`,
-      hecho: e.presupuestoSiguiente >= n, alerta: e.presupuestoSiguiente < n && avisoSiguiente, detalle: `${e.presupuestoSiguiente} de ${n} sedes`,
-      accion: { tipo: "ir", href: "/grupo/presupuesto", texto: `Armar el de ${nombreMes(siguiente)}` },
-    },
-  ];
-
-  let mensaje: string;
-  let tono: Tono = "normal";
-  if (e.presupuestoMes < n) {
-    tono = "alerta";
-    mensaje = `${nombreMes(mes).replace(/^./, (c) => c.toUpperCase())} ya empezó y ${n - e.presupuestoMes === 1 ? "una sede no tiene" : `${n - e.presupuestoMes} sedes no tienen`} presupuesto aprobado: sin él, el control del mes no tiene contra qué comparar.`;
-  } else if (!cierreListo) {
-    tono = cierreVencido ? "alerta" : "normal";
-    mensaje = cierreVencido
-      ? `El cierre de ${nombreMes(anterior)} se pasó del día ${DIA_LIMITE_CIERRE}: van ${e.cierreMarcados} de ${e.cierreTotal} puntos.`
-      : `Toca cerrar ${nombreMes(anterior)}: van ${e.cierreMarcados} de ${e.cierreTotal} puntos. Lo ideal, antes del día ${DIA_LIMITE_CIERRE}.`;
-  } else if (e.menorAnterior < n) {
-    mensaje = `Sube la menor rotación de ${nombreMes(anterior)} (${e.menorAnterior} de ${n} sedes): con ella se decide qué sale de la carta.`;
-  } else if (e.presupuestoSiguiente < n) {
-    tono = avisoSiguiente ? "alerta" : "normal";
-    mensaje = avisoSiguiente
-      ? `Faltan pocos días para ${nombreMes(siguiente)} y el presupuesto no está aprobado (${e.presupuestoSiguiente} de ${n} sedes).`
-      : `Mes en marcha. Antes del 1 de ${nombreMes(siguiente)} aprueba su presupuesto.`;
-  } else {
-    mensaje = `Mes en orden: ${nombreMes(anterior)} cerrado y ${nombreMes(siguiente)} ya presupuestado.`;
-  }
-  const actual = pasos.find((p) => !p.hecho);
-  const fraccion = actual?.clave === "cierre" ? e.cierreMarcados / Math.max(1, e.cierreTotal) : 0;
-  return armar("Tu mes", pasos, mensaje, tono, fraccion);
 }
