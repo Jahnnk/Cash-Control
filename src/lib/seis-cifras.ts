@@ -48,8 +48,9 @@
 export const DIA_MINIMO_RESULTADO = 10;
 
 import { tipoDeCategoria } from "./reglas-gasto";
+import { esSueldoDeSocio } from "./sueldo-socios";
 
-export type FilaCifras = { categoria: string; /** La parte de la sede (en un compartido, sin la de otras). */ propio: number; /** Lo que salió. */ monto: number };
+export type FilaCifras = { categoria: string; /** La parte de la sede (en un compartido, sin la de otras). */ propio: number; /** Lo que salió. */ monto: number; /** El concepto, para reconocer el sueldo de los socios dentro de PLANILLA. */ concepto?: string | null };
 
 /** `ahorro` y `reparto` son partes de `noEsGasto` (fondos mutuos; utilidades a socios): se muestran aparte en Caja. */
 export type FueraDeLaGanancia = { deudas: number; inversion: number; noEsGasto: number; otrasSedes: number; ahorro: number; reparto: number; /** Lo que volvió del ahorro (rescate de fondos mutuos): entró a la caja pero no es venta. */ rescate: number };
@@ -73,6 +74,8 @@ export type CifrasSede = {
   gastos: number;
   /** De los gastos, lo que es PLANILLA (la regla 33-33-33 le pone tope de 25% de la venta). */
   planilla: number;
+  /** De la planilla, el sueldo de los socios (Profit First: se muestra aparte, no se camufla). */
+  sueldoSocios: number;
   impuestos: number;
   /** (Ventas − Costos) ÷ Ventas, en %. */
   margenPct: number | null;
@@ -137,12 +140,14 @@ export function cifrasDeSede(input: {
   let otrasSedes = 0;
   let compraAtelier = 0;
   let planilla = 0;
+  let sueldoSocios = 0;
   let ahorro = 0;
   let reparto = 0;
   for (const f of input.filas) {
     const rubro = rubroDe(f.categoria);
     sumas[rubro] += f.propio;
     if (f.categoria === "PLANILLA") planilla += f.propio;
+    if (esSueldoDeSocio(f.categoria, f.concepto)) sueldoSocios += f.propio;
     if (f.categoria === "AHORRO") ahorro += f.propio;
     if (f.categoria === "UTILIDADES A SOCIOS") reparto += f.propio;
     otrasSedes += f.monto - f.propio;
@@ -166,7 +171,7 @@ export function cifrasDeSede(input: {
     conResultado: hayResultado, sinResultadoPorque,
     ventas: ventas !== null ? r2(ventas) : null,
     ventasPosteriores: r2(input.ventasPosteriores ?? 0),
-    costos, gastos, planilla: r2(planilla), impuestos,
+    costos, gastos, planilla: r2(planilla), sueldoSocios: r2(sueldoSocios), impuestos,
     margenPct: hayResultado ? r1(((ventas! - costos) / ventas!) * 100) : null,
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / ventas!) * 100) : null,
@@ -183,6 +188,7 @@ export type CifrasGrupo = {
   costos: number;
   gastos: number;
   planilla: number;
+  sueldoSocios: number;
   impuestos: number;
   margenPct: number | null;
   ganancia: number | null;
@@ -218,12 +224,13 @@ export function cifrasDelGrupo(sedes: CifrasSede[]): CifrasGrupo {
   const costos = r2(conResultado.reduce((t, s) => t + s.costos, 0) - interno);
   const gastos = r2(conResultado.reduce((t, s) => t + s.gastos, 0));
   const planilla = r2(conResultado.reduce((t, s) => t + s.planilla, 0));
+  const sueldoSocios = r2(conResultado.reduce((t, s) => t + s.sueldoSocios, 0));
   const impuestos = r2(conResultado.reduce((t, s) => t + s.impuestos, 0));
   const hayResultado = conResultado.length > 0 && vRes > 0;
   const ganancia = hayResultado ? r2(vRes - costos - gastos - impuestos) : null;
   const entro = sum((s) => s.caja.entro), salio = sum((s) => s.caja.salio);
   return {
-    ventas, costos, gastos, planilla, impuestos,
+    ventas, costos, gastos, planilla, sueldoSocios, impuestos,
     margenPct: hayResultado ? r1(((vRes - costos) / vRes) * 100) : null,
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / vRes) * 100) : null,

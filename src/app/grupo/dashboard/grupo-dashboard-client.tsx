@@ -29,7 +29,7 @@ import type { ResumenExtra } from "@/app/actions/resumen-grupo";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
 import { construirAtencion } from "@/lib/grupo/atencion";
 import { proyeccionSede, textoEquilibrio, textoGanancia } from "@/lib/grupo/estado-mes";
-import { regla33, ETIQUETA_TERMOMETRO, META_BLOQUE_PCT } from "@/lib/regla-33";
+import { regla33, ETIQUETA_TERMOMETRO } from "@/lib/regla-33";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { ScopeCode } from "@/lib/business-theme";
 
@@ -244,7 +244,7 @@ export function GrupoDashboardClient({
   const reglaGrupo = cifras ? regla33(cifras).find((x) => x.esGrupo) : undefined;
   const ebitda = reglaGrupo?.ebitda && reglaGrupo.termometro
     ? {
-        pct: reglaGrupo.ebitda.pct, metaPct: Math.round(META_BLOQUE_PCT), etiqueta: ETIQUETA_TERMOMETRO[reglaGrupo.termometro].toLowerCase(),
+        pct: reglaGrupo.ebitda.pct, metaPct: Math.round(reglaGrupo.ebitda.metaPct), etiqueta: ETIQUETA_TERMOMETRO[reglaGrupo.termometro].toLowerCase(),
         tono: ({ fragil: "mal", en_camino: "ojo", eficiente: "bien" } as const)[reglaGrupo.termometro],
         href: `/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`,
       }
@@ -263,6 +263,7 @@ export function GrupoDashboardClient({
     excelPendiente: frescura && !alDia ? frescura.accion ?? frescura.titular : null,
     highlightsSinAsignar: extra.highlightsSinAsignar,
     presupuesto: extra.presupuesto,
+    utilidadPorSeparar: extra.utilidadPorSeparar,
     cobrosAtelier: extra.cobrosAtelier,
   }) : [];
   // Los avisos que se resuelven en esta misma pantalla no navegan: cambian de pestaña o bajan a las sedes.

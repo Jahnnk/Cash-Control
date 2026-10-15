@@ -15,12 +15,20 @@ import { requireFullSession } from "@/lib/session-access";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
 import { cifrasDeSede, cifrasDelGrupo, type CifrasSede, type CifrasGrupo, type FilaCifras } from "@/lib/seis-cifras";
+import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
+import type { ConfigProfitFirst } from "@/lib/regla-33";
 
 const sql = neon(process.env.DATABASE_URL!);
 
 const SEDES: [number, string][] = [[2, "Fonavi"], [3, "Centro"], [1, "Atelier"]];
 
-export type SeisCifras = { mes: string; sedes: CifrasSede[]; grupo: CifrasGrupo };
+export type SeisCifras = {
+  mes: string; sedes: CifrasSede[]; grupo: CifrasGrupo;
+  /** Los ajustes del CEO para Profit First y la regla 33-33-33 (los de por defecto si no hay). */
+  config: ConfigProfitFirst;
+  /** ¿Se pueden guardar ajustes? (false = falta crear la tabla). */
+  configGuardable: boolean;
+};
 
 export async function getSeisCifras(mes: string): Promise<{ ok: true; data: SeisCifras } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
@@ -46,7 +54,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
       const [filas, ventas, caja, rescates, cobros] = await Promise.all([
         corte
           ? sql`
-              SELECT category AS categoria, amount::float AS monto,
+              SELECT category AS categoria, concept AS concepto, amount::float AS monto,
                      (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS propio
               FROM expenses
               WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${corte} AND archived = false
@@ -76,7 +84,8 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
         cobrado: cobros ? cobros.ingresos : null,
       });
     }));
-    return { ok: true, data: { mes, sedes, grupo: cifrasDelGrupo(sedes) } };
+    const { config, guardable } = await leerConfigProfitFirst(sql);
+    return { ok: true, data: { mes, sedes, grupo: cifrasDelGrupo(sedes), config, configGuardable: guardable } };
   } catch (e) {
     console.error("[getSeisCifras] failed:", e);
     return { ok: false, error: "No se pudieron calcular las seis cifras." };

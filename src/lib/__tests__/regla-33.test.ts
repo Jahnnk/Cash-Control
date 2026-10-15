@@ -4,7 +4,7 @@
  * lo que le falta a su tercio es lo que los otros dos se pasaron, y el semáforo.
  */
 import { describe, it, expect } from "vitest";
-import { regla33, dondeFalta, termometroEbitda, profitFirst, TOPE_PLANILLA_PCT } from "../regla-33";
+import { regla33, dondeFalta, termometroEbitda, profitFirst, utilidadPorSeparar, validarConfig, CONFIG_PROFIT_FIRST, TOPE_PLANILLA_PCT } from "../regla-33";
 import { cifrasDeSede, cifrasDelGrupo } from "../seis-cifras";
 
 const f = (categoria: string, monto: number) => ({ categoria, propio: monto, monto });
@@ -136,5 +136,109 @@ describe("Profit First: apartar el 25% de la venta", () => {
     const g = profitFirst({ sedes: [a, b], grupo: cifrasDelGrupo([a, b]) }).at(-1)!;
     expect(g.apartado).toMatchObject({ ahorro: 6000, neto: 6000 });
     expect(g.meta).toBe(15000);
+  });
+});
+
+describe("los tres principios de Profit First", () => {
+  const sedeSocios = (ahorro = 0, rescate = 0, reparto = 0) => cifrasDeSede({
+    businessId: 2, sede: "Fonavi", mes: "2026-09", finDeMes: "2026-09-30", corte: "2026-09-30",
+    filas: [
+      f("INSUMOS", 9000), f("ALQUILER", 3000), f("PLANILLA", 6000),
+      { categoria: "PLANILLA", concepto: "SUELDO SETIEMBRE 2026 (JAHNN KARLO ROJAS)", propio: 500, monto: 500 },
+      { categoria: "PLANILLA", concepto: "SUELDO SETIEMBRE 2026 (JUANI TERRONES)", propio: 500, monto: 500 },
+      ...(ahorro ? [f("AHORRO", ahorro)] : []), ...(reparto ? [f("UTILIDADES A SOCIOS", reparto)] : []),
+    ],
+    ventas: 30000, caja: { entro: 30000, salio: 0, rescate }, cobrado: 30000,
+  });
+  const cif = (s: ReturnType<typeof sedeSocios>) => ({ sedes: [s], grupo: cifrasDelGrupo([s]) });
+
+  it("el sueldo de los socios se reconoce dentro de la planilla, sin cambiar los gastos", () => {
+    const s = sedeSocios();
+    expect(s.sueldoSocios).toBe(1000);
+    expect(s.planilla).toBe(7000);
+    expect(s.gastos).toBe(10000);
+  });
+
+  it("por defecto el sueldo de socios sigue en planilla (EBITDA 33.3%); con el interruptor sale del EBITDA", () => {
+    const c = cif(sedeSocios());
+    expect(regla33(c)[0].ebitda).toMatchObject({ monto: 11000, pct: 36.7 });
+    const fuera = regla33(c, { ...CONFIG_PROFIT_FIRST, sociosDeUtilidad: true })[0];
+    expect(fuera.ebitda).toMatchObject({ monto: 12000, pct: 40 });
+    expect(fuera.fijos?.monto).toBe(9000);
+    expect(fuera.planilla?.monto).toBe(6000);
+    expect(fuera.sociosFuera).toBe(true);
+    expect(fuera.sueldoSocios).toBe(1000);
+  });
+
+  it("1) el % de utilidad es ajustable: con 20% la meta baja", () => {
+    const c = cif(sedeSocios(4500));
+    expect(profitFirst(c)[0]).toMatchObject({ meta: 7500, estado: "parcial" });
+    expect(profitFirst(c, { ...CONFIG_PROFIT_FIRST, utilidadPct: 15 })[0]).toMatchObject({ meta: 4500, estado: "cumple" });
+  });
+
+  it("2) la operación debe caber en el 75%; si no, el problema es de eficiencia y dice dónde están las fugas", () => {
+    const rojo = cifrasDeSede({ businessId: 3, sede: "Centro", mes: "2026-09", finDeMes: "2026-09-30", corte: "2026-09-30", filas: [f("INSUMOS", 15000), f("PLANILLA", 9000), f("ALQUILER", 3000)], ventas: 30000, caja: { entro: 30000, salio: 0 }, cobrado: 30000 });
+    const [fila] = profitFirst({ sedes: [rojo], grupo: cifrasDelGrupo([rojo]) });
+    expect(fila.operacion).toMatchObject({ monto: 27000, pct: 90, limitePct: 75, limite: 22500, dentro: false, exceso: 4500 });
+    expect(fila.fugas).toEqual({ costos: 5000, fijos: 2000 });
+  });
+
+  it("2) dentro del 75% pero lejos del EBITDA objetivo: está dentro del límite", () => {
+    const [fila] = profitFirst(cif(sedeSocios()));
+    expect(fila.operacion).toMatchObject({ pct: 63.3, dentro: true, exceso: 0 });
+  });
+
+  it("3) el 25% sale del EBITDA objetivo: el resto es para impuestos y reinversión", () => {
+    const [fila] = profitFirst(cif(sedeSocios()));
+    expect(fila).toMatchObject({ utilidadPct: 25, ebitdaObjetivoPct: CONFIG_PROFIT_FIRST.ebitdaPct, restoPct: 8.3 });
+  });
+
+  it("3) con los socios pagados de la utilidad: lo que la operación dejó menos lo que cobraron", () => {
+    const c = cif(sedeSocios());
+    expect(profitFirst(c)[0].utilidadTrasSocios).toBeNull();
+    expect(profitFirst(c, { ...CONFIG_PROFIT_FIRST, sociosDeUtilidad: true })[0]).toMatchObject({ ebitda: 12000, sueldoSocios: 1000, utilidadTrasSocios: 11000 });
+  });
+
+  it("la reserva es intocable: un rescate que no fue para pagar utilidades se avisa", () => {
+    expect(profitFirst(cif(sedeSocios(7500, 1372)))[0].retiroAjeno).toBe(1372);
+    expect(profitFirst(cif(sedeSocios(7200, 2400, 2400)))[0].retiroAjeno).toBe(0);
+  });
+
+  it("los ajustes se validan: la utilidad sale del EBITDA y no puede pasarlo", () => {
+    expect(validarConfig({ utilidadPct: 25, ebitdaPct: 33.33, sociosDeUtilidad: false })).toBeNull();
+    expect(validarConfig({ utilidadPct: 40, ebitdaPct: 33.33, sociosDeUtilidad: false })).toMatch(/no puede ser mayor/);
+    expect(validarConfig({ utilidadPct: 0, ebitdaPct: 33, sociosDeUtilidad: false })).toMatch(/entre 1%/);
+  });
+
+  it("si cambia el EBITDA objetivo, costos y fijos se reparten el resto por igual", () => {
+    const c = cif(sedeSocios());
+    const [fila] = regla33(c, { ...CONFIG_PROFIT_FIRST, ebitdaPct: 40 });
+    expect(fila.ebitda?.metaPct).toBe(40);
+    expect(fila.costos?.metaPct).toBe(30);
+    expect(fila.fijos?.metaPct).toBe(30);
+  });
+});
+
+describe("el aviso de la primera semana del mes", () => {
+  const ventaSede = (id: number, nombre: string, ventas: number, ahorro = 0, completo = true) =>
+    cifrasDeSede({ businessId: id, sede: nombre, mes: "2026-09", finDeMes: "2026-09-30", corte: completo ? "2026-09-30" : "2026-09-12",
+      filas: [f("INSUMOS", ventas * 0.3), f("PLANILLA", ventas * 0.3), ...(ahorro ? [f("AHORRO", ahorro)] : [])], ventas, caja: { entro: ventas, salio: 0 }, cobrado: ventas });
+  const cif2 = (...s: ReturnType<typeof ventaSede>[]) => ({ sedes: s, grupo: cifrasDelGrupo(s) });
+
+  it("dice cuánto toca separar de la venta del mes cerrado, por sede", () => {
+    const cerrado = cif2(ventaSede(2, "Fonavi", 40000), ventaSede(3, "Centro", 30000));
+    const actual = cif2(ventaSede(2, "Fonavi", 5000), ventaSede(3, "Centro", 5000));
+    expect(utilidadPorSeparar(cerrado, actual)).toEqual([{ sede: "Fonavi", monto: 10000 }, { sede: "Centro", monto: 7500 }]);
+  });
+
+  it("se apaga solo cuando el depósito ya aparece en el mes actual", () => {
+    const cerrado = cif2(ventaSede(2, "Fonavi", 40000), ventaSede(3, "Centro", 30000));
+    const actual = cif2(ventaSede(2, "Fonavi", 5000, 10000), ventaSede(3, "Centro", 5000, 3000));
+    expect(utilidadPorSeparar(cerrado, actual)).toEqual([{ sede: "Centro", monto: 4500 }]);
+  });
+
+  it("una sede con el mes sin cerrar no entra (el monto no sería exacto)", () => {
+    const cerrado = cif2(ventaSede(2, "Fonavi", 40000, 0, false));
+    expect(utilidadPorSeparar(cerrado, cerrado)).toEqual([]);
   });
 });

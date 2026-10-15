@@ -51,6 +51,11 @@ export type EntradaAtencion = {
    * `diasRestantes` = días que faltan para fin de mes.
    */
   presupuesto?: { mesActualSinAprobar: number; siguienteSinAprobar: number; totalSedes: number; diasRestantes: number; mesSiguiente: string } | null;
+  /**
+   * Profit First: del 1 al 7 del mes, lo que toca separar de la venta del mes que cerró para la
+   * cuenta de la utilidad (el sistema lo comprueba: se apaga cuando el depósito aparece en el Excel).
+   */
+  utilidadPorSeparar?: { mes: string; pct: number; sedes: { sede: string; monto: number }[] } | null;
   /** Cobros de Atelier: días desde la última carga del reporte de Byte. */
   cobrosAtelier: { diasDesdeCarga: number | null; porCobrar: number } | null;
 };
@@ -103,6 +108,17 @@ export function construirAtencion(e: EntradaAtencion): Atencion[] {
       titulo: "Asigna el Highlight de esta semana",
       detalle: n.length === 3 ? "Ninguna sede tiene su prioridad de la semana." : `Falta en ${n.join(" y ")}.`,
       href: "/grupo/highlight", accion: "Asignar",
+    });
+  }
+
+  const ut = e.utilidadPorSeparar;
+  if (ut && ut.sedes.length) {
+    const soles = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
+    out.push({
+      id: "utilidad", nivel: "medio",
+      titulo: `Toca separar la utilidad de ${MESES[Number(ut.mes.slice(5, 7)) - 1]}`,
+      detalle: `${ut.sedes.map((x) => `${x.sede} ${soles(x.monto)}`).join(" · ")}: el ${Math.round(ut.pct * 10) / 10}% de la venta, antes de pagar lo demás, a fondos mutuos.`,
+      href: `/grupo/reportes?mes=${ut.mes}`, accion: "Ver",
     });
   }
 
