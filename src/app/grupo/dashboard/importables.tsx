@@ -45,7 +45,7 @@ export function BotonSubirByte({ onCambio, className = "" }: { onCambio?: () => 
         className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-xl whitespace-nowrap bg-[#3b00a8] hover:bg-[#2f0087] disabled:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3b00a8] ${className}`}
       >
         {abriendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-        Subir Byte<span className="hidden lg:inline">&nbsp;· ventas y productos</span>
+        Byte
       </button>
       {periodos && (
         <ImportarReportesModal
