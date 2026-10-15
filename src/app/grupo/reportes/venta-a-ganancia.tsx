@@ -1,36 +1,50 @@
 "use client";
 
 /**
- * De la venta a la ganancia: tres barras por sede y por mes (Vendido →
- * Cobrado → Ganancia real). Pedido de Jahnn, 3-oct-2026, tomado de un libro:
- * "facturación, efectivo y beneficio". Los números y la regla de cada barra:
- * src/lib/venta-a-ganancia.ts. Va plegada: el resumen ya dice lo esencial.
+ * Vendido → Ingresado → Ganancia real: tres barras por sede y por mes. Pedido
+ * de Jahnn, 3-oct-2026, tomado de un libro ("facturación, efectivo y beneficio");
+ * desde el 14-oct-2026 es lo PRIMERO del Resumen de Grupo, porque junta las dos
+ * fuentes sin contradecirse: Byte (lo vendido) y el Excel de finanzas (lo que
+ * ingresó a banco y caja). «Ingresado» se llamaba «Cobrado»: chocaba con «Por
+ * cobrar». Los números y la regla de cada barra: src/lib/venta-a-ganancia.ts.
  */
 
-import { SeccionDesplegable } from "@/components/productos/ui";
+import Link from "next/link";
+import { ArrowUpRight } from "lucide-react";
+import type { ReactNode } from "react";
 import { barrasDelMes, type BarrasSede } from "@/lib/venta-a-ganancia";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
+
+/** Lo que el Resumen agrega a cada tarjeta: a dónde lleva, su etiqueta y una línea de estado al pie. */
+export type ExtraSede = { href: string; flag: "atencion" | "mejor" | null; pie: ReactNode };
 
 const ALTO = 112;
 const dd = (iso: string | null) => (iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "");
 const pct = (n: number) => `${n.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%`;
 
 const BARRAS = [
-  { clave: "vendido", n: 1, nombre: "Vendido", color: "bg-[#004C40]", texto: "text-[#004C40]" },
-  { clave: "cobrado", n: 2, nombre: "Cobrado", color: "bg-[#098B5F]", texto: "text-[#098B5F]" },
-  { clave: "ganancia", n: 3, nombre: "Ganancia real", color: "bg-[#D9A441]", texto: "text-[#A7771B]" },
+  { clave: "vendido", n: 1, nombre: "Vendido", sub: "según Byte", color: "bg-[#004C40]", texto: "text-[#004C40]" },
+  { clave: "cobrado", n: 2, nombre: "Ingresado", sub: "a banco y caja", color: "bg-[#098B5F]", texto: "text-[#098B5F]" },
+  { clave: "ganancia", n: 3, nombre: "Ganancia real", sub: "después de todo", color: "bg-[#D9A441]", texto: "text-[#A7771B]" },
 ] as const;
 
-function Sede({ b }: { b: BarrasSede }) {
+function Sede({ b, extra }: { b: BarrasSede; extra?: ExtraSede }) {
   const valores = { vendido: b.vendido, cobrado: b.cobrado, ganancia: b.ganancia };
   const tope = Math.max(b.vendido ?? 0, b.cobrado ?? 0, b.ganancia ?? 0, 1);
   return (
     <div className="bg-white rounded-2xl border border-gray-200/80 p-5 min-w-0 flex flex-col">
       <div className="flex items-baseline justify-between gap-2">
-        <h4 className="text-sm font-semibold text-gray-900">{b.sede}</h4>
-        {b.corte && <span className="text-[11px] text-gray-400">hasta el {dd(b.corte)}</span>}
+        {extra ? (
+          <Link href={extra.href} className="group inline-flex items-center gap-1 text-sm font-semibold text-gray-900 hover:text-primary">
+            {b.sede}<ArrowUpRight className="h-3.5 w-3.5 text-gray-300 group-hover:text-primary" aria-hidden />
+          </Link>
+        ) : <h4 className="text-sm font-semibold text-gray-900">{b.sede}</h4>}
+        <span className="flex items-center gap-2">
+          {extra?.flag === "atencion" && <span className="rounded-full bg-red-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-red-700">Atención</span>}
+          {extra?.flag === "mejor" && <span className="rounded-full bg-emerald-50 px-2 py-0.5 text-[10px] font-medium uppercase tracking-wide text-emerald-700">Mejor</span>}
+          {b.corte && !extra && <span className="text-[11px] text-gray-400">hasta el {dd(b.corte)}</span>}
+        </span>
       </div>
-
       {!b.conBarras ? (
         <p className="mt-6 mb-2 text-sm text-gray-400">{b.vendido === null || b.vendido <= 0 ? "Sin ventas cargadas." : "Sin Excel de este mes."}</p>
       ) : (
@@ -57,6 +71,7 @@ function Sede({ b }: { b: BarrasSede }) {
               <div key={x.clave} className="flex-1 min-w-0 flex flex-col items-center gap-1">
                 <span className={`w-5 h-5 rounded-full text-[11px] font-semibold text-white flex items-center justify-center ${x.color}`}>{x.n}</span>
                 <span className="text-[11px] font-medium text-gray-700 text-center leading-tight">{x.nombre}</span>
+                <span className="-mt-0.5 text-[10px] text-gray-400 text-center leading-tight">{x.sub}</span>
               </div>
             ))}
           </div>
@@ -68,37 +83,21 @@ function Sede({ b }: { b: BarrasSede }) {
           </div>
         </>
       )}
+      {extra?.pie && <div className="mt-3 border-t border-gray-100 pt-2.5 text-[11px] leading-relaxed text-gray-500">{extra.pie}</div>}
     </div>
   );
 }
 
-/** Las tres tarjetas de sede, ya sin el desplegable (así también se pueden mostrar abiertas). */
-export function BarrasVentaAGanancia({ cifras, periodo }: { cifras: SeisCifras | null; periodo: string }) {
+/** Las tres tarjetas de sede. `extras` (por businessId) agrega enlace, etiqueta y estado al pie. */
+export function BarrasVentaAGanancia({ cifras, periodo, extras }: { cifras: SeisCifras | null; periodo: string; extras?: Record<number, ExtraSede> }) {
   const barras = cifras ? barrasDelMes(cifras.sedes) : [];
   if (barras.length === 0) return <p className="text-sm text-gray-500">No se pudieron calcular las cifras de {periodo}.</p>;
   return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{barras.map((b) => <Sede key={b.businessId} b={b} />)}</div>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{barras.map((b) => <Sede key={b.businessId} b={b} extra={extras?.[b.businessId]} />)}</div>
       <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
-        Vendido = ventas de Byte · Cobrado = lo que entró de esas ventas según el Excel (sin préstamos, rescates ni reembolsos) · Ganancia real = ventas − costos − gastos − impuestos. Todo hasta el último día con Excel de cada sede.
+        Vendido = ventas de Byte · Ingresado = lo que entró de esas ventas a banco y caja, según el Excel (sin préstamos, rescates ni reembolsos) · Ganancia real = ventas − costos − gastos − impuestos. Todo hasta el último día con Excel de cada sede.
       </p>
     </>
-  );
-}
-
-export function VentaAGanancia({ cifras, periodo }: { cifras: SeisCifras | null; periodo: string }) {
-  const barras = cifras ? barrasDelMes(cifras.sedes) : [];
-  const conGanancia = barras.filter((b) => b.gananciaPct !== null);
-  const resumen = conGanancia.length > 0
-    ? <p className="text-xs text-gray-600">De cada S/100 vendidos queda de ganancia: {conGanancia.map((b) => <span key={b.businessId} className="whitespace-nowrap"><b className={b.gananciaPct! < 0 ? "text-red-700" : "text-gray-900"}>{b.sede} {pct(b.gananciaPct!)}</b>{b !== conGanancia[conGanancia.length - 1] ? " · " : ""}</span>)}</p>
-    : <p className="text-xs text-gray-500">Todavía no hay ganancia calculada para {periodo}.</p>;
-  return (
-    <SeccionDesplegable
-      titulo="De la venta a la ganancia"
-      subtitulo="Vender no es cobrar, y cobrar no es ganar."
-      resumen={resumen}
-    >
-      <BarrasVentaAGanancia cifras={cifras} periodo={periodo} />
-    </SeccionDesplegable>
   );
 }
