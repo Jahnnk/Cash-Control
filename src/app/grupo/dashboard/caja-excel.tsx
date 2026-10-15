@@ -14,7 +14,7 @@
  */
 
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, ChevronDown } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { resultadoOperativo } from "@/lib/margenes-del-mes";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
@@ -35,69 +35,71 @@ export function CajaExcel({ cifras, periodo, mesesHref }: { cifras: SeisCifras |
         <h2 id="caja-excel-titulo" className="text-sm font-semibold text-gray-900">
           Resultado del mes <span className="font-normal text-gray-500">· según el Excel · {periodo.toLowerCase()}</span>
         </h2>
-        <p className="text-[11px] text-gray-500">Como al pie de cada hoja Ing&amp;Gtos, separando lo que no es gasto del negocio.</p>
+        <Link href={mesesHref} className="inline-flex items-center gap-0.5 text-[11px] font-medium text-primary hover:underline">
+          Ver los dos márgenes <ArrowRight className="h-3 w-3" />
+        </Link>
       </div>
 
-      <div className="mt-3 grid grid-cols-1 gap-x-4 gap-y-5 sm:grid-cols-2 lg:grid-cols-4">
+      <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
         {filas.map((f) => {
           const sinExcel = f.entro === 0 && f.salio === 0;
+          const conMargen = f.margenPct !== null && f.ingresos !== null && f.gastos !== null;
           return (
-            <div key={f.etiqueta} className={`min-w-0 ${f.esGrupo ? "rounded-xl bg-gray-50 px-3 py-2 lg:-my-2" : ""}`}>
+            <div key={f.etiqueta} className={`min-w-0 rounded-xl px-3 py-3 ${f.esGrupo ? "bg-gray-50" : "border border-gray-100"}`}>
               <div className="flex items-baseline justify-between gap-2">
-                <span className={`text-sm ${f.esGrupo ? "font-bold" : "font-semibold"} text-gray-900`}>{f.etiqueta}</span>
+                <span className="text-sm font-semibold text-gray-900">{f.etiqueta}</span>
                 {!f.esGrupo && f.corte && (
-                  <span className={`text-[10px] ${f.corte < masReciente ? "text-amber-700" : "text-gray-400"}`}>datos al {dm(f.corte)}</span>
+                  <span className={`text-[10px] ${f.corte < masReciente ? "text-amber-700" : "text-gray-400"}`}>al {dm(f.corte)}</span>
                 )}
                 {f.esGrupo && fechasDistintas && <span className="text-[10px] text-amber-700">fechas distintas</span>}
               </div>
-
               {sinExcel ? (
-                <p className="mt-1 text-xs text-gray-400">Sin Excel de {periodo.toLowerCase().split(" ")[0]}</p>
+                <p className="mt-2 text-xs text-gray-400">Sin Excel de {periodo.toLowerCase().split(" ")[0]}</p>
+              ) : conMargen ? (
+                <>
+                  <div className={`mt-1.5 text-2xl font-bold tabular-nums leading-none ${f.margenPct! < 0 ? "text-red-600" : "text-emerald-700"}`}>{pct(f.margenPct!)}</div>
+                  <div className="mt-1 text-[11px] text-gray-500">margen de la operación</div>
+                  <dl className="mt-2.5 space-y-0.5 text-xs text-gray-600">
+                    <div className="flex justify-between gap-2"><dt>Ingresos</dt><dd className="tabular-nums">{formatCurrency(f.ingresos!)}</dd></div>
+                    <div className="flex justify-between gap-2"><dt>Gastos</dt><dd className="tabular-nums">{formatCurrency(f.gastos!)}</dd></div>
+                  </dl>
+                </>
               ) : (
-                <div className="mt-1 space-y-0.5">
-                  {f.margenPct !== null && f.ingresos !== null && f.gastos !== null ? (
-                    <>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-[11px] text-gray-500">Ingresos</span>
-                        <span className="tabular-nums text-sm font-semibold text-gray-900">{formatCurrency(f.ingresos)}</span>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-2">
-                        <span className="text-[11px] text-gray-500">Gastos</span>
-                        <span className="tabular-nums text-sm font-semibold text-gray-900">{formatCurrency(f.gastos)}</span>
-                      </div>
-                      <div className="flex items-baseline justify-between gap-2 border-t border-gray-100 pt-0.5">
-                        <span className="text-[11px] font-medium text-gray-700">Margen de la operación</span>
-                        <span className={`tabular-nums text-sm font-bold ${f.margenPct < 0 ? "text-red-600" : "text-emerald-700"}`}>{pct(f.margenPct)}</span>
-                      </div>
-                    </>
-                  ) : (
-                    <p className="text-xs text-gray-400">Sin gastos cargados todavía: aún no hay margen.</p>
-                  )}
-
-                  {f.salioFuera > 0 && (
-                    <p className="pt-1 text-[11px] leading-snug text-gray-600">
-                      Salió además <b className="tabular-nums text-gray-800">{formatCurrency(f.salioFuera)}</b> que no es gasto del negocio:{" "}
-                      {f.detalleFuera.map((d) => `${d.etiqueta} ${formatCurrency(d.monto)}`).join(" · ")}.
-                    </p>
-                  )}
-
-                  <p className="pt-1 text-[10px] leading-snug text-gray-400">
-                    Excel de Kelly (caja): entró {formatCurrency(f.entro)} · salió {formatCurrency(f.salio)}
-                    {f.margenCajaPct !== null && <> · <span className="tabular-nums">{pct(f.margenCajaPct)}</span></>}
-                  </p>
-                </div>
+                <p className="mt-2 text-xs text-gray-400">Sin gastos cargados todavía: aún no hay margen.</p>
               )}
             </div>
           );
         })}
       </div>
 
-      <p className="mt-3 border-t border-gray-100 pt-2.5 text-[11px] leading-relaxed text-gray-500">
-        Margen de la operación = (ingresos − gastos del negocio) ÷ ingresos, con lo que entró y salió según el Excel. La ganancia real, con las ventas de Byte, es la barra 3 de arriba.{" "}
-        <Link href={mesesHref} className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline">
-          Ver los dos márgenes <ArrowRight className="h-3 w-3" />
-        </Link>
-      </p>
+      <details className="group mt-3 border-t border-gray-100 pt-2.5">
+        <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-gray-600 hover:text-gray-900 [&::-webkit-details-marker]:hidden">
+          <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" />
+          Ver qué más salió y la caja del Excel
+        </summary>
+        <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+          {filas.filter((f) => f.entro !== 0 || f.salio !== 0).map((f) => (
+            <div key={f.etiqueta} className="min-w-0 space-y-1.5">
+              <div className="text-xs font-semibold text-gray-900">{f.etiqueta}</div>
+              {f.salioFuera > 0 ? (
+                <p className="text-[11px] leading-snug text-gray-600">
+                  Salió además <b className="tabular-nums text-gray-800">{formatCurrency(f.salioFuera)}</b> que no es gasto del negocio:
+                  <span className="mt-0.5 block text-gray-500">{f.detalleFuera.map((d) => `${d.etiqueta} ${formatCurrency(d.monto)}`).join(" · ")}</span>
+                </p>
+              ) : (
+                <p className="text-[11px] text-gray-500">Todo lo que salió es gasto del negocio.</p>
+              )}
+              <p className="text-[11px] leading-snug text-gray-400">
+                Caja del Excel: entró {formatCurrency(f.entro)} · salió {formatCurrency(f.salio)}
+                {f.margenCajaPct !== null && <> · <span className="tabular-nums">{pct(f.margenCajaPct)}</span></>}
+              </p>
+            </div>
+          ))}
+        </div>
+        <p className="mt-3 text-[11px] leading-relaxed text-gray-400">
+          Margen de la operación = (ingresos − gastos del negocio) ÷ ingresos. La ganancia real, con las ventas de Byte, es la barra 3 de arriba.
+        </p>
+      </details>
     </section>
   );
 }
