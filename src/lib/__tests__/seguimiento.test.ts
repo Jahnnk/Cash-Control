@@ -4,7 +4,7 @@
  * frase ve cada uno — no la forma del componente.
  */
 import { describe, it, expect } from "vitest";
-import { seguimientoAdministrador, seguimientoCeoSemana, seguimientoCeoMes, armar, type EntradaSemanaSede } from "../seguimiento";
+import { seguimientoAdministrador, armar, type EntradaSemanaSede } from "../seguimiento";
 
 // Semana del lunes 12 al domingo 18 de octubre de 2026.
 const MIE = "2026-10-14";
@@ -97,88 +97,6 @@ describe("administrador", () => {
   it("solo el paso actual ofrece botón", () => {
     const s = seguimientoAdministrador(sede({ faltan: ["2026-10-13"] }));
     expect(s.pasos.filter((p) => p.accion).map((p) => p.clave)).toEqual(["registro"]);
-  });
-});
-
-describe("CEO · semana", () => {
-  const sedesAlDia = (hoy: string) => ["Fonavi", "Centro", "Atelier"].map((n) => ({
-    sede: n, seguimiento: seguimientoAdministrador(sede({ hoy, reportes: sede().reportes.map((r) => ({ ...r, ultimaCarga: hoy >= SAB ? SAB : r.ultimaCarga })) })),
-  }));
-  const base = {
-    hoy: "2026-10-12", semanaRevision: { desde: "2026-10-05", hasta: "2026-10-11" }, revisada: false,
-    highlights: [{ sede: "Fonavi", asignado: false }, { sede: "Centro", asignado: false }, { sede: "Atelier", asignado: false }],
-    porDefinir: 0, propuestas: 0,
-  };
-
-  it("el lunes recuerda revisar y asignar, sin alarma todavía", () => {
-    const s = seguimientoCeoSemana({ ...base, sedes: sedesAlDia(base.hoy) });
-    expect(s.tono).toBe("normal");
-    expect(s.indiceActual).toBe(0);
-    expect(s.mensaje).toBe("Hoy es lunes: revisa la semana del 5 al 11 oct y deja el Highlight de cada sede.");
-    expect(s.pasos[0].accion).toMatchObject({ href: "/grupo/direccion?vista=control" });
-  });
-
-  it("el martes sin revisión ya es alerta", () => {
-    const s = seguimientoCeoSemana({ ...base, hoy: "2026-10-13", sedes: sedesAlDia("2026-10-13") });
-    expect(s.tono).toBe("alerta");
-    expect(s.pasos[0].alerta).toBe(true);
-  });
-
-  it("nombra la sede atrasada y por qué", () => {
-    const sedes = sedesAlDia(MIE);
-    sedes[2] = { sede: "Atelier", seguimiento: seguimientoAdministrador(sede({ faltan: ["2026-10-13"] })) };
-    const s = seguimientoCeoSemana({
-      ...base, hoy: MIE, revisada: true, highlights: base.highlights.map((h) => ({ ...h, asignado: true })), sedes,
-    });
-    expect(s.pasos[3]).toMatchObject({ detalle: "2 de 3", alerta: true });
-    expect(s.mensaje).toContain("Atelier está atrasada: Atelier, falta mar 13");
-  });
-
-  it("los pendientes de Por definir y propuestas se cuentan juntos", () => {
-    const s = seguimientoCeoSemana({
-      ...base, hoy: MIE, revisada: true, highlights: base.highlights.map((h) => ({ ...h, asignado: true })),
-      porDefinir: 3, propuestas: 1, sedes: sedesAlDia(MIE),
-    });
-    expect(s.pasos[2].detalle).toBe("3 por definir · 1 propuesta");
-    expect(s.pasos[2].accion).toMatchObject({ href: "/grupo/por-definir" });
-  });
-
-  it("semana en orden cuando todo está hecho y las sedes subieron el sábado", () => {
-    const s = seguimientoCeoSemana({
-      ...base, hoy: SAB, revisada: true, highlights: base.highlights.map((h) => ({ ...h, asignado: true })), sedes: sedesAlDia(SAB),
-    });
-    expect(s.tono).toBe("listo");
-  });
-});
-
-describe("CEO · mes", () => {
-  const base = { hoy: "2026-10-11", totalSedes: 3, presupuestoMes: 3, presupuestoSiguiente: 0, cierreMarcados: 4, cierreTotal: 12, menorAnterior: 3 };
-
-  it("el día 11 el cierre del mes anterior ya está vencido", () => {
-    const s = seguimientoCeoMes(base);
-    expect(s.indiceActual).toBe(1);
-    expect(s.tono).toBe("alerta");
-    expect(s.mensaje).toBe("El cierre de setiembre se pasó del día 10: van 4 de 12 puntos.");
-  });
-
-  it("antes del día 10 solo lo recuerda", () => {
-    expect(seguimientoCeoMes({ ...base, hoy: "2026-10-05" }).tono).toBe("normal");
-  });
-
-  it("sin presupuesto del mes, eso va primero", () => {
-    const s = seguimientoCeoMes({ ...base, presupuestoMes: 1 });
-    expect(s.indiceActual).toBe(0);
-    expect(s.mensaje).toContain("2 sedes no tienen presupuesto aprobado");
-  });
-
-  it("los últimos días del mes avisa del presupuesto siguiente", () => {
-    const s = seguimientoCeoMes({ ...base, hoy: "2026-10-28", cierreMarcados: 12 });
-    expect(s.pasos[3].alerta).toBe(true);
-    expect(s.mensaje).toContain("Faltan pocos días para noviembre");
-  });
-
-  it("mes en orden", () => {
-    expect(seguimientoCeoMes({ ...base, cierreMarcados: 12, presupuestoSiguiente: 3 }).tono).toBe("listo");
   });
 });
 

@@ -1,6 +1,5 @@
 "use client";
 
-import { TuSemanaCeo } from "./tu-semana-ceo";
 import { CajaExcel } from "./caja-excel";
 import { useState } from "react";
 import { CheckCircle2, AlertTriangle } from "lucide-react";
@@ -251,7 +250,8 @@ export function GrupoDashboardClient({
     })),
     cuadres: (cuadreKelly ?? []).filter((v) => v.month >= mesAnterior(selectedMonth)).map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
     excelPendiente: frescura && !alDia ? frescura.accion ?? frescura.titular : null,
-    revisionSemanal: extra.revisionSemanal,
+    highlightsSinAsignar: extra.highlightsSinAsignar,
+    presupuesto: extra.presupuesto,
     cobrosAtelier: extra.cobrosAtelier,
   }) : [];
   // Los avisos que se resuelven en esta misma pantalla no navegan: cambian de pestaña o bajan a las sedes.
@@ -331,9 +331,6 @@ export function GrupoDashboardClient({
             />
             {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
           </div>
-
-          {/* ¿Qué me toca a mí? Rastreador de la semana y del mes, estilo delivery (11-oct-2026). */}
-          {isCurrentMonth && <TuSemanaCeo />}
 
           {/* El detalle, para cuando se pide (revelación progresiva) */}
           <SeccionDesplegable

@@ -152,28 +152,6 @@ export function SeguimientoTracker({
   );
 }
 
-/** Versión de una línea: los puntos y el paso actual (para la fila de cada sede). */
-export function SeguimientoMini({ seguimiento: s }: { seguimiento: Seguimiento }) {
-  const alerta = s.tono === "alerta";
-  const actual = s.pasos[s.indiceActual] ?? null;
-  const etiqueta = actual ? `${actual.titulo}${actual.detalle ? ` · ${actual.detalle}` : ""}` : "Semana entregada";
-  return (
-    <span className="inline-flex min-w-0 items-center gap-2" title={s.mensaje} aria-label={`${etiqueta}. ${s.mensaje}`}>
-      <span className="relative inline-flex h-2.5 w-16 shrink-0 items-center" aria-hidden>
-        <span className="absolute inset-x-1 h-0.5 rounded-full bg-gray-200" />
-        <span className="absolute left-1 h-0.5 rounded-full bg-primary transition-[width] duration-700" style={{ width: `calc((100% - 0.5rem) * ${s.avance})` }} />
-        <span className="relative flex w-full justify-between">
-          {s.pasos.map((p) => (
-            <span key={p.clave}
-              className={`h-2.5 w-2.5 rounded-full ${p.estado === "hecho" ? "bg-primary" : p.estado === "actual" ? `bg-white ring-2 ${alerta ? "ring-amber-500" : "ring-primary"}` : "bg-gray-200"}`} />
-          ))}
-        </span>
-      </span>
-      <span className={`truncate text-xs font-medium ${alerta ? "text-amber-700" : s.tono === "listo" ? "text-emerald-700" : "text-gray-800"}`}>{etiqueta}</span>
-    </span>
-  );
-}
-
 /** Aviso para que los rastreadores abiertos se actualicen al instante tras una acción (cerrar Highlight, subir, registrar). */
 export const EVENTO_SEGUIMIENTO = "yayis:seguimiento";
 export function avisarSeguimiento() {
