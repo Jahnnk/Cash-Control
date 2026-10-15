@@ -92,3 +92,95 @@ export function porQueDifieren(c: SeisCifrasLike): { sede: string; gananciaPct: 
   }
   return dist >= 1 ? mejor : null;
 }
+
+// ─────────────────────────────────────────────────────────────────
+// El resultado de la OPERACIÓN según el Excel (15-oct-2026)
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Auditoría del Excel de Kelly (15-oct-2026): el margen que ella escribe al pie
+ * de cada hoja es de CAJA y cuenta como gasto el ahorro a fondos mutuos, las
+ * utilidades a socios, las cuotas de deuda y los equipos. En Centro de setiembre
+ * eso daba −2.10% cuando la operación dejó ~14% (y la ganancia real, 16.0%).
+ * Esta fila muestra lo mismo que Kelly pero SEPARANDO lo que no es gasto del
+ * negocio, y deja la cifra de Kelly al lado:
+ *
+ *   Ingresos de la operación = lo que entró de las ventas (sin préstamos,
+ *                              rescates ni reembolsos): la barra «Ingresado».
+ *   Gastos de la operación   = costos + gastos + impuestos (sin ahorro, utilidades,
+ *                              cuotas de deuda, equipos ni la parte de otras sedes).
+ *   Margen operativo         = (Ingresos − Gastos de la operación) ÷ Ingresos.
+ *
+ * Ojo: no es la ganancia real (esa usa las ventas de Byte). Es el mismo Excel, mejor leído.
+ */
+export type FilaOperativa = {
+  etiqueta: string;
+  esGrupo: boolean;
+  corte: string | null;
+  mesCompleto: boolean;
+  /** null = la sede no tiene Excel (o gastos cargados) todavía: no hay margen que mostrar. */
+  ingresos: number | null;
+  gastos: number | null;
+  margenPct: number | null;
+  /** Lo que Kelly ve: todo lo que entró y salió, y su margen. */
+  entro: number;
+  salio: number;
+  margenCajaPct: number | null;
+  /** Salió de la caja sin ser gasto del negocio, con su detalle. */
+  salioFuera: number;
+  detalleFuera: { etiqueta: string; monto: number }[];
+};
+
+type Fuera = CifrasSede["fuera"];
+
+function detalleFuera(f: Fuera, otrasSedes: number): { etiqueta: string; monto: number }[] {
+  const otros = f.noEsGasto - f.ahorro - f.reparto;
+  return [
+    { etiqueta: "ahorro a fondos mutuos", monto: f.ahorro },
+    { etiqueta: "utilidades a socios", monto: f.reparto },
+    { etiqueta: "cuotas de deuda", monto: f.deudas },
+    { etiqueta: "equipos e inversión", monto: f.inversion },
+    { etiqueta: "devoluciones y préstamos entre sedes", monto: otros },
+    { etiqueta: "parte de otras sedes en gastos compartidos", monto: otrasSedes },
+  ].map((x) => ({ ...x, monto: r2(x.monto) })).filter((x) => x.monto >= 1);
+}
+
+function operativaDeSede(s: CifrasSede): FilaOperativa {
+  const hay = s.conResultado && s.cobrado !== null;
+  const gastos = s.costos + s.gastos + s.impuestos;
+  const det = detalleFuera(s.fuera, s.fuera.otrasSedes);
+  return {
+    etiqueta: s.sede, esGrupo: false, corte: s.corte, mesCompleto: s.mesCompleto,
+    ingresos: hay ? r2(s.cobrado as number) : null,
+    gastos: hay ? r2(gastos) : null,
+    margenPct: hay ? margenDeCaja(s.cobrado as number, gastos) : null,
+    entro: s.caja.entro, salio: s.caja.salio,
+    margenCajaPct: s.conResultado ? margenDeCaja(s.caja.entro, s.caja.salio) : null,
+    salioFuera: r2(det.reduce((t, x) => t + x.monto, 0)),
+    detalleFuera: det,
+  };
+}
+
+export function resultadoOperativo(c: SeisCifrasLike): FilaOperativa[] {
+  const sedes = ORDEN.map((id) => c.sedes.find((s) => s.businessId === id)).filter((s): s is CifrasSede => !!s);
+  const filas = sedes.map(operativaDeSede);
+  // El grupo suma las sedes que ya tienen resultado, igual que el Excel de Kelly suma las suyas.
+  const con = filas.filter((f) => f.ingresos !== null);
+  const ingresos = con.reduce((t, f) => t + (f.ingresos ?? 0), 0);
+  const gastos = con.reduce((t, f) => t + (f.gastos ?? 0), 0);
+  const etiquetas = new Map<string, number>();
+  for (const f of filas) for (const d of f.detalleFuera) etiquetas.set(d.etiqueta, (etiquetas.get(d.etiqueta) ?? 0) + d.monto);
+  const det = [...etiquetas.entries()].map(([etiqueta, monto]) => ({ etiqueta, monto: r2(monto) }));
+  const g = c.grupo;
+  const grupo: FilaOperativa = {
+    etiqueta: "Grupo", esGrupo: true, corte: null, mesCompleto: !g.provisional,
+    ingresos: con.length ? r2(ingresos) : null,
+    gastos: con.length ? r2(gastos) : null,
+    margenPct: con.length ? margenDeCaja(ingresos, gastos) : null,
+    entro: g.caja.entro, salio: g.caja.salio,
+    margenCajaPct: g.ganancia !== null ? margenDeCaja(g.caja.entro, g.caja.salio) : null,
+    salioFuera: r2(det.reduce((t, x) => t + x.monto, 0)),
+    detalleFuera: det,
+  };
+  return [...filas, grupo];
+}
