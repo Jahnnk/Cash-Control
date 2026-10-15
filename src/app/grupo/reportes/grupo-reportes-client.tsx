@@ -20,6 +20,7 @@ import { SelectorMes } from "../dashboard/selector-mes";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { DosMargenes } from "./dos-margenes";
 import { Regla33 } from "./regla-33";
+import { ProfitFirst } from "./profit-first";
 import { PuntoEquilibrio } from "./punto-equilibrio";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
 
@@ -68,6 +69,8 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
       <DosMargenes cifras={cifras} periodo={periodo} />
       {/* El EBITDA como termómetro: la regla del 33-33-33 de la asesoría (15-oct-2026). */}
       <Regla33 cifras={cifras} periodo={periodo} />
+      {/* Profit First: apartar el 25% de la venta primero (15-oct-2026). */}
+      <ProfitFirst cifras={cifras} periodo={periodo} />
       <FlujoDeCaja flujo={flujo} periodo={periodo} />
       {/* El piso de cada sede, como lo enseña el libro (5-oct-2026). */}
       <PuntoEquilibrio mes={selectedMonth} periodo={periodo} />

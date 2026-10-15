@@ -4,7 +4,7 @@
  * lo que le falta a su tercio es lo que los otros dos se pasaron, y el semáforo.
  */
 import { describe, it, expect } from "vitest";
-import { regla33, dondeFalta, termometroEbitda, TOPE_PLANILLA_PCT } from "../regla-33";
+import { regla33, dondeFalta, termometroEbitda, profitFirst, TOPE_PLANILLA_PCT } from "../regla-33";
 import { cifrasDeSede, cifrasDelGrupo } from "../seis-cifras";
 
 const f = (categoria: string, monto: number) => ({ categoria, propio: monto, monto });
@@ -88,5 +88,53 @@ describe("el EBITDA contra la regla 33-33-33", () => {
 describe("el termómetro", () => {
   it("menos de 10% frágil · de 10 a 30% en camino · 30% o más eficiente", () => {
     expect([-5, 9.9, 10, 29.9, 30, 35].map(termometroEbitda)).toEqual(["fragil", "fragil", "en_camino", "en_camino", "eficiente", "eficiente"]);
+  });
+});
+
+describe("Profit First: apartar el 25% de la venta", () => {
+  const conAhorro = (ahorro: number, rescate = 0, reparto = 0) => cifrasDeSede({
+    businessId: 3, sede: "Centro", mes: "2026-09", finDeMes: "2026-09-30", corte: "2026-09-30",
+    filas: [f("INSUMOS", 12000), f("PLANILLA", 6000), f("ALQUILER", 3000), ...(ahorro ? [f("AHORRO", ahorro)] : []), ...(reparto ? [f("UTILIDADES A SOCIOS", reparto)] : [])],
+    ventas: 30000, caja: { entro: 30000, salio: 0, rescate }, cobrado: 30000,
+  });
+
+  it("la meta es el 25% de la venta; el EBITDA dice de dónde puede salir", () => {
+    const c = conAhorro(7500);
+    const [fila] = profitFirst({ sedes: [c], grupo: cifrasDelGrupo([c]) });
+    expect(fila).toMatchObject({ meta: 7500, ebitda: 9000, operacionAlcanza: true, estado: "cumple", falta: 0 });
+    expect(fila.apartado).toMatchObject({ neto: 7500, pct: 25 });
+  });
+
+  it("apartó algo pero no todo: parcial, y dice cuánto faltó", () => {
+    const c = conAhorro(3000);
+    const [fila] = profitFirst({ sedes: [c], grupo: cifrasDelGrupo([c]) });
+    expect(fila).toMatchObject({ estado: "parcial", falta: 4500 });
+  });
+
+  it("las utilidades pagadas, financiadas con un rescate, no cuentan como «des-apartar»", () => {
+    const c = conAhorro(7200, 2400, 2400);
+    const [fila] = profitFirst({ sedes: [c], grupo: cifrasDelGrupo([c]) });
+    expect(fila.apartado).toMatchObject({ ahorro: 7200, rescates: 2400, utilidadesPagadas: 2400, neto: 7200 });
+  });
+
+  it("sin ahorro, sin apartar; y un rescate para cubrir gastos deja el neto en negativo", () => {
+    const sin = conAhorro(0);
+    expect(profitFirst({ sedes: [sin], grupo: cifrasDelGrupo([sin]) })[0]).toMatchObject({ estado: "sin_apartar", falta: 7500 });
+    const sacando = conAhorro(0, 1372);
+    expect(profitFirst({ sedes: [sacando], grupo: cifrasDelGrupo([sacando]) })[0].apartado?.neto).toBe(-1372);
+  });
+
+  it("si la operación no dejó ni para la meta, lo dice (hay que subir el EBITDA antes)", () => {
+    const c = cifrasDeSede({ businessId: 3, sede: "Centro", mes: "2026-09", finDeMes: "2026-09-30", corte: "2026-09-30", filas: [f("INSUMOS", 14000), f("PLANILLA", 9000), f("ALQUILER", 3000)], ventas: 30000, caja: { entro: 30000, salio: 0 }, cobrado: 30000 });
+    const [fila] = profitFirst({ sedes: [c], grupo: cifrasDelGrupo([c]) });
+    expect(fila).toMatchObject({ ebitda: 4000, meta: 7500, operacionAlcanza: false });
+  });
+
+  it("el Grupo suma lo apartado por las sedes", () => {
+    const a = conAhorro(5000);
+    const b = cifrasDeSede({ businessId: 2, sede: "Fonavi", mes: "2026-09", finDeMes: "2026-09-30", corte: "2026-09-30", filas: [f("INSUMOS", 12000), f("PLANILLA", 6000), f("AHORRO", 1000)], ventas: 30000, caja: { entro: 30000, salio: 0 }, cobrado: 30000 });
+    const g = profitFirst({ sedes: [a, b], grupo: cifrasDelGrupo([a, b]) }).at(-1)!;
+    expect(g.apartado).toMatchObject({ ahorro: 6000, neto: 6000 });
+    expect(g.meta).toBe(15000);
   });
 });

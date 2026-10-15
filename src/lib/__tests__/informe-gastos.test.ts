@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { construirInformeSede, claveProveedor, unirNombresCortos, type GastoInforme } from "../informe-gastos";
+import { construirInformeSede, claveProveedor, unirNombresCortos, METAS, type GastoInforme } from "../informe-gastos";
 
 const g = (mes: string, categoria: string, monto: number, concepto: string, extra: Partial<GastoInforme> = {}): GastoInforme => ({
   mes, fecha: `${mes}-10`, categoria, concepto, monto, propio: monto, deExcel: true, ...extra,
@@ -111,5 +111,11 @@ describe("informe de gastos por sede", () => {
       ...cadaMes("ALQUILER", 900, "ALQUILER (PRODUCTOS SALUDABLES YAYIS)"),
     ]);
     expect(r.alertas.filter((a) => a.titulo.startsWith("Gasto nuevo")).map((a) => a.titulo)).toEqual(["Gasto nuevo: FRIGORIFICO NUEVO"]);
+  });
+});
+
+describe("las metas del semáforo", () => {
+  it("la planilla usa el tope de 25% de la regla 33-33-33 (15-oct-2026)", () => {
+    expect(METAS.planilla).toBe(25);
   });
 });
