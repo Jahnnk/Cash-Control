@@ -10,7 +10,7 @@
 
 import { SeccionDesplegable } from "@/components/productos/ui";
 import {
-  regla33, dondeFalta, ETIQUETA_TERMOMETRO, META_BLOQUE_PCT, TOPE_PLANILLA_PCT, EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT,
+  regla33, dondeFalta, ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT,
   type FilaRegla, type Termometro,
 } from "@/lib/regla-33";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
@@ -55,8 +55,8 @@ function Barra({ f }: { f: FilaRegla }) {
       </div>
       {/* Los tercios: dónde terminaría cada bloque si se cumpliera la regla. */}
       <div className="relative mt-0.5 h-2" aria-hidden>
-        <span className="absolute top-0 h-2 w-px bg-gray-400" style={marca(META_BLOQUE_PCT)} />
-        <span className="absolute top-0 h-2 w-px bg-gray-400" style={marca(META_BLOQUE_PCT * 2)} />
+        <span className="absolute top-0 h-2 w-px bg-gray-400" style={marca(f.costos!.metaPct)} />
+        <span className="absolute top-0 h-2 w-px bg-gray-400" style={marca(f.costos!.metaPct + f.fijos!.metaPct)} />
       </div>
     </div>
   );
@@ -83,7 +83,7 @@ function Tarjeta({ f, finDeMes }: { f: FilaRegla; finDeMes: string }) {
         <>
           <div className="mt-2 flex items-baseline gap-2">
             <span className={`text-2xl font-bold tabular-nums leading-none ${t ? ESTILO_TERMOMETRO[t].texto : ""}`}>{pct(f.ebitda.pct)}</span>
-            <span className="text-xs text-gray-500">de EBITDA · meta {Math.round(META_BLOQUE_PCT)}% · {f.ebitda.monto < 0 ? "−" : ""}{soles(f.ebitda.monto)}</span>
+            <span className="text-xs text-gray-500">de EBITDA · meta {Math.round(f.ebitda.metaPct)}% · {f.ebitda.monto < 0 ? "−" : ""}{soles(f.ebitda.monto)}</span>
           </div>
           <Barra f={f} />
           <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 tabular-nums">
@@ -92,6 +92,11 @@ function Tarjeta({ f, finDeMes }: { f: FilaRegla; finDeMes: string }) {
             <Punto clase="bg-emerald-600">EBITDA {pct(f.ebitda.pct)}</Punto>
           </div>
           <p className="mt-2 text-[11px] leading-snug text-gray-600">{frase(f)}</p>
+          {f.sueldoSocios > 0 && (
+            <p className="mt-1 text-[11px] leading-snug text-gray-500">
+              {f.sociosFuera ? `Sin contar el sueldo de los socios (${soles(f.sueldoSocios)}): se paga de la utilidad.` : `Incluye ${soles(f.sueldoSocios)} de sueldo de los socios, dentro de la planilla.`}
+            </p>
+          )}
           {f.planilla && (
             <p className={`mt-1 text-[11px] leading-snug ${f.planilla.pasaDelTope ? "text-amber-700" : "text-gray-500"}`}>
               Planilla {pct(f.planilla.pct)} de la venta (tope {TOPE_PLANILLA_PCT}%){f.planilla.pasaDelTope ? `: ${soles(f.planilla.monto - (f.ventas! * TOPE_PLANILLA_PCT) / 100)} sobre el tope.` : "."}
@@ -112,13 +117,13 @@ export function Regla33({ cifras, periodo }: { cifras: SeisCifras | null; period
   const finDeMes = new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
   const g = filas.find((x) => x.esGrupo);
   const resumen = g?.ebitda && g.termometro
-    ? <p className="text-xs text-gray-600">Grupo: EBITDA <b className={ESTILO_TERMOMETRO[g.termometro].texto}>{pct(g.ebitda.pct)}</b> de la venta · meta {Math.round(META_BLOQUE_PCT)}% · {ETIQUETA_TERMOMETRO[g.termometro].toLowerCase()}</p>
+    ? <p className="text-xs text-gray-600">Grupo: EBITDA <b className={ESTILO_TERMOMETRO[g.termometro].texto}>{pct(g.ebitda.pct)}</b> de la venta · meta {Math.round(g.ebitda.metaPct)}% · {ETIQUETA_TERMOMETRO[g.termometro].toLowerCase()}</p>
     : <p className="text-xs text-gray-500">Todavía sin EBITDA para {periodo}.</p>;
 
   return (
     <SeccionDesplegable
       titulo="Regla 33-33-33 · EBITDA"
-      subtitulo="De cada S/ 100 que vendes: un tercio a costos variables, un tercio a costos fijos y un tercio de EBITDA."
+      subtitulo="De cada S/ 100 que vendes: un tercio a costos variables, un tercio a costos fijos y un tercio de EBITDA (lo ajustas en Profit First)."
       resumen={resumen}
     >
       <div className="space-y-3">

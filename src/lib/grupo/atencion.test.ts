@@ -63,4 +63,13 @@ describe("necesita tu atención", () => {
     const actual = construirAtencion({ ...sinNada, presupuesto: { ...pr, mesActualSinAprobar: 2, siguienteSinAprobar: 0, diasRestantes: 16 } });
     expect(actual[0]).toMatchObject({ id: "presupuesto-mes", detalle: expect.stringContaining("2 de 3 sedes") });
   });
+  it("Profit First: la primera semana avisa cuánto toca separar de la venta del mes cerrado, con el detalle por sede", () => {
+    const sinNada = { ...base, cuadres: [], cobrosAtelier: null, sedes: [], highlightsSinAsignar: [], presupuesto: null };
+    expect(construirAtencion(sinNada)).toEqual([]);
+    const a = construirAtencion({ ...sinNada, utilidadPorSeparar: { mes: "2026-09", pct: 25, sedes: [{ sede: "Fonavi", monto: 9324 }, { sede: "Centro", monto: 3134.4 }] } });
+    expect(a).toHaveLength(1);
+    expect(a[0]).toMatchObject({ id: "utilidad", titulo: "Toca separar la utilidad de setiembre", href: "/grupo/reportes?mes=2026-09" });
+    expect(a[0].detalle).toContain("Fonavi S/9,324");
+    expect(a[0].detalle).toContain("Centro S/3,134");
+  });
 });
