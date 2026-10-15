@@ -29,6 +29,12 @@ export type CostoCarta = {
    * (lo produce Atelier), «Externo» (reventa, se compra hecho) o «Por definir» (8-oct-2026).
    */
   origen?: string | null;
+  /**
+   * Lo que cuesta en INSUMOS (lo que el coach llama food cost): la receta de la cafetería (CF-, MN-)
+   * o, si lo hace Atelier (AT-), el costo de Atelier — su `costo` es el precio interno al que se lo
+   * vende a la cafetería, que ya trae el margen de Atelier. null = no se conoce (15-oct-2026).
+   */
+  costoInsumos?: number | null;
   /** Insumos de su receta (sin empaques); `exclusivo` = ningún otro producto del Excel lo usa. */
   insumos?: InsumoCarta[] | null;
 };

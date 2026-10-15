@@ -16,6 +16,7 @@ import { CandidatosReemplazo } from "./candidatos-reemplazo";
 import { RankingPorCategoria, ReglaOchentaVeinte } from "./categorias-y-pareto";
 import { ProductosSinVenta } from "./productos-sin-venta";
 import { RentabilidadProductos } from "./rentabilidad-productos";
+import { PisoPrecios } from "./piso-precios";
 import { DatosCargados } from "./datos-cargados";
 import { ImportarReportesModal } from "./importar-reportes";
 import { VistaMes } from "@/components/productos/vista-mes";
@@ -255,6 +256,8 @@ function PestanaMes({ month, sede, onSede, onMes }: { month: string; sede: numbe
       <ReglaOchentaVeinte month={month} sede={sede} />
       {/* Precio, costo, margen y lo que deja cada producto (4-oct-2026). */}
       <RentabilidadProductos key={`rent-${sede}-${month}`} month={month} sede={sede} />
+      {/* El piso de precios: costo × 3 y margen bruto de 65–70% (15-oct-2026). */}
+      <PisoPrecios key={`piso-${sede}-${month}`} month={month} sede={sede} />
       {/* Del reporte «Platos con menor rotación» que sube dirección (28-sep-2026). */}
       <ProductosSinVenta sede={sede} />
       {/* Fonavi y Centro juntas: no depende de la sede elegida arriba (en Atelier no aplica). */}

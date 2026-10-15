@@ -28,6 +28,7 @@ import {
 } from "@/lib/productos/candidatos";
 import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
+import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
 import { CAFETERIAS, IDS_CAFETERIAS, NOMBRE_CAFETERIAS, juntarFilas, juntarRango } from "@/lib/productos/cafeterias";
 import type { VentasDelMes } from "@/lib/productos/estado-reportes";
@@ -613,16 +614,21 @@ export async function getRentabilidadProductos(mes: string, businessId: number):
   const sede = businessId === CAFETERIAS ? { id: CAFETERIAS, nombre: NOMBRE_CAFETERIAS } : SEDES.find((s) => s.id === businessId && (s.id === 2 || s.id === 3));
   if (!sede) return { ok: false, error: "Solo Fonavi y Centro tienen carta con precio al público." };
   try {
-    const [costos, vinculos, mesDatos] = await Promise.all([
+    const [costos, vinculos, mesDatos, catalogoAtelier] = await Promise.all([
       (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>)
       // Antes de la migración de origen e insumos (8-oct-2026): sin esas dos columnas.
       .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>))
       .catch(() => [] as CostoCarta[]),
       (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
       filasPara(sede.id, mes),
+      // El costo de insumos de lo que hace Atelier (recetas del sistema encima del Excel).
+      leerCatalogo(sql, 1).then((c) => c.efectivo).catch(() => []),
     ]);
     if (mesDatos.filas.length === 0 || !mesDatos.desde || !mesDatos.hasta) return { ok: true, data: null };
     const p = armarPanorama(mesDatos.filas, mesDatos.desde, mesDatos.hasta);
+    // Food cost real: lo de Atelier (AT-) al costo de Atelier; lo que se prepara en la cafetería (CF-, MN-), a su costo.
+    const insumosAtelier = new Map(catalogoAtelier.map((i) => [i.reemplaza ?? i.ref, i.costo]));
+    for (const c of costos) c.costoInsumos = c.ref.startsWith("AT-") ? (insumosAtelier.get(c.ref) ?? null) : c.costo;
     return {
       ok: true,
       data: rentabilidadDeSede({
