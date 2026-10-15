@@ -47,7 +47,7 @@ export type SedePulse = {
   flag: "atencion" | "mejor" | null;
 };
 
-function ddmm(iso: string | null) {
+export function ddmm(iso: string | null) {
   return iso ? `${iso.slice(8, 10)}/${iso.slice(5, 7)}` : "—";
 }
 
@@ -56,7 +56,7 @@ function ddmm(iso: string | null) {
  * administrador registra al día siguiente del cierre de Byte. Si falta
  * ayer o más, se avisa cuántos días faltan (Jahnn la revisa cada mañana).
  */
-function diasSinRegistrar(hasta: string | null): number | null {
+export function diasSinRegistrar(hasta: string | null): number | null {
   if (!hasta) return null;
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const dias = Math.round((Date.parse(hoy + "T12:00:00Z") - Date.parse(hasta + "T12:00:00Z")) / 86_400_000);

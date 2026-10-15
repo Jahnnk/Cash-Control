@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { barrasDelMes, notaVendidoCobrado } from "../venta-a-ganancia";
+import { barrasDelMes, notaVendidoIngresado } from "../venta-a-ganancia";
 import { cifrasDeSede } from "../seis-cifras";
 
 const sede = (businessId: number, nombre: string, o: { ventas: number | null; cobrado: number | null; corte?: string | null; gastos?: number }) =>
@@ -9,11 +9,11 @@ const sede = (businessId: number, nombre: string, o: { ventas: number | null; co
   });
 
 describe("de la venta a la ganancia", () => {
-  it("dice qué pasó entre lo vendido y lo cobrado", () => {
-    expect(notaVendidoCobrado(10000, 9990)).toMatch(/prácticamente todo/);
-    expect(notaVendidoCobrado(10000, 8700)).toMatch(/Vendiste S\/ 1,300 más de lo que cobraste/);
-    expect(notaVendidoCobrado(10000, 11200)).toMatch(/Cobraste S\/ 1,200 más de lo que vendiste/);
-    expect(notaVendidoCobrado(null, 100)).toBeNull();
+  it("dice qué pasó entre lo vendido y lo ingresado", () => {
+    expect(notaVendidoIngresado(10000, 9990)).toMatch(/prácticamente todo/);
+    expect(notaVendidoIngresado(10000, 8700)).toMatch(/Vendiste S\/ 1,300 más de lo que ingresó/);
+    expect(notaVendidoIngresado(10000, 11200)).toMatch(/Ingresaron S\/ 1,200 más de lo que vendiste/);
+    expect(notaVendidoIngresado(null, 100)).toBeNull();
   });
 
   it("ordena Fonavi, Centro, Atelier y reutiliza la ganancia de las seis cifras", () => {
@@ -33,7 +33,7 @@ describe("de la venta a la ganancia", () => {
     expect(sinGastos).toMatchObject({ conBarras: true, ganancia: null, sinGananciaPorque: "Sin gastos cargados" });
   });
 
-  it("con el mes a medias no compara lo cobrado con lo vendido", () => {
+  it("con el mes a medias no compara lo ingresado con lo vendido", () => {
     const [b] = barrasDelMes([sede(2, "Fonavi", { ventas: 3000, cobrado: 1000, corte: "2026-09-05" })]);
     expect(b.nota).toMatch(/Mes a medias/);
   });

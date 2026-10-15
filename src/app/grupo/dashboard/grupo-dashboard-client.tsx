@@ -22,7 +22,8 @@ import { fechaLarga } from "@/lib/frescura-datos";
 import type { HeroStats } from "./executive-hero";
 import { SeisCifrasPanel } from "./seis-cifras-panel";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
-import { SedePulseCard, type SedePulse } from "./sede-pulse-card";
+import { ddmm, type SedePulse } from "./sede-pulse-card";
+import { BarrasVentaAGanancia, type ExtraSede } from "../reportes/venta-a-ganancia";
 import { AtencionCard } from "./atencion-card";
 import { EstadoMes } from "./estado-mes";
 import { SeccionDesplegable } from "@/components/productos/ui";
@@ -198,6 +199,37 @@ export function GrupoDashboardClient({
 
   // ── ¿Cómo vamos? Una sola cifra de ventas (Byte, la misma de las sedes), su meta y su ritmo ──
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const diasSinRegistrar = (hasta: string | null) => hasta
+    ? Math.max(0, Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${hasta}T12:00:00Z`)) / 86_400_000) - 1) : null;
+
+  // Lo que la tarjeta de cada sede dice al pie: hasta qué día está al día, la meta y el equilibrio.
+  const extrasSede: Record<number, ExtraSede> = Object.fromEntries(pulses.map((p) => {
+    const faltan = diasSinRegistrar(p.hasta);
+    const meta = p.meta ? Math.round((p.ventasMes / p.meta) * 100) : null;
+    const eq = p.equilibrioPct !== null ? Math.round(p.equilibrioPct) : null;
+    return [p.businessId, {
+      href: `/${p.code}/dashboard`,
+      flag: p.flag === "atencion" || p.flag === "mejor" ? p.flag : null,
+      pie: (
+        <>
+          {p.hasta && (
+            <span className={`block ${faltan ? "text-amber-700" : ""}`}>
+              {faltan ? `⚠ Al día hasta el ${ddmm(p.hasta)} · ${faltan === 1 ? "falta 1 día" : `faltan ${faltan} días`}` : `✓ Al día hasta el ${ddmm(p.hasta)}`}
+            </span>
+          )}
+          {(meta !== null || eq !== null) && (
+            <span className="block">
+              {meta !== null && <>Meta de ventas: <b className="text-gray-700">{meta}%</b></>}
+              {meta !== null && eq !== null && " · "}
+              {eq !== null && <>Costos cubiertos: <b className="text-gray-700">{eq}%</b></>}
+            </span>
+          )}
+          {p.deltaPct !== null && <span className="block">Ventas vs mes pasado: <b className={p.deltaPct < 0 ? "text-red-700" : "text-emerald-700"}>{p.deltaPct > 0 ? "+" : ""}{p.deltaPct}%</b></span>}
+        </>
+      ),
+    }];
+  }));
+
   const diasDelMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const diaHoy = isCurrentMonth ? Number(hoy.slice(8, 10)) : diasDelMes;
   const metas = [1, 2, 3].map((id) => extra.metas[id] ?? null);
@@ -209,8 +241,6 @@ export function GrupoDashboardClient({
   const ganancia = textoGanancia(cg);
 
   // ── Necesita tu atención: lo que pide una acción, agrupado y ordenado ──
-  const diasSinRegistrar = (hasta: string | null) => hasta
-    ? Math.max(0, Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${hasta}T12:00:00Z`)) / 86_400_000) - 1) : null;
   const atencion = isCurrentMonth ? construirAtencion({
     hoy,
     sedes: pulses.map((p) => ({
@@ -282,7 +312,13 @@ export function GrupoDashboardClient({
 
       {pestana === "resumen" && (
         <div className="space-y-6">
-          {/* Lo primero que Jahnn mira en los Excel de finanzas: el pie de cada hoja Ing&Gtos (14-oct-2026). */}
+          {/* Lo primero (14-oct-2026): por sede, Vendido (Byte) → Ingresado (Excel) → Ganancia real. Las dos fuentes de verdad, juntas. */}
+          <section id="sedes" className="space-y-3 scroll-mt-4" aria-label="Vendido, ingresado y ganancia por sede">
+            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Por sede · {periodo.toLowerCase()}</h2>
+            <BarrasVentaAGanancia cifras={cifras} periodo={periodo} extras={extrasSede} />
+          </section>
+
+          {/* El pie de cada hoja Ing&Gtos del Excel de finanzas (14-oct-2026). */}
           <CajaExcel cifras={cifras} periodo={periodo} mesesHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
 
           {/* ¿Cómo vamos?  ·  ¿Qué necesita mi atención? */}
@@ -298,14 +334,6 @@ export function GrupoDashboardClient({
 
           {/* ¿Qué me toca a mí? Rastreador de la semana y del mes, estilo delivery (11-oct-2026). */}
           {isCurrentMonth && <TuSemanaCeo />}
-
-          {/* ¿Cómo va cada sede? — ordenadas por desempeño; cada tarjeta abre su sede */}
-          <section id="sedes" className="space-y-3 scroll-mt-4">
-            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Las sedes</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
-              {pulses.map((p) => <SedePulseCard key={p.businessId} s={p} />)}
-            </div>
-          </section>
 
           {/* El detalle, para cuando se pide (revelación progresiva) */}
           <SeccionDesplegable

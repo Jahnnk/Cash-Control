@@ -6,8 +6,10 @@
  * En Cash Control:
  *
  *   1 · Vendido        = Ventas de Byte hasta el último día con Excel.
- *   2 · Cobrado        = lo que entró de las ventas (ingresos operativos del
+ *   2 · Ingresado      = lo que entró de las ventas a banco y caja (ingresos operativos del
  *                        Excel, sin préstamos, rescates ni reembolsos).
+ *                        Antes se llamaba «Cobrado» (14-oct-2026): chocaba con «Por cobrar» y en las
+ *                        cafeterías nadie cobra después. El campo interno sigue siendo `cobrado`.
  *                        No se llama "Caja" porque la tarjeta Caja cuenta
  *                        TODO lo que entra y sale, incluido el ahorro.
  *   3 · Ganancia real  = Ventas − Costos − Gastos − Impuestos (seis cifras).
@@ -28,7 +30,7 @@ export type BarrasSede = {
   gananciaPct: number | null;
   /** Por qué falta la ganancia (null si la hay). */
   sinGananciaPorque: string | null;
-  /** Una frase sobre la distancia entre lo vendido y lo cobrado. */
+  /** Una frase sobre la distancia entre lo vendido y lo ingresado. */
   nota: string | null;
   /** La sede tiene al menos vendido y cobrado: se pueden dibujar las barras. */
   conBarras: boolean;
@@ -36,12 +38,12 @@ export type BarrasSede = {
 
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 
-export function notaVendidoCobrado(vendido: number | null, cobrado: number | null): string | null {
+export function notaVendidoIngresado(vendido: number | null, cobrado: number | null): string | null {
   if (vendido === null || cobrado === null || vendido <= 0) return null;
   const dif = vendido - cobrado;
-  if (Math.abs(dif) < vendido * 0.01) return "Cobraste prácticamente todo lo que vendiste.";
-  if (dif > 0) return `Vendiste ${soles(dif)} más de lo que cobraste: crédito por cobrar o cobros que llegan después.`;
-  return `Cobraste ${soles(-dif)} más de lo que vendiste: llegaron cobros de ventas de antes.`;
+  if (Math.abs(dif) < vendido * 0.01) return "Ingresó prácticamente todo lo que vendiste.";
+  if (dif > 0) return `Vendiste ${soles(dif)} más de lo que ingresó: crédito por cobrar o plata que llega después.`;
+  return `Ingresaron ${soles(-dif)} más de lo que vendiste: llegaron cobros de ventas de antes.`;
 }
 
 export function barrasDeSede(s: CifrasSede): BarrasSede {
@@ -50,8 +52,8 @@ export function barrasDeSede(s: CifrasSede): BarrasSede {
     vendido: s.ventas, cobrado: s.cobrado,
     ganancia: s.ganancia, gananciaPct: s.gananciaPct,
     sinGananciaPorque: s.conResultado ? null : s.sinResultadoPorque,
-    // Con el mes a medias, lo cobrado va unos días detrás de lo vendido: comparar sería engañoso.
-    nota: s.mesCompleto ? notaVendidoCobrado(s.ventas, s.cobrado) : "Mes a medias: lo cobrado suele ir unos días detrás de lo vendido.",
+    // Con el mes a medias, lo ingresado va unos días detrás de lo vendido: comparar sería engañoso.
+    nota: s.mesCompleto ? notaVendidoIngresado(s.ventas, s.cobrado) : "Mes a medias: lo ingresado suele ir unos días detrás de lo vendido.",
     conBarras: s.ventas !== null && s.ventas > 0 && s.cobrado !== null,
   };
 }

@@ -17,7 +17,6 @@ import { BandaFrescura } from "@/components/banda-frescura";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SelectorMes } from "../dashboard/selector-mes";
-import { VentaAGanancia } from "./venta-a-ganancia";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { DosMargenes } from "./dos-margenes";
 import { PuntoEquilibrio } from "./punto-equilibrio";
@@ -65,7 +64,6 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         </div>
       </header>
 
-      <VentaAGanancia cifras={cifras} periodo={periodo} />
       <DosMargenes cifras={cifras} periodo={periodo} />
       <FlujoDeCaja flujo={flujo} periodo={periodo} />
       {/* El piso de cada sede, como lo enseña el libro (5-oct-2026). */}
