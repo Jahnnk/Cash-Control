@@ -111,6 +111,10 @@ export function porQueDifieren(c: SeisCifrasLike): { sede: string; gananciaPct: 
  *                              cuotas de deuda, equipos ni la parte de otras sedes).
  *   Margen operativo         = (Ingresos − Gastos de la operación) ÷ Ingresos.
  *
+ * Las utilidades a socios de Centro (S/2,400 al mes: S/1,200 para Juani y S/1,200 para
+ * Jahnn) salen de un rescate de fondos mutuos que entra el mismo mes (Jahnn, 15-oct-2026):
+ * en la caja quedan en cero y no son ni venta ni gasto.
+ *
  * Ojo: no es la ganancia real (esa usa las ventas de Byte). Es el mismo Excel, mejor leído.
  */
 export type FilaOperativa = {
@@ -137,7 +141,7 @@ function detalleFuera(f: Fuera, otrasSedes: number): { etiqueta: string; monto: 
   const otros = f.noEsGasto - f.ahorro - f.reparto;
   return [
     { etiqueta: "ahorro a fondos mutuos", monto: f.ahorro },
-    { etiqueta: "utilidades a socios", monto: f.reparto },
+    { etiqueta: "utilidades a socios (adelanto que sale del ahorro)", monto: f.reparto },
     { etiqueta: "cuotas de deuda", monto: f.deudas },
     { etiqueta: "equipos e inversión", monto: f.inversion },
     { etiqueta: "devoluciones y préstamos entre sedes", monto: otros },
