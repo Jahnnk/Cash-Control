@@ -258,7 +258,7 @@ export function InformeGastosVista({ data }: { data: InformeGastos }) {
         <details className="group mt-1 text-xs text-gray-500 max-w-3xl">
           <summary className="cursor-pointer list-none hover:text-gray-800"><span className="group-open:hidden">¿Cómo se lee el semáforo?</span><span className="hidden group-open:inline">Ocultar</span></summary>
           <p className="mt-1 leading-relaxed">
-            Referencias del rubro para cafeterías: costo de lo vendido (Atelier + insumos + empaques) ≤ 35% de la venta, planilla ≤ 30%,
+            Referencias del rubro para cafeterías: costo de lo vendido (Atelier + insumos + empaques) ≤ 35% de la venta, planilla ≤ 25% (la regla 33-33-33),
             costo primo (la suma) ≤ 65%. Lo que salió es la misma cifra del Excel.
           </p>
         </details>

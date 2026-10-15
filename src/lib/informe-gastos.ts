@@ -14,6 +14,8 @@
  *     retraso lo distorsionan).
  *   · Metas del semáforo: referencias del rubro para cafeterías — costo de lo
  *     vendido ≤ 35% de la venta, planilla ≤ 30%, costo primo ≤ 65%.
+ *   · 15-oct-2026: la planilla baja a ≤ 25% (tope de la regla 33-33-33 de la
+ *     asesoría, lib/regla-33.ts: una sola vara en toda la app).
  *
  * Las filas son las mismas que la cifra "salió" (igual al Excel,
  * lib/totales-mes-sede.ts): los bolsillos suman exactamente eso. De un gasto
@@ -21,6 +23,7 @@
  */
 
 import { tipoDeCategoria, type TipoCategoria } from "./reglas-gasto";
+import { TOPE_PLANILLA_PCT } from "./regla-33";
 import { textoDeRegla, textoSugeridoParaRegla } from "./texto-regla";
 
 export type GastoInforme = {
@@ -128,7 +131,7 @@ export type InformeGastosSede = {
 };
 
 /** Metas del semáforo (referencias del rubro, decisión de Jahnn 25-sep-2026). */
-export const METAS: Record<ClaveIndicador, number> = { costoVendido: 35, planilla: 30, costoPrimo: 65 };
+export const METAS: Record<ClaveIndicador, number> = { costoVendido: 35, planilla: TOPE_PLANILLA_PCT, costoPrimo: 65 };
 
 /** Lo que se compra para vender: en las cafeterías, lo de Atelier + insumos + empaques. */
 export const CATEGORIAS_COSTO_VENDIDO = ["PRODUCTOS ATELIER", "INSUMOS", "PACKAGING"];

@@ -129,3 +129,73 @@ export function dondeFalta(f: FilaRegla): { llegaAlTercio: boolean; masCostos: n
     masFijos: Math.max(0, f.fijos.difMeta),
   };
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Profit First: apartar la utilidad ANTES de gastar el resto
+// ─────────────────────────────────────────────────────────────────
+
+/**
+ * Pedido de Jahnn (15-oct-2026): del EBITDA (un tercio de la venta), el 25% de la
+ * venta se aparta primero para utilidades; el resto va a impuestos y reinversión.
+ * Se mide con tres cifras por sede:
+ *
+ *   · Meta       = 25% de la venta del mes.
+ *   · La operación dejó = el EBITDA (de dónde puede salir ese 25%).
+ *   · Apartado   = lo que de verdad quedó guardado para los socios: lo que se mandó a
+ *                  fondos mutuos, menos lo que se sacó de ahí (rescates), más las
+ *                  utilidades pagadas a los socios (ese rescate las financia: sin
+ *                  sumarlas, pagar utilidades parecería «des-apartar»).
+ *
+ * Todo sale de las filas que ya clasifica el sistema (AHORRO, UTILIDADES A SOCIOS,
+ * rescates de fondos mutuos): nada nuevo que llenar.
+ */
+export const UTILIDAD_META_PCT = 25;
+
+export type EstadoApartado = "cumple" | "parcial" | "sin_apartar";
+
+export type FilaProfitFirst = {
+  etiqueta: string;
+  esGrupo: boolean;
+  corte: string | null;
+  mesCompleto: boolean;
+  sinResultadoPorque: string | null;
+  ventas: number | null;
+  /** 25% de la venta, en soles. */
+  meta: number | null;
+  /** El EBITDA: lo que dejó la operación. */
+  ebitda: number | null;
+  /** ¿La operación dejó al menos lo de la meta? */
+  operacionAlcanza: boolean | null;
+  apartado: { neto: number; pct: number; ahorro: number; rescates: number; utilidadesPagadas: number } | null;
+  estado: EstadoApartado | null;
+  /** Lo que faltó para la meta (0 si se cumplió). */
+  falta: number | null;
+};
+
+const sinNumerosPF = { ventas: null, meta: null, ebitda: null, operacionAlcanza: null, apartado: null, estado: null, falta: null } as const;
+
+function filaPF(base: Pick<FilaProfitFirst, "etiqueta" | "esGrupo" | "corte" | "mesCompleto">, r: FilaRegla, fuera: { ahorro: number; rescate: number; reparto: number }[]): FilaProfitFirst {
+  if (!r.ebitda || r.ventas === null || r.ventas <= 0) return { ...base, sinResultadoPorque: r.sinResultadoPorque ?? "Sin datos", ...sinNumerosPF };
+  const meta = r2(r.ventas * (UTILIDAD_META_PCT / 100));
+  const ahorro = r2(fuera.reduce((t, x) => t + x.ahorro, 0));
+  const rescates = r2(fuera.reduce((t, x) => t + x.rescate, 0));
+  const utilidadesPagadas = r2(fuera.reduce((t, x) => t + x.reparto, 0));
+  const neto = r2(ahorro - rescates + utilidadesPagadas);
+  const estado: EstadoApartado = neto >= meta ? "cumple" : neto > 0 ? "parcial" : "sin_apartar";
+  return {
+    ...base, sinResultadoPorque: null, ventas: r.ventas, meta, ebitda: r.ebitda.monto,
+    operacionAlcanza: r.ebitda.monto >= meta,
+    apartado: { neto, pct: r1((neto / r.ventas) * 100), ahorro, rescates, utilidadesPagadas },
+    estado, falta: r2(Math.max(0, meta - neto)),
+  };
+}
+
+/** Profit First por sede y para el Grupo (el Grupo suma solo las sedes que entran al resultado). */
+export function profitFirst(c: { sedes: CifrasSede[]; grupo: CifrasGrupo }): FilaProfitFirst[] {
+  const filas = regla33(c);
+  return filas.map((r) => {
+    const base = { etiqueta: r.etiqueta, esGrupo: r.esGrupo, corte: r.corte, mesCompleto: r.mesCompleto };
+    const sedes = r.esGrupo ? c.sedes.filter((s) => s.conResultado) : c.sedes.filter((s) => s.sede === r.etiqueta);
+    return filaPF(base, r, sedes.map((s) => s.fuera));
+  });
+}
