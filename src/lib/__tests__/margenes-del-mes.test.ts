@@ -65,7 +65,7 @@ describe("el resultado de la operación según el Excel (15-oct-2026)", () => {
     const [c] = resultadoOperativo(cifrasC);
     expect(c.detalleFuera).toEqual([
       { etiqueta: "ahorro a fondos mutuos", monto: 7200 },
-      { etiqueta: "utilidades a socios", monto: 2400 },
+      { etiqueta: "utilidades a socios (adelanto que sale del ahorro)", monto: 2400 },
       { etiqueta: "devoluciones y préstamos entre sedes", monto: 606.85 },
     ]);
     expect(c.salioFuera).toBe(10206.85);
