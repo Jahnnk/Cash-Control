@@ -24,7 +24,7 @@ const pct = (n: number) => `${n.toLocaleString("es-PE", { maximumFractionDigits:
 
 const BARRAS = [
   { clave: "vendido", n: 1, nombre: "Vendido", sub: "según Byte", color: "bg-[#004C40]", texto: "text-[#004C40]" },
-  { clave: "cobrado", n: 2, nombre: "Ingresado", sub: "a banco y caja", color: "bg-[#098B5F]", texto: "text-[#098B5F]" },
+  { clave: "cobrado", n: 2, nombre: "Ingresado", sub: "por ventas", color: "bg-[#098B5F]", texto: "text-[#098B5F]" },
   { clave: "ganancia", n: 3, nombre: "Ganancia real", sub: "después de todo", color: "bg-[#D9A441]", texto: "text-[#A7771B]" },
 ] as const;
 
@@ -80,6 +80,9 @@ function Sede({ b, extra }: { b: BarrasSede; extra?: ExtraSede }) {
               ? <p><strong className="text-gray-800">{pct(b.gananciaPct)}</strong> de lo vendido queda como ganancia.</p>
               : <p>Sin ganancia todavía: {(b.sinGananciaPorque ?? "faltan datos").toLowerCase()}.</p>}
             {b.nota && <p>{b.nota}</p>}
+            {b.otrosIngresos !== null && b.otrosIngresos >= 1 && (
+              <p>Además entraron <strong className="text-gray-700">S/ {Math.round(b.otrosIngresos).toLocaleString("es-PE")}</strong> que no son ventas (devoluciones, depósitos y filas sin grupo).</p>
+            )}
           </div>
         </>
       )}
@@ -96,7 +99,7 @@ export function BarrasVentaAGanancia({ cifras, periodo, extras }: { cifras: Seis
     <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{barras.map((b) => <Sede key={b.businessId} b={b} extra={extras?.[b.businessId]} />)}</div>
       <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
-        Vendido = ventas de Byte · Ingresado = lo que entró de esas ventas a banco y caja, según el Excel (sin préstamos, rescates ni reembolsos) · Ganancia real = ventas − costos − gastos − impuestos. Todo hasta el último día con Excel de cada sede.
+        Vendido = ventas de Byte · Ingresado = lo que entró por ventas, según el Excel (filas con Grupo «Ventas») · Ganancia real = ventas − costos − gastos − impuestos. Todo hasta el último día con Excel de cada sede.
       </p>
     </>
   );

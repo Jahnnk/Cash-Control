@@ -24,7 +24,7 @@ const dd = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
 const BARRAS = [
   { clave: "vendido", nombre: "Vendido", color: C.oscuro },
-  { clave: "cobrado", nombre: "Cobrado", color: C.verde },
+  { clave: "cobrado", nombre: "Ingresado", color: C.verde },
   { clave: "ganancia", nombre: "Ganancia real", color: C.ambar },
 ] as const;
 
@@ -39,7 +39,7 @@ function cortar(t: string, fontSize: number, ancho: number, lineas: number): str
 export function delaVentaALaGanancia(ctx: Ctx, cifras: SeisCifras) {
   const s = diapositiva(ctx.pptx, {
     titulo: "De la venta a la ganancia",
-    subtitulo: "Vendido (Byte) → cobrado (lo que entró, según el Excel) → ganancia real (tras costos, gastos e impuestos).",
+    subtitulo: "Vendido (Byte) → ingresado (lo que entró por ventas, según el Excel) → ganancia real (tras costos, gastos e impuestos).",
     periodo: ctx.periodo, derecha: "Resultados",
   });
   cajaFecha(s, mesLargo(cifras.mes), "Último mes cerrado");
