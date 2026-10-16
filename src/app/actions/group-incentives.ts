@@ -19,6 +19,7 @@
 import { neon } from "@neondatabase/serverless";
 import { equipoDelBono } from "@/lib/incentives/equipo-del-bono";
 import { resolverHorasDelMes } from "@/lib/incentives/horas-trabajadas";
+import { explicarBono, type ExplicacionBono } from "@/lib/incentives/explicacion-bono";
 import { getEntradaCandadoVentas } from "./breakeven";
 import { requireFullSession } from "@/lib/session-access";
 import { filasVentasTrabajador } from "@/lib/incentivos/ventas-trabajador-sql";
@@ -69,6 +70,8 @@ export type SedeIncentives = {
    * del piloto ("lujo de detalle", Jahnn ago-2026). Vacío si la sede
    * aún no tiene configuración del programa. */
   dailies: DailyEntry[];
+  /** «¿Por qué este monto?» — la cuenta de cada nivel en palabras simples (sin rango y con config). */
+  explicacion: ExplicacionBono | null;
 };
 
 export type GroupIncentives = {
@@ -123,6 +126,7 @@ export async function getGroupIncentives(
       let progress: IncentiveProgress | null = null;
       let ticketBase: number | null = null;
       let dailies: DailyEntry[] = [];
+      let explicacion: ExplicacionBono | null = null;
       if (cfgRows.length > 0) {
         const config: IncentiveConfigT = {
           ticketBase: cfgRows[0].base,
@@ -139,7 +143,8 @@ export async function getGroupIncentives(
         // de Fonavi decía S/489 para el mismo nivel (8-oct-2026).
         const equipo = await equipoDelBono(sql as never, bId, month);
         const horasPlanilla = new Map((equipo.deLaPlanilla ?? []).map((p) => [p.dni, p.horas]));
-        const staff = resolverHorasDelMes(equipo.staff.map((x) => ({ ...x, active: true })), horasPlanilla).staff.map((x) => ({
+        const horasResueltas = resolverHorasDelMes(equipo.staff.map((x) => ({ ...x, active: true })), horasPlanilla);
+        const staff = horasResueltas.staff.map((x) => ({
           name: x.name, jornada: x.jornada, area: x.area, horasSemanales: x.horasSemanales,
           horasMesTrabajadas: x.horasMesTrabajadas, horasMes: x.horasMesTrabajadas,
         }));
@@ -165,6 +170,14 @@ export async function getGroupIncentives(
         // de mes contra una semana diría cualquier cosa).
         const candado = config.requiereEquilibrio && !range ? await getEntradaCandadoVentas(bId, month) : null;
         progress = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, daysInWindow, candado);
+        // La explicación usa el MISMO equipo y las MISMAS cifras; no recalcula el pozo ni el colchón.
+        explicacion = range ? null : explicarBono({
+          staff: staff.map((s) => ({ ...s, active: true })),
+          levels: config.levels,
+          porNivel: progress.porNivel,
+          excluidos: equipo.excluidos.map((e) => ({ nombre: e.name, motivo: e.motivo })),
+          usaTrabajadas: horasResueltas.usaTrabajadas,
+        });
       }
 
       // Mejor vendedor por turno (mismas consultas que el Panel de Sede).
@@ -229,6 +242,7 @@ export async function getGroupIncentives(
         minMesas: MIN_MESAS,
         noElegibles,
         dailies,
+        explicacion,
       });
     }
 

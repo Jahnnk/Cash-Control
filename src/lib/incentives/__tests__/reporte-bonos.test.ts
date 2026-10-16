@@ -29,7 +29,7 @@ function sede(): GroupIncentives {
     sedes: [{
       businessId: 2, sede: "Fonavi", progress, ticketBase: 22.11, mejorVendedor: null,
       mvPeriodStart: null, mvPeriodEnd: null, ultimoRegistro: "2026-09-03", liquidado: false,
-      minMesas: 60, noElegibles: 0, dailies,
+      minMesas: 60, noElegibles: 0, dailies, explicacion: null,
     }],
   };
 }
