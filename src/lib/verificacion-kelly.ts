@@ -43,6 +43,8 @@ export type IngresoFila = {
   noOperativo: string | null;
   /** Préstamo del socio que entró por el banco (cuenta como plata que entró). */
   viaBanco?: boolean;
+  /** Kelly la puso en el Grupo «Ventas» (is_byte_sale): plata que llegó por ventas. */
+  esVenta?: boolean;
 };
 
 export type GastoFila = {
@@ -104,8 +106,25 @@ export type Verificacion = {
    * y préstamos; no es la ganancia.
    */
   margen: { sistema: number | null; excel: number | null; excelGastosPct: number | null } | null;
+  /**
+   * Mes cerrado de una cafetería: lo vendido (Byte) contra lo que llegó al banco por ventas (Grupo
+   * «Ventas» del Excel). null = mes en curso, Atelier (vende a crédito) o sin datos.
+   */
+  ventaVsBanco: { vendido: number; llego: number; difPct: number; normal: boolean } | null;
   alertas: Alerta[];
 };
+
+/**
+ * Cuánto puede separarse, en un mes cerrado, lo vendido en Byte de lo que llegó al banco por ventas.
+ * Jul–set 2026 en las cafeterías: 1.0% a 4.3% (abonos del POS que llegan después, depósitos del último
+ * día del mes, comisiones). Decisión de Jahnn (16-oct-2026): más de 5% hay que revisarlo con Kelly.
+ */
+export const TOPE_VENTA_VS_BANCO_PCT = 5;
+
+/** (vendido − llegó) ÷ vendido, en % con 1 decimal. */
+export function difVentaBanco(vendido: number, llego: number): number {
+  return Math.round(((vendido - llego) / vendido) * 1000) / 10;
+}
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const suma = <T>(xs: T[], f: (x: T) => number) => r2(xs.reduce((t, x) => t + f(x), 0));
@@ -136,6 +155,8 @@ export function verificarMes(input: {
   ventas?: FuentesVenta;
   /** Entró / salió del mes según el sistema (totales-mes-sede.ts). */
   caja?: { entro: number; salio: number };
+  /** El mes ya terminó (para el cruce de lo vendido contra lo que llegó al banco). */
+  mesCerrado?: boolean;
 }): Verificacion {
   const { foto, ingresos, gastos, sistema } = input;
   const alertas: Alerta[] = [];
@@ -310,10 +331,26 @@ export function verificarMes(input: {
   const v = input.ventas ? verificarVentas(input.ventas) : null;
   if (v) alertas.push(...v.alertas);
 
+  // ── 5 · Lo vendido contra lo que llegó al banco por ventas (solo cafeterías, mes cerrado) ──
+  // Atelier no entra: vende a crédito y cobra semanas después; ahí manda Por cobrar.
+  let ventaVsBanco: Verificacion["ventaVsBanco"] = null;
+  const llego = suma(impIn.filter((i) => i.esVenta), (i) => i.monto);
+  if (input.mesCerrado && !input.esAtelier && v && v.sistema > 0 && llego > 0) {
+    const difPct = difVentaBanco(v.sistema, llego);
+    const normal = Math.abs(difPct) <= TOPE_VENTA_VS_BANCO_PCT;
+    ventaVsBanco = { vendido: v.sistema, llego, difPct, normal };
+    if (!normal) alertas.push({
+      regla: "venta-banco",
+      titulo: `Lo vendido y lo que llegó al banco por ventas se separan ${Math.abs(difPct).toLocaleString("es-PE")}%`,
+      detalle: `Byte dice ${soles(v.sistema)} y el grupo «Ventas» del Excel ${soles(llego)}: al banco llegaron ${soles(v.sistema - llego)} ${difPct > 0 ? "menos" : "más"} de lo vendido. Lo normal en un mes cerrado es hasta ${TOPE_VENTA_VS_BANCO_PCT}%. Revisa con Kelly si falta registrar un depósito o si hay ventas en otro grupo.`,
+    });
+  }
+
   return {
     estado: alertas.length > 0 ? "alerta" : foto ? "ok" : "sin-foto",
     analisisKelly: foto?.analisis ?? null,
     margen: margenSistema !== null || margenExcel !== null ? { sistema: margenSistema, excel: margenExcel, excelGastosPct: foto?.hoja?.gastosPct ?? null } : null,
+    ventaVsBanco,
     puenteIngresos,
     puenteGastos,
     puenteVentas: v?.puente ?? null,

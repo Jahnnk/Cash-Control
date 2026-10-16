@@ -112,6 +112,12 @@ export function DetalleCuadre({ v }: { v: VerificacionSedeMes }) {
         </ul>
       )}
       <DashboardVsExcel v={v} />
+      {v.ventaVsBanco && (
+        <p className={`text-xs ${v.ventaVsBanco.normal ? "text-gray-500" : "text-red-700"}`}>
+          Vendido en Byte {formatCurrency(v.ventaVsBanco.vendido)} · llegó al banco por ventas (grupo «Ventas») {formatCurrency(v.ventaVsBanco.llego)} ·{" "}
+          <strong>{v.ventaVsBanco.difPct.toLocaleString("es-PE")}%</strong> {v.ventaVsBanco.normal ? "✓ normal (hasta 5% en un mes cerrado)" : "— más de 5%: revisar con Kelly"}
+        </p>
+      )}
       <div className="text-[11px] text-gray-500">
         Cómo se llega del Excel a los números de la operación (los que usa el punto de equilibrio) y de la venta del Excel a la del sistema:
       </div>

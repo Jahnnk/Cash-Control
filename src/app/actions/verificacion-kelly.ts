@@ -42,7 +42,7 @@ async function verificarSedeMes(b: {
   const [ingresos, gastos, fijos, sistema, ventas] = await Promise.all([
     sql`SELECT amount::float AS monto, imported_from_excel AS importado, date::text AS fecha, COALESCE(note, '') AS nota,
                is_fonavi_reimbursement AS reemb, is_special_loan AS socio, is_internal_transfer AS interna, non_operative_category AS noop,
-               loan_via_bank AS via
+               loan_via_bank AS via, is_byte_sale AS venta
         FROM bank_income_items WHERE business_id = ${b.business_id} AND date BETWEEN ${desde} AND ${hasta} AND archived = false`,
     sql`SELECT amount::float AS monto, imported_from_excel AS importado, date::text AS fecha, COALESCE(category, '') AS categoria,
                COALESCE(concept, '') AS concepto, is_shared AS compartido, atelier_amount::float AS atelier,
@@ -63,7 +63,7 @@ async function verificarSedeMes(b: {
     ingresos: (ingresos as Record<string, unknown>[]).map((r) => ({
       monto: Number(r.monto), importado: Boolean(r.importado), fecha: String(r.fecha), nota: String(r.nota),
       reembolsoEntreSedes: Boolean(r.reemb), prestamoSocio: Boolean(r.socio), transferenciaInterna: Boolean(r.interna),
-      noOperativo: (r.noop as string | null) ?? null, viaBanco: Boolean(r.via),
+      noOperativo: (r.noop as string | null) ?? null, viaBanco: Boolean(r.via), esVenta: Boolean(r.venta),
     })),
     gastos: (gastos as Record<string, unknown>[]).map((r) => ({
       monto: Number(r.monto), importado: Boolean(r.importado), fecha: String(r.fecha), categoria: String(r.categoria),
@@ -78,6 +78,7 @@ async function verificarSedeMes(b: {
     utilidadesMensuales: b.business_id === 3 ? 2400 : undefined,
     ventas,
     caja: { entro: sistema.entro, salio: sistema.salio },
+    mesCerrado: b.month < new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7),
   });
   return { ...v, businessId: b.business_id, sede: SEDES[b.business_id] ?? `Sede ${b.business_id}`, month: b.month, archivo: b.file_name, cargadoEl: b.cargado };
 }
