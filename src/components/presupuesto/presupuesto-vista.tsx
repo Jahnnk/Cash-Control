@@ -17,6 +17,7 @@ import {
   type FilaArea, type FilaPresupuesto, type FilaSede, type Semaforo,
 } from "@/lib/presupuesto";
 import { Pastilla, SeccionDesplegable } from "@/components/productos/ui";
+import { ProyeccionDelPlan } from "./proyeccion-regla";
 import { EditorPresupuesto } from "./editor-presupuesto";
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
@@ -315,6 +316,12 @@ export function Contenido({ datos, sedeFija, onIrAMes, onAbrirEditor, editor }: 
               {!sedeFija && interno > 0 && <> En el total de la empresa van {soles(interno)} que las cafeterías le pagan a Atelier: esa plata no sale de Yayi&apos;s.</>}
             </details>
           </section>
+
+          {/* La regla 33-33-33 y Profit First aplicadas al plan guardado (15-oct-2026). */}
+          <ProyeccionDelPlan
+            sedes={datos.sedes.map((s) => ({ businessId: s.businessId, sede: s.sede, venta: s.cabecera?.ventaEsperada ?? null, lineas: s.lineas }))}
+            config={datos.config} sueldoSocios={datos.sueldoSocios ?? {}} sedeFija={sedeFija} periodo={nombreMes(datos.mes)}
+          />
 
           {desvios.length > 0 && (
             <section className="bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-6">

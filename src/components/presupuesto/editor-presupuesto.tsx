@@ -17,6 +17,9 @@ import { useToast } from "@/components/toast-provider";
 import { aprobarPresupuesto, guardarPresupuesto, reenviarAControlCaja, type DatosPresupuesto, type SedePresupuesto } from "@/app/actions/presupuesto";
 import { AREAS, descripcionDe, modoPorDefecto, montoDe, sugerir, type Linea, type Modo } from "@/lib/presupuesto";
 import { Segmentado } from "@/components/productos/ui";
+import { ProyeccionRegla } from "./proyeccion-regla";
+import { proyectarPlan } from "@/lib/proyeccion-presupuesto";
+import type { ConfigProfitFirst } from "@/lib/regla-33";
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
 const mesCorto = (m: string) => MESES[Number(m.slice(5, 7)) - 1];
@@ -55,7 +58,7 @@ function cajaDe(s: SedePresupuesto, mes: string) {
   return out;
 }
 
-function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; onGuardado: () => void }) {
+function EditorSede({ s, mes, onGuardado, config, sueldoSocios }: { s: SedePresupuesto; mes: string; onGuardado: () => void; config: ConfigProfitFirst; sueldoSocios: number }) {
   const { showToast } = useToast();
   const inicial = useMemo(() => desdeLineas(s.cabecera?.ventaEsperada ?? null, s.lineas), [s]);
   const [b, setB] = useState<Borrador>(inicial);
@@ -81,6 +84,8 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
     .reduce((t, l) => t + (montoDe(l, venta) ?? 0), 0);
   const operacion = totalDe("operacion");
   const resto = totalDe("deudas") + totalDe("inversion") + totalDe("ahorro");
+  // La proyección con la regla 33-33-33 se recalcula en vivo mientras se escribe el plan.
+  const proyeccion = useMemo(() => proyectarPlan({ venta, lineas, config, sueldoSocios }), [venta, JSON.stringify(lineas), config, sueldoSocios]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const set = (c: string, x: Partial<Campos>) => setB((v) => ({ ...v, lineas: { ...v.lineas, [c]: { ...v.lineas[c], ...x } } }));
   // Llenar con lo sugerido o copiar el mes anterior no borra la parte del admin ya escrita.
@@ -179,6 +184,11 @@ function EditorSede({ s, mes, onGuardado }: { s: SedePresupuesto; mes: string; o
         ) : <>Escribe la venta esperada para ver cuánto queda después del plan.</>}
         {totalCaja > 0 && <> De todo eso, <b>{soles(totalCaja)}</b> pasan por las manos del administrador (sus topes en Control de Caja).</>}
       </div>
+
+      {/* Proyección 33-33-33 y Profit First con este plan (15-oct-2026). */}
+      {proyeccion
+        ? <ProyeccionRegla p={proyeccion} titulo={`Proyección 33-33-33 de ${s.sede}`} />
+        : <p className="text-[11px] text-gray-500">Con la venta esperada y algunas categorías verás aquí cómo queda el plan contra la regla 33-33-33 y cuánto se aparta para utilidades.</p>}
 
       <div className="flex flex-wrap items-center gap-2">
         <button type="button" onClick={async () => { if (await guardar()) onGuardado(); }} disabled={busy !== null || !sucio}
@@ -293,7 +303,7 @@ export function EditorPresupuesto({ datos, onGuardado }: { datos: DatosPresupues
       {datos.sedes.length > 1 && (
         <Segmentado tamano="sm" opciones={datos.sedes.map((x) => ({ valor: x.businessId, etiqueta: x.sede }))} valor={bId} onChange={setBId} />
       )}
-      <EditorSede key={`${s.businessId}-${datos.mes}-${s.cabecera?.actualizadoEl ?? ""}-${s.cabecera?.aprobadoEl ?? ""}`} s={s} mes={datos.mes} onGuardado={onGuardado} />
+      <EditorSede key={`${s.businessId}-${datos.mes}-${s.cabecera?.actualizadoEl ?? ""}-${s.cabecera?.aprobadoEl ?? ""}`} s={s} mes={datos.mes} onGuardado={onGuardado} config={datos.config} sueldoSocios={datos.sueldoSocios?.[s.businessId] ?? 0} />
     </div>
   );
 }

@@ -17,6 +17,9 @@ import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { gastoPorCategoria, planDe, ventasPorMes, type CabeceraPresupuesto } from "@/lib/presupuesto-datos";
 import { CATEGORIAS_PRESUPUESTABLES, montoDe, type Linea, type MesHistorial, type Modo } from "@/lib/presupuesto";
 import { controlCajaConfigurado, enviarTopes, gastoCajaMensual, type GastoCaja } from "@/lib/control-caja";
+import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
+import type { ConfigProfitFirst } from "@/lib/regla-33";
+import { getSeisCifras } from "./seis-cifras";
 
 const sql = neon(process.env.DATABASE_URL!);
 const SEDES = [{ id: 2, nombre: "Fonavi" }, { id: 3, nombre: "Centro" }, { id: 1, nombre: "Atelier" }];
@@ -57,6 +60,10 @@ export type DatosPresupuesto = {
   mes: string; hoy: string; enCurso: boolean; avanceMes: number; sedes: SedePresupuesto[];
   /** La conexión con Control de Caja: si está configurada y, si falló la lectura, por qué. */
   controlCaja: { configurado: boolean; error: string | null };
+  /** Los ajustes del CEO (25% de utilidad, EBITDA objetivo, sueldo de socios) para proyectar el plan con la regla 33-33-33. */
+  config: ConfigProfitFirst;
+  /** Por sede, el sueldo de los socios dentro de la planilla del último mes cerrado (solo si el CEO lo pasó a la utilidad; si no, 0). */
+  sueldoSocios: Record<number, number>;
 };
 
 async function datosSede(bId: number, sede: string, mes: string, hoy: string, caja: GastoCaja[] | null): Promise<SedePresupuesto> {
@@ -120,7 +127,14 @@ export async function getPresupuesto(mes: string, businessId?: number | null): P
       catch (e) { errorCaja = e instanceof Error ? e.message : String(e); console.error("[getPresupuesto] Control de Caja:", e); }
     }
     const sedes = await Promise.all(elegidas.map((s) => datosSede(s.id, s.nombre, mes, hoy, caja)));
-    return { ok: true, data: { mes, hoy, enCurso, avanceMes, sedes, controlCaja: { configurado: controlCajaConfigurado(), error: errorCaja } } };
+    // Los ajustes de Profit First: con ellos el plan se proyecta con la regla 33-33-33 (15-oct-2026).
+    const { config } = await leerConfigProfitFirst(sql as never);
+    const sueldoSocios: Record<number, number> = {};
+    if (config.sociosDeUtilidad) {
+      const c = await getSeisCifras(ultimoCerrado);
+      if (c.ok) for (const x of c.data.sedes) sueldoSocios[x.businessId] = x.sueldoSocios;
+    }
+    return { ok: true, data: { mes, hoy, enCurso, avanceMes, sedes, controlCaja: { configurado: controlCajaConfigurado(), error: errorCaja }, config, sueldoSocios } };
   } catch (e) {
     console.error("[getPresupuesto] failed:", e);
     return { ok: false, error: "No se pudo cargar el presupuesto." };
