@@ -49,7 +49,10 @@ async function verificarSedeMes(b: {
                fonavi_amount::float AS fonavi, centro_amount::float AS centro, is_special_loan AS socio, is_internal_transfer AS interna,
                payment_method AS metodo, loan_via_bank AS via
         FROM expenses WHERE business_id = ${b.business_id} AND date BETWEEN ${desde} AND ${hasta} AND archived = false`,
-    sql`SELECT c.name AS categoria, MIN(r.concept) AS concepto, SUM(r.atelier_fixed)::float AS fijo
+    // `desde` = el mes en que se fijó el monto. La regla no guarda historia: el alquiler de Atelier
+    // pasó de 1,800 a 1,700 en oct-2026 y agosto–setiembre (pagados con 1,800) no deben salir como error.
+    sql`SELECT c.name AS categoria, MIN(r.concept) AS concepto, SUM(r.atelier_fixed)::float AS fijo,
+               to_char(MAX(r.updated_at) AT TIME ZONE 'America/Lima', 'YYYY-MM') AS desde
         FROM shared_expense_rules r JOIN expense_categories c ON c.id = r.category_id
         WHERE r.active = true AND r.split_mode = 'fixed' AND r.atelier_fixed IS NOT NULL
         GROUP BY c.name`,
@@ -73,7 +76,7 @@ async function verificarSedeMes(b: {
       metodo: String(r.metodo ?? ""), viaBanco: Boolean(r.via),
     })),
     sistema: { ingresos: sistema.ingresos, gastos: sistema.gastos },
-    fijosAtelier: (fijos as { categoria: string; concepto: string; fijo: number }[]),
+    fijosAtelier: (fijos as { categoria: string; concepto: string; fijo: number; desde: string | null }[]).filter((f) => !f.desde || f.desde <= b.month),
     esAtelier: b.business_id === 1,
     utilidadesMensuales: b.business_id === 3 ? 2400 : undefined,
     ventas,
