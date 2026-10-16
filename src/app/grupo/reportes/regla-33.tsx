@@ -10,7 +10,7 @@
 
 import { SeccionDesplegable } from "@/components/productos/ui";
 import {
-  regla33, dondeFalta, ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT,
+  regla33, dondeFalta, ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, PLANILLA_SANA_MIN_PCT, EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT,
   type FilaRegla,
 } from "@/lib/regla-33";
 import { PastelRegla, PARTES, ESTILO_TERMOMETRO } from "@/components/pastel-regla";
@@ -74,7 +74,7 @@ function Tarjeta({ f, finDeMes }: { f: FilaRegla; finDeMes: string }) {
           )}
           {f.planilla && (
             <p className={`mt-1 text-[11px] leading-snug ${f.planilla.pasaDelTope ? "text-amber-700" : "text-gray-500"}`}>
-              Planilla {pct(f.planilla.pct)} de la venta (tope {TOPE_PLANILLA_PCT}%){f.planilla.pasaDelTope ? `: ${soles(f.planilla.monto - (f.ventas! * TOPE_PLANILLA_PCT) / 100)} sobre el tope.` : "."}
+              Planilla {pct(f.planilla.pct)} de la venta (sano {PLANILLA_SANA_MIN_PCT}–{TOPE_PLANILLA_PCT}%){f.planilla.pasaDelTope ? `: ${soles(f.planilla.monto - (f.ventas! * TOPE_PLANILLA_PCT) / 100)} sobre el tope.` : f.planilla.estado === "baja" ? ": por debajo de lo sano, ¿falta gente?" : "."}
             </p>
           )}
         </>

@@ -25,7 +25,7 @@
  * casillas que alguien marca (regla de Jahnn: al CEO solo lo que el sistema verifica).
  */
 
-import { dondeFalta, TOPE_PLANILLA_PCT, type FilaRegla } from "./regla-33";
+import { dondeFalta, TOPE_PLANILLA_PCT, PLANILLA_SANA_MIN_PCT, type FilaRegla } from "./regla-33";
 
 export type EstadoMotor = "verde" | "ambar" | "rojo" | "gris";
 export type ClaveMotor = "ventas" | "producto" | "fijos" | "eficiencia";
@@ -186,7 +186,7 @@ export function motoresDeSede(e: EntradaMotores): Motores {
       excesoFijos >= MINIMO_QUE_FRENA
         ? `Se pasó ${soles(excesoFijos)} de su tercio${quitaVentas >= MINIMO_QUE_FRENA ? `: ${soles(quitaVentas)} por vender menos de lo esperado y ${soles(quitaFijos)} por gastar más de lo que le toca` : ""}.`
         : "Está dentro de su tercio.",
-      planilla ? `Planilla ${pct(planilla.pct)} de la venta (tope ${TOPE_PLANILLA_PCT}%).` : "",
+      planilla ? `Planilla ${pct(planilla.pct)} de la venta (sano ${PLANILLA_SANA_MIN_PCT}–${TOPE_PLANILLA_PCT}%).` : "",
     ].filter(Boolean).join(" "),
     quita: quitaFijos,
   };

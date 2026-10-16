@@ -60,6 +60,12 @@ export function validarConfig(c: ConfigProfitFirst): string | null {
 export const META_BLOQUE_PCT = CONFIG_PROFIT_FIRST.ebitdaPct;
 /** Tope de la planilla dentro de los costos fijos (% de la venta). */
 export const TOPE_PLANILLA_PCT = 25;
+/** Método 1 del coach (planilla ÷ ventas): el rango sano es de 20% a 25%; por debajo de 20% suele faltar gente o se está pagando poco. */
+export const PLANILLA_SANA_MIN_PCT = 20;
+export type EstadoPlanilla = "baja" | "sana" | "alta";
+export function estadoPlanilla(pct: number): EstadoPlanilla {
+  return pct > TOPE_PLANILLA_PCT ? "alta" : pct >= PLANILLA_SANA_MIN_PCT ? "sana" : "baja";
+}
 /** Termómetro del EBITDA: menos de 10% = frágil; 30% o más = eficiente. */
 export const EBITDA_FRAGIL_PCT = 10;
 export const EBITDA_EFICIENTE_PCT = 30;
@@ -100,7 +106,7 @@ export type FilaRegla = {
   fijos: Bloque | null;
   ebitda: Bloque | null;
   termometro: Termometro | null;
-  planilla: { monto: number; pct: number; pasaDelTope: boolean } | null;
+  planilla: { monto: number; pct: number; pasaDelTope: boolean; estado: EstadoPlanilla } | null;
   /** El sueldo de los socios que hay dentro de la planilla (informativo). */
   sueldoSocios: number;
   /** El EBITDA ya no cuenta el sueldo de los socios (interruptor del CEO). */
@@ -126,7 +132,7 @@ function armar(ventas: number, costos: number, gastos: number, planilla: number,
     // En el EBITDA, positivo = falta para la meta.
     ebitda: { ...b, difMeta: r2(b.meta - ebitda) },
     termometro: termometroEbitda((ebitda / ventas) * 100),
-    planilla: { monto: r2(planilla), pct: r1((planilla / ventas) * 100), pasaDelTope: (planilla / ventas) * 100 > TOPE_PLANILLA_PCT },
+    planilla: { monto: r2(planilla), pct: r1((planilla / ventas) * 100), pasaDelTope: (planilla / ventas) * 100 > TOPE_PLANILLA_PCT, estado: estadoPlanilla((planilla / ventas) * 100) },
   };
 }
 

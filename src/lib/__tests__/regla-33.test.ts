@@ -4,7 +4,7 @@
  * lo que le falta a su tercio es lo que los otros dos se pasaron, y el semáforo.
  */
 import { describe, it, expect } from "vitest";
-import { regla33, dondeFalta, partesDelPastel, termometroEbitda, profitFirst, utilidadPorSeparar, validarConfig, CONFIG_PROFIT_FIRST, TOPE_PLANILLA_PCT } from "../regla-33";
+import { regla33, dondeFalta, partesDelPastel, estadoPlanilla, termometroEbitda, profitFirst, utilidadPorSeparar, validarConfig, CONFIG_PROFIT_FIRST, TOPE_PLANILLA_PCT } from "../regla-33";
 import { cifrasDeSede, cifrasDelGrupo } from "../seis-cifras";
 
 const f = (categoria: string, monto: number) => ({ categoria, propio: monto, monto });
@@ -263,5 +263,16 @@ describe("el pastel de la regla", () => {
     expect(c.largo + f.largo).toBeCloseTo(1);
     expect(e.largo).toBe(0);
     expect(f.largo).toBeCloseTo(64 / 114);
+  });
+});
+
+describe("método 1 del coach: la planilla sobre las ventas", () => {
+  it("el rango sano es de 20% a 25%: más es alta, menos es baja", () => {
+    expect([15, 19.9, 20, 25, 25.1, 38].map(estadoPlanilla)).toEqual(["baja", "baja", "sana", "sana", "alta", "alta"]);
+  });
+  it("cada fila trae el estado de su planilla", () => {
+    const [fon, cen] = regla33(cifras);
+    expect(fon.planilla?.estado).toBe("alta");   // 30%
+    expect(cen.planilla?.estado).toBe("sana");   // 6,000 ÷ 30,000 = 20%, justo en el borde de lo sano
   });
 });
