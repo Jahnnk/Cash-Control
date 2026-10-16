@@ -14,6 +14,7 @@ import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { construirInformeSede, type InformeGastosSede, type GastoInforme } from "@/lib/informe-gastos";
+import { recuperosDelPeriodo } from "@/lib/recuperos-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -48,7 +49,7 @@ export async function getInformeGastos(mesPedido?: string): Promise<{ ok: true; 
   const hasta = finDeMes(mes);
   try {
     const sedes = await Promise.all(SEDES.map(async ([bId, sede]) => {
-      const [filas, ventas] = await Promise.all([
+      const [filas, ventas, recup] = await Promise.all([
         sql`
           SELECT to_char(date, 'YYYY-MM') AS mes, date::text AS fecha, category AS categoria, concept AS concepto,
                  amount::float AS monto,
@@ -57,16 +58,23 @@ export async function getInformeGastos(mesPedido?: string): Promise<{ ok: true; 
           FROM expenses
           WHERE business_id = ${bId} AND date BETWEEN ${desde} AND ${hasta} AND archived = false
             AND is_internal_transfer = false AND (is_special_loan = false OR loan_via_bank = true)
-            AND payment_method NOT IN ('pendiente_atelier', 'socio')
+            -- 'socio': gasto real que pagó el socio (cuenta; en meses con socio el total supera lo que salió).
+            AND payment_method <> 'pendiente_atelier'
         ` as unknown as Promise<GastoInforme[]>,
         loadVentaRowsBlended(sql, bId, desde, hasta),
+        // Lo que otras sedes o personas devolvieron: resta de su categoría (una sola fuente, lib/recuperos-sql.ts).
+        recuperosDelPeriodo(sql as never, bId, desde, hasta),
       ]);
+      const gastos: GastoInforme[] = [
+        ...filas,
+        ...recup.recuperos.map((r) => ({ mes: r.fecha.slice(0, 7), fecha: r.fecha, categoria: r.categoria, concepto: r.nota, monto: 0, propio: -r.monto, deExcel: true, recupero: true })),
+      ];
       const ventasPorMes: Record<string, number | null> = {};
       for (const m of [mes, ...previos]) {
         const t = ventas.rows.filter((r) => r.date.slice(0, 7) === m).reduce((s, r) => s + r.total, 0);
         ventasPorMes[m] = t > 0 ? t : null;
       }
-      return construirInformeSede({ businessId: bId, sede, mes, mesesPrevios: previos, gastos: filas, ventasPorMes });
+      return construirInformeSede({ businessId: bId, sede, mes, mesesPrevios: previos, gastos, ventasPorMes });
     }));
     return { ok: true, data: { mes, sedes } };
   } catch (e) {

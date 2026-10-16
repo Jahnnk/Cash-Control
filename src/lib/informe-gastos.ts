@@ -38,6 +38,12 @@ export type GastoInforme = {
   propio: number;
   /** ¿Vino del Excel? Los meses registrados a mano escriben los conceptos distinto. */
   deExcel: boolean;
+  /**
+   * Devolución que resta del gasto (lib/recuperos-sql.ts): otra sede o una persona devolvió parte de un gasto
+   * que esta sede pagó entero. Va con monto 0 y propio negativo: baja su categoría y pasa al bolsillo «de otras
+   * sedes», así el total sigue igual a lo que salió. No cuenta como pago, proveedor ni gasto hormiga.
+   */
+  recupero?: boolean;
 };
 
 export type Bolsillos = {
@@ -279,14 +285,16 @@ export function construirInformeSede(input: {
   // hasta julio de 2026 ("Pago Sra Elena") y desde agosto viene del Excel
   // ("… (ELENA CUEVA)"); mezclarlos haría ver todo como "nuevo".
   const fuente = (m: string) => {
-    const gs = input.gastos.filter((g) => g.mes === m);
+    const gs = input.gastos.filter((g) => g.mes === m && !g.recupero);
     return gs.filter((g) => g.deExcel).length * 2 >= gs.length;
   };
   const comparables = previosConDatos.filter((m) => fuente(m) === fuente(mes));
-  const unidos = unirNombresCortos(input.gastos.map((g) => claveCorta(g.concepto)));
+  // Lo que se analiza pago por pago (proveedores, recurrencia, pagos grandes, hormiga) son pagos de verdad.
+  const reales = input.gastos.filter((g) => !g.recupero);
+  const unidos = unirNombresCortos(reales.map((g) => claveCorta(g.concepto)));
   const clave = (concepto: string | null) => { const k = claveCorta(concepto); return unidos.get(k) ?? k; };
   const mesesDe = new Map<string, Set<string>>();
-  for (const g of input.gastos) {
+  for (const g of reales) {
     const k = clave(g.concepto);
     if (!mesesDe.has(k)) mesesDe.set(k, new Set());
     mesesDe.get(k)!.add(g.mes);
@@ -294,7 +302,7 @@ export function construirInformeSede(input: {
   const vecesAntes = (k: string) => comparables.filter((m) => mesesDe.get(k)?.has(m)).length;
   const esRecurrente = (concepto: string | null) => vecesAntes(clave(concepto)) >= Math.min(2, comparables.length);
 
-  const pagos: PagoGrande[] = [...delMes]
+  const pagos: PagoGrande[] = delMes.filter((g) => !g.recupero)
     .sort((a, b) => b.propio - a.propio)
     .slice(0, 10)
     .map((g) => ({
@@ -304,10 +312,11 @@ export function construirInformeSede(input: {
 
   const operacionMes = delMes.filter((g) => esOperacion(tipoDeCategoria(g.categoria)));
   const totalOperacion = operacionMes.reduce((t, g) => t + g.propio, 0);
+  const operacionReal = operacionMes.filter((g) => !g.recupero);
   const provMes = new Map<string, number>();
   // Se muestra el nombre más largo con que aparece (el más completo).
   const nombreDe = new Map<string, string>();
-  for (const g of operacionMes) {
+  for (const g of operacionReal) {
     const k = clave(g.concepto);
     provMes.set(k, (provMes.get(k) ?? 0) + g.propio);
     const largo = claveProveedor(g.concepto);
@@ -317,7 +326,7 @@ export function construirInformeSede(input: {
     .map(([k, monto]) => ({ nombre: nombreDe.get(k) ?? k, monto: r2(monto), meses: [mes, ...comparables].filter((m) => mesesDe.get(k)?.has(m)).length, de: comparables.length + 1 }))
     .sort((a, b) => b.monto - a.monto)
     .slice(0, 8);
-  const recurrenteOp = comparables.length > 0 ? operacionMes.filter((g) => esRecurrente(g.concepto)).reduce((t, g) => t + g.propio, 0) : 0;
+  const recurrenteOp = comparables.length > 0 ? operacionReal.filter((g) => esRecurrente(g.concepto)).reduce((t, g) => t + g.propio, 0) : 0;
 
   const fijosYCuotas = (gs: GastoInforme[]) => gs.filter((g) => ["Fijo", "Financiamiento"].includes(tipoDeCategoria(g.categoria) ?? ""));
   const mesesPiso = [mes, ...previosConDatos];
@@ -327,7 +336,7 @@ export function construirInformeSede(input: {
     .map(([categoria, t]) => ({ categoria, promedio: r2(t / mesesPiso.length) }))
     .sort((a, b) => b.promedio - a.promedio);
 
-  const hormigas = operacionMes.filter((g) => g.propio > 0 && g.propio < HORMIGA_HASTA);
+  const hormigas = operacionReal.filter((g) => g.propio > 0 && g.propio < HORMIGA_HASTA);
   const hormigaTotal = hormigas.reduce((t, g) => t + g.propio, 0);
 
   const recurrencia: Recurrencia = {
@@ -355,7 +364,7 @@ export function construirInformeSede(input: {
     // «Gasto nuevo» es para proveedores: los sueldos no cuentan (decisión de Jahnn, 8-oct-2026). Un
     // trabajador nuevo, o uno cuyo nombre el Excel empezó a escribir completo, no es un gasto a revisar.
     const sinSueldos = new Map<string, number>();
-    for (const g of operacionMes) {
+    for (const g of operacionReal) {
       if (g.categoria === "PLANILLA") continue;
       const k = clave(g.concepto);
       sinSueldos.set(k, (sinSueldos.get(k) ?? 0) + g.propio);

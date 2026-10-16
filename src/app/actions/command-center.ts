@@ -18,6 +18,8 @@
  *    anteriores al inicio del mes vs lo gastado al corte.
  */
 
+import { recuperosOperativosPorCategoria } from "@/lib/recuperos-sql";
+import { CATEGORIAS_FUERA_DE_OPERACION } from "@/lib/reglas-gasto";
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { neon } from "@neondatabase/serverless";
@@ -115,22 +117,22 @@ export async function salesInRange(bId: number, start: string, end: string): Pro
   return Number(r.t);
 }
 
-/** Gasto OPERATIVO (porción negocio, sin categorías excluidas del EBITDA).
+/** Gasto OPERATIVO (porción negocio, sin deudas, inversión ni lo que no es gasto: la lista única, 16-oct-2026).
  *  Exportada: el Panel de Liquidez usa EXACTAMENTE el mismo cálculo para
  *  el gasto diario promedio (una sola definición de "gasto operativo"). */
 export async function opExpensesInRange(bId: number, start: string, end: string): Promise<number> {
+  // Lo que otras sedes o personas devolvieron resta del gasto operativo (una sola fuente, lib/recuperos-sql.ts).
+  const recup = recuperosOperativosPorCategoria(sqlNeon as never, bId, start, end);
   const r = (await db.execute(sql`
     SELECT COALESCE(SUM(CASE WHEN e.is_shared THEN COALESCE(e.atelier_amount, e.amount) ELSE e.amount END), 0)::float AS t
     FROM expenses e
     WHERE e.business_id = ${bId} AND e.date >= ${start} AND e.date <= ${end}
       AND e.is_special_loan = false AND e.is_internal_transfer = false AND e.archived = false
       AND e.payment_method <> 'pendiente_atelier'
-      AND e.category NOT IN (
-        SELECT name FROM expense_categories
-        WHERE business_id = ${bId} AND exclude_from_ebitda = true
-      )
+      AND e.category NOT IN (${sql.join(CATEGORIAS_FUERA_DE_OPERACION.map((c) => sql`${c}`), sql`, `)})
   `)).rows[0] as { t: number };
-  return Number(r.t);
+  const resta = [...(await recup).values()].reduce((t, x) => t + x, 0);
+  return Math.round((Number(r.t) - resta) * 100) / 100;
 }
 
 export type CommandCenterData = CommandCenterIntel & {

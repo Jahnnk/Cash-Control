@@ -12,6 +12,7 @@
  * El motor puro vive en lib/breakeven.ts.
  */
 
+import { recuperosDelPeriodo } from "@/lib/recuperos-sql";
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession, getSessionRole } from "@/lib/session-access";
@@ -186,7 +187,7 @@ async function peDelExcel(bId: number, month: string): Promise<number | null> {
  * lib/pagos-devueltos.ts (Fonavi, agosto 2026: S/3,777).
  */
 async function monthCosts(bId: number, start: string, end: string) {
-  const [rows, cats] = await Promise.all([
+  const [rows, cats, recup] = await Promise.all([
     sql`
       SELECT id::text AS id, date::text AS date, category, concept, amount::float AS bruto,
              (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS amount
@@ -199,6 +200,9 @@ async function monthCosts(bId: number, start: string, end: string) {
       SELECT name, exclude_from_ebitda, cost_group
       FROM expense_categories WHERE business_id = ${bId}
     `,
+    // Lo que otras sedes o personas devolvieron resta de su categoría (una sola fuente, lib/recuperos-sql.ts).
+    // No toca el candado del bono: ese solo mira ventas.
+    recuperosDelPeriodo(sql as never, bId, start, end),
   ]);
   const gastos = rows as { id: string; date: string; category: string; concept: string | null; bruto: number; amount: number }[];
 
@@ -216,7 +220,10 @@ async function monthCosts(bId: number, start: string, end: string) {
   }
 
   const categorias = cats as { name: string; exclude_from_ebitda: boolean; cost_group: string | null }[];
-  const cuentan = gastos.filter((r) => !devueltos.has(r.id));
+  const cuentan = [
+    ...gastos.filter((r) => !devueltos.has(r.id)),
+    ...recup.recuperos.map((r, i) => ({ id: `recupero-${i}`, date: r.fecha, category: r.categoria, concept: r.nota, bruto: 0, amount: -r.monto })),
+  ];
   // Lo comprado a Atelier, tal como entra en `variables`: el consolidado
   // del grupo lo descuenta (ver lib/ventas-internas-grupo.ts).
   const catAtelier = categorias.find((c) => c.name === CATEGORIA_COMPRA_ATELIER);

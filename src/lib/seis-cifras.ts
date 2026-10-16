@@ -50,10 +50,23 @@ export const DIA_MINIMO_RESULTADO = 10;
 import { tipoDeCategoria } from "./reglas-gasto";
 import { esSueldoDeSocio } from "./sueldo-socios";
 
-export type FilaCifras = { categoria: string; /** La parte de la sede (en un compartido, sin la de otras). */ propio: number; /** Lo que salió. */ monto: number; /** El concepto, para reconocer el sueldo de los socios dentro de PLANILLA. */ concepto?: string | null };
+export type FilaCifras = {
+  categoria: string; /** La parte de la sede (en un compartido, sin la de otras). */ propio: number; /** Lo que salió. */ monto: number;
+  /** El concepto, para reconocer el sueldo de los socios dentro de PLANILLA. */ concepto?: string | null;
+  /**
+   * Gasto real que pagó el socio de su bolsillo (método «socio»): cuenta como gasto pero NO salió de la cuenta
+   * (Atelier abr–jul 2026: alquiler de abril S/2,700, insumos de mayo…). Una sola fuente, 16-oct-2026.
+   */
+  pagadoPorSocio?: boolean;
+};
 
 /** `ahorro` y `reparto` son partes de `noEsGasto` (fondos mutuos; utilidades a socios): se muestran aparte en Caja. */
-export type FueraDeLaGanancia = { deudas: number; inversion: number; noEsGasto: number; otrasSedes: number; ahorro: number; reparto: number; /** Lo que volvió del ahorro (rescate de fondos mutuos): entró a la caja pero no es venta. */ rescate: number };
+export type FueraDeLaGanancia = {
+  deudas: number; inversion: number; noEsGasto: number; otrasSedes: number; ahorro: number; reparto: number;
+  /** Lo que volvió del ahorro (rescate de fondos mutuos): entró a la caja pero no es venta. */ rescate: number;
+  /** Gastos que pagó el socio de su bolsillo: están en el gasto, no en lo que salió (la conciliación los suma aparte). */
+  pagadoPorSocio: number;
+};
 
 /** Lo que entró a la cuenta sin ser venta ni ingreso de la operación. */
 export type IngresosFuera = {
@@ -198,6 +211,7 @@ export function cifrasDeSede(input: {
   let sueldoSocios = 0;
   let ahorro = 0;
   let reparto = 0;
+  let pagadoPorSocio = 0;
   // Lo que otra sede devolvió resta en su categoría, como una fila negativa (no toca «otras sedes»).
   const recuperos = input.recuperos ?? [];
   const filas: FilaCifras[] = [...input.filas, ...recuperos.map((r) => ({ categoria: r.categoria, concepto: r.concepto ?? null, monto: -r.monto, propio: -r.monto }))];
@@ -208,7 +222,8 @@ export function cifrasDeSede(input: {
     if (esSueldoDeSocio(f.categoria, f.concepto)) sueldoSocios += f.propio;
     if (f.categoria === "AHORRO") ahorro += f.propio;
     if (f.categoria === "UTILIDADES A SOCIOS") reparto += f.propio;
-    otrasSedes += f.monto - f.propio;
+    if (f.pagadoPorSocio) pagadoPorSocio += f.propio;
+    else otrasSedes += f.monto - f.propio;
     if (rubro === "costos") porCostos.set(f.categoria, (porCostos.get(f.categoria) ?? 0) + f.propio);
     if (rubro === "gastos") porGastos.set(f.categoria, (porGastos.get(f.categoria) ?? 0) + f.propio);
     if (f.categoria === CATEGORIA_COMPRA_ATELIER) compraAtelier += f.propio;
@@ -237,7 +252,7 @@ export function cifrasDeSede(input: {
     cobrado: input.cobrado === null || input.cobrado === undefined ? null : r2(input.cobrado),
     ingresadoVentas: input.ingresadoVentas == null ? null : r2(input.ingresadoVentas),
     otrosIngresos: input.ingresadoVentas == null || input.cobrado == null ? null : r2(Math.max(input.cobrado - input.ingresadoVentas, 0)),
-    fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0) },
+    fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0), pagadoPorSocio: r2(pagadoPorSocio) },
     compraAtelier: r2(compraAtelier),
     recuperado: r2(recuperos.reduce((t, r) => t + r.monto, 0)),
     ingresosFuera: input.ingresosFuera ?? { devolucionesSedes: 0, prestamos: 0, rescates: 0, otros: 0, devolucionesGastos: 0 },
@@ -301,6 +316,7 @@ export function cifrasDelGrupo(sedes: CifrasSede[]): CifrasGrupo {
       deudas: r2(sum((s) => s.fuera.deudas)), inversion: r2(sum((s) => s.fuera.inversion)),
       noEsGasto: r2(sum((s) => s.fuera.noEsGasto)), otrasSedes: r2(sum((s) => s.fuera.otrasSedes)),
       ahorro: r2(sum((s) => s.fuera.ahorro)), reparto: r2(sum((s) => s.fuera.reparto)), rescate: r2(sum((s) => s.fuera.rescate)),
+      pagadoPorSocio: r2(sum((s) => s.fuera.pagadoPorSocio ?? 0)),
     },
     ventasInternas: r2(internoVentas),
     provisional: conResultado.some((s) => !s.mesCompleto),

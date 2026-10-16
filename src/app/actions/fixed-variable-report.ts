@@ -1,5 +1,6 @@
 "use server";
 
+import { recuperosDelPeriodo } from "@/lib/recuperos-sql";
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
 import { buildFixedVariable, type FixedVariableReport } from "@/lib/fixed-variable";
@@ -23,7 +24,7 @@ export async function getFixedVariableMonth(month: string): Promise<FixedVariabl
   if (!/^\d{4}-\d{2}$/.test(month)) throw new Error("Mes inválido");
   const { start, end } = monthRangeOf(month);
 
-  const [rows, cats] = await Promise.all([
+  const [rows, cats, recup] = await Promise.all([
     sql`
       SELECT category,
              (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS amount
@@ -36,13 +37,15 @@ export async function getFixedVariableMonth(month: string): Promise<FixedVariabl
       SELECT name, exclude_from_ebitda, cost_group
       FROM expense_categories WHERE business_id = ${bId}
     `,
+    // Lo que otras sedes o personas devolvieron resta de su categoría (una sola fuente, lib/recuperos-sql.ts).
+    recuperosDelPeriodo(sql as never, bId, start, end),
   ]);
 
   const report = buildFixedVariable(
-    (rows as { category: string; amount: number }[]).map((r) => ({
-      category: r.category,
-      amount: Number(r.amount),
-    })),
+    [
+      ...(rows as { category: string; amount: number }[]).map((r) => ({ category: r.category, amount: Number(r.amount) })),
+      ...recup.recuperos.map((r) => ({ category: r.categoria, amount: -r.monto })),
+    ],
     (cats as { name: string; exclude_from_ebitda: boolean; cost_group: string | null }[]).map((c) => ({
       name: c.name,
       excludeFromEbitda: c.exclude_from_ebitda,

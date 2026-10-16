@@ -36,7 +36,7 @@ describe("cifras de una sede", () => {
       caja: { entro: 11000, salio: 12700, rescate: 400 },
     });
     expect(s.ganancia).toBe(10000 - 4000 - (3000 + 600));
-    expect(s.fuera).toEqual({ deudas: 1000, inversion: 800, noEsGasto: 3000, otrasSedes: 300, ahorro: 600, reparto: 2400, rescate: 400 });
+    expect(s.fuera).toEqual({ deudas: 1000, inversion: 800, noEsGasto: 3000, otrasSedes: 300, ahorro: 600, reparto: 2400, rescate: 400, pagadoPorSocio: 0 });
     expect(s.caja.flujo).toBe(-1700);
   });
 
@@ -96,5 +96,18 @@ describe("lo que otra sede devuelve se resta del gasto (16-oct-2026)", () => {
     expect(c.recuperado).toBe(282.5);
     expect(c.fuera.otrasSedes).toBe(0);
     expect(c.ganancia).toBe(Math.round((37293.99 - 3607.02 - 10314.29) * 100) / 100);
+  });
+});
+
+describe("gastos que pagó el socio de su bolsillo (una sola fuente, 16-oct-2026)", () => {
+  it("cuentan como gasto de la sede pero no como plata que salió de su cuenta", () => {
+    const c = cifrasDeSede({
+      businessId: 1, sede: "Atelier", mes: "2026-07", finDeMes: "2026-07-31", corte: "2026-07-31",
+      filas: [{ categoria: "INSUMOS", propio: 5000, monto: 5000 }, { categoria: "PERSONAL", propio: 169.47, monto: 169.47, pagadoPorSocio: true }],
+      ventas: 38511.66, caja: { entro: 0, salio: 5000 },
+    });
+    expect(c.gastos).toBe(169.47);
+    expect(c.fuera.pagadoPorSocio).toBe(169.47);
+    expect(c.fuera.otrasSedes).toBe(0);
   });
 });

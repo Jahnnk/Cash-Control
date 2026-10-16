@@ -244,8 +244,22 @@ export function clasificarGasto(concepto: string | null | undefined, proveedor?:
 const PORNOMBRE = new Map(CATEGORIAS_GASTO.map((c) => [c.nombre, c]));
 
 export function tipoDeCategoria(nombre: string): TipoCategoria | null {
+  // Pasar plata entre cuentas propias no es gasto (Centro, 11-set-2026: S/63.19 se contaban como gasto).
+  if (nombre === CATEGORIA_TRANSFERENCIA_INTERNA) return "No es gasto";
   return PORNOMBRE.get(nombre)?.tipo ?? null;
 }
+
+export const CATEGORIA_TRANSFERENCIA_INTERNA = "TRANSFERENCIA INTERNA";
+
+/**
+ * Las categorías que NO son gasto de la operación (deudas, inversión, no es gasto). Es la regla de la lista
+ * única: el gasto operativo del dashboard, del reporte ejecutivo y de la liquidez la usan en vez de la marca
+ * vieja «exclude_from_ebitda» (que dejaba fuera POR ACLARAR, que la lista única cuenta como fijo provisional).
+ */
+export const CATEGORIAS_FUERA_DE_OPERACION: string[] = [
+  ...CATEGORIAS_GASTO.filter((c) => c.tipo === "Financiamiento" || c.tipo === "Inversión" || c.tipo === "No es gasto").map((c) => c.nombre),
+  CATEGORIA_TRANSFERENCIA_INTERNA,
+];
 
 /**
  * Lo que sale del banco pero no es gasto de la operación: cuotas de

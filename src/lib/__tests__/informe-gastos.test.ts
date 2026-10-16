@@ -119,3 +119,18 @@ describe("las metas del semáforo", () => {
     expect(METAS.planilla).toBe(25);
   });
 });
+
+describe("devoluciones que restan del gasto (una sola fuente, 16-oct-2026)", () => {
+  it("bajan su categoría, pasan al bolsillo «de otras sedes» y el total sigue igual a lo que salió", () => {
+    const sin = construirInformeSede({ businessId: 2, sede: "Fonavi", mes: "2026-09", mesesPrevios: [], ventasPorMes: { "2026-09": 37000 },
+      gastos: [g("2026-09", "PLANILLA", 10596.79, "SUELDOS (VARIOS)")] });
+    const con = construirInformeSede({ businessId: 2, sede: "Fonavi", mes: "2026-09", mesesPrevios: [], ventasPorMes: { "2026-09": 37000 },
+      gastos: [g("2026-09", "PLANILLA", 10596.79, "SUELDOS (VARIOS)"), g("2026-09", "PLANILLA", 0, "REEMBOLSO POR SUELDO LUANA (SERVCIOS GASTRONOMICOS SAC)", { propio: -282.5, recupero: true })] });
+    expect(con.bolsillos.total).toBe(sin.bolsillos.total);
+    expect(con.bolsillos.fijo).toBe(Math.round((sin.bolsillos.fijo - 282.5) * 100) / 100);
+    expect(con.bolsillos.otrasSedes).toBe(282.5);
+    expect(con.categorias.find((c) => c.categoria === "PLANILLA")!.monto).toBe(10314.29);
+    // No es un pago ni un proveedor.
+    expect(con.pagos.some((p) => p.monto < 0)).toBe(false);
+  });
+});
