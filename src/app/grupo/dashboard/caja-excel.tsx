@@ -89,6 +89,11 @@ export function CajaExcel({ cifras, periodo, mesesHref }: { cifras: SeisCifras |
               ) : (
                 <p className="text-[11px] text-gray-500">Todo lo que salió es gasto del negocio.</p>
               )}
+              {f.recuperado >= 1 && (
+                <p className="text-[11px] leading-snug text-gray-600">
+                  Otras sedes le devolvieron <b className="tabular-nums text-gray-800">{formatCurrency(f.recuperado)}</b> por gastos que pagó enteros: ya está restado de sus gastos.
+                </p>
+              )}
               <p className="text-[11px] leading-snug text-gray-400">
                 Caja del Excel: entró {formatCurrency(f.entro)} · salió {formatCurrency(f.salio)}
                 {f.margenCajaPct !== null && <> · <span className="tabular-nums">{pct(f.margenCajaPct)}</span></>}

@@ -111,6 +111,11 @@ export type CifrasSede = {
   fuera: FueraDeLaGanancia;
   /** Lo que esta sede le compró a Atelier (para netear el consolidado). */
   compraAtelier: number;
+  /**
+   * Lo que otras sedes le DEVOLVIERON por gastos que esta sede pagó enteros (sueldo de Luana, aceite…):
+   * ya está restado de costos y gastos (lib/recuperos-entre-sedes.ts). 0 = nada.
+   */
+  recuperado: number;
   /** Las categorías que más pesan en cada rubro. */
   topCostos: { categoria: string; monto: number }[];
   topGastos: { categoria: string; monto: number }[];
@@ -171,6 +176,8 @@ export function cifrasDeSede(input: {
   cobrado?: number | null;
   /** Ingresos con Grupo «Ventas» hasta el corte; null = sin filas marcadas. */
   ingresadoVentas?: number | null;
+  /** Devoluciones de otras sedes que se restan del gasto, con su categoría. */
+  recuperos?: { categoria: string; monto: number; concepto?: string }[];
 }): CifrasSede {
   const sumas: Record<Rubro, number> = { costos: 0, gastos: 0, impuestos: 0, deudas: 0, inversion: 0, noEsGasto: 0 };
   const porCostos = new Map<string, number>();
@@ -181,7 +188,10 @@ export function cifrasDeSede(input: {
   let sueldoSocios = 0;
   let ahorro = 0;
   let reparto = 0;
-  for (const f of input.filas) {
+  // Lo que otra sede devolvió resta en su categoría, como una fila negativa (no toca «otras sedes»).
+  const recuperos = input.recuperos ?? [];
+  const filas: FilaCifras[] = [...input.filas, ...recuperos.map((r) => ({ categoria: r.categoria, concepto: r.concepto ?? null, monto: -r.monto, propio: -r.monto }))];
+  for (const f of filas) {
     const rubro = rubroDe(f.categoria);
     sumas[rubro] += f.propio;
     if (f.categoria === "PLANILLA") planilla += f.propio;
@@ -219,6 +229,7 @@ export function cifrasDeSede(input: {
     otrosIngresos: input.ingresadoVentas == null || input.cobrado == null ? null : r2(Math.max(input.cobrado - input.ingresadoVentas, 0)),
     fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0) },
     compraAtelier: r2(compraAtelier),
+    recuperado: r2(recuperos.reduce((t, r) => t + r.monto, 0)),
     topCostos: top(porCostos), topGastos: top(porGastos),
   };
 }

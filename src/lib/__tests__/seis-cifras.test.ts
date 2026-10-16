@@ -82,3 +82,19 @@ describe("el grupo cuenta una sola vez lo que Atelier le vende a las cafeterías
     expect(g.ganancia).toBe(3000);
   });
 });
+
+describe("lo que otra sede devuelve se resta del gasto (16-oct-2026)", () => {
+  it("Fonavi: la planilla baja en lo que Centro devuelve del sueldo de Luana, sin tocar «otras sedes»", () => {
+    const c = cifrasDeSede({
+      businessId: 2, sede: "Fonavi", mes: "2026-09", finDeMes: "2026-09-30", corte: "2026-09-30",
+      filas: [{ categoria: "PLANILLA", propio: 10596.79, monto: 10596.79 }, { categoria: "INSUMOS", propio: 3607.02, monto: 3607.02 }],
+      ventas: 37293.99, caja: { entro: 0, salio: 0 },
+      recuperos: [{ categoria: "PLANILLA", monto: 250.38 }, { categoria: "PLANILLA", monto: 32.12 }],
+    });
+    expect(c.planilla).toBe(10314.29);
+    expect(c.gastos).toBe(10314.29);
+    expect(c.recuperado).toBe(282.5);
+    expect(c.fuera.otrasSedes).toBe(0);
+    expect(c.ganancia).toBe(Math.round((37293.99 - 3607.02 - 10314.29) * 100) / 100);
+  });
+});
