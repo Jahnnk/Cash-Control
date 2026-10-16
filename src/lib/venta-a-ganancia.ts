@@ -38,7 +38,17 @@ export type BarrasSede = {
   nota: string | null;
   /** La sede tiene al menos vendido y cobrado: se pueden dibujar las barras. */
   conBarras: boolean;
+  /** Si el Excel va más adelante que Byte: la frase que lo dice (todo se midió hasta el día de Byte). */
+  avisoCorte: string | null;
 };
+
+const ddmm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
+
+/** Byte atrasado respecto del Excel: falta subir el reporte de ventas de esos días. */
+export function avisoDeCorte(corte: string | null, corteExcel: string | null): string | null {
+  if (!corte || !corteExcel || corteExcel <= corte) return null;
+  return `El Excel llega al ${ddmm(corteExcel)}, pero las ventas de Byte solo al ${ddmm(corte)}: todo se mide hasta el ${ddmm(corte)}. Falta subir el reporte de ventas de Byte.`;
+}
 
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 
@@ -59,6 +69,7 @@ export function barrasDeSede(s: CifrasSede): BarrasSede {
     // Con el mes a medias, lo ingresado va unos días detrás de lo vendido: comparar sería engañoso.
     nota: s.mesCompleto ? notaVendidoIngresado(s.ventas, s.ingresadoVentas ?? s.cobrado) : "Mes a medias: lo ingresado va unos días detrás de lo vendido (los abonos del POS llegan con retraso).",
     conBarras: s.ventas !== null && s.ventas > 0 && (s.ingresadoVentas ?? s.cobrado) !== null,
+    avisoCorte: avisoDeCorte(s.corte, s.corteExcel),
   };
 }
 

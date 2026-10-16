@@ -149,7 +149,9 @@ function detalleFuera(f: Fuera, otrasSedes: number): { etiqueta: string; monto: 
   ].map((x) => ({ ...x, monto: r2(x.monto) })).filter((x) => x.monto >= 1);
 }
 
-function operativaDeSede(s: CifrasSede): FilaOperativa {
+function operativaDeSede(sede: CifrasSede): FilaOperativa {
+  // Esta franja se compara con el Excel de Kelly: va hasta el último día del EXCEL, aunque Byte vaya atrás.
+  const s = sede.segunExcel ?? sede;
   const hay = s.conResultado && s.cobrado !== null;
   const gastos = s.costos + s.gastos + s.impuestos;
   const det = detalleFuera(s.fuera, s.fuera.otrasSedes);

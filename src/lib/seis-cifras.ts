@@ -59,8 +59,18 @@ export type CifrasSede = {
   businessId: number;
   sede: string;
   mes: string;
-  /** Último día incluido en costos y gastos (el último con Excel); null = sin Excel del mes. */
+  /**
+   * Último día incluido en ventas, costos y gastos: el último que tiene LAS DOS cosas, venta de Byte y
+   * Excel (corteComun). null = sin Excel del mes.
+   */
   corte: string | null;
+  /** Hasta dónde llega el Excel. Si es posterior a `corte`, faltan ventas de Byte de esos días. */
+  corteExcel: string | null;
+  /**
+   * Las mismas cifras cortadas en el último día del EXCEL (no en el común). Solo existe cuando los dos
+   * cortes difieren; la franja «Resultado del mes · según el Excel» la usa para cuadrar con Kelly al día.
+   */
+  segunExcel?: CifrasSede;
   /** El Excel llega hasta fin de mes (±2 días): la ganancia es la del mes, no provisional. */
   mesCompleto: boolean;
   /** Hay base para mostrar margen y ganancia (gastos cargados y mes con algo de avance). */
@@ -129,6 +139,21 @@ export function rubroDe(categoria: string): Rubro {
 const top = (m: Map<string, number>, n = 3) =>
   [...m.entries()].map(([categoria, monto]) => ({ categoria, monto: r2(monto) })).sort((a, b) => b.monto - a.monto).slice(0, n);
 
+/**
+ * El día hasta el que se mide el mes: el último que tiene venta de Byte Y Excel.
+ *
+ * Jahnn (16-oct-2026): el Excel de Atelier llegaba al 13/10 y el último reporte de Byte al 12/10; la
+ * ganancia restaba los gastos del 13 sin sumar su venta (S/2,523.92) y salía S/802 en vez de ~S/3,300.
+ * Cortando en el mismo día nunca se mezcla un día con gastos y sin venta, aunque alguien se atrase
+ * en subir un reporte. Si una sede cierra un día (domingo sin venta), sus gastos de ese día entran
+ * apenas haya una venta posterior.
+ */
+export function corteComun(corteExcel: string | null, ultimaVenta: string | null): string | null {
+  if (corteExcel === null) return null;
+  if (ultimaVenta === null) return corteExcel;
+  return ultimaVenta < corteExcel ? ultimaVenta : corteExcel;
+}
+
 export function cifrasDeSede(input: {
   businessId: number;
   sede: string;
@@ -136,6 +161,8 @@ export function cifrasDeSede(input: {
   /** Último día del mes (YYYY-MM-DD). */
   finDeMes: string;
   corte: string | null;
+  /** Último día del Excel (por defecto, el mismo `corte`). */
+  corteExcel?: string | null;
   filas: FilaCifras[];
   ventas: number | null;
   ventasPosteriores?: number;
@@ -178,7 +205,7 @@ export function cifrasDeSede(input: {
   const hayResultado = sinResultadoPorque === null;
   const ganancia = hayResultado ? r2(ventas! - costos - gastos - impuestos) : null;
   return {
-    businessId: input.businessId, sede: input.sede, mes: input.mes, corte, mesCompleto,
+    businessId: input.businessId, sede: input.sede, mes: input.mes, corte, corteExcel: input.corteExcel === undefined ? corte : input.corteExcel, mesCompleto,
     conResultado: hayResultado, sinResultadoPorque,
     ventas: ventas !== null ? r2(ventas) : null,
     ventasPosteriores: r2(input.ventasPosteriores ?? 0),

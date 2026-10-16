@@ -11,6 +11,7 @@
  * grupo para esta sede, ganancia = las seis cifras.
  */
 
+import { avisoDeCorte } from "@/lib/venta-a-ganancia";
 import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { ArrowRightLeft } from "lucide-react";
@@ -43,7 +44,8 @@ function SeisCifrasSede({ c }: { c: CifrasSede }) {
   const sin = c.sinResultadoPorque;
   return (
     <div className="space-y-3">
-      {c.corte && <p className="text-xs text-gray-500">Costos y gastos hasta el {Number(c.corte.slice(8, 10))}/{c.corte.slice(5, 7)} (último día con Excel).</p>}
+      {c.corte && <p className="text-xs text-gray-500">Ventas, costos y gastos hasta el {Number(c.corte.slice(8, 10))}/{c.corte.slice(5, 7)} (último día con venta de Byte y Excel).</p>}
+      {avisoDeCorte(c.corte, c.corteExcel) && <p className="text-xs text-amber-700">{avisoDeCorte(c.corte, c.corteExcel)}</p>}
       <div className="grid grid-cols-2 lg:grid-cols-3 gap-2.5">
         <Cifra titulo="Ventas" valor={c.ventas !== null ? soles(c.ventas) : "—"} detalle="Lo facturado: el punto de partida" />
         <Cifra titulo="Costos" valor={c.ganancia !== null ? soles(c.costos) : "—"} detalle={c.ganancia !== null ? "Lo que sube y baja con la venta" : sin ?? undefined} />
