@@ -59,3 +59,20 @@ describe("lo que NO es plata de otra sede", () => {
     expect(esReembolsoEntreSedes(undefined)).toBe(false);
   });
 });
+
+describe("pago de una sede por un costo compartido, sin la palabra «reembolso» (16-oct-2026)", () => {
+  it("la parte de Fonavi del alquiler de octubre es devolución entre sedes", () => {
+    expect(esReembolsoEntreSedes("ALQUILER OCTUBRE 2026 (EXPERIENCIAS GASTRONOMICAS YAYIS SRL) [FA VARIAS]")).toBe(true);
+    expect(esReembolsoEntreSedes("PAGO LUZ 2DO PISO (EXPERIENCIAS GASTRONOMICAS YAYIS SRL)")).toBe(true);
+    expect(esReembolsoEntreSedes("INTERNET 50% (SERVCIOS GASTRONOMICOS SAC)")).toBe(true);
+  });
+
+  it("«GASTRONOMICAS» no cuenta como «gas», y un pago por productos sigue siendo venta", () => {
+    expect(esReembolsoEntreSedes("PAGO FACTURAS PRODUCTOS (EXPERIENCIAS GASTRONOMICAS YAYIS SRL)")).toBe(false);
+    expect(esReembolsoEntreSedes("PAN Y POSTRES SEMANA 38 (SERVICIOS GASTRONOMICOS YAYIS SAC)")).toBe(false);
+  });
+
+  it("un alquiler que no paga una empresa del grupo no se toca", () => {
+    expect(esReembolsoEntreSedes("ALQUILER DE MESAS (CLIENTE EVENTO)")).toBe(false);
+  });
+});
