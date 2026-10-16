@@ -43,7 +43,7 @@ export type EstadoMesProps = {
    * La regla 33-33-33 con un pastel por cada opción (Grupo y cada sede): se escoge cuál ver. Lleva a
    * Reportes, donde están todas juntas y donde se ajusta la meta. null = aún sin resultado.
    */
-  regla?: { href: string; opciones: { etiqueta: string; fila: FilaRegla }[] } | null;
+  regla?: { href: string; opciones: { etiqueta: string; fila: FilaRegla; /** «El motor que más frena: …» (los cuatro motores del EBITDA). */ frena?: string | null }[] } | null;
 };
 
 const TONO = { bien: "text-emerald-700", ojo: "text-amber-700", mal: "text-red-700", neutro: "text-gray-900" };
@@ -149,6 +149,7 @@ function ReglaDelMes({ regla }: { regla: NonNullable<EstadoMesProps["regla"]> })
                 </li>
               ))}
             </ul>
+            {actual.frena && <p className="mt-2 text-[11px] font-medium leading-snug text-gray-800">{actual.frena}</p>}
             <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
               <Link href={regla.href} className="text-primary hover:underline">Ver la regla completa →</Link>
               <Link href={regla.href} className="text-gray-500 hover:underline" title="En Reportes → Profit First → Ajustar los porcentajes">Cambiar la meta</Link>
