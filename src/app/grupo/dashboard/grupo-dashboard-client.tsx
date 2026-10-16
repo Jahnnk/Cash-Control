@@ -29,7 +29,7 @@ import type { ResumenExtra } from "@/app/actions/resumen-grupo";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
 import { construirAtencion } from "@/lib/grupo/atencion";
 import { proyeccionSede, textoEquilibrio, textoGanancia } from "@/lib/grupo/estado-mes";
-import { regla33, ETIQUETA_TERMOMETRO } from "@/lib/regla-33";
+import { regla33 } from "@/lib/regla-33";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { ScopeCode } from "@/lib/business-theme";
 
@@ -240,14 +240,12 @@ export function GrupoDashboardClient({
   const equilibrio = textoEquilibrio(breakeven?.grupo ?? null, isCurrentMonth);
   const cg = cifras?.grupo ?? null;
   const ganancia = textoGanancia(cg);
-  // El EBITDA del grupo contra la regla 33-33-33 (la regla completa vive en Reportes).
-  const reglaGrupo = cifras ? regla33(cifras).find((x) => x.esGrupo) : undefined;
-  const ebitda = reglaGrupo?.ebitda && reglaGrupo.termometro
+  // La regla 33-33-33: Grupo primero y luego cada sede, para escoger cuál ver (la completa vive en Reportes).
+  const reglaFilas = cifras ? regla33(cifras) : [];
+  const regla = reglaFilas.some((x) => x.ebitda)
     ? {
-        pct: reglaGrupo.ebitda.pct, metaPct: Math.round(reglaGrupo.ebitda.metaPct), etiqueta: ETIQUETA_TERMOMETRO[reglaGrupo.termometro].toLowerCase(),
-        tono: ({ fragil: "mal", en_camino: "ojo", eficiente: "bien" } as const)[reglaGrupo.termometro],
         href: `/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`,
-        fila: reglaGrupo,
+        opciones: [...reglaFilas.filter((x) => x.esGrupo), ...reglaFilas.filter((x) => !x.esGrupo)].map((x) => ({ etiqueta: x.etiqueta, fila: x })),
       }
     : null;
 
@@ -328,7 +326,7 @@ export function GrupoDashboardClient({
               periodo={periodo} enCurso={isCurrentMonth} dia={diaHoy} diasDelMes={diasDelMes}
               ventas={ventasMes} deltaPct={deltaGrupo} meta={metaGrupo} proyeccion={proyeccion}
               liquidez={liquidez ? liquidez.total : null} equilibrio={equilibrio} ganancia={ganancia}
-              flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion" ebitda={ebitda}
+              flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion" regla={regla}
             />
             {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
           </div>

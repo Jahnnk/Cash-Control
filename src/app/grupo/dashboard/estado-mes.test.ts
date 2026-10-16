@@ -21,18 +21,23 @@ describe("¿Cómo vamos este mes?", () => {
     expect(html).toContain("Caja");
     expect(html).not.toContain("Liquidez");
   });
-  test("el pastel de la regla 33-33-33 del grupo: las tres partes con su meta y un enlace a Reportes", () => {
+  test("el pastel de la regla 33-33-33: el Grupo primero, con selector de sede, las tres partes en real / meta y enlace a Reportes", () => {
     const bloque = (pct: number, metaPct: number) => ({ monto: 0, pct, metaPct, meta: 0, difMeta: 0 });
+    const fila = (c: number, f: number, e: number, t: "fragil" | "en_camino" | "eficiente") => ({ costos: bloque(c, 33.3), fijos: bloque(f, 33.3), ebitda: bloque(e, 33.3), termometro: t }) as never;
+    const sinDatos = { costos: null, fijos: null, ebitda: null, termometro: null, sinResultadoPorque: "Sin gastos cargados" } as never;
     const html = renderToStaticMarkup(h(EstadoMes, {
       ...base,
-      ebitda: {
-        pct: 8.5, metaPct: 33, etiqueta: "frágil", tono: "mal", href: "/grupo/reportes",
-        fila: { costos: bloque(32.3, 33.3), fijos: bloque(59.2, 33.3), ebitda: bloque(8.5, 33.3), termometro: "fragil" },
-      },
+      regla: { href: "/grupo/reportes", opciones: [
+        { etiqueta: "Grupo", fila: fila(32.3, 59.2, 8.5, "fragil") },
+        { etiqueta: "Fonavi", fila: fila(45.9, 37.1, 17, "en_camino") },
+        { etiqueta: "Atelier", fila: sinDatos },
+      ] },
     }));
-    for (const t of ["Regla 33-33-33 · real / meta", "frágil", "Costos variables", "Costos fijos", "EBITDA", "32.3%", "59.2%", "/ 33%", "href=\"/grupo/reportes\"", "<svg"]) expect(html).toContain(t);
+    for (const t of ["Regla 33-33-33 · real / meta", "Grupo: frágil", "Costos variables", "Costos fijos", "32.3%", "59.2%", "/ 33%", "Fonavi", "Atelier", "href=\"/grupo/reportes\"", "Cambiar la meta"]) expect(html).toContain(t);
+    // Atelier no tiene resultado: su botón del selector queda deshabilitado.
+    expect(html).toMatch(/disabled=""[^>]*>Atelier</);
   });
   test("sin EBITDA (mes recién empezado) no hay pastel", () => {
-    expect(renderToStaticMarkup(h(EstadoMes, { ...base, ebitda: null }))).not.toContain("Regla 33-33-33");
+    expect(renderToStaticMarkup(h(EstadoMes, { ...base, regla: null }))).not.toContain("Regla 33-33-33");
   });
 });
