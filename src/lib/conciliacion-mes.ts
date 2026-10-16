@@ -48,6 +48,7 @@ export function conciliarSede(sede: CifrasSede, finDeMes: string): ConciliacionS
     { etiqueta: "Ventas (grupo «Ventas»)", monto: s.ingresadoVentas ?? 0 },
     { etiqueta: "Otros ingresos de la operación", monto: s.ingresadoVentas !== null ? (s.otrosIngresos ?? 0) : (s.cobrado ?? 0), nota: "Devoluciones de compras, caja chica que volvió, ventas sueltas, filas sin Grupo" },
     { etiqueta: "Devoluciones de otras sedes", monto: f.devolucionesSedes, nota: "Su parte de gastos compartidos, pagos mal hechos, cuotas de préstamo" },
+    { etiqueta: "Devoluciones de gastos (personas, caja chica)", monto: f.devolucionesGastos ?? 0, nota: "Plata que volvió de un gasto: restan del gasto, no son ingreso" },
     { etiqueta: "Préstamos recibidos", monto: f.prestamos },
     { etiqueta: "Rescates de ahorro (fondos mutuos)", monto: f.rescates },
     { etiqueta: "Otros ingresos que no son de la operación", monto: f.otros },
@@ -65,7 +66,7 @@ export function conciliarSede(sede: CifrasSede, finDeMes: string): ConciliacionS
     { etiqueta: "Equipos y remodelación (inversión)", monto: -s.fuera.inversion },
     { etiqueta: "Plata que no era de la sede", monto: -otrosNoGasto, nota: "Pagos por error, ventas de otra sede, propinas entregadas, préstamos entre sedes" },
     { etiqueta: "Parte de otras sedes en gastos compartidos", monto: -s.fuera.otrasSedes },
-    { etiqueta: "Lo que otras sedes devolvieron de gastos pagados enteros", monto: -s.recuperado },
+    { etiqueta: "Devoluciones que restan del gasto", monto: -s.recuperado, nota: "Lo que otras sedes o personas devolvieron de gastos que esta sede pagó enteros" },
   ]);
   const salioTotal = s.caja.salio;
   const salioSin = r2(salioTotal + salioLineas.reduce((t, l) => t + l.monto, 0) - egresoReal);

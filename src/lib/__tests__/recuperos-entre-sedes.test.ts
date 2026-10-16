@@ -45,3 +45,29 @@ describe("lo que otra sede devuelve se resta del gasto de quien pagó", () => {
     expect(recuperosDeOtrasSedes([dev("2026-09-30", 1200, "DEVOLUCION PRESTAMO 2DA CUOTA")], [])).toEqual([]);
   });
 });
+
+import { devolucionesDeGastos } from "../recuperos-entre-sedes";
+describe("devoluciones de personas por un gasto (auditoría abr–set)", () => {
+  it("el alquiler pagado dos veces que Kelly devolvió baja el ALQUILER; el SIS, la PLANILLA; el sueldo devuelto, la PLANILLA", () => {
+    const r = devolucionesDeGastos([
+      dev("2026-07-17", 900, "DEVOLUCIÓN POR PAGO ALQUILER (KELLY TERRONES)"),
+      dev("2026-07-17", 90, "DEVOLUCIÓN POR PAGO SIS (KELLY TERRONES)"),
+      dev("2026-04-30", 184.4, "[DEVOLUCION] DEVOLUCIÓN SUELDO TALIA"),
+    ]);
+    expect(r.map((x) => x.categoria)).toEqual(["ALQUILER", "PLANILLA", "PLANILLA"]);
+  });
+
+  it("los sobrantes y devoluciones de caja chica bajan la CAJA CHICA", () => {
+    const r = devolucionesDeGastos([dev("2026-04-20", 51, "SOBRANTE CAJA CHICA #03 (LUIS PISCO)"), dev("2026-07-31", 300, "INGRESO A EFECTIVO POR DEVOLUCION DE CAJAS CHICAS (CAJA CHICA)")]);
+    expect(r.map((x) => x.categoria)).toEqual(["CAJA CHICA", "CAJA CHICA"]);
+  });
+
+  it("no toca préstamos, ventas, créditos del personal ni lo que no se sabe de qué gasto era", () => {
+    expect(devolucionesDeGastos([
+      dev("2026-06-23", 861.65, "PAGO POR CREDITOS A PERSONAL DE ATELIER (PRODUCTOS SALUDABLES YAYIS)"),
+      dev("2026-06-30", 283.21, "DESCUADRE A FAVOR"),
+      dev("2026-09-16", 1500, "PRÉSTAMO PARA 50% ARREGLO ABATIDOR"),
+      dev("2026-09-01", 50, "DEVOLUCION VARIOS"),
+    ])).toEqual([]);
+  });
+});

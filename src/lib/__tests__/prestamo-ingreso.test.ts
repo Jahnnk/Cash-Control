@@ -43,3 +43,11 @@ describe("reparto con monto fijo: el fijo es mensual", () => {
     expect(partirMonto(300, alquiler)).toEqual({ atelier: 300, fonavi: 0, centro: 0 });
   });
 });
+
+describe("efectivo de otros meses y saldos de arranque (auditoría abr–set, 16-oct-2026)", () => {
+  it("no son ingreso de la operación del mes en que se depositan", () => {
+    expect(categoriaPrestamoIngreso("SOBRANTES EFECTIVO MAR 292.4+ABR 1799.91 + MAY 4247.16")).toBe("Otros no operativos");
+    expect(categoriaPrestamoIngreso("Saldo inicial caja efectivo - regularización histórica al 10/04/2026")).toBe("Otros no operativos");
+    expect(categoriaPrestamoIngreso("SOBRANTE CAJA CHICA #03 (LUIS PISCO)")).toBeNull();
+  });
+});

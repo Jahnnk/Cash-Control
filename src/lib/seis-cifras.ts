@@ -56,7 +56,11 @@ export type FilaCifras = { categoria: string; /** La parte de la sede (en un com
 export type FueraDeLaGanancia = { deudas: number; inversion: number; noEsGasto: number; otrasSedes: number; ahorro: number; reparto: number; /** Lo que volvió del ahorro (rescate de fondos mutuos): entró a la caja pero no es venta. */ rescate: number };
 
 /** Lo que entró a la cuenta sin ser venta ni ingreso de la operación. */
-export type IngresosFuera = { devolucionesSedes: number; prestamos: number; rescates: number; otros: number };
+export type IngresosFuera = {
+  devolucionesSedes: number; prestamos: number; rescates: number; otros: number;
+  /** Devoluciones de personas por un gasto (restan del gasto, no son ingreso): lib/recuperos-entre-sedes.ts. */
+  devolucionesGastos: number;
+};
 
 export type CifrasSede = {
   businessId: number;
@@ -236,7 +240,7 @@ export function cifrasDeSede(input: {
     fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0) },
     compraAtelier: r2(compraAtelier),
     recuperado: r2(recuperos.reduce((t, r) => t + r.monto, 0)),
-    ingresosFuera: input.ingresosFuera ?? { devolucionesSedes: 0, prestamos: 0, rescates: 0, otros: 0 },
+    ingresosFuera: input.ingresosFuera ?? { devolucionesSedes: 0, prestamos: 0, rescates: 0, otros: 0, devolucionesGastos: 0 },
     topCostos: top(porCostos), topGastos: top(porGastos),
   };
 }

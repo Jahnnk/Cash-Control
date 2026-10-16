@@ -31,6 +31,9 @@ export function categoriaPrestamoIngreso(nota: string | null | undefined): NoOpe
   const t = norm(nota);
   // Rescate de ahorros (fondos mutuos, plazo fijo): plata propia que vuelve.
   if (/\bRESCATE\b/.test(t)) return "Otros no operativos";
+  // Efectivo de ventas de OTROS meses que se guardó y se depositó después (Fonavi jun-2026: «SOBRANTES
+  // EFECTIVO MAR+ABR+MAY» S/6,339.47) y saldos de arranque: ya se vendieron (Byte) en su mes, no son de este.
+  if (/\bSOBRANTES? (DE )?EFECTIVO\b|\bSALDO INICIAL\b/.test(t)) return "Otros no operativos";
   if (!/\bPRESTAMO/.test(t)) return null;
   // Devolución de un préstamo que esta sede dio (cuota que le pagan).
   if (/^(PAGO|DEVOLUCION|CUOTA|ABONO)\b/.test(t) || /\bCUOTA\b.*\bPRESTAMO\b/.test(t)) return "Otros no operativos";
