@@ -8,11 +8,12 @@
  * ¿cubrimos los costos?, ¿estamos ganando? Nada más: el detalle vive plegado más abajo.
  */
 
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import { Delta } from "./executive-hero";
 import { PastelRegla, PARTES } from "@/components/pastel-regla";
-import type { FilaRegla } from "@/lib/regla-33";
+import { Segmentado } from "@/components/productos/ui";
+import { ETIQUETA_TERMOMETRO, type FilaRegla } from "@/lib/regla-33";
 
 const soles = (n: number) => `S/${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 
@@ -38,8 +39,11 @@ export type EstadoMesProps = {
   etiquetaVentas?: string;
   /** Detalle de la liquidez («Banco + caja hoy, las 3 sedes»). */
   detalleLiquidez?: string;
-  /** El EBITDA del grupo contra la regla 33-33-33 (null = aún sin resultado); lleva a Reportes. */
-  ebitda?: { pct: number; metaPct: number; etiqueta: string; tono: "bien" | "ojo" | "mal"; href: string; fila: Pick<FilaRegla, "costos" | "fijos" | "ebitda" | "termometro"> } | null;
+  /**
+   * La regla 33-33-33 con un pastel por cada opción (Grupo y cada sede): se escoge cuál ver. Lleva a
+   * Reportes, donde están todas juntas y donde se ajusta la meta. null = aún sin resultado.
+   */
+  regla?: { href: string; opciones: { etiqueta: string; fila: FilaRegla }[] } | null;
 };
 
 const TONO = { bien: "text-emerald-700", ojo: "text-amber-700", mal: "text-red-700", neutro: "text-gray-900" };
@@ -109,26 +113,51 @@ export function EstadoMes(p: EstadoMesProps) {
           tono={p.ganancia.valor === null ? "neutro" : p.ganancia.valor < 0 ? "mal" : "bien"} detalle={p.ganancia.detalle} />
       </div>
 
-      {p.ebitda && (
-        <Link href={p.ebitda.href} className="mt-5 flex items-center gap-4 border-t border-gray-100 pt-5 text-xs text-gray-500 hover:text-gray-800" aria-label="Ver la regla 33-33-33 en Reportes">
-          <PastelRegla f={p.ebitda.fila} className="h-24 w-24 sm:h-32 sm:w-32" />
+      {p.regla && <ReglaDelMes regla={p.regla} />}
+    </section>
+  );
+}
+
+const TONO_TERMOMETRO = { fragil: "mal", en_camino: "ojo", eficiente: "bien" } as const;
+
+/** El pastel de la regla 33-33-33, con selector de sede (Grupo por defecto). */
+function ReglaDelMes({ regla }: { regla: NonNullable<EstadoMesProps["regla"]> }) {
+  const [elegida, setElegida] = useState(regla.opciones[0]?.etiqueta ?? "");
+  const actual = regla.opciones.find((o) => o.etiqueta === elegida) ?? regla.opciones[0];
+  if (!actual) return null;
+  const f = actual.fila;
+  const t = f.termometro;
+  return (
+    <div className="mt-5 border-t border-gray-100 pt-5">
+      <div className="flex flex-wrap items-center justify-between gap-x-3 gap-y-2">
+        <span className="font-medium uppercase tracking-wider text-[10px] sm:text-[11px] text-gray-500">Regla 33-33-33 · real / meta</span>
+        <Segmentado
+          tamano="sm" valor={actual.etiqueta} onChange={setElegida}
+          opciones={regla.opciones.map((o) => ({ valor: o.etiqueta, etiqueta: o.etiqueta, deshabilitado: !o.fila.ebitda }))}
+        />
+      </div>
+      {f.ebitda && f.costos && f.fijos ? (
+        <div className="mt-4 flex items-center gap-4 text-xs text-gray-500">
+          <PastelRegla f={f} className="h-24 w-24 sm:h-32 sm:w-32" />
           <div className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-baseline gap-x-2">
-              <span className="font-medium uppercase tracking-wider text-[10px] sm:text-[11px]">Regla 33-33-33 · real / meta</span>
-              <span className={`text-sm font-semibold ${TONO[p.ebitda.tono]}`}>{p.ebitda.etiqueta}</span>
-            </div>
+            {t && <div className={`text-sm font-semibold ${TONO[TONO_TERMOMETRO[t]]}`}>{actual.etiqueta}: {ETIQUETA_TERMOMETRO[t].toLowerCase()}</div>}
             <ul className="mt-2 max-w-xs space-y-1 tabular-nums">
-              {([["costos", p.ebitda.fila.costos], ["fijos", p.ebitda.fila.fijos], ["ebitda", p.ebitda.fila.ebitda]] as const).map(([clave, b]) => b && (
+              {([["costos", f.costos], ["fijos", f.fijos], ["ebitda", f.ebitda]] as const).map(([clave, b]) => (
                 <li key={clave} className="flex items-baseline justify-between gap-2">
                   <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-gray-700"><span className={`h-2 w-2 rounded-full ${PARTES[clave].punto}`} aria-hidden />{PARTES[clave].nombre}</span>
                   <span className="whitespace-nowrap"><b className={(clave === "ebitda" ? b.pct < b.metaPct : b.pct > b.metaPct) ? "text-amber-700" : "text-emerald-700"}>{b.pct.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%</b><span className="text-gray-400"> / {Math.round(b.metaPct)}%</span></span>
                 </li>
               ))}
             </ul>
-            <div className="mt-2 text-[11px] text-primary">Ver la regla completa →</div>
+            <div className="mt-2 flex flex-wrap gap-x-3 gap-y-1 text-[11px]">
+              <Link href={regla.href} className="text-primary hover:underline">Ver la regla completa →</Link>
+              <Link href={regla.href} className="text-gray-500 hover:underline" title="En Reportes → Profit First → Ajustar los porcentajes">Cambiar la meta</Link>
+            </div>
           </div>
-        </Link>
+        </div>
+      ) : (
+        <p className="mt-3 text-xs text-gray-400">{actual.etiqueta}: {f.sinResultadoPorque ?? "sin datos"}. Todavía no hay EBITDA.</p>
       )}
-    </section>
+    </div>
   );
 }
