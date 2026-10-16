@@ -16,7 +16,7 @@ const centroSet = () => cifrasDeSede({
   recuperos: [{ categoria: "DELIVERY Y FLETES", monto: 75.5 }],
   ventas: 41336.31, caja: { entro: 43984.61, salio: 44906.85 },
   cobrado: 40207.65, ingresadoVentas: 40163.55,
-  ingresosFuera: { devolucionesSedes: 1376.96, prestamos: 0, rescates: 2400, otros: 0 },
+  ingresosFuera: { devolucionesSedes: 1376.96, prestamos: 0, rescates: 2400, otros: 0, devolucionesGastos: 0 },
 });
 
 describe("conciliación del mes (Centro, setiembre)", () => {

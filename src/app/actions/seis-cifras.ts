@@ -14,7 +14,7 @@ import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
-import { recuperosDeOtrasSedes, type DevolucionRecibida, type GastoRepartido } from "@/lib/recuperos-entre-sedes";
+import { recuperosDeOtrasSedes, devolucionesDeGastos, type DevolucionRecibida, type GastoRepartido } from "@/lib/recuperos-entre-sedes";
 import { cifrasDeSede, cifrasDelGrupo, corteComun, type IngresosFuera, type CifrasSede, type CifrasGrupo, type FilaCifras } from "@/lib/seis-cifras";
 import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
 import type { ConfigProfitFirst } from "@/lib/regla-33";
@@ -51,7 +51,19 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
             WHERE business_id = ${bId} AND imported_from_excel = true AND archived = false AND date BETWEEN ${inicio} AND ${hastaHoy}
         ) x
       `) as { corte: string | null }[];
-      const corteExcel = c[0]?.corte ?? null;
+      // Meses que se llenaron a mano (Atelier abr–jul 2026, antes del Excel): si el mes ya cerró y hay
+      // movimientos, se mide hasta el último día con datos (auditoría abr–set, 16-oct-2026).
+      let corteExcel = c[0]?.corte ?? null;
+      if (corteExcel === null && finDeMes < hoy) {
+        const man = (await sql`
+          SELECT MAX(d)::text AS corte FROM (
+            SELECT MAX(date) AS d FROM expenses WHERE business_id = ${bId} AND archived = false AND date BETWEEN ${inicio} AND ${finDeMes}
+            UNION ALL
+            SELECT MAX(date) FROM bank_income_items WHERE business_id = ${bId} AND archived = false AND date BETWEEN ${inicio} AND ${finDeMes}
+          ) x
+        `) as { corte: string | null }[];
+        corteExcel = man[0]?.corte ?? null;
+      }
       const [ventas, caja, rescates] = await Promise.all([
         loadVentaRowsBlended(sql, bId, inicio, hastaHoy),
         totalesMesSede(bId, inicio, hastaHoy),
@@ -83,7 +95,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
     bId: number, sede: string, corte: string | null, corteExcel: string | null,
     ventasRows: { date: string; total: number }[], caja: { entro: number; salio: number }, rescate: number,
   ): Promise<CifrasSede> {
-      const [filas, cobros, porVentas, devoluciones, repartidos, fueraIn] = await Promise.all([
+      const [filas, cobros, porVentas, devoluciones, repartidos, fueraIn, otrosOp] = await Promise.all([
         corte
           ? sql`
               SELECT category AS categoria, concept AS concepto, amount::float AS monto,
@@ -134,7 +146,17 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
                 AND is_internal_transfer = false AND (is_special_loan = false OR loan_via_bank = true)
             ` as unknown as Promise<IngresosFuera[]>
           : Promise.resolve([] as IngresosFuera[]),
+        // Los «otros ingresos» de la operación, para separar las devoluciones de personas por un gasto.
+        corte
+          ? sql`
+              SELECT date::text AS fecha, amount::float AS monto, COALESCE(note, '') AS nota FROM bank_income_items
+              WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${corte} AND archived = false AND is_byte_sale = false
+                AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false AND non_operative_category IS NULL
+            ` as unknown as Promise<DevolucionRecibida[]>
+          : Promise.resolve([] as DevolucionRecibida[]),
       ]);
+      const deGastos = devolucionesDeGastos(otrosOp);
+      const devGastos = Math.round(deGastos.reduce((t, r) => t + r.monto, 0) * 100) / 100;
       const tope = corte ?? hastaHoy;
       const hasta = ventasRows.filter((r) => r.date <= tope).reduce((t, r) => t + r.total, 0);
       const despues = ventasRows.filter((r) => r.date > tope).reduce((t, r) => t + r.total, 0);
@@ -142,10 +164,11 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
         businessId: bId, sede, mes, finDeMes, corte, corteExcel, filas,
         ventas: hasta > 0 ? hasta : null, ventasPosteriores: corte ? despues : 0,
         caja: { entro: caja.entro, salio: caja.salio, rescate },
-        cobrado: cobros ? cobros.ingresos : null,
+        // Las devoluciones de personas restan del gasto: dejan de ser «otros ingresos».
+        cobrado: cobros ? Math.round((cobros.ingresos - devGastos) * 100) / 100 : null,
         ingresadoVentas: porVentas[0]?.n ? porVentas[0].t : null,
-        recuperos: recuperosDeOtrasSedes(devoluciones, repartidos).map((r) => ({ categoria: r.categoria, monto: r.monto, concepto: r.nota })),
-        ingresosFuera: fueraIn[0],
+        recuperos: [...recuperosDeOtrasSedes(devoluciones, repartidos), ...deGastos].map((r) => ({ categoria: r.categoria, monto: r.monto, concepto: r.nota })),
+        ingresosFuera: fueraIn[0] ? { ...fueraIn[0], devolucionesGastos: devGastos } : undefined,
       });
   }
 }

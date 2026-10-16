@@ -59,3 +59,29 @@ export function recuperosDeOtrasSedes(devoluciones: DevolucionRecibida[], repart
   }
   return out;
 }
+
+/**
+ * Devoluciones de PERSONAS por un gasto (auditoría abr–set, 16-oct-2026): Kelly devolvió S/900 de un
+ * alquiler pagado dos veces y S/90 de un SIS (Fonavi, jul); una colaboradora devolvió sueldo; sobrantes de
+ * caja chica. Entraban como «otros ingresos» y el gasto seguía contado entero: la ganancia real (que parte
+ * de la venta de Byte, no de los ingresos) los ignoraba. Ahora restan del gasto en su categoría y salen de
+ * «otros ingresos» (si no, el resultado de la operación los contaría dos veces).
+ * Solo cuando el concepto dice que la plata VUELVE y las reglas saben de qué gasto era; si no, se queda
+ * como otro ingreso (mejor no adivinar).
+ */
+const VUELVE_GASTO = /REEMBOLS|DEVOLUCI|REINTEGRO|SOBRANTE|NO EJECUTADO/;
+const CAJA_CHICA = /CAJAS? CHICAS?/;
+
+export function devolucionesDeGastos(ingresos: DevolucionRecibida[]): Recupero[] {
+  const out: Recupero[] = [];
+  for (const d of ingresos) {
+    const t = norm(d.nota ?? "");
+    if (!(d.monto > 0) || !VUELVE_GASTO.test(t) || /PRESTAMO|VENTA|CREDITO/.test(t)) continue;
+    const cat = CAJA_CHICA.test(t)
+      ? "CAJA CHICA"
+      : clasificarGasto(t.replace(/\([^)]*\)/g, " ").replace(/\[[^\]]*\]/g, " ").replace(/REEMBOLSOS?|REEMBOLZO|DEVOLUCION(ES)?|REINTEGRO/g, " "));
+    if (cat === POR_ACLARAR) continue;
+    out.push({ fecha: d.fecha, monto: d.monto, categoria: cat, nota: d.nota });
+  }
+  return out;
+}
