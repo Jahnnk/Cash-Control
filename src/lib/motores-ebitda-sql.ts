@@ -107,6 +107,7 @@ async function senalesDeSede(s: CifrasSede, mes: string, cumplimiento: Awaited<R
       clave: "mermas", etiqueta: "Mermas",
       estado: aEstado(mermasTraffic(resumen.mermasTotal, resumen.ventasTotal || null, metas.mermasMaxPct)),
       detalle: `${resumen.mermasPct.toLocaleString("es-PE", { maximumFractionDigits: 2 })}% de la venta · meta ${r1(metas.mermasMaxPct * 100)}%`,
+      valor: resumen.mermasPct, peso: resumen.ventasTotal, meta: r1(metas.mermasMaxPct * 100),
     });
   } else out.push(gris("mermas", "Mermas", "Sin mermas registradas en el período"));
 
@@ -181,7 +182,11 @@ function senalesDelGrupo(porSede: { sede: string; senales: Senal[] }[]): Senal[]
     if (conDato.length === 0) return gris(clave, etiqueta, de[0].s.detalle);
     const peor = conDato.reduce((p, x) => (orden[x.s.estado] < orden[p.s.estado] ? x : p));
     const falla = conDato.filter((x) => x.s.estado !== "verde");
-    return { clave, etiqueta, estado: peor.s.estado, detalle: falla.length === 0 ? "En verde en todas las sedes" : falla.map((x) => `${x.sede}: ${x.s.detalle}`).join(" · ") };
+    // Las señales con número (mermas) se promedian entre sedes, pesadas por su venta.
+    const conNumero = conDato.filter((x) => x.s.valor !== null && x.s.valor !== undefined && (x.s.peso ?? 0) > 0);
+    const pesoTotal = conNumero.reduce((t, x) => t + (x.s.peso ?? 0), 0);
+    const valor = conNumero.length > 0 && pesoTotal > 0 ? conNumero.reduce((t, x) => t + (x.s.valor ?? 0) * (x.s.peso ?? 0), 0) / pesoTotal : null;
+    return { clave, etiqueta, estado: peor.s.estado, detalle: falla.length === 0 ? "En verde en todas las sedes" : falla.map((x) => `${x.sede}: ${x.s.detalle}`).join(" · "), valor: valor !== null ? r1(valor * 100) / 100 : null, peso: pesoTotal || null, meta: conNumero[0]?.s.meta ?? null };
   });
 }
 
