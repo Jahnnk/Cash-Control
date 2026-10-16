@@ -14,7 +14,7 @@ import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
-import { cifrasDeSede, cifrasDelGrupo, type CifrasSede, type CifrasGrupo, type FilaCifras } from "@/lib/seis-cifras";
+import { cifrasDeSede, cifrasDelGrupo, corteComun, type CifrasSede, type CifrasGrupo, type FilaCifras } from "@/lib/seis-cifras";
 import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
 import type { ConfigProfitFirst } from "@/lib/regla-33";
 
@@ -50,8 +50,39 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
             WHERE business_id = ${bId} AND imported_from_excel = true AND archived = false AND date BETWEEN ${inicio} AND ${hastaHoy}
         ) x
       `) as { corte: string | null }[];
-      const corte = c[0]?.corte ?? null;
-      const [filas, ventas, caja, rescates, cobros, porVentas] = await Promise.all([
+      const corteExcel = c[0]?.corte ?? null;
+      const [ventas, caja, rescates] = await Promise.all([
+        loadVentaRowsBlended(sql, bId, inicio, hastaHoy),
+        totalesMesSede(bId, inicio, hastaHoy),
+        // Rescates de fondos mutuos: entran a la caja pero es plata propia que vuelve del ahorro.
+        sql`
+          SELECT COALESCE(SUM(amount), 0)::float AS t FROM bank_income_items
+          WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${hastaHoy} AND archived = false
+            AND is_internal_transfer = false AND (is_special_loan = false OR loan_via_bank = true)
+            AND note ILIKE '%rescate%'
+        ` as unknown as Promise<{ t: number }[]>,
+      ]);
+      // Ventas y gastos se cortan el MISMO día: el último con venta de Byte y Excel (corteComun).
+      const ultimaVenta = ventas.rows.reduce<string | null>((m, r) => (r.total > 0 && (m === null || r.date > m) ? r.date : m), null);
+      const corte = corteComun(corteExcel, ultimaVenta);
+      const principal = await cifrasHasta(bId, sede, corte, corteExcel, ventas.rows, caja, rescates[0]?.t ?? 0);
+      if (corte === corteExcel) return principal;
+      // La franja «según el Excel» sigue llegando hasta el último día del Excel, para cuadrar con Kelly.
+      return { ...principal, segunExcel: await cifrasHasta(bId, sede, corteExcel, corteExcel, ventas.rows, caja, rescates[0]?.t ?? 0) };
+    }));
+    const { config, guardable } = await leerConfigProfitFirst(sql);
+    return { ok: true, data: { mes, sedes, grupo: cifrasDelGrupo(sedes), config, configGuardable: guardable } };
+  } catch (e) {
+    console.error("[getSeisCifras] failed:", e);
+    return { ok: false, error: "No se pudieron calcular las seis cifras." };
+  }
+
+  /** Las cifras de una sede con ventas, costos y gastos hasta `corte`. */
+  async function cifrasHasta(
+    bId: number, sede: string, corte: string | null, corteExcel: string | null,
+    ventasRows: { date: string; total: number }[], caja: { entro: number; salio: number }, rescate: number,
+  ): Promise<CifrasSede> {
+      const [filas, cobros, porVentas] = await Promise.all([
         corte
           ? sql`
               SELECT category AS categoria, concept AS concepto, amount::float AS monto,
@@ -62,15 +93,6 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
                 AND payment_method NOT IN ('pendiente_atelier', 'socio')
             ` as unknown as Promise<FilaCifras[]>
           : Promise.resolve([] as FilaCifras[]),
-        loadVentaRowsBlended(sql, bId, inicio, hastaHoy),
-        totalesMesSede(bId, inicio, hastaHoy),
-        // Rescates de fondos mutuos: entran a la caja pero es plata propia que vuelve del ahorro.
-        sql`
-          SELECT COALESCE(SUM(amount), 0)::float AS t FROM bank_income_items
-          WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${hastaHoy} AND archived = false
-            AND is_internal_transfer = false AND (is_special_loan = false OR loan_via_bank = true)
-            AND note ILIKE '%rescate%'
-        ` as unknown as Promise<{ t: number }[]>,
         // Lo cobrado de las ventas: ingresos operativos hasta el mismo corte que ventas y gastos.
         corte ? totalesMesSede(bId, inicio, corte) : Promise.resolve(null),
         // Lo que entró POR VENTAS: las filas con Grupo «Ventas» del Excel (is_byte_sale), hasta el corte.
@@ -84,20 +106,14 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
           : Promise.resolve([] as { n: number; t: number }[]),
       ]);
       const tope = corte ?? hastaHoy;
-      const hasta = ventas.rows.filter((r) => r.date <= tope).reduce((t, r) => t + r.total, 0);
-      const despues = ventas.rows.filter((r) => r.date > tope).reduce((t, r) => t + r.total, 0);
+      const hasta = ventasRows.filter((r) => r.date <= tope).reduce((t, r) => t + r.total, 0);
+      const despues = ventasRows.filter((r) => r.date > tope).reduce((t, r) => t + r.total, 0);
       return cifrasDeSede({
-        businessId: bId, sede, mes, finDeMes, corte, filas,
+        businessId: bId, sede, mes, finDeMes, corte, corteExcel, filas,
         ventas: hasta > 0 ? hasta : null, ventasPosteriores: corte ? despues : 0,
-        caja: { entro: caja.entro, salio: caja.salio, rescate: rescates[0]?.t ?? 0 },
+        caja: { entro: caja.entro, salio: caja.salio, rescate },
         cobrado: cobros ? cobros.ingresos : null,
         ingresadoVentas: porVentas[0]?.n ? porVentas[0].t : null,
       });
-    }));
-    const { config, guardable } = await leerConfigProfitFirst(sql);
-    return { ok: true, data: { mes, sedes, grupo: cifrasDelGrupo(sedes), config, configGuardable: guardable } };
-  } catch (e) {
-    console.error("[getSeisCifras] failed:", e);
-    return { ok: false, error: "No se pudieron calcular las seis cifras." };
   }
 }

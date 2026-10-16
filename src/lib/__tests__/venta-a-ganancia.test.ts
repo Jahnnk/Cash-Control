@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
-import { barrasDelMes, notaVendidoIngresado } from "../venta-a-ganancia";
-import { cifrasDeSede } from "../seis-cifras";
+import { avisoDeCorte, barrasDelMes, notaVendidoIngresado } from "../venta-a-ganancia";
+import { cifrasDeSede, corteComun } from "../seis-cifras";
 
 const sede = (businessId: number, nombre: string, o: { ventas: number | null; cobrado: number | null; corte?: string | null; gastos?: number; ingresadoVentas?: number | null }) =>
   cifrasDeSede({
@@ -50,5 +50,19 @@ describe("de la venta a la ganancia", () => {
     const [b] = barrasDelMes([sede(1, "Atelier", { ventas: 10000, cobrado: 9500, ingresadoVentas: null })]);
     expect(b.cobrado).toBe(9500);
     expect(b.otrosIngresos).toBeNull();
+  });
+
+  it("ventas y gastos se cortan el MISMO día: el último con venta de Byte y Excel", () => {
+    // Atelier 16-oct: Excel al 13/10, Byte al 12/10 → todo hasta el 12/10.
+    expect(corteComun("2026-10-13", "2026-10-12")).toBe("2026-10-12");
+    // Byte más adelante que el Excel → manda el Excel (no hay gastos de esos días).
+    expect(corteComun("2026-10-13", "2026-10-15")).toBe("2026-10-13");
+    expect(corteComun(null, "2026-10-12")).toBeNull();
+    expect(corteComun("2026-10-13", null)).toBe("2026-10-13");
+  });
+
+  it("si el Excel va adelante de Byte, la tarjeta lo dice y pide subir el reporte", () => {
+    expect(avisoDeCorte("2026-10-12", "2026-10-13")).toMatch(/Excel llega al 13\/10.*Byte solo al 12\/10.*Falta subir/);
+    expect(avisoDeCorte("2026-10-13", "2026-10-13")).toBeNull();
   });
 });

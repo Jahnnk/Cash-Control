@@ -80,6 +80,7 @@ function Sede({ b, extra }: { b: BarrasSede; extra?: ExtraSede }) {
               ? <p><strong className="text-gray-800">{pct(b.gananciaPct)}</strong> de lo vendido queda como ganancia.</p>
               : <p>Sin ganancia todavía: {(b.sinGananciaPorque ?? "faltan datos").toLowerCase()}.</p>}
             {b.nota && <p>{b.nota}</p>}
+            {b.avisoCorte && <p className="text-amber-700">{b.avisoCorte}</p>}
             {b.otrosIngresos !== null && b.otrosIngresos >= 1 && (
               <p>Además entraron <strong className="text-gray-700">S/ {Math.round(b.otrosIngresos).toLocaleString("es-PE")}</strong> que no son ventas (devoluciones, depósitos y filas sin grupo).</p>
             )}
@@ -99,7 +100,7 @@ export function BarrasVentaAGanancia({ cifras, periodo, extras }: { cifras: Seis
     <>
       <div className="grid grid-cols-1 md:grid-cols-3 gap-4">{barras.map((b) => <Sede key={b.businessId} b={b} extra={extras?.[b.businessId]} />)}</div>
       <p className="mt-3 text-[11px] text-gray-400 leading-relaxed">
-        Vendido = ventas de Byte · Ingresado = lo que entró por ventas, según el Excel (filas con Grupo «Ventas») · Ganancia real = ventas − costos − gastos − impuestos. Todo hasta el último día con Excel de cada sede.
+        Vendido = ventas de Byte · Ingresado = lo que entró por ventas, según el Excel (filas con Grupo «Ventas») · Ganancia real = ventas − costos − gastos − impuestos. Todo hasta el último día que tiene venta de Byte y Excel en cada sede.
       </p>
     </>
   );
