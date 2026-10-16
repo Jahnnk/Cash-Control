@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { analizarEquilibrio, curvaEquilibrio, simular, ESCENARIO_BASE, type BaseEquilibrio } from "./equilibrio";
+import { analizarEquilibrio, curvaEquilibrio, simular, pisoDiario, ESCENARIO_BASE, type BaseEquilibrio } from "./equilibrio";
 
 // Ejemplo del libro: Cafetería «El Grano». Fijos 3,200; precio promedio por venta 8.50; costo variable 3.20; vende 7,500.
 const elGrano: BaseEquilibrio = { fijos: 3200, varRatio: 3.2 / 8.5, ventas: 7500, ticket: 8.5, diasDelMes: 30, financiamiento: 0 };
@@ -136,5 +136,50 @@ describe("¿y si…? (los cuatro usos del libro)", () => {
     const s = simular(elGrano, { ...ESCENARIO_BASE, costoVariablePct: 200 });
     expect(s.despues.estado).toBe("sin-margen");
     expect(s.frases.some((f) => /no hay volumen que alcance/.test(f))).toBe(true);
+  });
+});
+
+describe("el piso diario de la asesoría (15-oct-2026)", () => {
+  it("el ejemplo del coach: ventas proyectadas S/57,000, fijos S/19,000 y food cost S/19,000 → S/1,266.67 por día", () => {
+    const p = pisoDiario({ fijos: 19000, varRatio: 1 / 3, ventasEsperadas: 57000 });
+    expect(p).toMatchObject({ fijos: 19000, foodCost: 19000, mes: 38000, dia: 1266.67 });
+  });
+
+  it("el sueldo de los socios sale de los fijos solo si el CEO lo pasó a la utilidad", () => {
+    const base = { fijos: 19000, varRatio: 1 / 3, ventasEsperadas: 57000, sueldoSocios: 1000 };
+    expect(pisoDiario(base)!.mes).toBe(38000);
+    const fuera = pisoDiario({ ...base, sociosFuera: true })!;
+    expect(fuera).toMatchObject({ fijos: 18000, mes: 37000, sociosFuera: 1000 });
+  });
+
+  it("sin fijos, sin venta esperada o con un % de variables imposible no hay piso", () => {
+    expect(pisoDiario({ fijos: 0, varRatio: 0.3, ventasEsperadas: 1000 })).toBeNull();
+    expect(pisoDiario({ fijos: 1000, varRatio: 0.3, ventasEsperadas: 0 })).toBeNull();
+    expect(pisoDiario({ fijos: 1000, varRatio: NaN, ventasEsperadas: 1000 })).toBeNull();
+  });
+
+  it("en el análisis: cuánto sobra o falta contra el piso, en tickets y con las cuotas", () => {
+    const a = analizarEquilibrio({ fijos: 19000, varRatio: 1 / 3, ventas: 57000, ticket: 19, diasDelMes: 30, financiamiento: 2000 });
+    expect(a.piso?.mes).toBe(38000);
+    expect(a.estadoPiso).toBe("sobre");
+    expect(a.sobrePiso).toBe(19000);
+    expect(a.sobrePisoPct).toBe(33.3);
+    expect(a.pisoVentas).toBe(2000);
+    expect(a.pisoVentasDia).toBe(66.7);
+    expect(a.pisoConDeudas).toBe(40000);
+  });
+
+  it("vende menos que el piso: debajo, aunque el cálculo del libro aún lo vea sobre su punto de equilibrio", () => {
+    // Fijos 19,000, variables 33%: el libro pide 28,500; el piso del coach (con las compras del mes), 38,000.
+    const a = analizarEquilibrio({ fijos: 19000, varRatio: 1 / 3, ventas: 30000, ticket: null, diasDelMes: 30, financiamiento: 0, ventasEsperadas: 57000 });
+    expect(a.estado).toBe("sobre");
+    expect(a.estadoPiso).toBe("debajo");
+    expect(a.sobrePiso).toBe(-8000);
+  });
+
+  it("la venta esperada define el food cost, no la venta real del mes", () => {
+    const a = analizarEquilibrio({ fijos: 10000, varRatio: 0.4, ventas: 5000, ticket: null, diasDelMes: 30, financiamiento: 0, ventasEsperadas: 30000 });
+    expect(a.piso?.foodCost).toBe(12000);
+    expect(a.piso?.mes).toBe(22000);
   });
 });

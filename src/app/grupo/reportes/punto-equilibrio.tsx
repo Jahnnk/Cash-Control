@@ -23,17 +23,17 @@ const COL = { ingresos: "#098B5F", costos: "#C0392B", fijos: "#4A7FB5" };
 
 // ── La frase de arriba ──────────────────────────────────────────────────
 function Lectura({ d, a }: { d: EquilibrioSede; a: AnalisisEquilibrio }) {
-  if (a.pe === null) return null;
-  const quien = d.sede;
+  const p = a.piso;
+  if (!p || a.sobrePiso === null || a.sobrePisoPct === null) return null;
   const cuando = d.enCurso ? (d.ventasBase === "proyeccion" ? "Al ritmo de este mes cerraría en" : "En un mes normal vende") : `En ${nombreMes(d.mes)} vendió`;
   const ventas = d.base!.ventas;
   return (
     <p className="text-[15px] leading-relaxed text-gray-900">
-      <b>{quien}</b> necesita vender <b>{soles(a.pe)}</b> al mes ({soles(a.peDia!)} por día) para no perder plata.{" "}
+      <b>{d.sede}</b> necesita vender <b>{soles(p.dia)} por día</b> ({soles(p.mes)} al mes) para cubrir sus costos fijos y sus compras de insumos.{" "}
       {cuando} <b>{soles(ventas)}</b>:{" "}
-      {a.estado === "sobre"
-        ? <><span className="text-emerald-700 font-semibold">{soles(a.margenSeguridad!)} por encima</span>. Sus ventas podrían caer un {dec(a.margenSeguridadPct!)}% antes de empezar a perder.</>
-        : <><span className="text-red-700 font-semibold">{soles(a.margenSeguridad!)} por debajo</span>: {d.enCurso ? "va camino a perder" : "perdió"} unos {soles(a.utilidad!)} en el mes.</>}
+      {a.estadoPiso === "sobre"
+        ? <><span className="text-emerald-700 font-semibold">{soles(a.sobrePiso)} por encima</span> del piso ({dec(a.sobrePisoPct)}% de lo vendido): eso es lo que le queda antes de impuestos.</>
+        : <><span className="text-red-700 font-semibold">{soles(a.sobrePiso)} por debajo</span> del piso: {d.enCurso ? "va camino a no cubrir" : "no cubrió"} sus costos.</>}
     </p>
   );
 }
@@ -52,17 +52,41 @@ function Cifra({ titulo, valor, detalle, tono = "gris" }: { titulo: string; valo
 
 function Cifras({ d, a }: { d: EquilibrioSede; a: AnalisisEquilibrio }) {
   const u = d.unidad;
+  const p = a.piso;
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-      <Cifra titulo="Piso del mes" valor={a.pe === null ? "—" : soles(a.pe)} detalle={a.peDia === null ? "" : `${soles(a.peDia)} por día · el mínimo para no perder`} />
-      <Cifra titulo={u === "pedidos" ? "Pedidos necesarios" : "Ventas necesarias"} valor={a.peVentas === null ? "—" : `${num(a.peVentas)} al mes`}
-        detalle={a.peVentasDia === null ? "Sin reporte de ventas de Byte para contarlas" : `${dec(a.peVentasDia)} por día · ${d.enCurso ? "hoy" : "hizo"} ${dec(a.ventasDia ?? 0)} por día`} />
-      <Cifra titulo="Margen de seguridad" valor={a.margenSeguridadPct === null ? "—" : `${a.margenSeguridadPct > 0 ? "+" : ""}${dec(a.margenSeguridadPct)}%`}
-        tono={a.margenSeguridad === null ? "gris" : a.margenSeguridad >= 0 ? "verde" : "rojo"}
-        detalle={a.margenSeguridad === null ? "" : a.margenSeguridad >= 0 ? `${soles(a.margenSeguridad)} que las ventas pueden caer antes de perder` : `Faltan ${soles(a.margenSeguridad)} de ventas para cubrir los costos`} />
+      <Cifra titulo="Piso diario" valor={p ? soles(p.dia) : "—"} detalle={p ? `(${soles(p.fijos)} de fijos + ${soles(p.foodCost)} de insumos) ÷ 30 = ${soles(p.mes)} al mes` : ""} />
+      <Cifra titulo={u === "pedidos" ? "Pedidos necesarios" : "Ventas necesarias"} valor={a.pisoVentas === null ? "—" : `${num(a.pisoVentas)} al mes`}
+        detalle={a.pisoVentasDia === null ? "Sin reporte de ventas de Byte para contarlas" : `${dec(a.pisoVentasDia)} por día · ${d.enCurso ? "hoy" : "hizo"} ${dec(a.ventasDia ?? 0)} por día`} />
+      <Cifra titulo="Sobre el piso" valor={a.sobrePisoPct === null ? "—" : `${a.sobrePisoPct > 0 ? "+" : ""}${dec(a.sobrePisoPct)}%`}
+        tono={a.sobrePiso === null ? "gris" : a.sobrePiso >= 0 ? "verde" : "rojo"}
+        detalle={a.sobrePiso === null ? "" : a.sobrePiso >= 0 ? `${soles(a.sobrePiso)} que las ventas pueden caer antes de no cubrir los costos` : `Faltan ${soles(a.sobrePiso)} de ventas para cubrir los costos`} />
       {d.enCurso
         ? <Cifra titulo="Piso estable" valor={d.referencia ? soles(d.referencia.pe) : "—"} detalle={d.referencia ? `Promedio de los ${d.referencia.meses.length} meses cerrados` : "Sin meses cerrados"} />
-        : <Cifra titulo="Incluyendo deudas" valor={a.peConDeudas === null ? "—" : soles(a.peConDeudas)} detalle={`Para pagar también las cuotas de préstamos y tarjetas (${soles(d.base!.financiamiento)} en el mes)`} />}
+        : <Cifra titulo="Incluyendo deudas" valor={a.pisoConDeudas === null ? "—" : soles(a.pisoConDeudas)} detalle={`Para pagar también las cuotas de préstamos y tarjetas (${soles(d.base!.financiamiento)} en el mes)`} />}
+    </div>
+  );
+}
+
+/** «Cómo se calcula el piso diario»: la fórmula de la asesoría con los números de la sede. */
+function ComoSeCalculaPiso({ d, a }: { d: EquilibrioSede; a: AnalisisEquilibrio }) {
+  const p = a.piso;
+  if (!p) return null;
+  const b = d.base!;
+  const fuente = d.fuenteEsperada === "presupuesto" ? "la meta de ventas del presupuesto aprobado"
+    : d.fuenteEsperada === "tipica" ? `la venta típica de los ${d.referencia?.meses.length ?? "últimos"} meses cerrados (todavía no hay presupuesto aprobado)`
+    : `lo que de verdad vendió en ${nombreMes(d.mes)}`;
+  return (
+    <div className="space-y-2 text-xs leading-relaxed text-gray-700">
+      <p className="rounded-md bg-gray-50 px-3 py-2 text-[12px] text-gray-800">
+        Piso diario = (costos fijos + food cost proyectado) ÷ 30 = ({soles(p.fijos)} + {soles(p.foodCost)}) ÷ 30 = <b>{soles(p.dia)}</b>
+      </p>
+      <ul className="space-y-1">
+        <li><b>Costos fijos {soles(p.fijos)}:</b> planilla, alquiler, servicios{d.enCurso ? " (promedio de los meses cerrados)" : ""}.{" "}
+          {p.sociosFuera > 0 ? `No incluye el sueldo de los socios (${soles(p.sociosFuera)}): se paga de la utilidad.` : b.sueldoSocios && b.sueldoSocios > 0 ? `Incluye ${soles(b.sueldoSocios)} del sueldo de los socios (se puede sacar en Reportes → Profit First).` : ""}</li>
+        <li><b>Food cost proyectado {soles(p.foodCost)}:</b> el {dec(b.varRatio * 100)}% que de verdad te cuestan las compras, sobre una venta esperada de {soles(p.ventasEsperadas)} ({fuente}). No depende del ritmo del mes: si dependiera, el piso subiría al vender más.</li>
+        <li><b>÷ 30:</b> reparte el mes en una meta diaria de caja.</li>
+      </ul>
     </div>
   );
 }
@@ -342,8 +366,8 @@ export function VistaPuntoEquilibrio({ datos, periodo, abiertaAlInicio = false, 
         {SEDES.map((s) => {
           const x = datos[s.id];
           const an = x?.base ? analizarEquilibrio(x.base) : null;
-          if (!an || an.margenSeguridadPct === null) return <Pastilla key={s.id} tono="gris">{s.nombre}: sin datos</Pastilla>;
-          return <Pastilla key={s.id} tono={an.estado === "sobre" ? "verde" : "rojo"}>{s.nombre}: {an.estado === "sobre" ? "✓" : "✕"} {dec(Math.abs(an.margenSeguridadPct))}% {an.estado === "sobre" ? "sobre" : "debajo de"} su piso</Pastilla>;
+          if (!an || an.sobrePisoPct === null || !an.piso) return <Pastilla key={s.id} tono="gris">{s.nombre}: sin datos</Pastilla>;
+          return <Pastilla key={s.id} tono={an.estadoPiso === "sobre" ? "verde" : "rojo"}>{s.nombre}: {an.estadoPiso === "sobre" ? "✓" : "✕"} piso {soles(an.piso.dia)}/día · {dec(Math.abs(an.sobrePisoPct))}% {an.estadoPiso === "sobre" ? "sobre" : "debajo"}</Pastilla>;
         })}
       </div>
     );
@@ -351,8 +375,8 @@ export function VistaPuntoEquilibrio({ datos, periodo, abiertaAlInicio = false, 
   return (
     <SeccionDesplegable
       abiertaAlInicio={abiertaAlInicio}
-      titulo="Punto de equilibrio"
-      subtitulo={`Lo mínimo que cada sede tiene que vender en ${periodo.split(" ")[0]} para no perder plata.`}
+      titulo="Punto de equilibrio · piso diario"
+      subtitulo={`Lo que cada sede tiene que vender al día en ${periodo.split(" ")[0]} para cubrir sus costos fijos y sus compras.`}
       resumen={resumen}
     >
       <div className="space-y-5">
@@ -365,13 +389,21 @@ export function VistaPuntoEquilibrio({ datos, periodo, abiertaAlInicio = false, 
             <>
               <Lectura d={d} a={a} />
               <Cifras d={d} a={a} />
-              {c && <Grafica c={c} d={d} a={a} />}
-              {/* Lo de consulta, a un toque: la cuenta del libro y el historial. */}
+              {/* Lo de consulta, a un toque: la cuenta del piso y el análisis del libro (gráfica, simulador, historial). */}
               <div className="divide-y divide-gray-100 border-y border-gray-100">
-                <Plegable titulo={`Cómo se calcula, con los números de ${d.sede}`}><ComoSeCalcula d={d} a={a} b={b} /></Plegable>
-                {d.historial.length > 0 && <Plegable titulo="Mes a mes"><Historial d={d} /></Plegable>}
+                <Plegable titulo="Cómo se calcula el piso diario"><ComoSeCalculaPiso d={d} a={a} /></Plegable>
+                <Plegable titulo="Análisis del libro: gráfica, cuenta y simulador «¿y si…?»">
+                  <div className="space-y-5">
+                    <p className="text-[11px] leading-relaxed text-gray-500">
+                      El libro calcula el punto de equilibrio suponiendo que las compras suben y bajan con cada venta; el piso diario de arriba toma las compras del mes como un compromiso. Sirve para ver curvas y probar escenarios; el número que manda es el piso diario.
+                    </p>
+                    {c && <Grafica c={c} d={d} a={a} />}
+                    <ComoSeCalcula d={d} a={a} b={b} />
+                    <Simulador key={`${d.businessId}-${d.mes}`} d={d} b={b} />
+                  </div>
+                </Plegable>
+                {d.historial.length > 0 && <Plegable titulo="Mes a mes (cálculo del libro, contra el Excel)"><Historial d={d} /></Plegable>}
               </div>
-              <Simulador key={`${d.businessId}-${d.mes}`} d={d} b={b} />
               {d.avisos.length > 0 && <ul className="space-y-1 text-[11px] text-gray-500">{d.avisos.map((x) => <li key={x}>· {x}</li>)}</ul>}
             </>
           )}

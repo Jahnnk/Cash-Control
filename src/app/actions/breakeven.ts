@@ -20,6 +20,9 @@ import {
 } from "@/lib/incentives/candado-ventas";
 import { conciliacionVentas } from "@/lib/ventas-conciliadas-sql";
 import { buildFixedVariable } from "@/lib/fixed-variable";
+import { esSueldoDeSocio } from "@/lib/sueldo-socios";
+import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
+import { planDe } from "@/lib/presupuesto-datos";
 import { POR_ACLARAR } from "@/lib/reglas-gasto";
 import { ventasInternasDelGrupo, type SedeEnConsolidado } from "@/lib/ventas-internas-grupo";
 import { gastosDevueltos, MARCA_PAGO_ERRADO, DIAS_MAX, type IngresoCandidato } from "@/lib/pagos-devueltos";
@@ -27,11 +30,30 @@ import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/vent
 import { formatCurrency } from "@/lib/utils";
 import { computeBreakeven, type BreakevenResult, type BreakevenReference } from "@/lib/breakeven";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
-import type { BaseEquilibrio } from "@/lib/equilibrio";
+import { pisoDiario, type BaseEquilibrio } from "@/lib/equilibrio";
 
 const sql = neon(process.env.DATABASE_URL!);
 
 const SEDE_NAMES: Record<number, string> = { 1: "Atelier", 2: "Fonavi", 3: "Centro" };
+
+/**
+ * Venta esperada del mes: la meta del presupuesto APROBADO (null = no hay). Con ella se proyecta el
+ * food cost del piso diario (lib/equilibrio.ts, `pisoDiario`).
+ */
+async function ventaEsperadaDelMes(bId: number, month: string): Promise<number | null> {
+  try {
+    const p = await planDe(bId, month);
+    const v = p.cab?.aprobadoEl ? p.cab.ventaEsperada : null;
+    return v !== null && v !== undefined && v > 0 ? v : null;
+  } catch {
+    return null;
+  }
+}
+
+/** ¿El CEO pasó el sueldo de los socios a «se paga de la utilidad»? (Reportes → Profit First). */
+async function sociosFueraDeFijos(): Promise<boolean> {
+  return (await leerConfigProfitFirst(sql as never)).config.sociosDeUtilidad;
+}
 
 function todayLima(): string {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
@@ -219,6 +241,8 @@ async function monthCosts(bId: number, start: string, end: string) {
     sinClasificar: report.sinClasificar.total,
     /** Parte de los fijos que es POR ACLARAR (provisional). */
     porAclarar: Math.round(porAclarar * 100) / 100,
+    /** De la planilla (fijos), el sueldo de los socios: Profit First lo muestra aparte. */
+    sueldoSocios: Math.round(cuentan.filter((r) => esSueldoDeSocio(r.category, r.concept)).reduce((t, r) => t + Number(r.amount), 0) * 100) / 100,
     compraAtelier,
     ultimoGasto: gastos.reduce<string | null>((max, g) => (max === null || g.date > max ? g.date : max), null),
   };
@@ -321,6 +345,8 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
   return {
     fijos: usable.reduce((s, r) => s + r.fijos, 0) / usable.length,
     varRatio: sumVentas > 0 ? sumVariables / sumVentas : 0,
+    ventasTipicas: sumVentas / usable.length,
+    sueldoSocios: usable.reduce((s, r) => s + r.sueldoSocios, 0) / usable.length,
     monthsUsed: usable.map((r) => r.month).sort(),
     sumVariables,
     sumVentas,
@@ -330,11 +356,13 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
 
 async function breakevenOf(bId: number, month: string): Promise<BreakevenResult> {
   const { start, end, daysInMonth, daysElapsed, isCurrent } = monthMeta(month);
-  const [ventas, costs, reference] = await Promise.all([
+  const [ventas, costs, reference, esperada, sociosFuera] = await Promise.all([
     // La venta oficial: a la fecha en el mes en curso, del mes entero si está cerrado.
     monthSales(bId, start, end),
     monthCosts(bId, start, end),
     isCurrent ? buildReference(bId, month) : Promise.resolve(null),
+    isCurrent ? ventaEsperadaDelMes(bId, month) : Promise.resolve(null),
+    sociosFueraDeFijos(),
   ]);
   if (isCurrent && !reference) {
     // Sin meses cerrados con datos no hay contra qué compararse — se
@@ -346,7 +374,7 @@ async function breakevenOf(bId: number, month: string): Promise<BreakevenResult>
     ];
     return r;
   }
-  const r = computeBreakeven({ ...costs, ventas, daysElapsed, daysInMonth, reference });
+  const r = computeBreakeven({ ...costs, ventas, daysElapsed, daysInMonth, reference, ventasEsperadas: esperada, sociosFuera });
   if (costs.porAclarar > 0) {
     r.warnings = [...r.warnings, `Incluye S/${costs.porAclarar.toFixed(2)} de gastos desconocidos (POR ACLARAR), contados como fijos.`];
   }
@@ -401,14 +429,16 @@ export async function getGroupBreakeven(month: string): Promise<
   try {
     const { start, end, daysInMonth, daysElapsed, isCurrent } = monthMeta(month);
     const ids = [1, 2, 3];
+    const sociosFuera = await sociosFueraDeFijos();
     const perSede = await Promise.all(
       ids.map(async (bId) => {
-        const [v, costs, reference] = await Promise.all([
+        const [v, costs, reference, esperada] = await Promise.all([
           ventasOficiales(bId, start, end),
           monthCosts(bId, start, end),
           isCurrent ? buildReference(bId, month) : Promise.resolve(null),
+          isCurrent ? ventaEsperadaDelMes(bId, month) : Promise.resolve(null),
         ]);
-        return { bId, ventas: v.total, ventasHasta: v.ultimoDia, reference, ...costs };
+        return { bId, ventas: v.total, ventasHasta: v.ultimoDia, reference, esperada, ...costs };
       }),
     );
     // Mes en curso: cada sede se mide con los días que TIENE cargados, no con los del calendario.
@@ -448,6 +478,9 @@ export async function getGroupBreakeven(month: string): Promise<
           daysElapsed: diasDe(s),
           daysInMonth,
           reference: s.reference,
+          ventasEsperadas: s.esperada,
+          sueldoSocios: s.sueldoSocios,
+          sociosFuera,
         }),
       };
     });
@@ -472,12 +505,20 @@ export async function getGroupBreakeven(month: string): Promise<
       const internoMes = internoDelMes(withRef);
       const sumVar = withRef.reduce((t, s) => t + s.reference!.sumVariables, 0) - internoRef.variables;
       const sumVen = withRef.reduce((t, s) => t + s.reference!.sumVentas, 0) - internoRef.ventas;
+      // Lo que las cafeterías le compran a Atelier en un mes típico: se cuenta una sola vez en el grupo.
+      const compraTipica = (s: (typeof withRef)[number]) =>
+        s.bId === 1 ? 0 : s.reference!.monthsUsed.reduce((t, m) => t + (s.reference!.compraAtelierPorMes[m] ?? 0), 0) / s.reference!.monthsUsed.length;
+      const internoTipico = withRef.reduce((t, s) => t + compraTipica(s), 0);
+      // Venta esperada del grupo: la meta aprobada de cada sede (o su venta típica), sin lo interno.
+      const esperadaGrupo = withRef.reduce((t, s) => t + (s.esperada ?? s.reference!.ventasTipicas ?? 0), 0) - internoTipico;
       const groupRef: BreakevenReference | null =
         withRef.length > 0
           ? {
               fijos: withRef.reduce((t, s) => t + s.reference!.fijos, 0),
               varRatio: sumVen > 0 ? sumVar / sumVen : 0,
               monthsUsed: [...new Set(withRef.flatMap((s) => s.reference!.monthsUsed))].sort(),
+              ventasTipicas: withRef.reduce((t, s) => t + (s.reference!.ventasTipicas ?? 0), 0) - internoTipico,
+              sueldoSocios: withRef.reduce((t, s) => t + (s.reference!.sueldoSocios ?? 0), 0),
             }
           : null;
       grupo = computeBreakeven({
@@ -488,6 +529,8 @@ export async function getGroupBreakeven(month: string): Promise<
         daysElapsed: diasGrupo(withRef),
         daysInMonth,
         reference: groupRef,
+        ventasEsperadas: esperadaGrupo > 0 ? esperadaGrupo : null,
+        sociosFuera,
       });
       const sinRef = perSede.filter((s) => !s.reference).map((s) => SEDE_NAMES[s.bId]);
       if (sinRef.length > 0 && groupRef) {
@@ -505,6 +548,8 @@ export async function getGroupBreakeven(month: string): Promise<
         ventas: perSede.reduce((t, s) => t + s.ventas, 0) - interno.ventas,
         daysElapsed,
         daysInMonth,
+        sueldoSocios: perSede.reduce((t, s) => t + s.sueldoSocios, 0),
+        sociosFuera,
       });
       if (interno.ventas > 0) grupo.warnings.push(avisoInterno(interno.ventas));
     }
@@ -743,7 +788,9 @@ export type EquilibrioSede = {
   ticketDe: string | null;
   /** «ventas» en las cafeterías (tickets de Byte), «pedidos» en Atelier. */
   unidad: "ventas" | "pedidos";
-  /** El piso estable: con el promedio de los meses cerrados anteriores (null sin referencia). */
+  /** De dónde sale la venta esperada con la que se proyecta el food cost del piso. */
+  fuenteEsperada: "presupuesto" | "tipica" | "mes";
+  /** El piso estable (fórmula del coach): con el promedio de los meses cerrados anteriores (null sin referencia). `pe` es el piso del mes. */
   referencia: { pe: number; meses: string[] } | null;
   historial: FilaResumenEquilibrio[];
   avisos: string[];
@@ -780,15 +827,19 @@ export async function getEquilibrioSede(mes: string, businessId: number): Promis
   if (![1, 2, 3].includes(businessId)) return { ok: false, error: "Sede inválida." };
   try {
     const { start, end, daysInMonth, isCurrent } = monthMeta(mes);
-    const [v, costs, ref, tk, resumen] = await Promise.all([
+    const [v, costs, ref, tk, resumen, esperada, sociosFuera] = await Promise.all([
       ventasOficiales(businessId, start, end),
       monthCosts(businessId, start, end),
       buildReference(businessId, mes),
       ticketDelMes(businessId, mes),
       getResumenEquilibrio(mes, 6, businessId),
+      isCurrent ? ventaEsperadaDelMes(businessId, mes) : Promise.resolve(null),
+      sociosFueraDeFijos(),
     ]);
     const avisos: string[] = [];
-    const referencia = ref && ref.varRatio < 1 ? { pe: Math.round((ref.fijos / (1 - ref.varRatio)) * 100) / 100, meses: ref.monthsUsed } : null;
+    // El piso estable: la fórmula del coach con el promedio de los meses cerrados (pe = piso del mes).
+    const pisoRef = ref ? pisoDiario({ fijos: ref.fijos, varRatio: ref.varRatio, ventasEsperadas: ref.ventasTipicas ?? 0, sueldoSocios: ref.sueldoSocios, sociosFuera }) : null;
+    const referencia = pisoRef ? { pe: pisoRef.mes, meses: ref!.monthsUsed } : null;
     let base: BaseEquilibrio | null = null;
     let ventasBase: EquilibrioSede["ventasBase"] = "mes";
     if (isCurrent) {
@@ -807,6 +858,8 @@ export async function getEquilibrioSede(mes: string, businessId: number): Promis
           ticket: tk?.ticket ?? null, diasDelMes: daysInMonth,
           // Las cuotas del mes en curso todavía no están completas: no se suman.
           financiamiento: 0,
+          // El food cost del piso se proyecta con la venta esperada (presupuesto o venta típica), no con el ritmo.
+          ventasEsperadas: esperada ?? ref.ventasTipicas ?? null, sueldoSocios: ref.sueldoSocios, sociosFuera,
         };
         avisos.push(proyeccion !== null
           ? `Mes en curso: el piso usa el promedio de ${ref.monthsUsed.length} meses cerrados y las ventas se proyectan al cierre con el ritmo de los ${diasCubiertos} días cargados.`
@@ -816,6 +869,7 @@ export async function getEquilibrioSede(mes: string, businessId: number): Promis
       base = {
         fijos: costs.fijos, varRatio: costs.variables / v.total, ventas: v.total,
         ticket: tk?.ticket ?? null, diasDelMes: daysInMonth, financiamiento: costs.financiamiento,
+        sueldoSocios: costs.sueldoSocios, sociosFuera,
       };
     } else {
       avisos.push("Ese mes no tiene ventas o gastos fijos cargados.");
@@ -829,6 +883,7 @@ export async function getEquilibrioSede(mes: string, businessId: number): Promis
         businessId, sede: SEDE_NAMES[businessId], mes, enCurso: isCurrent, base,
         ventasALaFecha: v.total, ventasBase, ventasHasta: v.ultimoDia, ticketDe: tk?.mes ?? null,
         unidad: businessId === 1 ? "pedidos" : "ventas",
+        fuenteEsperada: isCurrent ? (esperada !== null ? "presupuesto" : "tipica") : "mes",
         referencia, historial: resumen.ok ? resumen.filas : [], avisos,
       },
     };

@@ -12,7 +12,8 @@ import type { BreakevenResult } from "@/lib/breakeven";
 
 const res = (o: Partial<BreakevenResult>): BreakevenResult => ({
   fijos: 10000, variables: 5000, sinClasificar: 0, ventas: 0,
-  varRatio: 0.5, contributionMargin: 0.5, breakEven: null, avancePct: null,
+  varRatio: 0.5, contributionMargin: 0.5, breakEven: null, pisoDia: null, foodCostProyectado: null,
+  ventasEsperadas: null, sociosFuera: 0, breakEvenLibro: null, avancePct: null,
   ventasProyectadas: null, diaEstimadoCruce: null, estado: "sin_datos",
   referenceMonths: null, warnings: [], ...o,
 });

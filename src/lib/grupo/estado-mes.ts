@@ -28,22 +28,25 @@ export function textoEquilibrio(
   alRitmo?: { ventas: number; proyeccion: number; diasDelMes: number },
 ): { texto: string; detalle: string; tono: Tono } {
   if (!r || r.estado === "sin_datos") return { texto: "—", detalle: "Sin datos suficientes", tono: "neutro" };
+  // Desde el 15-oct-2026 el piso es el diario de la asesoría: (costos fijos + food cost) ÷ 30. La frase lo dice.
+  const piso = r.pisoDia ? `Piso S/${Math.round(r.pisoDia).toLocaleString("es-PE")} al día` : null;
+  const con = (cola: string, sinPiso: string) => (piso ? `${piso} · ${cola}` : sinPiso);
   if (enCurso && alRitmo && r.breakEven && r.breakEven > 0 && alRitmo.proyeccion > 0) {
     const pe = r.breakEven;
     const avance = Math.round((alRitmo.ventas / pe) * 100);
-    if (alRitmo.ventas >= pe) return { texto: "Cubierto", detalle: "Las ventas ya pagan los costos del mes", tono: "bien" };
-    if (alRitmo.proyeccion < pe) return { texto: "En riesgo", detalle: `Al ritmo actual no se cubre (va en ${avance}%)`, tono: "mal" };
+    if (alRitmo.ventas >= pe) return { texto: "Cubierto", detalle: con("las ventas ya cubren el mes", "Las ventas ya pagan los costos del mes"), tono: "bien" };
+    if (alRitmo.proyeccion < pe) return { texto: "En riesgo", detalle: con(`al ritmo actual no se cubre (va en ${avance}%)`, `Al ritmo actual no se cubre (va en ${avance}%)`), tono: "mal" };
     const dia = Math.ceil(pe / (alRitmo.proyeccion / alRitmo.diasDelMes));
-    return { texto: `Se cubre el día ${Math.min(dia, alRitmo.diasDelMes)}`, detalle: `Va en ${avance}% al ritmo actual`, tono: "neutro" };
+    return { texto: `Se cubre el día ${Math.min(dia, alRitmo.diasDelMes)}`, detalle: con(`va en ${avance}% al ritmo actual`, `Va en ${avance}% al ritmo actual`), tono: "neutro" };
   }
   const avance = Math.round(r.avancePct ?? 0);
-  if (r.estado === "superado") return { texto: "Cubierto", detalle: enCurso ? "Las ventas ya pagan los costos del mes" : "Las ventas pagaron los costos del mes", tono: "bien" };
+  if (r.estado === "superado") return { texto: "Cubierto", detalle: enCurso ? con("las ventas ya cubren el mes", "Las ventas ya pagan los costos del mes") : con("las ventas cubrieron el mes", "Las ventas pagaron los costos del mes"), tono: "bien" };
   if (r.estado === "en_riesgo") {
     return enCurso
-      ? { texto: "En riesgo", detalle: `Al ritmo actual no se cubre (va en ${avance}%)`, tono: "mal" }
-      : { texto: "No se cubrió", detalle: `Se llegó al ${avance}%`, tono: "mal" };
+      ? { texto: "En riesgo", detalle: con(`al ritmo actual no se cubre (va en ${avance}%)`, `Al ritmo actual no se cubre (va en ${avance}%)`), tono: "mal" }
+      : { texto: "No se cubrió", detalle: con(`se llegó al ${avance}%`, `Se llegó al ${avance}%`), tono: "mal" };
   }
-  return { texto: r.diaEstimadoCruce ? `Se cubre el día ${r.diaEstimadoCruce}` : `${avance}% cubierto`, detalle: `Va en ${avance}% al ritmo actual`, tono: "neutro" };
+  return { texto: r.diaEstimadoCruce ? `Se cubre el día ${r.diaEstimadoCruce}` : `${avance}% cubierto`, detalle: con(`va en ${avance}% al ritmo actual`, `Va en ${avance}% al ritmo actual`), tono: "neutro" };
 }
 
 /** La ganancia real en una cifra y su explicación corta. */
