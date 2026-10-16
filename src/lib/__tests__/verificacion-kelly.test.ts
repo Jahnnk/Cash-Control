@@ -154,3 +154,32 @@ describe("adelanto de utilidades de Centro (S/2,400 al mes)", () => {
     expect(verificarMes({ ...base, ingresos: [], gastos: [] }).alertas.some((a) => a.regla === "utilidades")).toBe(false);
   });
 });
+
+describe("lo vendido contra lo que llegó al banco por ventas (mes cerrado, cafeterías)", () => {
+  // Fonavi setiembre 2026: Byte 37,293.99 y grupo «Ventas» 35,705.87 → 4.3%, dentro de lo normal.
+  const dias = (total: number) => [{ date: "2026-09-15", total }];
+  const caso = (llego: number, o: { mesCerrado?: boolean; esAtelier?: boolean } = {}) => verificarMes({
+    foto: null, ingresos: [ing(llego, "VENTAS", { esVenta: true }), ing(300, "DEVOLUCIÓN CAJA CHICA")], gastos: [],
+    sistema: { ingresos: llego + 300, gastos: 0 }, fijosAtelier: [], esAtelier: o.esAtelier ?? false,
+    ventas: { byte: dias(37293.99), kelly: dias(37293.99), registro: dias(37293.99) }, mesCerrado: o.mesCerrado ?? true,
+  });
+
+  it("hasta 5% es normal: lo muestra sin alerta (solo cuentan las filas del grupo «Ventas»)", () => {
+    const v = caso(35705.87);
+    expect(v.ventaVsBanco).toEqual({ vendido: 37293.99, llego: 35705.87, difPct: 4.3, normal: true });
+    expect(v.alertas.filter((a) => a.regla === "venta-banco")).toEqual([]);
+  });
+
+  it("más de 5% es alerta para revisar con Kelly", () => {
+    const v = caso(34000);
+    expect(v.ventaVsBanco?.normal).toBe(false);
+    const a = v.alertas.find((x) => x.regla === "venta-banco");
+    expect(a?.titulo).toMatch(/se separan 8.8%/);
+    expect(a?.detalle).toMatch(/llegaron S\/3,293.99 menos/);
+  });
+
+  it("no se revisa con el mes en curso (el POS llega con retraso) ni en Atelier (vende a crédito)", () => {
+    expect(caso(20000, { mesCerrado: false }).ventaVsBanco).toBeNull();
+    expect(caso(20000, { esAtelier: true }).ventaVsBanco).toBeNull();
+  });
+});
