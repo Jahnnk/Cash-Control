@@ -9,6 +9,7 @@ import { SeccionDesplegable } from "@/components/productos/ui";
 import { armarReporte, conPremio } from "@/lib/incentives/reporte-bonos";
 import type { PagosDelMes } from "@/lib/incentives/reporte-bonos-tipos";
 import { PagoSedePanel } from "./pagos-panel";
+import { PorQueMonto } from "./por-que-monto";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { buildSedeShareLines, buildShareHeader, SHARE_FOOTER } from "@/lib/incentives/share-text";
 
@@ -458,6 +459,8 @@ function SedeCard({ s, isRange }: { s: SedeIncentives; isRange: boolean }) {
             </tbody>
           </table>
           )}
+
+          {!isRange && s.explicacion && <PorQueMonto x={s.explicacion} nivelActual={p.nivelAlcanzado?.nombre ?? null} />}
 
           {/* Mejor vendedor — el del desayuno */}
           <div className="mt-3 bg-amber-50/60 border border-amber-100 rounded-lg px-3 py-2">

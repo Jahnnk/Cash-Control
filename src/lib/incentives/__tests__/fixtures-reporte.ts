@@ -68,7 +68,7 @@ export function reporteDePrueba(opts: { conNivel?: boolean } = {}) {
     month: "2026-09", range: null,
     sedes: [{
       businessId: 3, sede: "Centro", progress, ticketBase: 24.82, mejorVendedor: null,
-      mvPeriodStart: null, mvPeriodEnd: null, ultimoRegistro: "2026-09-30", liquidado: false, minMesas: 60, noElegibles: 0, dailies,
+      mvPeriodStart: null, mvPeriodEnd: null, ultimoRegistro: "2026-09-30", liquidado: false, minMesas: 60, noElegibles: 0, dailies, explicacion: null,
     }],
   };
   return armarReporte(data, { month: "2026-09", generadoEn: "x", sedes: [conPremio(pago, "Teresa")], errores: [] }, "Setiembre 2026", "01 oct 2026, 10:00");
