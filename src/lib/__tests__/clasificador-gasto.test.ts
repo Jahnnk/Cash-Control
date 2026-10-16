@@ -1,6 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { clasificarEgreso, calidadClasificacion, porcentajeSeguro, reglaAprendidaDe, type GastoAClasificar } from "../clasificador-gasto";
-import { clasificarGasto } from "../reglas-gasto";
+import { clasificarGasto, tipoDeCategoria } from "../reglas-gasto";
 
 const gasto = (g: Partial<GastoAClasificar>): GastoAClasificar => ({
   concepto: null, categoria: "POR ACLARAR", grupoExcel: null, deExcel: true, decidido: false, ...g,
@@ -102,5 +102,41 @@ describe("la nota de con qué plata se pagó no cambia lo que se compró (Atelie
     expect(clasificarGasto("PAGO COMISIÒN PRESTAMO ARREGLO ABATIDOR (JUAN TERRONES)")).toBe("PRÉSTAMOS Y TARJETAS");
     expect(clasificarGasto("PRESTAMO DINERS (KELLY TERRONES)")).toBe("PRÉSTAMOS Y TARJETAS");
     expect(clasificarGasto("CUOTA SET26 (KELLY TERRONES)")).toBe("PRÉSTAMOS Y TARJETAS");
+  });
+});
+
+describe("16-oct-2026: lo que el Excel y las reglas tenían mal a la vez", () => {
+  const g = (concepto: string, categoria: string, monto?: number) =>
+    clasificarEgreso({ concepto, categoria, grupoExcel: categoria, deExcel: true, decidido: false, monto });
+
+  it("el papel para impresora es oficina, no equipo (la palabra IMPRESORA ya no manda)", () => {
+    expect(clasificarGasto("PAPEL PARA IMPRESORA (GRUPO PAPELERO COSTA)")).toBe("OFICINA Y SISTEMAS");
+    expect(clasificarGasto("IMPRESORA EPSON")).toBe("EQUIPOS");
+    expect(clasificarGasto("TONER HP")).toBe("OFICINA Y SISTEMAS");
+    expect(clasificarGasto("DELIVERY PAPEL IMPRESORA (JORMAR)")).toBe("DELIVERY Y FLETES");
+  });
+
+  it("devolverle plata a un cliente anula una venta: resta (variable), no es «devolución» que no cuenta", () => {
+    expect(clasificarGasto("DEVOLUCION A CLIENTAS POR INDECOPI (CLIENTE)")).toBe("DEVOLUCIONES A CLIENTES");
+    expect(tipoDeCategoria("DEVOLUCIONES A CLIENTES")).toBe("Variable");
+    expect(clasificarGasto("PAGO MAL EJECUTADO PORQUE LE PERTENECE A FONAVI")).toBe("DEVOLUCIONES");
+    expect(clasificarGasto("PROPINAS SETIEMBRE 2026 (COLABORADORES CENTRO)")).toBe("DEVOLUCIONES");
+    // Lo que el cliente pagó de más nunca fue venta: devolverlo no resta.
+    expect(clasificarGasto("DEVOLUCIÒN A CLIENTE PORQUE PAGÒ EN EXCESO (CLIENTE)")).toBe("DEVOLUCIONES");
+    expect(clasificarGasto("DEVOLUCION A CLIENTA POR PAGO DUPLICADO (CARMEN ALVARADO)")).toBe("DEVOLUCIONES");
+    expect(clasificarGasto("DEVOLUCION A CLIENTE POR EMPANADAS EN MAL ESTADO")).toBe("DEVOLUCIONES A CLIENTES");
+  });
+
+  it("una «inversión» de menos de S/300 se pregunta aunque el Excel y las reglas coincidan", () => {
+    const c = g("SELLADORA CHICA", "EQUIPOS", 81);
+    expect(c.confianza).toBe("baja");
+    expect(c.motivo).toMatch(/cuesta S\/81.*menos de S\/300/);
+    expect(c.sugerencias).toEqual(expect.arrayContaining(["EQUIPOS", "OFICINA Y SISTEMAS"]));
+  });
+
+  it("un equipo de verdad, o una inversión que ya decidiste, no se pregunta", () => {
+    expect(g("CONGELADORA", "EQUIPOS", 1800).confianza).not.toBe("baja");
+    expect(clasificarEgreso({ concepto: "SELLADORA CHICA", categoria: "EQUIPOS", grupoExcel: "EQUIPOS", deExcel: true, decidido: true, monto: 81 }).confianza).toBe("alta");
+    expect(g("SELLADORA CHICA", "EQUIPOS").confianza).not.toBe("baja"); // sin monto no se juzga
   });
 });

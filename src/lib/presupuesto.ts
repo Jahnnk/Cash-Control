@@ -29,7 +29,7 @@ export const AREAS: Area[] = [
   { id: "produccion", nombre: "Producción", bloque: "operacion", categorias: ["INSUMOS", "PRODUCTOS ATELIER", "PACKAGING", "DELIVERY Y FLETES"] },
   { id: "personal", nombre: "Personal", bloque: "operacion", categorias: ["PLANILLA", "PERSONAL"] },
   { id: "local", nombre: "Local", bloque: "operacion", categorias: ["ALQUILER", "SERVICIOS", "MANTENIMIENTO", "LIMPIEZA", "MENAJE Y UTENSILIOS"] },
-  { id: "ventas", nombre: "Ventas", bloque: "operacion", categorias: ["MARKETING"] },
+  { id: "ventas", nombre: "Ventas", bloque: "operacion", categorias: ["MARKETING", "DEVOLUCIONES A CLIENTES"] },
   { id: "administracion", nombre: "Administración", bloque: "operacion", categorias: ["CONTABILIDAD Y ASESORÍAS", "OFICINA Y SISTEMAS", "SS BANCARIOS", "IMPUESTOS", "CAJA CHICA"] },
   { id: "deudas", nombre: "Deudas", bloque: "deudas", categorias: ["PRÉSTAMOS Y TARJETAS"] },
   { id: "inversion", nombre: "Inversión", bloque: "inversion", categorias: ["EQUIPOS", "REMODELACIÓN"] },

@@ -60,7 +60,16 @@ export type GastoAClasificar = {
   deExcel: boolean;
   /** ¿Jahnn ya decidió este gasto (o el grupo al que pertenece)? */
   decidido: boolean;
+  /** Lo que le toca a la sede (para la revisión por monto de las inversiones). */
+  monto?: number;
 };
+
+/**
+ * Una «inversión» de menos de esto se pregunta (16-oct-2026): «PAPEL PARA IMPRESORA» S/81 entró como
+ * EQUIPOS y el Excel y las reglas coincidían, así que nadie lo notó. Un equipo de verdad rara vez
+ * cuesta tan poco; si lo es, Jahnn lo confirma con un clic y se enseña la regla.
+ */
+export const INVERSION_MINIMA = 300;
 
 export type Clasificacion = {
   /** La categoría con la que cuenta (la guardada, salvo que una regla de Jahnn diga otra). */
@@ -107,6 +116,20 @@ function categoriaDelGrupo(grupo: string | null): string | null {
 }
 
 export function clasificarEgreso(g: GastoAClasificar, aprendidas: ReglaAprendida[] = []): Clasificacion {
+  const c = clasificarSinMonto(g, aprendidas);
+  // Revisión por monto: una inversión chica casi siempre es un gasto del mes mal puesto.
+  if (c.confianza !== "baja" && c.tipo === "Inversión" && !g.decidido && c.opiniones.every((o) => o.fuente !== "aprendida")
+      && g.monto !== undefined && g.monto > 0 && g.monto < INVERSION_MINIMA) {
+    return {
+      ...c, confianza: "baja",
+      motivo: `Está como ${c.categoria} (inversión) pero cuesta S/${g.monto.toLocaleString("es-PE", { maximumFractionDigits: 2 })}: un equipo de verdad rara vez cuesta menos de S/${INVERSION_MINIMA}. ¿Es inversión o un gasto del mes?`,
+      sugerencias: [...new Set([c.categoria, "OFICINA Y SISTEMAS", "MENAJE Y UTENSILIOS", "MANTENIMIENTO"])],
+    };
+  }
+  return c;
+}
+
+function clasificarSinMonto(g: GastoAClasificar, aprendidas: ReglaAprendida[]): Clasificacion {
   const actual = g.categoria;
   if (g.decidido) {
     const op = opinion("decision", actual);

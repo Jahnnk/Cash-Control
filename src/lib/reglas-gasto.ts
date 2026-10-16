@@ -72,6 +72,10 @@ export const CATEGORIAS_GASTO: CategoriaGasto[] = [
   { nombre: "DELIVERY Y FLETES", tipo: "Variable", descripcion: "Traer compras y llevar pedidos", ejemplos: "Delivery Metro, delivery Akemy, carretilla, flete, traslado" },
   { nombre: "IMPUESTOS", tipo: "Variable", descripcion: "Pagos a SUNAT: el IR mensual de la MYPE es un % de las ventas", ejemplos: "IR del mes, regularización de IR" },
   { nombre: "SS BANCARIOS", tipo: "Variable", descripcion: "Lo que cobra el banco", ejemplos: "ITF, mantenimiento de cuenta, comisiones, estado de cuenta, desgravamen" },
+  // 16-oct-2026 (conciliación de setiembre con Jahnn): Centro devolvió S/120 a unas clientas por un reclamo en
+  // Indecopi. La venta ya se había contado, así que su devolución TIENE que restar; en «DEVOLUCIONES» (no es gasto)
+  // la venta quedaba inflada. Es variable: anula una venta.
+  { nombre: "DEVOLUCIONES A CLIENTES", tipo: "Variable", descripcion: "Plata que se le devuelve a un cliente por una venta que ya se contó", ejemplos: "Reclamos, quejas, Indecopi, pedido que no se entregó" },
   // ─── FINANCIAMIENTO: cómo se paga el negocio, no cuánto cuesta operarlo ───
   { nombre: "PRÉSTAMOS Y TARJETAS", tipo: "Financiamiento", descripcion: "Cuotas de préstamos y tarjetas de crédito", ejemplos: "Cuota Diners, préstamo de Kelly, cuotas bancarias" },
   // ─── INVERSIÓN: dura años, no es gasto del mes ───
@@ -81,7 +85,7 @@ export const CATEGORIAS_GASTO: CategoriaGasto[] = [
   { nombre: "UTILIDADES A SOCIOS", tipo: "No es gasto", descripcion: "Reparto y adelantos de utilidades", ejemplos: "Pago de utilidades Jahnn y Juani" },
   { nombre: "AHORRO", tipo: "No es gasto", descripcion: "Plata que se guarda", ejemplos: "Fondos mutuos" },
   { nombre: "PRÉSTAMOS ENTRE SEDES", tipo: "No es gasto", descripcion: "Plata que una sede le presta o le devuelve a otra", ejemplos: "Préstamo a Atelier, devolución de cuota a Fonavi o Centro" },
-  { nombre: "DEVOLUCIONES", tipo: "No es gasto", descripcion: "Plata que no era de Yayi's", ejemplos: "Devoluciones a clientes, pagos por error, pagos dobles, propinas entregadas al equipo" },
+  { nombre: "DEVOLUCIONES", tipo: "No es gasto", descripcion: "Plata que no era de Yayi's o que sale y vuelve", ejemplos: "Pagos por error que se recuperan, pagos dobles, propinas entregadas al equipo (las devoluciones a clientes van aparte)" },
   // ─── DESCONOCIDO: nadie sabe qué fue ───
   { nombre: POR_ACLARAR, tipo: "Desconocido", descripcion: "Nadie sabe qué fue: cuenta como gasto fijo en el punto de equilibrio mientras no se aclare", ejemplos: "Lo que ninguna regla reconoce, pagos sin descripción" },
 ];
@@ -156,6 +160,9 @@ export const REGLAS_GASTO: ReglaGasto[] = [
   ...r("EQUIPOS", "CONGELADORA", "REFRIGERADORA", "CONSERVADORA", "BALANZA", "LICUADORA", "HORNO", "MICROONDAS", "BATIDORA", "EXTRACTOR",
     "CAFETERA", "VENTILADOR", "PANTALLA", "MOUSE", "TECLADO", "COMPUTADORA", "LAPTOP", "IMPRESORA", "SOPLETE", "FLAMEADOR", "SELLADORA",
     "DISPENSADOR", "ADAPTADOR", "CARGADOR", " EQUIPO"),
+  // Va después de EQUIPOS (gana a IMPRESORA) y antes de las excepciones (pierde con «DELIVERY …»).
+  // «PAPEL PARA IMPRESORA» caía en EQUIPOS por la palabra IMPRESORA (Centro, set-2026): lo que la impresora gasta es oficina.
+  ...r("OFICINA Y SISTEMAS", "PAPEL PARA IMPRESORA", "PAPEL IMPRESORA", "PAPEL BOND", "HOJAS BOND", "TONER", "TINTA", "CARTUCHO"),
   ...r("REMODELACIÓN", "REMODELACION", "PINTURA", "LETRERO", "LETERO", "OBRA ", "INSTALACION", "TRIFASICO", "TRUFASICO", "MEDIDOR", "MANO DE OBRA",
     "CAJAS ELECTRICAS", "ALUMINIO PARA PARED", "DRYWALL", "LETRAS"),
   ...r("UTILIDADES A SOCIOS", "UTILIDADES", "UTILIDAD "),
@@ -201,7 +208,11 @@ export const REGLAS_GASTO: ReglaGasto[] = [
   // ejecutado de insumos" no es un insumo).
   ...r("DEVOLUCIONES", "MAL EJECUTADO", "MAL HECHO", "POR ERROR", "ERROR EN PAGO", "DELOCION", "PAGO DOBLE", "EXCESO DE PAGO", "PAGO EN EXCESO", "PAGO DUPLICADO",
     "COBRO EN EXCESO", "MAL COBRO", "NO ES DE LA EMPRESA", "NO CORRESPONDE", "PROPINA", "SOBRANTE CAJA", "SALDO RESTANTE CAJA",
-    "DEVOLUCION A CLIENT", "VENTA TRANSFERIDA", "ENTREGA A KELLY PARA DEPOSITO", "DEVOLUCION A EFECTIVO"),
+    "VENTA TRANSFERIDA", "ENTREGA A KELLY PARA DEPOSITO", "DEVOLUCION A EFECTIVO"),
+  // Devolverle plata a un cliente anula una venta que ya se contó: resta (gana incluso a «devolución»).
+  ...r("DEVOLUCIONES A CLIENTES", "DEVOLUCION A CLIENT", "REEMBOLSO A CLIENT", "INDECOPI", "QUEJA", "RECLAMO", "LIBRO DE RECLAMACIONES"),
+  // …salvo que el cliente haya pagado DE MÁS: lo que sobró nunca fue venta en Byte, así que devolverlo no resta.
+  ...r("DEVOLUCIONES", "PAGO EN EXCESO", "EXCESO DE PAGO", "PAGO DUPLICADO", "PAGO DOBLE", "COBRO EN EXCESO", "YAPE DOBLE", "PAGO REPETIDO"),
 ];
 
 /**

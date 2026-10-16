@@ -68,7 +68,7 @@ function detectarConflictos(gastos: FilaClasificable[], aprendidas: ReglaAprendi
     // Una transferencia entre cuentas propias no es gasto: no hay nada que clasificar.
     if (!(g.propio > 0) || g.transferencia || vistos.has(g.huella)) continue;
     const decidido = g.tipoPE != null || gastosRevisados.has(g.huella) || gruposMovidos.has(`${normGrupoPE(g.grupo)}|${g.category}`);
-    const c = clasificarEgreso({ concepto: g.concept, categoria: g.category, grupoExcel: g.grupoExcel, deExcel: g.deExcel, decidido }, aprendidas);
+    const c = clasificarEgreso({ concepto: g.concept, categoria: g.category, grupoExcel: g.grupoExcel, deExcel: g.deExcel, decidido, monto: g.propio }, aprendidas);
     if (c.confianza !== "baja") continue;
     vistos.add(g.huella);
     out.push({
@@ -300,6 +300,7 @@ export async function calidadClasificacionSede(bId: number, desdeFecha: string, 
       confianza: clasificarEgreso({
         concepto: f.concept, categoria: f.category, grupoExcel: f.grupoExcel, deExcel: f.deExcel,
         decidido: f.tipoPE != null || revisados.has(f.huella) || movidos.has(`${normGrupoPE(f.grupo)}|${f.category}`),
+        monto: f.propio,
       }, aprendidas).confianza,
     })),
   );
