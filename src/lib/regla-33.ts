@@ -121,8 +121,8 @@ function bloque(monto: number, ventas: number, metaPct: number): Bloque {
   return { monto: r2(monto), pct: r1((monto / ventas) * 100), metaPct, meta, difMeta: r2(monto - meta) };
 }
 
-/** Arma las tres partes con una venta, costos y gastos ya decididos. */
-function armar(ventas: number, costos: number, gastos: number, planilla: number, cfg: ConfigProfitFirst) {
+/** Arma las tres partes con una venta, costos y gastos ya decididos (también para la proyección del presupuesto). */
+export function bloquesDeLaRegla(ventas: number, costos: number, gastos: number, planilla: number, cfg: ConfigProfitFirst) {
   const ebitda = ventas - costos - gastos;
   const metaOperativa = (100 - cfg.ebitdaPct) / 2;
   const b = bloque(ebitda, ventas, cfg.ebitdaPct);
@@ -146,7 +146,7 @@ function deSede(s: CifrasSede, cfg: ConfigProfitFirst): FilaRegla {
     return { ...base, sinResultadoPorque: s.sinResultadoPorque ?? "Sin datos", ventas: s.ventas, ...sinNumeros };
   }
   const quita = cfg.sociosDeUtilidad ? s.sueldoSocios : 0;
-  return { ...base, sinResultadoPorque: null, ventas: s.ventas, ...armar(s.ventas, s.costos, s.gastos - quita, s.planilla - quita, cfg) };
+  return { ...base, sinResultadoPorque: null, ventas: s.ventas, ...bloquesDeLaRegla(s.ventas, s.costos, s.gastos - quita, s.planilla - quita, cfg) };
 }
 
 function delGrupo(g: CifrasGrupo, cfg: ConfigProfitFirst): FilaRegla {
@@ -158,7 +158,7 @@ function delGrupo(g: CifrasGrupo, cfg: ConfigProfitFirst): FilaRegla {
   // Ganancia = Venta − Costos − Gastos − Impuestos.
   const ventasResultado = g.ganancia + g.costos + g.gastos + g.impuestos;
   const quita = cfg.sociosDeUtilidad ? g.sueldoSocios : 0;
-  return { ...base, sinResultadoPorque: null, ventas: r2(ventasResultado), ...armar(ventasResultado, g.costos, g.gastos - quita, g.planilla - quita, cfg) };
+  return { ...base, sinResultadoPorque: null, ventas: r2(ventasResultado), ...bloquesDeLaRegla(ventasResultado, g.costos, g.gastos - quita, g.planilla - quita, cfg) };
 }
 
 const ORDEN = [2, 3, 1];
