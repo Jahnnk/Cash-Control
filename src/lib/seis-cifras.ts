@@ -89,6 +89,15 @@ export type CifrasSede = {
    * "De la venta a la ganancia"; null si la sede no tiene Excel del mes.
    */
   cobrado: number | null;
+  /**
+   * Lo que entró POR VENTAS: solo las filas que Kelly marca con Grupo «Ventas» (el importador las
+   * guarda con is_byte_sale). Decisión de Jahnn tras hablar con Kelly (16-oct-2026): Ing&Gtos es la
+   * radiografía de la cuenta, con todo lo que entra; para «Ingresado» solo cuentan las ventas.
+   * null = el mes no tiene filas marcadas (ej. Atelier jun–jul, antes del Excel): se usa `cobrado`.
+   */
+  ingresadoVentas: number | null;
+  /** Lo demás que entró de la operación y no es venta (cobrado − ingresadoVentas); null si no se puede separar. */
+  otrosIngresos: number | null;
   fuera: FueraDeLaGanancia;
   /** Lo que esta sede le compró a Atelier (para netear el consolidado). */
   compraAtelier: number;
@@ -133,6 +142,8 @@ export function cifrasDeSede(input: {
   caja: { entro: number; salio: number; rescate?: number };
   /** Ingresos operativos del Excel hasta el corte; null = sin Excel. */
   cobrado?: number | null;
+  /** Ingresos con Grupo «Ventas» hasta el corte; null = sin filas marcadas. */
+  ingresadoVentas?: number | null;
 }): CifrasSede {
   const sumas: Record<Rubro, number> = { costos: 0, gastos: 0, impuestos: 0, deudas: 0, inversion: 0, noEsGasto: 0 };
   const porCostos = new Map<string, number>();
@@ -177,6 +188,8 @@ export function cifrasDeSede(input: {
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / ventas!) * 100) : null,
     caja: { entro: r2(input.caja.entro), salio: r2(input.caja.salio), flujo: r2(input.caja.entro - input.caja.salio) },
     cobrado: input.cobrado === null || input.cobrado === undefined ? null : r2(input.cobrado),
+    ingresadoVentas: input.ingresadoVentas == null ? null : r2(input.ingresadoVentas),
+    otrosIngresos: input.ingresadoVentas == null || input.cobrado == null ? null : r2(Math.max(input.cobrado - input.ingresadoVentas, 0)),
     fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0) },
     compraAtelier: r2(compraAtelier),
     topCostos: top(porCostos), topGastos: top(porGastos),

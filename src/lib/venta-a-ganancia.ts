@@ -6,8 +6,10 @@
  * En Cash Control:
  *
  *   1 · Vendido        = Ventas de Byte hasta el último día con Excel.
- *   2 · Ingresado      = lo que entró de las ventas a banco y caja (ingresos operativos del
- *                        Excel, sin préstamos, rescates ni reembolsos).
+ *   2 · Ingresado      = lo que entró POR VENTAS: las filas del Excel con Grupo «Ventas»
+ *                        (16-oct-2026, tras la reunión de Jahnn con Kelly: Ing&Gtos trae TODO lo
+ *                        que pasa por la cuenta). Lo demás de la operación va aparte como
+ *                        «otros ingresos». Sin filas marcadas en el mes, los ingresos operativos.
  *                        Antes se llamaba «Cobrado» (14-oct-2026): chocaba con «Por cobrar» y en las
  *                        cafeterías nadie cobra después. El campo interno sigue siendo `cobrado`.
  *                        No se llama "Caja" porque la tarjeta Caja cuenta
@@ -26,6 +28,8 @@ export type BarrasSede = {
   corte: string | null;
   vendido: number | null;
   cobrado: number | null;
+  /** Lo que entró y no es venta (devoluciones, depósitos, ventas sueltas sin marcar…); null si no se separa. */
+  otrosIngresos: number | null;
   ganancia: number | null;
   gananciaPct: number | null;
   /** Por qué falta la ganancia (null si la hay). */
@@ -49,12 +53,12 @@ export function notaVendidoIngresado(vendido: number | null, cobrado: number | n
 export function barrasDeSede(s: CifrasSede): BarrasSede {
   return {
     businessId: s.businessId, sede: s.sede, corte: s.corte,
-    vendido: s.ventas, cobrado: s.cobrado,
+    vendido: s.ventas, cobrado: s.ingresadoVentas ?? s.cobrado, otrosIngresos: s.ingresadoVentas !== null ? s.otrosIngresos : null,
     ganancia: s.ganancia, gananciaPct: s.gananciaPct,
     sinGananciaPorque: s.conResultado ? null : s.sinResultadoPorque,
     // Con el mes a medias, lo ingresado va unos días detrás de lo vendido: comparar sería engañoso.
-    nota: s.mesCompleto ? notaVendidoIngresado(s.ventas, s.cobrado) : "Mes a medias: lo ingresado suele ir unos días detrás de lo vendido.",
-    conBarras: s.ventas !== null && s.ventas > 0 && s.cobrado !== null,
+    nota: s.mesCompleto ? notaVendidoIngresado(s.ventas, s.ingresadoVentas ?? s.cobrado) : "Mes a medias: lo ingresado va unos días detrás de lo vendido (los abonos del POS llegan con retraso).",
+    conBarras: s.ventas !== null && s.ventas > 0 && (s.ingresadoVentas ?? s.cobrado) !== null,
   };
 }
 

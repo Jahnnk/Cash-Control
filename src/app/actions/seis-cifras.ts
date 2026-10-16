@@ -51,7 +51,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
         ) x
       `) as { corte: string | null }[];
       const corte = c[0]?.corte ?? null;
-      const [filas, ventas, caja, rescates, cobros] = await Promise.all([
+      const [filas, ventas, caja, rescates, cobros, porVentas] = await Promise.all([
         corte
           ? sql`
               SELECT category AS categoria, concept AS concepto, amount::float AS monto,
@@ -73,6 +73,15 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
         ` as unknown as Promise<{ t: number }[]>,
         // Lo cobrado de las ventas: ingresos operativos hasta el mismo corte que ventas y gastos.
         corte ? totalesMesSede(bId, inicio, corte) : Promise.resolve(null),
+        // Lo que entró POR VENTAS: las filas con Grupo «Ventas» del Excel (is_byte_sale), hasta el corte.
+        corte
+          ? sql`
+              SELECT COUNT(*)::int AS n, COALESCE(SUM(amount), 0)::float AS t FROM bank_income_items
+              WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${corte} AND archived = false AND is_byte_sale = true
+                AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false
+                AND non_operative_category IS NULL
+            ` as unknown as Promise<{ n: number; t: number }[]>
+          : Promise.resolve([] as { n: number; t: number }[]),
       ]);
       const tope = corte ?? hastaHoy;
       const hasta = ventas.rows.filter((r) => r.date <= tope).reduce((t, r) => t + r.total, 0);
@@ -82,6 +91,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
         ventas: hasta > 0 ? hasta : null, ventasPosteriores: corte ? despues : 0,
         caja: { entro: caja.entro, salio: caja.salio, rescate: rescates[0]?.t ?? 0 },
         cobrado: cobros ? cobros.ingresos : null,
+        ingresadoVentas: porVentas[0]?.n ? porVentas[0].t : null,
       });
     }));
     const { config, guardable } = await leerConfigProfitFirst(sql);

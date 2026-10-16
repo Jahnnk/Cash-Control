@@ -2,10 +2,10 @@ import { describe, it, expect } from "vitest";
 import { barrasDelMes, notaVendidoIngresado } from "../venta-a-ganancia";
 import { cifrasDeSede } from "../seis-cifras";
 
-const sede = (businessId: number, nombre: string, o: { ventas: number | null; cobrado: number | null; corte?: string | null; gastos?: number }) =>
+const sede = (businessId: number, nombre: string, o: { ventas: number | null; cobrado: number | null; corte?: string | null; gastos?: number; ingresadoVentas?: number | null }) =>
   cifrasDeSede({
     businessId, sede: nombre, mes: "2026-09", finDeMes: "2026-09-30", corte: o.corte === undefined ? "2026-09-30" : o.corte,
-    filas: o.gastos ? [{ categoria: "PLANILLA", propio: o.gastos, monto: o.gastos }] : [], ventas: o.ventas, caja: { entro: 0, salio: 0 }, cobrado: o.cobrado,
+    filas: o.gastos ? [{ categoria: "PLANILLA", propio: o.gastos, monto: o.gastos }] : [], ventas: o.ventas, caja: { entro: 0, salio: 0 }, cobrado: o.cobrado, ingresadoVentas: o.ingresadoVentas,
   });
 
 describe("de la venta a la ganancia", () => {
@@ -36,5 +36,19 @@ describe("de la venta a la ganancia", () => {
   it("con el mes a medias no compara lo ingresado con lo vendido", () => {
     const [b] = barrasDelMes([sede(2, "Fonavi", { ventas: 3000, cobrado: 1000, corte: "2026-09-05" })]);
     expect(b.nota).toMatch(/Mes a medias/);
+  });
+
+  it("Ingresado = solo lo que entró por ventas (Grupo «Ventas»); el resto va aparte como otros ingresos", () => {
+    // Atelier oct-2026 al 13/10: entraron 14,436.69 de la operación; 12,324.13 con Grupo «Ventas».
+    const [b] = barrasDelMes([sede(1, "Atelier", { ventas: 12342.14, cobrado: 14436.69, ingresadoVentas: 12324.13, gastos: 11540.5 })]);
+    expect(b.cobrado).toBe(12324.13);
+    expect(b.otrosIngresos).toBe(2112.56);
+    expect(b.ganancia).toBe(801.64);
+  });
+
+  it("si el mes no tiene filas marcadas como venta, usa todos los ingresos de la operación y no inventa «otros»", () => {
+    const [b] = barrasDelMes([sede(1, "Atelier", { ventas: 10000, cobrado: 9500, ingresadoVentas: null })]);
+    expect(b.cobrado).toBe(9500);
+    expect(b.otrosIngresos).toBeNull();
   });
 });
