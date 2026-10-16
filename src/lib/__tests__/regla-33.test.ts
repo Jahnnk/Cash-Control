@@ -4,7 +4,7 @@
  * lo que le falta a su tercio es lo que los otros dos se pasaron, y el semáforo.
  */
 import { describe, it, expect } from "vitest";
-import { regla33, dondeFalta, termometroEbitda, profitFirst, utilidadPorSeparar, validarConfig, CONFIG_PROFIT_FIRST, TOPE_PLANILLA_PCT } from "../regla-33";
+import { regla33, dondeFalta, partesDelPastel, termometroEbitda, profitFirst, utilidadPorSeparar, validarConfig, CONFIG_PROFIT_FIRST, TOPE_PLANILLA_PCT } from "../regla-33";
 import { cifrasDeSede, cifrasDelGrupo } from "../seis-cifras";
 
 const f = (categoria: string, monto: number) => ({ categoria, propio: monto, monto });
@@ -240,5 +240,28 @@ describe("el aviso de la primera semana del mes", () => {
   it("una sede con el mes sin cerrar no entra (el monto no sería exacto)", () => {
     const cerrado = cif2(ventaSede(2, "Fonavi", 40000, 0, false));
     expect(utilidadPorSeparar(cerrado, cerrado)).toEqual([]);
+  });
+});
+
+describe("el pastel de la regla", () => {
+  it("tres partes en vuelta: costos, fijos y EBITDA, una detrás de otra desde arriba", () => {
+    const [c, f, e] = partesDelPastel(40, 35, 25);
+    expect([c.desde, c.largo]).toEqual([0, 0.4]);
+    expect(f.desde).toBeCloseTo(0.4);
+    expect(f.largo).toBeCloseTo(0.35);
+    expect(e.desde).toBeCloseTo(0.75);
+    expect(e.largo).toBeCloseTo(0.25);
+  });
+
+  it("la regla cumplida son tres partes iguales", () => {
+    const p = partesDelPastel(100 / 3, 100 / 3, 100 / 3);
+    for (const x of p) expect(x.largo).toBeCloseTo(1 / 3);
+  });
+
+  it("sin EBITDA (costos + fijos pasan de 100) el pastel se escala y el EBITDA queda en cero", () => {
+    const [c, f, e] = partesDelPastel(50, 64, -14);
+    expect(c.largo + f.largo).toBeCloseTo(1);
+    expect(e.largo).toBe(0);
+    expect(f.largo).toBeCloseTo(64 / 114);
   });
 });
