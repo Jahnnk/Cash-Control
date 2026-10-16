@@ -67,6 +67,7 @@ export function conciliarSede(sede: CifrasSede, finDeMes: string): ConciliacionS
     { etiqueta: "Plata que no era de la sede", monto: -otrosNoGasto, nota: "Pagos por error, ventas de otra sede, propinas entregadas, préstamos entre sedes" },
     { etiqueta: "Parte de otras sedes en gastos compartidos", monto: -s.fuera.otrasSedes },
     { etiqueta: "Devoluciones que restan del gasto", monto: -s.recuperado, nota: "Lo que otras sedes o personas devolvieron de gastos que esta sede pagó enteros" },
+    { etiqueta: "Gastos que pagó el socio de su bolsillo", monto: s.fuera.pagadoPorSocio ?? 0, nota: "Son gasto de la sede, pero no salieron de su cuenta" },
   ]);
   const salioTotal = s.caja.salio;
   const salioSin = r2(salioTotal + salioLineas.reduce((t, l) => t + l.monto, 0) - egresoReal);

@@ -6,6 +6,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { loadVentaRowsBlended } from "./kpis/ventas-loader";
+import { recuperosDelPeriodo } from "./recuperos-sql";
 import { armarSede, type FilaSede, type Linea } from "./presupuesto";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -31,15 +32,26 @@ export type CabeceraPresupuesto = {
  * los gastos compartidos, sin espejos ni lo que pagó el socio de su bolsillo).
  */
 export async function gastoPorCategoria(bId: number, desde: string, hasta: string): Promise<{ mes: string; categoria: string; monto: number }[]> {
-  return (await sql`
+  const [filas, recup] = await Promise.all([sql`
     SELECT to_char(date, 'YYYY-MM') AS mes, category AS categoria,
            SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS monto
     FROM expenses
     WHERE business_id = ${bId} AND date BETWEEN ${desde} AND ${hasta} AND archived = false
       AND is_internal_transfer = false AND (is_special_loan = false OR loan_via_bank = true)
-      AND payment_method NOT IN ('pendiente_atelier', 'socio')
+      -- 'socio': gasto real que pagó el socio de su bolsillo (método 'socio'): también es gasto de la sede.
+      AND payment_method <> 'pendiente_atelier'
     GROUP BY 1, 2
-  `) as { mes: string; categoria: string; monto: number }[];
+  ` as unknown as Promise<{ mes: string; categoria: string; monto: number }[]>,
+    // Lo que otras sedes o personas devolvieron resta de su categoría (una sola fuente, lib/recuperos-sql.ts).
+    recuperosDelPeriodo(sql as never, bId, desde, hasta)]);
+  const out = new Map(filas.map((f) => [`${f.mes}|${f.categoria}`, { ...f }]));
+  for (const r of recup.recuperos) {
+    const k = `${r.fecha.slice(0, 7)}|${r.categoria}`;
+    const f = out.get(k) ?? { mes: r.fecha.slice(0, 7), categoria: r.categoria, monto: 0 };
+    f.monto = Math.round((f.monto - r.monto) * 100) / 100;
+    out.set(k, f);
+  }
+  return [...out.values()];
 }
 
 export async function ventasPorMes(bId: number, desde: string, hasta: string): Promise<Map<string, number>> {

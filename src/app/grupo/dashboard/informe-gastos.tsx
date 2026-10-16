@@ -23,7 +23,7 @@ const BOLSILLOS: { clave: keyof Bolsillos; nombre: string; color: string; ayuda:
   { clave: "deudas", nombre: "Deudas", color: "#8E7CC3", ayuda: "Cuotas de préstamos y tarjetas" },
   { clave: "inversion", nombre: "Inversión", color: "#5B8DB8", ayuda: "Equipos y remodelación: duran años" },
   { clave: "noEsGasto", nombre: "No es gasto", color: "#D9A441", ayuda: "Ahorro, préstamos a otra sede, utilidades, devoluciones" },
-  { clave: "otrasSedes", nombre: "De otras sedes", color: "#CBD5E1", ayuda: "Parte de un gasto compartido que le toca a otra sede" },
+  { clave: "otrasSedes", nombre: "De otras sedes", color: "#CBD5E1", ayuda: "Parte de un gasto compartido que le toca a otra sede, o que otra sede o una persona devolvió" },
 ];
 
 const NOMBRE_CORTO: Record<Indicador["clave"], string> = { costoVendido: "Lo vendido", planilla: "Planilla", costoPrimo: "Costo primo" };

@@ -15,6 +15,9 @@
  */
 
 import { db } from "@/db";
+import { neon } from "@neondatabase/serverless";
+import { recuperosDelPeriodo, recuperosOperativosPorCategoria, totalRecuperos } from "@/lib/recuperos-sql";
+import { CATEGORIAS_FUERA_DE_OPERACION } from "@/lib/reglas-gasto";
 import { sql } from "drizzle-orm";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
@@ -74,8 +77,11 @@ async function liquidityAt(bId: number, date: string): Promise<{ bank: number; c
   return { bank: r2(Number(bank.b)), cash: r2(Number(cash.c)) };
 }
 
-/** Gasto bruto del rango (porción unidad; sin excluir categorías del EBITDA). */
+const sqlNeon = neon(process.env.DATABASE_URL!);
+
+/** Gasto bruto del rango (porción unidad; sin excluir categorías del EBITDA), menos lo que otras sedes o personas devolvieron. */
 async function grossExpensesInRange(bId: number, start: string, end: string): Promise<number> {
+  const recup = recuperosDelPeriodo(sqlNeon as never, bId, start, end);
   const r = (await db.execute(sql`
     SELECT COALESCE(SUM(CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END), 0)::float AS t
     FROM expenses
@@ -83,7 +89,7 @@ async function grossExpensesInRange(bId: number, start: string, end: string): Pr
       AND is_special_loan = false AND is_internal_transfer = false AND archived = false
       AND payment_method <> 'pendiente_atelier'
   `)).rows[0] as { t: number };
-  return r2(Number(r.t));
+  return r2(Number(r.t) - totalRecuperos((await recup).recuperos));
 }
 
 async function monthlyBasics(bId: number, month: string): Promise<MonthlyBasics> {
@@ -186,7 +192,7 @@ export async function collectUnitFacts(unit: BusinessUnitRef, month: string): Pr
   const catFilter = sql`
     e.business_id = ${bId} AND e.is_special_loan = false AND e.is_internal_transfer = false
     AND e.archived = false AND e.payment_method <> 'pendiente_atelier'
-    AND e.category NOT IN (SELECT name FROM expense_categories WHERE business_id = ${bId} AND exclude_from_ebitda = true)
+    AND e.category NOT IN (${sql.join(CATEGORIAS_FUERA_DE_OPERACION.map((c) => sql`${c}`), sql`, `)})
   `;
   const catMonth = (await db.execute(sql`
     SELECT e.category, COALESCE(SUM(CASE WHEN e.is_shared THEN COALESCE(e.atelier_amount, e.amount) ELSE e.amount END), 0)::float AS t
@@ -198,6 +204,19 @@ export async function collectUnitFacts(unit: BusinessUnitRef, month: string): Pr
     FROM expenses e WHERE ${catFilter} AND e.date >= ${window3} AND e.date <= ${window3End}
     GROUP BY e.category
   `)).rows as { category: string; t: number }[];
+  // Lo que otras sedes o personas devolvieron resta de su categoría (una sola fuente, lib/recuperos-sql.ts).
+  const [recMes, recVentana] = await Promise.all([
+    recuperosOperativosPorCategoria(sqlNeon as never, bId, start, end),
+    recuperosOperativosPorCategoria(sqlNeon as never, bId, window3, window3End),
+  ]);
+  const restar = (lista: { category: string; t: number }[], rec: Map<string, number>) => {
+    for (const [category, x] of rec) {
+      const f = lista.find((c) => c.category === category);
+      if (f) f.t = Number(f.t) - x; else lista.push({ category, t: -x });
+    }
+  };
+  restar(catMonth, recMes);
+  restar(catWindow, recVentana);
   const costGroups = (await db.execute(sql`
     SELECT name, cost_group FROM expense_categories WHERE business_id = ${bId}
   `)).rows as { name: string; cost_group: string | null }[];
