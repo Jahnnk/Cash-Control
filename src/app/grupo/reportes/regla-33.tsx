@@ -10,20 +10,16 @@
 
 import { SeccionDesplegable } from "@/components/productos/ui";
 import {
-  regla33, dondeFalta, partesDelPastel, ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT,
-  type FilaRegla, type Termometro,
+  regla33, dondeFalta, ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT,
+  type FilaRegla,
 } from "@/lib/regla-33";
+import { PastelRegla, PARTES, ESTILO_TERMOMETRO } from "@/components/pastel-regla";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 
 const pct = (n: number) => `${n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("es-PE", { maximumFractionDigits: 1 })}%`;
 const soles = (n: number) => `S/${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const dd = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-export const ESTILO_TERMOMETRO: Record<Termometro, { chip: string; texto: string }> = {
-  fragil: { chip: "bg-red-50 text-red-700 ring-red-200", texto: "text-red-700" },
-  en_camino: { chip: "bg-amber-50 text-amber-800 ring-amber-200", texto: "text-amber-700" },
-  eficiente: { chip: "bg-emerald-50 text-emerald-800 ring-emerald-200", texto: "text-emerald-700" },
-};
 
 /** Lo que se dice debajo de la barra: dónde está la diferencia con el tercio de EBITDA. */
 function frase(f: FilaRegla): string {
@@ -34,42 +30,6 @@ function frase(f: FilaRegla): string {
   if (d.masCostos >= 1) partes.push(`${soles(d.masCostos)} en costos variables`);
   if (d.masFijos >= 1) partes.push(`${soles(d.masFijos)} en costos fijos`);
   return `Para llegar a su tercio faltan ${soles(f.ebitda.difMeta)}: se pasó ${partes.join(" y ")}.`;
-}
-
-/**
- * El pastel: el anillo de afuera es la regla (tres partes iguales, delgado y claro) y el de adentro
- * es cómo va de verdad (grueso). Donde el anillo de adentro se pasa o se queda corto respecto del de
- * afuera se ve a simple vista qué parte falla. En el centro, el EBITDA.
- */
-const PARTES = {
-  costos: { vivo: "stroke-amber-400", claro: "stroke-amber-200", punto: "bg-amber-400", nombre: "Costos variables" },
-  fijos: { vivo: "stroke-slate-400", claro: "stroke-slate-200", punto: "bg-slate-400", nombre: "Costos fijos" },
-  ebitda: { vivo: "stroke-emerald-600", claro: "stroke-emerald-200", punto: "bg-emerald-600", nombre: "EBITDA" },
-} as const;
-
-function Pastel({ f }: { f: FilaRegla }) {
-  const real = partesDelPastel(f.costos!.pct, f.fijos!.pct, f.ebitda!.pct);
-  const regla = partesDelPastel(f.costos!.metaPct, f.fijos!.metaPct, f.ebitda!.metaPct);
-  const t = f.termometro;
-  const anillo = (partes: ReturnType<typeof partesDelPastel>, r: number, ancho: number, tono: "vivo" | "claro") =>
-    partes.filter((x) => x.largo > 0).map((x) => (
-      <circle
-        key={`${tono}-${x.clave}`} cx={60} cy={60} r={r} fill="none" strokeWidth={ancho} pathLength={100}
-        className={PARTES[x.clave][tono]}
-        // Un huequito entre partes (0.7%) para que se lean separadas.
-        strokeDasharray={`${Math.max(0, x.largo * 100 - 0.7)} 100`} strokeDashoffset={-x.desde * 100}
-        transform="rotate(-90 60 60)"
-      />
-    ));
-  return (
-    <svg viewBox="0 0 120 120" className="h-36 w-36 shrink-0" role="img"
-      aria-label={`De cada 100 soles vendidos: ${f.costos!.pct.toFixed(0)} en costos variables, ${f.fijos!.pct.toFixed(0)} en costos fijos y ${f.ebitda!.pct.toFixed(0)} de EBITDA. La regla pide un tercio cada uno.`}>
-      {anillo(regla, 54, 4, "claro")}
-      {anillo(real, 38, 18, "vivo")}
-      <text x={60} y={58} textAnchor="middle" className={`fill-current text-[17px] font-bold tabular-nums ${t ? ESTILO_TERMOMETRO[t].texto : ""}`}>{pct(f.ebitda!.pct)}</text>
-      <text x={60} y={71} textAnchor="middle" className="fill-gray-500 text-[8px]">de EBITDA</text>
-    </svg>
-  );
 }
 
 function Tarjeta({ f, finDeMes }: { f: FilaRegla; finDeMes: string }) {
@@ -88,7 +48,7 @@ function Tarjeta({ f, finDeMes }: { f: FilaRegla; finDeMes: string }) {
       {f.ebitda && f.costos && f.fijos ? (
         <>
           <div className="mt-2 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
-            <Pastel f={f} />
+            <PastelRegla f={f} />
             <ul className="w-full min-w-0 space-y-1.5 text-xs tabular-nums">
               {([["costos", f.costos], ["fijos", f.fijos], ["ebitda", f.ebitda]] as const).map(([clave, b]) => {
                 // Costos y fijos: pasarse de la meta es malo. EBITDA: quedarse corto es malo.

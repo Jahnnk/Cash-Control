@@ -21,4 +21,18 @@ describe("¿Cómo vamos este mes?", () => {
     expect(html).toContain("Caja");
     expect(html).not.toContain("Liquidez");
   });
+  test("el pastel de la regla 33-33-33 del grupo: las tres partes con su meta y un enlace a Reportes", () => {
+    const bloque = (pct: number, metaPct: number) => ({ monto: 0, pct, metaPct, meta: 0, difMeta: 0 });
+    const html = renderToStaticMarkup(h(EstadoMes, {
+      ...base,
+      ebitda: {
+        pct: 8.5, metaPct: 33, etiqueta: "frágil", tono: "mal", href: "/grupo/reportes",
+        fila: { costos: bloque(32.3, 33.3), fijos: bloque(59.2, 33.3), ebitda: bloque(8.5, 33.3), termometro: "fragil" },
+      },
+    }));
+    for (const t of ["Regla 33-33-33 · real / meta", "frágil", "Costos variables", "Costos fijos", "EBITDA", "32.3%", "59.2%", "/ 33%", "href=\"/grupo/reportes\"", "<svg"]) expect(html).toContain(t);
+  });
+  test("sin EBITDA (mes recién empezado) no hay pastel", () => {
+    expect(renderToStaticMarkup(h(EstadoMes, { ...base, ebitda: null }))).not.toContain("Regla 33-33-33");
+  });
 });

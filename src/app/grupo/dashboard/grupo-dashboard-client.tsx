@@ -247,6 +247,7 @@ export function GrupoDashboardClient({
         pct: reglaGrupo.ebitda.pct, metaPct: Math.round(reglaGrupo.ebitda.metaPct), etiqueta: ETIQUETA_TERMOMETRO[reglaGrupo.termometro].toLowerCase(),
         tono: ({ fragil: "mal", en_camino: "ojo", eficiente: "bien" } as const)[reglaGrupo.termometro],
         href: `/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`,
+        fila: reglaGrupo,
       }
     : null;
 
