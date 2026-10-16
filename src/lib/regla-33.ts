@@ -164,6 +164,23 @@ export function regla33(c: Cifras, config?: ConfigProfitFirst): FilaRegla[] {
   return [...sedes, delGrupo(c.grupo, cfg)];
 }
 
+/**
+ * El pastel de la regla: las tres partes como fracciones de la vuelta (0 a 1), empezando arriba.
+ * Si costos + fijos pasan de 100 no queda EBITDA y se escalan para que quepan en el círculo.
+ * `meta` es el mismo pastel con la regla cumplida (por defecto tres partes iguales).
+ */
+export type ParteDelPastel = { clave: "costos" | "fijos" | "ebitda"; desde: number; largo: number };
+
+export function partesDelPastel(costosPct: number, fijosPct: number, ebitdaPct: number): ParteDelPastel[] {
+  const c = Math.max(0, costosPct), f = Math.max(0, fijosPct), e = Math.max(0, ebitdaPct);
+  const total = Math.max(100, c + f + e);
+  return [
+    { clave: "costos", desde: 0, largo: c / total },
+    { clave: "fijos", desde: c / total, largo: f / total },
+    { clave: "ebitda", desde: (c + f) / total, largo: e / total },
+  ];
+}
+
 /** Para qué sirve la parte que falta: la frase que dice dónde está la diferencia con la meta. */
 export function dondeFalta(f: FilaRegla): { llegaAlTercio: boolean; masCostos: number; masFijos: number } | null {
   if (!f.ebitda || !f.costos || !f.fijos) return null;

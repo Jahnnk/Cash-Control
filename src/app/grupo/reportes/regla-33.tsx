@@ -3,14 +3,14 @@
 /**
  * «Regla 33-33-33» — el EBITDA como termómetro (pedido de Jahnn, 15-oct-2026, de una
  * asesoría con su coach). De cada S/ 100 vendidos: un tercio a costos variables, un
- * tercio a costos fijos y un tercio de EBITDA. Cada sede muestra cómo se reparte su
- * venta de verdad, con marcas en los tercios, y dónde está la diferencia con la meta.
+ * tercio a costos fijos y un tercio de EBITDA. Cada sede muestra, en un pastel de dos
+ * anillos (la regla afuera, cómo va adentro), cómo se reparte su venta y dónde está la diferencia con la meta.
  * Reglas y números: src/lib/regla-33.ts (sale de las seis cifras, nada nuevo que cuadrar).
  */
 
 import { SeccionDesplegable } from "@/components/productos/ui";
 import {
-  regla33, dondeFalta, ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT,
+  regla33, dondeFalta, partesDelPastel, ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT,
   type FilaRegla, type Termometro,
 } from "@/lib/regla-33";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
@@ -36,34 +36,40 @@ function frase(f: FilaRegla): string {
   return `Para llegar a su tercio faltan ${soles(f.ebitda.difMeta)}: se pasó ${partes.join(" y ")}.`;
 }
 
-function Barra({ f }: { f: FilaRegla }) {
-  const c = f.costos!.pct, fi = f.fijos!.pct, e = Math.max(0, f.ebitda!.pct);
-  // Si costos + fijos pasan de 100 no queda EBITDA: la barra se escala para que quepan.
-  const total = Math.max(100, c + fi);
-  const w = (n: number) => `${(n / total) * 100}%`;
-  const marca = (n: number) => ({ left: `${(n / total) * 100}%` });
-  return (
-    <div className="mt-2.5">
-      <div
-        className="relative flex h-3 overflow-hidden rounded-full bg-gray-100"
-        role="img"
-        aria-label={`De cada 100 soles vendidos: ${c.toFixed(0)} en costos variables, ${fi.toFixed(0)} en costos fijos y ${f.ebitda!.pct.toFixed(0)} de EBITDA`}
-      >
-        <div className="h-full bg-amber-400" style={{ width: w(c) }} />
-        <div className="h-full bg-slate-400" style={{ width: w(fi) }} />
-        <div className="h-full bg-emerald-600" style={{ width: w(e) }} />
-      </div>
-      {/* Los tercios: dónde terminaría cada bloque si se cumpliera la regla. */}
-      <div className="relative mt-0.5 h-2" aria-hidden>
-        <span className="absolute top-0 h-2 w-px bg-gray-400" style={marca(f.costos!.metaPct)} />
-        <span className="absolute top-0 h-2 w-px bg-gray-400" style={marca(f.costos!.metaPct + f.fijos!.metaPct)} />
-      </div>
-    </div>
-  );
-}
+/**
+ * El pastel: el anillo de afuera es la regla (tres partes iguales, delgado y claro) y el de adentro
+ * es cómo va de verdad (grueso). Donde el anillo de adentro se pasa o se queda corto respecto del de
+ * afuera se ve a simple vista qué parte falla. En el centro, el EBITDA.
+ */
+const PARTES = {
+  costos: { vivo: "stroke-amber-400", claro: "stroke-amber-200", punto: "bg-amber-400", nombre: "Costos variables" },
+  fijos: { vivo: "stroke-slate-400", claro: "stroke-slate-200", punto: "bg-slate-400", nombre: "Costos fijos" },
+  ebitda: { vivo: "stroke-emerald-600", claro: "stroke-emerald-200", punto: "bg-emerald-600", nombre: "EBITDA" },
+} as const;
 
-function Punto({ clase, children }: { clase: string; children: React.ReactNode }) {
-  return <span className="inline-flex items-center gap-1.5 whitespace-nowrap"><span className={`h-2 w-2 rounded-full ${clase}`} aria-hidden />{children}</span>;
+function Pastel({ f }: { f: FilaRegla }) {
+  const real = partesDelPastel(f.costos!.pct, f.fijos!.pct, f.ebitda!.pct);
+  const regla = partesDelPastel(f.costos!.metaPct, f.fijos!.metaPct, f.ebitda!.metaPct);
+  const t = f.termometro;
+  const anillo = (partes: ReturnType<typeof partesDelPastel>, r: number, ancho: number, tono: "vivo" | "claro") =>
+    partes.filter((x) => x.largo > 0).map((x) => (
+      <circle
+        key={`${tono}-${x.clave}`} cx={60} cy={60} r={r} fill="none" strokeWidth={ancho} pathLength={100}
+        className={PARTES[x.clave][tono]}
+        // Un huequito entre partes (0.7%) para que se lean separadas.
+        strokeDasharray={`${Math.max(0, x.largo * 100 - 0.7)} 100`} strokeDashoffset={-x.desde * 100}
+        transform="rotate(-90 60 60)"
+      />
+    ));
+  return (
+    <svg viewBox="0 0 120 120" className="h-36 w-36 shrink-0" role="img"
+      aria-label={`De cada 100 soles vendidos: ${f.costos!.pct.toFixed(0)} en costos variables, ${f.fijos!.pct.toFixed(0)} en costos fijos y ${f.ebitda!.pct.toFixed(0)} de EBITDA. La regla pide un tercio cada uno.`}>
+      {anillo(regla, 54, 4, "claro")}
+      {anillo(real, 38, 18, "vivo")}
+      <text x={60} y={58} textAnchor="middle" className={`fill-current text-[17px] font-bold tabular-nums ${t ? ESTILO_TERMOMETRO[t].texto : ""}`}>{pct(f.ebitda!.pct)}</text>
+      <text x={60} y={71} textAnchor="middle" className="fill-gray-500 text-[8px]">de EBITDA</text>
+    </svg>
+  );
 }
 
 function Tarjeta({ f, finDeMes }: { f: FilaRegla; finDeMes: string }) {
@@ -81,15 +87,24 @@ function Tarjeta({ f, finDeMes }: { f: FilaRegla; finDeMes: string }) {
 
       {f.ebitda && f.costos && f.fijos ? (
         <>
-          <div className="mt-2 flex items-baseline gap-2">
-            <span className={`text-2xl font-bold tabular-nums leading-none ${t ? ESTILO_TERMOMETRO[t].texto : ""}`}>{pct(f.ebitda.pct)}</span>
-            <span className="text-xs text-gray-500">de EBITDA · meta {Math.round(f.ebitda.metaPct)}% · {f.ebitda.monto < 0 ? "−" : ""}{soles(f.ebitda.monto)}</span>
-          </div>
-          <Barra f={f} />
-          <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs text-gray-600 tabular-nums">
-            <Punto clase="bg-amber-400">Costos variables {pct(f.costos.pct)}</Punto>
-            <Punto clase="bg-slate-400">Costos fijos {pct(f.fijos.pct)}</Punto>
-            <Punto clase="bg-emerald-600">EBITDA {pct(f.ebitda.pct)}</Punto>
+          <div className="mt-2 flex flex-col items-center gap-3 sm:flex-row sm:gap-4">
+            <Pastel f={f} />
+            <ul className="w-full min-w-0 space-y-1.5 text-xs tabular-nums">
+              {([["costos", f.costos], ["fijos", f.fijos], ["ebitda", f.ebitda]] as const).map(([clave, b]) => {
+                // Costos y fijos: pasarse de la meta es malo. EBITDA: quedarse corto es malo.
+                const mal = clave === "ebitda" ? b.pct < b.metaPct : b.pct > b.metaPct;
+                return (
+                  <li key={clave} className="flex items-baseline justify-between gap-2">
+                    <span className="inline-flex items-center gap-1.5 text-gray-700"><span className={`h-2 w-2 rounded-full ${PARTES[clave].punto}`} aria-hidden />{PARTES[clave].nombre}</span>
+                    <span className="text-right">
+                      <b className={mal ? "text-amber-700" : "text-emerald-700"}>{pct(b.pct)}</b>
+                      <span className="text-gray-400"> · meta {Math.round(b.metaPct)}%</span>
+                      {clave === "ebitda" && <span className="block text-[10px] text-gray-400">{b.monto < 0 ? "−" : ""}{soles(b.monto)}</span>}
+                    </span>
+                  </li>
+                );
+              })}
+            </ul>
           </div>
           <p className="mt-2 text-[11px] leading-snug text-gray-600">{frase(f)}</p>
           {f.sueldoSocios > 0 && (
@@ -131,7 +146,7 @@ export function Regla33({ cifras, periodo }: { cifras: SeisCifras | null; period
           {filas.map((f) => <Tarjeta key={f.etiqueta} f={f} finDeMes={finDeMes} />)}
         </div>
         <p className="text-[11px] leading-relaxed text-gray-500">
-          Las rayitas de la barra marcan cada tercio. El EBITDA es lo que queda de la venta después de los costos variables y los fijos, antes de impuestos:
+          El anillo de afuera es la regla (un tercio cada parte); el de adentro, cómo va de verdad: donde se pasa o se queda corto se ve qué parte falla. El EBITDA es lo que queda de la venta después de los costos variables y los fijos, antes de impuestos:
           un termómetro de qué tan eficiente es la operación. Menos de {EBITDA_FRAGIL_PCT}% es una operación frágil; {EBITDA_EFICIENTE_PCT}% o más, un modelo eficiente.
           Costos variables = lo que sube y baja con la venta; costos fijos = planilla, alquiler y servicios (y lo que aún no se clasificó).
           {" "}Cifras de {periodo.toLowerCase()}, las mismas de «Las seis cifras».
