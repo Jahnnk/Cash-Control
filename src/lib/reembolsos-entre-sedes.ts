@@ -34,13 +34,30 @@
  * También se aceptan las notas que escribía Jahnn a mano antes de que
  * Kelly cargara todo ("Reembolso Fonavi — Agua 1er piso"), donde la sede
  * va en el texto y no entre paréntesis.
+ *
+ * ─── Sin la palabra «reembolso» (16-oct-2026) ───
+ *
+ *   "ALQUILER OCTUBRE 2026 (EXPERIENCIAS GASTRONOMICAS YAYIS SRL)" S/1,000
+ *      → la parte de Fonavi del alquiler, pagada por adelantado. No dice
+ *        «reembolso» y Kelly la puso en OTROS: el importador la contó como
+ *        ingreso de Atelier (conciliación de setiembre con Jahnn).
+ *
+ * Si paga una empresa del grupo y el concepto es un costo que se comparte
+ * (alquiler, luz, agua, gas, internet), también es plata que vuelve. Solo
+ * esos costos: un pago de Fonavi por productos de Atelier SÍ es venta.
  */
 
 /** Las razones sociales del grupo. Si una de estas paga, es entre sedes. */
 const EMPRESAS_DEL_GRUPO = [
   "EXPERIENCIAS GASTRONOMICAS",
   "PRODUCTOS SALUDABLES",
+  // Centro. Kelly a veces escribe «SERVCIOS» (Fonavi, oct-2026).
+  "SERVICIOS GASTRONOMICOS",
+  "SERVCIOS GASTRONOMICOS",
 ];
+
+/** Costos del local que se reparten entre sedes. Palabra completa: «GAS» no es «GASTRONOMICAS». */
+const COSTO_COMPARTIDO = /\b(ALQUILER|LUZ|AGUA|GAS|INTERNET)\b/;
 
 /** Los nombres con que Jahnn se refiere a cada sede en sus notas. */
 const SEDES = ["FONAVI", "CENTRO", "ATELIER"];
@@ -79,6 +96,10 @@ export function evaluarReembolso(nota: string | null | undefined): EvaluacionRee
   }
 
   const vuelve = VUELVE.some((p) => texto.includes(normalizar(p)));
+  const empresaSinPalabra = !vuelve && COSTO_COMPARTIDO.test(texto) ? EMPRESAS_DEL_GRUPO.find((e) => texto.includes(e)) : undefined;
+  if (empresaSinPalabra) {
+    return { origen: "grupo", quien: empresaSinPalabra, motivo: `Lo paga ${empresaSinPalabra}, que es del grupo, por un costo compartido.` };
+  }
   if (!vuelve) {
     return { origen: "no-es-reembolso", quien: null, motivo: "No dice que sea una devolución." };
   }
