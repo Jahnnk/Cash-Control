@@ -84,7 +84,7 @@ describe("estados y frases", () => {
     const m = motoresDeSede({ regla: fl, ventas: { monto: 30000, esperada: 30000, mesAnterior: null }, senales: [] });
     // Fijos 9,500 = 31.7% (dentro de su tercio) pero planilla 26.7% > 25%.
     expect(m.motores[2].estado).toBe("ambar");
-    expect(m.motores[2].frase).toContain("tope 25%");
+    expect(m.motores[2].frase).toContain("sano 20–25%");
   });
 
   it("con el EBITDA en su meta ningún motor frena", () => {
