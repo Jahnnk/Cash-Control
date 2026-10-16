@@ -133,6 +133,8 @@ export type FilaOperativa = {
   /** Salió de la caja sin ser gasto del negocio, con su detalle. */
   salioFuera: number;
   detalleFuera: { etiqueta: string; monto: number }[];
+  /** Lo que otras sedes devolvieron por gastos que esta sede pagó enteros (ya restado de los gastos). */
+  recuperado: number;
 };
 
 type Fuera = CifrasSede["fuera"];
@@ -164,6 +166,7 @@ function operativaDeSede(sede: CifrasSede): FilaOperativa {
     margenCajaPct: s.conResultado ? margenDeCaja(s.caja.entro, s.caja.salio) : null,
     salioFuera: r2(det.reduce((t, x) => t + x.monto, 0)),
     detalleFuera: det,
+    recuperado: s.recuperado ?? 0,
   };
 }
 
@@ -187,6 +190,8 @@ export function resultadoOperativo(c: SeisCifrasLike): FilaOperativa[] {
     margenCajaPct: g.ganancia !== null ? margenDeCaja(g.caja.entro, g.caja.salio) : null,
     salioFuera: r2(det.reduce((t, x) => t + x.monto, 0)),
     detalleFuera: det,
+    // Dentro del grupo, lo que una sede devuelve a otra se compensa: cada gasto ya cuenta una sola vez.
+    recuperado: 0,
   };
   return [...filas, grupo];
 }

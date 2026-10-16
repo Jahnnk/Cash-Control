@@ -14,6 +14,7 @@ import { neon } from "@neondatabase/serverless";
 import { requireFullSession } from "@/lib/session-access";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
+import { recuperosDeOtrasSedes, type DevolucionRecibida, type GastoRepartido } from "@/lib/recuperos-entre-sedes";
 import { cifrasDeSede, cifrasDelGrupo, corteComun, type CifrasSede, type CifrasGrupo, type FilaCifras } from "@/lib/seis-cifras";
 import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
 import type { ConfigProfitFirst } from "@/lib/regla-33";
@@ -82,7 +83,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
     bId: number, sede: string, corte: string | null, corteExcel: string | null,
     ventasRows: { date: string; total: number }[], caja: { entro: number; salio: number }, rescate: number,
   ): Promise<CifrasSede> {
-      const [filas, cobros, porVentas] = await Promise.all([
+      const [filas, cobros, porVentas, devoluciones, repartidos] = await Promise.all([
         corte
           ? sql`
               SELECT category AS categoria, concept AS concepto, amount::float AS monto,
@@ -104,6 +105,20 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
                 AND non_operative_category IS NULL
             ` as unknown as Promise<{ n: number; t: number }[]>
           : Promise.resolve([] as { n: number; t: number }[]),
+        // Lo que otras sedes devolvieron (lib/recuperos-entre-sedes.ts) y los gastos compartidos que ya lo explican.
+        corte
+          ? sql`
+              SELECT date::text AS fecha, amount::float AS monto, COALESCE(note, '') AS nota FROM bank_income_items
+              WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${corte} AND archived = false AND is_fonavi_reimbursement = true
+            ` as unknown as Promise<DevolucionRecibida[]>
+          : Promise.resolve([] as DevolucionRecibida[]),
+        corte
+          ? sql`
+              SELECT date::text AS fecha, (amount - COALESCE(atelier_amount, amount))::float AS otras FROM expenses
+              WHERE business_id = ${bId} AND archived = false AND is_shared = true
+                AND date BETWEEN (${inicio}::date - 45) AND (${corte}::date + 45) AND amount - COALESCE(atelier_amount, amount) > 0
+            ` as unknown as Promise<GastoRepartido[]>
+          : Promise.resolve([] as GastoRepartido[]),
       ]);
       const tope = corte ?? hastaHoy;
       const hasta = ventasRows.filter((r) => r.date <= tope).reduce((t, r) => t + r.total, 0);
@@ -114,6 +129,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
         caja: { entro: caja.entro, salio: caja.salio, rescate },
         cobrado: cobros ? cobros.ingresos : null,
         ingresadoVentas: porVentas[0]?.n ? porVentas[0].t : null,
+        recuperos: recuperosDeOtrasSedes(devoluciones, repartidos).map((r) => ({ categoria: r.categoria, monto: r.monto, concepto: r.nota })),
       });
   }
 }
