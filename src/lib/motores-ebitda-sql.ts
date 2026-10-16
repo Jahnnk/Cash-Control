@@ -121,6 +121,16 @@ async function senalesDeSede(s: CifrasSede, mes: string, cumplimiento: Awaited<R
       : gris("tiempos", "Tiempos de atención", "Sin metas de tiempo"));
   } else out.push(gris("tiempos", "Tiempos de atención", "Sin tiempos registrados en el período"));
 
+  // «Generar valor» (triángulo del valor): ¿el cliente percibe el valor? NPS y ticket promedio de la sede (cafeterías).
+  if (ES_CAFETERIA[s.businessId]) {
+    out.push(resumen && resumen.npsProm !== null
+      ? { clave: "nps", etiqueta: "NPS", paso: "generar", estado: aEstado(resumen.traffic.nps), detalle: `${resumen.npsProm} de 10 · meta ${metas.npsMin}` }
+      : { ...gris("nps", "NPS", "Sin NPS registrado en el período"), paso: "generar" });
+    out.push(resumen && resumen.ticketProm !== null && metas.ticketRef > 1
+      ? { clave: "ticket", etiqueta: "Ticket promedio", paso: "generar", estado: aEstado(resumen.traffic.ticket), detalle: `S/${resumen.ticketProm.toFixed(2)} · referencia S/${metas.ticketRef.toFixed(2)}` }
+      : { ...gris("ticket", "Ticket promedio", "Sin ticket en el período"), paso: "generar" });
+  }
+
   // Registro diario: días con venta registrada sobre los días del período (cafeterías; Atelier llega con el Reporte de Ventas).
   if (ES_CAFETERIA[s.businessId]) {
     const dias = Number(tope.slice(8, 10));
@@ -179,14 +189,15 @@ function senalesDelGrupo(porSede: { sede: string; senales: Senal[] }[]): Senal[]
     const de = porSede.map((x) => ({ sede: x.sede, s: x.senales.find((s) => s.clave === clave) })).filter((x): x is { sede: string; s: Senal } => !!x.s);
     const conDato = de.filter((x) => x.s.estado !== "gris");
     const etiqueta = de[0].s.etiqueta;
-    if (conDato.length === 0) return gris(clave, etiqueta, de[0].s.detalle);
+    const paso = de[0].s.paso;
+    if (conDato.length === 0) return { ...gris(clave, etiqueta, de[0].s.detalle), paso };
     const peor = conDato.reduce((p, x) => (orden[x.s.estado] < orden[p.s.estado] ? x : p));
     const falla = conDato.filter((x) => x.s.estado !== "verde");
     // Las señales con número (mermas) se promedian entre sedes, pesadas por su venta.
     const conNumero = conDato.filter((x) => x.s.valor !== null && x.s.valor !== undefined && (x.s.peso ?? 0) > 0);
     const pesoTotal = conNumero.reduce((t, x) => t + (x.s.peso ?? 0), 0);
     const valor = conNumero.length > 0 && pesoTotal > 0 ? conNumero.reduce((t, x) => t + (x.s.valor ?? 0) * (x.s.peso ?? 0), 0) / pesoTotal : null;
-    return { clave, etiqueta, estado: peor.s.estado, detalle: falla.length === 0 ? "En verde en todas las sedes" : falla.map((x) => `${x.sede}: ${x.s.detalle}`).join(" · "), valor: valor !== null ? r1(valor * 100) / 100 : null, peso: pesoTotal || null, meta: conNumero[0]?.s.meta ?? null };
+    return { clave, etiqueta, paso, estado: peor.s.estado, detalle: falla.length === 0 ? "En verde en todas las sedes" : falla.map((x) => `${x.sede}: ${x.s.detalle}`).join(" · "), valor: valor !== null ? r1(valor * 100) / 100 : null, peso: pesoTotal || null, meta: conNumero[0]?.s.meta ?? null };
   });
 }
 

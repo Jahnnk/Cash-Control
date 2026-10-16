@@ -17,6 +17,7 @@ import { getRentabilidadProductos } from "@/app/actions/productos-panorama";
 import { regla33, profitFirst } from "@/lib/regla-33";
 import { tarjetasDelTablero, titularEbitda, puntosDelRadar, type Tarjeta } from "@/lib/tablero-ebitda";
 import { pisoDePrecios, type PisoSede } from "@/lib/productos/piso-precios";
+import { trianguloDelValor, type Triangulo } from "@/lib/triangulo-valor";
 import { CAFETERIAS } from "@/lib/productos/cafeterias";
 import type { EstadoMotor, Motores } from "@/lib/motores-ebitda";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
@@ -80,6 +81,38 @@ function Radar({ m }: { m: Motores | null }) {
   );
 }
 
+const RELLENO: Record<EstadoMotor, string> = { verde: "fill-emerald-500", ambar: "fill-amber-400", rojo: "fill-red-500", gris: "fill-gray-300" };
+
+/** El triángulo del valor: generar (arriba) → entregar (abajo a la izquierda) → capturar (abajo a la derecha); el paso actual lleva un aro. */
+function TrianguloSvg({ t }: { t: Triangulo }) {
+  const nodos = [{ x: 110, y: 44 }, { x: 34, y: 158 }, { x: 186, y: 158 }] as const;
+  const flecha = (a: number, b: number) => {
+    const [p, q] = [nodos[a], nodos[b]];
+    const dx = q.x - p.x, dy = q.y - p.y, L = Math.hypot(dx, dy);
+    const ux = dx / L, uy = dy / L;
+    const x1 = p.x + ux * 22, y1 = p.y + uy * 22, x2 = q.x - ux * 24, y2 = q.y - uy * 24;
+    return <line key={`${a}${b}`} x1={x1} y1={y1} x2={x2} y2={y2} className="stroke-gray-300" strokeWidth={1.5} markerEnd="url(#punta)" />;
+  };
+  const rotulos = [["Generar", 110, 11, "middle"], ["Entregar", 34, 192, "middle"], ["Capturar", 186, 192, "middle"]] as const;
+  return (
+    <svg viewBox="0 0 220 198" className="mx-auto h-44 w-full max-w-[16rem]" role="img"
+      aria-label={`Triángulo del valor: ${t.pasos.map((p) => `${p.titulo} ${p.estado === "gris" ? "sin dato" : p.estado === "verde" ? "en verde" : p.estado === "ambar" ? "en ámbar" : "en rojo"}`).join(", ")}`}>
+      <defs>
+        <marker id="punta" viewBox="0 0 8 8" refX="6" refY="4" markerWidth="6" markerHeight="6" orient="auto-start-reverse"><path d="M0,0 L8,4 L0,8 z" className="fill-gray-300" /></marker>
+      </defs>
+      {flecha(0, 1)}{flecha(1, 2)}{flecha(2, 0)}
+      {t.pasos.map((p, i) => (
+        <g key={p.clave}>
+          {t.actual === p.clave && <circle cx={nodos[i].x} cy={nodos[i].y} r={21} fill="none" className="stroke-gray-800" strokeWidth={2} strokeDasharray="4 3" />}
+          <circle cx={nodos[i].x} cy={nodos[i].y} r={16} className={RELLENO[p.estado]} />
+          <text x={nodos[i].x} y={nodos[i].y + 5} textAnchor="middle" className="fill-white text-[14px] font-bold">{p.numero}</text>
+          <text x={rotulos[i][1]} y={rotulos[i][2] + (i === 0 ? 0 : 0)} textAnchor={rotulos[i][3]} className="fill-gray-700 text-[10px] font-semibold">{rotulos[i][0]}</text>
+        </g>
+      ))}
+    </svg>
+  );
+}
+
 function Panel({ titulo, children, pie }: { titulo: string; children: React.ReactNode; pie?: React.ReactNode }) {
   return (
     <section className="min-w-0 rounded-2xl border border-gray-200/80 bg-white px-4 py-4 sm:px-5">
@@ -118,6 +151,8 @@ export function TableroEbitda({ cifras, breakeven, motores, selectedMonth, isCur
   const piso = s.id !== 1 && carta?.clave === clave ? carta.piso : null;
   const cargando = s.id !== 1 && carta?.clave !== clave;
   const top5 = useMemo(() => (piso ? [...piso.filas].sort((a, b) => (b.precio - b.costo) * b.unidades - (a.precio - a.costo) * a.unidades).slice(0, 5) : []), [piso]);
+
+  const triangulo = useMemo(() => trianguloDelValor({ motores: mot, regla: fila, profit: pf, piso }), [mot, fila, pf, piso]);
 
   if (!cifras) return <p className="text-sm text-gray-500">No se pudieron calcular las cifras de {periodo}.</p>;
   const aMedias = fila && !fila.mesCompleto;
@@ -172,17 +207,35 @@ export function TableroEbitda({ cifras, breakeven, motores, selectedMonth, isCur
           ) : <p className="text-xs text-gray-400">Calculando los motores…</p>}
         </Panel>
 
-        <Panel titulo="Precios de la carta" pie={s.id !== 1 ? <Link href="/grupo/productos" className="inline-flex items-center gap-0.5 font-medium text-primary hover:underline">Ver Productos <ArrowRight className="h-3 w-3" /></Link> : undefined}>
-          {s.id === 1 ? <p className="text-xs text-gray-500">Atelier vende por pedidos a empresas y a las cafeterías: no tiene carta con precio al público.</p>
-            : cargando ? <p className="text-xs text-gray-400">Calculando…</p>
-            : piso ? (
-              <dl className="space-y-3 text-sm">
-                <div className="flex items-baseline justify-between gap-3"><dt className="text-gray-600">Bajo el piso (costo × 3)</dt><dd className={`font-semibold tabular-nums ${piso.bajo > 0 ? "text-amber-700" : "text-emerald-700"}`}>{piso.bajo} de {piso.conCosto}</dd></div>
-                <div className="flex items-baseline justify-between gap-3"><dt className="text-gray-600">Margen bruto de la carta</dt><dd className={`font-semibold tabular-nums ${(piso.margenCartaPct ?? 0) >= 65 ? "text-emerald-700" : "text-amber-700"}`}>{pct(piso.margenCartaPct)}</dd></div>
-                <div className="flex items-baseline justify-between gap-3"><dt className="text-gray-600">Planilla sobre ventas</dt><dd className="font-semibold tabular-nums text-gray-900">{pct(fila?.planilla?.pct ?? null)}</dd></div>
-                <p className="text-[11px] leading-snug text-gray-500">Lo sano: margen bruto de 65% a 70% o más; planilla de 20% a 25%.</p>
-              </dl>
-            ) : <p className="text-xs text-gray-500">Sin reporte de rotación de {periodo.toLowerCase()} para calcular los precios.</p>}
+        <Panel titulo="El triángulo del valor" pie={<span className="text-gray-500">Generar → entregar → capturar: el aro marca el primer paso que no está en verde.</span>}>
+          <TrianguloSvg t={triangulo} />
+          <ul className="mt-2 space-y-1.5 text-xs">
+            {triangulo.pasos.map((p) => (
+              <li key={p.clave} className="flex items-baseline justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-gray-700"><span className={`h-2 w-2 rounded-full ${ESTADO[p.estado].punto}`} aria-hidden />{p.numero}. {p.titulo}</span>
+                <span className={`text-[11px] ${ESTADO[p.estado].texto}`}>{p.estado === "gris" ? "sin dato" : p.estado === "verde" ? "en verde" : p.estado === "ambar" ? "cuidado" : "frena"}</span>
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2.5 text-[11px] font-medium leading-snug text-gray-800">{triangulo.mensaje}</p>
+          <details className="group mt-2">
+            <summary className="cursor-pointer list-none text-[11px] font-medium text-primary hover:underline"><span className="group-open:hidden">Ver las señales de cada paso</span><span className="hidden group-open:inline">Ocultar las señales</span></summary>
+            <div className="mt-2 space-y-2.5">
+              {triangulo.pasos.map((p) => (
+                <div key={p.clave}>
+                  <div className="text-[11px] font-semibold text-gray-900">{p.numero}. {p.titulo} <span className="font-normal text-gray-500">· {p.pregunta}</span></div>
+                  {p.senales.length === 0 ? <p className="text-[11px] text-gray-400">Sin señales medibles en este período.</p> : (
+                    <ul className="mt-1 space-y-1">
+                      {p.senales.map((x) => (
+                        <li key={x.clave} className="flex items-start gap-1.5 text-[11px] leading-snug"><span className={`mt-1 h-1.5 w-1.5 shrink-0 rounded-full ${ESTADO[x.estado].punto}`} aria-hidden /><span className="text-gray-700"><b className="font-medium">{x.etiqueta}</b> <span className="text-gray-500">· {x.detalle}</span></span></li>
+                      ))}
+                    </ul>
+                  )}
+                </div>
+              ))}
+              <p className="text-[10px] leading-snug text-gray-400">La propuesta de valor y la diferenciación son estratégicas y no las mide el sistema: el paso 1 usa señales de que el cliente percibe el valor (NPS, ticket y precios sostenidos).</p>
+            </div>
+          </details>
         </Panel>
       </div>
 

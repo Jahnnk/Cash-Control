@@ -33,6 +33,11 @@ export type ClaveMotor = "ventas" | "producto" | "fijos" | "eficiencia";
 export type Senal = {
   clave: string;
   etiqueta: string;
+  /**
+   * A qué paso del triángulo del valor pertenece: «entregar» (por defecto) cuenta para el motor 4 (eficiencia
+   * del sistema); «generar» (NPS, ticket) mide si el cliente percibe el valor y NO entra al motor 4.
+   */
+  paso?: "generar" | "entregar";
   estado: EstadoMotor;
   /** El dato en una frase corta («3.1% de la venta · meta 4%»). */
   detalle: string;
@@ -80,6 +85,8 @@ export type Motores = {
   motores: Motor[];
   /** El motor que más frena el EBITDA; null si el EBITDA llega a su meta o no hay base. */
   frena: ClaveMotor | null;
+  /** Las señales de «generar valor» (NPS, ticket promedio): alimentan el triángulo del valor. */
+  senalesValor: Senal[];
   /** La frase para titular («El motor que más frena: costos fijos»). */
   titular: string;
 };
@@ -119,12 +126,16 @@ export function motoresDeSede(e: EntradaMotores): Motores {
   const base = { etiqueta: f.etiqueta, esGrupo: f.esGrupo };
   const sinBase = !f.ebitda || !f.costos || !f.fijos || f.ventas === null || f.ventas <= 0;
 
+  // «Generar valor» (NPS, ticket) no es eficiencia del sistema: va al triángulo del valor, no al motor 4.
+  const senalesValor = e.senales.filter((s) => s.paso === "generar");
+  const senalesEficiencia = e.senales.filter((s) => s.paso !== "generar");
+
   // ── 4. Eficiencia: semáforo con las señales que el sistema comprueba ──
-  const conDato = e.senales.filter((s) => s.estado !== "gris");
+  const conDato = senalesEficiencia.filter((s) => s.estado !== "gris");
   const verdes = conDato.filter((s) => s.estado === "verde").length;
   const eficiencia: Motor = {
     clave: "eficiencia", titulo: NOMBRE.eficiencia,
-    estado: peorEstado(e.senales.map((s) => s.estado)),
+    estado: peorEstado(senalesEficiencia.map((s) => s.estado)),
     cifra: conDato.length > 0 ? `${verdes} de ${conDato.length} en verde` : "—",
     meta: "todas en verde",
     frase: conDato.length === 0
@@ -134,12 +145,12 @@ export function motoresDeSede(e: EntradaMotores): Motores {
         : `Revisar: ${conDato.filter((s) => s.estado !== "verde").map((s) => s.etiqueta.toLowerCase()).join(", ")}.`,
     quita: null,
     puntaje: conDato.length > 0 ? Math.round((verdes / conDato.length) * 100) : null,
-    senales: e.senales,
+    senales: senalesEficiencia,
   };
 
   if (sinBase) {
     const vacio = (clave: ClaveMotor): Motor => ({ clave, titulo: NOMBRE[clave], estado: "gris", cifra: "—", meta: "", frase: f.sinResultadoPorque ?? "Sin datos", quita: null, puntaje: null });
-    return { ...base, motores: [vacio("ventas"), vacio("producto"), vacio("fijos"), eficiencia], frena: null, titular: f.sinResultadoPorque ?? "Sin datos para este período" };
+    return { ...base, motores: [vacio("ventas"), vacio("producto"), vacio("fijos"), eficiencia], frena: null, senalesValor, titular: f.sinResultadoPorque ?? "Sin datos para este período" };
   }
 
   const vendido = e.ventas.monto;
@@ -222,5 +233,5 @@ export function motoresDeSede(e: EntradaMotores): Motores {
   }
   // Mes a medias: la planilla y el alquiler se pagan en fechas puntuales, así que los fijos aún no están completos.
   if (!f.mesCompleto) titular += " Mes a medias: los gastos fijos todavía no están completos.";
-  return { ...base, motores, frena, titular };
+  return { ...base, motores, frena, senalesValor, titular };
 }
