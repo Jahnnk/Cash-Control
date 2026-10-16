@@ -138,6 +138,13 @@ export type CifrasSede = {
   recuperado: number;
   /** Lo que ENTRÓ y no es de la operación, hasta el corte (para la conciliación del mes). */
   ingresosFuera: IngresosFuera;
+  /**
+   * Todas las categorías con su rubro y lo que le tocó a la sede (ya con las devoluciones restadas): el
+   * detalle del estado de resultados (Fase 2, 16-oct-2026).
+   */
+  porCategoria: { categoria: string; rubro: Rubro; monto: number }[];
+  /** El corte salió del Excel (false = mes llenado a mano en el sistema, como Atelier abr–jul 2026). */
+  fuenteExcel: boolean;
   /** Las categorías que más pesan en cada rubro. */
   topCostos: { categoria: string; monto: number }[];
   topGastos: { categoria: string; monto: number }[];
@@ -200,6 +207,8 @@ export function cifrasDeSede(input: {
   ingresadoVentas?: number | null;
   /** Devoluciones de otras sedes que se restan del gasto, con su categoría. */
   recuperos?: { categoria: string; monto: number; concepto?: string }[];
+  /** false = el mes se llenó a mano (sin Excel). Por defecto true. */
+  fuenteExcel?: boolean;
   ingresosFuera?: IngresosFuera;
 }): CifrasSede {
   const sumas: Record<Rubro, number> = { costos: 0, gastos: 0, impuestos: 0, deudas: 0, inversion: 0, noEsGasto: 0 };
@@ -212,12 +221,14 @@ export function cifrasDeSede(input: {
   let ahorro = 0;
   let reparto = 0;
   let pagadoPorSocio = 0;
+  const porCategoria = new Map<string, number>();
   // Lo que otra sede devolvió resta en su categoría, como una fila negativa (no toca «otras sedes»).
   const recuperos = input.recuperos ?? [];
   const filas: FilaCifras[] = [...input.filas, ...recuperos.map((r) => ({ categoria: r.categoria, concepto: r.concepto ?? null, monto: -r.monto, propio: -r.monto }))];
   for (const f of filas) {
     const rubro = rubroDe(f.categoria);
     sumas[rubro] += f.propio;
+    porCategoria.set(f.categoria, (porCategoria.get(f.categoria) ?? 0) + f.propio);
     if (f.categoria === "PLANILLA") planilla += f.propio;
     if (esSueldoDeSocio(f.categoria, f.concepto)) sueldoSocios += f.propio;
     if (f.categoria === "AHORRO") ahorro += f.propio;
@@ -257,6 +268,9 @@ export function cifrasDeSede(input: {
     recuperado: r2(recuperos.reduce((t, r) => t + r.monto, 0)),
     ingresosFuera: input.ingresosFuera ?? { devolucionesSedes: 0, prestamos: 0, rescates: 0, otros: 0, devolucionesGastos: 0 },
     topCostos: top(porCostos), topGastos: top(porGastos),
+    porCategoria: [...porCategoria.entries()].map(([categoria, monto]) => ({ categoria, rubro: rubroDe(categoria), monto: r2(monto) }))
+      .filter((c) => Math.abs(c.monto) >= 0.01).sort((a, b) => b.monto - a.monto),
+    fuenteExcel: input.fuenteExcel ?? true,
   };
 }
 
