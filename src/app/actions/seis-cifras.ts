@@ -15,7 +15,7 @@ import { requireFullSession } from "@/lib/session-access";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
 import { recuperosDeOtrasSedes, type DevolucionRecibida, type GastoRepartido } from "@/lib/recuperos-entre-sedes";
-import { cifrasDeSede, cifrasDelGrupo, corteComun, type CifrasSede, type CifrasGrupo, type FilaCifras } from "@/lib/seis-cifras";
+import { cifrasDeSede, cifrasDelGrupo, corteComun, type IngresosFuera, type CifrasSede, type CifrasGrupo, type FilaCifras } from "@/lib/seis-cifras";
 import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
 import type { ConfigProfitFirst } from "@/lib/regla-33";
 
@@ -83,7 +83,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
     bId: number, sede: string, corte: string | null, corteExcel: string | null,
     ventasRows: { date: string; total: number }[], caja: { entro: number; salio: number }, rescate: number,
   ): Promise<CifrasSede> {
-      const [filas, cobros, porVentas, devoluciones, repartidos] = await Promise.all([
+      const [filas, cobros, porVentas, devoluciones, repartidos, fueraIn] = await Promise.all([
         corte
           ? sql`
               SELECT category AS categoria, concept AS concepto, amount::float AS monto,
@@ -119,6 +119,21 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
                 AND date BETWEEN (${inicio}::date - 45) AND (${corte}::date + 45) AND amount - COALESCE(atelier_amount, amount) > 0
             ` as unknown as Promise<GastoRepartido[]>
           : Promise.resolve([] as GastoRepartido[]),
+        // Lo que entró sin ser de la operación, por tipo (conciliación del mes). Mismo filtro que «entró».
+        corte
+          ? sql`
+              SELECT
+                COALESCE(SUM(amount) FILTER (WHERE is_fonavi_reimbursement), 0)::float AS "devolucionesSedes",
+                COALESCE(SUM(amount) FILTER (WHERE NOT is_fonavi_reimbursement AND (non_operative_category ILIKE '%pr_stamo%' OR is_special_loan)), 0)::float AS prestamos,
+                COALESCE(SUM(amount) FILTER (WHERE NOT is_fonavi_reimbursement AND NOT is_special_loan AND non_operative_category IS NOT NULL
+                  AND non_operative_category NOT ILIKE '%pr_stamo%' AND (note ILIKE '%rescate%' OR note ILIKE '%fondos mutuos%')), 0)::float AS rescates,
+                COALESCE(SUM(amount) FILTER (WHERE NOT is_fonavi_reimbursement AND NOT is_special_loan AND non_operative_category IS NOT NULL
+                  AND non_operative_category NOT ILIKE '%pr_stamo%' AND NOT (note ILIKE '%rescate%' OR note ILIKE '%fondos mutuos%')), 0)::float AS otros
+              FROM bank_income_items
+              WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${corte} AND archived = false
+                AND is_internal_transfer = false AND (is_special_loan = false OR loan_via_bank = true)
+            ` as unknown as Promise<IngresosFuera[]>
+          : Promise.resolve([] as IngresosFuera[]),
       ]);
       const tope = corte ?? hastaHoy;
       const hasta = ventasRows.filter((r) => r.date <= tope).reduce((t, r) => t + r.total, 0);
@@ -130,6 +145,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
         cobrado: cobros ? cobros.ingresos : null,
         ingresadoVentas: porVentas[0]?.n ? porVentas[0].t : null,
         recuperos: recuperosDeOtrasSedes(devoluciones, repartidos).map((r) => ({ categoria: r.categoria, monto: r.monto, concepto: r.nota })),
+        ingresosFuera: fueraIn[0],
       });
   }
 }

@@ -100,3 +100,23 @@ describe("lo que NO debe avisar", () => {
     expect(avisos(buf)).toHaveLength(0);
   });
 });
+
+describe("ingreso sin Grupo (16-oct-2026)", () => {
+  const sinGrupo = (buf: Buffer) => parseExcelFile(buf, "Ing&Gtos AGO26").parseWarnings.filter((w) => w.reason === "income_without_group");
+
+  it("se importa, pero avisa que no cuenta como venta (Atelier oct: 14 filas así)", () => {
+    const buf = libro([
+      [serial("2026-08-05"), "I", null, null, null, null, null, null, null, 698.2, null, null],
+      [serial("2026-08-05"), "I", "Ventas", "BCP", null, "YAPE", null, null, null, 300, null, null],
+    ]);
+    const w = sinGrupo(buf);
+    expect(w).toHaveLength(1);
+    expect(w[0]).toMatchObject({ amount: 698.2, severity: "info" });
+    expect(w[0].message).toMatch(/sin Grupo.*no como venta/);
+    expect(parseExcelFile(buf, "Ing&Gtos AGO26").movimientos.some((m) => m.amount === 698.2)).toBe(true);
+  });
+
+  it("un gasto sin Grupo no entra en este aviso (lo clasifican las reglas)", () => {
+    expect(sinGrupo(libro([[serial("2026-08-05"), "G", null, "METRO", null, "POLLO", null, null, null, null, null, 50]]))).toEqual([]);
+  });
+});
