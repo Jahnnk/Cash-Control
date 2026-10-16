@@ -22,6 +22,7 @@ import { SeisCifrasPanel } from "./seis-cifras-panel";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import type { Motores } from "@/lib/motores-ebitda";
 import { getMotoresEbitda } from "@/app/actions/motores-ebitda";
+import { TableroEbitda } from "./tablero-ebitda";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
 import { BarrasVentaAGanancia, type ExtraSede } from "../reportes/venta-a-ganancia";
 import { AtencionCard } from "./atencion-card";
@@ -86,14 +87,14 @@ type Props = {
   /** Metas de venta del presupuesto, revisión semanal pendiente y cobros de Atelier. */
   extra: ResumenExtra;
   /** Pestaña con la que abre (?pestana=equipo, p. ej. desde Reportes). */
-  pestanaInicial?: "resumen" | "equipo" | "gastos" | "kelly";
+  pestanaInicial?: "resumen" | "rentabilidad" | "equipo" | "gastos" | "kelly";
 };
 
 export function GrupoDashboardClient({
   selectedMonth, mesActual, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas,
   atelierB2B, cuadreKelly, cifras, extra, pestanaInicial = "resumen",
 }: Props) {
-  const [pestana, setPestana] = useState<"resumen" | "equipo" | "gastos" | "kelly">(pestanaInicial);
+  const [pestana, setPestana] = useState<"resumen" | "rentabilidad" | "equipo" | "gastos" | "kelly">(pestanaInicial);
   // Sube con cada carga (Byte o Excel) para que la franja «Datos cargados» se actualice sola.
   const [versionCargas, setVersionCargas] = useState(0);
   // Los cuatro motores del EBITDA: se piden aparte, con la página ya abierta, para no alargar su carga.
@@ -301,6 +302,7 @@ export function GrupoDashboardClient({
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {([
             ["resumen", "Resumen"],
+            ["rentabilidad", "Rentabilidad"],
             ["equipo", "Equipo"],
             ["gastos", "Gastos"],
             ["kelly", "Excel"],
@@ -370,6 +372,11 @@ export function GrupoDashboardClient({
             </SeccionDesplegable>
           )}
         </div>
+      )}
+
+      {/* El tablero de la asesoría: EBITDA, piso diario, Profit First, food cost, planilla, mermas y los cuatro motores (16-oct-2026). */}
+      {pestana === "rentabilidad" && (
+        <TableroEbitda cifras={cifras} breakeven={breakeven} motores={motores} selectedMonth={selectedMonth} isCurrentMonth={isCurrentMonth} periodo={periodo} />
       )}
 
       {pestana === "equipo" && (

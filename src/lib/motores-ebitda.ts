@@ -36,6 +36,11 @@ export type Senal = {
   estado: EstadoMotor;
   /** El dato en una frase corta («3.1% de la venta · meta 4%»). */
   detalle: string;
+  /** El número detrás (solo en las señales que lo tienen, p. ej. el % de mermas) y la base para promediar entre sedes. */
+  valor?: number | null;
+  peso?: number | null;
+  /** La meta de ese número (mismas unidades). */
+  meta?: number | null;
 };
 
 export type Motor = {
@@ -50,6 +55,8 @@ export type Motor = {
   frase: string;
   /** Plata que este motor le quita al EBITDA respecto de su meta (null = no es plata, o no se puede medir). */
   quita: number | null;
+  /** Qué tan cerca está de su meta, 0 a 100 (100 = en su meta o mejor); para el radar. null = sin dato. */
+  puntaje: number | null;
   senales?: Senal[];
 };
 
@@ -126,11 +133,12 @@ export function motoresDeSede(e: EntradaMotores): Motores {
         ? "Procesos y comunicación al día en lo que el sistema puede comprobar."
         : `Revisar: ${conDato.filter((s) => s.estado !== "verde").map((s) => s.etiqueta.toLowerCase()).join(", ")}.`,
     quita: null,
+    puntaje: conDato.length > 0 ? Math.round((verdes / conDato.length) * 100) : null,
     senales: e.senales,
   };
 
   if (sinBase) {
-    const vacio = (clave: ClaveMotor): Motor => ({ clave, titulo: NOMBRE[clave], estado: "gris", cifra: "—", meta: "", frase: f.sinResultadoPorque ?? "Sin datos", quita: null });
+    const vacio = (clave: ClaveMotor): Motor => ({ clave, titulo: NOMBRE[clave], estado: "gris", cifra: "—", meta: "", frase: f.sinResultadoPorque ?? "Sin datos", quita: null, puntaje: null });
     return { ...base, motores: [vacio("ventas"), vacio("producto"), vacio("fijos"), eficiencia], frena: null, titular: f.sinResultadoPorque ?? "Sin datos para este período" };
   }
 
@@ -162,6 +170,7 @@ export function motoresDeSede(e: EntradaMotores): Motores {
       quitaVentas >= MINIMO_QUE_FRENA ? `Con menos ventas los fijos pesan más: eso le quita ${soles(quitaVentas)} al EBITDA.` : "",
     ].filter(Boolean).join(" "),
     quita: esperada ? quitaVentas : null,
+    puntaje: esperada ? Math.round(Math.min(100, (vendido / esperada) * 100)) : null,
   };
 
   // ── 2. Costo del producto ──
@@ -173,6 +182,7 @@ export function motoresDeSede(e: EntradaMotores): Motores {
       ? `Se pasó de su tercio: le quita ${soles(quitaProducto)} al EBITDA.`
       : "Está dentro de su tercio.",
     quita: quitaProducto,
+    puntaje: costos.pct > 0 ? Math.round(Math.min(100, (costos.metaPct / costos.pct) * 100)) : 100,
   };
 
   // ── 3. Costos fijos ──
@@ -189,6 +199,7 @@ export function motoresDeSede(e: EntradaMotores): Motores {
       planilla ? `Planilla ${pct(planilla.pct)} de la venta (sano ${PLANILLA_SANA_MIN_PCT}–${TOPE_PLANILLA_PCT}%).` : "",
     ].filter(Boolean).join(" "),
     quita: quitaFijos,
+    puntaje: fijos.pct > 0 ? Math.round(Math.min(100, (fijos.metaPct / fijos.pct) * 100)) : 100,
   };
 
   const motores = [ventas, producto, fijosMotor, eficiencia];
