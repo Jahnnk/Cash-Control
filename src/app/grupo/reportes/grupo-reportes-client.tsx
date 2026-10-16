@@ -19,6 +19,7 @@ import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SelectorMes } from "../dashboard/selector-mes";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { DosMargenes } from "./dos-margenes";
+import { ConciliacionMes } from "./conciliacion-mes";
 import { Regla33 } from "./regla-33";
 import { MotoresEbitda } from "./motores-ebitda";
 import type { Motores } from "@/lib/motores-ebitda";
@@ -69,6 +70,8 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         </div>
       </header>
 
+      {/* La conciliación que Jahnn hizo a mano con setiembre, ahora sola (16-oct-2026). */}
+      <ConciliacionMes cifras={cifras} periodo={periodo} />
       <DosMargenes cifras={cifras} periodo={periodo} />
       {/* Los cuatro motores: cuál frena el EBITDA (15-oct-2026). */}
       <MotoresEbitda motores={motores} periodo={periodo} />

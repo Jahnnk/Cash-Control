@@ -1363,12 +1363,15 @@ function describeProblem(w: ParseWarningRow): string {
   if (w.reason === "stale_forward_fill") {
     return "Fecha heredada por forward-fill — posiblemente desfasada";
   }
+  if (w.reason === "income_without_group") return "Ingreso sin Grupo: no cuenta como venta";
+  if (w.reason === "amount_without_data") return "Monto sin concepto ni grupo";
   return "Fecha vacía";
 }
 
 function describeAction(w: ParseWarningRow): string {
   if (w.severity === "blocking_error") return "❌ NO importable";
   if (w.severity === "silenced") return "⏸ Silenciada (no se importa)";
+  if (w.severity === "info" && w.reason === "income_without_group") return "👁 Importada como otro ingreso — ponerle Grupo";
   if (w.severity === "info") return "👁 Importada — revisar fecha";
   if (w.reason === "empty_type") {
     return `✅ Tratado como ${w.correctedType === "G" ? "egreso (G)" : "ingreso (I)"}`;

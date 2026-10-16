@@ -118,7 +118,9 @@ export type ParseWarning = {
     | "empty_date"
     | "balance_row"
     | "stale_forward_fill"
-    | "amount_without_data";
+    | "amount_without_data"
+    // Ingreso sin Grupo (16-oct-2026): se importa, pero no cuenta como venta (Atelier oct: 14 filas, S/1,504.56).
+    | "income_without_group";
   originalType?: string | null;
   correctedType?: "I" | "G";
   originalDate?: null;
@@ -750,6 +752,16 @@ export function parseExcelFile(
       isRefund,
       note,
     });
+
+    // Un ingreso sin Grupo no se sabe si es venta: entra como «otros ingresos» y se avisa para que Kelly lo complete.
+    if (effectiveType === "income" && !grupoRaw.trim()) {
+      parseWarnings.push({
+        rowNumber: excelRow, date: fecha, amount: Math.round(amount * 100) / 100,
+        column: destination === "cash" ? "ie" : "ic", description: note || "(sin concepto)",
+        reason: "income_without_group", severity: "info",
+        message: `Fila ${excelRow}: ingreso de S/${amount.toFixed(2)} sin Grupo. Se importa como «otros ingresos», no como venta. Si es un cobro de ventas, ponle «Ventas» en Grupo y vuelve a subir el Excel.`,
+      });
+    }
 
     // Stats
     distMethod[paymentMethod] = (distMethod[paymentMethod] ?? 0) + 1;
