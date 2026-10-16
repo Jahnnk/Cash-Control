@@ -11,6 +11,8 @@
 import type { ReactNode } from "react";
 import Link from "next/link";
 import { Delta } from "./executive-hero";
+import { PastelRegla, PARTES } from "@/components/pastel-regla";
+import type { FilaRegla } from "@/lib/regla-33";
 
 const soles = (n: number) => `S/${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 
@@ -37,7 +39,7 @@ export type EstadoMesProps = {
   /** Detalle de la liquidez («Banco + caja hoy, las 3 sedes»). */
   detalleLiquidez?: string;
   /** El EBITDA del grupo contra la regla 33-33-33 (null = aún sin resultado); lleva a Reportes. */
-  ebitda?: { pct: number; metaPct: number; etiqueta: string; tono: "bien" | "ojo" | "mal"; href: string } | null;
+  ebitda?: { pct: number; metaPct: number; etiqueta: string; tono: "bien" | "ojo" | "mal"; href: string; fila: Pick<FilaRegla, "costos" | "fijos" | "ebitda" | "termometro"> } | null;
 };
 
 const TONO = { bien: "text-emerald-700", ojo: "text-amber-700", mal: "text-red-700", neutro: "text-gray-900" };
@@ -108,10 +110,23 @@ export function EstadoMes(p: EstadoMesProps) {
       </div>
 
       {p.ebitda && (
-        <Link href={p.ebitda.href} className="mt-4 flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-lg border-t border-gray-100 pt-3 text-xs text-gray-500 hover:text-gray-800">
-          <span className="font-medium uppercase tracking-wider text-[10px] sm:text-[11px]">EBITDA</span>
-          <span className={`text-sm font-semibold tabular-nums ${TONO[p.ebitda.tono]}`}>{p.ebitda.pct.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%</span>
-          <span>de la venta · meta {p.ebitda.metaPct}% · {p.ebitda.etiqueta} · ver la regla 33-33-33 →</span>
+        <Link href={p.ebitda.href} className="mt-5 flex items-center gap-4 border-t border-gray-100 pt-5 text-xs text-gray-500 hover:text-gray-800" aria-label="Ver la regla 33-33-33 en Reportes">
+          <PastelRegla f={p.ebitda.fila} className="h-24 w-24 sm:h-32 sm:w-32" />
+          <div className="min-w-0 flex-1">
+            <div className="flex flex-wrap items-baseline gap-x-2">
+              <span className="font-medium uppercase tracking-wider text-[10px] sm:text-[11px]">Regla 33-33-33 · real / meta</span>
+              <span className={`text-sm font-semibold ${TONO[p.ebitda.tono]}`}>{p.ebitda.etiqueta}</span>
+            </div>
+            <ul className="mt-2 max-w-xs space-y-1 tabular-nums">
+              {([["costos", p.ebitda.fila.costos], ["fijos", p.ebitda.fila.fijos], ["ebitda", p.ebitda.fila.ebitda]] as const).map(([clave, b]) => b && (
+                <li key={clave} className="flex items-baseline justify-between gap-2">
+                  <span className="inline-flex items-center gap-1.5 whitespace-nowrap text-gray-700"><span className={`h-2 w-2 rounded-full ${PARTES[clave].punto}`} aria-hidden />{PARTES[clave].nombre}</span>
+                  <span className="whitespace-nowrap"><b className={(clave === "ebitda" ? b.pct < b.metaPct : b.pct > b.metaPct) ? "text-amber-700" : "text-emerald-700"}>{b.pct.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%</b><span className="text-gray-400"> / {Math.round(b.metaPct)}%</span></span>
+                </li>
+              ))}
+            </ul>
+            <div className="mt-2 text-[11px] text-primary">Ver la regla completa →</div>
+          </div>
         </Link>
       )}
     </section>
