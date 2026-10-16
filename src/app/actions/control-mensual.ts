@@ -180,7 +180,8 @@ export async function getRevisionSemanal(): Promise<{ ok: true; data: DatosSeman
       const ventasHasta = filas.length ? filas[filas.length - 1].date : null;
       const diasConDatos = ventasHasta ? Number(ventasHasta.slice(8, 10)) : 0;
       const base = eq.ok ? eq.data.base : null;
-      const pe = eq.ok ? (eq.data.referencia?.pe ?? (base ? analizarEquilibrio(base).pe : null)) : null;
+      // El piso del mes (fórmula de la asesoría, 15-oct-2026): el estable de los meses cerrados o, sin él, el de esta base.
+      const pe = eq.ok ? (eq.data.referencia?.pe ?? (base ? analizarEquilibrio(base).piso?.mes ?? null : null)) : null;
       const ritmo = ritmoVentas({
         ventasMes, ventasSemana: ventasSemanaTotal, diasConDatos, diasDelMes: ultimoDia(mes),
         ventaEsperada: planMes.cab?.aprobadoEl ? planMes.cab.ventaEsperada : null, pe,
@@ -367,11 +368,11 @@ export async function getCierreMes(mes: string): Promise<{ ok: true; data: Datos
         caja: c.caja,
         fuera: c.fuera,
         cambios: mayoresCambios(aMapa(gastoAct), aMapa(gastoAnt)),
-        equilibrio: { pe: ae?.pe ?? null, ventas: c.ventas, superado: ae?.pe != null && c.ventas != null ? c.ventas >= ae.pe : null },
+        equilibrio: { pe: ae?.piso?.mes ?? null, ventas: c.ventas, superado: ae?.piso != null && c.ventas != null ? c.ventas >= ae.piso.mes : null },
         libreHoy,
         siguiente: {
           aprobado: !!planSig.cab?.aprobadoEl, ventaEsperada: planSig.cab?.ventaEsperada ?? null,
-          peReferencia: eq.ok ? (eq.data.referencia?.pe ?? ae?.pe ?? null) : null,
+          peReferencia: eq.ok ? (eq.data.referencia?.pe ?? ae?.piso?.mes ?? null) : null,
           compromisosFijos: Math.round([...porCategoria.values()].reduce((t, x) => t + x, 0)),
           detalle: [...porCategoria.entries()].map(([k, v]) => ({ concepto: k.charAt(0) + k.slice(1).toLowerCase(), monto: Math.round(v) })).sort((x, y) => y.monto - x.monto),
         },

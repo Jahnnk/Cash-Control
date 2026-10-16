@@ -1,11 +1,19 @@
 /**
  * Punto de equilibrio del mes · MOTOR (lógica pura).
  *
- * Metodología clásica de gestión, con los datos que el sistema ya
- * clasifica (decisión contable de Jahnn en Configuración):
+ * Con los datos que el sistema ya clasifica (decisión contable de Jahnn en Configuración).
+ *
+ * DESDE EL 15-OCT-2026 el piso es el de su coach (lib/equilibrio.ts, `pisoDiario`):
+ *
+ *   piso del mes = costos fijos + food cost mensual proyectado      (÷ 30 = piso diario)
+ *
+ * donde el food cost proyectado es el % REAL de costos variables × la venta ESPERADA del mes.
+ * `breakEven` ES ese piso; el cálculo clásico del libro queda en `breakEvenLibro`:
  *
  *   margen de contribución = 1 − (costos variables / ventas)
- *   punto de equilibrio    = costos fijos / margen de contribución
+ *   punto de equilibrio del libro = costos fijos / margen de contribución
+ *
+ * En un mes cerrado los dos dan el mismo veredicto (vendió más que el piso ⇔ no perdió).
  *
  * Honestidad del dato (filosofía del Centro de Comando):
  * - Solo cuenta lo CLASIFICADO: si hay egresos "sin clasificar", el
@@ -31,6 +39,10 @@ export type BreakevenReference = {
   varRatio: number;
   /** Meses cerrados que alimentan la referencia (ej. ["2026-04","2026-05","2026-06"]). */
   monthsUsed: string[];
+  /** Venta típica de un mes (promedio de esos meses): la venta esperada si no hay presupuesto aprobado. */
+  ventasTipicas?: number;
+  /** Del promedio de fijos, el sueldo de los socios (para sacarlo si el CEO lo pasó a la utilidad). */
+  sueldoSocios?: number;
 };
 
 export type BreakevenInput = {
@@ -51,6 +63,14 @@ export type BreakevenInput = {
    * omitir (se usan los reales del mes).
    */
   reference?: BreakevenReference | null;
+  /**
+   * Venta esperada del mes, para proyectar el food cost del piso: la meta del presupuesto aprobado.
+   * Sin ella: la venta típica de la referencia (mes en curso) o la venta real (mes cerrado).
+   */
+  ventasEsperadas?: number | null;
+  /** Sueldo de los socios dentro de los fijos del mes, y si el CEO lo sacó de los costos fijos. */
+  sueldoSocios?: number;
+  sociosFuera?: boolean;
 };
 
 export type BreakevenEstado = "superado" | "en_camino" | "en_riesgo" | "sin_datos";
@@ -64,8 +84,18 @@ export type BreakevenResult = {
   varRatio: number | null;
   /** Margen de contribución (1 − varRatio); null sin ventas. */
   contributionMargin: number | null;
-  /** Ventas del mes necesarias para cubrir todos los costos. */
+  /** El piso del mes: costos fijos + food cost proyectado (fórmula del coach). */
   breakEven: number | null;
+  /** El piso por día: breakEven ÷ 30. */
+  pisoDia: number | null;
+  /** Food cost proyectado del piso (% real de variables × venta esperada). */
+  foodCostProyectado: number | null;
+  /** Venta esperada con la que se proyectó el food cost. */
+  ventasEsperadas: number | null;
+  /** Sueldo de los socios que se dejó fuera de los fijos del piso (0 si sigue en planilla). */
+  sociosFuera: number;
+  /** El punto de equilibrio clásico del libro (fijos ÷ margen de contribución), solo como análisis. */
+  breakEvenLibro: number | null;
   /** % del punto de equilibrio ya cubierto con las ventas a la fecha. */
   avancePct: number | null;
   /** Ventas proyectadas al cierre con el ritmo actual. */
@@ -78,6 +108,8 @@ export type BreakevenResult = {
   /** Avisos de calidad del dato (sin clasificar, margen negativo…). */
   warnings: string[];
 };
+
+import { pisoDiario } from "./equilibrio";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -103,6 +135,11 @@ export function computeBreakeven(input: BreakevenInput): BreakevenResult {
     varRatio: null,
     contributionMargin: null,
     breakEven: null,
+    pisoDia: null,
+    foodCostProyectado: null,
+    ventasEsperadas: null,
+    sociosFuera: 0,
+    breakEvenLibro: null,
     avancePct: null,
     ventasProyectadas: null,
     diaEstimadoCruce: null,
@@ -135,8 +172,27 @@ export function computeBreakeven(input: BreakevenInput): BreakevenResult {
     return { ...base, estado: "en_riesgo" };
   }
 
-  const breakEven = r2(fijosBase / contributionMargin);
+  base.breakEvenLibro = r2(fijosBase / contributionMargin);
+
+  // El piso del coach: fijos + food cost proyectado. La venta esperada no depende del ritmo del mes
+  // (si dependiera, el piso subiría al vender más): presupuesto, venta típica de la referencia o,
+  // en un mes cerrado, la venta real.
+  const ritmoDelMes = daysElapsed > 0 ? (ventas / daysElapsed) * daysInMonth : ventas;
+  const esperadas = input.ventasEsperadas && input.ventasEsperadas > 0
+    ? input.ventasEsperadas
+    : reference ? (reference.ventasTipicas && reference.ventasTipicas > 0 ? reference.ventasTipicas : ritmoDelMes) : ventas;
+  const piso = pisoDiario({
+    fijos: fijosBase, varRatio, ventasEsperadas: esperadas,
+    sueldoSocios: reference ? reference.sueldoSocios : input.sueldoSocios, sociosFuera: input.sociosFuera,
+  });
+  if (!piso) return { ...base, estado: "sin_datos" };
+  const breakEven = piso.mes;
   base.breakEven = breakEven;
+  base.pisoDia = piso.dia;
+  base.foodCostProyectado = piso.foodCost;
+  base.ventasEsperadas = piso.ventasEsperadas;
+  base.sociosFuera = piso.sociosFuera;
+  base.fijos = piso.fijos;
   base.avancePct = Math.round((ventas / breakEven) * 1000) / 10;
 
   const dailyRate = daysElapsed > 0 ? ventas / daysElapsed : 0;

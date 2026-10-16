@@ -17,6 +17,54 @@
  * metas, evaluar un gasto nuevo, entender un mes difícil y ajustar precios.
  */
 
+// ─── El piso diario (fórmula del coach, 15-oct-2026) ─────────────────────────
+
+/**
+ * Pedido de Jahnn (15-oct-2026), de la asesoría con su coach de negocios: el punto de equilibrio
+ * diario es el piso de ventas que una sede debe generar cada día para cubrir sus compromisos:
+ *
+ *   piso diario = (costos fijos + food cost mensual proyectado) ÷ 30
+ *
+ *   · Costos fijos: planilla, alquiler, energía… SIN el sueldo de los socios cuando el CEO lo
+ *     pasa a «se paga de la utilidad» (lib/regla-33.ts, interruptor `sociosDeUtilidad`).
+ *   · Food cost proyectado: lo que cuestan las compras del mes = el % REAL de costos variables de
+ *     los meses cerrados × la venta ESPERADA del mes (la meta del presupuesto aprobado o, si no hay,
+ *     la venta típica de los meses cerrados). No depende del ritmo del mes: si dependiera, el
+ *     piso subiría al vender más y la fórmula sería la misma de antes con otro nombre.
+ *   · 30: los días del mes, para convertirlo en una meta diaria de caja.
+ *
+ * En un mes cerrado el piso es lo que de verdad costó operar (fijos + compras), así que «vendió
+ * más que el piso» equivale a «no perdió» (el mismo veredicto del cálculo del libro).
+ */
+export const DIAS_DEL_PISO = 30;
+
+export type Piso = {
+  /** Costos fijos que cuentan (sin el sueldo de los socios si el CEO lo sacó). */
+  fijos: number;
+  /** Food cost proyectado del mes. */
+  foodCost: number;
+  /** Venta esperada con la que se proyectó el food cost. */
+  ventasEsperadas: number;
+  mes: number;
+  dia: number;
+  /** Sueldo de los socios que se dejó fuera de los fijos (0 si sigue en planilla). */
+  sociosFuera: number;
+};
+
+export function pisoDiario(i: { fijos: number; varRatio: number; ventasEsperadas: number; sueldoSocios?: number; sociosFuera?: boolean }): Piso | null {
+  if (!(i.fijos > 0) || !(i.ventasEsperadas > 0) || !Number.isFinite(i.varRatio) || i.varRatio < 0) return null;
+  const quita = i.sociosFuera ? Math.min(Math.max(0, i.sueldoSocios ?? 0), i.fijos) : 0;
+  const fijos = i.fijos - quita;
+  const foodCost = i.varRatio * i.ventasEsperadas;
+  const mes = fijos + foodCost;
+  return {
+    fijos: Math.round(fijos * 100) / 100, foodCost: Math.round(foodCost * 100) / 100,
+    ventasEsperadas: Math.round(i.ventasEsperadas * 100) / 100,
+    mes: Math.round(mes * 100) / 100, dia: Math.round((mes / DIAS_DEL_PISO) * 100) / 100,
+    sociosFuera: Math.round(quita * 100) / 100,
+  };
+}
+
 export type BaseEquilibrio = {
   /** Costos fijos del mes (en el mes en curso, el promedio de los meses cerrados). */
   fijos: number;
@@ -29,11 +77,28 @@ export type BaseEquilibrio = {
   diasDelMes: number;
   /** Cuotas de préstamos y tarjetas del mes (no son costo, pero hay que pagarlas). */
   financiamiento: number;
+  /** Venta con la que se proyecta el food cost del piso (presupuesto o venta típica); sin ella, `ventas`. */
+  ventasEsperadas?: number | null;
+  /** Del total de fijos, el sueldo de los socios, y si el CEO lo sacó de los costos fijos. */
+  sueldoSocios?: number;
+  sociosFuera?: boolean;
 };
 
 export type EstadoEquilibrio = "sobre" | "debajo" | "sin-margen" | "sin-datos";
 
 export type AnalisisEquilibrio = {
+  /** El piso de ventas del coach: (fijos + food cost proyectado) ÷ 30. null sin datos. */
+  piso: Piso | null;
+  /** Ventas − piso del mes: lo que sobra (o falta) para cubrir fijos y compras. */
+  sobrePiso: number | null;
+  sobrePisoPct: number | null;
+  /** «sobre» si las ventas llegan al piso. */
+  estadoPiso: "sobre" | "debajo" | "sin-datos";
+  /** El piso en número de ventas (tickets o pedidos), total y por día. */
+  pisoVentas: number | null;
+  pisoVentasDia: number | null;
+  /** El piso más las cuotas de préstamos y tarjetas del mes. */
+  pisoConDeudas: number | null;
   /** Margen de contribución como fracción (0–1). */
   mc: number | null;
   /** Punto de equilibrio del mes en soles, y por día. */
@@ -60,13 +125,24 @@ const r2 = (n: number) => Math.round(n * 100) / 100;
 
 export function analizarEquilibrio(b: BaseEquilibrio): AnalisisEquilibrio {
   const vacio: AnalisisEquilibrio = {
-    mc: null, pe: null, peDia: null, peConDeudas: null, margenSeguridad: null, margenSeguridadPct: null, utilidad: null,
+    piso: null, sobrePiso: null, sobrePisoPct: null, estadoPiso: "sin-datos", pisoVentas: null, pisoVentasDia: null, pisoConDeudas: null, mc: null, pe: null, peDia: null, peConDeudas: null, margenSeguridad: null, margenSeguridadPct: null, utilidad: null,
     ventas: null, costoVariableVenta: null, mcVenta: null, peVentas: null, peVentasDia: null, ventasDia: null, estado: "sin-datos",
   };
   if (!(b.fijos > 0) || !(b.ventas > 0) || !Number.isFinite(b.varRatio)) return vacio;
+  const piso = pisoDiario({ fijos: b.fijos, varRatio: b.varRatio, ventasEsperadas: b.ventasEsperadas && b.ventasEsperadas > 0 ? b.ventasEsperadas : b.ventas, sueldoSocios: b.sueldoSocios, sociosFuera: b.sociosFuera });
+  const ticketPiso = b.ticket && b.ticket > 0 ? b.ticket : null;
+  const delPiso = piso ? {
+    piso,
+    sobrePiso: r2(b.ventas - piso.mes),
+    sobrePisoPct: Math.round(((b.ventas - piso.mes) / b.ventas) * 1000) / 10,
+    estadoPiso: (b.ventas >= piso.mes ? "sobre" : "debajo") as "sobre" | "debajo",
+    pisoVentas: ticketPiso ? Math.ceil(piso.mes / ticketPiso) : null,
+    pisoVentasDia: ticketPiso ? Math.round((piso.mes / ticketPiso / b.diasDelMes) * 10) / 10 : null,
+    pisoConDeudas: r2(piso.mes + Math.max(0, b.financiamiento)),
+  } : {};
   const mc = 1 - b.varRatio;
   const utilidad = r2(b.ventas * mc - b.fijos);
-  if (mc <= 0) return { ...vacio, mc: Math.round(mc * 10000) / 10000, utilidad, estado: "sin-margen" };
+  if (mc <= 0) return { ...vacio, ...delPiso, mc: Math.round(mc * 10000) / 10000, utilidad, estado: "sin-margen" };
 
   const pe = b.fijos / mc;
   const ticket = b.ticket && b.ticket > 0 ? b.ticket : null;
@@ -74,6 +150,8 @@ export function analizarEquilibrio(b: BaseEquilibrio): AnalisisEquilibrio {
   const mcVenta = ticket ? ticket * mc : null;
   const peVentas = mcVenta ? b.fijos / mcVenta : null;
   return {
+    ...vacio,
+    ...delPiso,
     mc: Math.round(mc * 10000) / 10000,
     pe: r2(pe),
     peDia: r2(pe / b.diasDelMes),
