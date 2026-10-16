@@ -54,6 +54,7 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
       // Meses que se llenaron a mano (Atelier abr–jul 2026, antes del Excel): si el mes ya cerró y hay
       // movimientos, se mide hasta el último día con datos (auditoría abr–set, 16-oct-2026).
       let corteExcel = c[0]?.corte ?? null;
+      const fuenteExcel = corteExcel !== null;
       if (corteExcel === null && finDeMes < hoy) {
         const man = (await sql`
           SELECT MAX(d)::text AS corte FROM (
@@ -80,10 +81,10 @@ export async function getSeisCifras(mes: string): Promise<{ ok: true; data: Seis
       // En un mes CERRADO cuenta el mes completo (el último día puede ser un domingo sin venta: Atelier, 31-may,
       // dejaba fuera S/1,185 de gastos). El corte común es para el mes en curso, cuando Byte va atrasado.
       const corte = finDeMes < hoy ? corteExcel : corteComun(corteExcel, ultimaVenta);
-      const principal = await cifrasHasta(bId, sede, corte, corteExcel, ventas.rows, caja, rescates[0]?.t ?? 0);
+      const principal = { ...await cifrasHasta(bId, sede, corte, corteExcel, ventas.rows, caja, rescates[0]?.t ?? 0), fuenteExcel };
       if (corte === corteExcel) return principal;
       // La franja «según el Excel» sigue llegando hasta el último día del Excel, para cuadrar con Kelly.
-      return { ...principal, segunExcel: await cifrasHasta(bId, sede, corteExcel, corteExcel, ventas.rows, caja, rescates[0]?.t ?? 0) };
+      return { ...principal, segunExcel: { ...await cifrasHasta(bId, sede, corteExcel, corteExcel, ventas.rows, caja, rescates[0]?.t ?? 0), fuenteExcel } };
     }));
     const { config, guardable } = await leerConfigProfitFirst(sql);
     return { ok: true, data: { mes, sedes, grupo: cifrasDelGrupo(sedes), config, configGuardable: guardable } };

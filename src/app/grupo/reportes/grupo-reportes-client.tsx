@@ -20,6 +20,7 @@ import { SelectorMes } from "../dashboard/selector-mes";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { DosMargenes } from "./dos-margenes";
 import { ConciliacionMes } from "./conciliacion-mes";
+import { EstadoResultados } from "./estado-resultados";
 import { Regla33 } from "./regla-33";
 import { MotoresEbitda } from "./motores-ebitda";
 import type { Motores } from "@/lib/motores-ebitda";
@@ -70,6 +71,8 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         </div>
       </header>
 
+      {/* Lo real de las tres sedes en 6 meses: ventas → EBITDA → ganancia (Fase 2, 16-oct-2026). */}
+      <EstadoResultados cifras={cifras} mes={selectedMonth} periodo={periodo} />
       {/* La conciliación que Jahnn hizo a mano con setiembre, ahora sola (16-oct-2026). */}
       <ConciliacionMes cifras={cifras} periodo={periodo} />
       <DosMargenes cifras={cifras} periodo={periodo} />
