@@ -1,7 +1,7 @@
 "use client";
 
 import { CajaExcel } from "./caja-excel";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { GroupKpisSection } from "./group-kpis-section";
@@ -20,6 +20,8 @@ import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import type { HeroStats } from "./executive-hero";
 import { SeisCifrasPanel } from "./seis-cifras-panel";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
+import type { Motores } from "@/lib/motores-ebitda";
+import { getMotoresEbitda } from "@/app/actions/motores-ebitda";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
 import { BarrasVentaAGanancia, type ExtraSede } from "../reportes/venta-a-ganancia";
 import { AtencionCard } from "./atencion-card";
@@ -94,6 +96,14 @@ export function GrupoDashboardClient({
   const [pestana, setPestana] = useState<"resumen" | "equipo" | "gastos" | "kelly">(pestanaInicial);
   // Sube con cada carga (Byte o Excel) para que la franja «Datos cargados» se actualice sola.
   const [versionCargas, setVersionCargas] = useState(0);
+  // Los cuatro motores del EBITDA: se piden aparte, con la página ya abierta, para no alargar su carga.
+  const [motoresPedidos, setMotoresPedidos] = useState<{ mes: string; data: Motores[] | null } | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    getMotoresEbitda(selectedMonth).then((r) => { if (vivo) setMotoresPedidos({ mes: selectedMonth, data: r.ok ? r.data : null }); }).catch(() => { if (vivo) setMotoresPedidos({ mes: selectedMonth, data: null }); });
+    return () => { vivo = false; };
+  }, [selectedMonth]);
+  const motores = motoresPedidos?.mes === selectedMonth ? motoresPedidos.data : null;
 
   const [y, m] = selectedMonth.split("-").map(Number);
   const periodo = `${MESES[m - 1]} ${y}`;
@@ -245,7 +255,7 @@ export function GrupoDashboardClient({
   const regla = reglaFilas.some((x) => x.ebitda)
     ? {
         href: `/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`,
-        opciones: [...reglaFilas.filter((x) => x.esGrupo), ...reglaFilas.filter((x) => !x.esGrupo)].map((x) => ({ etiqueta: x.etiqueta, fila: x })),
+        opciones: [...reglaFilas.filter((x) => x.esGrupo), ...reglaFilas.filter((x) => !x.esGrupo)].map((x) => ({ etiqueta: x.etiqueta, fila: x, frena: motores?.find((m) => m.etiqueta === x.etiqueta)?.titular ?? null })),
       }
     : null;
 

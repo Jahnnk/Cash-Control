@@ -20,6 +20,8 @@ import { SelectorMes } from "../dashboard/selector-mes";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { DosMargenes } from "./dos-margenes";
 import { Regla33 } from "./regla-33";
+import { MotoresEbitda } from "./motores-ebitda";
+import type { Motores } from "@/lib/motores-ebitda";
 import { ProfitFirst } from "./profit-first";
 import { PuntoEquilibrio } from "./punto-equilibrio";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
@@ -33,9 +35,10 @@ type Props = {
   frescura: FrescuraGrupo | null;
   cifras: SeisCifras | null;
   flujo: FlujoCaja | null;
+  motores: Motores[] | null;
 };
 
-export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, flujo }: Props) {
+export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, flujo, motores }: Props) {
   const [showEirs, setShowEirs] = useState(false);
   const hoyLima = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const periodo = nombreMes(selectedMonth);
@@ -67,6 +70,8 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
       </header>
 
       <DosMargenes cifras={cifras} periodo={periodo} />
+      {/* Los cuatro motores: cuál frena el EBITDA (15-oct-2026). */}
+      <MotoresEbitda motores={motores} periodo={periodo} />
       {/* El EBITDA como termómetro: la regla del 33-33-33 de la asesoría (15-oct-2026). */}
       <Regla33 cifras={cifras} periodo={periodo} />
       {/* Profit First: apartar el 25% de la venta primero (15-oct-2026). */}
