@@ -18,7 +18,7 @@ describe("tarjetas de sede del Resumen (rediseño)", () => {
     extras: { 2: { href: "/fonavi/dashboard", flag: "mejor", cubiertosPct: 121, pie: null }, 1: { href: "/atelier/dashboard", flag: "atencion", cubiertosPct: 87, pie: null } },
   }));
   it("las cuatro barras, las tres cifras y la caja del mes", () => {
-    for (const t of ["Ventas", "Costos", "Gastos", "Ganancia real", "Margen", "Costos cubiertos", "Caja del mes", "Ingresado por ventas", "Otras entradas", "Total que entró", "S/ 37,294", "S/ 6,608", "121%", "Mejor rendimiento", "Atención"]) expect(html).toContain(t);
+    for (const t of ["Ventas", "Costos y gastos", "Costos: S/ 17,148", "Gastos: S/ 13,538", "S/ 30,686", "Ganancia real", "Margen", "Costos cubiertos", "Caja del mes", "Ingresado por ventas", "Otras entradas", "Total que entró", "S/ 37,294", "S/ 6,608", "121%", "Mejor rendimiento", "Atención"]) expect(html).toContain(t);
   });
   it("la pérdida se ve en rojo con su signo", () => {
     expect(html).toContain("−S/ 4,857");
