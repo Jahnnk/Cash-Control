@@ -24,7 +24,7 @@ import type { Motores } from "@/lib/motores-ebitda";
 import { getMotoresEbitda } from "@/app/actions/motores-ebitda";
 import { TableroEbitda } from "./tablero-ebitda";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
-import { BarrasVentaAGanancia, type ExtraSede } from "../reportes/venta-a-ganancia";
+import { TarjetasSede, type ExtraSede } from "./tarjetas-sede";
 import { AtencionCard } from "./atencion-card";
 import { EstadoMes } from "./estado-mes";
 import { SeccionDesplegable } from "@/components/productos/ui";
@@ -222,6 +222,7 @@ export function GrupoDashboardClient({
     return [p.businessId, {
       href: `/${p.code}/dashboard`,
       flag: p.flag === "atencion" || p.flag === "mejor" ? p.flag : null,
+      cubiertosPct: eq,
       pie: (
         <>
           {p.hasta && (
@@ -229,13 +230,7 @@ export function GrupoDashboardClient({
               {faltan ? `⚠ Al día hasta el ${ddmm(p.hasta)} · ${faltan === 1 ? "falta 1 día" : `faltan ${faltan} días`}` : `✓ Al día hasta el ${ddmm(p.hasta)}`}
             </span>
           )}
-          {(meta !== null || eq !== null) && (
-            <span className="block">
-              {meta !== null && <>Meta de ventas: <b className="text-gray-700">{meta}%</b></>}
-              {meta !== null && eq !== null && " · "}
-              {eq !== null && <>Costos cubiertos: <b className="text-gray-700">{eq}%</b></>}
-            </span>
-          )}
+          {meta !== null && <span className="block">Meta de ventas: <b className="text-gray-700">{meta}%</b></span>}
           {p.deltaPct !== null && <span className="block">Ventas vs mes pasado: <b className={p.deltaPct < 0 ? "text-red-700" : "text-emerald-700"}>{p.deltaPct > 0 ? "+" : ""}{p.deltaPct}%</b></span>}
         </>
       ),
@@ -323,10 +318,11 @@ export function GrupoDashboardClient({
 
       {pestana === "resumen" && (
         <div className="space-y-6">
-          {/* Lo primero (14-oct-2026): por sede, Vendido (Byte) → Ingresado (Excel) → Ganancia real. Las dos fuentes de verdad, juntas. */}
-          <section id="sedes" className="space-y-3 scroll-mt-4" aria-label="Vendido, ingresado y ganancia por sede">
+          {/* Lo primero: por sede, los seis números de un dueño (rediseño 17-oct-2026): ventas, costos, gastos y ganancia;
+              margen, ganancia % y costos cubiertos; y la caja del mes. */}
+          <section id="sedes" className="space-y-3 scroll-mt-4" aria-label="Ventas, costos, gastos, ganancia y caja por sede">
             <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Por sede · {periodo.toLowerCase()}</h2>
-            <BarrasVentaAGanancia cifras={cifras} periodo={periodo} extras={extrasSede} />
+            <TarjetasSede cifras={cifras} periodo={periodo} extras={extrasSede} cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
           </section>
 
           {/* El pie de cada hoja Ing&Gtos del Excel de finanzas (14-oct-2026). */}
