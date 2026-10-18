@@ -11,7 +11,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { requireFullSession } from "@/lib/session-access";
+import { requireLectura } from "@/lib/session-access";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { construirInformeSede, type InformeGastosSede, type GastoInforme } from "@/lib/informe-gastos";
 import { recuperosDelPeriodo } from "@/lib/recuperos-sql";
@@ -42,7 +42,7 @@ function ultimoMesCerrado(): string {
 export type InformeGastos = { mes: string; sedes: InformeGastosSede[] };
 
 export async function getInformeGastos(mesPedido?: string): Promise<{ ok: true; data: InformeGastos } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  if (!(await requireLectura())) return { ok: false, error: "Solo dirección." };
   const mes = mesPedido && /^\d{4}-(0[1-9]|1[0-2])$/.test(mesPedido) ? mesPedido : ultimoMesCerrado();
   const previos = mesesAntes(mes, 3);
   const desde = `${previos[previos.length - 1]}-01`;

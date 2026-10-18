@@ -15,7 +15,7 @@
 import { recuperosDelPeriodo } from "@/lib/recuperos-sql";
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
-import { requireFullSession, getSessionRole } from "@/lib/session-access";
+import { requireFullSession, getSessionRole, requireLectura } from "@/lib/session-access";
 import {
   tocaCongelar, metaPorPromedioDeVentas, MESES_A_BUSCAR_META, type EntradaCandadoVentas,
 } from "@/lib/incentives/candado-ventas";
@@ -431,7 +431,7 @@ export async function getGroupBreakeven(month: string): Promise<
   | { ok: true; data: GroupBreakeven }
   | { ok: false; error: string }
 > {
-  if (!(await requireFullSession())) return { ok: false, error: "Sin acceso." };
+  if (!(await requireLectura())) return { ok: false, error: "Sin acceso." };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(month)) return { ok: false, error: "Mes inválido." };
   try {
     const { start, end, daysInMonth, daysElapsed, isCurrent } = monthMeta(month);
@@ -829,7 +829,7 @@ const MIN_DIAS_PROYECCION = 7;
 
 /** Todo lo que necesita la sección «Punto de equilibrio» de una sede en un mes. Solo dirección. */
 export async function getEquilibrioSede(mes: string, businessId: number): Promise<{ ok: true; data: EquilibrioSede } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  if (!(await requireLectura())) return { ok: false, error: "Solo dirección." };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return { ok: false, error: "Mes inválido." };
   if (![1, 2, 3].includes(businessId)) return { ok: false, error: "Sede inválida." };
   try {

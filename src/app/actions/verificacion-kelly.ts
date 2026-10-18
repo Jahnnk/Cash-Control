@@ -10,7 +10,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
 import { leerFuentesVenta } from "@/lib/kpis/ventas-loader";
 import { verificarMes, omitidosDeNotas, type Verificacion } from "@/lib/verificacion-kelly";
@@ -89,7 +89,7 @@ async function verificarSedeMes(b: {
 /** Las últimas cargas de cada sede y mes (3 meses), verificadas. */
 export async function getVerificacionKelly(): Promise<{ ok: true; items: VerificacionSedeMes[] } | { ok: false; error: string }> {
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   try {
     // El mes sale del nombre de la pestaña ("Ing&Gtos SEP26"), como en el
     // importador: la fecha de inicio puede caer en otro mes si el archivo

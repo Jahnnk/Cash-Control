@@ -15,7 +15,7 @@ import { neon } from "@neondatabase/serverless";
 import { getEntradaCandadoVentas } from "./breakeven";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { getSessionRole, requireFullSession } from "@/lib/session-access";
+import { getSessionRole, requireFullSession, requireLectura } from "@/lib/session-access";
 import {
   computeWeekSummary,
   computeRangeSummary,
@@ -295,7 +295,7 @@ export async function getBoardDeckData(weekStart: string, rangeEnd?: string): Pr
   | { ok: true; data: BoardDeckData }
   | { ok: false; error: string }
 > {
-  if (!(await requireFullSession())) {
+  if (!(await requireLectura())) {
     return { ok: false, error: "El informe de la reunión es solo para la sesión completa." };
   }
   if (!/^\d{4}-\d{2}-\d{2}$/.test(weekStart)) return { ok: false, error: "Fecha inicial inválida." };

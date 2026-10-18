@@ -13,7 +13,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
 import {
@@ -96,7 +96,7 @@ export async function getLlenadoReportes(weekStart: string): Promise<EstadoLlena
 
   // Solo dirección: es una vista de control de las 3 sedes.
   const role = await getSessionRole();
-  if (role?.kind !== "full") return VACIO(weekStart, hoy);
+  if (!puedeLeerDireccion(role)) return VACIO(weekStart, hoy);
 
   try {
     const fechas = diasDeLaSemana(weekStart);
@@ -270,7 +270,7 @@ export async function getCumplimientoEquipo(): Promise<EstadoCumplimiento> {
   const hoy = getToday();
   const role = await getSessionRole();
   // Vista de control de las 3 sedes: solo dirección.
-  if (role?.kind !== "full") return { esDireccion: false, hoy, control: null };
+  if (!puedeLeerDireccion(role)) return { esDireccion: false, hoy, control: null };
 
   try {
     // ── 1. KPIs diarios: ventana móvil de los últimos 7 días ──────────

@@ -10,7 +10,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { requireFullSession } from "@/lib/session-access";
+import { requireLectura } from "@/lib/session-access";
 import { planDe } from "@/lib/presupuesto-datos";
 import { lunesDe, sumarDias } from "@/lib/highlight";
 import { utilidadPorSeparar } from "@/lib/regla-33";
@@ -39,7 +39,7 @@ export type ResumenExtra = {
 
 export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
   const vacio: ResumenExtra = { metas: {}, highlightsSinAsignar: null, presupuesto: null, utilidadPorSeparar: null, cobrosAtelier: null };
-  if (!(await requireFullSession())) return vacio;
+  if (!(await requireLectura())) return vacio;
   try {
     const hoy = hoyLima();
     const enCurso = mes === hoy.slice(0, 7);

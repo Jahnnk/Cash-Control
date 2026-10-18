@@ -15,7 +15,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -52,7 +52,7 @@ const VACIO: AtelierB2BResumen = {
 
 export async function getAtelierB2BResumen(): Promise<AtelierB2BResumen> {
   const role = await getSessionRole();
-  const puede = role?.kind === "full" || (role?.kind === "admin" && role.sede === ATELIER);
+  const puede = puedeLeerDireccion(role) || (role?.kind === "admin" && role.sede === ATELIER);
   if (!puede) return VACIO;
 
   const hoy = getToday();

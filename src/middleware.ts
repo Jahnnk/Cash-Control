@@ -140,6 +140,14 @@ export async function middleware(request: NextRequest) {
       // /grupo/supervisiones — nada de finanzas, saldos, reportes ni
       // paneles de sede. El candado es acá, a nivel de servidor, así que
       // también cubre los POST de las actions.
+      // Solo lectura (Muse de Meta, 18-oct-2026): SOLO el Dashboard de Grupo y Reportes. Nada de APIs ni de
+      // paneles de sede. Las acciones que escriben, aunque se llamen desde estas páginas, las rechaza
+      // requireFullSession en el servidor (lib/session-access.ts).
+      if (scopedScope === "lector") {
+        const ok = ["/grupo/dashboard", "/grupo/reportes"].some((p) => pathname === p || pathname.startsWith(p + "/"));
+        if (!ok) return NextResponse.redirect(new URL("/grupo/dashboard", request.url));
+        return NextResponse.next();
+      }
       if (scopedScope === "highlight") {
         const permitido = "/grupo/highlight";
         const ok =

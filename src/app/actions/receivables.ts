@@ -25,7 +25,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
 import type { DocumentoParseado, TipoReporte } from "@/lib/receivables-parser";
 import { ventasPorDia, semanasCubiertas, clientesDeLaSemana } from "@/lib/atelier-reporte-ventas";
@@ -437,7 +437,7 @@ type FilaDB = {
 
 export async function getReceivables(): Promise<ReceivablesData> {
   const role = await getSessionRole();
-  const puede = role?.kind === "full" || (role?.kind === "admin" && role.sede === ATELIER);
+  const puede = puedeLeerDireccion(role) || (role?.kind === "admin" && role.sede === ATELIER);
   if (!puede) return VACIO;
 
   const hoy = getToday();

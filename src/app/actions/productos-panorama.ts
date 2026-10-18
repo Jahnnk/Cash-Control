@@ -17,7 +17,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import { armarPanorama, type PanoramaProductos, type FilaProducto } from "@/lib/productos/panorama";
 import { armarTrimestral, type InformeTrimestral } from "@/lib/productos/trimestral";
 import { reglaOchentaVeinte, type Pareto } from "@/lib/productos/ochenta-veinte";
@@ -144,7 +144,7 @@ export async function getPanoramaProductos(month: string, businessId?: number): 
 export async function getPanoramaProductosGrupo(month: string): Promise<Res<{ sedes: PanoramaDeSede[] }>> {
   if (!mesValido(month)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   try {
     const sedes = await Promise.all(SEDES.map(async (s) => {
       const [panorama, cargado] = await Promise.all([
@@ -266,7 +266,7 @@ export type OchentaVeinteSede = {
 export async function getReglaOchentaVeinte(hastaMes: string): Promise<Res<{ sedes: OchentaVeinteSede[] }>> {
   if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   try {
     return { ok: true, sedes: await Promise.all(SEDES.map((s) => ochentaVeintePara(s.id, s.nombre, hastaMes))) };
   } catch (e) {
@@ -430,7 +430,7 @@ export async function getCoberturaRotacion(meses = 6): Promise<Res<{
   ventas: VentasDelMes[]; menor: { businessId: number; desde: string; hasta: string }[];
 }>> {
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const lista = mesesAntes(hoy.slice(0, 7), Math.min(12, Math.max(1, meses)));
   try {
@@ -560,7 +560,7 @@ async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandi
 export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ data: CandidatosReemplazo }>> {
   if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   try {
     const { r, hasta, costos, hoy } = await calcularCandidatos(hastaMes);
     await seguirPreparar(r.candidatos, hoy);
@@ -610,7 +610,7 @@ export async function getDatosCargadosProductos(): Promise<Res<{ hoy: string; se
 export async function getRentabilidadProductos(mes: string, businessId: number): Promise<Res<{ data: RentabilidadSede | null }>> {
   if (!mesValido(mes)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   const sede = businessId === CAFETERIAS ? { id: CAFETERIAS, nombre: NOMBRE_CAFETERIAS } : SEDES.find((s) => s.id === businessId && (s.id === 2 || s.id === 3));
   if (!sede) return { ok: false, error: "Solo Fonavi y Centro tienen carta con precio al público." };
   try {

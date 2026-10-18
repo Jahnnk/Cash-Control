@@ -1,5 +1,6 @@
 "use server";
 
+import { requireLectura } from "@/lib/session-access";
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
@@ -143,6 +144,8 @@ export async function getKellyLoadStatus(): Promise<KellyLoadStatus[]> {
 }
 
 export async function getGroupDashboard(monthInput?: string) {
+  // Dirección o llave de solo lectura (18-oct-2026); antes no tenía control propio.
+  if (!(await requireLectura())) throw new Error("Sin acceso.");
   const today = new Date().toISOString().slice(0, 10);
   const currentMonth = today.substring(0, 7);
   const month = monthInput && /^\d{4}-(0[1-9]|1[0-2])$/.test(monthInput) ? monthInput : currentMonth;

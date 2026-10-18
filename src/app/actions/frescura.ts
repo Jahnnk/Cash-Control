@@ -9,12 +9,14 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, requireLectura, puedeLeerDireccion } from "@/lib/session-access";
 import { getDataFreshness, getKellyLoadStatus } from "./grupo";
 import { getDatosCargadosProductos } from "./productos-panorama";
 import { resumirFrescura, type FrescuraGrupo } from "@/lib/frescura-datos";
 
 export async function getFrescuraGrupo(): Promise<FrescuraGrupo | null> {
+  // Dirección o llave de solo lectura (18-oct-2026); antes no tenía control propio. Nunca lanza: sin acceso, null.
+  if (!(await requireLectura())) return null;
   try {
     const sedes = await getDataFreshness();
     return resumirFrescura({
@@ -50,7 +52,7 @@ const NOMBRES: Record<number, string> = { 2: "Fonavi", 3: "Centro", 1: "Atelier"
 
 export async function getFrescuraImportables(): Promise<FrescuraImportables | null> {
   const role = await getSessionRole();
-  if (role?.kind !== "full") return null;
+  if (!puedeLeerDireccion(role)) return null;
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   try {
     const sql = neon(process.env.DATABASE_URL!);

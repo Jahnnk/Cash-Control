@@ -25,6 +25,8 @@ vi.mock("@neondatabase/serverless", () => ({ neon: () => fake.makeTag() }));
 vi.mock("@/lib/session-access", () => ({
   getSessionRole: vi.fn(async () => (fake.state.full ? { kind: "full", quien: "jahnn" } : { kind: "admin", sede: 2 })),
   requireFullSession: vi.fn(async () => fake.state.full),
+  requireLectura: vi.fn(async () => fake.state.full),
+  puedeLeerDireccion: (r: { kind?: string } | null) => r?.kind === "full" || r?.kind === "lector",
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 vi.spyOn(console, "error").mockImplementation(() => {});
