@@ -11,7 +11,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { requireFullSession } from "@/lib/session-access";
+import { requireLectura } from "@/lib/session-access";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
 import { recuperosDelPeriodo, totalRecuperos } from "@/lib/recuperos-sql";
@@ -32,7 +32,7 @@ export type SeisCifras = {
 };
 
 export async function getSeisCifras(mes: string): Promise<{ ok: true; data: SeisCifras } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  if (!(await requireLectura())) return { ok: false, error: "Solo dirección." };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return { ok: false, error: "Mes inválido." };
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const [y, m] = mes.split("-").map(Number);

@@ -59,6 +59,9 @@ export type SessionRole =
   // respaldo — no es un dato garantizado.
   | { kind: "admin" | "verif"; sede: number; nombre?: string }
   | { kind: "highlight"; userId: number; nombre: string }
+  // Solo lectura (18-oct-2026): ve el Dashboard de Grupo y Reportes; NO pasa requireFullSession, así que
+  // toda acción que guarda, sube o borra lo rechaza por defecto. Las lecturas lo admiten con requireLectura.
+  | { kind: "lector"; userId: number; nombre: string }
   | null;
 
 /**
@@ -82,6 +85,9 @@ async function resolveUserToken(token: string, now: number): Promise<SessionRole
     // El scope de Highlight no está atado a una sede: cubre las tres.
     if (rows[0].scope === "highlight") {
       return { kind: "highlight", userId, nombre: rows[0].nombre };
+    }
+    if (rows[0].scope === "lector") {
+      return { kind: "lector", userId, nombre: rows[0].nombre };
     }
     const sede = SEDE_BY_SCOPE[rows[0].scope];
     if (sede === undefined) return null;
@@ -127,4 +133,17 @@ export async function getSessionRole(): Promise<SessionRole> {
 export async function requireFullSession(): Promise<boolean> {
   const role = await getSessionRole();
   return role?.kind === "full";
+}
+
+/** ¿Puede VER las cifras de dirección? La dirección o una llave de solo lectura. */
+export function puedeLeerDireccion(role: SessionRole): boolean {
+  return role?.kind === "full" || role?.kind === "lector";
+}
+
+/**
+ * Para las acciones que solo LEEN cifras de dirección (dashboard de Grupo y Reportes). Seguro por defecto:
+ * una acción que guarda, sube o borra sigue usando requireFullSession, que rechaza la llave de solo lectura.
+ */
+export async function requireLectura(): Promise<boolean> {
+  return puedeLeerDireccion(await getSessionRole());
 }

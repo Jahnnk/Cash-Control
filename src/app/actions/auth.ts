@@ -139,6 +139,8 @@ export async function loginWithPassword(
         try {
           await sql`UPDATE app_users SET last_login = NOW() WHERE id = ${u.id}`;
         } catch { /* el login no depende de esta marca */ }
+        // Solo lectura: directo al Dashboard de Grupo (lo único que puede ver, con Reportes).
+        if (u.scope === "lector") redirect("/grupo/dashboard");
         const [kind, sede] = u.scope.split("-");
         redirect(`/${sede}/${kind === "admin" ? "panel" : "verificacion"}`);
       }

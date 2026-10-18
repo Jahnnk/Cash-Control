@@ -84,8 +84,14 @@ describe("import central — sedeCentral", () => {
     expect((r as { error: string }).error).not.toBe(ACCESS_MSG);
   });
 
-  it("SIN sedeCentral el flujo por sede sigue igual (admins incluidos)", async () => {
+  it("SIN sedeCentral también es solo de dirección (18-oct-2026: la sede salía de la cookie sin revisar la sesión)", async () => {
     fake.full = false;
+    const r = await previewExcelImport("", "kelly.xlsx", null, null);
+    expect((r as { error: string }).error).toBe(ACCESS_MSG);
+  });
+
+  it("dirección SIN sedeCentral sigue importando en la sede activa", async () => {
+    fake.full = true;
     const r = await previewExcelImport("", "kelly.xlsx", null, null);
     expect((r as { error: string }).error).not.toBe(ACCESS_MSG);
   });

@@ -18,7 +18,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { requireFullSession } from "@/lib/session-access";
+import { requireLectura } from "@/lib/session-access";
 import { compareVentasSede, type VentasSedeComparison } from "@/lib/kpis/ventas-deck";
 import { loadVentaRowsBlended } from "@/lib/kpis/ventas-loader";
 import { compareMonths, type MonthComparison } from "@/lib/kpis/month-compare";
@@ -57,7 +57,7 @@ export async function getGroupVentasComparison(mes?: string): Promise<
   | { ok: true; sedes: GroupVentasSede[] }
   | { ok: false; error: string }
 > {
-  if (!(await requireFullSession())) {
+  if (!(await requireLectura())) {
     return { ok: false, error: "Solo para la dirección." };
   }
   try {

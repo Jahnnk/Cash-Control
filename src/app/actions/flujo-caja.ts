@@ -8,7 +8,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { requireFullSession } from "@/lib/session-access";
+import { requireLectura } from "@/lib/session-access";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
 import type { MesFlujo } from "@/lib/flujo-caja";
 
@@ -38,7 +38,7 @@ const finDeMes = (mes: string) => {
 };
 
 export async function getFlujoCaja(mes: string): Promise<{ ok: true; data: FlujoCaja } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  if (!(await requireLectura())) return { ok: false, error: "Solo dirección." };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return { ok: false, error: "Mes inválido." };
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const meses = mesesHasta(mes);

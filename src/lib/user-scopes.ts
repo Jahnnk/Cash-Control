@@ -13,6 +13,9 @@ export const USER_SCOPES = [
   // sin ver nada financiero. Es de Juani (socia), que supervisa los
   // locales una o dos veces por semana.
   "highlight",
+  // Solo lectura (18-oct-2026): para herramientas externas como Muse (Meta) que entran a MIRAR el
+  // Dashboard de Grupo y Reportes. No puede guardar, subir ni borrar nada. Se apaga con un clic.
+  "lector",
 ] as const;
 
 export type UserScope = (typeof USER_SCOPES)[number];
@@ -29,4 +32,5 @@ export const SCOPE_LABELS: Record<UserScope, string> = {
   "verif-fonavi": "Verificador de conteo · Fonavi",
   "verif-centro": "Verificador de conteo · Centro",
   highlight: "Highlight y supervisiones · 3 sedes (sin acceso financiero)",
+  lector: "Solo lectura · Dashboard de Grupo y Reportes (no puede cambiar nada)",
 };

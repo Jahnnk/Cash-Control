@@ -9,7 +9,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import type { MesKelly } from "@/lib/cobertura-kelly";
 import { totalesMesSede } from "@/lib/totales-mes-sede";
 
@@ -29,7 +29,7 @@ export async function getCoberturaKelly(meses = 6): Promise<
   { ok: true; hoy: string; meses: string[]; celdas: MesKelly[] } | { ok: false; error: string }
 > {
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const lista = mesesHasta(hoy, Math.min(12, Math.max(1, meses)));
   const desde = `${lista[0]}-01`;
@@ -140,7 +140,7 @@ export type ExcelSubidoHoy = { businessId: number; archivo: string; hora: string
  */
 export async function getExcelSubidosHoy(): Promise<{ ok: true; subidos: ExcelSubidoHoy[] } | { ok: false; error: string }> {
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   try {
     const rows = (await sql`
       SELECT DISTINCT ON (business_id) business_id, file_name,
@@ -175,7 +175,7 @@ export type CorteExcelSede = {
  */
 export async function getCorteExcel(): Promise<{ ok: true; sedes: CorteExcelSede[] } | { ok: false; error: string }> {
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   try {
     const [movs, cargas] = await Promise.all([

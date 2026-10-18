@@ -12,6 +12,7 @@
  * motor puro `lib/liquidez.ts`. Acá solo se recolecta.
  */
 
+import { requireLectura } from "@/lib/session-access";
 import { neon } from "@neondatabase/serverless";
 import { calcularLiquidez, type EntradaSede, type LiquidezGrupo } from "@/lib/liquidez";
 
@@ -83,6 +84,8 @@ async function derivado(bId: number, hoy: string): Promise<EntradaSede["derivado
 
 /** Nunca lanza: una pantalla no se cae porque falte un saldo. */
 export async function getLiquidezGrupo(): Promise<LiquidezGrupo | null> {
+  // Dirección o llave de solo lectura (18-oct-2026); antes no tenía control propio. Sin acceso: null (sin datos).
+  if (!(await requireLectura())) return null;
   try {
     const hoy = todayLima();
     const sedes: EntradaSede[] = await Promise.all(

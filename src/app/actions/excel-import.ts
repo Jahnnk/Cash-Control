@@ -385,9 +385,12 @@ async function categoriasYaClasificadas(bId: number): Promise<Set<string>> {
  * jul-2026 Kelly lleva las 3 sedes, así que las 3 se aceptan.
  */
 async function importBusinessId(sedeCentral?: string): Promise<number | null> {
+  // Importar el Excel es SOLO de dirección (Jahnn y Kelly), con o sin sede elegida. Antes, sin sede elegida,
+  // la sede salía de la cookie sin revisar quién llamaba: cualquier sesión que llegara a la acción podía
+  // importar (lo encontró la revisión de la llave de solo lectura, 18-oct-2026).
+  if (!(await requireFullSession())) return null;
   if (sedeCentral !== undefined) {
     if (sedeCentral !== "atelier" && sedeCentral !== "fonavi" && sedeCentral !== "centro") return null;
-    if (!(await requireFullSession())) return null;
     return activeBusinessId(sedeCentral);
   }
   return activeBusinessId();

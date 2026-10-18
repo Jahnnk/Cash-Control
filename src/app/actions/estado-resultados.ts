@@ -7,7 +7,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { requireFullSession } from "@/lib/session-access";
+import { requireLectura } from "@/lib/session-access";
 import { getSeisCifras } from "./seis-cifras";
 import { recuperosDelPeriodo } from "@/lib/recuperos-sql";
 import type { CifrasSede } from "@/lib/seis-cifras";
@@ -24,7 +24,7 @@ export type DatosEstadoResultados = { hoy: string; meses: { mes: string; sedes: 
 
 /** Las seis cifras de los 6 meses que terminan en `mes` (del más antiguo al más reciente). */
 export async function getEstadoResultados(mes: string): Promise<{ ok: true; data: DatosEstadoResultados } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  if (!(await requireLectura())) return { ok: false, error: "Solo dirección." };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes)) return { ok: false, error: "Mes inválido." };
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const lista = mesesHasta(mes, 6);
@@ -41,7 +41,7 @@ export type MovimientoCategoria = { sede: string; fecha: string; concepto: strin
  * `bId` null = las tres sedes (vista del grupo).
  */
 export async function getMovimientosCategoria(bId: number | null, mes: string, categoria: string): Promise<{ ok: true; items: MovimientoCategoria[] } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  if (!(await requireLectura())) return { ok: false, error: "Solo dirección." };
   if (!/^\d{4}-(0[1-9]|1[0-2])$/.test(mes) || !categoria) return { ok: false, error: "Datos inválidos." };
   const desde = `${mes}-01`;
   const fin = new Date(Date.UTC(+mes.slice(0, 4), +mes.slice(5), 0)).toISOString().slice(0, 10);

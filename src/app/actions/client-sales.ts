@@ -20,7 +20,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import type { ClientSalesRow } from "@/lib/client-sales-parser";
 import { guardarSnapshotClientes } from "@/lib/client-sales-sql";
 
@@ -161,7 +161,7 @@ export async function getClientSalesAnalisis(
 ): Promise<ClientSalesAnalisis> {
   const bId = ATELIER;
   const role = await getSessionRole();
-  const puede = role?.kind === "full" || (role?.kind === "admin" && role.sede === bId);
+  const puede = puedeLeerDireccion(role) || (role?.kind === "admin" && role.sede === bId);
   if (!puede) return VACIO;
 
   try {
