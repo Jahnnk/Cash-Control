@@ -30,6 +30,7 @@ import {
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
+import { logout } from "@/app/actions/auth";
 
 type ScopeKey = ScopeCode;
 
@@ -311,9 +312,10 @@ export function Sidebar() {
           ))}
         </nav>
 
-        {/* Abajo, lo de vez en cuando: Configuración y quién está usando el sistema. */}
+        {/* Abajo, lo de vez en cuando: Configuración, quién está usando el sistema y cerrar sesión. */}
+        <div className="border-t border-white/10 px-3 py-2 space-y-0.5">
         {conConfiguracion && (
-          <div className="border-t border-white/10 px-3 py-2 space-y-0.5">
+          <>
             <ItemMenu item={CONFIGURACION} href={hrefFor(CONFIGURACION.segment)} activo={isActive(CONFIGURACION.segment)} onClick={() => setOpen(false)} />
             <form action={clearRole}>
               <button
@@ -323,11 +325,22 @@ export function Sidebar() {
               >
                 <User className="w-4 h-4 shrink-0" />
                 <span className="truncate">{role ? (role === "admin" ? "Jahnn" : "Kelly") : "Usuario"}</span>
-                <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-white/45"><LogOut className="w-3.5 h-3.5" />Cambiar</span>
+                <span className="ml-auto inline-flex items-center gap-1 text-[11px] text-white/45"><RefreshCcw className="w-3.5 h-3.5" />Cambiar</span>
               </button>
             </form>
-          </div>
+          </>
         )}
+          {/* Cerrar sesión (18-oct-2026): para todos, también los administradores de sede. */}
+          <form action={logout}>
+            <button
+              type="submit"
+              className="w-full flex items-center gap-3 px-3 py-2 rounded-lg text-[13px] text-white/65 hover:bg-white/10 hover:text-white transition-colors text-left"
+            >
+              <LogOut className="w-4 h-4 shrink-0" />
+              <span>Cerrar sesión</span>
+            </button>
+          </form>
+        </div>
       </aside>
     </>
   );
