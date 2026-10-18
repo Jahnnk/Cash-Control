@@ -152,3 +152,17 @@ export async function loginWithPassword(
   await failedLoginDelay();
   return { error: "Contraseña incorrecta. Intenta de nuevo." };
 }
+
+/**
+ * Cerrar sesión (pedido de Jahnn, 18-oct-2026): borra la sesión de ESTE dispositivo y vuelve a la pantalla de
+ * contraseña. No cambia ninguna contraseña: las sesiones de otros celulares o computadoras siguen abiertas (para
+ * cerrarlas todas se cambia la contraseña, ver AGENTS.md). Antes solo existía «Cambiar» (Jahnn ↔ Kelly), que no
+ * sale de la app.
+ */
+export async function logout(): Promise<void> {
+  const c = await cookies();
+  c.delete(AUTH_COOKIE);
+  c.delete(SCOPE_HINT_COOKIE);
+  c.delete("yayis_role");
+  redirect("/login");
+}
