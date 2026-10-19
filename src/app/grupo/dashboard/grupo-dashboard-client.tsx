@@ -172,14 +172,10 @@ export function GrupoDashboardClient({
       href: `/${p.code}/dashboard`,
       flag: p.flag === "atencion" || p.flag === "mejor" ? p.flag : null,
       cubiertosPct: eq,
+      ventasHasta: p.hasta,
       pie: (
         <>
-          {p.hasta && (
-            <span className={`block ${faltan ? "text-amber-700" : ""}`}>
-              {`Ventas hasta el ${ddmm(p.hasta)}: `}<b className="text-gray-700">S/ {Math.round(p.ventasMes).toLocaleString("es-PE")}</b>
-              {faltan ? ` · ⚠ ${faltan === 1 ? "falta 1 día" : `faltan ${faltan} días`}` : ""}
-            </span>
-          )}
+          {faltan ? <span className="block text-amber-700">⚠ {faltan === 1 ? "Falta 1 día de ventas" : `Faltan ${faltan} días de ventas`} · llegan al {ddmm(p.hasta!)}</span> : null}
           {meta !== null && <span className="block">Meta de ventas: <b className="text-gray-700">{meta}%</b></span>}
           {p.deltaPct !== null && <span className="block">Ventas vs mes pasado: <b className={p.deltaPct < 0 ? "text-red-700" : "text-emerald-700"}>{p.deltaPct > 0 ? "+" : ""}{p.deltaPct}%</b></span>}
         </>

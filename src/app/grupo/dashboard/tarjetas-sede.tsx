@@ -18,14 +18,14 @@ import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { GLOSARIO } from "@/lib/vocabulario";
 
 /** Lo que el Resumen agrega a cada tarjeta: a dónde lleva, su etiqueta, el mínimo cubierto y el pie. */
-export type ExtraSede = { href: string; flag: "atencion" | "mejor" | null; cubiertosPct?: number | null; pie: ReactNode };
+export type ExtraSede = { href: string; flag: "atencion" | "mejor" | null; cubiertosPct?: number | null; pie: ReactNode; /** Último día con venta cargada: la fecha pequeña bajo «Ventas». */ ventasHasta?: string | null };
 
 const ALTO = 110;
 const soles = (n: number) => `${n < 0 ? "−" : ""}S/ ${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const pct = (n: number | null) => (n === null ? "—" : `${n.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%`);
 
 const COLOR = {
-  ventas: "#004C40", entroVentas: "#0284C7", entroOtras: "#7DD3FC",
+  ventas: "#004C40", ventasPosterior: "#5E9C8F", entroVentas: "#0284C7", entroOtras: "#7DD3FC",
   costos: "#F2A56B", gastos: "#A78BFA", ganancia: "#D9A441", perdida: "#DC2626",
 };
 
@@ -42,12 +42,16 @@ function Segmento({ alto, color, nombre, monto, ayuda, arriba }: { alto: number;
   );
 }
 
-function Barras({ t }: { t: TarjetaSede }) {
+function Barras({ t, ventasHasta }: { t: TarjetaSede; ventasHasta?: string | null }) {
   const costos = t.costos ?? 0, gastos = t.gastos ?? 0;
   const salio = t.costos === null && t.gastos === null ? null : Math.round((costos + gastos) * 100) / 100;
   const ingresado = t.caja.ingresado ?? 0, otras = t.caja.otras;
   const entro = t.caja.total > 0 ? t.caja.total : null;
-  const tope = Math.max(t.ventas ?? 0, salio ?? 0, entro ?? 0, Math.abs(t.ganancia ?? 0), 1);
+  // «Ventas» = lo vendido hasta el último día con venta cargada: la parte oscura llega hasta el corte del Excel (comparable con
+  // lo que salió y la ganancia) y la clara son los días que el Excel todavía no cubre.
+  const hastaCorte = t.ventas ?? 0, despues = t.ventasPosteriores;
+  const ventasTotal = t.ventas === null && despues <= 0 ? null : Math.round((hastaCorte + despues) * 100) / 100;
+  const tope = Math.max(ventasTotal ?? 0, salio ?? 0, entro ?? 0, Math.abs(t.ganancia ?? 0), 1);
   const h = (v: number) => Math.max(Math.round((Math.abs(v) / tope) * ALTO), v !== 0 ? 4 : 0);
   const neg = t.ganancia !== null && t.ganancia < 0;
   const etiqueta = (v: number | null, cls: string) => (
@@ -60,8 +64,13 @@ function Barras({ t }: { t: TarjetaSede }) {
     <>
       <div className="mt-4 grid grid-cols-4 gap-2 items-end" style={{ height: ALTO + 28 }}>
         <div className={col}>
-          {etiqueta(t.ventas, "text-[#004C40]")}
-          {t.ventas === null ? vacio : <div className="w-full rounded-t-md" style={{ height: h(t.ventas), background: COLOR.ventas }} />}
+          {etiqueta(ventasTotal, "text-[#004C40]")}
+          {ventasTotal === null ? vacio : (
+            <div className="flex w-full flex-col">
+              {despues > 0 && <Segmento alto={h(despues)} color={COLOR.ventasPosterior} nombre="Ventas más recientes" monto={despues} ayuda="días que el Excel aún no cubre" arriba />}
+              <Segmento alto={h(hastaCorte)} color={COLOR.ventas} nombre="Ventas hasta el corte" monto={hastaCorte} ayuda="comparables con costos y gastos" arriba={despues <= 0} />
+            </div>
+          )}
         </div>
         {/* Dinero que entró: lo que llegó por ventas y lo que llegó por otros motivos, en una barra. */}
         <div className={col}>
@@ -92,7 +101,7 @@ function Barras({ t }: { t: TarjetaSede }) {
         <div className={pie}>
           <Banknote className="h-4 w-4" style={{ color: COLOR.ventas }} aria-hidden />
           <span className="text-[11px] font-medium leading-tight text-gray-800">Ventas</span>
-          <span className="text-[10px] leading-tight text-gray-400">lo vendido</span>
+          <span className="text-[10px] leading-tight text-gray-400">{ventasHasta ? `al ${ventasHasta.slice(8, 10)}/${ventasHasta.slice(5, 7)}` : "lo vendido"}</span>
         </div>
         <div className={pie}>
           <ArrowDownToLine className="h-4 w-4" style={{ color: COLOR.entroVentas }} aria-hidden />
@@ -161,12 +170,12 @@ function TermometroEbitda({ fila }: { fila: FilaRegla | null }) {
   );
 }
 
-/** «hasta el 13/10 · último día con Excel» (mes en curso) o «mes completo»: de qué día a qué día cuentan las barras. */
+/** «hasta el 13/10 · último día con Excel» (mes en curso) o «mes completo»: hasta qué día cuentan el dinero, los costos y la ganancia. */
 function periodoDeLaTarjeta(corte: string | null, mes: string): string | null {
   if (!corte) return null;
   const [y, m] = mes.split("-").map(Number);
   const fin = `${mes}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
-  return corte >= fin ? "mes completo" : `hasta el ${corte.slice(8, 10)}/${corte.slice(5, 7)} · último día con Excel`;
+  return corte >= fin ? "mes completo" : `Dinero, costos y ganancia hasta el ${corte.slice(8, 10)}/${corte.slice(5, 7)} · último día con Excel`;
 }
 
 function Tarjeta({ t, fila, extra, cajaHref, mes }: { t: TarjetaSede; fila: FilaRegla | null; extra?: ExtraSede; cajaHref: string; mes: string }) {
@@ -187,9 +196,10 @@ function Tarjeta({ t, fila, extra, cajaHref, mes }: { t: TarjetaSede; fila: Fila
 
       {sinNada ? <p className="mt-6 mb-2 text-sm text-gray-400">Sin ventas cargadas.</p> : (
         <>
-          {/* Las barras cuentan ventas, dinero y gastos hasta el MISMO día: el último con Excel (si no, la ganancia saldría inflada). */}
+          {/* Dinero, costos y ganancia se cuentan hasta el último día con Excel (si no, la ganancia saldría inflada); las ventas llegan
+              hasta el último día cargado y la parte clara de su barra es lo que el Excel todavía no cubre. */}
           {periodo && <p className="mt-0.5 text-[11px] text-gray-500">{periodo}</p>}
-          <Barras t={t} />
+          <Barras t={t} ventasHasta={extra?.ventasHasta ?? null} />
           {t.porque && <p className="mt-2 text-xs text-gray-500">Sin ganancia todavía: {t.porque.toLowerCase()}.</p>}
           <TermometroEbitda fila={fila} />
 
