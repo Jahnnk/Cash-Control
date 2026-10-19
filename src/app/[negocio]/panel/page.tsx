@@ -167,7 +167,16 @@ function IncentivosPage() {
       personalPedidos: persPedidos.trim() === "" ? null : Number(persPedidos),
       personalVenta: persVenta.trim() === "" ? null : Number(persVenta),
     };
-    let r = await saveDailyEntry(dia);
+    // Día ya registrado y solo se completan NPS/mermas/tiempos (personas y venta en blanco): se guardan solo
+    // los KPIs y NO se toca venta ni personas. Antes salía «Personas debe ser mayor a 0» y el NPS no se guardaba (19-oct-2026).
+    const soloKpis = editingDate === null && personas.trim() === "" && venta.trim() === "" && !!dayRecord && dayRecord.revenue !== null;
+    if (soloKpis && nps.trim() === "" && mermas.trim() === "" && tiempo.trim() === "" && tiempoMesa.trim() === "" && tiempoDelivery.trim() === "") {
+      setSaving(false);
+      showToast("Escribe el NPS, las mermas o los tiempos que quieres guardar.", "error");
+      return;
+    }
+    let r: Awaited<ReturnType<typeof saveDailyEntry>> = { ok: true, firmaAnulada: false };
+    if (!soloKpis) r = await saveDailyEntry(dia);
     // Mismos números que otra sede: se pregunta antes de guardar.
     if (!r.ok && r.confirmar) {
       if (!window.confirm(`${r.error}\n\n¿Los números de ${sedeLabel} son realmente estos? Aceptar = guardar igual. Cancelar = revisarlos.`)) {
@@ -178,11 +187,12 @@ function IncentivosPage() {
     }
     if (!r.ok) { setSaving(false); showToast(r.error, "error"); return; }
     // KPIs del mismo día (NPS, mermas, tiempos) — si se llenó alguno o se edita.
-    if (editingDate !== null || nps.trim() !== "" || mermas.trim() !== "" || tiempo.trim() !== "" || tiempoMesa.trim() !== "" || tiempoDelivery.trim() !== "") {
+    if (editingDate !== null || soloKpis || nps.trim() !== "" || mermas.trim() !== "" || tiempo.trim() !== "" || tiempoMesa.trim() !== "" || tiempoDelivery.trim() !== "") {
       const rk = await saveDailyKpis({
         date: fecha,
-        nps: nps.trim() === "" ? null : Number(nps),
-        mermasSoles: mermas.trim() === "" ? null : Number(mermas),
+        // Lo que no se escribe se conserva (solo-KPIs): completar el NPS no borra las mermas ya guardadas.
+        nps: nps.trim() === "" ? (soloKpis ? dayRecord?.nps ?? null : null) : Number(nps),
+        mermasSoles: mermas.trim() === "" ? (soloKpis ? dayRecord?.mermasSoles ?? null : null) : Number(mermas),
         tiempoMin: tiempo.trim() === "" ? null : Number(tiempo),
         tiempoMesaMin: tiempoMesa.trim() === "" ? null : Number(tiempoMesa),
         tiempoDeliveryMin: tiempoDelivery.trim() === "" ? null : Number(tiempoDelivery),
@@ -205,7 +215,10 @@ function IncentivosPage() {
    * reclama, y el administrador tiene que ir a buscar dónde se arregla.
    */
   function irAlRegistro(fechaObjetivo: string) {
-    setFecha(fechaObjetivo);
+    // Si el día ya tiene venta, se abre para completar con sus números cargados (no un formulario vacío).
+    const existente = data?.dailies.find((d) => d.date === fechaObjetivo);
+    if (existente && existente.revenue !== null && existente.personas !== null) startEdit(existente);
+    else setFecha(fechaObjetivo);
     document.getElementById("registro-diario")?.scrollIntoView({
       behavior: "smooth", block: "center",
     });
