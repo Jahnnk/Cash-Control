@@ -24,6 +24,26 @@ describe("resolverVentasPorDia: días juntos", () => {
     expect(avisos).toEqual([]);
   });
 
+  it("caso real de Fonavi: 862.00 + 741.10 contra 1,664.30 (61.20 eran una venta al crédito): el domingo no se cuenta dos veces y el total es el de Byte", () => {
+    const { dias } = resolverVentasPorDia({
+      byte: [r("2026-10-02", 1553), r("2026-10-03", 1664.3)], kelly: [],
+      registro: [r("2026-10-02", 1553), r("2026-10-03", 862), r("2026-10-04", 741.1)],
+    });
+    expect(dias.get("2026-10-04")).toEqual({ total: 741.1, fuente: "admin", motivo: "dias-juntos" });
+    // lo que el administrador no anotó (el crédito) queda en el primer día, donde Byte lo puso
+    expect(dias.get("2026-10-03")).toEqual({ total: 923.2, fuente: "admin", motivo: "dias-juntos" });
+    expect((dias.get("2026-10-03")!.total + dias.get("2026-10-04")!.total).toFixed(2)).toBe("1664.30");
+  });
+
+  it("más de 5% de diferencia ya no es «días juntos»: se queda con Byte y se avisa", () => {
+    const { dias, avisos } = resolverVentasPorDia({
+      byte: [r("2026-10-03", 1664.3), r("2026-10-06", 1300)], kelly: [],
+      registro: [r("2026-10-03", 862), r("2026-10-04", 600)],
+    });
+    expect(dias.get("2026-10-03")).toMatchObject({ total: 1664.3, fuente: "byte" });
+    expect(avisos).toHaveLength(1);
+  });
+
   it("la suma de los dos días reproduce el total de Byte (no se cuenta el domingo dos veces)", () => {
     const { dias } = resolverVentasPorDia({
       byte: [r("2026-10-03", 1664.3)], kelly: [],

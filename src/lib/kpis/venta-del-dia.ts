@@ -21,6 +21,14 @@
 export const TOLERANCIA_DESACUERDO = 5;
 /** Hasta cuánto el administrador "coincide" con una fuente (redondeos). */
 export const TOLERANCIA_COINCIDE = 1;
+/**
+ * Días juntos: lo que anotó el administrador día por día suma casi lo que Byte puso en un solo día. «Casi» = S/5 o 5%
+ * de lo que dice Byte: el administrador anota lo cobrado en caja y Byte además cuenta las ventas al crédito (Fonavi,
+ * 3 y 4 de octubre de 2026: 862.00 + 741.10 = 1,603.10 contra 1,664.30 de Byte; los 61.20 de diferencia eran una venta al
+ * crédito, y con una tolerancia de S/5 el domingo 4 se contaba dos veces).
+ */
+export const TOLERANCIA_JUNTOS_PCT = 0.05;
+const cercaJuntos = (suma: number, byte: number) => Math.abs(suma - byte) <= Math.max(TOLERANCIA_DESACUERDO, TOLERANCIA_JUNTOS_PCT * byte);
 
 export type FuenteVenta = "byte" | "excel" | "admin";
 export type MotivoEleccion =
@@ -120,8 +128,14 @@ export function resolverVentasPorDia(
       if (ladoByte(dk) !== undefined || ak === undefined) break;
       tramo.push({ fecha: dk, total: ak });
       const suma = tramo.reduce((s, x) => s + x.total, 0);
-      if (cerca(suma, bd, TOLERANCIA_DESACUERDO)) {
-        for (const x of tramo) { dias.set(x.fecha, { total: x.total, fuente: "admin", motivo: "dias-juntos" }); usados.add(x.fecha); }
+      if (cercaJuntos(suma, bd)) {
+        // El total de los días juntos es EXACTAMENTE el de Byte: lo que el administrador no anotó (una venta al crédito) queda en
+        // el primer día, que es donde Byte lo puso. Los demás días se quedan con lo que anotó el administrador.
+        const resto = tramo.slice(1).reduce((t, x) => t + x.total, 0);
+        tramo.forEach((x, i) => {
+          dias.set(x.fecha, { total: i === 0 ? Math.round((bd - resto) * 100) / 100 : x.total, fuente: "admin", motivo: "dias-juntos" });
+          usados.add(x.fecha);
+        });
         juntados = true;
         break;
       }

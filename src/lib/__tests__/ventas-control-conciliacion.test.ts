@@ -213,3 +213,26 @@ describe("parser de la pestaña CONTROL VENTAS", () => {
     expect(r.errores.some((e) => e.includes("2026-08-31"))).toBe(true);
   });
 });
+
+describe("días que Byte junta en uno (Fonavi, 3 y 4 de octubre de 2026)", () => {
+  // Byte puso 1,664.30 el sábado 3 y nada el domingo 4; el administrador anotó 862.00 y 741.10 (los 61.20 de diferencia eran
+  // una venta al crédito). El total del bono NO puede contar el domingo dos veces.
+  const byte: FilaByte[] = [
+    { date: "2026-10-02", pedidos: 40, descuentos: 0, total: 1553 },
+    { date: "2026-10-03", pedidos: 61, descuentos: 24.8, total: 1664.3 },
+    { date: "2026-10-05", pedidos: 40, descuentos: 0, total: 1105 },
+  ];
+  const registro = [
+    { date: "2026-10-02", total: 1553 }, { date: "2026-10-03", total: 862 }, { date: "2026-10-04", total: 741.1 }, { date: "2026-10-05", total: 1105 },
+  ];
+  const r = conciliarVentasDelMes(byte, [], METODOS_CAFETERIA, registro);
+
+  it("el total del mes es el de Byte (4,322.30), no 5,063.40", () => {
+    expect(r.totalVendido).toBe(4322.3);
+  });
+  it("cada día queda con lo que anotó el administrador; el crédito queda en el primer día", () => {
+    const v = (d: string) => r.dias.find((x) => x.date === d)?.totalVendido;
+    expect(v("2026-10-03")).toBe(923.2);
+    expect(v("2026-10-04")).toBe(741.1);
+  });
+});
