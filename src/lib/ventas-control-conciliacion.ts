@@ -42,6 +42,8 @@
  * si Byte tiene venta, es variación.
  */
 
+import { resolverVentasPorDia } from "./kpis/venta-del-dia";
+
 export type MetodoCuenta = { clave: string; etiqueta: string };
 
 export const METODOS_ATELIER: MetodoCuenta[] = [
@@ -139,6 +141,15 @@ export function conciliarVentasDelMes(
   const porRegistro = new Map(registro.filter((r) => r.total > 0).map((r) => [r.date, r]));
   const porCuentas = new Map(cuentas.map((c) => [c.date, c]));
   const kellyHasta = ultimoDiaDeKelly(cuentas);
+  // Días que Byte juntó en uno (caja sin abrir): el total del tramo es el de Byte, repartido día por día como lo anotó el
+  // administrador. Es la MISMA regla del dashboard y el deck (resolverVentasPorDia): si no, el domingo se contaba dos veces.
+  const juntos = new Map<string, number>();
+  const { dias: elegidos } = resolverVentasPorDia({
+    byte: byte.filter((b) => !b.parcial).map((b) => ({ date: b.date, total: b.total })),
+    kelly: cuentas.filter((c) => c.copiaTotalByte > 0).map((c) => ({ date: c.date, total: c.copiaTotalByte })),
+    registro: registro.filter((r) => r.total > 0).map((r) => ({ date: r.date, total: r.total })),
+  });
+  for (const [d, x] of elegidos) if (x.motivo === "dias-juntos") juntos.set(d, x.total);
   const fechas = [...new Set([...porByte.keys(), ...porCuentas.keys(), ...porRegistro.keys()])].sort();
   const vacio = () => Object.fromEntries(metodos.map((m) => [m.clave, 0])) as Record<string, number>;
 
@@ -150,7 +161,8 @@ export function conciliarVentasDelMes(
       const reg = porRegistro.get(date);
       const copia = c && c.copiaTotalByte > 0 ? c.copiaTotalByte : undefined;
       const [fuente, totalBruto]: [DiaConciliado["fuente"], number] =
-        b ? ["byte", b.total]
+        juntos.has(date) ? ["registro", juntos.get(date)!]
+        : b ? ["byte", b.total]
         : reg ? ["registro", reg.total]
         : copia !== undefined ? ["kelly", copia]
         : ["byte", cargado?.total ?? 0];

@@ -13,6 +13,7 @@
  *   info   = contexto que no bloquea (el Excel de Kelly llega los viernes)
  */
 
+import { TOLERANCIA_JUNTOS_PCT } from "./venta-del-dia";
 import { evaluarLlenado, etiquetaDia, type FilaDia, type SedeInfo } from "./llenado";
 import { evaluarReportesSemanales, type CargaRegistrada } from "../incentivos/reportes-semanales";
 
@@ -72,7 +73,7 @@ export const TOLERANCIA_PANEL_BYTE = 5;
  * Si dos o más días seguidos difieren pero JUNTOS casi coinciden —menos de 3% o S/5—, no es que el administrador
  * se equivoque: es Byte repartiendo distinto. Se dice como información y el deck sigue usando el panel.
  */
-export const TOLERANCIA_REPARTO_PCT = 0.03;
+export const TOLERANCIA_REPARTO_PCT = TOLERANCIA_JUNTOS_PCT;
 
 const ddmm = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`;
 const soles = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
