@@ -66,6 +66,14 @@ export type ListoReunion = {
 /** Lo que el panel y Byte pueden diferir sin que sea un problema (redondeos, propinas): S/5, como la verificación del Excel. */
 export const TOLERANCIA_PANEL_BYTE = 5;
 
+/**
+ * Cuando el cajero no abre la caja de Byte, Byte pone ventas de un día en el día de al lado (Centro, 15 y 16 de
+ * octubre de 2026: Byte puso S/868 de más el jueves y S/785 de menos el viernes; Chari revisó ticket por ticket).
+ * Si dos o más días seguidos difieren pero JUNTOS casi coinciden —menos de 3% o S/5—, no es que el administrador
+ * se equivoque: es Byte repartiendo distinto. Se dice como información y el deck sigue usando el panel.
+ */
+export const TOLERANCIA_REPARTO_PCT = 0.03;
+
 const ddmm = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`;
 const soles = (n: number) => `S/${Math.round(n).toLocaleString("es-PE")}`;
 const lista = (ds: string[]) => ds.map(etiquetaDia).join(", ");
@@ -124,11 +132,27 @@ function evaluarSede(s: SedeEntrada, start: string, end: string, hoy: string): S
 
   // ── 3 · Lo que tecleó el administrador contra Byte (la oficial) ──
   const byte = new Map(s.byte.map((b) => [b.fecha, b.total]));
+  const distintosDias = s.dias
+    .filter((d) => d.venta != null && byte.has(d.fecha) && Math.abs(d.venta! - byte.get(d.fecha)!) >= TOLERANCIA_PANEL_BYTE && d.fecha >= start && d.fecha <= end)
+    .sort((a, b) => a.fecha.localeCompare(b.fecha));
+  // Los días distintos que van seguidos forman un grupo: si juntos casi coinciden, Byte solo repartió distinto.
+  const grupos: DiaEntrada[][] = [];
+  for (const d of distintosDias) {
+    const ult = grupos[grupos.length - 1];
+    if (ult && mover(ult[ult.length - 1].fecha, 1) === d.fecha) ult.push(d); else grupos.push([d]);
+  }
   const distintos: string[] = [];
-  for (const d of s.dias) {
-    const b = byte.get(d.fecha);
-    if (d.venta != null && b != null && Math.abs(d.venta - b) >= TOLERANCIA_PANEL_BYTE && d.fecha >= start && d.fecha <= end) {
-      distintos.push(`${etiquetaDia(d.fecha)}: panel ${soles(d.venta)}, Byte ${soles(b)}`);
+  for (const g of grupos) {
+    const panel = g.reduce((t, d) => t + d.venta!, 0);
+    const delByte = g.reduce((t, d) => t + byte.get(d.fecha)!, 0);
+    const dif = Math.abs(delByte - panel);
+    if (g.length >= 2 && dif <= Math.max(TOLERANCIA_PANEL_BYTE, delByte * TOLERANCIA_REPARTO_PCT)) {
+      h.push({
+        nivel: "info", tema: "panel-vs-byte", titulo: `Byte repartió distinto las ventas de ${lista(g.map((d) => d.fecha))}`,
+        detalle: `Suele pasar con la caja sin abrir en Byte. Los ${g.length} días juntos casi coinciden (panel ${soles(panel)}, Byte ${soles(delByte)}${dif >= TOLERANCIA_PANEL_BYTE ? `; quedan ${soles(dif)} de diferencia` : ""}); el deck usa lo del panel.`,
+      });
+    } else {
+      for (const d of g) distintos.push(`${etiquetaDia(d.fecha)}: panel ${soles(d.venta!)}, Byte ${soles(byte.get(d.fecha)!)}`);
     }
   }
   if (distintos.length) h.push({ nivel: "aviso", tema: "panel-vs-byte", titulo: `El panel no coincide con Byte en ${distintos.length} ${distintos.length === 1 ? "día" : "días"}`, detalle: `${distintos.join(" · ")}. El ticket y las personas del deck salen del panel: conviene corregirlo con el administrador.` });
