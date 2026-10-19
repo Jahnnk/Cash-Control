@@ -175,7 +175,8 @@ export function GrupoDashboardClient({
         <>
           {p.hasta && (
             <span className={`block ${faltan ? "text-amber-700" : ""}`}>
-              {faltan ? `⚠ Al día hasta el ${ddmm(p.hasta)} · ${faltan === 1 ? "falta 1 día" : `faltan ${faltan} días`}` : `✓ Al día hasta el ${ddmm(p.hasta)}`}
+              {`Ventas hasta el ${ddmm(p.hasta)}: `}<b className="text-gray-700">S/ {Math.round(p.ventasMes).toLocaleString("es-PE")}</b>
+              {faltan ? ` · ⚠ ${faltan === 1 ? "falta 1 día" : `faltan ${faltan} días`}` : ""}
             </span>
           )}
           {meta !== null && <span className="block">Meta de ventas: <b className="text-gray-700">{meta}%</b></span>}
@@ -185,6 +186,8 @@ export function GrupoDashboardClient({
     }];
   }));
 
+  // Hasta qué día llegan las ventas que suma el número grande (la sede más adelantada).
+  const ultimaVenta = ventasDelMes.reduce<string | null>((mx, v) => (v.hasta && (!mx || v.hasta > mx) ? v.hasta : mx), null);
   const diasDelMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const diaHoy = isCurrentMonth ? Number(hoy.slice(8, 10)) : diasDelMes;
   const metas = [1, 2, 3].map((id) => extra.metas[id] ?? null);
@@ -260,7 +263,7 @@ export function GrupoDashboardClient({
           <div className={`grid grid-cols-1 gap-5 items-start ${isCurrentMonth ? "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
             <EstadoMes
               periodo={periodo} enCurso={isCurrentMonth} dia={diaHoy} diasDelMes={diasDelMes}
-              ventas={ventasMes} deltaPct={deltaGrupo} meta={metaGrupo} proyeccion={proyeccion}
+              ventas={ventasMes} hasta={isCurrentMonth ? ultimaVenta : null} deltaPct={deltaGrupo} meta={metaGrupo} proyeccion={proyeccion}
               liquidez={liquidez ? liquidez.total : null} equilibrio={equilibrio} ganancia={ganancia}
               flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion"
             />

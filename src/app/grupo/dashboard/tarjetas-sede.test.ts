@@ -28,6 +28,13 @@ describe("tarjetas de sede del Resumen (rediseño)", () => {
   it("ya no usa las palabras que se juntaban (Margen, Costos cubiertos, Caja del mes, Ganancia real, Plata)", () => {
     for (const t of ["Margen", "Costos cubiertos", "Caja del mes", "Ganancia real", "Plata que entró", "Ingresado por ventas"]) expect(html).not.toContain(t);
   });
+  it("cada tarjeta dice hasta qué día cuenta: mes completo, o hasta el último día con Excel", () => {
+    expect(html).toContain("mes completo");
+    const aMedias = renderToStaticMarkup(createElement(TarjetasSede, {
+      cifras: { mes: "2026-09", sedes: [{ ...sede(2, "Fonavi", 16491, 5200, 4100), corte: "2026-09-13" }] } as never, periodo: "setiembre 2026", cajaHref: "/x",
+    }));
+    expect(aMedias).toContain("hasta el 13/09 · último día con Excel");
+  });
   it("la pérdida se ve en rojo con su signo", () => {
     expect(html).toContain("−S/ 4,857");
   });

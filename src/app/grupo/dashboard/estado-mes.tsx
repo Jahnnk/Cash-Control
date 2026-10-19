@@ -24,6 +24,8 @@ export type EstadoMesProps = {
   dia: number;
   diasDelMes: number;
   ventas: number;
+  /** Hasta qué día llegan las ventas («vendido en las 3 sedes hasta el 18/10»); null = no se dice (mes cerrado). */
+  hasta?: string | null;
   deltaPct: number | null;
   /** Meta del mes: suma de la venta esperada de los presupuestos aprobados (null = no hay). */
   meta: number | null;
@@ -76,7 +78,7 @@ export function EstadoMes(p: EstadoMesProps) {
       <div className="mt-2 flex flex-wrap items-end gap-x-3 gap-y-1">
         <div className="text-4xl sm:text-5xl font-semibold tracking-tight tabular-nums text-gray-900 leading-none">{soles(p.ventas)}</div>
         <div className="pb-1 text-sm text-gray-500 flex flex-wrap items-center gap-2">
-          {p.etiquetaVentas ?? "vendido en las 3 sedes"}
+          {p.etiquetaVentas ?? "vendido en las 3 sedes"}{p.hasta ? ` hasta el ${p.hasta.slice(8, 10)}/${p.hasta.slice(5, 7)}` : ""}
           {p.deltaPct !== null && <span className="inline-flex items-center gap-1"><Delta pct={p.deltaPct} /> <span className="text-xs">vs. mismos días del mes pasado</span></span>}
         </div>
       </div>
