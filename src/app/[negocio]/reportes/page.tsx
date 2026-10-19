@@ -7,6 +7,7 @@ import { GenerateReportModal } from "./generate-report-modal";
 import { MonthlyReport } from "./monthly-report";
 import { DailyMovementsReport } from "./daily-movements-report";
 import { ExportModal } from "./export-modal";
+import { ClientesAtelier } from "./atelier-b2b-card";
 
 /**
  * Reportes de una sede (UX, 8-oct-2026, decisión de Jahnn: «dejar solo lo vivo»). Quedan dos
@@ -14,22 +15,24 @@ import { ExportModal } from "./export-modal";
  * dependían del cierre diario de Byte y del saldo del banco anotados a mano, que nadie llena
  * desde agosto (todo entra con el Excel). El equilibrio y el flujo viven en Grupo → Reportes.
  */
-type Tab = "mensual" | "movimientos";
+type Tab = "mensual" | "movimientos" | "clientes";
 
 function ReportesContent() {
   const searchParams = useSearchParams();
   const rawTab = searchParams.get("tab");
-  const initialTab: Tab = rawTab === "movimientos" ? "movimientos" : "mensual";
-  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
-  const [showExport, setShowExport] = useState(false);
-  const [showEirs, setShowEirs] = useState(false);
   const params = useParams<{ negocio?: string }>();
   const negocio = params?.negocio ?? "atelier";
   const activeUnitId = negocio === "fonavi" ? 2 : negocio === "centro" ? 3 : 1;
+  // «Clientes» (venta a empresas y cuentas por cobrar) solo existe en Atelier (19-oct-2026).
+  const initialTab: Tab = rawTab === "movimientos" ? "movimientos" : rawTab === "clientes" && activeUnitId === 1 ? "clientes" : "mensual";
+  const [activeTab, setActiveTab] = useState<Tab>(initialTab);
+  const [showExport, setShowExport] = useState(false);
+  const [showEirs, setShowEirs] = useState(false);
 
   const tabs: { key: Tab; label: string }[] = [
     { key: "mensual", label: "El mes" },
     { key: "movimientos", label: "Movimientos" },
+    ...(activeUnitId === 1 ? [{ key: "clientes" as const, label: "Clientes" }] : []),
   ];
 
   return (
@@ -80,6 +83,7 @@ function ReportesContent() {
 
       {activeTab === "mensual" && <MonthlyReport />}
       {activeTab === "movimientos" && <DailyMovementsReport />}
+      {activeTab === "clientes" && activeUnitId === 1 && <ClientesAtelier />}
     </div>
   );
 }
