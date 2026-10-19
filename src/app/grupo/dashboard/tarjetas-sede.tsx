@@ -161,8 +161,17 @@ function TermometroEbitda({ fila }: { fila: FilaRegla | null }) {
   );
 }
 
-function Tarjeta({ t, fila, extra, cajaHref }: { t: TarjetaSede; fila: FilaRegla | null; extra?: ExtraSede; cajaHref: string }) {
+/** «hasta el 13/10 · último día con Excel» (mes en curso) o «mes completo»: de qué día a qué día cuentan las barras. */
+function periodoDeLaTarjeta(corte: string | null, mes: string): string | null {
+  if (!corte) return null;
+  const [y, m] = mes.split("-").map(Number);
+  const fin = `${mes}-${String(new Date(Date.UTC(y, m, 0)).getUTCDate()).padStart(2, "0")}`;
+  return corte >= fin ? "mes completo" : `hasta el ${corte.slice(8, 10)}/${corte.slice(5, 7)} · último día con Excel`;
+}
+
+function Tarjeta({ t, fila, extra, cajaHref, mes }: { t: TarjetaSede; fila: FilaRegla | null; extra?: ExtraSede; cajaHref: string; mes: string }) {
   const sinNada = t.ventas === null || t.ventas <= 0;
+  const periodo = periodoDeLaTarjeta(t.corte, mes);
   const cubiertos = extra?.cubiertosPct ?? null;
   return (
     <div className="flex min-w-0 flex-col rounded-2xl border border-gray-200/80 bg-white p-4 sm:p-5">
@@ -178,6 +187,8 @@ function Tarjeta({ t, fila, extra, cajaHref }: { t: TarjetaSede; fila: FilaRegla
 
       {sinNada ? <p className="mt-6 mb-2 text-sm text-gray-400">Sin ventas cargadas.</p> : (
         <>
+          {/* Las barras cuentan ventas, dinero y gastos hasta el MISMO día: el último con Excel (si no, la ganancia saldría inflada). */}
+          {periodo && <p className="mt-0.5 text-[11px] text-gray-500">{periodo}</p>}
           <Barras t={t} />
           {t.porque && <p className="mt-2 text-xs text-gray-500">Sin ganancia todavía: {t.porque.toLowerCase()}.</p>}
           <TermometroEbitda fila={fila} />
@@ -210,7 +221,7 @@ export function TarjetasSede({ cifras, periodo, extras, cajaHref }: { cifras: Se
   const filas = new Map(cifras.sedes.map((s) => [s.businessId, reglaDeSede(s, cfg)]));
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{tarjetas.map((t) => <Tarjeta key={t.businessId} t={t} fila={filas.get(t.businessId) ?? null} extra={extras?.[t.businessId]} cajaHref={cajaHref} />)}</div>
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{tarjetas.map((t) => <Tarjeta key={t.businessId} t={t} fila={filas.get(t.businessId) ?? null} extra={extras?.[t.businessId]} cajaHref={cajaHref} mes={cifras.mes} />)}</div>
       <details className="group mt-3">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800 [&::-webkit-details-marker]:hidden">
           ¿Qué significa cada palabra? <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" aria-hidden />
