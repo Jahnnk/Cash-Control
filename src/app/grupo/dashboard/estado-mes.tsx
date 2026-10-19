@@ -103,11 +103,11 @@ export function EstadoMes(p: EstadoMesProps) {
 
       <div className="mt-6 pt-5 border-t border-gray-100 grid grid-cols-3 gap-3 sm:gap-5">
         {p.enCurso ? (
-          <Dato titulo="Liquidez" valor={p.liquidez !== null ? soles(p.liquidez) : "—"} detalle={p.detalleLiquidez ?? "Banco + caja hoy, las 3 sedes"} href={p.liquidezHref} />
+          <Dato titulo="Plata hoy" valor={p.liquidez !== null ? soles(p.liquidez) : "—"} detalle={p.detalleLiquidez ?? "En banco y caja, las 3 sedes"} href={p.liquidezHref} />
         ) : (
-          <Dato titulo="Caja" valor={p.flujo !== null ? `${p.flujo < 0 ? "−" : ""}${soles(p.flujo)}` : "—"} tono={p.flujo !== null && p.flujo < 0 ? "mal" : "neutro"} detalle="Lo que entró menos lo que salió" />
+          <Dato titulo="Plata del mes" valor={p.flujo !== null ? `${p.flujo < 0 ? "−" : ""}${soles(p.flujo)}` : "—"} tono={p.flujo !== null && p.flujo < 0 ? "mal" : "neutro"} detalle="Lo que entró menos lo que salió" />
         )}
-        <Dato titulo="Equilibrio" valor={p.equilibrio.texto} detalle={p.equilibrio.detalle} tono={p.equilibrio.tono} />
+        <Dato titulo="Mínimo del día" valor={p.equilibrio.texto} detalle={p.equilibrio.detalle} tono={p.equilibrio.tono} />
         <Dato titulo="Ganancia"
           valor={p.ganancia.valor !== null ? `${p.ganancia.valor < 0 ? "−" : ""}${soles(p.ganancia.valor)}` : <span className="text-gray-400">—</span>}
           tono={p.ganancia.valor === null ? "neutro" : p.ganancia.valor < 0 ? "mal" : "bien"} detalle={p.ganancia.detalle} />

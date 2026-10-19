@@ -44,7 +44,7 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
       cuadreKelly={cuadre.ok ? cuadre.items : null}
       cifras={cifras.ok ? cifras.data : null}
       extra={extra}
-      pestanaInicial={pestana === "equipo" || pestana === "gastos" || pestana === "kelly" || pestana === "rentabilidad" ? pestana : "resumen"}
+      pestanaInicial={pestana === "equipo" ? "equipo" : pestana === "datos" || pestana === "gastos" || pestana === "kelly" ? "datos" : "resumen"}
     />
   );
 }

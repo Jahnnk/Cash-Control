@@ -27,9 +27,9 @@ describe("¿cómo vamos? — reglas compartidas", () => {
   });
   it("el equilibrio dice el piso diario de la asesoría: (costos fijos + food cost) ÷ 30", () => {
     const con = (o: Partial<BreakevenResult>) => r({ pisoDia: 1031.4, ...o });
-    expect(textoEquilibrio(con({ estado: "superado" }), false).detalle).toBe("Piso S/1,031 al día · las ventas cubrieron el mes");
-    expect(textoEquilibrio(con({}), true, { ventas: 2401, proyeccion: 43533, diasDelMes: 31 }).detalle).toBe("Piso S/1,031 al día · va en 7% al ritmo actual");
-    expect(textoEquilibrio(con({}), true, { ventas: 2401, proyeccion: 30000, diasDelMes: 31 }).detalle).toBe("Piso S/1,031 al día · al ritmo actual no se cubre (va en 7%)");
-    expect(textoEquilibrio(con({ estado: "en_riesgo", avancePct: 82 }), false).detalle).toBe("Piso S/1,031 al día · se llegó al 82%");
+    expect(textoEquilibrio(con({ estado: "superado" }), false).detalle).toBe("Mínimo S/1,031 al día · las ventas cubrieron el mes");
+    expect(textoEquilibrio(con({}), true, { ventas: 2401, proyeccion: 43533, diasDelMes: 31 }).detalle).toBe("Mínimo S/1,031 al día · va en 7% al ritmo actual");
+    expect(textoEquilibrio(con({}), true, { ventas: 2401, proyeccion: 30000, diasDelMes: 31 }).detalle).toBe("Mínimo S/1,031 al día · al ritmo actual no se cubre (va en 7%)");
+    expect(textoEquilibrio(con({ estado: "en_riesgo", avancePct: 82 }), false).detalle).toBe("Mínimo S/1,031 al día · se llegó al 82%");
   });
 });

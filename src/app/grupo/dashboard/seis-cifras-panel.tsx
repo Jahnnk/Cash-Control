@@ -63,7 +63,7 @@ function Fila({ nombre, valor, clase = "text-gray-800", nota, nota2 }: { nombre:
   );
 }
 
-export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras | null; apoyo: ApoyoSeisCifras; periodo: string }) {
+export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras | null; /** Sin apoyo (Reportes → Para el contador) no se muestran la tendencia, la liquidez de hoy ni el equilibrio. */ apoyo?: ApoyoSeisCifras; periodo: string }) {
   if (!cifras) {
     return <p className="text-sm text-gray-500">No se pudieron calcular las cifras de {periodo}.</p>;
   }
@@ -94,10 +94,10 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
           icono={<Banknote className="w-4 h-4" />} titulo="Ventas"
           definicion="Lo que facturaste en el período. El punto de partida, no el resultado."
           grande={soles(g.ventas)}
-          sub={apoyo.ventasDeltaPct !== null ? <span className="inline-flex items-center gap-1.5"><Delta pct={apoyo.ventasDeltaPct} className="font-semibold" /> vs mes pasado</span> : undefined}
+          sub={apoyo && apoyo.ventasDeltaPct !== null ? <span className="inline-flex items-center gap-1.5"><Delta pct={apoyo.ventasDeltaPct} className="font-semibold" /> vs mes pasado</span> : undefined}
           pie={g.ventasInternas > 0 ? `Ya descontamos ${formatCurrency(g.ventasInternas)} que Atelier le vende a Fonavi y Centro: esa venta se cuenta una sola vez.` : undefined}
         >
-          {apoyo.serie.length >= 2 && <Sparkline points={apoyo.serie} tone="neutral" height={32} />}
+          {apoyo && apoyo.serie.length >= 2 && <Sparkline points={apoyo.serie} tone="neutral" height={32} />}
           {sedes.map((s) => <Fila key={s.businessId} nombre={s.sede} valor={soles(s.ventas)} clase={s.ventas === null ? "text-gray-400" : undefined}
             nota={s.ventasPosteriores > 0 ? `+${formatCurrency(s.ventasPosteriores)} después del ${dd(s.corte)}` : undefined} />)}
         </Tarjeta>
@@ -137,8 +137,8 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
                 Sin ellos, la caja del mes sería {formatCurrency(g.caja.flujo + g.fuera.ahorro + g.fuera.reparto - g.fuera.rescate)}.
               </span>
             )}</>}
-          pie={<>Liquidez {apoyo.mesCerrado ? "de hoy" : "ahora"} (banco + caja): <strong className="text-gray-700 tabular-nums">{formatCurrency(apoyo.liquidez)}</strong>
-            {apoyo.liquidezSedes.length > 0 && <> · {apoyo.liquidezSedes.map((x) => `${x.nombre} ${formatCurrency(x.total)}`).join(" · ")}</>}</>}
+          pie={apoyo ? <>Liquidez {apoyo.mesCerrado ? "de hoy" : "ahora"} (banco + caja): <strong className="text-gray-700 tabular-nums">{formatCurrency(apoyo.liquidez)}</strong>
+            {apoyo.liquidezSedes.length > 0 && <> · {apoyo.liquidezSedes.map((x) => `${x.nombre} ${formatCurrency(x.total)}`).join(" · ")}</> }</> : undefined}
         >
           {sedes.map((s) => <Fila key={s.businessId} nombre={s.sede} valor={`${s.caja.flujo >= 0 ? "" : "−"}${formatCurrency(Math.abs(s.caja.flujo))}`} clase={color(s.caja.flujo)}
             nota={`entró ${formatCurrency(s.caja.entro)} · salió ${formatCurrency(s.caja.salio)}`}
@@ -179,7 +179,7 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
       </div>
 
       {/* Punto de equilibrio: la ganancia, medida contra lo que hay que cubrir. */}
-      {apoyo.equilibrioPct !== null && (
+      {apoyo && apoyo.equilibrioPct !== null && (
         <div className="bg-white rounded-2xl border border-gray-200/80 px-5 py-4 flex flex-wrap items-center gap-x-6 gap-y-2">
           <div className="text-sm font-semibold text-gray-900">Punto de equilibrio</div>
           <div className="flex-1 min-w-[10rem]"><ProgressBar pct={apoyo.equilibrioPct} tone={apoyo.equilibrioPct >= 100 ? "positive" : apoyo.equilibrioPct >= 80 ? "warning" : "negative"} /></div>

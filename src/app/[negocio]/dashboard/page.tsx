@@ -75,7 +75,7 @@ export default async function DashboardPage({ params, searchParams }: {
   }).map((a) => ({
     ...a,
     // En la propia sede, «Ver» el registro lleva al Panel (donde el administrador lo llena) y el Excel al Grupo.
-    href: a.href === `/${negocio}/dashboard` ? `/${negocio}/panel` : a.href === "#excel" ? "/grupo/dashboard?pestana=kelly" : a.href,
+    href: a.href === `/${negocio}/dashboard` ? `/${negocio}/panel` : a.href === "#excel" ? "/grupo/dashboard?pestana=datos" : a.href,
   })) : [];
 
   return (

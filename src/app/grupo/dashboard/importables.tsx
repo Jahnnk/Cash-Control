@@ -104,12 +104,25 @@ export function DatosCargados({ version = 0, onVerExcel }: { version?: number; o
   ];
   const hayAtraso = byte.some((b) => tonoDeFecha(grupo(b.k), hoy) !== "al-dia");
 
+  const hayAtrasoExcel = sedes.some((x) => tonoDeFecha(x.excelHasta, hoy) !== "al-dia");
+  const todoAlDia = !hayAtraso && !hayAtrasoExcel;
+  const masReciente = (fs: (string | null)[]) => fs.reduce<string | null>((m, f) => (f && (!m || f > m) ? f : m), null);
+  // Divulgación progresiva: con todo al día es UNA línea; con atrasos se abre sola para mostrar cuál.
   return (
-    <section className="rounded-2xl border border-gray-200 bg-white px-4 py-3.5 sm:px-5" aria-label="Hasta qué fecha tenemos datos">
-      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-0.5">
-        <h2 className="text-sm font-semibold text-gray-900">Datos cargados <span className="font-normal text-gray-500">· hasta qué fecha llega cada uno</span></h2>
-        {onVerExcel && <button type="button" onClick={onVerExcel} className="text-xs font-medium text-primary hover:underline">Ver detalle del Excel</button>}
-      </div>
+    <details open={!todoAlDia} className="group rounded-2xl border border-gray-200 bg-white px-4 py-3 sm:px-5" aria-label="Hasta qué fecha tenemos datos">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-x-3 gap-y-0.5 [&::-webkit-details-marker]:hidden">
+        <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <span className={`h-2 w-2 rounded-full ${todoAlDia ? "bg-emerald-500" : "bg-amber-500"}`} aria-hidden />
+          {todoAlDia ? "Datos al día" : "Hay datos atrasados"}
+          <span className="font-normal text-gray-500">
+            · Byte al {ddmm(masReciente(sedes.map((x) => x.ventasHasta)) ?? hoy)}{masReciente(sedes.map((x) => x.excelHasta)) ? ` · Excel al ${ddmm(masReciente(sedes.map((x) => x.excelHasta))!)}` : ""}
+          </span>
+        </h2>
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+          Ver cada uno <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
+        </span>
+      </summary>
+      {onVerExcel && <div className="mt-2"><button type="button" onClick={onVerExcel} className="text-xs font-medium text-primary hover:underline">Ver detalle del Excel</button></div>}
 
       <div className="mt-2.5 space-y-2.5">
         <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
@@ -158,6 +171,6 @@ export function DatosCargados({ version = 0, onVerExcel }: { version?: number; o
           </table>
         </div>
       </details>
-    </section>
+    </details>
   );
 }
