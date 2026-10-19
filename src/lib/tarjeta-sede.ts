@@ -14,6 +14,8 @@ export type TarjetaSede = {
   sede: string;
   corte: string | null;
   ventas: number | null;
+  /** Ventas de los días que siguen al corte del Excel (el Excel aún no llega hasta ahí): ventas totales = ventas + esto. */
+  ventasPosteriores: number;
   costos: number | null;
   gastos: number | null;
   /** La ganancia ya los resta; se dicen aparte para que la cuenta de las barras cierre. */
@@ -40,6 +42,7 @@ export function tarjetaDeSede(sede: CifrasSede): TarjetaSede {
   return {
     businessId: s.businessId, sede: s.sede, corte: s.corte,
     ventas: s.ventas,
+    ventasPosteriores: s.ventasPosteriores ?? 0,
     costos: hay ? s.costos : null,
     gastos: hay ? s.gastos : null,
     impuestos: hay ? s.impuestos : 0,

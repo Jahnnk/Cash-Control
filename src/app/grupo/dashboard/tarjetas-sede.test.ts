@@ -35,6 +35,16 @@ describe("tarjetas de sede del Resumen (rediseño)", () => {
     }));
     expect(aMedias).toContain("hasta el 13/09 · último día con Excel");
   });
+  it("«Ventas» llega hasta el último día cargado: suma lo que el Excel aún no cubre, en una parte más clara, y dice la fecha", () => {
+    const x = renderToStaticMarkup(createElement(TarjetasSede, {
+      cifras: { mes: "2026-10", sedes: [{ ...sede(3, "Centro", 19560, 5300, 4500), corte: "2026-10-14", ventasPosteriores: 5686.43 }] } as never, periodo: "octubre 2026", cajaHref: "/x",
+      extras: { 3: { href: "#", flag: null, cubiertosPct: 73, pie: null, ventasHasta: "2026-10-18" } },
+    }));
+    expect(x).toContain("S/ 25,246");        // 19,560 + 5,686 = ventas hasta el 18/10
+    expect(x).toContain("Ventas más recientes");
+    expect(x).toContain("al 18/10");
+    expect(x).toContain("Dinero, costos y ganancia hasta el 14/10");
+  });
   it("la pérdida se ve en rojo con su signo", () => {
     expect(html).toContain("−S/ 4,857");
   });
