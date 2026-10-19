@@ -72,17 +72,34 @@ describe("¿llego con los datos completos?", () => {
     expect(x?.detalle).toContain("30/09");
   });
 
-  it("lo que tecleó el administrador contra Byte: Centro 15 y 16 de octubre, Atelier sábado 17", () => {
-    const centro: SedeEntrada = {
-      info: { businessId: 3, sede: "Centro", desde: null, esCafeteria: true, diasEsperados: TODA_LA_SEMANA },
-      dias: [d("2026-10-15", 1130.4), d("2026-10-16", 2067.8), d("2026-10-17", 1167.4)],
-      byte: [{ fecha: "2026-10-15", total: 1998.32 }, { fecha: "2026-10-16", total: 1283.22 }, { fecha: "2026-10-17", total: 1167.4 }],
-      byteHasta: "2026-10-18", cargas: CARGAS_OK("2026-10-17"), excelHasta: null,
-    };
-    const x = listoParaLaReunion({ start: "2026-10-15", end: "2026-10-17", hoy, sedes: [centro] }).sedes[0].hallazgos.find((y) => y.tema === "panel-vs-byte");
+  const centro = (dias: DiaEntrada[], byte: { fecha: string; total: number }[]): SedeEntrada => ({
+    info: { businessId: 3, sede: "Centro", desde: null, esCafeteria: true, diasEsperados: TODA_LA_SEMANA },
+    dias, byte, byteHasta: "2026-10-18", cargas: CARGAS_OK("2026-10-17"), excelHasta: null,
+  });
+  const panelVsByte = (e: SedeEntrada, start = "2026-10-15") => listoParaLaReunion({ start, end: "2026-10-17", hoy, sedes: [e] }).sedes[0].hallazgos.find((y) => y.tema === "panel-vs-byte");
+
+  it("Centro 15 y 16: Byte repartió distinto (caja sin abrir); juntos casi coinciden → información, no error del administrador", () => {
+    const x = panelVsByte(centro(
+      [d("2026-10-15", 1130.4), d("2026-10-16", 2067.8), d("2026-10-17", 1167.4)],
+      [{ fecha: "2026-10-15", total: 1998.32 }, { fecha: "2026-10-16", total: 1283.22 }, { fecha: "2026-10-17", total: 1167.4 }],
+    ));
+    expect(x?.nivel).toBe("info");
+    expect(x?.titulo).toBe("Byte repartió distinto las ventas de jue 15, vie 16");
+    expect(x?.detalle).toContain("panel S/3,198, Byte S/3,282; quedan S/83 de diferencia");
+  });
+
+  it("dos días seguidos que NO se compensan siguen siendo aviso (el administrador pudo equivocarse)", () => {
+    const x = panelVsByte(centro(
+      [d("2026-10-15", 900), d("2026-10-16", 1000)],
+      [{ fecha: "2026-10-15", total: 1500 }, { fecha: "2026-10-16", total: 1400 }],
+    ));
     expect(x?.nivel).toBe("aviso");
     expect(x?.titulo).toBe("El panel no coincide con Byte en 2 días");
-    expect(x?.detalle).toContain("panel S/1,130, Byte S/1,998");
-    expect(x?.detalle).not.toContain("sáb 17");
+  });
+
+  it("un día suelto que no coincide con Byte (Atelier sáb 17: 1,210 contra 667) sigue siendo aviso", () => {
+    const x = panelVsByte(centro([d("2026-10-17", 1210.01)], [{ fecha: "2026-10-17", total: 667.42 }]));
+    expect(x?.nivel).toBe("aviso");
+    expect(x?.detalle).toContain("panel S/1,210, Byte S/667");
   });
 });
