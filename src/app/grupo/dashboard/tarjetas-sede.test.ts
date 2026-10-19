@@ -17,11 +17,16 @@ describe("tarjetas de sede del Resumen (rediseño)", () => {
     cajaHref: "/grupo/reportes?mes=2026-09",
     extras: { 2: { href: "/fonavi/dashboard", flag: "mejor", cubiertosPct: 121, pie: null }, 1: { href: "/atelier/dashboard", flag: "atencion", cubiertosPct: 87, pie: null } },
   }));
-  it("a primera vista: Ventas, Ganancia, Plata que entró y Mínimo cubierto; las barras van en «Ver el detalle»", () => {
-    for (const t of ["Ventas", "Ganancia", "Plata que entró", "Mínimo cubierto", "Ver el detalle", "Costos y gastos", "Costos: S/ 17,148", "Gastos: S/ 13,538", "S/ 30,686", "Plata por ventas", "Otras entradas", "S/ 37,294", "S/ 6,608", "121%", "Mejor rendimiento", "Atención", "¿Qué significa cada palabra?"]) expect(html).toContain(t);
+  it("a primera vista: cuatro barras (Ventas, Dinero que entró, Dinero que salió, Ganancia) y el termómetro del EBITDA", () => {
+    for (const t of ["Ventas", "Dinero que entró", "Dinero que salió", "Ganancia", "EBITDA", "Costos: S/ 17,148", "Gastos: S/ 13,538", "S/ 30,686", "Por ventas", "Otras entradas", "S/ 37,294", "S/ 6,608", "Ver el detalle", "Mínimo cubierto", "121%", "Mejor rendimiento", "Atención", "¿Qué significa cada palabra?"]) expect(html).toContain(t);
   });
-  it("ya no usa las palabras que se juntaban (Margen, Costos cubiertos, Caja del mes, Ganancia real)", () => {
-    for (const t of ["Margen", "Costos cubiertos", "Caja del mes", "Ganancia real", "Ingresado por ventas"]) expect(html).not.toContain(t);
+  it("el EBITDA se ve como termómetro con su zona (Fonavi 17.7% = En camino; Atelier negativo = Frágil)", () => {
+    expect(html).toContain("En camino");
+    expect(html).toContain("Frágil");
+    expect(html).toContain("Por cada S/ 100 vendidos");
+  });
+  it("ya no usa las palabras que se juntaban (Margen, Costos cubiertos, Caja del mes, Ganancia real, Plata)", () => {
+    for (const t of ["Margen", "Costos cubiertos", "Caja del mes", "Ganancia real", "Plata que entró", "Ingresado por ventas"]) expect(html).not.toContain(t);
   });
   it("la pérdida se ve en rojo con su signo", () => {
     expect(html).toContain("−S/ 4,857");

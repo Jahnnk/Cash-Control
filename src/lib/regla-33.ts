@@ -161,6 +161,9 @@ function delGrupo(g: CifrasGrupo, cfg: ConfigProfitFirst): FilaRegla {
   return { ...base, sinResultadoPorque: null, ventas: r2(ventasResultado), ...bloquesDeLaRegla(ventasResultado, g.costos, g.gastos - quita, g.planilla - quita, cfg) };
 }
 
+/** La fila de UNA sede (la tarjeta del Resumen la usa para el termómetro del EBITDA). */
+export const reglaDeSede = deSede;
+
 const ORDEN = [2, 3, 1];
 
 /** Las filas de la regla: Fonavi, Centro, Atelier y Grupo. */
