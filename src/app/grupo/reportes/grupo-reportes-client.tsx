@@ -28,6 +28,11 @@ import type { Motores } from "@/lib/motores-ebitda";
 import { ProfitFirst } from "./profit-first";
 import { PuntoEquilibrio } from "./punto-equilibrio";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
+import type { GroupBreakeven } from "@/app/actions/breakeven";
+import { SeccionDesplegable } from "@/components/productos/ui";
+import { CajaExcel } from "../dashboard/caja-excel";
+import { SeisCifrasPanel } from "../dashboard/seis-cifras-panel";
+import { TableroEbitda } from "../dashboard/tablero-ebitda";
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
 const nombreMes = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
@@ -39,9 +44,10 @@ type Props = {
   cifras: SeisCifras | null;
   flujo: FlujoCaja | null;
   motores: Motores[] | null;
+  breakeven: GroupBreakeven | null;
 };
 
-export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, flujo, motores }: Props) {
+export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, flujo, motores, breakeven }: Props) {
   const [showEirs, setShowEirs] = useState(false);
   const hoyLima = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   // La reunión de los lunes mira la ÚLTIMA semana cerrada (dom→sáb), no la que recién empieza (19-oct-2026).
@@ -91,6 +97,19 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
       <FlujoDeCaja flujo={flujo} periodo={periodo} />
       {/* El piso de cada sede, como lo enseña el libro (5-oct-2026). */}
       <PuntoEquilibrio mes={selectedMonth} periodo={periodo} />
+
+      {/* Lo que antes repetía el Resumen del Dashboard (19-oct-2026): las seis cifras, el resultado según el Excel y el
+          tablero de rentabilidad. Plegado: es para el contador, no para el día a día. */}
+      <SeccionDesplegable
+        titulo="Para el contador"
+        subtitulo="Las seis cifras, el resultado según el Excel y el tablero de rentabilidad (EBITDA)."
+      >
+        <div className="space-y-8">
+          <SeisCifrasPanel cifras={cifras} periodo={periodo} />
+          <CajaExcel cifras={cifras} periodo={periodo} mesesHref={`/grupo/reportes?mes=${selectedMonth}`} />
+          <TableroEbitda cifras={cifras} breakeven={breakeven} motores={motores} selectedMonth={selectedMonth} isCurrentMonth={selectedMonth === mesActual} periodo={periodo} />
+        </div>
+      </SeccionDesplegable>
 
       {showEirs && (
         <GenerateReportModal

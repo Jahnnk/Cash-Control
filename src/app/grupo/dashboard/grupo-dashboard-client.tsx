@@ -1,14 +1,13 @@
 "use client";
 
-import { CajaExcel } from "./caja-excel";
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { GroupKpisSection } from "./group-kpis-section";
 import { AtelierB2BCard } from "./atelier-b2b-card";
 import type { AtelierB2BResumen } from "@/app/actions/atelier-b2b";
 import { BandaFrescura } from "@/components/banda-frescura";
-import { DIAS_SALDO_FRESCO, type LiquidezGrupo } from "@/lib/liquidez";
+import type { LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { CargasKelly, SubirExcelKelly } from "./cargas-kelly";
 import { BotonSubirByte, DatosCargados } from "./importables";
@@ -17,12 +16,7 @@ import { InformeGastosGrupo } from "./informe-gastos";
 import { SelectorMes } from "./selector-mes";
 import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
 import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
-import type { HeroStats } from "./executive-hero";
-import { SeisCifrasPanel } from "./seis-cifras-panel";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
-import type { Motores } from "@/lib/motores-ebitda";
-import { getMotoresEbitda } from "@/app/actions/motores-ebitda";
-import { TableroEbitda } from "./tablero-ebitda";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
 import { TarjetasSede, type ExtraSede } from "./tarjetas-sede";
 import { AtencionCard } from "./atencion-card";
@@ -32,7 +26,6 @@ import type { ResumenExtra } from "@/app/actions/resumen-grupo";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
 import { construirAtencion } from "@/lib/grupo/atencion";
 import { proyeccionSede, textoEquilibrio, textoGanancia } from "@/lib/grupo/estado-mes";
-import { regla33 } from "@/lib/regla-33";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { ScopeCode } from "@/lib/business-theme";
 
@@ -64,9 +57,10 @@ const mesAnterior = (m: string) => {
   const [y, mm] = m.split("-").map(Number);
   return mm === 1 ? `${y - 1}-12` : `${y}-${String(mm - 1).padStart(2, "0")}`;
 };
-/** Orden de la liquidez por sede bajo el número del grupo. */
-const ORDEN_LIQUIDEZ = [2, 3, 1];
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+
+/** Tres pestañas (19-oct-2026): lo de cada día, el equipo y los datos (gastos y Excel). Rentabilidad pasó a Reportes → Para el contador. */
+export type Pestana = "resumen" | "equipo" | "datos";
 
 type Props = {
   selectedMonth: string;
@@ -87,25 +81,16 @@ type Props = {
   /** Metas de venta del presupuesto, revisión semanal pendiente y cobros de Atelier. */
   extra: ResumenExtra;
   /** Pestaña con la que abre (?pestana=equipo, p. ej. desde Reportes). */
-  pestanaInicial?: "resumen" | "rentabilidad" | "equipo" | "gastos" | "kelly";
+  pestanaInicial?: Pestana;
 };
 
 export function GrupoDashboardClient({
-  selectedMonth, mesActual, isCurrentMonth, summaries, totals: t, breakeven, frescura, liquidez, ventas,
+  selectedMonth, mesActual, isCurrentMonth, summaries, breakeven, frescura, liquidez, ventas,
   atelierB2B, cuadreKelly, cifras, extra, pestanaInicial = "resumen",
 }: Props) {
-  const [pestana, setPestana] = useState<"resumen" | "rentabilidad" | "equipo" | "gastos" | "kelly">(pestanaInicial);
+  const [pestana, setPestana] = useState<Pestana>(pestanaInicial);
   // Sube con cada carga (Byte o Excel) para que la franja «Datos cargados» se actualice sola.
   const [versionCargas, setVersionCargas] = useState(0);
-  // Los cuatro motores del EBITDA: se piden aparte, con la página ya abierta, para no alargar su carga.
-  const [motoresPedidos, setMotoresPedidos] = useState<{ mes: string; data: Motores[] | null } | null>(null);
-  useEffect(() => {
-    let vivo = true;
-    getMotoresEbitda(selectedMonth).then((r) => { if (vivo) setMotoresPedidos({ mes: selectedMonth, data: r.ok ? r.data : null }); }).catch(() => { if (vivo) setMotoresPedidos({ mes: selectedMonth, data: null }); });
-    return () => { vivo = false; };
-  }, [selectedMonth]);
-  const motores = motoresPedidos?.mes === selectedMonth ? motoresPedidos.data : null;
-
   const [y, m] = selectedMonth.split("-").map(Number);
   const periodo = `${MESES[m - 1]} ${y}`;
 
@@ -116,47 +101,13 @@ export function GrupoDashboardClient({
   const byId = new Map(ventasDelMes.map((v) => [v.businessId, v]));
   const beById = new Map((breakeven?.sedes ?? []).map((s) => [s.businessId, s.result]));
 
-  // ── Hero: la venta del grupo y su tendencia agregada por día ──
+  // ── Ventas del grupo ──
   const ventasMes = ventasDelMes.reduce((s, v) => s + v.mes, 0);
-  const largo = Math.max(0, ...ventasDelMes.map((v) => v.serie14.length));
-  const serieGrupo = Array.from({ length: largo }, (_, i) =>
-    ventasDelMes.reduce((s, v) => {
-      // Alinear por el FINAL: el último punto de cada sede es su último día.
-      const off = largo - v.serie14.length;
-      return s + (i >= off ? v.serie14[i - off] : 0);
-    }, 0),
-  );
   // Δ del grupo: suma de los tramos emparejados de cada sede (no un
   // promedio de porcentajes, que pesaría igual a una sede chica).
   const cmpCur = ventasDelMes.reduce((s, v) => s + (v.mesCmp?.sameDay.current ?? 0), 0);
   const cmpPrev = ventasDelMes.reduce((s, v) => s + (v.mesCmp?.sameDay.previous ?? 0), 0);
   const deltaGrupo = cmpPrev > 0 ? Math.round(((cmpCur - cmpPrev) / cmpPrev) * 1000) / 10 : null;
-
-  const hero: HeroStats = {
-    // La liquidez sale de getLiquidezGrupo (única fuente). Si falla, se
-    // cae al total del resumen para no dejar la tarjeta en blanco.
-    liquidez: liquidez ? liquidez.total : t.bankBalance,
-    liquidezProcedencia: liquidez ? liquidez.procedencia : null,
-    liquidezConfiable: liquidez ? liquidez.confiable : false,
-    liquidezSedes: ORDEN_LIQUIDEZ
-      .map((id) => liquidez?.sedes.find((x) => x.businessId === id))
-      .filter((x): x is NonNullable<typeof x> => !!x)
-      .map((x) => ({
-        businessId: x.businessId, nombre: x.nombre.replace("Yayi's ", ""),
-        total: x.total, banco: x.banco, caja: x.caja,
-        // Alerta solo si el saldo no está declarado o ya está viejo; lo que a
-        // Kelly le falta cuadrar se muestra aparte, como dato.
-        alerta: x.origen !== "declarado" || (x.antiguedadDias ?? 0) > DIAS_SALDO_FRESCO,
-        descuadre: x.descuadreKelly !== null && Math.abs(x.descuadreKelly) >= 0.01 ? x.descuadreKelly : null,
-      })),
-    ventasMes: ventasMes > 0 ? ventasMes : t.monthlyIncome,
-    ventasDeltaPct: deltaGrupo,
-    margen: t.margin,
-    equilibrioPct: breakeven?.grupo.avancePct ?? null,
-    serie: serieGrupo,
-    periodo,
-    mesCerrado: !isCurrentMonth,
-  };
 
   // ── Sedes ordenadas por desempeño (mejor arriba) ──
   const liqById = new Map((liquidez?.sedes ?? []).map((x) => [x.businessId, x]));
@@ -246,15 +197,6 @@ export function GrupoDashboardClient({
   const equilibrio = textoEquilibrio(breakeven?.grupo ?? null, isCurrentMonth);
   const cg = cifras?.grupo ?? null;
   const ganancia = textoGanancia(cg);
-  // La regla 33-33-33: Grupo primero y luego cada sede, para escoger cuál ver (la completa vive en Reportes).
-  const reglaFilas = cifras ? regla33(cifras) : [];
-  const regla = reglaFilas.some((x) => x.ebitda)
-    ? {
-        href: `/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`,
-        opciones: [...reglaFilas.filter((x) => x.esGrupo), ...reglaFilas.filter((x) => !x.esGrupo)].map((x) => ({ etiqueta: x.etiqueta, fila: x, frena: motores?.find((m) => m.etiqueta === x.etiqueta)?.titular ?? null })),
-      }
-    : null;
-
   // ── Necesita tu atención: lo que pide una acción, agrupado y ordenado ──
   const atencion = isCurrentMonth ? construirAtencion({
     hoy,
@@ -273,7 +215,7 @@ export function GrupoDashboardClient({
   }) : [];
   // Los avisos que se resuelven en esta misma pantalla no navegan: cambian de pestaña o bajan a las sedes.
   const irA = (href: string) => {
-    if (href === "#excel") { setPestana("kelly"); return true; }
+    if (href === "#excel") { setPestana("datos"); return true; }
     if (href.endsWith("#sedes")) { document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth" }); return true; }
     return false;
   };
@@ -291,16 +233,14 @@ export function GrupoDashboardClient({
         </div>
       </header>
 
-      <DatosCargados version={versionCargas} onVerExcel={() => setPestana("kelly")} />
+      <DatosCargados version={versionCargas} onVerExcel={() => setPestana("datos")} />
 
       <div className="border-b border-gray-200">
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
           {([
             ["resumen", "Resumen"],
-            ["rentabilidad", "Rentabilidad"],
             ["equipo", "Equipo"],
-            ["gastos", "Gastos"],
-            ["kelly", "Excel"],
+            ["datos", "Datos"],
           ] as const).map(([k, label]) => (
             <button
               key={k}
@@ -318,48 +258,22 @@ export function GrupoDashboardClient({
 
       {pestana === "resumen" && (
         <div className="space-y-6">
-          {/* Lo primero: por sede, los seis números de un dueño (rediseño 17-oct-2026): ventas, costos, gastos y ganancia;
-              margen, ganancia % y costos cubiertos; y la caja del mes. */}
-          <section id="sedes" className="space-y-3 scroll-mt-4" aria-label="Ventas, costos, gastos, ganancia y caja por sede">
-            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Por sede · {periodo.toLowerCase()}</h2>
-            <TarjetasSede cifras={cifras} periodo={periodo} extras={extrasSede} cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
-          </section>
-
-          {/* El pie de cada hoja Ing&Gtos del Excel de finanzas (14-oct-2026). */}
-          <CajaExcel cifras={cifras} periodo={periodo} mesesHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
-
-          {/* ¿Cómo vamos?  ·  ¿Qué necesita mi atención? */}
+          {/* Capa 1: lo que se mira cada día. Primero cómo vamos y qué hacer hoy; después cada sede con cuatro datos.
+              El detalle de cada sede se abre con «Ver el detalle»; lo de contador vive en Reportes → Para el contador. */}
           <div className={`grid grid-cols-1 gap-5 items-start ${isCurrentMonth ? "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
             <EstadoMes
               periodo={periodo} enCurso={isCurrentMonth} dia={diaHoy} diasDelMes={diasDelMes}
               ventas={ventasMes} deltaPct={deltaGrupo} meta={metaGrupo} proyeccion={proyeccion}
               liquidez={liquidez ? liquidez.total : null} equilibrio={equilibrio} ganancia={ganancia}
-              flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion" regla={regla}
+              flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion"
             />
             {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
           </div>
 
-          {/* El detalle, para cuando se pide (revelación progresiva) */}
-          <SeccionDesplegable
-            titulo={`Las seis cifras de ${periodo.toLowerCase()}`}
-            subtitulo="Ventas, costos, gastos, caja, margen y ganancia real, sede por sede."
-            resumen={!isCurrentMonth ? (
-              <div className="text-xs text-gray-500">Los saldos de liquidez son los de hoy: el saldo al cierre de cada mes no se guarda.</div>
-            ) : undefined}
-          >
-            <SeisCifrasPanel
-              cifras={cifras}
-              periodo={periodo}
-              apoyo={{
-                serie: hero.serie,
-                ventasDeltaPct: hero.ventasDeltaPct,
-                liquidez: hero.liquidez,
-                liquidezSedes: hero.liquidezSedes.map((x) => ({ businessId: x.businessId, nombre: x.nombre, total: x.total })),
-                equilibrioPct: hero.equilibrioPct,
-                mesCerrado: !isCurrentMonth,
-              }}
-            />
-          </SeccionDesplegable>
+          <section id="sedes" className="space-y-3 scroll-mt-4" aria-label="Ventas, ganancia y plata por sede">
+            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Por sede · {periodo.toLowerCase()}</h2>
+            <TarjetasSede cifras={cifras} periodo={periodo} extras={extrasSede} cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
+          </section>
 
           {/* Atelier B2B — lo que se debe HOY: no tiene versión por mes. */}
           {isCurrentMonth && (
@@ -368,11 +282,6 @@ export function GrupoDashboardClient({
             </SeccionDesplegable>
           )}
         </div>
-      )}
-
-      {/* El tablero de la asesoría: EBITDA, piso diario, Profit First, food cost, planilla, mermas y los cuatro motores (16-oct-2026). */}
-      {pestana === "rentabilidad" && (
-        <TableroEbitda cifras={cifras} breakeven={breakeven} motores={motores} selectedMonth={selectedMonth} isCurrentMonth={isCurrentMonth} periodo={periodo} />
       )}
 
       {pestana === "equipo" && (
@@ -384,15 +293,19 @@ export function GrupoDashboardClient({
         </div>
       )}
 
-      {pestana === "gastos" && <InformeGastosGrupo mes={isCurrentMonth ? undefined : selectedMonth} />}
-
-      {pestana === "kelly" && (
+      {/* Datos: los gastos del mes y, plegado, todo lo del Excel (antes eran las pestañas «Gastos» y «Excel»). */}
+      {pestana === "datos" && (
         <div className="space-y-6">
-          {frescura && <BandaFrescura frescura={frescura} />}
-          {/* ¿Cuánto confiar en la clasificación de los gastos del Excel? (venía de la pestaña Finanzas) */}
-          <SelloClasificacionGrupo month={selectedMonth} />
-          <CuadreKellySeccion items={cuadreKelly} />
-          <CargasKelly />
+          <InformeGastosGrupo mes={isCurrentMonth ? undefined : selectedMonth} />
+          <SeccionDesplegable titulo="El Excel de finanzas" subtitulo="Hasta qué día llega, si cuadra con el sistema y qué se cargó.">
+            <div className="space-y-6">
+              {frescura && <BandaFrescura frescura={frescura} />}
+              {/* ¿Cuánto confiar en la clasificación de los gastos del Excel? */}
+              <SelloClasificacionGrupo month={selectedMonth} />
+              <CuadreKellySeccion items={cuadreKelly} />
+              <CargasKelly />
+            </div>
+          </SeccionDesplegable>
         </div>
       )}
     </div>

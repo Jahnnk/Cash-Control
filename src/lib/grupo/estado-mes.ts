@@ -28,8 +28,8 @@ export function textoEquilibrio(
   alRitmo?: { ventas: number; proyeccion: number; diasDelMes: number },
 ): { texto: string; detalle: string; tono: Tono } {
   if (!r || r.estado === "sin_datos") return { texto: "—", detalle: "Sin datos suficientes", tono: "neutro" };
-  // Desde el 15-oct-2026 el piso es el diario de la asesoría: (costos fijos + food cost) ÷ 30. La frase lo dice.
-  const piso = r.pisoDia ? `Piso S/${Math.round(r.pisoDia).toLocaleString("es-PE")} al día` : null;
+  // Desde el 15-oct-2026 el mínimo es el diario de la asesoría: (costos fijos + food cost) ÷ 30. La frase lo dice.
+  const piso = r.pisoDia ? `Mínimo S/${Math.round(r.pisoDia).toLocaleString("es-PE")} al día` : null;
   const con = (cola: string, sinPiso: string) => (piso ? `${piso} · ${cola}` : sinPiso);
   if (enCurso && alRitmo && r.breakEven && r.breakEven > 0 && alRitmo.proyeccion > 0) {
     const pe = r.breakEven;
