@@ -295,7 +295,8 @@ function IncentivosPage() {
           que hay que hacer hoy. */}
       {data && <BonoDelMesCard data={data} month={month} />}
 
-      {loading ? (
+      {/* «Cargando…» solo la primera vez: al volver a leer tras guardar o detallar mermas, la pantalla no se vacía (se perdía el toque en «Guardar» y salía hasta el 2.º intento). */}
+      {loading && !data ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Cargando…</div>
       ) : error || !data || !p ? (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-sm text-gray-500">{error}</div>

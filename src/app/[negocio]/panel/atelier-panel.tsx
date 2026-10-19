@@ -208,7 +208,8 @@ export function AtelierPanel() {
       {/* Luis también propone: la operación de Atelier la ve él. Después de lo que toca hoy. */}
       <ProponerHighlight />
 
-      {loading ? (
+      {/* «Cargando…» solo la primera vez: al volver a leer tras guardar o detallar mermas, la pantalla no se vacía (se perdía el toque en «Guardar» y salía hasta el 2.º intento). */}
+      {loading && !data ? (
         <div className="bg-white rounded-xl border border-gray-200 p-12 text-center text-gray-500">Cargando…</div>
       ) : error || !data || !s ? (
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-sm text-gray-500">{error}</div>
