@@ -1,21 +1,18 @@
 "use client";
 
 /**
- * Atelier B2B en el dashboard de Grupo — resumen, no operación.
- *
- * Antes esta zona traía enteras las dos secciones de Luis (ranking de
- * clientes, tabla de deudores, documento por documento). Jahnn pidió
- * (10-ago-2026) que el dashboard quede limpio: acá van los tres números
- * que sirven para decidir y el detalle vive detrás de un botón.
+ * Atelier B2B: clientes y cobranza. Vivía en el Resumen de Grupo; el 19-oct-2026 Jahnn lo pasó a Atelier → Reportes
+ * (pestaña «Clientes») porque lo debe vigilar el administrador de Atelier, no él. Sigue siendo resumen con detalle
+ * detrás de un botón.
  *
  * El detalle NO se carga con la página: se pide al abrirlo. Así el
  * dashboard no paga por datos que casi nunca se miran.
  */
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import { Users, ChevronDown, Loader2, AlertTriangle } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
-import type { AtelierB2BResumen } from "@/app/actions/atelier-b2b";
+import { getAtelierB2BResumen, type AtelierB2BResumen } from "@/app/actions/atelier-b2b";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
 import { getReceivables, type ReceivablesData } from "@/app/actions/receivables";
 import { ClientSalesSection } from "@/app/[negocio]/panel/client-sales-section";
@@ -165,4 +162,19 @@ export function AtelierB2BCard({ resumen }: { resumen: AtelierB2BResumen }) {
       </div>
     </div>
   );
+}
+
+/** La pestaña «Clientes» de los Reportes de Atelier: pide su propio resumen al abrirse. */
+export function ClientesAtelier() {
+  const [resumen, setResumen] = useState<AtelierB2BResumen | null | undefined>(undefined);
+  useEffect(() => {
+    let vivo = true;
+    getAtelierB2BResumen().then((r) => { if (vivo) setResumen(r); }).catch(() => { if (vivo) setResumen(null); });
+    return () => { vivo = false; };
+  }, []);
+  if (resumen === undefined) return <p className="py-8 text-center text-sm text-gray-400">Cargando clientes…</p>;
+  if (!resumen?.hayDatos) {
+    return <p className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">Todavía no hay clientes ni cuentas por cobrar: aparecen cuando el administrador sube los reportes de Byte del sábado.</p>;
+  }
+  return <AtelierB2BCard resumen={resumen} />;
 }

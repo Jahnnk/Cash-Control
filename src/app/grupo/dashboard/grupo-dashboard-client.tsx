@@ -4,8 +4,6 @@ import { useState } from "react";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
 import { GroupKpisSection } from "./group-kpis-section";
-import { AtelierB2BCard } from "./atelier-b2b-card";
-import type { AtelierB2BResumen } from "@/app/actions/atelier-b2b";
 import { BandaFrescura } from "@/components/banda-frescura";
 import type { LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
@@ -73,7 +71,6 @@ type Props = {
   frescura: FrescuraGrupo | null;
   liquidez: LiquidezGrupo | null;
   ventas: GroupVentasSede[] | null;
-  atelierB2B: AtelierB2BResumen;
   /** Verificación automática contra el Excel de Kelly; null si falló. */
   cuadreKelly: VerificacionSedeMes[] | null;
   /** Las seis cifras del mes (ventas, costos, gastos, caja, margen, ganancia real); null si falló. */
@@ -86,7 +83,7 @@ type Props = {
 
 export function GrupoDashboardClient({
   selectedMonth, mesActual, isCurrentMonth, summaries, breakeven, frescura, liquidez, ventas,
-  atelierB2B, cuadreKelly, cifras, extra, pestanaInicial = "resumen",
+  cuadreKelly, cifras, extra, pestanaInicial = "resumen",
 }: Props) {
   const [pestana, setPestana] = useState<Pestana>(pestanaInicial);
   // Sube con cada carga (Byte o Excel) para que la franja «Datos cargados» se actualice sola.
@@ -274,13 +271,6 @@ export function GrupoDashboardClient({
             <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Por sede · {periodo.toLowerCase()}</h2>
             <TarjetasSede cifras={cifras} periodo={periodo} extras={extrasSede} cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
           </section>
-
-          {/* Atelier B2B — lo que se debe HOY: no tiene versión por mes. */}
-          {isCurrentMonth && (
-            <SeccionDesplegable titulo="Clientes de Atelier" subtitulo="Venta a empresas y lo que te deben.">
-              <AtelierB2BCard resumen={atelierB2B} />
-            </SeccionDesplegable>
-          )}
         </div>
       )}
 
