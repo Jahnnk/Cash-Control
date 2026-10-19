@@ -17,6 +17,7 @@ import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
 import { TarjetasSede, type ExtraSede } from "./tarjetas-sede";
+import { VentasAlDiaVista } from "./ventas-al-dia";
 import { AtencionCard } from "./atencion-card";
 import { EstadoMes } from "./estado-mes";
 import { SeccionDesplegable } from "@/components/productos/ui";
@@ -274,6 +275,9 @@ export function GrupoDashboardClient({
             <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Por sede · {periodo.toLowerCase()}</h2>
             <TarjetasSede cifras={cifras} periodo={periodo} extras={extrasSede} cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
           </section>
+
+          {/* Entre una carga de Byte y la siguiente: la venta diaria que anotan los administradores, contrastada con Byte. */}
+          <VentasAlDiaVista mes={selectedMonth} />
         </div>
       )}
 
