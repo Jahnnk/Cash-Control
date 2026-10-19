@@ -12,14 +12,14 @@ const base: EstadoMesProps = {
 describe("¿Cómo vamos este mes?", () => {
   test("una sola cifra de ventas, su meta, el ritmo y tres datos de apoyo", () => {
     const html = renderToStaticMarkup(h(EstadoMes, base));
-    for (const t of ["S/19,168", "vendido en las 3 sedes", "16% de la meta de S/118,000", "Al ritmo actual cierra en S/125,791", "S/7,791 sobre la meta", "Plata hoy", "Mínimo del día", "Se cubre el día 24", "Ganancia"]) expect(html).toContain(t);
+    for (const t of ["S/19,168", "vendido en las 3 sedes", "16% de la meta de S/118,000", "Al ritmo actual cierra en S/125,791", "S/7,791 sobre la meta", "Dinero hoy", "Mínimo del día", "Se cubre el día 24", "Ganancia"]) expect(html).toContain(t);
   });
   test("mes cerrado: resultado contra la meta, caja en vez de liquidez", () => {
     const html = renderToStaticMarkup(h(EstadoMes, { ...base, enCurso: false, ventas: 115000, proyeccion: null, flujo: -1737, ganancia: { valor: 11655, detalle: "12.5% de lo vendido" } }));
     expect(html).toContain("mes cerrado");
     expect(html).toContain("S/3,000 bajo la meta");
-    expect(html).toContain("Plata del mes");
-    expect(html).not.toContain("Plata hoy");
+    expect(html).toContain("Dinero del mes");
+    expect(html).not.toContain("Dinero hoy");
   });
   test("el pastel de la regla 33-33-33: el Grupo primero, con selector de sede, las tres partes en real / meta y enlace a Reportes", () => {
     const bloque = (pct: number, metaPct: number) => ({ monto: 0, pct, metaPct, meta: 0, difMeta: 0 });
