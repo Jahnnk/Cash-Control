@@ -9,6 +9,7 @@ import { getInformeGastos } from "@/app/actions/informe-gastos";
 import { getSeisCifras } from "@/app/actions/seis-cifras";
 import { getCorteExcel } from "@/app/actions/cobertura-kelly";
 import { getToday } from "@/lib/utils";
+import { EstadoDatosReunion } from "@/components/estado-datos-reunion";
 import { useToast } from "@/components/toast-provider";
 
 /**
@@ -94,7 +95,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
 
       {open && (
         <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => !generating && setOpen(false)}>
-          <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-lg max-h-[90vh] overflow-y-auto p-6" onClick={(e) => e.stopPropagation()}>
             <div className="flex items-center justify-between mb-3">
               <h3 className="text-base font-semibold text-gray-900 flex items-center gap-2">
                 <CalendarRange className="w-4 h-4 text-primary" /> Rango del reporte
@@ -104,7 +105,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
               </button>
             </div>
             <p className="text-xs text-gray-500 mb-3">
-              Por defecto es la semana en pantalla (dom→sáb). Cambia las fechas para un rango personalizado.
+              Por defecto es la semana propuesta (dom→sáb). Cambia las fechas para un rango personalizado.
             </p>
             <div className="grid grid-cols-2 gap-2">
               <div>
@@ -118,6 +119,8 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
                   className="w-full border border-gray-300 rounded-lg px-2 py-1.5 text-xs" />
               </div>
             </div>
+            {/* ¿Los datos de ESE rango están completos? Se vuelve a revisar al cambiar las fechas (19-oct-2026). */}
+            <div className="mt-4"><EstadoDatosReunion start={start} end={end} compacto /></div>
             <div className="flex justify-end gap-2 pt-4">
               <button onClick={() => setOpen(false)} disabled={generating}
                 className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50">

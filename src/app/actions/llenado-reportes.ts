@@ -16,38 +16,20 @@ import { neon } from "@neondatabase/serverless";
 import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
-import {
-  claveDesdeNota, evaluarReportesSemanales, cargaDeVentas, cargasDeCobros, type CargaRegistrada,
-} from "@/lib/incentivos/reportes-semanales";
+import { evaluarReportesSemanales } from "@/lib/incentivos/reportes-semanales";
+import { leerCargasPorSede } from "@/lib/cargas-semanales-sql";
+import { ES_CAFETERIA, DIAS_ESPERADOS, MODO_REGISTRO } from "@/lib/kpis/config-sedes";
 import {
   evaluarCumplimiento, type SedeCumplimiento, type ControlCumplimiento,
 } from "@/lib/control-cumplimiento";
 import {
-  evaluarLlenado, diasDeLaSemana, restarDias, rachaDeRegistro, TODA_LA_SEMANA, LUNES_A_SABADO,
+  evaluarLlenado, diasDeLaSemana, restarDias, rachaDeRegistro, TODA_LA_SEMANA,
   type EstadoLlenado, type DiaLlenado, type FilaDia, type SedeInfo, type ModoRegistro,
 } from "@/lib/kpis/llenado";
 import { getTodosLosDiasPausados } from "./dias-no-operativos";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-/** Atelier (1) es producción: no lleva NPS ni tiempos de salón. */
-const ES_CAFETERIA: Record<number, boolean> = { 1: false, 2: true, 3: true };
-
-/**
- * ┌─────────────────────────────────────────────────────────────────┐
- * │  QUÉ DÍAS SE ESPERA QUE REPORTE CADA SEDE                       │
- * │                                                                 │
- * │  Para que Atelier vuelva a reportar los domingos, cambia su     │
- * │  línea a TODA_LA_SEMANA. No hay que tocar nada más.             │
- * └─────────────────────────────────────────────────────────────────┘
- *
- * Atelier libra los domingos (día libre de su administrador, decisión
- * de Jahnn del 16-ago-2026): reclamárselo cada semana sería ruido fijo,
- * y una alerta que siempre está encendida deja de leerse.
- *
- * Si un domingo IGUAL registran, se muestra como cualquier día lleno:
- * el dato real siempre gana sobre lo esperado.
- */
 /**
  * Los días que dirección marcó como no operativos, agrupados por sede.
  * Se le pasan a `evaluarLlenado` para que no los reclame en rojo: no es
@@ -60,30 +42,6 @@ async function pausadosPorSede(desde: string): Promise<Record<number, string[]>>
   return porSede;
 }
 
-const DIAS_ESPERADOS: Record<number, number[]> = {
-  1: LUNES_A_SABADO,   // Atelier
-  2: TODA_LA_SEMANA,   // Fonavi
-  3: TODA_LA_SEMANA,   // Centro
-};
-
-/**
- * ┌─────────────────────────────────────────────────────────────────┐
- * │  DE DÓNDE SALE EL DATO DE CADA SEDE                             │
- * │                                                                 │
- * │  Cambia la línea de una sede a "manual" y su aviso pasa a       │
- * │  hablar de teclear el día, no de subir el reporte.              │
- * └─────────────────────────────────────────────────────────────────┘
- *
- * Atelier va como "importado" porque su día normal llega con el
- * reporte de Byte — pero su panel YA tiene formulario manual, y por
- * eso el aviso menciona los dos caminos. Esto solo cambia las
- * palabras: el día falta igual, venga de donde venga.
- */
-const MODO_REGISTRO: Record<number, ModoRegistro> = {
-  1: "importado",  // Atelier
-  2: "manual",     // Fonavi
-  3: "manual",     // Centro
-};
 
 const VACIO = (weekStart: string, hoy: string): EstadoLlenado => ({
   weekStart, hoy, sedes: [], alDia: true,
@@ -308,43 +266,8 @@ export async function getCumplimientoEquipo(): Promise<EstadoCumplimiento> {
 
     const llenado = evaluarLlenado({ weekStart: desde, hoy, sedes, filas });
 
-    // ── 2. Los archivos del sábado, por sede ──────────────────────────
-    // De import_batches y no de los datos: Cortesías y Cambios de Precio
-    // pueden venir legítimamente vacíos, y "no hubo" no es lo mismo que
-    // "no lo subiste".
-    const subidas = (await sql`
-      SELECT business_id, notes,
-             (imported_at AT TIME ZONE 'America/Lima')::date::text AS fecha
-      FROM import_batches
-      WHERE notes IS NOT NULL AND imported_at >= (${desde}::date - INTERVAL '60 days')
-      ORDER BY imported_at DESC
-      LIMIT 600
-    `) as { business_id: number; notes: string | null; fecha: string }[];
-
-    const porSede = new Map<number, CargaRegistrada[]>();
-    for (const s of subidas) {
-      const clave = claveDesdeNota(s.notes);
-      if (!clave) continue;
-      const lista = porSede.get(s.business_id) ?? [];
-      lista.push({ clave, fecha: s.fecha });
-      porSede.set(s.business_id, lista);
-    }
-    // "Ventas del mes" no deja fila en import_batches: se lee de byte_ventas_daily.
-    const ventas = (await sql`
-      SELECT business_id, (MAX(updated_at) AT TIME ZONE 'America/Lima')::date::text AS fecha
-      FROM byte_ventas_daily WHERE source = 'import' GROUP BY business_id
-    `) as { business_id: number; fecha: string | null }[];
-    for (const v of ventas) {
-      porSede.set(v.business_id, [...(porSede.get(v.business_id) ?? []), ...cargaDeVentas(v.fecha)]);
-    }
-    // Atelier: sus dos reportes de cobros (invoice_imports).
-    const cobros = (await sql`
-      SELECT business_id, tipo_reporte AS tipo, (MAX(creado_en) AT TIME ZONE 'America/Lima')::date::text AS fecha
-      FROM invoice_imports GROUP BY business_id, tipo_reporte
-    `.catch(() => [])) as { business_id: number; tipo: string; fecha: string | null }[];
-    for (const c of cobros) {
-      porSede.set(c.business_id, [...(porSede.get(c.business_id) ?? []), ...cargasDeCobros([c])]);
-    }
+    // ── 2. Los archivos del sábado, por sede (lectura compartida: lib/cargas-semanales-sql.ts) ──
+    const porSede = await leerCargasPorSede(sql as never, desde);
 
     // ── 3. Juntar ─────────────────────────────────────────────────────
     const entrada: SedeCumplimiento[] = llenado.sedes.map((s) => ({

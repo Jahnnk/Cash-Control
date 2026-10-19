@@ -11,7 +11,8 @@
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { KpiDeckButton } from "@/components/kpi-deck-button";
-import { weekStartOf, weekEndOf } from "@/lib/kpis/engine";
+import { semanaDeLaReunion } from "@/lib/kpis/semana-reunion";
+import { EstadoDatosReunion } from "@/components/estado-datos-reunion";
 import { GenerateReportModal } from "@/app/[negocio]/reportes/generate-report-modal";
 import { BandaFrescura } from "@/components/banda-frescura";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
@@ -43,6 +44,8 @@ type Props = {
 export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, flujo, motores }: Props) {
   const [showEirs, setShowEirs] = useState(false);
   const hoyLima = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  // La reunión de los lunes mira la ÚLTIMA semana cerrada (dom→sáb), no la que recién empieza (19-oct-2026).
+  const semana = semanaDeLaReunion(hoyLima);
   const periodo = nombreMes(selectedMonth);
   return (
     <div className="space-y-5 max-w-6xl min-w-0">
@@ -50,6 +53,9 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
           porque un reporte generado sobre datos a medias es peor que no
           generarlo — es la lección del reporte de agosto. */}
       {frescura && <BandaFrescura frescura={frescura} />}
+
+      {/* Lo que suben los administradores para la semana de la reunión: KPIs diarios, Byte y archivos del sábado. */}
+      <EstadoDatosReunion start={semana.start} end={semana.end} />
 
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
@@ -60,7 +66,7 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
             sedes, arrancando en "Grupo Yayi's" (un solo lugar para todos — jul-2026). Los KPIs
             de la semana se VEN en Dashboard → Equipo. */}
         <div className="flex flex-wrap items-center gap-2">
-          <KpiDeckButton defaultStart={weekStartOf(hoyLima)} defaultEnd={weekEndOf(weekStartOf(hoyLima))} />
+          <KpiDeckButton defaultStart={semana.start} defaultEnd={semana.end} />
           <button
             onClick={() => setShowEirs(true)}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
