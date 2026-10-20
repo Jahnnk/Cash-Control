@@ -10,6 +10,9 @@
 import { neon } from "@neondatabase/serverless";
 import { getEntradaCandadoVentas } from "./breakeven";
 import { getEntradaSupervision } from "./supervisiones";
+import { getTodosLosDiasPausados } from "./dias-no-operativos";
+import { leerVentasAlDia } from "@/lib/kpis/ventas-al-dia-sql";
+import { entradaVentasVsByte } from "@/lib/kpis/ventas-al-dia";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
@@ -34,7 +37,7 @@ const sql = neon(process.env.DATABASE_URL!);
 
 type LevelRow = { nombre: string; delta: number; bono_tc: number; bono_mt: number; bono_admin: number; premio_mv: number };
 
-async function collectForLiquidation(bId: number, month: string, mejorVendedor: string | null): Promise<LiquidationResult> {
+async function collectForLiquidation(bId: number, month: string, mejorVendedor: string | null, aceptaDiferenciasByte = false): Promise<LiquidationResult> {
   // Antes de calcular un pago, el roster tiene que ser el real. Si la
   // copia de Planilla está vieja se refresca sola; si Planilla no
   // responde, se sigue con lo que hay (nunca rompe la liquidación).
@@ -119,8 +122,17 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   // Supervisiones de Juani (desde octubre 2026): sin poder leerlas, el
   // motor bloquea el cierre.
   const supervision = config.requiereSupervision ? await getEntradaSupervision(bId, month) : null;
+  // Lo que anotó el administrador contra el reporte de Byte (que es lo que cuenta): si algún día no coincide, el ticket del bono
+  // saldría de un dato equivocado. Si no se puede leer, no se bloquea a ciegas: se avisa.
+  let ventasVsByte = null;
+  try {
+    const dia = (await leerVentasAlDia(sql as never, month, todayISO, await getTodosLosDiasPausados(`${month}-01`))).sedes.find((x) => x.businessId === bId);
+    ventasVsByte = dia ? entradaVentasVsByte(dia) : null;
+  } catch (err) {
+    console.error("[collectForLiquidation] ventas vs Byte:", err);
+  }
   const r = computeLiquidation({
-    month, todayISO, config, candadoVentas, supervision,
+    month, todayISO, config, candadoVentas, supervision, ventasVsByte, aceptaDiferenciasByte,
     staff: resuelto.staff,
     dailies, unverifiedDays, observedDays, mejorVendedor,
   });
@@ -145,7 +157,7 @@ export type StoredLiquidation = {
 };
 
 /** Vista previa (o la liquidación ya cerrada) del mes. */
-export async function getLiquidation(month: string, mejorVendedor: string | null): Promise<
+export async function getLiquidation(month: string, mejorVendedor: string | null, aceptaDiferenciasByte = false): Promise<
   | { ok: true; closed: StoredLiquidation | null; preview: LiquidationResult | null; salonStaff: string[] }
   | { ok: false; error: string }
 > {
@@ -169,7 +181,7 @@ export async function getLiquidation(month: string, mejorVendedor: string | null
     const salon = (await sql`
       SELECT name FROM staff WHERE business_id = ${bId} AND active = true AND area = 'salon' ORDER BY name
     `) as { name: string }[];
-    const preview = closed ? null : await collectForLiquidation(bId, month, mejorVendedor);
+    const preview = closed ? null : await collectForLiquidation(bId, month, mejorVendedor, aceptaDiferenciasByte);
     return { ok: true, closed, preview, salonStaff: salon.map((s) => s.name) };
   } catch (err) {
     return { ok: false, error: err instanceof Error ? err.message : "Error al preparar la liquidación" };
@@ -181,12 +193,14 @@ export async function closeLiquidation(input: {
   month: string;
   mejorVendedor: string | null;
   notas: string | null;
+  /** La dirección revisó las diferencias contra Byte y cierra igual (queda como constancia en el acta). */
+  aceptaDiferenciasByte?: boolean;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return { ok: false, error: "La liquidación es solo para la dirección." };
   const bId = await activeBusinessId();
   if (bId !== 2 && bId !== 3) return { ok: false, error: "Aplica a las cafeterías." };
   try {
-    const result = await collectForLiquidation(bId, input.month, input.mejorVendedor);
+    const result = await collectForLiquidation(bId, input.month, input.mejorVendedor, input.aceptaDiferenciasByte === true);
     if (result.blockers.length > 0) {
       return { ok: false, error: "Hay pendientes que resolver antes de cerrar: " + result.blockers[0] };
     }

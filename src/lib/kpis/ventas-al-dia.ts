@@ -147,3 +147,27 @@ export function ventasAlDia(input: { mes: string; hoy: string; sedes: SedeVentas
     },
   };
 }
+
+/**
+ * Lo que el cierre del bono necesita saber de una sede: Byte es lo que cuenta, así que cualquier día que el administrador
+ * anotó distinto, que no anotó teniendo venta en Byte, o que el reporte de Byte aún no cubre, bloquea el cierre.
+ */
+export type EntradaVentasVsByte = {
+  /** Días que no coinciden y no se explican por caja sin abrir. */
+  noCoinciden: { fecha: string; anotado: number | null; byte: number }[];
+  /** Días en que se espera venta (o Byte la tiene) y el administrador no anotó nada. */
+  sinAnotar: string[];
+  /** Días anotados que el reporte de Byte subido todavía no cubre. */
+  sinByte: string[];
+  byteHasta: string | null;
+};
+
+export function entradaVentasVsByte(s: SedeVentasAlDia): EntradaVentasVsByte {
+  const dia = (f: string) => s.dias.find((d) => d.fecha === f);
+  return {
+    noCoinciden: s.sueltos.map((f) => ({ fecha: f, anotado: dia(f)?.admin ?? null, byte: dia(f)?.byte ?? 0 })),
+    sinAnotar: s.faltan,
+    sinByte: s.dias.filter((d) => d.byte === null && d.admin !== null).map((d) => d.fecha),
+    byteHasta: s.byteHasta,
+  };
+}

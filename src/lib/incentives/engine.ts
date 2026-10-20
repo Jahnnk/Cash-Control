@@ -11,6 +11,7 @@
  */
 
 import { evaluarCandadoVentas, type EntradaCandadoVentas, type EstadoCandadoVentas } from "./candado-ventas";
+import type { EntradaVentasVsByte } from "../kpis/ventas-al-dia";
 import { resumirSupervisionMes, type EntradaSupervision, type ResumenSupervisionMes } from "../supervisiones";
 
 export type IncentiveLevel = {
@@ -448,6 +449,8 @@ export type LiquidationResult = {
   excluidos?: { dni: string; name: string; motivo: string; origen: "automatico" | "manual"; reglaId: number | null }[];
   /** Quiénes cobran por una excepción de la dirección aunque la regla automática los dejaba fuera. */
   incluidosPorExcepcion?: { dni: string; name: string; motivo: string; reglaId: number }[];
+  /** true = entre los bloqueos hay diferencias entre lo anotado por el administrador y Byte (la dirección puede cerrar igual, con constancia). */
+  bloqueoVentasByte?: boolean;
   /** Impiden cerrar (se resuelven primero). */
   blockers: string[];
   /** No impiden cerrar, pero quedan en el acta. */
@@ -470,6 +473,14 @@ export function computeLiquidation(input: {
   candadoVentas?: EntradaCandadoVentas | null;
   /** Visitas y observaciones del mes; obligatorio si la config pide supervisiones. */
   supervision?: EntradaSupervision | null;
+  /**
+   * Lo que anotó el administrador contra el reporte de Byte (19-oct-2026). Byte es lo que cuenta para los KPIs y el bono;
+   * el ticket promedio sale de lo que anota el administrador, así que si algún día no coincide, no se cierra. Solo se
+   * evalúa si se entrega (las actas viejas y los tests sin esta entrada no cambian).
+   */
+  ventasVsByte?: EntradaVentasVsByte | null;
+  /** La dirección revisó las diferencias con Byte y cierra igual: el bloqueo pasa a constancia en el acta. */
+  aceptaDiferenciasByte?: boolean;
 }): LiquidationResult {
   const { config, staff, dailies } = input;
   const [y, m] = input.month.split("-").map(Number);
@@ -572,6 +583,26 @@ export function computeLiquidation(input: {
     );
   }
   if (withData.length === 0) blockers.push("Sin registros diarios en el mes.");
+  let bloqueoVentasByte = false;
+  if (input.ventasVsByte) {
+    const v = input.ventasVsByte;
+    const dd = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`;
+    const sol = (n: number) => `S/${n.toFixed(2)}`;
+    const frases: string[] = [];
+    if (v.noCoinciden.length) {
+      frases.push(`Lo anotado por el administrador no coincide con Byte (Byte es lo que cuenta): ${v.noCoinciden.map((d) => `${dd(d.fecha)} (anotó ${d.anotado === null ? "nada" : sol(d.anotado)}, Byte ${sol(d.byte)})`).join(", ")}. Que lo corrija en su Panel de Sede.`);
+    }
+    if (v.sinAnotar.length) frases.push(`El administrador no anotó días con venta: ${v.sinAnotar.map(dd).join(", ")}.`);
+    if (v.sinByte.length) frases.push(`Tu reporte de Byte no cubre ${v.sinByte.map(dd).join(", ")}: súbelo hasta el fin de mes para poder compararlos.`);
+    if (frases.length) {
+      bloqueoVentasByte = true;
+      if (input.aceptaDiferenciasByte) {
+        warnings.push(`Cierre con diferencias contra Byte aceptadas por la dirección. ${frases.join(" ")}`);
+      } else {
+        for (const f of frases) blockers.push(f);
+      }
+    }
+  }
   if (input.unverifiedDays > 0) {
     warnings.push(`${input.unverifiedDays} día(s) con registro sin la segunda firma del verificador.`);
   }
@@ -650,6 +681,7 @@ export function computeLiquidation(input: {
     pozo,
     lines,
     totalBonos,
+    bloqueoVentasByte,
     blockers,
     warnings,
   };
