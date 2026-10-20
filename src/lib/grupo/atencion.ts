@@ -58,6 +58,11 @@ export type EntradaAtencion = {
   utilidadPorSeparar?: { mes: string; pct: number; sedes: { sede: string; monto: number }[] } | null;
   /** Cobros de Atelier: días desde la última carga del reporte de Byte. */
   cobrosAtelier: { diasDesdeCarga: number | null; porCobrar: number } | null;
+  /**
+   * Lo que anotó cada administrador contra el reporte de Byte que sube Jahnn (19-oct-2026): los días que no coinciden y
+   * no se explican (no cuentan los que Byte juntó por caja sin abrir). Byte es lo que cuenta para los KPIs y el bono.
+   */
+  ventasVsByte?: { sede: string; code: string; dias: string[] }[] | null;
 };
 
 /** Caída de ventas que amerita interrumpir: −15% con al menos una semana comparada. */
@@ -97,6 +102,18 @@ export function construirAtencion(e: EntradaAtencion): Atencion[] {
         href: "/grupo/reportes", accion: "Ver punto de equilibrio",
       });
     }
+  }
+
+  // Lo anotado por el administrador contra Byte: es lo que cuenta para los KPIs y el bono, así que va primero.
+  const conErrores = (e.ventasVsByte ?? []).filter((x) => x.dias.length > 0);
+  if (conErrores.length) {
+    const dd = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`;
+    out.push({
+      id: "ventas-vs-byte", nivel: "alto",
+      titulo: conErrores.length === 1 ? `${conErrores[0].sede}: lo que anotó el administrador no coincide con Byte` : `Lo anotado no coincide con Byte en ${conErrores.map((x) => x.sede).join(" y ")}`,
+      detalle: `${conErrores.map((x) => `${x.sede}: ${x.dias.map(dd).join(", ")}`).join(" · ")}. Byte es lo que cuenta: pídele que lo corrija.`,
+      href: "#ventas-al-dia", accion: "Ver días",
+    });
   }
 
   // Lo que el SISTEMA comprueba (15-oct-2026: se quitó la revisión del lunes y el checklist, que eran

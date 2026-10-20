@@ -67,7 +67,7 @@ export function VistaVentasAlDia({ datos }: { datos: VentasAlDia }) {
     );
   };
   return (
-    <section className="rounded-2xl border border-gray-200/80 bg-white px-4 py-4 sm:px-6 sm:py-5" aria-label="Ventas al día según los administradores">
+    <section id="ventas-al-dia" className="scroll-mt-4 rounded-2xl border border-gray-200/80 bg-white px-4 py-4 sm:px-6 sm:py-5" aria-label="Ventas al día según los administradores">
       <h2 className="text-[15px] font-semibold text-gray-900">Ventas al día <span className="font-normal text-gray-500">· lo que anotan los administradores</span></h2>
       <p className="mt-1 text-xs text-gray-500">Entre una carga de Byte y la siguiente: la venta diaria que cada administrador anota en su Panel de Sede, contrastada con tu reporte de Byte.</p>
 

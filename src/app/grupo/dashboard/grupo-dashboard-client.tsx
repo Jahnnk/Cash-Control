@@ -17,7 +17,7 @@ import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
 import { TarjetasSede, type ExtraSede } from "./tarjetas-sede";
-import { VentasAlDiaVista } from "./ventas-al-dia";
+import { VentasAlDiaVista, useVentasAlDia } from "./ventas-al-dia";
 import { AtencionCard } from "./atencion-card";
 import { EstadoMes } from "./estado-mes";
 import { SeccionDesplegable } from "@/components/productos/ui";
@@ -87,6 +87,8 @@ export function GrupoDashboardClient({
   cuadreKelly, cifras, extra, pestanaInicial = "resumen",
 }: Props) {
   const [pestana, setPestana] = useState<Pestana>(pestanaInicial);
+  // Lo que anotan los administradores contra Byte: se dibuja en el Resumen y alimenta el aviso «no coincide con Byte».
+  const ventasAlDia = useVentasAlDia(selectedMonth);
   // Sube con cada carga (Byte o Excel) para que la franja «Datos cargados» se actualice sola.
   const [versionCargas, setVersionCargas] = useState(0);
   const [y, m] = selectedMonth.split("-").map(Number);
@@ -209,10 +211,12 @@ export function GrupoDashboardClient({
     presupuesto: extra.presupuesto,
     utilidadPorSeparar: extra.utilidadPorSeparar,
     cobrosAtelier: extra.cobrosAtelier,
+    ventasVsByte: ventasAlDia ? ventasAlDia.sedes.map((v) => ({ sede: v.sede, code: SEDE_CODE[v.businessId] ?? "grupo", dias: v.sueltos })) : null,
   }) : [];
   // Los avisos que se resuelven en esta misma pantalla no navegan: cambian de pestaña o bajan a las sedes.
   const irA = (href: string) => {
     if (href === "#excel") { setPestana("datos"); return true; }
+    if (href === "#ventas-al-dia") { setPestana("resumen"); setTimeout(() => document.getElementById("ventas-al-dia")?.scrollIntoView({ behavior: "smooth" }), 0); return true; }
     if (href.endsWith("#sedes")) { document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth" }); return true; }
     return false;
   };
@@ -273,7 +277,7 @@ export function GrupoDashboardClient({
           </section>
 
           {/* Entre una carga de Byte y la siguiente: la venta diaria que anotan los administradores, contrastada con Byte. */}
-          <VentasAlDiaVista mes={selectedMonth} />
+          <VentasAlDiaVista datos={ventasAlDia} />
         </div>
       )}
 
