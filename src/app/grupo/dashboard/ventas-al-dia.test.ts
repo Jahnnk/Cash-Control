@@ -15,6 +15,12 @@ describe("Ventas al día (lo que anotan los administradores)", () => {
   it("muestra lo anotado, hasta cuándo, Byte en los mismos días y si cuadra", () => {
     for (const t of ["Ventas al día", "Lo que anotó", "Byte, mismos días", "hasta el 18/10", "Cuadra con Byte", "Las 3 sedes", "Día por día"]) expect(html).toContain(t);
   });
+  it("plegado es una sola línea con el estado de cada sede, y el detalle se abre con «Ver contra Byte»", () => {
+    expect(html).toContain("Ver contra Byte");
+    expect(html).toContain("Centro</b> cuadra");
+    expect(html).toContain("Fonavi</b> revisar");
+    expect(html).not.toContain("<details id=\"ventas-al-dia\" open");
+  });
   it("explica la caja sin abrir y avisa lo que no coincide o falta", () => {
     expect(html).toContain("Byte repartió distinto");
     expect(html).toContain("No coincide con Byte: sáb 17");

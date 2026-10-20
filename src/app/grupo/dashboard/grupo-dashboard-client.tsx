@@ -216,7 +216,7 @@ export function GrupoDashboardClient({
   // Los avisos que se resuelven en esta misma pantalla no navegan: cambian de pestaña o bajan a las sedes.
   const irA = (href: string) => {
     if (href === "#excel") { setPestana("datos"); return true; }
-    if (href === "#ventas-al-dia") { setPestana("resumen"); setTimeout(() => document.getElementById("ventas-al-dia")?.scrollIntoView({ behavior: "smooth" }), 0); return true; }
+    if (href === "#ventas-al-dia") { setPestana("resumen"); setTimeout(() => { const el = document.getElementById("ventas-al-dia"); if (el instanceof HTMLDetailsElement) el.open = true; el?.scrollIntoView({ behavior: "smooth" }); }, 0); return true; }
     if (href.endsWith("#sedes")) { document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth" }); return true; }
     return false;
   };
