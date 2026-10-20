@@ -72,4 +72,18 @@ describe("necesita tu atención", () => {
     expect(a[0].detalle).toContain("Fonavi S/9,324");
     expect(a[0].detalle).toContain("Centro S/3,134");
   });
+
+  it("avisa primero cuando lo que anotó un administrador no coincide con Byte (Byte es lo que cuenta)", () => {
+    const a = construirAtencion({ ...base, ventasVsByte: [{ sede: "Fonavi", code: "fonavi", dias: ["2026-10-17"] }, { sede: "Centro", code: "centro", dias: [] }] });
+    expect(a[0].id).toBe("ventas-vs-byte");
+    expect(a[0].nivel).toBe("alto");
+    expect(a[0].titulo).toBe("Fonavi: lo que anotó el administrador no coincide con Byte");
+    expect(a[0].detalle).toContain("Fonavi: 17/10");
+    expect(a[0].href).toBe("#ventas-al-dia");
+  });
+
+  it("sin días que no coincidan, no hay aviso", () => {
+    expect(construirAtencion({ ...base, ventasVsByte: [{ sede: "Fonavi", code: "fonavi", dias: [] }] }).some((x) => x.id === "ventas-vs-byte")).toBe(false);
+    expect(construirAtencion({ ...base, ventasVsByte: null }).some((x) => x.id === "ventas-vs-byte")).toBe(false);
+  });
 });
