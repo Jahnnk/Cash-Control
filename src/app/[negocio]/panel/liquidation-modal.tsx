@@ -43,10 +43,12 @@ export function LiquidationModal({
   const [mejorVendedor, setMejorVendedor] = useState("");
   const [notas, setNotas] = useState("");
   const [error, setError] = useState<string | null>(null);
+  // La dirección revisó las diferencias contra Byte y cierra igual (queda como constancia en el acta).
+  const [aceptaByte, setAceptaByte] = useState(false);
 
-  const load = useCallback(async (mv: string) => {
+  const load = useCallback(async (mv: string, acepta = false) => {
     setLoading(true);
-    const r = await getLiquidation(month, mv || null);
+    const r = await getLiquidation(month, mv || null, acepta);
     if (r.ok) {
       setClosed(r.closed);
       setPreview(r.preview);
@@ -64,11 +66,11 @@ export function LiquidationModal({
 
   async function handleClose() {
     setBusy(true);
-    const r = await closeLiquidation({ month, mejorVendedor: mejorVendedor || null, notas: notas || null });
+    const r = await closeLiquidation({ month, mejorVendedor: mejorVendedor || null, notas: notas || null, aceptaDiferenciasByte: aceptaByte });
     setBusy(false);
     if (!r.ok) { showToast(r.error, "error"); return; }
     showToast("Mes cerrado — el acta quedó congelada", "success");
-    await load(mejorVendedor);
+    await load(mejorVendedor, aceptaByte);
   }
 
   async function handleReopen() {
@@ -156,6 +158,16 @@ export function LiquidationModal({
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {b}
                 </div>
               ))}
+              {/* Lo anotado contra Byte: Byte es lo que cuenta. Se corrige en el Panel de Sede; si la dirección ya lo revisó, puede cerrar igual. */}
+              {!closed && r.bloqueoVentasByte && (
+                <label className="flex items-start gap-2 text-xs text-gray-700 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2 cursor-pointer">
+                  <input
+                    type="checkbox" className="mt-0.5" checked={aceptaByte}
+                    onChange={(e) => { setAceptaByte(e.target.checked); void load(mejorVendedor, e.target.checked); }}
+                  />
+                  <span>Ya revisé estas diferencias con Byte y cierro igual. Queda escrito en el acta.</span>
+                </label>
+              )}
               {r.warnings.map((wtext) => (
                 <div key={wtext} className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 flex gap-2">
                   <AlertTriangle className="w-4 h-4 shrink-0 mt-0.5" /> {wtext}

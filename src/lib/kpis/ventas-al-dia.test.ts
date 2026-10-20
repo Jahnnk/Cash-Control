@@ -81,3 +81,17 @@ describe("ventas al día · lo que anotan los administradores contra Byte", () =
     expect(ventasAlDia({ mes: "2026-10", hoy: "2026-10-19", sedes: [base({})] }).sedes[0].estado).toBe("sin-dato");
   });
 });
+
+describe("entrada para el cierre del bono", () => {
+  test("junta lo que no coincide, lo que falta anotar y lo que Byte aún no cubre", async () => {
+    const { entradaVentasVsByte } = await import("./ventas-al-dia");
+    const s = ventasAlDia({ mes: "2026-10", hoy: "2026-10-19", sedes: [base({
+      admin: dias([["2026-10-16", 500], ["2026-10-17", 1210], ["2026-10-18", 300]]),
+      byte: dias([["2026-10-16", 500], ["2026-10-17", 667]]), byteHasta: "2026-10-17",
+    })] }).sedes[0];
+    const e = entradaVentasVsByte(s);
+    expect(e.noCoinciden).toEqual([{ fecha: "2026-10-17", anotado: 1210, byte: 667 }]);
+    expect(e.sinByte).toEqual(["2026-10-18"]);
+    expect(e.byteHasta).toBe("2026-10-17");
+  });
+});
