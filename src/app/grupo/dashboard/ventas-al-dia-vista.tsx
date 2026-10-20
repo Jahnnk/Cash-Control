@@ -52,6 +52,14 @@ function Fila({ s }: { s: SedeVentasAlDia }) {
   );
 }
 
+/** El estado de una sede en una frase corta, para la línea plegada. */
+function estadoCorto(s: SedeVentasAlDia): { ok: boolean; texto: string } {
+  if (s.estado === "sin-dato") return { ok: false, texto: "sin anotar" };
+  if (s.estado === "revisar") return { ok: false, texto: "revisar" };
+  if (s.faltan.length > 0) return { ok: false, texto: s.faltan.length === 1 ? "falta 1 día" : `faltan ${s.faltan.length} días` };
+  return { ok: true, texto: "cuadra" };
+}
+
 /** Solo dibuja: recibe el resultado ya calculado (así se puede probar y ver sin base de datos). */
 export function VistaVentasAlDia({ datos }: { datos: VentasAlDia }) {
   const fechas = [...new Set(datos.sedes.flatMap((s) => s.dias.map((d) => d.fecha)))].sort().reverse();
@@ -66,45 +74,68 @@ export function VistaVentasAlDia({ datos }: { datos: VentasAlDia }) {
       </span>
     );
   };
+  // Divulgación progresiva: plegado es UNA línea con el estado de cada sede; el detalle se abre solo si se pide
+  // (si algo no coincide, el aviso de «Necesita tu atención» lleva hasta aquí y lo abre).
   return (
-    <section id="ventas-al-dia" className="scroll-mt-4 rounded-2xl border border-gray-200/80 bg-white px-4 py-4 sm:px-6 sm:py-5" aria-label="Ventas al día según los administradores">
-      <h2 className="text-[15px] font-semibold text-gray-900">Ventas al día <span className="font-normal text-gray-500">· lo que anotan los administradores</span></h2>
-      <p className="mt-1 text-xs text-gray-500">Entre una carga de Byte y la siguiente: la venta diaria que cada administrador anota en su Panel de Sede, contrastada con tu reporte de Byte.</p>
-
-      <div className="mt-3">{datos.sedes.map((s) => <Fila key={s.businessId} s={s} />)}</div>
-
-      <div className="mt-1 grid grid-cols-2 gap-x-4 rounded-xl bg-gray-50 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)]">
-        <div className="text-sm font-semibold text-gray-900">Las 3 sedes</div>
-        <div className="text-lg font-semibold tabular-nums text-gray-900">{soles(datos.grupo.anotado)}</div>
-        <div className="text-lg font-semibold tabular-nums text-gray-700">{soles(datos.grupo.byteMismosDias)}</div>
-        <div className="col-span-2 text-xs text-gray-600 sm:col-span-1">Diferencia <b className="tabular-nums">{solesFino(datos.grupo.diferencia)}</b></div>
-      </div>
-
-      {fechas.length > 0 && (
-        <details className="group mt-3">
-          <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-primary hover:underline [&::-webkit-details-marker]:hidden">
-            Día por día <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
-          </summary>
-          <div className="mt-2 overflow-x-auto">
-            <table className="w-full min-w-[520px] text-xs">
-              <thead>
-                <tr className="text-left text-[10px] uppercase tracking-wide text-gray-400">
-                  <th className="py-1 pr-3 font-medium">Día</th>
-                  {datos.sedes.map((s) => <th key={s.businessId} className="py-1 pr-3 font-medium">{s.sede}</th>)}
-                </tr>
-              </thead>
-              <tbody className="divide-y divide-gray-100">
-                {fechas.map((f) => (
-                  <tr key={f}>
-                    <td className="py-1.5 pr-3 font-medium text-gray-800">{etiquetaDia(f)}</td>
-                    {datos.sedes.map((s) => <td key={s.businessId} className="py-1.5 pr-3">{celda(s, f)}</td>)}
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <details id="ventas-al-dia" className="group scroll-mt-4 rounded-2xl border border-gray-200/80 bg-white" aria-label="Ventas al día según los administradores">
+      <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-x-4 gap-y-2 px-4 py-3 sm:px-5 [&::-webkit-details-marker]:hidden">
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+          <h2 className="text-sm font-semibold text-gray-900">Ventas al día <span className="font-normal text-gray-500">· lo que anotan los administradores</span></h2>
+          <div className="flex flex-wrap items-center gap-1.5">
+            {datos.sedes.map((s) => {
+              const e = estadoCorto(s);
+              return (
+                <span key={s.businessId} className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[11px] ring-1 ring-inset ${e.ok ? "bg-emerald-50 text-emerald-800 ring-emerald-200" : "bg-amber-50 text-amber-900 ring-amber-200"}`}>
+                  {e.ok ? <CircleCheck className="h-3 w-3" aria-hidden /> : <TriangleAlert className="h-3 w-3" aria-hidden />}
+                  <b className="font-medium">{s.sede}</b> {e.texto}
+                </span>
+              );
+            })}
           </div>
-        </details>
-      )}
-    </section>
+        </div>
+        <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
+          Ver contra Byte <ChevronDown className="h-3.5 w-3.5 transition-transform group-open:rotate-180" aria-hidden />
+        </span>
+      </summary>
+
+      <div className="border-t border-gray-100 px-4 pb-4 pt-3 sm:px-6">
+        <p className="text-xs text-gray-500">Entre una carga de Byte y la siguiente: la venta diaria que cada administrador anota en su Panel de Sede, contrastada con tu reporte de Byte.</p>
+
+        <div className="mt-2">{datos.sedes.map((s) => <Fila key={s.businessId} s={s} />)}</div>
+
+        <div className="mt-1 grid grid-cols-2 gap-x-4 rounded-xl bg-gray-50 px-3 py-3 sm:grid-cols-[minmax(0,1fr)_minmax(0,1.1fr)_minmax(0,1.1fr)_minmax(0,1.3fr)]">
+          <div className="text-sm font-semibold text-gray-900">Las 3 sedes</div>
+          <div className="text-lg font-semibold tabular-nums text-gray-900">{soles(datos.grupo.anotado)}</div>
+          <div className="text-lg font-semibold tabular-nums text-gray-700">{soles(datos.grupo.byteMismosDias)}</div>
+          <div className="col-span-2 text-xs text-gray-600 sm:col-span-1">Diferencia <b className="tabular-nums">{solesFino(datos.grupo.diferencia)}</b></div>
+        </div>
+
+        {fechas.length > 0 && (
+          <details className="group/dia mt-3">
+            <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-xs font-medium text-primary hover:underline [&::-webkit-details-marker]:hidden">
+              Día por día <ChevronDown className="h-3.5 w-3.5 transition-transform group-open/dia:rotate-180" aria-hidden />
+            </summary>
+            <div className="mt-2 overflow-x-auto">
+              <table className="w-full min-w-[520px] text-xs">
+                <thead>
+                  <tr className="text-left text-[10px] uppercase tracking-wide text-gray-400">
+                    <th className="py-1 pr-3 font-medium">Día</th>
+                    {datos.sedes.map((s) => <th key={s.businessId} className="py-1 pr-3 font-medium">{s.sede}</th>)}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {fechas.map((f) => (
+                    <tr key={f}>
+                      <td className="py-1.5 pr-3 font-medium text-gray-800">{etiquetaDia(f)}</td>
+                      {datos.sedes.map((s) => <td key={s.businessId} className="py-1.5 pr-3">{celda(s, f)}</td>)}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </details>
+        )}
+      </div>
+    </details>
   );
 }
