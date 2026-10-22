@@ -23,6 +23,8 @@ export type TarjetaSede = {
   ganancia: number | null;
   margenPct: number | null;
   gananciaPct: number | null;
+  /** Gasto extraordinario (reparaciones grandes): ya está dentro de gastos y ganancia; se dice aparte. 0 = nada. */
+  extraordinario: number;
   /** Por qué no hay ganancia todavía (null si la hay). */
   porque: string | null;
   /** Caja del mes: lo que entró por ventas, lo que entró por otros motivos y el total (igual al Excel). */
@@ -49,6 +51,7 @@ export function tarjetaDeSede(sede: CifrasSede): TarjetaSede {
     ganancia: s.ganancia,
     margenPct: s.margenPct,
     gananciaPct: s.gananciaPct,
+    extraordinario: hay ? s.extraordinario?.total ?? 0 : 0,
     porque: hay ? null : s.sinResultadoPorque,
     caja: { ingresado: ingresado === null ? null : r2(ingresado), otras, total: r2((ingresado ?? 0) + otras) },
   };

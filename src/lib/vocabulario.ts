@@ -12,6 +12,7 @@ export const GLOSARIO: { palabra: string; significa: string }[] = [
   { palabra: "Ganancia", significa: "lo que queda después de costos, gastos e impuestos." },
   { palabra: "Dinero", significa: "lo que entró de verdad a la cuenta, lo que salió (costos y gastos) y lo que hay hoy en banco y caja." },
   { palabra: "EBITDA", significa: "de cada S/ 100 vendidos, lo que queda después de costos y gastos (antes de impuestos): menos de 10% es frágil, 30% o más es eficiente." },
+  { palabra: "Gasto extraordinario", significa: "una reparación grande de S/1,000 o más en un solo pago. Ya está dentro de los gastos y de la ganancia; se muestra aparte para ver cómo fue un mes normal." },
   { palabra: "Mínimo", significa: "lo mínimo que hay que vender para no perder; «mínimo cubierto» dice cuánto de eso ya se vendió." },
   { palabra: "Meta", significa: "lo que se quiere vender en el mes, según el presupuesto aprobado." },
 ];

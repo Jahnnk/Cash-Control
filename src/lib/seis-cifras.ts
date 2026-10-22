@@ -148,6 +148,11 @@ export type CifrasSede = {
   /** Las categorías que más pesan en cada rubro. */
   topCostos: { categoria: string; monto: number }[];
   topGastos: { categoria: string; monto: number }[];
+  /**
+   * Gasto extraordinario (22-oct-2026): reparaciones grandes de un solo pago (ver esGastoExtraordinario). YA está dentro
+   * de los gastos y de la ganancia; solo se dice aparte para ver la operación de un mes normal. total 0 = nada.
+   */
+  extraordinario: { total: number; movimientos: { concepto: string; monto: number }[] };
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -155,6 +160,17 @@ const r1 = (n: number) => Math.round(n * 10) / 10;
 
 export const CATEGORIA_IMPUESTOS = "IMPUESTOS";
 export const CATEGORIA_COMPRA_ATELIER = "PRODUCTOS ATELIER";
+
+/**
+ * Gasto extraordinario (decisión de Jahnn, 22-oct-2026): un pago de MANTENIMIENTO de S/1,000 o más (una reparación grande,
+ * como el abatidor y la refrigeradora de Atelier en setiembre: S/6,300). Sigue siendo GASTO —una reparación deja el equipo
+ * como estaba; comprar o mejorar un equipo es inversión (categoría EQUIPOS)— y la ganancia no cambia: solo se muestra aparte.
+ * Abril–octubre 2026: solo esos 3 pagos pasan el corte; lo siguiente era un pago de S/911.
+ */
+export const GASTO_EXTRAORDINARIO_MINIMO = 1000;
+export function esGastoExtraordinario(categoria: string, monto: number): boolean {
+  return categoria.trim().toUpperCase() === "MANTENIMIENTO" && monto >= GASTO_EXTRAORDINARIO_MINIMO;
+}
 
 /** En qué rubro cae una categoría. */
 export type Rubro = "costos" | "gastos" | "impuestos" | "deudas" | "inversion" | "noEsGasto";
@@ -222,6 +238,7 @@ export function cifrasDeSede(input: {
   let reparto = 0;
   let pagadoPorSocio = 0;
   const porCategoria = new Map<string, number>();
+  const extraordinarios: { concepto: string; monto: number }[] = [];
   // Lo que otra sede devolvió resta en su categoría, como una fila negativa (no toca «otras sedes»).
   const recuperos = input.recuperos ?? [];
   const filas: FilaCifras[] = [...input.filas, ...recuperos.map((r) => ({ categoria: r.categoria, concepto: r.concepto ?? null, monto: -r.monto, propio: -r.monto }))];
@@ -238,6 +255,7 @@ export function cifrasDeSede(input: {
     if (rubro === "costos") porCostos.set(f.categoria, (porCostos.get(f.categoria) ?? 0) + f.propio);
     if (rubro === "gastos") porGastos.set(f.categoria, (porGastos.get(f.categoria) ?? 0) + f.propio);
     if (f.categoria === CATEGORIA_COMPRA_ATELIER) compraAtelier += f.propio;
+    if (rubro === "gastos" && esGastoExtraordinario(f.categoria, f.propio)) extraordinarios.push({ concepto: (f.concepto ?? f.categoria).trim(), monto: r2(f.propio) });
   }
   const { ventas, corte } = input;
   const costos = r2(sumas.costos), gastos = r2(sumas.gastos), impuestos = r2(sumas.impuestos);
@@ -268,6 +286,7 @@ export function cifrasDeSede(input: {
     recuperado: r2(recuperos.reduce((t, r) => t + r.monto, 0)),
     ingresosFuera: input.ingresosFuera ?? { devolucionesSedes: 0, prestamos: 0, rescates: 0, otros: 0, devolucionesGastos: 0 },
     topCostos: top(porCostos), topGastos: top(porGastos),
+    extraordinario: { total: r2(extraordinarios.reduce((t, x) => t + x.monto, 0)), movimientos: extraordinarios },
     porCategoria: [...porCategoria.entries()].map(([categoria, monto]) => ({ categoria, rubro: rubroDe(categoria), monto: r2(monto) }))
       .filter((c) => Math.abs(c.monto) >= 0.01).sort((a, b) => b.monto - a.monto),
     fuenteExcel: input.fuenteExcel ?? true,
@@ -292,6 +311,8 @@ export type CifrasGrupo = {
   provisional: boolean;
   /** Sedes que no entran al resultado del grupo, con la razón. */
   sinResultado: { sede: string; porque: string }[];
+  /** Gasto extraordinario de las sedes que entran al resultado (ya está dentro de la ganancia). */
+  extraordinario: number;
 };
 
 /**
@@ -335,5 +356,6 @@ export function cifrasDelGrupo(sedes: CifrasSede[]): CifrasGrupo {
     ventasInternas: r2(internoVentas),
     provisional: conResultado.some((s) => !s.mesCompleto),
     sinResultado,
+    extraordinario: r2(conResultado.reduce((t, s) => t + (s.extraordinario?.total ?? 0), 0)),
   };
 }

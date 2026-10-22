@@ -201,6 +201,11 @@ function Tarjeta({ t, fila, extra, cajaHref, mes }: { t: TarjetaSede; fila: Fila
           {periodo && <p className="mt-0.5 text-[11px] text-gray-500">{periodo}</p>}
           <Barras t={t} ventasHasta={extra?.ventasHasta ?? null} />
           {t.porque && <p className="mt-2 text-xs text-gray-500">Sin ganancia todavía: {t.porque.toLowerCase()}.</p>}
+          {t.extraordinario > 0 && t.ganancia !== null && (
+            <p className="mt-2 text-[11px] leading-snug text-gray-500">
+              Incluye <b className="text-gray-700">{soles(t.extraordinario)}</b> de gasto extraordinario (reparaciones grandes). Sin él, la ganancia sería <b className="text-gray-700">{soles(t.ganancia + t.extraordinario)}</b>.
+            </p>
+          )}
           <TermometroEbitda fila={fila} />
 
           {/* El detalle, solo si se pide (divulgación progresiva). */}

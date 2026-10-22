@@ -38,6 +38,8 @@ export type ColumnaMes = {
   impuestos: number | null;
   ganancia: number | null;
   gananciaPct: number | null;
+  /** De los gastos, lo extraordinario (reparaciones grandes); ya está dentro. 0 = nada. */
+  extraordinario: number;
   fuera: { deudas: number; inversion: number; ahorro: number; reparto: number; otros: number };
   caja: { entro: number; salio: number };
 };
@@ -99,6 +101,7 @@ function columna(vista: Vista, mes: string, sedes: CifrasSede[], hoy: string): {
       porque: estado === "sin-resultado" ? sedesVista.map((s) => s.sinResultadoPorque).find(Boolean) ?? "Sin datos" : null,
       ventas, ingresadoVentas, costos, margenBruto, margenBrutoPct: pct(margenBruto, ventas), gastos,
       ebitda, ebitdaPct: pct(ebitda, ventas), impuestos, ganancia, gananciaPct: pct(ganancia, ventas),
+      extraordinario: ganancia === null ? 0 : sum((s) => (s.conResultado ? s.extraordinario?.total ?? 0 : 0)),
       fuera: {
         deudas: sum((s) => s.fuera.deudas), inversion: sum((s) => s.fuera.inversion), ahorro: sum((s) => s.fuera.ahorro),
         reparto: sum((s) => s.fuera.reparto), otros: sum((s) => s.fuera.noEsGasto - s.fuera.ahorro - s.fuera.reparto),
