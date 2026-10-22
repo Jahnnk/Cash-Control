@@ -151,6 +151,13 @@ export function TablaEstadoResultados({ datos, vista }: { datos: DatosEstadoResu
             <Fila etiqueta="EBITDA" ayuda="antes de impuestos" cols={c} valor={(x) => x.ebitda} porc={(x) => x.ebitdaPct} fuerte fondo="bg-emerald-50/60" />
             <Fila etiqueta="Impuestos" cols={c} valor={(x) => (x.impuestos === null ? null : -x.impuestos)} />
             <Fila etiqueta="Ganancia real" cols={c} valor={(x) => x.ganancia} porc={(x) => x.gananciaPct} fuerte fondo="bg-gray-50" />
+            {/* Lo extraordinario ya está dentro de los gastos y la ganancia: se dice aparte para ver un mes normal (22-oct-2026). */}
+            {c.some((m) => m.extraordinario > 0) && (
+              <>
+                <Fila etiqueta="de lo cual: gasto extraordinario" ayuda="reparaciones de S/1,000 o más en un pago" cols={c} valor={(x) => (x.extraordinario > 0 ? -x.extraordinario : null)} />
+                <Fila etiqueta="Ganancia sin lo extraordinario" ayuda="cómo fue la operación de un mes normal" cols={c} valor={(x) => (x.ganancia === null || x.extraordinario <= 0 ? null : Math.round((x.ganancia + x.extraordinario) * 100) / 100)} />
+              </>
+            )}
             <Separador texto="Salió, pero no es gasto" n={n} />
             <Fila etiqueta="Cuotas de préstamos y tarjetas" cols={c} valor={(x) => x.fuera.deudas} />
             <Fila etiqueta="Equipos y remodelación" cols={c} valor={(x) => x.fuera.inversion} />
