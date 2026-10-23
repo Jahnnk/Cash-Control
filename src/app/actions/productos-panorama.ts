@@ -31,6 +31,7 @@ import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/renta
 import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
 import { CAFETERIAS, IDS_CAFETERIAS, NOMBRE_CAFETERIAS, juntarFilas, juntarRango } from "@/lib/productos/cafeterias";
+import { confiabilidadDelMes } from "@/lib/productos/confiabilidad-sql";
 import { ATELIER, VISTAS_ATELIER, esCanalAtelier, filtrarPorCanal, repartoPorCanal, sedeReal, type RepartoCanal } from "@/lib/productos/canal-atelier";
 import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
@@ -50,6 +51,8 @@ export type PanoramaDeSede = {
   panorama: PanoramaProductos | null;
   /** Cuándo se subió el último reporte del mes (para saber qué tan fresco es). */
   cargadoEl: string | null;
+  /** El reporte del mes no cuadra con la venta de Byte (lib/productos/confiabilidad.ts): por qué. null = confiable. */
+  aviso?: string | null;
 };
 
 type Res<T> = ({ ok: true } & T) | { ok: false; error: string };
@@ -102,6 +105,28 @@ async function filasPara(bId: number, month: string): Promise<{ filas: FilaProdu
   return { filas: juntarFilas(partes.map((x) => x.filas)), desde: r?.desde ?? null, hasta: r?.hasta ?? null };
 }
 
+/**
+ * Por qué el reporte de productos de ese mes no es confiable (null = sí lo es). «Fonavi + Centro» mira las dos; las vistas
+ * por canal, Atelier entero (22-oct-2026).
+ */
+async function avisoDelMes(bId: number, month: string): Promise<string | null> {
+  const ids = bId === CAFETERIAS ? IDS_CAFETERIAS : [sedeReal(bId)];
+  for (const id of ids) {
+    try {
+      const c = await confiabilidadDelMes(sql as never, id, month);
+      if (!c.confiable) return c.motivo;
+    } catch { /* sin poder comprobarlo no se marca */ }
+  }
+  return null;
+}
+
+/** Las filas de un mes para comparar varios meses: si el reporte no es confiable, ese mes no entra (y se dice). */
+async function filasParaHistorial(bId: number, month: string, fuera: { mes: string; motivo: string }[]) {
+  const motivo = await avisoDelMes(bId, month);
+  if (motivo) { fuera.push({ mes: month, motivo }); return { filas: [] as FilaProducto[], desde: null, hasta: null }; }
+  return filasPara(bId, month);
+}
+
 async function panoramaDe(bId: number, month: string): Promise<PanoramaProductos | null> {
   const { filas, desde, hasta } = await filasPara(bId, month);
   if (filas.length === 0 || !desde || !hasta) return null;
@@ -127,9 +152,10 @@ export async function getPanoramaProductos(month: string, businessId?: number): 
   if (role.kind === "admin" && role.sede !== sedeReal(bId)) return { ok: false, error: "Sin acceso a esta sede." };
   if (role.kind !== "admin" && role.kind !== "full") return { ok: false, error: "Sin acceso." };
   try {
-    const [panorama, cargado] = await Promise.all([
+    const [panorama, cargado, aviso] = await Promise.all([
       panoramaDe(bId, month),
       sql`SELECT MAX(imported_at)::text AS c FROM product_period_sales WHERE business_id = ${sedeReal(bId)} AND month = ${month}` as unknown as Promise<{ c: string | null }[]>,
+      avisoDelMes(bId, month),
     ]);
     return {
       ok: true,
@@ -138,6 +164,7 @@ export async function getPanoramaProductos(month: string, businessId?: number): 
         sede: VISTAS_ATELIER.find((v) => v.id === bId && esCanalAtelier(bId))?.nombre ?? SEDES.find((s) => s.id === bId)?.nombre ?? `Sede ${bId}`,
         panorama,
         cargadoEl: cargado[0]?.c ?? null,
+        aviso,
       },
     };
   } catch (e) {
@@ -167,11 +194,12 @@ export async function getPanoramaProductosGrupo(month: string): Promise<Res<{ se
   if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   try {
     const sedes = await Promise.all(SEDES.map(async (s) => {
-      const [panorama, cargado] = await Promise.all([
+      const [panorama, cargado, aviso] = await Promise.all([
         panoramaDe(s.id, month),
         sql`SELECT MAX(imported_at)::text AS c FROM product_period_sales WHERE business_id = ${s.id} AND month = ${month}` as unknown as Promise<{ c: string | null }[]>,
+        avisoDelMes(s.id, month),
       ]);
-      return { businessId: s.id, sede: s.nombre, panorama, cargadoEl: cargado[0]?.c ?? null };
+      return { businessId: s.id, sede: s.nombre, panorama, cargadoEl: cargado[0]?.c ?? null, aviso };
     }));
     return { ok: true, sedes };
   } catch (e) {
@@ -203,6 +231,7 @@ export async function getPanoramaCafeterias(month: string): Promise<Res<{ data: 
         businessId: CAFETERIAS, sede: NOMBRE_CAFETERIAS,
         panorama: filas.length > 0 && r ? armarPanorama(filas, r.desde, r.hasta) : null,
         cargadoEl: cargado[0]?.c ?? null,
+        aviso: await avisoDelMes(CAFETERIAS, month),
         cubre: IDS_CAFETERIAS.map((id, i) => ({ sede: SEDES.find((x) => x.id === id)!.nombre, desde: partes[i].desde, hasta: partes[i].hasta })),
       },
     };
@@ -219,6 +248,8 @@ export type InformeTrimestralSede = {
   sede: string;
   meses: string[];
   informe: InformeTrimestral | null;
+  /** Meses que quedaron fuera porque su reporte de productos no cuadra con Byte (con el porqué). */
+  noConfiables?: { mes: string; motivo: string }[];
 };
 
 /**
@@ -234,9 +265,12 @@ export async function getInformeTrimestral(hastaMes: string, businessId?: number
   const bId = businessId ?? CAFETERIAS;
   const lista = mesesAntes(hastaMes, Math.min(12, Math.max(1, meses)));
   try {
+    const fuera: { mes: string; motivo: string }[] = [];
     const armar = async (sede: number) => {
+      // Solo se anotan los meses fuera de la sede que se está mirando (las demás van al comparativo).
+      const anotar = sede === bId ? fuera : [];
       const datos = await Promise.all(lista.map(async (month) => {
-        const { filas, desde, hasta } = await filasPara(sede, month);
+        const { filas, desde, hasta } = await filasParaHistorial(sede, month, anotar);
         return { month, desde: desde ?? `${month}-01`, hasta: hasta ?? `${month}-01`, filas };
       }));
       return datos.some((d) => d.filas.length > 0) ? armarTrimestral(datos) : null;
@@ -258,7 +292,7 @@ export async function getInformeTrimestral(hastaMes: string, businessId?: number
       }));
     return {
       ok: true,
-      sede: { businessId: bId, sede: nombreDe(bId), meses: lista, informe: propio },
+      sede: { businessId: bId, sede: nombreDe(bId), meses: lista, informe: propio, noConfiables: fuera.sort((a, b) => a.mes.localeCompare(b.mes)) },
       comparativo,
     };
   } catch (e) {
@@ -310,8 +344,9 @@ export async function getReglaOchentaVeinteCafeterias(hastaMes: string): Promise
 
 async function ochentaVeintePara(bId: number, nombre: string, hastaMes: string): Promise<OchentaVeinteSede> {
   const lista = mesesAntes(hastaMes, 3);
+  const fuera: { mes: string; motivo: string }[] = [];
   const datos = await Promise.all(lista.map(async (month) => {
-    const { filas, desde, hasta } = await filasPara(bId, month);
+    const { filas, desde, hasta } = await filasParaHistorial(bId, month, fuera);
     return { month, desde: desde ?? `${month}-01`, hasta: hasta ?? `${month}-01`, filas };
   }));
   const actual = datos[datos.length - 1];
