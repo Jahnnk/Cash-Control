@@ -42,10 +42,13 @@ vi.mock("@neondatabase/serverless", () => ({ neon: () => fake.makeTag() }));
 vi.mock("@/lib/session-access", () => ({
   requireFullSession: vi.fn(async () => fake.state.full),
 }));
+// Días pausados por dirección (corte de luz): sin ninguno, salvo en la prueba que los usa.
+const pausados = vi.hoisted(() => ({ dias: [] as { businessId: number; fecha: string }[] }));
+vi.mock("./dias-no-operativos", () => ({ getTodosLosDiasPausados: vi.fn(async () => pausados.dias) }));
 
 import { getGroupIncentives } from "./group-incentives";
 
-beforeEach(() => { fake.state.full = true; });
+beforeEach(() => { fake.state.full = true; pausados.dias = []; });
 
 describe("getGroupIncentives", () => {
   it("solo dirección (los admins ven su sede en SU panel)", async () => {
@@ -66,6 +69,14 @@ describe("getGroupIncentives", () => {
     expect(fonavi.ticketBase).toBe(25.44);
     expect(fonavi.progress?.delivery).toEqual({ pedidos: 10, venta: 120, ticket: 12 });
     expect(fonavi.ultimoRegistro).toBe("2026-07-01");
+  });
+
+  it("un día pausado por dirección (corte de luz) sale del ticket, igual que en el Panel de Sede", async () => {
+    // El fixture tiene un solo día (01-jul): pausado, la sede se queda sin días que cuenten para el ticket.
+    pausados.dias = [{ businessId: 2, fecha: "2026-07-01" }];
+    const r = await getGroupIncentives("2026-07");
+    if (!r.ok) throw new Error("debió resolver");
+    expect(r.data.sedes[0].progress?.ticketActual ?? null).toBeNull();
   });
 
   it("mes inválido → error claro", async () => {

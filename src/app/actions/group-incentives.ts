@@ -21,6 +21,8 @@ import { equipoDelBono } from "@/lib/incentives/equipo-del-bono";
 import { resolverHorasDelMes } from "@/lib/incentives/horas-trabajadas";
 import { explicarBono, type ExplicacionBono } from "@/lib/incentives/explicacion-bono";
 import { getEntradaCandadoVentas } from "./breakeven";
+import { getTodosLosDiasPausados } from "./dias-no-operativos";
+import { indicePausados, sinDiasPausados, diasOperativosDelMes } from "@/lib/incentivos/dias-no-operativos";
 import { requireFullSession } from "@/lib/session-access";
 import { filasVentasTrabajador } from "@/lib/incentivos/ventas-trabajador-sql";
 import { ventasPorTrabajador, type FilaPeriodo } from "@/lib/incentivos/ventas-trabajador";
@@ -166,10 +168,15 @@ export async function getGroupIncentives(
             ORDER BY date
           `) as DailyEntry[];
         }
+        // Días que dirección pausó (corte de luz, feriado): fuera del ticket, igual que en el Panel de Sede y en el acta
+        // (23-oct-2026: esta vista los contaba y podía decir otro nivel que el panel).
+        const pausados = await getTodosLosDiasPausados(from);
+        dailies = sinDiasPausados(dailies, indicePausados(pausados), bId);
+        const diasQueCuentan = range ? daysInWindow : diasOperativosDelMes(daysInWindow, month, pausados, bId);
         // El candado es MENSUAL: con un rango a medida no se evalúa (una meta
         // de mes contra una semana diría cualquier cosa).
         const candado = config.requiereEquilibrio && !range ? await getEntradaCandadoVentas(bId, month) : null;
-        progress = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, daysInWindow, candado);
+        progress = computeProgress(config, staff.map((s) => ({ ...s, active: true })), dailies, diasQueCuentan, candado);
         // La explicación usa el MISMO equipo y las MISMAS cifras; no recalcula el pozo ni el colchón.
         explicacion = range ? null : explicarBono({
           staff: staff.map((s) => ({ ...s, active: true })),
