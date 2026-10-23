@@ -14,6 +14,7 @@ import { requireFullSession, getSessionRole } from "@/lib/session-access";
 import { compilePortfolioStory } from "@/lib/portfolio/story-compiler";
 import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
 import { consultarVentasDelMes, keyDeProducto } from "@/lib/portfolio/facts-sql";
+import { mesesNoConfiables } from "@/lib/productos/confiabilidad-sql";
 import { monthLabel } from "@/lib/utils";
 import {
   projectNextMonth,
@@ -43,14 +44,22 @@ async function collectFacts(bId: number, month: string): Promise<PortfolioFacts 
     // Historia por producto (todos los meses ≤ mes del reporte). La clave
     // une por producto del catálogo o por nombre normalizado (los alias
     // retroactivos van uniendo la historia sola).
-    const histRows = (await sql`
+    const monthsSet = (await sql`
+      SELECT DISTINCT month FROM product_month_sales
+      WHERE business_id = ${bId} AND source = 'byte' AND month <= ${month}
+      ORDER BY month
+    `) as { month: string }[];
+    // Los meses cuyo reporte no cuadra con la venta de Byte no entran a la historia (lib/productos/confiabilidad.ts);
+    // el mes del reporte sí se muestra.
+    const noConfiables = await mesesNoConfiables(sql as never, bId, monthsSet.map((x) => x.month).filter((m) => m !== month));
+    const histRows = ((await sql`
       SELECT product_id::text AS product_id, product_name_raw, month,
              SUM(units)::float AS units, SUM(revenue)::float AS revenue
       FROM product_month_sales
       WHERE business_id = ${bId} AND source = 'byte' AND month <= ${month}
       GROUP BY product_id, product_name_raw, month
       ORDER BY month
-    `) as Record<string, unknown>[];
+    `) as Record<string, unknown>[]).filter((h) => !noConfiables.has(h.month as string));
     // La misma clave que el Deck (con el canal Y-/P- de Atelier): una sola definición.
     const keyOf = keyDeProducto;
     const historyByKey = new Map<string, { month: string; units: number; revenue: number }[]>();
@@ -67,12 +76,6 @@ async function collectFacts(bId: number, month: string): Promise<PortfolioFacts 
         arr.push({ month: m, units: Number(h.units) || 0, revenue: Number(h.revenue) || 0 });
       }
     }
-
-    const monthsSet = (await sql`
-      SELECT DISTINCT month FROM product_month_sales
-      WHERE business_id = ${bId} AND source = 'byte' AND month <= ${month}
-      ORDER BY month
-    `) as { month: string }[];
 
     const products: ProductFacts[] = rows.map((r) => {
       const units = Number(r.units) || 0;
@@ -102,7 +105,7 @@ async function collectFacts(bId: number, month: string): Promise<PortfolioFacts 
       monthLabel: monthLabel(month),
       generatedAt: new Date().toISOString(),
       products,
-      historyMonths: monthsSet.map((h) => h.month),
+      historyMonths: monthsSet.map((h) => h.month).filter((m) => !noConfiables.has(m)),
     };
 }
 

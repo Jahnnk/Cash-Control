@@ -300,6 +300,13 @@ function PestanaMes({ month, sede, onSede, onMes, onCanal }: { month: string; se
         </p>
       )}
       {sedeReal(sede) === ATELIER && <CanalAtelier vista={sede} onCanal={onCanal} reparto={datos.reparto} />}
+      {/* El reporte del mes no cuadra con la venta de Byte: se ve, pero avisado (22-oct-2026). */}
+      {sel?.aviso && (
+        <div className="flex gap-3 rounded-2xl border border-red-200 bg-red-50 px-5 py-4 text-sm text-red-900">
+          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div><div className="font-semibold">Reporte no confiable</div>{sel.aviso}</div>
+        </div>
+      )}
       {sel?.panorama
         ? <VistaMes p={sel.panorama} cargadoEl={sel.cargadoEl} conKpis={!onSede || porCanal} />
         : (
@@ -375,6 +382,15 @@ function PestanaTrimestre({ month, sede, onSede, onCanal }: { month: string; sed
         </div>
       )}
       {sedeReal(sede) === ATELIER && <CanalAtelier vista={sede} onCanal={onCanal} reparto={null} />}
+      {(data.sede.noConfiables ?? []).length > 0 && (
+        <div className="flex gap-3 rounded-2xl border border-amber-200 bg-amber-50 px-5 py-4 text-sm text-amber-900">
+          <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
+          <div className="space-y-1">
+            <div className="font-semibold">{data.sede.noConfiables!.map((x) => monthLabel(x.mes)).join(" y ")} {data.sede.noConfiables!.length === 1 ? "quedó" : "quedaron"} fuera de esta comparación</div>
+            {data.sede.noConfiables!.map((x) => <div key={x.mes}>{x.motivo}</div>)}
+          </div>
+        </div>
+      )}
       {t ? <VistaTrimestre t={t} meses={meses} /> : <Vacio>Esta sede no tiene reportes de rotación en esos meses.</Vacio>}
     </div>
   );

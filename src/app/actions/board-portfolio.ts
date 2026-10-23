@@ -54,6 +54,7 @@ import {
 } from "@/lib/portfolio/facts-sql";
 import { computeMovers, projectNextMonth, type MonthSummary } from "@/lib/portfolio/history";
 import { construirBoardPortfolio, type BoardPortfolio } from "@/lib/portfolio/board-view";
+import { mesesNoConfiables } from "@/lib/productos/confiabilidad-sql";
 import { monthLabel } from "@/lib/utils";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -100,11 +101,16 @@ async function mesesCargados(bId: number, month: string): Promise<string[]> {
 async function portafolioDeSede(
   bId: number, month: string, mesActual: string,
 ): Promise<BoardPortfolio | null> {
-  const [ventasRaw, historiaRaw, meses] = await Promise.all([
+  const [ventasRaw, historiaTodos, mesesTodos] = await Promise.all([
     ventasDelMes(bId, month),
     historiaHasta(bId, month),
     mesesCargados(bId, month),
   ]);
+  // Los meses cuyo reporte de productos no cuadra con la venta de Byte no entran a tendencias ni proyección
+  // (lib/productos/confiabilidad.ts, 22-oct-2026); el mes del deck sí se muestra.
+  const noConfiables = await mesesNoConfiables(sql as never, bId, mesesTodos.filter((m) => m !== month));
+  const historiaRaw = historiaTodos.filter((h) => !noConfiables.has(h.month));
+  const meses = mesesTodos.filter((m) => !noConfiables.has(m));
 
   // Los productos que Byte marcó como eliminados se sacan UNA vez, acá,
   // y no en cada consumidor: `armarFacts` los filtra por su cuenta, pero
