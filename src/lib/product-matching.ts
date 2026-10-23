@@ -24,6 +24,19 @@ export function normalizeProductName(name: string): string {
     .trim();
 }
 
+/**
+ * El canal de una línea de Atelier, por su prefijo en Byte (Jahnn y Luis, 22-oct-2026): «Y-» = producto terminado que se
+ * vende a las cafeterías (Fonavi y Centro), «P-» = a otros B2B; sin prefijo = sub-receta u otra línea → null. El matching
+ * quita el prefijo para encontrar el producto del catálogo, pero las ventas de un canal y otro NUNCA se suman en una fila:
+ * son el mismo producto vendido a clientes distintos (oct-2026: «P-BROWNIE» salía con 235 u = 181 P + 54 Y).
+ * Solo Atelier usa estos prefijos (las cafeterías no).
+ */
+export type CanalAtelier = "Y" | "P";
+export function canalDeLinea(name: string): CanalAtelier | null {
+  const m = /^\s*([YP])\s*-/i.exec(name.replace(/^\s*\[[^\]]*\]\s*/, ""));
+  return m ? (m[1].toUpperCase() as CanalAtelier) : null;
+}
+
 export type CatalogEntry = { id: string; name: string };
 
 export type MatchResult<T extends { name: string }> = {

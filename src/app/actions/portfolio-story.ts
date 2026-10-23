@@ -13,8 +13,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession, getSessionRole } from "@/lib/session-access";
 import { compilePortfolioStory } from "@/lib/portfolio/story-compiler";
 import { compilePortfolioIntelligence } from "@/lib/portfolio/intelligence";
-import { normalizeProductName } from "@/lib/product-matching";
-import { consultarVentasDelMes } from "@/lib/portfolio/facts-sql";
+import { consultarVentasDelMes, keyDeProducto } from "@/lib/portfolio/facts-sql";
 import { monthLabel } from "@/lib/utils";
 import {
   projectNextMonth,
@@ -52,8 +51,8 @@ async function collectFacts(bId: number, month: string): Promise<PortfolioFacts 
       GROUP BY product_id, product_name_raw, month
       ORDER BY month
     `) as Record<string, unknown>[];
-    const keyOf = (pid: string | null, raw: string) =>
-      pid || `raw:${normalizeProductName(raw)}`;
+    // La misma clave que el Deck (con el canal Y-/P- de Atelier): una sola definición.
+    const keyOf = keyDeProducto;
     const historyByKey = new Map<string, { month: string; units: number; revenue: number }[]>();
     for (const h of histRows) {
       const k = keyOf((h.product_id as string) || null, h.product_name_raw as string);
