@@ -31,6 +31,7 @@ import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/renta
 import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
 import { CAFETERIAS, IDS_CAFETERIAS, NOMBRE_CAFETERIAS, juntarFilas, juntarRango } from "@/lib/productos/cafeterias";
+import { ATELIER, VISTAS_ATELIER, esCanalAtelier, filtrarPorCanal, repartoPorCanal, sedeReal, type RepartoCanal } from "@/lib/productos/canal-atelier";
 import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 
@@ -90,6 +91,11 @@ async function filasDelMes(bId: number, month: string): Promise<{ filas: FilaPro
  * producto suma sus unidades e ingresos y el rango es del primer al último día cargado.
  */
 async function filasPara(bId: number, month: string): Promise<{ filas: FilaProducto[]; desde: string | null; hasta: string | null }> {
+  // Atelier por canal (Y- cafeterías / P- B2B): las filas de Atelier, solo las de ese canal (22-oct-2026).
+  if (esCanalAtelier(bId)) {
+    const a = await filasDelMes(ATELIER, month);
+    return { ...a, filas: filtrarPorCanal(a.filas, bId) };
+  }
   if (bId !== CAFETERIAS) return filasDelMes(bId, month);
   const partes = await Promise.all(IDS_CAFETERIAS.map((id) => filasDelMes(id, month)));
   const r = juntarRango(partes);
@@ -118,18 +124,18 @@ export async function getPanoramaProductos(month: string, businessId?: number): 
   const role = await getSessionRole();
   if (!role) return { ok: false, error: "Sin acceso." };
   const bId = businessId ?? (await activeBusinessId());
-  if (role.kind === "admin" && role.sede !== bId) return { ok: false, error: "Sin acceso a esta sede." };
+  if (role.kind === "admin" && role.sede !== sedeReal(bId)) return { ok: false, error: "Sin acceso a esta sede." };
   if (role.kind !== "admin" && role.kind !== "full") return { ok: false, error: "Sin acceso." };
   try {
     const [panorama, cargado] = await Promise.all([
       panoramaDe(bId, month),
-      sql`SELECT MAX(imported_at)::text AS c FROM product_period_sales WHERE business_id = ${bId} AND month = ${month}` as unknown as Promise<{ c: string | null }[]>,
+      sql`SELECT MAX(imported_at)::text AS c FROM product_period_sales WHERE business_id = ${sedeReal(bId)} AND month = ${month}` as unknown as Promise<{ c: string | null }[]>,
     ]);
     return {
       ok: true,
       data: {
         businessId: bId,
-        sede: SEDES.find((s) => s.id === bId)?.nombre ?? `Sede ${bId}`,
+        sede: VISTAS_ATELIER.find((v) => v.id === bId && esCanalAtelier(bId))?.nombre ?? SEDES.find((s) => s.id === bId)?.nombre ?? `Sede ${bId}`,
         panorama,
         cargadoEl: cargado[0]?.c ?? null,
       },
@@ -137,6 +143,20 @@ export async function getPanoramaProductos(month: string, businessId?: number): 
   } catch (e) {
     console.error("[getPanoramaProductos] failed:", e);
     return { ok: false, error: "No se pudo leer la rotación de productos." };
+  }
+}
+
+/** Cuánto vendió Atelier en el mes por canal: a las cafeterías (Y-), a otros B2B (P-) y sub-recetas (22-oct-2026). */
+export async function getRepartoCanalAtelier(month: string): Promise<Res<{ data: RepartoCanal | null }>> {
+  if (!mesValido(month)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  if (!puedeLeerDireccion(role) && !(role?.kind === "admin" && role.sede === ATELIER)) return { ok: false, error: "Sin acceso." };
+  try {
+    const { filas } = await filasDelMes(ATELIER, month);
+    return { ok: true, data: filas.length ? repartoPorCanal(filas) : null };
+  } catch (e) {
+    console.error("[getRepartoCanalAtelier] failed:", e);
+    return { ok: false, error: "No se pudo leer la venta de Atelier por canal." };
   }
 }
 
@@ -223,7 +243,7 @@ export async function getInformeTrimestral(hastaMes: string, businessId?: number
     };
     // «Fonavi + Centro» (0) también se compara con las demás, y siempre está en la tira de arriba.
     const TODAS = [{ id: CAFETERIAS, nombre: NOMBRE_CAFETERIAS }, ...SEDES];
-    const nombreDe = (id: number) => TODAS.find((s) => s.id === id)?.nombre ?? `Sede ${id}`;
+    const nombreDe = (id: number) => TODAS.find((s) => s.id === id)?.nombre ?? VISTAS_ATELIER.find((v) => v.id === id)?.nombre ?? `Sede ${id}`;
     const otras = TODAS.filter((s) => s.id !== bId);
     const [propio, ...resto] = await Promise.all([armar(bId), ...otras.map((s) => armar(s.id))]);
     const comparativo = [
