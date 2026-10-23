@@ -1,12 +1,13 @@
 /**
  * ¿El reporte de productos de un mes es confiable? (22-oct-2026). Se compara lo que suma el reporte de rotación de Byte
- * con la venta diaria de Byte de los mismos días: deberían ser casi iguales (abr–oct 2026, las tres sedes: −6% a +12%).
- * Si se pasa de 15%, el archivo está mal —Atelier mayo-2026 traía ~5 meses (S/201,761 contra S/38,343); abril, productos
- * P- a precio de lista (S/54,897 contra S/38,664)— y ese mes NO entra a tendencias ni comparaciones hasta que se vuelva a
- * subir bien. La regla es automática: al subir el archivo corregido, el mes vuelve solo.
+ * con la venta diaria de Byte de los mismos días: deberían ser casi iguales (may–oct 2026, las tres sedes: −6% a +4%).
+ * Si se pasa de 10% (Jahnn, 22-oct-2026; empezó en 15%), el reporte no sirve para comparar y ese mes NO entra a tendencias
+ * ni comparaciones hasta que se vuelva a subir bien. Casos: Atelier mayo-2026 traía ~5 meses (S/201,761 contra S/38,343);
+ * Atelier abril, productos P- a precio de lista (+42%); Fonavi y Centro abril, +12% (probables promociones contadas a
+ * precio de lista). La regla es automática: al subir el archivo corregido, el mes vuelve solo.
  */
 
-export const TOLERANCIA_REPORTE_PRODUCTOS = 0.15;
+export const TOLERANCIA_REPORTE_PRODUCTOS = 0.1;
 
 export type Confiabilidad = { confiable: boolean; productos: number; byte: number; difPct: number | null; motivo: string | null };
 
