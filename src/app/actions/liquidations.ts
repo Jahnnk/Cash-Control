@@ -11,6 +11,7 @@ import { neon } from "@neondatabase/serverless";
 import { getEntradaCandadoVentas } from "./breakeven";
 import { getEntradaSupervision } from "./supervisiones";
 import { getTodosLosDiasPausados } from "./dias-no-operativos";
+import { indicePausados, sinDiasPausados } from "@/lib/incentivos/dias-no-operativos";
 import { leerVentasAlDia } from "@/lib/kpis/ventas-al-dia-sql";
 import { entradaVentasVsByte } from "@/lib/kpis/ventas-al-dia";
 import { revalidatePath } from "next/cache";
@@ -94,6 +95,12 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
     `) as LiqDaily[];
   }
 
+  // Días que dirección pausó (corte de luz, feriado): se sacan del TICKET, igual que en el Panel de Sede
+  // (incentives.ts, decisión de Jahnn del 22-ago-2026). La venta de ese día sigue en el candado de ventas: esa plata entró.
+  // Antes el acta los contaba aunque el panel no: el panel y el pago podían decir tickets distintos (23-oct-2026).
+  const pausadosMes = await getTodosLosDiasPausados(`${month}-01`);
+  dailies = sinDiasPausados(dailies, indicePausados(pausadosMes), bId);
+
   let unverifiedDays = 0;
   let observedDays: { date: string; nota: string | null }[] = [];
   try {
@@ -126,7 +133,7 @@ async function collectForLiquidation(bId: number, month: string, mejorVendedor: 
   // saldría de un dato equivocado. Si no se puede leer, no se bloquea a ciegas: se avisa.
   let ventasVsByte = null;
   try {
-    const dia = (await leerVentasAlDia(sql as never, month, todayISO, await getTodosLosDiasPausados(`${month}-01`))).sedes.find((x) => x.businessId === bId);
+    const dia = (await leerVentasAlDia(sql as never, month, todayISO, pausadosMes)).sedes.find((x) => x.businessId === bId);
     ventasVsByte = dia ? entradaVentasVsByte(dia) : null;
   } catch (err) {
     console.error("[collectForLiquidation] ventas vs Byte:", err);
