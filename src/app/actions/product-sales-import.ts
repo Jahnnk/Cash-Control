@@ -37,6 +37,8 @@ import {
   type CargaRegistrada, type EstadoSemanal,
 } from "@/lib/incentivos/reportes-semanales";
 
+import { insertarMesDeProductos } from "@/lib/productos/mes-productos-sql";
+
 const sql = neon(process.env.DATABASE_URL!);
 
 function currentMonthLima(): string {
@@ -239,13 +241,8 @@ async function runImport(bId: number, input: ImportInput, batchNote: string,
       //    sigue igual sin enterarse de este cambio.
       sql`DELETE FROM product_month_sales
           WHERE business_id = ${bId} AND month = ${input.month} AND source = 'byte'`,
-      sql`INSERT INTO product_month_sales
-            (business_id, product_id, product_name_raw, month, units, revenue, source, import_batch_id)
-          SELECT ${bId}, product_id, MIN(product_name_raw), ${input.month},
-                 SUM(units), SUM(revenue), 'byte', ${batchId}
-          FROM rotacion_efectiva(${bId}, ${input.month})
-          GROUP BY product_id,
-                   CASE WHEN product_id IS NULL THEN lower(product_name_raw) ELSE NULL END`,
+      // Por producto Y por canal de Atelier (Y- / P-): ver lib/productos/mes-productos-sql.ts.
+      insertarMesDeProductos(sql as never, bId, input.month, batchId) as never,
     ]);
 
     // 3) Check de integridad natural contra las ventas Byte del sistema

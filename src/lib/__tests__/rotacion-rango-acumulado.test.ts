@@ -26,6 +26,8 @@ import { resolve } from "path";
 
 const leer = (rel: string) => readFileSync(resolve(process.cwd(), rel), "utf8");
 const action = leer("src/app/actions/product-sales-import.ts");
+// Desde el 22-oct-2026 la sentencia del mes vive en su propio archivo (la comparten el import y la reconstrucción).
+const mesSql = leer("src/lib/productos/mes-productos-sql.ts");
 
 describe("acumulación por períodos", () => {
   it("una carga nueva borra los períodos que PISA, no todo el mes", () => {
@@ -36,11 +38,12 @@ describe("acumulación por períodos", () => {
   });
 
   it("el mes se recalcula sumando sus períodos", () => {
-    expect(action).toMatch(/INSERT INTO product_month_sales/);
-    expect(action).toMatch(/SUM\(units\), SUM\(revenue\)/);
+    expect(action).toMatch(/insertarMesDeProductos\(/);
+    expect(mesSql).toMatch(/INSERT INTO product_month_sales/);
+    expect(mesSql).toMatch(/SUM\(units\), SUM\(revenue\)/);
     // Desde el 22-sep-2026 la suma sale de rotacion_efectiva: los períodos
     // que cuentan (los de dirección ganan a los de la sede que pisan).
-    expect(action).toMatch(/FROM rotacion_efectiva/);
+    expect(mesSql).toMatch(/FROM rotacion_efectiva/);
   });
 
   it("una carga solo reemplaza períodos de SU origen (sede o dirección)", () => {
@@ -48,7 +51,9 @@ describe("acumulación por períodos", () => {
   });
 
   it("agrupa los no matcheados por nombre para no partirlos en dos filas", () => {
-    expect(action).toMatch(/CASE WHEN product_id IS NULL THEN lower\(product_name_raw\) ELSE NULL END/);
+    expect(mesSql).toMatch(/CASE WHEN product_id IS NULL THEN lower\(product_name_raw\) ELSE NULL END/);
+    // …y por canal de Atelier: Y- y P- del mismo producto no se suman en una fila.
+    expect(mesSql).toMatch(/GROUP BY product_id, canal/);
   });
 
   it("ya NO exige que el reporte empiece el día 1", () => {

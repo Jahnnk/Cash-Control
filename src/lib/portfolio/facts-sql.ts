@@ -25,7 +25,7 @@
  * igual que en una sola sede.
  */
 
-import { normalizeProductName } from "@/lib/product-matching";
+import { normalizeProductName, canalDeLinea } from "@/lib/product-matching";
 import { monthLabel } from "@/lib/utils";
 import type { PortfolioFacts, ProductFacts } from "./types";
 
@@ -123,9 +123,15 @@ export async function consultarVentasDelMes(
   return filas as FilaVenta[];
 }
 
-/** Clave estable: el producto del catálogo, o su nombre normalizado. */
-export const keyDeProducto = (pid: string | null, raw: string): string =>
-  pid || `raw:${normalizeProductName(raw)}`;
+/**
+ * Clave estable: el producto del catálogo, o su nombre normalizado. En Atelier, además, su canal («Y-» cafeterías,
+ * «P-» B2B): el mismo producto vendido por los dos canales son dos líneas, no una (22-oct-2026).
+ */
+export const keyDeProducto = (pid: string | null, raw: string): string => {
+  const base = pid || `raw:${normalizeProductName(raw)}`;
+  const canal = canalDeLinea(raw);
+  return canal ? `${base}|${canal}` : base;
+};
 
 /**
  * El MISMO producto de carta, sin importar en qué sede se catalogó.
