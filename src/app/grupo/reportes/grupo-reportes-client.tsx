@@ -1,11 +1,11 @@
 "use client";
 
 /**
- * Grupo → Reportes (rediseño UX, 8-oct-2026): arriba, hasta cuándo hay datos y las dos cosas que se
- * generan para la reunión (el deck y el reporte ejecutivo); debajo, los cuatro reportes del mes,
- * todos plegados y cada uno con su conclusión a la vista. Se quitó el «Comparativo financiero del
- * mes» (saldo BCP / entró / salió): repetía el margen de caja de «Los dos márgenes» y mostraba el
- * saldo de HOY aunque se mirara un mes pasado; la liquidez vive en Sistema de Dirección.
+ * Grupo → Reportes. Fase 2 (23-oct-2026, «la epifanía» de Jahnn): el mes en el orden de sus 8 puntos, en 4 secciones —
+ * 1 Ventas (Byte, por sede y grupo) · 2 Del sol vendido a la utilidad (costos variables y fijos, EBITDA como termómetro,
+ * regla 33-33-33 y Profit First; plegado el estado de resultados y el cuadre con el Excel) · 3 Productos (potenciar y
+ * reemplazar) · 4 Para el contador (todo lo técnico, plegado). Arriba: hasta cuándo hay datos y lo que se genera para la
+ * reunión (deck y reporte ejecutivo).
  */
 
 import { useState } from "react";
@@ -26,6 +26,9 @@ import { Regla33 } from "./regla-33";
 import { MotoresEbitda } from "./motores-ebitda";
 import type { Motores } from "@/lib/motores-ebitda";
 import { ProfitFirst } from "./profit-first";
+import { VentasMeses } from "./ventas-meses";
+import { CascadaSol } from "./cascada-sol";
+import { ProductosDecision } from "./productos-decision";
 import { PuntoEquilibrio } from "./punto-equilibrio";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
@@ -83,28 +86,32 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         </div>
       </header>
 
-      {/* Lo real de las tres sedes en 6 meses: ventas → EBITDA → ganancia (Fase 2, 16-oct-2026). */}
-      <EstadoResultados cifras={cifras} mes={selectedMonth} periodo={periodo} />
-      {/* La conciliación que Jahnn hizo a mano con setiembre, ahora sola (16-oct-2026). */}
-      <ConciliacionMes cifras={cifras} periodo={periodo} />
-      <DosMargenes cifras={cifras} periodo={periodo} />
-      {/* Los cuatro motores: cuál frena el EBITDA (15-oct-2026). */}
-      <MotoresEbitda motores={motores} periodo={periodo} />
-      {/* El EBITDA como termómetro: la regla del 33-33-33 de la asesoría (15-oct-2026). */}
-      <Regla33 cifras={cifras} periodo={periodo} />
-      {/* Profit First: apartar el 25% de la venta primero (15-oct-2026). */}
-      <ProfitFirst cifras={cifras} periodo={periodo} />
-      <FlujoDeCaja flujo={flujo} periodo={periodo} />
-      {/* El piso de cada sede, como lo enseña el libro (5-oct-2026). */}
-      <PuntoEquilibrio mes={selectedMonth} periodo={periodo} />
+      {/* Fase 2 (23-oct-2026): los 8 puntos de Jahnn en 4 secciones, en el orden del sol vendido.
+          1 · Ventas (punto 1). */}
+      <VentasMeses mes={selectedMonth} periodo={periodo} />
 
-      {/* Lo que antes repetía el Resumen del Dashboard (19-oct-2026): las seis cifras, el resultado según el Excel y el
-          tablero de rentabilidad. Plegado: es para el contador, no para el día a día. */}
+      {/* 2 · Del sol vendido a la utilidad (puntos 2 a 7): la cascada, y plegado el detalle y el cuadre con el Excel. */}
+      <CascadaSol cifras={cifras} periodo={periodo} />
+      <div className="space-y-3">
+        <EstadoResultados cifras={cifras} mes={selectedMonth} periodo={periodo} />
+        <ConciliacionMes cifras={cifras} periodo={periodo} />
+      </div>
+
+      {/* 3 · Productos (punto 8): qué potenciar y qué reemplazar. */}
+      <ProductosDecision mes={selectedMonth} />
+
+      {/* 4 · Para el contador: todo lo técnico, plegado (antes eran 8 secciones sueltas). */}
       <SeccionDesplegable
         titulo="Para el contador"
-        subtitulo="Las seis cifras, el resultado según el Excel y el tablero de rentabilidad (EBITDA)."
+        subtitulo="Los márgenes, los motores del EBITDA, la regla 33-33-33 y Profit First en detalle, el flujo de caja, el punto de equilibrio, las seis cifras y el resultado según el Excel."
       >
-        <div className="space-y-8">
+        <div className="space-y-4">
+          <DosMargenes cifras={cifras} periodo={periodo} />
+          <MotoresEbitda motores={motores} periodo={periodo} />
+          <Regla33 cifras={cifras} periodo={periodo} />
+          <ProfitFirst cifras={cifras} periodo={periodo} />
+          <FlujoDeCaja flujo={flujo} periodo={periodo} />
+          <PuntoEquilibrio mes={selectedMonth} periodo={periodo} />
           <SeisCifrasPanel cifras={cifras} periodo={periodo} />
           <CajaExcel cifras={cifras} periodo={periodo} mesesHref={`/grupo/reportes?mes=${selectedMonth}`} />
           <TableroEbitda cifras={cifras} breakeven={breakeven} motores={motores} selectedMonth={selectedMonth} isCurrentMonth={selectedMonth === mesActual} periodo={periodo} />
