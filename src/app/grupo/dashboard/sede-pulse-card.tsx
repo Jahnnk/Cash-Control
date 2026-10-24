@@ -140,12 +140,12 @@ export function SedePulseCard({ s }: { s: SedePulse }) {
               <span className="font-medium text-gray-700 tabular-nums">{Math.round((s.ventasMes / s.meta) * 100)}%</span>
             </div>
             <ProgressBar pct={(s.ventasMes / s.meta) * 100} tone={s.ventasMes >= s.meta ? "positive" : "neutral"} />
-            {eq !== null && <div className="mt-2 text-[11px] text-gray-500">Punto de equilibrio: <span className={`font-medium tabular-nums ${eq >= 100 ? "text-emerald-700" : "text-gray-700"}`}>{Math.round(eq)}% cubierto</span></div>}
+            {eq !== null && <div className="mt-2 text-[11px] text-gray-500">Piso del mes (coach): <span className={`font-medium tabular-nums ${eq >= 100 ? "text-emerald-700" : "text-gray-700"}`}>{Math.round(eq)}% cubierto</span></div>}
           </>
         ) : eq !== null ? (
           <>
             <div className="flex items-baseline justify-between text-[11px] mb-1.5">
-              <span className="text-gray-500">Punto de equilibrio</span>
+              <span className="text-gray-500">Piso del mes (coach)</span>
               <span className="font-medium text-gray-700 tabular-nums">{Math.round(eq)}%</span>
             </div>
             <ProgressBar pct={eq} tone={eqTone} />

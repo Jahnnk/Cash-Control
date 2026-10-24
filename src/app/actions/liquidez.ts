@@ -68,11 +68,14 @@ async function derivado(bId: number, hoy: string): Promise<EntradaSede["derivado
       COALESCE((SELECT SUM(amount) FROM bank_income_items
         WHERE business_id = ${bId} AND date > ${fecha} AND date <= ${hoy}
           AND (is_special_loan = false OR loan_via_bank = true)
-          AND payment_method <> 'efectivo' AND archived = false), 0)::float AS entra,
+          AND payment_method <> 'efectivo' AND archived = false
+          -- Filas con el tipo cruzado: fuera del saldo calculado hasta que se corrijan (lib/revisar-tipo.ts).
+          AND COALESCE(note, '') NOT ILIKE '[REVISAR TIPO]%'), 0)::float AS entra,
       COALESCE((SELECT SUM(amount) FROM expenses
         WHERE business_id = ${bId} AND date > ${fecha} AND date <= ${hoy}
           AND payment_method NOT IN ('efectivo','pendiente_atelier','socio')
-          AND (is_special_loan = false OR loan_via_bank = true) AND archived = false), 0)::float AS sale
+          AND (is_special_loan = false OR loan_via_bank = true) AND archived = false
+          AND category <> 'REVISAR TIPO' AND COALESCE(concept, '') NOT ILIKE '[REVISAR TIPO]%'), 0)::float AS sale
   `) as { entra: number; sale: number }[];
 
   return {

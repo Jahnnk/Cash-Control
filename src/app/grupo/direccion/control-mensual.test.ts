@@ -58,7 +58,7 @@ describe("Control mensual (pantalla)", () => {
   });
   test("cierre: las 6 preguntas en una tabla y los pasos del libro", () => {
     const html = render(h(VistaCierre, { c: cierre }));
-    for (const t of ["¿Cuánto vendí este mes?", "¿Cuánto me costó vender eso?", "¿Cuánto gasté en operar el negocio?", "¿Cuánto gané realmente?", "¿Cuánto tengo libre en caja?", "¿Superé mi punto de equilibrio?",
+    for (const t of ["¿Cuánto vendí este mes?", "¿Cuánto me costó vender eso?", "¿Cuánto gasté en operar el negocio?", "¿Cuánto gané realmente?", "¿Cuánto tengo libre en caja?", "¿Superé mi piso del mes (coach)?",
       "Estado de resultados simplificado", "Comparación vs. agosto", "Flujo de caja del mes", "Proyección de octubre"]) expect(html).toContain(t);
     expect((html.match(/<table/g) ?? []).length).toBe(1);
     expect(html).toMatch(/Sí<span class="hidden sm:inline"> · <\/span><span class="block sm:inline">S\/11,591/); // equilibrio: ventas − piso, en la misma tabla

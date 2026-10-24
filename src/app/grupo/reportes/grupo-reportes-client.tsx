@@ -23,6 +23,7 @@ import { DosMargenes } from "./dos-margenes";
 import { ConciliacionMes } from "./conciliacion-mes";
 import { EstadoResultados } from "./estado-resultados";
 import { Regla33 } from "./regla-33";
+import { SemaforoMes } from "@/app/grupo/dashboard/semaforo-mes";
 import { MotoresEbitda } from "./motores-ebitda";
 import type { Motores } from "@/lib/motores-ebitda";
 import { ProfitFirst } from "./profit-first";
@@ -90,7 +91,9 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
           1 · Ventas (punto 1). */}
       <VentasMeses mes={selectedMonth} periodo={periodo} />
 
-      {/* 2 · Del sol vendido a la utilidad (puntos 2 a 7): la cascada, y plegado el detalle y el cuadre con el Excel. */}
+      {/* 2 · Del sol vendido a la utilidad (puntos 2 a 7): la cascada, y plegado el detalle y el cuadre con el Excel.
+          Arriba, si esas cifras son confiables (controles de fiabilidad, 24-oct-2026). */}
+      <SemaforoMes mes={selectedMonth} />
       <CascadaSol cifras={cifras} periodo={periodo} />
       <div className="space-y-3">
         <EstadoResultados cifras={cifras} mes={selectedMonth} periodo={periodo} />
@@ -108,6 +111,7 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         <div className="space-y-4">
           <DosMargenes cifras={cifras} periodo={periodo} />
           <MotoresEbitda motores={motores} periodo={periodo} />
+          <SemaforoMes mes={selectedMonth} />
           <Regla33 cifras={cifras} periodo={periodo} />
           <ProfitFirst cifras={cifras} periodo={periodo} />
           <FlujoDeCaja flujo={flujo} periodo={periodo} />

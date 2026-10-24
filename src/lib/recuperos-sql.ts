@@ -43,6 +43,8 @@ async function recuperosDeUnMes(sql: SqlTag, bId: number, desde: string, hasta: 
     sql`
       SELECT date::text AS fecha, amount::float AS monto, COALESCE(note, '') AS nota FROM bank_income_items
       WHERE business_id = ${bId} AND date BETWEEN ${desde} AND ${hasta} AND archived = false AND is_fonavi_reimbursement = true
+        -- Una fila con Grupo «Ventas» es venta aunque su nota parezca un reembolso (A4, 24-oct-2026).
+        AND is_byte_sale = false
     ` as Promise<DevolucionRecibida[]>,
     sql`
       SELECT date::text AS fecha, (amount - COALESCE(atelier_amount, amount))::float AS otras FROM expenses
