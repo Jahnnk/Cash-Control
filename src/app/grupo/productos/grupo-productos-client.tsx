@@ -21,6 +21,7 @@ import { RentabilidadProductos } from "./rentabilidad-productos";
 import { PisoPrecios } from "./piso-precios";
 import { ManoDeObra } from "./mano-de-obra";
 import { DatosCargados } from "./datos-cargados";
+import { BuscadorProducto } from "./buscador-producto";
 import { ImportarReportesModal } from "./importar-reportes";
 import { VistaMes } from "@/components/productos/vista-mes";
 import { VistaTrimestre } from "@/components/productos/vista-trimestre";
@@ -123,6 +124,9 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
 
       {/* Qué fechas cubren los reportes de Byte cargados (4-oct-2026): una línea; el detalle, a un toque. */}
       <DatosCargados version={version} soloSede={sedeFija} />
+
+      {/* «Jahnn, el batido de plátano no se vende»: buscarlo y ver sus ventas por sede, mes a mes (24-oct-2026). */}
+      <BuscadorProducto key={`b-${version}`} month={month} sedeFija={sedeFija} />
 
       <div className="border-b border-gray-200">
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

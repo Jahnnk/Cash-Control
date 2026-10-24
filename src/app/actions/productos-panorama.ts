@@ -32,6 +32,8 @@ import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
 import { CAFETERIAS, IDS_CAFETERIAS, NOMBRE_CAFETERIAS, juntarFilas, juntarRango } from "@/lib/productos/cafeterias";
 import { confiabilidadDelMes } from "@/lib/productos/confiabilidad-sql";
+import { evaluarReporteProductos } from "@/lib/productos/confiabilidad";
+import { armarHistorial, type FilaRotacion, type HistorialProductos, type MesSede } from "@/lib/productos/historial-producto";
 import { ATELIER, VISTAS_ATELIER, esCanalAtelier, filtrarPorCanal, repartoPorCanal, sedeReal, type RepartoCanal } from "@/lib/productos/canal-atelier";
 import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
@@ -170,6 +172,55 @@ export async function getPanoramaProductos(month: string, businessId?: number): 
   } catch (e) {
     console.error("[getPanoramaProductos] failed:", e);
     return { ok: false, error: "No se pudo leer la rotación de productos." };
+  }
+}
+
+/**
+ * El historial de todos los productos, sede por sede y mes a mes (hasta `hastaMes`, `meses` hacia atrás), para el buscador
+ * de producto (24-oct-2026). Una consulta por sede; la búsqueda y los periodos se resuelven en la pantalla.
+ * `soloSede`: en la página de una sede, solo esa.
+ */
+export async function getHistorialProductos(hastaMes: string, meses = 12, soloSede: number | null = null): Promise<Res<{ data: HistorialProductos }>> {
+  if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
+  const lista = mesesAntes(hastaMes, Math.min(12, Math.max(1, meses)));
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  try {
+    const sedes = await Promise.all(SEDES.filter((x) => soloSede === null || x.id === sedeReal(soloSede)).map(async (s) => {
+      const filas = (await sql`
+        SELECT m AS mes, r.product_name_raw AS nombre, SUM(r.units)::float AS unidades, SUM(r.revenue)::float AS ingresos,
+               MIN(r.period_start)::text AS desde, MAX(r.period_end)::text AS hasta
+        FROM unnest(${lista}::text[]) AS m CROSS JOIN LATERAL rotacion_efectiva(${s.id}, m) r
+        GROUP BY 1, 2
+      `) as (FilaRotacion & { desde: string; hasta: string })[];
+      // Lo que cubre cada mes y su total; ¿cuadra con la venta de Byte de esos días? (lib/productos/confiabilidad.ts)
+      const porMes = new Map<string, MesSede>();
+      for (const f of filas) {
+        const m = porMes.get(f.mes) ?? { mes: f.mes, total: 0, desde: f.desde, hasta: f.hasta, confiable: true };
+        m.total += f.ingresos;
+        if (f.desde < (m.desde ?? f.desde)) m.desde = f.desde;
+        if (f.hasta > (m.hasta ?? f.hasta)) m.hasta = f.hasta;
+        porMes.set(f.mes, m);
+      }
+      const rangos = [...porMes.values()];
+      if (rangos.length > 0) {
+        const ini = rangos.reduce((a, m) => (m.desde! < a ? m.desde! : a), rangos[0].desde!);
+        const fin = rangos.reduce((a, m) => (m.hasta! > a ? m.hasta! : a), rangos[0].hasta!);
+        const byte = (await sql`
+          SELECT date::text AS fecha, total::float AS total FROM byte_ventas_efectiva WHERE business_id = ${s.id} AND date BETWEEN ${ini} AND ${fin}
+        `) as { fecha: string; total: number }[];
+        for (const m of rangos) {
+          const venta = byte.filter((b) => b.fecha >= m.desde! && b.fecha <= m.hasta!).reduce((t, b) => t + b.total, 0);
+          m.confiable = evaluarReporteProductos({ sede: s.nombre, mes: m.mes, productos: m.total, byte: venta }).confiable;
+        }
+      }
+      return { id: s.id, nombre: s.nombre, filas: filas.map(({ mes, nombre, unidades, ingresos }) => ({ mes, nombre, unidades, ingresos })), meses: rangos };
+    }));
+    return { ok: true, data: armarHistorial({ meses: lista, hoy, sedes }) };
+  } catch (e) {
+    console.error("[getHistorialProductos] failed:", e);
+    return { ok: false, error: "No se pudo leer el historial de productos." };
   }
 }
 
