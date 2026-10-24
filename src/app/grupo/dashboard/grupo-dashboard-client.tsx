@@ -228,7 +228,7 @@ export function GrupoDashboardClient({
         <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Grupo Yayi&apos;s</h1>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
           <SelectorMes mes={selectedMonth} mesActual={mesActual} />
-          {/* Los dos importables (15-oct-2026): Byte, que Jahnn sube cada semana, y el Excel de finanzas. */}
+          {/* Los dos importables del Dashboard: las ventas de Byte, que Jahnn sube cada semana, y el Excel de finanzas (la rotación se sube en Productos, 24-oct-2026). */}
           <BotonSubirByte onCambio={() => setVersionCargas((v) => v + 1)} />
           <SubirExcelKelly onCerrar={() => setVersionCargas((v) => v + 1)} />
         </div>

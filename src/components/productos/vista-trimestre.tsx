@@ -88,7 +88,7 @@ export function VistaTrimestre({ t, meses }: { t: InformeTrimestral; meses: stri
           <AlertTriangle className="w-5 h-5 shrink-0 mt-0.5" />
           <div>
             <strong>{capital(nombreMes(alguna.month))} vende muy poco por día</strong> comparado con los otros meses. Lo más probable es
-            que el reporte cargado sea parcial: vuelve a subirlo desde «Cargas de Byte» antes de sacar conclusiones.
+            que el reporte cargado sea parcial: vuelve a subirlo desde «Reportes de rotación» antes de sacar conclusiones.
           </div>
         </div>
       )}

@@ -19,9 +19,14 @@
  * del archivo lo dice, se propone), se sueltan los archivos y, ANTES de
  * guardar, cada uno muestra qué cubre y qué va a pasar: nuevo, reemplaza tu
  * carga anterior, o cómo se compara con lo que subió la sede.
+ *
+ * 24-oct-2026: cada reporte tiene UNA puerta (decisión de Jahnn). El Dashboard de Grupo abre esta
+ * ventana solo con el reporte de ventas; Grupo → Productos, solo con los de rotación (`tipos`). Si
+ * se suelta un reporte en el lugar que no es, no se sube: se avisa adónde llevarlo.
  */
 
 import { useEffect, useRef, useState } from "react";
+import Link from "next/link";
 import { X, Upload, Loader2, CheckCircle2, AlertTriangle, FileSpreadsheet, Trash2 } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { parseByteRotacion, type ByteRotacionItem } from "@/lib/byte-rotacion-parser";
@@ -32,7 +37,8 @@ import { compararVentasDireccion, importVentasDireccion, importMenorRotacion, ty
 import { queHaraLaCarga, sedeDelNombre, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { getCoberturaRotacion } from "@/app/actions/productos-panorama";
 import { GrillaCobertura, FaltaSubir, casilla, type DatosCobertura } from "./grilla-cobertura";
-import { limitesDelMes, type DetalleReporte } from "@/lib/productos/estado-reportes";
+import { TODOS_LOS_REPORTES, limitesDelMes, type DetalleReporte } from "@/lib/productos/estado-reportes";
+import { TITULO_TIPO, otraPuerta, tituloVentana } from "@/lib/productos/puerta-reportes";
 
 const SEDES = [
   { id: 2, nombre: "Fonavi" },
@@ -64,8 +70,6 @@ export function reportesPara(mes: string, hoy: string): DefReporte[] {
     { tipo: "menor", titulo: "Productos con menor rotación", ejemplo: `Platos con menor rotacion del ${iniMenor} al ${fin}`, ayuda: `Lo que casi no se vende. Del 01 al ${hasta}, o un solo rango largo (del ${dm(iniMenor)}). Cada rango se guarda aparte.` },
   ];
 }
-const TITULO_TIPO: Record<TipoReporteByte, string> = { ventas: "Reporte de ventas", mayor: "Productos con mayor rotación", menor: "Productos con menor rotación" };
-
 /** Un cuadro para un solo tipo de reporte. */
 export function CuadroReporte({ r, deshabilitado, cargados, estado, onArchivos }: {
   r: DefReporte;
@@ -122,6 +126,8 @@ type Archivo = {
   comparacion?: { sede: number; data: ComparacionVentas } | { sede: number; error: string };
   // Menor rotación
   productos?: ProductoMenorRotacion[];
+  /** El reporte va en otro lugar: el enlace para llevarlo. */
+  irA?: { href: string; lugar: string };
 };
 
 const fecha = (iso?: string | null) => (iso ? `${iso.slice(8)}/${iso.slice(5, 7)}` : "—");
@@ -130,11 +136,13 @@ function cruzaDeMes(desde?: string | null, hasta?: string | null) {
   return !!desde && !!hasta && desde.slice(0, 7) !== hasta.slice(0, 7);
 }
 
-export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos, onClose, onImportado }: {
+export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos, tipos = TODOS_LOS_REPORTES, onClose, onImportado }: {
   sedeInicial: number | null;
   /** El mes de la tarjeta que se tocó (YYYY-MM): los cuadros piden los archivos de ese mes. */
   mesInicial?: string | null;
   periodos: PeriodoCargado[];
+  /** Qué reportes se suben en este lugar (por defecto los tres). */
+  tipos?: TipoReporteByte[];
   onClose: () => void;
   onImportado: () => void;
 }) {
@@ -190,6 +198,12 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
         const tipo = tipoDeReporte(rows);
         if (!tipo) {
           actualizar(clave, { estado: "error", error: "No reconozco este reporte. Sirven «Ventas de <MES>», «Platos con mayor rotación» y «Platos con menor rotación» de Byte." });
+          continue;
+        }
+        // Cada reporte tiene una sola puerta: si no es de aquí, se dice adónde va y no se sube.
+        const otra = otraPuerta(tipo, tipos);
+        if (otra) {
+          actualizar(clave, { tipo, estado: "error", error: otra.error, irA: { href: otra.href, lugar: otra.lugar } });
           continue;
         }
         // Cada cuadro recibe solo su reporte: así no se sube uno por otro.
@@ -343,7 +357,7 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
       <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
         <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
           <h2 className="text-base font-semibold text-gray-900 flex items-center gap-2">
-            <FileSpreadsheet className="w-5 h-5 text-primary" /> Subir reportes de Byte
+            <FileSpreadsheet className="w-5 h-5 text-primary" /> {tituloVentana(tipos)}
           </h2>
           <button onClick={onClose} disabled={subiendo} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100" aria-label="Cerrar">
             <X className="w-4 h-4" />
@@ -354,8 +368,8 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
           {cobertura && (
             <div className="space-y-2">
               <div className="text-xs font-semibold text-gray-700">Qué tiene cada sede <span className="font-normal text-gray-500">· toca la tarjeta del mes que vas a subir</span></div>
-              <GrillaCobertura compacto datos={cobertura} elegido={{ sede, mes }} onCelda={(id, m) => { if (!subiendo) { setSede(id); setMes(m); } }} />
-              {sede !== null ? <FaltaSubir datos={cobertura} soloSede={sede} /> : <p className="text-[11px] text-gray-500">Elige una sede (o toca una tarjeta) para ver qué reporte le falta.</p>}
+              <GrillaCobertura compacto datos={cobertura} tipos={tipos} elegido={{ sede, mes }} onCelda={(id, m) => { if (!subiendo) { setSede(id); setMes(m); } }} />
+              {sede !== null ? <FaltaSubir datos={cobertura} soloSede={sede} tipos={tipos} /> : <p className="text-[11px] text-gray-500">Elige una sede (o toca una tarjeta) para ver qué reporte le falta.</p>}
             </div>
           )}
 
@@ -374,7 +388,7 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
 
           <div className="space-y-1.5">
             <div className="flex flex-wrap items-center gap-2">
-              <div className="text-xs font-semibold text-gray-700">2 · Sube cada reporte en su cuadro</div>
+              <div className="text-xs font-semibold text-gray-700">{tipos.length === 1 ? "2 · Sube el archivo" : "2 · Sube cada reporte en su cuadro"}</div>
               {mes && sede !== null && (
                 <span className="inline-flex items-center gap-1.5 rounded-full bg-primary/10 px-2.5 py-0.5 text-[11px] font-semibold text-primary">
                   {nombreSede} · {monthLabel(mes)}
@@ -382,8 +396,8 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
                 </span>
               )}
             </div>
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-              {reportesPara(mes ?? cobertura?.hoy.slice(0, 7) ?? "2026-10", cobertura?.hoy ?? new Date().toISOString().slice(0, 10)).map((r) => (
+            <div className={`grid grid-cols-1 gap-3 ${tipos.length === 3 ? "sm:grid-cols-3" : tipos.length === 2 ? "sm:grid-cols-2" : ""}`}>
+              {reportesPara(mes ?? cobertura?.hoy.slice(0, 7) ?? "2026-10", cobertura?.hoy ?? new Date().toISOString().slice(0, 10)).filter((r) => tipos.includes(r.tipo)).map((r) => (
                 <CuadroReporte key={r.tipo} r={r} deshabilitado={subiendo}
                   cargados={archivos.filter((a) => a.tipo === r.tipo && a.estado !== "error").length}
                   estado={cobertura && sede !== null && mes ? casilla(cobertura, sede, mes).tres[r.tipo] : null}
@@ -391,8 +405,12 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
               ))}
             </div>
             <p className="text-[11px] text-gray-500">
-              {mes ? "Cada cuadro muestra qué título debe traer el archivo de ese mes y si ese reporte ya está. " : "Toca la tarjeta de un mes para que los cuadros pidan los archivos de ese mes. "}
+              {tipos.length === 1
+                ? (mes ? "El cuadro muestra qué título debe traer el archivo de ese mes y si ya está. " : "Toca la tarjeta de un mes para que el cuadro pida el archivo de ese mes. ")
+                : (mes ? "Cada cuadro muestra qué título debe traer el archivo de ese mes y si ese reporte ya está. " : "Toca la tarjeta de un mes para que los cuadros pidan los archivos de ese mes. ")}
               Si sueltas uno equivocado, te avisa.
+              {!tipos.includes("ventas") && " El reporte de ventas se sube en el Dashboard."}
+              {tipos.length === 1 && tipos[0] === "ventas" && " Los de mayor y menor rotación se suben en Productos."}
             </p>
           </div>
 
@@ -433,6 +451,7 @@ export function ImportarReportesModal({ sedeInicial, mesInicial = null, periodos
                       </div>
                     </div>
                     {a.error && <div className="text-xs text-red-700 mt-1">{a.error}</div>}
+                    {a.irA && <Link href={a.irA.href} className="mt-1 inline-block text-xs font-semibold text-primary hover:underline">Ir a {a.irA.lugar} →</Link>}
                     {mes && a.month && a.tipo !== "menor" && a.month !== mes && a.estado === "listo" && (
                       <div className="text-xs text-amber-800 mt-1">Elegiste {monthLabel(mes)}, pero este archivo es de {monthLabel(a.month)}: se guardará como {monthLabel(a.month)}.</div>
                     )}

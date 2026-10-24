@@ -2,7 +2,8 @@ import { describe, it, expect } from "vitest";
 import { celdaCobertura, marcarSospechosas, type PeriodoCargado } from "../productos/cobertura-rotacion";
 import { mesesDesdeAbril } from "../productos/cobertura-datos";
 import { mesesEnPalabras, casilla, FaltaSubir, type DatosCobertura } from "../../app/grupo/productos/grilla-cobertura";
-import { reportesQueFaltan, reportesPorRevisar, todoCompleto } from "../productos/estado-reportes";
+import { reportesQueFaltan, reportesPorRevisar, todoCompleto, REPORTES_DEL_DASHBOARD, REPORTES_DE_PRODUCTOS } from "../productos/estado-reportes";
+import { otraPuerta, tituloVentana } from "../productos/puerta-reportes";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { GrillaCobertura } from "../../app/grupo/productos/grilla-cobertura";
@@ -103,5 +104,60 @@ describe("un reporte subido que no cuadra con ventas NO es «falta subir» (Atel
     expect(html).toContain("Mayor rotación de abril: no cuadra con ventas (+42%)");
     // Y abril ya no aparece como mayor rotación pendiente.
     expect(html).not.toMatch(/Mayor rotación: abril/);
+  });
+});
+
+describe("una sola puerta por reporte (24-oct-2026): cada lugar mira solo sus reportes", () => {
+  // Fonavi en setiembre: ventas completas, mayor completa, menor sin subir.
+  const datos: DatosCobertura = {
+    hoy: HOY,
+    periodos: [p(2, "2026-09", "2026-09-01", "2026-09-30")],
+    ventas: [{ businessId: 2, month: "2026-09", desde: "2026-09-01", hasta: "2026-09-30", dias: 30, total: 1000 }],
+    menor: [],
+  };
+  const { tres } = casilla(datos, 2, "2026-09");
+
+  it("en el Dashboard (solo ventas) el mes está completo aunque falte la menor rotación", () => {
+    expect(reportesQueFaltan(tres, REPORTES_DEL_DASHBOARD)).toEqual([]);
+    expect(todoCompleto(tres, REPORTES_DEL_DASHBOARD)).toBe(true);
+  });
+
+  it("en Productos (mayor y menor) falta 1 de 2", () => {
+    expect(reportesQueFaltan(tres, REPORTES_DE_PRODUCTOS)).toEqual(["menor"]);
+    const html = renderToStaticMarkup(createElement(GrillaCobertura, { datos, tipos: REPORTES_DE_PRODUCTOS, onCelda: () => {} }));
+    expect(html).toContain("Falta 1 de 2");
+    expect(html).not.toContain("Ventas</span>");
+  });
+
+  it("la grilla del Dashboard no habla de productos", () => {
+    const html = renderToStaticMarkup(createElement(GrillaCobertura, { datos, tipos: REPORTES_DEL_DASHBOARD, onCelda: () => {} }));
+    expect(html).not.toContain("en productos");
+    expect(html).not.toContain("Mayor");
+    expect(html).toContain("✓ Completo");
+    // Centro no tiene ventas: dice «Falta», sin «de 1».
+    expect(html).toMatch(/>Falta</);
+    expect(html).not.toContain("de 1");
+  });
+
+  it("la lista de lo que falta solo nombra los reportes del lugar", () => {
+    const dash = renderToStaticMarkup(createElement(FaltaSubir, { datos, soloSede: 2, tipos: REPORTES_DEL_DASHBOARD }));
+    expect(dash).not.toContain("Menor rotación");
+    const prod = renderToStaticMarkup(createElement(FaltaSubir, { datos, soloSede: 2, tipos: REPORTES_DE_PRODUCTOS }));
+    expect(prod).toContain("Menor rotación");
+    expect(prod).not.toContain("Reporte de ventas");
+  });
+});
+
+describe("la ventana avisa si el reporte va en otro lugar", () => {
+  it("un reporte de rotación en el Dashboard se manda a Productos, y el de ventas en Productos al Dashboard", () => {
+    expect(otraPuerta("mayor", REPORTES_DEL_DASHBOARD)).toMatchObject({ href: "/grupo/productos", lugar: "Productos" });
+    expect(otraPuerta("menor", REPORTES_DEL_DASHBOARD)?.error).toContain("se sube en Productos");
+    expect(otraPuerta("ventas", REPORTES_DE_PRODUCTOS)).toMatchObject({ href: "/grupo/dashboard", lugar: "el Dashboard" });
+    expect(otraPuerta("ventas", REPORTES_DEL_DASHBOARD)).toBeNull();
+    expect(otraPuerta("mayor", REPORTES_DE_PRODUCTOS)).toBeNull();
+  });
+  it("el título dice qué se sube", () => {
+    expect(tituloVentana(REPORTES_DEL_DASHBOARD)).toBe("Subir el reporte de ventas de Byte");
+    expect(tituloVentana(REPORTES_DE_PRODUCTOS)).toBe("Subir reportes de rotación de Byte");
   });
 });
