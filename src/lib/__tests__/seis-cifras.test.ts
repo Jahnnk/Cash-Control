@@ -36,7 +36,7 @@ describe("cifras de una sede", () => {
       caja: { entro: 11000, salio: 12700, rescate: 400 },
     });
     expect(s.ganancia).toBe(10000 - 4000 - (3000 + 600));
-    expect(s.fuera).toEqual({ deudas: 1000, inversion: 800, noEsGasto: 3000, otrasSedes: 300, ahorro: 600, reparto: 2400, rescate: 400, pagadoPorSocio: 0 });
+    expect(s.fuera).toEqual({ deudas: 1000, inversion: 800, noEsGasto: 3000, otrasSedes: 300, ahorro: 600, reparto: 2400, rescate: 400, pagadoPorSocio: 0, compensado: 0, revisarTipo: 0 });
     expect(s.caja.flujo).toBe(-1700);
   });
 

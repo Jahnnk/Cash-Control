@@ -52,6 +52,8 @@ export function conciliarSede(sede: CifrasSede, finDeMes: string): ConciliacionS
     { etiqueta: "Préstamos recibidos", monto: f.prestamos },
     { etiqueta: "Rescates de ahorro (fondos mutuos)", monto: f.rescates },
     { etiqueta: "Otros ingresos que no son de la operación", monto: f.otros },
+    { etiqueta: "Devoluciones de gastos no ejecutados o a rendir", monto: f.compensados ?? 0, nota: "Se compensan con su gasto: ni el gasto ni la devolución cuentan" },
+    { etiqueta: "Filas con el tipo cruzado (REVISAR TIPO)", monto: f.revisarTipo ?? 0, nota: "Fuera de las cifras hasta que se corrijan en el Excel" },
   ]);
   const entroTotal = s.caja.entro;
   const entroSin = r2(entroTotal - entroLineas.reduce((t, l) => t + l.monto, 0));
@@ -68,6 +70,8 @@ export function conciliarSede(sede: CifrasSede, finDeMes: string): ConciliacionS
     { etiqueta: "Parte de otras sedes en gastos compartidos", monto: -s.fuera.otrasSedes },
     { etiqueta: "Devoluciones que restan del gasto", monto: -s.recuperado, nota: "Lo que otras sedes o personas devolvieron de gastos que esta sede pagó enteros" },
     { etiqueta: "Gastos que pagó el socio de su bolsillo", monto: s.fuera.pagadoPorSocio ?? 0, nota: "Son gasto de la sede, pero no salieron de su cuenta" },
+    { etiqueta: "Gastos no ejecutados o a rendir que volvieron", monto: -(s.fuera.compensado ?? 0), nota: "Salieron y volvieron el mismo mes: no son gasto" },
+    { etiqueta: "Filas con el tipo cruzado (REVISAR TIPO)", monto: -(s.fuera.revisarTipo ?? 0), nota: "Fuera de las cifras hasta que se corrijan en el Excel" },
   ]);
   const salioTotal = s.caja.salio;
   const salioSin = r2(salioTotal + salioLineas.reduce((t, l) => t + l.monto, 0) - egresoReal);

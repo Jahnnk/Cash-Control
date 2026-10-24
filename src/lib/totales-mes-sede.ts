@@ -6,7 +6,8 @@
  * por su lado, podrían no coincidir y el control no serviría: por eso el
  * puente de la verificación tiene que terminar EXACTAMENTE en este número.
  *
- *   Ingresos = lo que entró, menos reembolsos entre sedes, préstamos del
+ *   Ingresos = lo que entró, menos reembolsos entre sedes (salvo las filas con
+ *              Grupo «Ventas»: son venta aunque la nota diga «devolución»), préstamos del
  *              socio, transferencias internas e ingresos no operativos
  *              (préstamos recibidos, venta de activos, aportes…).
  *   Gastos   = lo que salió, con la parte PROPIA de los gastos compartidos
@@ -34,7 +35,9 @@ export async function totalesMesSede(bId: number, desde: string, hasta: string):
     db.execute(sql`
       SELECT COALESCE(SUM(amount), 0) AS t FROM bank_income_items
       WHERE business_id = ${bId} AND date >= ${desde} AND date <= ${hasta}
-        AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false
+        -- Una fila con Grupo «Ventas» es venta aunque su nota parezca un reembolso entre sedes (A4, 24-oct-2026:
+        -- Centro set, S/21 de un Yape que un cliente mandó a Fonavi y Fonavi devolvió).
+        AND (is_fonavi_reimbursement = false OR is_byte_sale = true) AND is_special_loan = false AND is_internal_transfer = false
         AND archived = false AND non_operative_category IS NULL
     `),
     db.execute(sql`

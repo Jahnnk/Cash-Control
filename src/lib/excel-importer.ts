@@ -22,6 +22,7 @@ import { resolverCategoria, type ResolucionCategoria } from "./categoria-resolve
 import { esGrupoBolson } from "./categoria-alias";
 import { clasificarGasto, POR_ACLARAR } from "./reglas-gasto";
 import { grupoDelCatalogo } from "./catalogo-categorias";
+import { CATEGORIA_REVISAR_TIPO, MARCA_REVISAR_TIPO } from "./revisar-tipo";
 
 /**
  * La categoría de un gasto a partir de lo que escribió Kelly en Grupo.
@@ -105,6 +106,12 @@ export type ParsedMovement = {
  * severity='info'           → la fila se importa normalmente, pero
  *                             el usuario debería revisarla antes de
  *                             confirmar. Mensaje accionable.
+ * severity='revisar'        → tipo «I» con el monto en la columna de
+ *                             GASTOS (24-oct-2026): NO se autocorrige.
+ *                             Se importa tal cual está en las columnas,
+ *                             marcada «[REVISAR TIPO]», fuera de las
+ *                             seis cifras; el mes queda «No confiable»
+ *                             (control C6) hasta corregir el Excel.
  */
 export type ParseWarning = {
   rowNumber: number;
@@ -126,7 +133,7 @@ export type ParseWarning = {
   originalDate?: null;
   correctedDate?: string;     // YYYY-MM-DD
   message?: string;           // mensaje accionable para info/silenced
-  severity: "autocorrected" | "blocking_error" | "silenced" | "info";
+  severity: "autocorrected" | "blocking_error" | "silenced" | "info" | "revisar";
 };
 
 export type ParseResult = {
@@ -567,6 +574,9 @@ export function parseExcelFile(
     // original (siguen el flujo y son descartadas por amount==0 o por
     // los filtros existentes).
     let isCasoBLegitimate = false; // Caso B autocorregido (no devolución)
+    // Tipo «I» con el monto en la columna de gastos: ya NO se adivina (A2, auditoría de setiembre 2026 — Centro
+    // fila 114, «DEPÓSITO POR VENTAS EN EFECTIVO» S/63.19). Se importa como está en las columnas, marcada.
+    let revisarTipo = false;
     if (isInformativeRow && !hasMixedAmounts && hasAnyAmount) {
       if (normalizedTipo === "I" && hasExpenseAmount && !hasIncomeAmount) {
         parseWarnings.push({
@@ -577,10 +587,12 @@ export function parseExcelFile(
           description,
           reason: "type_mismatch",
           originalType: "I",
-          correctedType: "G",
-          severity: "autocorrected",
+          severity: "revisar",
+          message: `Fila ${excelRow}: dice «I» (ingreso) pero el monto está en la columna de GASTOS. No se adivina cuál de los dos está mal: se importa marcada «REVISAR TIPO», fuera de las seis cifras, y el mes queda «No confiable». Corrige el tipo o la columna en el Excel y vuelve a subirlo.`,
         });
+        // Se lee el monto de la columna donde está (gastos), sin cambiar lo que la fila dice ser.
         normalizedTipo = "G";
+        revisarTipo = true;
         isCasoBLegitimate = true;
       } else if (normalizedTipo === "G" && hasIncomeAmount && !hasExpenseAmount) {
         // Esto coincide con la lógica preexistente de "devolución".
@@ -730,14 +742,19 @@ export function parseExcelFile(
     // dirección lo decida al importar, en vez de que quede suelto.
     // Ver lib/categoria-resolver.ts.
     const resolucion = resolverGrupoDelGasto(grupoRaw, concepto, proveedor, effectiveType);
-    const cat = resolucion.canonica || POR_ACLARAR;
+    const cat = revisarTipo ? CATEGORIA_REVISAR_TIPO : resolucion.canonica || POR_ACLARAR;
+    if (revisarTipo) note = `${MARCA_REVISAR_TIPO} ${note}`;
     categorias.add(cat);
-    if (!resoluciones.has(cat)) resoluciones.set(cat, resolucion);
+    if (!resoluciones.has(cat)) {
+      resoluciones.set(cat, revisarTipo
+        ? { entrada: grupoRaw, canonica: cat, grupo: grupoDelCatalogo(cat), confianza: "alias", motivo: "El tipo y la columna del monto no coinciden: se revisa en el Excel (no cuenta en las seis cifras)." }
+        : resolucion);
+    }
 
     // OJO: sobre el grupo CRUDO, no sobre el corregido. "VENTAS" no está
     // en el mapa de variantes, pero si algún día se agregara, esta
     // marca no debe cambiar de significado por eso.
-    const isByteSale = grupoRaw.toUpperCase() === "VENTAS";
+    const isByteSale = !revisarTipo && grupoRaw.toUpperCase() === "VENTAS";
 
     movimientos.push({
       excelRow,

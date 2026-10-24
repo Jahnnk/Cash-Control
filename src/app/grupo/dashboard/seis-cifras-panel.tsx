@@ -181,7 +181,7 @@ export function SeisCifrasPanel({ cifras, apoyo, periodo }: { cifras: SeisCifras
       {/* Punto de equilibrio: la ganancia, medida contra lo que hay que cubrir. */}
       {apoyo && apoyo.equilibrioPct !== null && (
         <div className="bg-white rounded-2xl border border-gray-200/80 px-5 py-4 flex flex-wrap items-center gap-x-6 gap-y-2">
-          <div className="text-sm font-semibold text-gray-900">Punto de equilibrio</div>
+          <div className="text-sm font-semibold text-gray-900">Piso del mes (coach)</div>
           <div className="flex-1 min-w-[10rem]"><ProgressBar pct={apoyo.equilibrioPct} tone={apoyo.equilibrioPct >= 100 ? "positive" : apoyo.equilibrioPct >= 80 ? "warning" : "negative"} /></div>
           <div className="text-sm text-gray-700 tabular-nums"><strong>{Math.round(apoyo.equilibrioPct)}%</strong> · {apoyo.equilibrioPct >= 100 ? "costos cubiertos" : "falta cubrir costos"}</div>
         </div>

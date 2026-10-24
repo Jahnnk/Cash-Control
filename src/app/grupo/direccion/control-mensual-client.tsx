@@ -181,7 +181,7 @@ export function VistaSemana({ d, onCambio }: { d: DatosSemana; onCambio: () => v
                 resumen={r.meta === null || r.proyeccion === null ? <>Semana {soles(r.ventasSemana)} · sin meta del mes</> : <>Cerraría en {soles(r.proyeccion)} · meta {soles(r.meta)}</>}>
                 <p>Semana del {fechaCorta(d.semana.desde)} al {fechaCorta(d.semana.hasta)}: <b>{soles(r.ventasSemana)}</b>. En el mes van <b>{soles(r.ventasMes)}</b>{s.ventasHasta ? ` (hasta el ${fechaCorta(s.ventasHasta)})` : ""}.</p>
                 {r.proyeccion !== null && <p>Al ritmo {r.proyeccionEs === "semana" ? "de la última semana" : "del mes"}, cerraría en <b>{soles(r.proyeccion)}</b>.</p>}
-                {r.meta !== null && <p>Meta: <b>{soles(r.meta)}</b> ({r.metaEs === "presupuesto" ? "venta esperada del presupuesto" : "punto de equilibrio"}){r.pe !== null && r.metaEs === "presupuesto" ? ` · equilibrio ${soles(r.pe)}` : ""}.</p>}
+                {r.meta !== null && <p>Meta: <b>{soles(r.meta)}</b> ({r.metaEs === "presupuesto" ? "venta esperada del presupuesto" : "piso del mes (coach)"}){r.pe !== null && r.metaEs === "presupuesto" ? ` · piso del mes (coach) ${soles(r.pe)}` : ""}.</p>}
                 {r.porDia !== null && r.falta !== null && r.falta > 0 && <p>Faltan {soles(r.falta)} en {r.diasRestantes} días: <b>{soles(r.porDia)} por día</b>.</p>}
               </FilaSede>
             );
@@ -324,7 +324,7 @@ export function VistaCierre({ c }: { c: DatosCierre }) {
                 valor={(s) => s.ganancia.actual !== null
                   ? <span className={s.ganancia.actual < 0 ? "text-red-700" : "text-emerald-700"}>{conSigno(s.ganancia.actual)}{s.gananciaPct !== null && <span className="block text-[10px] sm:text-[11px] font-normal text-gray-500">{pct(s.gananciaPct)}<span className="hidden sm:inline"> de lo vendido</span></span>}</span>
                   : <span className="text-gray-400 font-normal">{s.sinResultadoPorque ?? "—"}</span>} />
-              <Fila pregunta="¿Superé mi punto de equilibrio?" corta="Equilibrio" sedes={c.sedes}
+              <Fila pregunta="¿Superé mi piso del mes (coach)?" corta="Piso (coach)" sedes={c.sedes}
                 valor={(s) => s.equilibrio.pe === null || s.equilibrio.ventas === null ? "—" : (
                   <span className={s.equilibrio.superado ? "text-emerald-700" : "text-red-700"}>
                     {s.equilibrio.superado ? "Sí" : "No"}<span className="hidden sm:inline"> · </span><span className="block sm:inline">{conSigno(s.equilibrio.ventas - s.equilibrio.pe)}</span>
@@ -366,7 +366,7 @@ export function VistaCierre({ c }: { c: DatosCierre }) {
       <Bloque titulo={`Proyección de ${sig}`}>
         {c.sedes.map((s) => (
           <PorSedeTexto key={s.businessId} sede={s.sede}>
-            Meta mínima (equilibrio) {s.siguiente.peReferencia !== null ? soles(s.siguiente.peReferencia) : "—"}
+            Meta mínima (piso del mes, coach) {s.siguiente.peReferencia !== null ? soles(s.siguiente.peReferencia) : "—"}
             {s.siguiente.ventaEsperada ? <> · venta esperada {soles(s.siguiente.ventaEsperada)}</> : null}
             {" · "}{s.siguiente.aprobado ? <span className="text-emerald-700">presupuesto aprobado</span> : <span className="text-amber-700">presupuesto sin aprobar</span>}
             {s.siguiente.compromisosFijos > 0 && <span className="block text-xs text-gray-500 mt-0.5">Pagos fijos {soles(s.siguiente.compromisosFijos)}: {s.siguiente.detalle.slice(0, 3).map((x) => `${x.concepto} ${soles(x.monto)}`).join(", ")}</span>}
@@ -483,7 +483,7 @@ export function ControlMensualClient() {
                 <div className="flex flex-wrap gap-1.5">
                   {c!.grupo.ganancia.actual !== null && <Pastilla tono={c!.grupo.ganancia.actual < 0 ? "rojo" : "verde"}>Ganancia {conSigno(c!.grupo.ganancia.actual)}</Pastilla>}
                   <Pastilla tono={c!.grupo.flujo.actual !== null && c!.grupo.flujo.actual < 0 ? "rojo" : "verde"}>Flujo {c!.grupo.flujo.actual !== null ? conSigno(c!.grupo.flujo.actual) : "—"}</Pastilla>
-                  {c!.sedes.filter((x) => x.equilibrio.superado === false).map((x) => <Pastilla key={x.businessId} tono="rojo">{x.sede} bajo el equilibrio</Pastilla>)}
+                  {c!.sedes.filter((x) => x.equilibrio.superado === false).map((x) => <Pastilla key={x.businessId} tono="rojo">{x.sede} bajo el piso (coach)</Pastilla>)}
                 </div>
               }
             >

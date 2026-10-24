@@ -246,6 +246,8 @@ const PORNOMBRE = new Map(CATEGORIAS_GASTO.map((c) => [c.nombre, c]));
 export function tipoDeCategoria(nombre: string): TipoCategoria | null {
   // Pasar plata entre cuentas propias no es gasto (Centro, 11-set-2026: S/63.19 se contaban como gasto).
   if (nombre === CATEGORIA_TRANSFERENCIA_INTERNA) return "No es gasto";
+  // Fila con el tipo cruzado (lib/revisar-tipo.ts): no es gasto hasta que se corrija; las seis cifras ni la cuentan.
+  if (nombre === "REVISAR TIPO") return "No es gasto";
   return PORNOMBRE.get(nombre)?.tipo ?? null;
 }
 

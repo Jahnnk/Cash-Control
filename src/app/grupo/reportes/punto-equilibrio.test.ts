@@ -30,7 +30,7 @@ describe("sección Punto de equilibrio · piso diario", () => {
     const html = ver(2);
     expect(html).toContain("necesita vender");
     expect(html).toContain("por día");
-    for (const t of ["Piso diario", "Ventas necesarias", "Sobre el piso", "Incluyendo deudas", "Cómo se calcula el piso diario", "÷ 30", "Análisis del libro", "Punto de equilibrio:", "Ganancia", "Pérdida", "Precio promedio por venta", "Margen de contribución por venta", "Punto de equilibrio en número de ventas", "Mes a mes", "¿Y si…?", "Contratar a alguien", "Un mes difícil"]) {
+    for (const t of ["Piso diario", "Ventas necesarias", "Sobre el piso", "Incluyendo deudas", "Cómo se calcula el piso del mes (coach)", "÷ 30", "Análisis del libro", "Punto de equilibrio:", "Ganancia", "Pérdida", "Precio promedio por venta", "Margen de contribución por venta", "Punto de equilibrio en número de ventas", "Mes a mes", "¿Y si…?", "Contratar a alguien", "Un mes difícil"]) {
       expect(html).toContain(t);
     }
   });

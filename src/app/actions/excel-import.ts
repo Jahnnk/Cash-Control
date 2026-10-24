@@ -18,6 +18,7 @@
 import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { neon } from "@neondatabase/serverless";
+import { controlesDelMes, guardarControles } from "@/lib/controles-fiabilidad-sql";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
@@ -904,7 +905,9 @@ export async function executeExcelImport(
         // Plata que vuelve de otra sede no es una venta: es recuperar un
         // costo que esta sede adelantó. Sin la marca, "Ingresos en
         // cuentas" queda inflado — S/3,979 entre may y ago-2026.
-        const entreSedes = esReembolsoEntreSedes(m.note);
+        // Si Kelly le puso Grupo «Ventas», es venta de esta sede aunque la nota diga «devolución … sede» (A4,
+        // 24-oct-2026: Centro set, un Yape de un cliente que llegó a Fonavi y Fonavi devolvió).
+        const entreSedes = !m.isByteSale && esReembolsoEntreSedes(m.note);
         // Un préstamo que entra (o la cuota que devuelve otra sede) tampoco
         // es venta: entra al banco pero no a los ingresos del mes.
         const noOperativo = entreSedes || m.isByteSale ? null : categoriaPrestamoIngreso(m.note);
@@ -1123,6 +1126,18 @@ export async function executeExcelImport(
     revisionesPendientes = rev.pendientes;
   } catch (err) {
     console.error("[executeExcelImport] revisión de clasificación no disponible:", err);
+  }
+
+  // Los controles de fiabilidad del mes (24-oct-2026): se recalculan y se guardan con cada Excel. Nunca tumban el import.
+  if (mesDelImport) {
+    try {
+      const r = await controlesDelMes(txSql as never, bId, mesDelImport);
+      const { cifras: _c, ...resultado } = r;
+      void _c;
+      await guardarControles(txSql as never, resultado, "import");
+    } catch (err) {
+      console.error("[executeExcelImport] controles de fiabilidad no disponibles:", err);
+    }
   }
 
   revalidatePath("/", "layout");

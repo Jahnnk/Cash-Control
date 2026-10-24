@@ -129,7 +129,7 @@ export function ExecutiveHero({ s }: { s: HeroStats }) {
         <Stat label="Flujo del mes" value={formatCurrency(s.margen)}>
           <div className="text-xs text-gray-400">Lo que entró − lo que salió (Excel)</div>
         </Stat>
-        <Stat label="Punto de equilibrio" value={eq === null ? "—" : `${Math.round(eq)}%`}>
+        <Stat label="Piso del mes (coach)" value={eq === null ? "—" : `${Math.round(eq)}%`}>
           {eq !== null ? (
             <>
               <ProgressBar pct={eq} tone={eqTone} />
