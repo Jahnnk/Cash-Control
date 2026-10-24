@@ -32,7 +32,7 @@ function Lectura({ d, a }: { d: EquilibrioSede; a: AnalisisEquilibrio }) {
       <b>{d.sede}</b> necesita vender <b>{soles(p.dia)} por día</b> ({soles(p.mes)} al mes) para cubrir sus costos fijos y sus compras de insumos.{" "}
       {cuando} <b>{soles(ventas)}</b>:{" "}
       {a.estadoPiso === "sobre"
-        ? <><span className="text-emerald-700 font-semibold">{soles(a.sobrePiso)} por encima</span> del piso ({dec(a.sobrePisoPct)}% de lo vendido): eso es lo que le queda antes de impuestos.</>
+        ? <><span className="text-emerald-700 font-semibold">{soles(a.sobrePiso)} por encima</span> del piso del mes (coach) ({dec(a.sobrePisoPct)}% de lo vendido): eso es lo que le queda antes de impuestos.</>
         : <><span className="text-red-700 font-semibold">{soles(a.sobrePiso)} por debajo</span> del piso: {d.enCurso ? "va camino a no cubrir" : "no cubrió"} sus costos.</>}
     </p>
   );
@@ -55,14 +55,14 @@ function Cifras({ d, a }: { d: EquilibrioSede; a: AnalisisEquilibrio }) {
   const p = a.piso;
   return (
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-2.5">
-      <Cifra titulo="Piso diario" valor={p ? soles(p.dia) : "—"} detalle={p ? `(${soles(p.fijos)} de fijos + ${soles(p.foodCost)} de insumos) ÷ 30 = ${soles(p.mes)} al mes` : ""} />
+      <Cifra titulo="Piso diario (coach)" valor={p ? soles(p.dia) : "—"} detalle={p ? `(${soles(p.fijos)} de fijos + ${soles(p.foodCost)} de insumos) ÷ 30 = ${soles(p.mes)} al mes` : ""} />
       <Cifra titulo={u === "pedidos" ? "Pedidos necesarios" : "Ventas necesarias"} valor={a.pisoVentas === null ? "—" : `${num(a.pisoVentas)} al mes`}
         detalle={a.pisoVentasDia === null ? "Sin reporte de ventas de Byte para contarlas" : `${dec(a.pisoVentasDia)} por día · ${d.enCurso ? "hoy" : "hizo"} ${dec(a.ventasDia ?? 0)} por día`} />
       <Cifra titulo="Sobre el piso" valor={a.sobrePisoPct === null ? "—" : `${a.sobrePisoPct > 0 ? "+" : ""}${dec(a.sobrePisoPct)}%`}
         tono={a.sobrePiso === null ? "gris" : a.sobrePiso >= 0 ? "verde" : "rojo"}
         detalle={a.sobrePiso === null ? "" : a.sobrePiso >= 0 ? `${soles(a.sobrePiso)} que las ventas pueden caer antes de no cubrir los costos` : `Faltan ${soles(a.sobrePiso)} de ventas para cubrir los costos`} />
       {d.enCurso
-        ? <Cifra titulo="Piso estable" valor={d.referencia ? soles(d.referencia.pe) : "—"} detalle={d.referencia ? `Promedio de los ${d.referencia.meses.length} meses cerrados` : "Sin meses cerrados"} />
+        ? <Cifra titulo="Piso estable (coach)" valor={d.referencia ? soles(d.referencia.pe) : "—"} detalle={d.referencia ? `Promedio de los ${d.referencia.meses.length} meses cerrados` : "Sin meses cerrados"} />
         : <Cifra titulo="Incluyendo deudas" valor={a.pisoConDeudas === null ? "—" : soles(a.pisoConDeudas)} detalle={`Para pagar también las cuotas de préstamos y tarjetas (${soles(d.base!.financiamiento)} en el mes)`} />}
     </div>
   );
@@ -79,7 +79,7 @@ function ComoSeCalculaPiso({ d, a }: { d: EquilibrioSede; a: AnalisisEquilibrio 
   return (
     <div className="space-y-2 text-xs leading-relaxed text-gray-700">
       <p className="rounded-md bg-gray-50 px-3 py-2 text-[12px] text-gray-800">
-        Piso diario = (costos fijos + food cost proyectado) ÷ 30 = ({soles(p.fijos)} + {soles(p.foodCost)}) ÷ 30 = <b>{soles(p.dia)}</b>
+        Piso diario (coach) = (costos fijos + food cost proyectado) ÷ 30 = ({soles(p.fijos)} + {soles(p.foodCost)}) ÷ 30 = <b>{soles(p.dia)}</b>
       </p>
       <ul className="space-y-1">
         <li><b>Costos fijos {soles(p.fijos)}:</b> planilla, alquiler, servicios{d.enCurso ? " (promedio de los meses cerrados)" : ""}.{" "}
@@ -237,7 +237,8 @@ function Simulador({ d, b }: { d: EquilibrioSede; b: BaseEquilibrio }) {
   const u = d.unidad === "pedidos" ? "pedidos" : "ventas";
   const cambio = (k: keyof Escenario, v: number) => setE((x) => ({ ...x, [k]: v }));
   const filas: [string, string, string][] = [
-    ["Piso del mes", s.antes.pe === null ? "—" : soles(s.antes.pe), s.despues.pe === null ? "sin margen" : soles(s.despues.pe)],
+    // El simulador mueve el punto de equilibrio del libro (fijos ÷ margen), no el piso del coach.
+    ["Punto de equilibrio", s.antes.pe === null ? "—" : soles(s.antes.pe), s.despues.pe === null ? "sin margen" : soles(s.despues.pe)],
     [u === "pedidos" ? "Pedidos necesarios por día" : "Ventas necesarias por día", s.antes.peVentasDia === null ? "—" : dec(s.antes.peVentasDia), s.despues.peVentasDia === null ? "—" : dec(s.despues.peVentasDia)],
     ["Margen de seguridad", s.antes.margenSeguridadPct === null ? "—" : `${dec(s.antes.margenSeguridadPct)}%`, s.despues.margenSeguridadPct === null ? "—" : `${dec(s.despues.margenSeguridadPct)}%`],
     ["Resultado del mes", s.antes.utilidad === null ? "—" : `${s.antes.utilidad < 0 ? "−" : "+"}${soles(s.antes.utilidad)}`, s.despues.utilidad === null ? "—" : `${s.despues.utilidad < 0 ? "−" : "+"}${soles(s.despues.utilidad)}`],
@@ -298,7 +299,7 @@ function Historial({ d }: { d: EquilibrioSede }) {
         <thead className="bg-gray-50 text-[11px] uppercase tracking-wide text-gray-500">
           <tr>
             <th className="text-left font-medium px-3 py-2">Mes</th><th className="text-right font-medium px-3 py-2">Ventas</th>
-            <th className="text-right font-medium px-3 py-2">Piso</th><th className="text-right font-medium px-3 py-2">Margen de seguridad</th>
+            <th className="text-right font-medium px-3 py-2">Punto de equilibrio</th><th className="text-right font-medium px-3 py-2">Margen de seguridad</th>
             <th className="text-right font-medium px-3 py-2">Resultado</th><th className="text-right font-medium px-3 py-2">Excel</th>
           </tr>
         </thead>
@@ -375,7 +376,7 @@ export function VistaPuntoEquilibrio({ datos, periodo, abiertaAlInicio = false, 
   return (
     <SeccionDesplegable
       abiertaAlInicio={abiertaAlInicio}
-      titulo="Punto de equilibrio · piso diario"
+      titulo="Punto de equilibrio y piso del mes (coach)"
       subtitulo={`Lo que cada sede tiene que vender al día en ${periodo.split(" ")[0]} para cubrir sus costos fijos y sus compras.`}
       resumen={resumen}
     >
@@ -391,11 +392,11 @@ export function VistaPuntoEquilibrio({ datos, periodo, abiertaAlInicio = false, 
               <Cifras d={d} a={a} />
               {/* Lo de consulta, a un toque: la cuenta del piso y el análisis del libro (gráfica, simulador, historial). */}
               <div className="divide-y divide-gray-100 border-y border-gray-100">
-                <Plegable titulo="Cómo se calcula el piso diario"><ComoSeCalculaPiso d={d} a={a} /></Plegable>
+                <Plegable titulo="Cómo se calcula el piso del mes (coach)"><ComoSeCalculaPiso d={d} a={a} /></Plegable>
                 <Plegable titulo="Análisis del libro: gráfica, cuenta y simulador «¿y si…?»">
                   <div className="space-y-5">
                     <p className="text-[11px] leading-relaxed text-gray-500">
-                      El libro calcula el punto de equilibrio suponiendo que las compras suben y bajan con cada venta; el piso diario de arriba toma las compras del mes como un compromiso. Sirve para ver curvas y probar escenarios; el número que manda es el piso diario.
+                      El libro calcula el punto de equilibrio suponiendo que las compras suben y bajan con cada venta; el piso diario de arriba toma las compras del mes como un compromiso. Sirve para ver curvas y probar escenarios; el número que manda es el piso diario (coach).
                     </p>
                     {c && <Grafica c={c} d={d} a={a} />}
                     <ComoSeCalcula d={d} a={a} b={b} />

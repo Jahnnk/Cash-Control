@@ -106,7 +106,7 @@ export function faltaParaEquilibrio(r: BreakevenResult): number | null {
 }
 
 export function breakevenSlide(nueva: SlideFactory, sub: string, be: GroupBreakeven) {
-  const s = nueva("Punto de equilibrio del mes por sede", sub);
+  const s = nueva("Piso del mes (coach) por sede", sub);
 
   s.addText(
     `${monthLabel(be.month)}${be.isCurrent ? " (mes en curso)" : ""} · La línea es lo que hay que vender para no perder plata. ` +

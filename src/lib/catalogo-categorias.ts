@@ -79,6 +79,8 @@ export const CATALOGO: CategoriaCanonica[] = [
   // el Excel de Kelly.
   { nombre: "PRESTAMOS SOCIO", grupo: "fuera", descripcion: "Gastos pagados por el socio — tienen su propio módulo" },
   { nombre: "TRANSFERENCIA INTERNA", grupo: "fuera", descripcion: "Plata moviéndose entre cuentas propias" },
+  // Fila con el tipo y la columna cruzados (lib/revisar-tipo.ts): fuera de todo hasta que se corrija el Excel.
+  { nombre: "REVISAR TIPO", grupo: "fuera", descripcion: "Fila cuyo tipo (I/G) no coincide con la columna del monto: corregir en el Excel" },
 ];
 
 /** Índice por nombre exacto, para no recorrer la lista en cada consulta. */

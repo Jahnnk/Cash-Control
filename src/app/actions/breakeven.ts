@@ -12,7 +12,6 @@
  * El motor puro vive en lib/breakeven.ts.
  */
 
-import { recuperosDelPeriodo } from "@/lib/recuperos-sql";
 import { neon } from "@neondatabase/serverless";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession, getSessionRole, requireLectura } from "@/lib/session-access";
@@ -20,13 +19,12 @@ import {
   tocaCongelar, metaPorPromedioDeVentas, MESES_A_BUSCAR_META, type EntradaCandadoVentas,
 } from "@/lib/incentives/candado-ventas";
 import { conciliacionVentas } from "@/lib/ventas-conciliadas-sql";
-import { buildFixedVariable } from "@/lib/fixed-variable";
-import { esSueldoDeSocio } from "@/lib/sueldo-socios";
 import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
 import { planDe } from "@/lib/presupuesto-datos";
 import { POR_ACLARAR } from "@/lib/reglas-gasto";
 import { ventasInternasDelGrupo, type SedeEnConsolidado } from "@/lib/ventas-internas-grupo";
-import { gastosDevueltos, MARCA_PAGO_ERRADO, DIAS_MAX, type IngresoCandidato } from "@/lib/pagos-devueltos";
+import { leerDatosMesSede } from "@/lib/seis-cifras-sql";
+import { cifrasDelMes } from "@/lib/seis-cifras-mes";
 import { elegirFuenteVentas, type FuenteVenta, type VentasMes } from "@/lib/ventas-mes-sql";
 import { formatCurrency } from "@/lib/utils";
 import { computeBreakeven, type BreakevenResult, type BreakevenReference } from "@/lib/breakeven";
@@ -180,83 +178,38 @@ async function peDelExcel(bId: number, month: string): Promise<number | null> {
 }
 
 /**
- * Fijos/variables/sin-clasificar operativos del mes de una sede, y hasta
- * qué día llegan los gastos registrados.
+ * Fijos, variables, cuotas y lo demás del mes de una sede · SALEN DE LAS SEIS CIFRAS (24-oct-2026).
  *
- * Los pagos hechos por error y devueltos no cuentan: ver
- * lib/pagos-devueltos.ts (Fonavi, agosto 2026: S/3,777).
+ * Antes se clasificaba con la lista de categorías vieja de cada sede (expense_categories.cost_group) y el punto de
+ * equilibrio no se reproducía con las cifras que se ven en pantalla. Setiembre 2026: Fonavi contaba IMPUESTOS
+ * (S/125) como variable y dejaba DEVOLUCIONES A CLIENTES (S/31.20) «sin clasificar»; Centro dejaba fuera S/120 de
+ * devoluciones a clientes. Ahora: fijos = «Gastos», variables = «Costos» (sin impuestos), exactamente los de
+ * lib/seis-cifras-mes.ts — con las mismas devoluciones, gastos compensados y filas fuera por tipo dudoso.
+ * `ventas` es la venta de esas cifras: en un mes cerrado, el punto de equilibrio usa esa.
  */
 async function monthCosts(bId: number, start: string, end: string) {
-  const [rows, cats, recup] = await Promise.all([
-    sql`
-      SELECT id::text AS id, date::text AS date, category, concept, amount::float AS bruto,
-             (CASE WHEN is_shared THEN COALESCE(atelier_amount, amount) ELSE amount END)::float AS amount
-      FROM expenses
-      WHERE business_id = ${bId} AND date >= ${start} AND date <= ${end}
-        AND is_special_loan = false AND is_internal_transfer = false AND archived = false
-        AND payment_method <> 'pendiente_atelier'
-    `,
-    sql`
-      SELECT name, exclude_from_ebitda, cost_group
-      FROM expense_categories WHERE business_id = ${bId}
-    `,
-    // Lo que otras sedes o personas devolvieron resta de su categoría (una sola fuente, lib/recuperos-sql.ts).
-    // No toca el candado del bono: ese solo mira ventas.
-    recuperosDelPeriodo(sql as never, bId, start, end),
-  ]);
-  const gastos = rows as { id: string; date: string; category: string; concept: string | null; bruto: number; amount: number }[];
-
-  // La devolución puede llegar hasta DIAS_MAX días después, ya en el mes
-  // siguiente. Solo se consulta el banco si hay algún gasto marcado.
-  let devueltos = new Set<string>();
-  if (gastos.some((g) => MARCA_PAGO_ERRADO.test(g.concept ?? ""))) {
-    const ingresos = (await sql`
-      SELECT id::text AS id, date::text AS date, amount::float AS amount, note
-      FROM bank_income_items
-      WHERE business_id = ${bId} AND archived = false
-        AND date >= ${start} AND date <= (${end}::date + ${DIAS_MAX}::int)
-    `) as IngresoCandidato[];
-    devueltos = gastosDevueltos(gastos.map((g) => ({ id: g.id, date: g.date, amount: g.bruto, concept: g.concept })), ingresos);
-  }
-
-  const categorias = cats as { name: string; exclude_from_ebitda: boolean; cost_group: string | null }[];
-  const cuentan = [
-    ...gastos.filter((r) => !devueltos.has(r.id)),
-    ...recup.recuperos.map((r, i) => ({ id: `recupero-${i}`, date: r.fecha, category: r.categoria, concept: r.nota, bruto: 0, amount: -r.monto })),
-  ];
-  // Lo comprado a Atelier, tal como entra en `variables`: el consolidado
-  // del grupo lo descuenta (ver lib/ventas-internas-grupo.ts).
-  const catAtelier = categorias.find((c) => c.name === CATEGORIA_COMPRA_ATELIER);
-  const compraAtelier = catAtelier && catAtelier.cost_group === "variable" && !catAtelier.exclude_from_ebitda
-    ? cuentan.filter((r) => r.category === CATEGORIA_COMPRA_ATELIER).reduce((t, r) => t + Number(r.amount), 0)
-    : 0;
-  // POR ACLARAR cuenta como fijo provisional (lib/fixed-variable.ts): se avisa cuánto.
-  const porAclarar = cuentan.filter((r) => r.category === POR_ACLARAR).reduce((t, r) => t + Number(r.amount), 0);
-  const report = buildFixedVariable(
-    cuentan.map((r) => ({ category: r.category, amount: Number(r.amount) })),
-    categorias.map((c) => ({
-      name: c.name,
-      excludeFromEbitda: c.exclude_from_ebitda,
-      costGroup: c.cost_group,
-    })),
-  );
+  void end; // siempre es un mes calendario: las cifras se leen por mes
+  const datos = await leerDatosMesSede(sql as never, bId, SEDE_NAMES[bId] ?? `Sede ${bId}`, start.slice(0, 7));
+  const c = cifrasDelMes(datos);
+  const porAclarar = c.porCategoria.filter((x) => x.categoria === POR_ACLARAR).reduce((t, x) => t + x.monto, 0);
+  const tope = c.corte ?? datos.hastaHoy;
   return {
-    fijos: report.fijo.total,
-    variables: report.variable.total,
+    fijos: c.gastos,
+    variables: c.costos,
     /** Cuotas de préstamos y tarjetas: van aparte ("PE incluyendo deudas"). */
-    financiamiento: report.financiamiento.total,
-    sinClasificar: report.sinClasificar.total,
+    financiamiento: c.fuera.deudas,
+    // Con la lista única todo tiene rubro: lo que no está en el catálogo cuenta como gasto (seis cifras).
+    sinClasificar: 0,
     /** Parte de los fijos que es POR ACLARAR (provisional). */
     porAclarar: Math.round(porAclarar * 100) / 100,
     /** De la planilla (fijos), el sueldo de los socios: Profit First lo muestra aparte. */
-    sueldoSocios: Math.round(cuentan.filter((r) => esSueldoDeSocio(r.category, r.concept)).reduce((t, r) => t + Number(r.amount), 0) * 100) / 100,
-    compraAtelier,
-    ultimoGasto: gastos.reduce<string | null>((max, g) => (max === null || g.date > max ? g.date : max), null),
+    sueldoSocios: c.sueldoSocios,
+    compraAtelier: c.compraAtelier,
+    ventas: c.ventas,
+    ultimoGasto: datos.gastos.filter((g) => g.fecha <= tope).reduce<string | null>((max, g) => (max === null || g.fecha > max ? g.fecha : max), null),
   };
 }
 
-/** Lo que las cafeterías le compran a Atelier (catálogo único de categorías). */
-const CATEGORIA_COMPRA_ATELIER = "PRODUCTOS ATELIER";
 
 function prevMonths(month: string, n: number): string[] {
   const [y, m] = month.split("-").map(Number);
@@ -330,7 +283,8 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
       const diasSinGasto = costs.ultimoGasto
         ? daysInMonth - Number(costs.ultimoGasto.slice(8, 10))
         : daysInMonth;
-      return { month: m, ventas: v.total, diasVenta: v.dias, daysInMonth, diasSinGasto, ...costs };
+      // La venta de las seis cifras (la misma con la que se ven sus costos); los días de venta, del cargador.
+      return { month: m, diasVenta: v.dias, daysInMonth, diasSinGasto, ...costs, ventas: costs.ventas ?? v.total };
     }),
   );
 
@@ -363,7 +317,7 @@ async function buildReference(bId: number, month: string): Promise<RefAgg | null
 
 async function breakevenOf(bId: number, month: string): Promise<BreakevenResult> {
   const { start, end, daysInMonth, daysElapsed, isCurrent } = monthMeta(month);
-  const [ventas, costs, reference, esperada, sociosFuera] = await Promise.all([
+  const [ventasOficial, costs, reference, esperada, sociosFuera] = await Promise.all([
     // La venta oficial: a la fecha en el mes en curso, del mes entero si está cerrado.
     monthSales(bId, start, end),
     monthCosts(bId, start, end),
@@ -371,6 +325,8 @@ async function breakevenOf(bId: number, month: string): Promise<BreakevenResult>
     isCurrent ? ventaEsperadaDelMes(bId, month) : Promise.resolve(null),
     sociosFueraDeFijos(),
   ]);
+  // Mes cerrado: la venta de las seis cifras, la misma de sus fijos y variables (punto de equilibrio único).
+  const ventas = isCurrent ? ventasOficial : costs.ventas ?? ventasOficial;
   if (isCurrent && !reference) {
     // Sin meses cerrados con datos no hay contra qué compararse — se
     // dice claro, nunca un "superado" falso con fijos a medio registrar.
@@ -445,7 +401,8 @@ export async function getGroupBreakeven(month: string): Promise<
           isCurrent ? buildReference(bId, month) : Promise.resolve(null),
           isCurrent ? ventaEsperadaDelMes(bId, month) : Promise.resolve(null),
         ]);
-        return { bId, ventas: v.total, ventasHasta: v.ultimoDia, reference, esperada, ...costs };
+        // Mes cerrado: la venta de las seis cifras (punto de equilibrio único). En curso: la venta a la fecha.
+        return { bId, ventasHasta: v.ultimoDia, reference, esperada, ...costs, ventas: isCurrent ? v.total : costs.ventas ?? v.total };
       }),
     );
     // Mes en curso: cada sede se mide con los días que TIENE cargados, no con los del calendario.
@@ -744,19 +701,21 @@ export async function getResumenEquilibrio(hastaMonth: string, meses = 6, busine
           porReferencia: ref !== null, mesesReferencia: ref?.monthsUsed ?? null,
         };
       }
-      const margen = v.total > 0 ? (v.total - c.variables) / v.total : 0;
+      // Mes cerrado: la venta de las seis cifras (la misma de sus fijos y variables).
+      const vm = c.ventas ?? v.total;
+      const margen = vm > 0 ? (vm - c.variables) / vm : 0;
       const pe = margen > 0 ? Math.round((c.fijos / margen) * 100) / 100 : null;
       const peDeudas = margen > 0 ? Math.round(((c.fijos + c.financiamiento) / margen) * 100) / 100 : null;
       return {
         month: m,
-        ventas: v.total,
+        ventas: vm,
         variables: Math.round(c.variables * 100) / 100,
         fijos: Math.round(c.fijos * 100) / 100,
         puntoEquilibrio: pe,
         puntoEquilibrioConDeudas: peDeudas,
         financiamiento: Math.round(c.financiamiento * 100) / 100,
-        utilidadOperativa: Math.round((v.total - c.variables - c.fijos) * 100) / 100,
-        sobreEquilibrio: pe === null ? null : v.total >= pe,
+        utilidadOperativa: Math.round((vm - c.variables - c.fijos) * 100) / 100,
+        sobreEquilibrio: pe === null ? null : vm >= pe,
         enCurso: false,
         excel,
         sinTipo: Math.round(c.sinClasificar * 100) / 100,
@@ -872,9 +831,11 @@ export async function getEquilibrioSede(mes: string, businessId: number): Promis
           ? `Mes en curso: el piso usa el promedio de ${ref.monthsUsed.length} meses cerrados y las ventas se proyectan al cierre con el ritmo de los ${diasCubiertos} días cargados.`
           : `Mes en curso con ${diasCubiertos} ${diasCubiertos === 1 ? "día cargado" : "días cargados"}: todavía es pronto para proyectar, así que se compara con la venta promedio de los meses cerrados.`);
       }
-    } else if (v.total > 0 && costs.fijos > 0) {
+    } else if ((costs.ventas ?? v.total) > 0 && costs.fijos > 0) {
+      // Mes cerrado: la venta de las seis cifras (la misma de sus fijos y variables).
+      const vm = costs.ventas ?? v.total;
       base = {
-        fijos: costs.fijos, varRatio: costs.variables / v.total, ventas: v.total,
+        fijos: costs.fijos, varRatio: costs.variables / vm, ventas: vm,
         ticket: tk?.ticket ?? null, diasDelMes: daysInMonth, financiamiento: costs.financiamiento,
         sueldoSocios: costs.sueldoSocios, sociosFuera,
       };

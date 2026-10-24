@@ -65,7 +65,8 @@ async function verificarSedeMes(b: {
       : null,
     ingresos: (ingresos as Record<string, unknown>[]).map((r) => ({
       monto: Number(r.monto), importado: Boolean(r.importado), fecha: String(r.fecha), nota: String(r.nota),
-      reembolsoEntreSedes: Boolean(r.reemb), prestamoSocio: Boolean(r.socio), transferenciaInterna: Boolean(r.interna),
+      // Grupo «Ventas» manda sobre la marca de reembolso (A4, 24-oct-2026).
+      reembolsoEntreSedes: Boolean(r.reemb) && !r.venta, prestamoSocio: Boolean(r.socio), transferenciaInterna: Boolean(r.interna),
       noOperativo: (r.noop as string | null) ?? null, viaBanco: Boolean(r.via), esVenta: Boolean(r.venta),
     })),
     gastos: (gastos as Record<string, unknown>[]).map((r) => ({

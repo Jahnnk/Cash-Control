@@ -66,6 +66,10 @@ export type FueraDeLaGanancia = {
   /** Lo que volvió del ahorro (rescate de fondos mutuos): entró a la caja pero no es venta. */ rescate: number;
   /** Gastos que pagó el socio de su bolsillo: están en el gasto, no en lo que salió (la conciliación los suma aparte). */
   pagadoPorSocio: number;
+  /** Gastos no ejecutados / a rendir que volvieron el mismo mes (lib/gastos-compensados.ts): salieron, pero no son gasto. */
+  compensado?: number;
+  /** Filas con el tipo y la columna cruzados (lib/revisar-tipo.ts): salieron según el Excel, fuera hasta que se corrijan. */
+  revisarTipo?: number;
 };
 
 /** Lo que entró a la cuenta sin ser venta ni ingreso de la operación. */
@@ -73,6 +77,10 @@ export type IngresosFuera = {
   devolucionesSedes: number; prestamos: number; rescates: number; otros: number;
   /** Devoluciones de personas por un gasto (restan del gasto, no son ingreso): lib/recuperos-entre-sedes.ts. */
   devolucionesGastos: number;
+  /** Devoluciones de gastos no ejecutados / a rendir: se compensan con su gasto (lib/gastos-compensados.ts). */
+  compensados?: number;
+  /** Ingresos con el tipo y la columna cruzados (lib/revisar-tipo.ts): fuera hasta que se corrijan. */
+  revisarTipo?: number;
 };
 
 export type CifrasSede = {
@@ -112,6 +120,12 @@ export type CifrasSede = {
   /** Ventas − Costos − Gastos − Impuestos. null si falta la venta o el Excel. */
   ganancia: number | null;
   gananciaPct: number | null;
+  /**
+   * Punto de equilibrio (24-oct-2026, uno solo en toda la app): Gastos ÷ (1 − Costos ÷ Ventas), con estas mismas
+   * cifras. null sin resultado o si los costos se comen toda la venta. La fórmula del coach es otra cosa: el «Piso
+   * del mes (coach)» de lib/equilibrio.ts.
+   */
+  puntoEquilibrio: number | null;
   caja: { entro: number; salio: number; flujo: number };
   /**
    * Lo que se COBRÓ de las ventas: ingresos operativos del Excel hasta el corte
@@ -175,6 +189,13 @@ export function esGastoExtraordinario(categoria: string, monto: number): boolean
 /** En qué rubro cae una categoría. */
 export type Rubro = "costos" | "gastos" | "impuestos" | "deudas" | "inversion" | "noEsGasto";
 
+/** El punto de equilibrio: fijos ÷ (1 − variables ÷ ventas). null si no hay venta o el margen no es positivo. */
+export function puntoDeEquilibrio(fijos: number, variables: number, ventas: number | null): number | null {
+  if (ventas === null || ventas <= 0) return null;
+  const margen = 1 - variables / ventas;
+  return margen > 0 ? r2(fijos / margen) : null;
+}
+
 export function rubroDe(categoria: string): Rubro {
   if (categoria === CATEGORIA_IMPUESTOS) return "impuestos";
   const t = tipoDeCategoria(categoria);
@@ -221,6 +242,9 @@ export function cifrasDeSede(input: {
   cobrado?: number | null;
   /** Ingresos con Grupo «Ventas» hasta el corte; null = sin filas marcadas. */
   ingresadoVentas?: number | null;
+  /** Gastos no ejecutados compensados y filas REVISAR TIPO (ya fuera de `filas`): solo para mostrarlos aparte. */
+  compensado?: number;
+  revisarTipo?: number;
   /** Devoluciones de otras sedes que se restan del gasto, con su categoría. */
   recuperos?: { categoria: string; monto: number; concepto?: string }[];
   /** false = el mes se llenó a mano (sin Excel). Por defecto true. */
@@ -277,11 +301,13 @@ export function cifrasDeSede(input: {
     margenPct: hayResultado ? r1(((ventas! - costos) / ventas!) * 100) : null,
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / ventas!) * 100) : null,
+    puntoEquilibrio: hayResultado ? puntoDeEquilibrio(gastos, costos, ventas) : null,
     caja: { entro: r2(input.caja.entro), salio: r2(input.caja.salio), flujo: r2(input.caja.entro - input.caja.salio) },
     cobrado: input.cobrado === null || input.cobrado === undefined ? null : r2(input.cobrado),
     ingresadoVentas: input.ingresadoVentas == null ? null : r2(input.ingresadoVentas),
     otrosIngresos: input.ingresadoVentas == null || input.cobrado == null ? null : r2(Math.max(input.cobrado - input.ingresadoVentas, 0)),
-    fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0), pagadoPorSocio: r2(pagadoPorSocio) },
+    fuera: { deudas: r2(sumas.deudas), inversion: r2(sumas.inversion), noEsGasto: r2(sumas.noEsGasto), otrasSedes: r2(otrasSedes), ahorro: r2(ahorro), reparto: r2(reparto), rescate: r2(input.caja.rescate ?? 0), pagadoPorSocio: r2(pagadoPorSocio),
+      compensado: r2(input.compensado ?? 0), revisarTipo: r2(input.revisarTipo ?? 0) },
     compraAtelier: r2(compraAtelier),
     recuperado: r2(recuperos.reduce((t, r) => t + r.monto, 0)),
     ingresosFuera: input.ingresosFuera ?? { devolucionesSedes: 0, prestamos: 0, rescates: 0, otros: 0, devolucionesGastos: 0 },
@@ -303,6 +329,8 @@ export type CifrasGrupo = {
   margenPct: number | null;
   ganancia: number | null;
   gananciaPct: number | null;
+  /** Gastos ÷ (1 − Costos ÷ Ventas) con las cifras del grupo (puntoDeEquilibrio). */
+  puntoEquilibrio: number | null;
   caja: { entro: number; salio: number; flujo: number };
   fuera: FueraDeLaGanancia;
   /** Lo que Atelier le vendió a las cafeterías: se descontó una vez de ventas y de costos. */
@@ -346,12 +374,14 @@ export function cifrasDelGrupo(sedes: CifrasSede[]): CifrasGrupo {
     margenPct: hayResultado ? r1(((vRes - costos) / vRes) * 100) : null,
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / vRes) * 100) : null,
+    puntoEquilibrio: hayResultado ? puntoDeEquilibrio(gastos, costos, vRes) : null,
     caja: { entro: r2(entro), salio: r2(salio), flujo: r2(entro - salio) },
     fuera: {
       deudas: r2(sum((s) => s.fuera.deudas)), inversion: r2(sum((s) => s.fuera.inversion)),
       noEsGasto: r2(sum((s) => s.fuera.noEsGasto)), otrasSedes: r2(sum((s) => s.fuera.otrasSedes)),
       ahorro: r2(sum((s) => s.fuera.ahorro)), reparto: r2(sum((s) => s.fuera.reparto)), rescate: r2(sum((s) => s.fuera.rescate)),
       pagadoPorSocio: r2(sum((s) => s.fuera.pagadoPorSocio ?? 0)),
+      compensado: r2(sum((s) => s.fuera.compensado ?? 0)), revisarTipo: r2(sum((s) => s.fuera.revisarTipo ?? 0)),
     },
     ventasInternas: r2(internoVentas),
     provisional: conResultado.some((s) => !s.mesCompleto),

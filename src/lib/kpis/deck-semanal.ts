@@ -563,9 +563,9 @@ const FRASE_ESTADO: Record<BreakevenEstado, string> = {
 export function puntoDeEquilibrio(ctx: Ctx, be: GroupBreakeven) {
   const mesNombre = monthLabel(be.month);
   const s = diapositiva(ctx.pptx, {
-    titulo: "Punto de equilibrio del mes por sede",
+    titulo: "Piso del mes (coach) por sede",
     subtitulo: `${mesNombre.charAt(0).toUpperCase()}${mesNombre.slice(1)}${be.isCurrent ? " (en curso)" : ""}. La línea negra es lo que hay que vender para cubrir los costos.`,
-    periodo: ctx.periodo, derecha: "Punto de equilibrio",
+    periodo: ctx.periodo, derecha: "Piso del mes (coach)",
   });
   const hastaMax = be.sedes.map((x) => x.ventasHasta).filter((x): x is string => !!x).sort().pop() ?? null;
   cajaFecha(s, hastaMax ? `Al ${Number(hastaMax.slice(8, 10))} de ${MESES[Number(hastaMax.slice(5, 7)) - 1]} ${hastaMax.slice(0, 4)}` : "Sin ventas cargadas", "Fuente: Byte");
@@ -594,7 +594,7 @@ export function puntoDeEquilibrio(ctx: Ctx, be: GroupBreakeven) {
       texto(s, solesDeck0(r.ventas), { x: dentro ? lx + 0.1 : lx + lw * frac + 0.08, y: ly, w: 1.2, h: lh, fontSize: 9.5, bold: true, color: dentro ? C.blanco : C.tinta });
       const mx = lx + lw * POS_META;
       s.addShape("rect", { x: mx - 0.01, y: ly - 0.05, w: 0.02, h: lh + 0.1, fill: { color: C.tinta }, line: { color: C.tinta, type: "none" } });
-      texto(s, `Equilibrio: ${solesDeck0(r.breakEven)}`, { x: mx - 1, y: ly + lh + 0.08, w: 2, h: 0.14, fontSize: 7, color: C.tinta, align: "center" });
+      texto(s, `Piso (coach): ${solesDeck0(r.breakEven)}`, { x: mx - 1, y: ly + lh + 0.08, w: 2, h: 0.14, fontSize: 7, color: C.tinta, align: "center" });
     }
     // Recuadro derecho: porcentaje y lo que falta.
     const rx = lx + lw + 0.2, rw = MX + ANCHO - 0.12 - rx;
@@ -621,7 +621,7 @@ export function puntoDeEquilibrio(ctx: Ctx, be: GroupBreakeven) {
   if (g.breakEven !== null) {
     texto(s, `Vendido: ${solesDeck0(g.ventas)} de ${solesDeck0(g.breakEven)}`, { x: MX + 0.6, y: gy + 0.42, w: izq, h: 0.17, fontSize: 8.5, bold: true, color: C.tinta });
     const fg = faltaParaEquilibrio(g);
-    const linea = `${Math.round(g.avancePct ?? 0)}% del equilibrio${g.estado !== "superado" && fg !== null ? ` · faltan ${solesDeck0(fg)}` : " · costos cubiertos"}`;
+    const linea = `${Math.round(g.avancePct ?? 0)}% del piso (coach)${g.estado !== "superado" && fg !== null ? ` · faltan ${solesDeck0(fg)}` : " · costos cubiertos"}`;
     texto(s, linea, { x: MX + 0.6, y: gy + 0.62, w: izq, h: altoLinea(8) * lineasEstimadas(linea, 8, izq, true), fontSize: 8, bold: true, color: TEXTO[tg], valign: "top" });
   } else {
     texto(s, "Aún no se puede calcular el consolidado.", { x: MX + 0.6, y: gy + 0.42, w: izq, h: 0.17, fontSize: 8.5, color: C.gris });

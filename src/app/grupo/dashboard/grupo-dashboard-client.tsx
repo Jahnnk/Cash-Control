@@ -9,6 +9,7 @@ import type { LiquidezGrupo } from "@/lib/liquidez";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import { CargasKelly, SubirExcelKelly } from "./cargas-kelly";
 import { BotonSubirByte, DatosCargados } from "./importables";
+import { SemaforoMes } from "./semaforo-mes";
 import { SelloClasificacionGrupo } from "@/components/sello-clasificacion";
 import { InformeGastosGrupo } from "./informe-gastos";
 import { SelectorMes } from "./selector-mes";
@@ -259,6 +260,8 @@ export function GrupoDashboardClient({
 
       {pestana === "resumen" && (
         <div className="space-y-6">
+          {/* Antes de las cifras: si son confiables (controles de fiabilidad, 24-oct-2026). */}
+          <SemaforoMes mes={selectedMonth} />
           {/* Capa 1: lo que se mira cada día. Primero cómo vamos y qué hacer hoy; después cada sede con cuatro datos.
               El detalle de cada sede se abre con «Ver el detalle»; lo de contador vive en Reportes → Para el contador. */}
           <div className={`grid grid-cols-1 gap-5 items-start ${isCurrentMonth ? "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>

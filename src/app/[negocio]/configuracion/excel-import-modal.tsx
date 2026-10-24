@@ -623,6 +623,8 @@ function PreviewStep({
   const autocorrectedWarnings = parseWarnings.filter((w) => w.severity === "autocorrected");
   const silencedWarnings = parseWarnings.filter((w) => w.severity === "silenced");
   const infoWarnings = parseWarnings.filter((w) => w.severity === "info");
+  // Tipo y columna cruzados (24-oct-2026): se importan marcadas, pero dejan el mes «No confiable».
+  const revisarWarnings = parseWarnings.filter((w) => w.severity === "revisar");
   // Filas con fecha de otro mes: bloquean igual que un warning del
   // parser. Se acumulan una copia por importación (ver
   // lib/filas-fuera-del-mes.ts), así que no se pueden dejar pasar.
@@ -754,6 +756,7 @@ function PreviewStep({
       {parseWarnings.length > 0 && (
         <ParseWarningsSection
           autocorrected={autocorrectedWarnings}
+          revisar={revisarWarnings}
           blocking={blockingWarnings}
           silenced={silencedWarnings}
           info={infoWarnings}
@@ -1237,18 +1240,20 @@ type ParseWarningRow = ParseWarning;
 
 function ParseWarningsSection({
   autocorrected,
+  revisar = [],
   blocking,
   silenced,
   info,
 }: {
   autocorrected: ParseWarningRow[];
+  revisar?: ParseWarningRow[];
   blocking: ParseWarningRow[];
   silenced: ParseWarningRow[];
   info: ParseWarningRow[];
 }) {
   // Agrupar por rowNumber para mostrar 1 fila aunque tenga múltiples
   // warnings (combo Caso A + Caso C, o Caso A + stale_forward_fill).
-  const all = [...autocorrected, ...blocking, ...silenced, ...info];
+  const all = [...autocorrected, ...revisar, ...blocking, ...silenced, ...info];
   const grouped = new Map<number, ParseWarningRow[]>();
   for (const w of all) {
     if (!grouped.has(w.rowNumber)) grouped.set(w.rowNumber, []);
@@ -1256,12 +1261,13 @@ function ParseWarningsSection({
   }
   const rowsSorted = Array.from(grouped.entries()).sort((a, b) => a[0] - b[0]);
 
-  const headerCls = blocking.length > 0 ? "text-red-600" : "text-amber-600";
-  const headerIcon = blocking.length > 0 ? "⛔" : "⚠️";
+  const headerCls = blocking.length > 0 || revisar.length > 0 ? "text-red-600" : "text-amber-600";
+  const headerIcon = blocking.length > 0 || revisar.length > 0 ? "⛔" : "⚠️";
 
   // Resumen del header: counts por severity
   const counts: string[] = [];
   if (autocorrected.length) counts.push(`${autocorrected.length} autocorregidas`);
+  if (revisar.length) counts.push(`${revisar.length} con el tipo cruzado`);
   if (blocking.length) counts.push(`${blocking.length} bloqueantes`);
   if (silenced.length) counts.push(`${silenced.length} silenciadas`);
   if (info.length) counts.push(`${info.length} para revisar`);
@@ -1277,6 +1283,11 @@ function ParseWarningsSection({
             Hay errores que el sistema no puede resolver solo: hay que corregir estas filas del Excel antes de importar.
           </p>
         )}
+        {revisar.length > 0 && (
+          <p className="text-xs text-red-700 mt-1">
+            {revisar.length} fila(s) dicen «I» pero tienen el monto en la columna de gastos. Se importan marcadas «REVISAR TIPO», fuera de las seis cifras, y el mes queda «No confiable» hasta que se corrijan en el Excel y se vuelva a subir.
+          </p>
+        )}
         {info.length > 0 && (
           <p className="text-xs text-blue-700 mt-1">
             Hay {info.length} fila(s) marcadas para revisar — el parser las importa pero conviene verificar fechas o conceptos antes de confirmar.
@@ -1284,7 +1295,7 @@ function ParseWarningsSection({
         )}
         <p className="text-[11px] text-gray-600 mt-1">
           El parser detecta: tipo vacío con monto en una sola columna (autocorregido),
-          tipo que no coincide con la columna del monto (autocorregido),
+          tipo «I» con el monto en la columna de gastos (se importa marcada «REVISAR TIPO», no se adivina),
           fecha vacía con monto/descripción (asignada al último día del mes),
           filas de saldo acumulado de meses anteriores (silenciadas),
           y filas con fecha forward-filled desfasada (info para revisar).
@@ -1304,7 +1315,7 @@ function ParseWarningsSection({
           </thead>
           <tbody className="divide-y divide-amber-100">
             {rowsSorted.map(([rn, wars]) => {
-              const anyBlocking = wars.some((w) => w.severity === "blocking_error");
+              const anyBlocking = wars.some((w) => w.severity === "blocking_error" || w.severity === "revisar");
               const anySilenced = wars.some((w) => w.severity === "silenced");
               const anyInfo = wars.some((w) => w.severity === "info");
               const bg =
@@ -1352,6 +1363,7 @@ function describeProblem(w: ParseWarningRow): string {
       ? "Tipo vacío + montos en columnas mixtas"
       : `Tipo vacío con monto en columna ${columnLabel(w.column)}`;
   }
+  if (w.reason === "type_mismatch" && w.severity === "revisar") return "Dice «I» (ingreso) pero el monto está en la columna de gastos";
   if (w.reason === "type_mismatch") {
     return w.severity === "blocking_error"
       ? `Tipo='${w.originalType}' + montos contradictorios en ambos lados`
@@ -1371,6 +1383,7 @@ function describeProblem(w: ParseWarningRow): string {
 function describeAction(w: ParseWarningRow): string {
   if (w.severity === "blocking_error") return "❌ NO importable";
   if (w.severity === "silenced") return "⏸ Silenciada (no se importa)";
+  if (w.severity === "revisar") return "⛔ Importada como «REVISAR TIPO» — corregir en el Excel y volver a subir";
   if (w.severity === "info" && w.reason === "income_without_group") return "👁 Importada como otro ingreso — ponerle Grupo";
   if (w.severity === "info") return "👁 Importada — revisar fecha";
   if (w.reason === "empty_type") {
