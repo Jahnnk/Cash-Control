@@ -8,11 +8,13 @@
  * es el que falta, para no estar subiendo los tres siempre». La usan «Cargas de
  * Byte» y la ventana «Subir Reportes Gerencia». Lógica: lib/productos/estado-reportes.ts.
  * Desde el 10-oct-2026 la venta y la mayor rotación cuentan igual si las subió la sede.
+ * Desde el 24-oct-2026 cada lugar mira solo SUS reportes (`tipos`): el Dashboard, el de ventas;
+ * Grupo → Productos, los de rotación.
  */
 
 import { celdaCobertura, marcarSospechosas, type CeldaCobertura, type PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { fechaCorta, mesesDesdeAbril } from "@/lib/productos/cobertura-datos";
-import { NOMBRE_REPORTE, reportesPorRevisar, reportesQueFaltan, todoCompleto, tresReportes, type DetalleReporte, type TipoReporte, type TresReportes, type VentasDelMes } from "@/lib/productos/estado-reportes";
+import { NOMBRE_REPORTE, TODOS_LOS_REPORTES, reportesPorRevisar, reportesQueFaltan, todoCompleto, tresReportes, type DetalleReporte, type TipoReporte, type TresReportes, type VentasDelMes } from "@/lib/productos/estado-reportes";
 
 export const SEDES_GRILLA = [
   { id: 2, nombre: "Fonavi" },
@@ -57,24 +59,39 @@ const MARCA: Record<DetalleReporte["estado"], { s: string; clase: string }> = {
 };
 const ETIQUETA_CORTA: Record<TipoReporte, string> = { ventas: "Ventas", mayor: "Mayor", menor: "Menor" };
 
-function tono(celda: CeldaCobertura, tres: TresReportes, enCurso: boolean): string {
-  if (celda.sospechosa) return "bg-red-50 border-red-200 text-red-900";
-  if (todoCompleto(tres)) return "bg-emerald-50 border-emerald-200 text-emerald-900";
+function tono(celda: CeldaCobertura, tres: TresReportes, enCurso: boolean, tipos: TipoReporte[]): string {
+  const conMayor = tipos.includes("mayor");
+  if (conMayor && celda.sospechosa) return "bg-red-50 border-red-200 text-red-900";
+  if (todoCompleto(tres, tipos)) return "bg-emerald-50 border-emerald-200 text-emerald-900";
   // Subido pero que no cuadra con ventas: no falta nada por subir (naranja, distinto del amarillo de «falta»).
-  if (reportesQueFaltan(tres).length === 0) return "bg-orange-50 border-orange-300 text-orange-900";
-  if (tres.mayor.estado === "vacio") return enCurso ? "bg-amber-50/60 border-amber-200 text-amber-900" : "bg-red-50 border-red-200 text-red-800";
+  if (reportesQueFaltan(tres, tipos).length === 0) return "bg-orange-50 border-orange-300 text-orange-900";
+  // El reporte principal del lugar (mayor rotación en Productos, ventas en el Dashboard) vacío pesa más.
+  const principal = conMayor ? "mayor" : tipos[0];
+  if (tres[principal].estado === "vacio") return enCurso ? "bg-amber-50/60 border-amber-200 text-amber-900" : "bg-red-50 border-red-200 text-red-800";
   return "bg-amber-50 border-amber-300 text-amber-900";
 }
 
-export function GrillaCobertura({ datos, compacto = false, elegido = null, onCelda }: {
+/** El titular de la tarjeta: «✓ Completo», «Falta 1 de 2»… Con un solo reporte, dice cómo está ese. */
+function titularCasilla(tres: TresReportes, tipos: TipoReporte[]): string {
+  const falta = reportesQueFaltan(tres, tipos);
+  const revisar = reportesPorRevisar(tres, tipos);
+  if (tipos.length === 1 && falta.length > 0) return tres[tipos[0]].estado === "parcial" ? "Incompleto" : "Falta";
+  if (falta.length > 0) return `Falta${falta.length > 1 ? "n" : ""} ${falta.length} de ${tipos.length}`;
+  return revisar.length > 0 ? "Subido · revisar" : "✓ Completo";
+}
+
+export function GrillaCobertura({ datos, compacto = false, elegido = null, tipos = TODOS_LOS_REPORTES, onCelda }: {
   datos: DatosCobertura;
   /** Tarjetas más angostas (dentro de la ventana de subida). */
   compacto?: boolean;
   /** La sede y el mes que se van a subir: su tarjeta se resalta. */
   elegido?: { sede: number | null; mes: string | null } | null;
+  /** Qué reportes mira esta grilla (por defecto los tres). */
+  tipos?: TipoReporte[];
   onCelda: (sedeId: number, month: string) => void;
 }) {
   const { hoy } = datos;
+  const conMayor = tipos.includes("mayor");
   const meses = mesesDesdeAbril(hoy);
   return (
     // «relative»: sin él, los textos sr-only (posición absoluta) de las casillas escapan del
@@ -100,23 +117,23 @@ export function GrillaCobertura({ datos, compacto = false, elegido = null, onCel
                 {celdas.map((c) => {
                   const enCurso = c.month === hoy.slice(0, 7);
                   const { tres } = casilla(datos, s.id, c.month, c);
-                  const falta = reportesQueFaltan(tres);
-                  const revisar = reportesPorRevisar(tres);
+                  const falta = reportesQueFaltan(tres, tipos);
+                  const revisar = reportesPorRevisar(tres, tipos);
                   const esElegida = s.id === elegido?.sede && c.month === elegido?.mes;
                   const resumenTitulo = [
                     falta.length > 0 ? `falta: ${falta.map((k) => `${NOMBRE_REPORTE[k].toLowerCase()} (${tres[k].texto})`).join(", ")}` : "",
                     revisar.length > 0 ? `subido, para revisar: ${revisar.map((k) => `${NOMBRE_REPORTE[k].toLowerCase()} (${tres[k].texto})`).join(", ")}` : "",
-                  ].filter(Boolean).join(" · ") || "los 3 reportes completos";
+                  ].filter(Boolean).join(" · ") || (tipos.length === 1 ? `${NOMBRE_REPORTE[tipos[0]].toLowerCase()} completo` : `los ${tipos.length} reportes completos`);
                   return (
                     <td key={c.month} className="align-top">
                       <button type="button" onClick={() => onCelda(s.id, c.month)} aria-pressed={esElegida} aria-label={`${s.nombre}, ${titulo(c.month)}: ${resumenTitulo}`} title={resumenTitulo}
-                        className={`w-full text-left rounded-xl border hover:ring-2 hover:ring-primary/30 ${compacto ? "min-w-[5.75rem] px-2 py-1.5 text-[11px]" : "min-w-[9.5rem] px-3 py-2.5 text-xs"} ${tono(c, tres, enCurso)} ${esElegida ? "ring-2 ring-primary" : ""}`}>
+                        className={`w-full text-left rounded-xl border hover:ring-2 hover:ring-primary/30 ${compacto ? "min-w-[5.75rem] px-2 py-1.5 text-[11px]" : "min-w-[9.5rem] px-3 py-2.5 text-xs"} ${tono(c, tres, enCurso, tipos)} ${esElegida ? "ring-2 ring-primary" : ""}`}>
                         <div className={`font-semibold tabular-nums ${compacto ? "text-xs" : "text-sm"}`}>
-                          {falta.length > 0 ? `Falta${falta.length > 1 ? "n" : ""} ${falta.length} de 3` : revisar.length > 0 ? "Subido · revisar" : "✓ Completo"}
+                          {titularCasilla(tres, tipos)}
                         </div>
-                        {/* Completo: basta el «✓ Completo»; las 3 marcas solo cuando algo falta o hay que revisar. */}
-                        {(falta.length > 0 || revisar.length > 0) && <ul className={`mt-1 space-y-0.5 ${compacto ? "" : "text-[11px]"}`}>
-                          {(Object.keys(tres) as TipoReporte[]).map((k) => (
+                        {/* Completo: basta el «✓ Completo»; las marcas solo cuando algo falta o hay que revisar (con un solo reporte, el titular ya lo dice). */}
+                        {tipos.length > 1 && (falta.length > 0 || revisar.length > 0) && <ul className={`mt-1 space-y-0.5 ${compacto ? "" : "text-[11px]"}`}>
+                          {tipos.map((k) => (
                             <li key={k} className="flex items-baseline justify-between gap-1.5">
                               <span className="font-medium">{ETIQUETA_CORTA[k]}</span>
                               <span className={`font-bold ${MARCA[tres[k].estado].clase}`} aria-hidden>{MARCA[tres[k].estado].s}</span>
@@ -124,16 +141,20 @@ export function GrillaCobertura({ datos, compacto = false, elegido = null, onCel
                             </li>
                           ))}
                         </ul>}
-                        {!compacto && c.estado !== "vacio" && (
+                        {!compacto && conMayor && c.estado !== "vacio" && (
                           <div className="mt-1.5 border-t border-black/10 pt-1 opacity-90">
                             <div className="tabular-nums">S/{Math.round(c.ventas).toLocaleString("es-PE")} en productos</div>
-                            {(Object.keys(tres) as TipoReporte[]).filter((k) => tres[k].estado === "parcial" || tres[k].estado === "revisar").map((k) => (
+                            {tipos.filter((k) => tres[k].estado === "parcial" || tres[k].estado === "revisar").map((k) => (
                               <div key={k} className="font-medium">{ETIQUETA_CORTA[k]}: {tres[k].estado === "revisar" ? `subido, ${tres[k].texto}` : tres[k].texto}</div>
                             ))}
                             {c.quien && <div className="opacity-80">{QUIEN[c.quien]}{c.cargadoEl ? ` · ${fechaCorta(c.cargadoEl)}` : ""}</div>}
                           </div>
                         )}
-                        {c.sospechosa && <div className="mt-0.5 font-semibold">vende muy poco: ¿carga parcial? vuelve a subirlo</div>}
+                        {/* Un solo reporte (ventas en el Dashboard): hasta dónde llega, si no está completo. */}
+                        {!conMayor && tipos.length === 1 && tres[tipos[0]].estado !== "completo" && tres[tipos[0]].estado !== "vacio" && (
+                          <div className={`mt-0.5 ${compacto ? "" : "text-[11px]"}`}>{tres[tipos[0]].texto}</div>
+                        )}
+                        {conMayor && c.sospechosa && <div className="mt-0.5 font-semibold">vende muy poco: ¿carga parcial? vuelve a subirlo</div>}
                       </button>
                     </td>
                   );
@@ -162,7 +183,7 @@ export function mesesEnPalabras(meses: string[]): string {
 }
 
 /** Qué reporte falta en cada mes, por sede, en palabras (debajo de la grilla). */
-export function FaltaSubir({ datos, soloSede = null }: { datos: DatosCobertura; soloSede?: number | null }) {
+export function FaltaSubir({ datos, soloSede = null, tipos = TODOS_LOS_REPORTES }: { datos: DatosCobertura; soloSede?: number | null; tipos?: TipoReporte[] }) {
   const meses = mesesDesdeAbril(datos.hoy);
   const sedes = SEDES_GRILLA.filter((s) => soloSede === null || s.id === soloSede);
   return (
@@ -174,8 +195,8 @@ export function FaltaSubir({ datos, soloSede = null }: { datos: DatosCobertura; 
         const porRevisar: string[] = [];
         for (const m of meses) {
           const { tres } = casilla(datos, s.id, m);
-          for (const k of reportesPorRevisar(tres)) porRevisar.push(`${NOMBRE_REPORTE[k]} de ${nombreMes(m)}: ${tres[k].texto}`);
-          for (const k of reportesQueFaltan(tres)) {
+          for (const k of reportesPorRevisar(tres, tipos)) porRevisar.push(`${NOMBRE_REPORTE[k]} de ${nombreMes(m)}: ${tres[k].texto}`);
+          for (const k of reportesQueFaltan(tres, tipos)) {
             if (k === "mayor") {
               const razon = tres.mayor.estado === "vacio" ? "" : tres.mayor.texto;
               mayorPorRazon.set(razon, [...(mayorPorRazon.get(razon) ?? []), m]);
@@ -193,7 +214,7 @@ export function FaltaSubir({ datos, soloSede = null }: { datos: DatosCobertura; 
           <li key={s.id}>
             <strong className="text-gray-800">{s.nombre}</strong>
             {lineas.length === 0
-              ? <span className="text-emerald-700"> · al día, no falta ningún reporte</span>
+              ? <span className="text-emerald-700"> · al día, {tipos.length === 1 ? `no falta el ${NOMBRE_REPORTE[tipos[0]].toLowerCase()}` : "no falta ningún reporte"}</span>
               : <ul className="mt-0.5 space-y-0.5 pl-3 text-gray-600">{lineas.map((l) => <li key={l}>{l}</li>)}</ul>}
           </li>
         );

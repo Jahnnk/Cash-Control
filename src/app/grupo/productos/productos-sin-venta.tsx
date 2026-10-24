@@ -114,7 +114,7 @@ export function ProductosSinVenta({ sede }: { sede: number }) {
       titulo="Productos que no se venden"
       subtitulo={s
         ? `Candidatos a sacar de la carta o de Byte. Byte: ${fecha(s.desde)} al ${fecha(s.hasta)}.`
-        : "Sube el reporte «Platos con menor rotación» de Byte de esta sede con «Subir reportes de Byte»."}
+        : "Sube el reporte «Platos con menor rotación» de Byte de esta sede con «Subir rotación de Byte»."}
       resumen={s && (
         <span className="text-xs text-gray-600">
           {cuenta("nunca")} nunca vendidos · {cuenta("dormido")} dormidos · {cuenta("poco")} con muy pocas ventas

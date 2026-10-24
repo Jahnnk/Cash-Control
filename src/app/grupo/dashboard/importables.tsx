@@ -5,9 +5,12 @@
  * finanzas no siempre manda a tiempo, así que él sube Byte cada semana (ventas,
  * mayor y menor rotación) y el Excel de cada sede cuando llega.
  *
- *   · BotonSubirByte  — abre el cargador de los 3 reportes de Byte (color #3b00a8).
- *   · DatosCargados   — hasta qué fecha llega cada cosa, en una franja: Byte en
- *                       una línea (el grupo vale por su peor sede, con el detalle
+ *   · BotonSubirByte  — abre el cargador del reporte de VENTAS de Byte (color #3b00a8).
+ *                       Desde el 24-oct-2026 cada reporte tiene una sola puerta (decisión de
+ *                       Jahnn): aquí la plata del día a día (ventas de Byte + Excel de cada
+ *                       sede); la mayor y menor rotación se suben en Grupo → Productos.
+ *   · DatosCargados   — hasta qué fecha llega cada cosa, en una franja: las ventas
+ *                       de Byte en una línea (el grupo vale por su peor sede, con el detalle
  *                       por sede a un toque) y el Excel de cada sede con el día
  *                       en que se subió. Reglas: lib/frescura-importables.ts.
  */
@@ -20,6 +23,7 @@ import { getFrescuraImportables, type FrescuraImportables } from "@/app/actions/
 import { ImportarReportesModal } from "@/app/grupo/productos/importar-reportes";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
 import { ddmm, fechaDelGrupo, sedesQueArrastran, tonoDeFecha, type TonoFecha } from "@/lib/frescura-importables";
+import { REPORTES_DEL_DASHBOARD } from "@/lib/productos/estado-reportes";
 
 /** El morado de Byte, definido por Jahnn. */
 export const COLOR_BYTE = "#3b00a8";
@@ -45,12 +49,13 @@ export function BotonSubirByte({ onCambio, className = "" }: { onCambio?: () => 
         className={`inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white rounded-xl whitespace-nowrap bg-[#3b00a8] hover:bg-[#2f0087] disabled:opacity-70 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-[#3b00a8] ${className}`}
       >
         {abriendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />}
-        Byte
+        Ventas de Byte
       </button>
       {periodos && (
         <ImportarReportesModal
           sedeInicial={null}
           periodos={periodos}
+          tipos={REPORTES_DEL_DASHBOARD}
           onClose={() => setPeriodos(null)}
           onImportado={() => { router.refresh(); onCambio?.(); }}
         />
@@ -94,14 +99,11 @@ export function DatosCargados({ version = 0, onVerExcel }: { version?: number; o
   if (datos === null) return null;
 
   const { hoy, sedes } = datos;
-  const grupo = (k: "ventasHasta" | "mayorHasta" | "menorHasta") => fechaDelGrupo(sedes.map((s) => s[k]));
-  const arrastra = (k: "ventasHasta" | "mayorHasta" | "menorHasta") =>
+  const grupo = (k: "ventasHasta") => fechaDelGrupo(sedes.map((s) => s[k]));
+  const arrastra = (k: "ventasHasta") =>
     sedesQueArrastran(sedes.map((s) => ({ nombre: s.nombre, hasta: s[k] })));
-  const byte = [
-    { nombre: "Ventas", k: "ventasHasta" as const },
-    { nombre: "Mayor rotación", k: "mayorHasta" as const },
-    { nombre: "Menor rotación", k: "menorHasta" as const },
-  ];
+  // Solo lo que se sube aquí: las ventas de Byte. La rotación tiene su franja en Grupo → Productos.
+  const byte = [{ nombre: "Ventas", k: "ventasHasta" as const }];
   const hayAtraso = byte.some((b) => tonoDeFecha(grupo(b.k), hoy) !== "al-dia");
 
   const hayAtrasoExcel = sedes.some((x) => tonoDeFecha(x.excelHasta, hoy) !== "al-dia");

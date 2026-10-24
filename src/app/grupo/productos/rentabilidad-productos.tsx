@@ -197,7 +197,7 @@ export function RentabilidadProductos({ month, sede }: { month: string; sede: nu
       {listo?.error ? <p className="text-sm text-gray-500">{listo.error}</p>
         : !listo ? <p className="text-sm text-gray-400">Calculando…</p>
         : d ? <Cuerpo d={d} />
-        : <p className="text-sm text-gray-500">Esta sede no tiene reporte de rotación de {nombreMes(month)}. Lo sube la sede los sábados (o tú, con «Subir reportes de Byte»).</p>}
+        : <p className="text-sm text-gray-500">Esta sede no tiene reporte de rotación de {nombreMes(month)}. Lo sube la sede los sábados (o tú, con «Subir rotación de Byte»).</p>}
     </SeccionDesplegable>
   );
 }

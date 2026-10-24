@@ -4,7 +4,7 @@
  * "¿Desde qué fecha hasta qué fecha tengo datos de productos?" (Grupo → Productos).
  * Pedido de Jahnn, 4-oct-2026: ver de un vistazo, por sede, qué cubren los reportes
  * de mayor y menor rotación de Byte que ya se subieron, y qué días faltan en el medio.
- * El cálculo: lib/productos/cobertura-datos.ts. El detalle por mes sigue en «Cargas de Byte».
+ * El cálculo: lib/productos/cobertura-datos.ts. El detalle por mes sigue en «Reportes de rotación».
  * UX (8-oct-2026): una sola línea («hasta qué día hay datos» por sede); si falta algo, lo dice
  * en ámbar; las fechas completas de mayor y menor rotación quedan a un toque.
  */

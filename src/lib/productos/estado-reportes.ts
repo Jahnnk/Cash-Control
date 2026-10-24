@@ -121,14 +121,23 @@ export function tresReportes(args: { celda: CeldaCobertura; periodos: PeriodoCar
   };
 }
 
+/**
+ * Cada reporte tiene UNA puerta (decisión de Jahnn, 24-oct-2026): el de ventas se sube en el Dashboard
+ * de Grupo (es la plata del día a día) y los de rotación en Grupo → Productos (deciden la carta).
+ * Cada lugar mira solo sus reportes: `tipos` limita las cuentas de abajo.
+ */
+export const TODOS_LOS_REPORTES: TipoReporte[] = ["ventas", "mayor", "menor"];
+export const REPORTES_DEL_DASHBOARD: TipoReporte[] = ["ventas"];
+export const REPORTES_DE_PRODUCTOS: TipoReporte[] = ["mayor", "menor"];
+
 /** Qué reportes faltan por subir (vacíos o incompletos) en un mes. Un «revisar» no falta: ya está guardado. */
-export function reportesQueFaltan(t: TresReportes): TipoReporte[] {
-  return (Object.keys(t) as TipoReporte[]).filter((k) => t[k].estado === "vacio" || t[k].estado === "parcial");
+export function reportesQueFaltan(t: TresReportes, tipos: TipoReporte[] = TODOS_LOS_REPORTES): TipoReporte[] {
+  return tipos.filter((k) => t[k].estado === "vacio" || t[k].estado === "parcial");
 }
 
 /** Reportes ya guardados cuyo total no cuadra con las ventas: no hay que subir nada, hay que revisar el archivo en Byte. */
-export function reportesPorRevisar(t: TresReportes): TipoReporte[] {
-  return (Object.keys(t) as TipoReporte[]).filter((k) => t[k].estado === "revisar");
+export function reportesPorRevisar(t: TresReportes, tipos: TipoReporte[] = TODOS_LOS_REPORTES): TipoReporte[] {
+  return tipos.filter((k) => t[k].estado === "revisar");
 }
 
-export const todoCompleto = (t: TresReportes) => (Object.keys(t) as TipoReporte[]).every((k) => t[k].estado === "completo");
+export const todoCompleto = (t: TresReportes, tipos: TipoReporte[] = TODOS_LOS_REPORTES) => tipos.every((k) => t[k].estado === "completo");

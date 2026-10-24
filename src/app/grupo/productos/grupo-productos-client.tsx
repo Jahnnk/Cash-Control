@@ -13,6 +13,7 @@ import {
 import { CAFETERIAS, NOMBRE_CAFETERIAS } from "@/lib/productos/cafeterias";
 import { ATELIER, ATELIER_CAFETERIAS as ATELIER_CAFETERIAS_VISTA, ATELIER_B2B as ATELIER_B2B_VISTA, VISTAS_ATELIER, esCanalAtelier, sedeReal, type RepartoCanal } from "@/lib/productos/canal-atelier";
 import type { PeriodoCargado } from "@/lib/productos/cobertura-rotacion";
+import { REPORTES_DE_PRODUCTOS } from "@/lib/productos/estado-reportes";
 import { CargasByte } from "./cargas-byte";
 import { CandidatosReemplazo } from "./candidatos-reemplazo";
 import { RankingPorCategoria, ReglaOchentaVeinte } from "./categorias-y-pareto";
@@ -90,7 +91,8 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
   }
 
   const pestanas: [Pestana, string][] = [["mes", "El mes"], ["trimestre", "Últimos 3 meses"]];
-  if (sedeFija === null) pestanas.push(["cargas", "Cargas de Byte"]);
+  // Una sola puerta por reporte (24-oct-2026): aquí la mayor y menor rotación; las ventas de Byte, en el Dashboard.
+  if (sedeFija === null) pestanas.push(["cargas", "Reportes de rotación"]);
 
   return (
     <div className="space-y-5 max-w-[1400px] min-w-0">
@@ -99,7 +101,7 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Productos</h1>
           {sedeFija !== null && (
             <Link href="/grupo/productos" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline mt-1">
-              Ver las 3 sedes y las cargas de Byte <ArrowRight className="w-3.5 h-3.5" />
+              Ver las 3 sedes y los reportes de rotación <ArrowRight className="w-3.5 h-3.5" />
             </Link>
           )}
         </div>
@@ -117,7 +119,7 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
             disabled={abriendo}
             className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl disabled:opacity-60 whitespace-nowrap"
           >
-            {abriendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Subir reportes de Byte
+            {abriendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Subir rotación de Byte
           </button>
         </div>
       </header>
@@ -159,6 +161,7 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
         <ImportarReportesModal
           sedeInicial={sede === CAFETERIAS ? 2 : sedeReal(sede)}
           periodos={importar.periodos}
+          tipos={REPORTES_DE_PRODUCTOS}
           onClose={() => setImportar(null)}
           onImportado={() => setVersion((v) => v + 1)}
         />
@@ -300,7 +303,7 @@ function PestanaMes({ month, sede, onSede, onMes, onCanal }: { month: string; se
       )}
       {distintas && (
         <p className="text-xs text-amber-900 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
-          Ojo: las dos cafeterías no llegan al mismo día ({hastas.map((x) => `${x.sede} al ${fechaCorta(x.hasta!)}`).join(" · ")}), así que lo que ves junto es parcial. Cada sede lo sube los sábados; si urge, súbelo tú con «Subir reportes de Byte».
+          Ojo: las dos cafeterías no llegan al mismo día ({hastas.map((x) => `${x.sede} al ${fechaCorta(x.hasta!)}`).join(" · ")}), así que lo que ves junto es parcial. Cada sede lo sube los sábados; si urge, súbelo tú con «Subir rotación de Byte».
         </p>
       )}
       {sedeReal(sede) === ATELIER && <CanalAtelier vista={sede} onCanal={onCanal} reparto={datos.reparto} />}
@@ -315,7 +318,7 @@ function PestanaMes({ month, sede, onSede, onMes, onCanal }: { month: string; se
         ? <VistaMes p={sel.panorama} cargadoEl={sel.cargadoEl} conKpis={!onSede || porCanal} />
         : (
           <Vacio>
-            {sel?.sede ?? "Esta sede"} todavía no tiene reporte de rotación de {monthLabel(month).toLowerCase()}. Lo sube la sede los sábados (o tú, con «Subir reportes de Byte»)
+            {sel?.sede ?? "Esta sede"} todavía no tiene reporte de rotación de {monthLabel(month).toLowerCase()}. Lo sube la sede los sábados (o tú, con «Subir rotación de Byte»)
             {" "}o <button type="button" onClick={() => onMes(mesAnterior(month))} className="font-medium text-primary hover:underline">mira {monthLabel(mesAnterior(month)).toLowerCase()}</button>.
           </Vacio>
         )}
