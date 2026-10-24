@@ -9,6 +9,7 @@
 import { leerFuentesVenta } from "./kpis/ventas-loader";
 import { leerConfigProfitFirst } from "./profit-first-config-sql";
 import { bloquesDeNotas } from "./bloques-pie-excel";
+import { controlEfectivoDeNotas } from "./control-efectivo-parser";
 import { leerDatosMesSede, hoyLima } from "./seis-cifras-sql";
 import { cifrasDelGrupo } from "./seis-cifras";
 import { c7Grupo, controlesDeSede, controlesDelGrupo, type ControlesMes, type DatosControles, type LoteMes } from "./controles-fiabilidad";
@@ -22,7 +23,7 @@ const nombreSede = (bId: number) => SEDES_CONTROLES.find(([id]) => id === bId)?.
 export async function leerDatosControles(sql: SqlTag, bId: number, mes: string, hoy = hoyLima()): Promise<DatosControles> {
   const datos = await leerDatosMesSede(sql, bId, nombreSede(bId), mes, hoy);
   const inicio = `${mes}-01`;
-  const [lotes, saldoIni, saldosMes, fuentes, efectivo, cfg] = await Promise.all([
+  const [lotes, saldoIni, saldosMes, fuentes, cfg] = await Promise.all([
     sql`
       SELECT b.id::text, to_char(b.imported_at AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "cargadoEl", b.file_name AS archivo, b.notes,
              (EXISTS (SELECT 1 FROM expenses x WHERE x.import_batch_id = b.id AND x.archived = false)
@@ -35,7 +36,6 @@ export async function leerDatosControles(sql: SqlTag, bId: number, mes: string, 
     sql`SELECT fecha::text, banco::float AS banco, caja::float AS caja FROM sede_balances WHERE business_id = ${bId} AND fecha < ${inicio} ORDER BY fecha DESC LIMIT 1` as unknown as Promise<{ fecha: string; banco: number | null; caja: number }[]>,
     sql`SELECT fecha::text, banco::float AS banco, caja::float AS caja FROM sede_balances WHERE business_id = ${bId} AND fecha BETWEEN ${inicio} AND ${datos.finDeMes} ORDER BY fecha` as unknown as Promise<{ fecha: string; banco: number | null; caja: number }[]>,
     leerFuentesVenta(sql, bId, inicio, datos.hastaHoy),
-    sql`SELECT COALESCE(SUM(efectivo), 0)::float AS t FROM byte_sales_daily WHERE business_id = ${bId} AND date BETWEEN ${inicio} AND ${datos.hastaHoy}` as unknown as Promise<{ t: number }[]>,
     leerConfigProfitFirst(sql as never),
   ]);
   const vigente = lotes.filter((l) => l.vigente).at(-1);
@@ -46,7 +46,7 @@ export async function leerDatosControles(sql: SqlTag, bId: number, mes: string, 
     saldoInicial: saldoIni[0] ?? null,
     saldosDelMes: saldosMes,
     ventasDia: { byte: fuentes.byte, excel: fuentes.kelly },
-    ventasEfectivo: Number(efectivo[0]?.t ?? 0),
+    efectivo: vigente ? controlEfectivoDeNotas(vigente.notes) : null,
     config: cfg.config,
   };
 }

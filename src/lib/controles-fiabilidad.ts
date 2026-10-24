@@ -10,7 +10,7 @@
  *   C3 Clasificación           · cuánto del gasto quedó POR ACLARAR o fuera del catálogo.
  *   C4 Cuadre de banco         · saldo inicial + ingresos − egresos del banco = saldo del banco del Excel
  *                                (la columna «Debe ser 0» de Kelly).
- *   C5 Caja                    · nunca negativa, y que se mueva si hubo ventas en efectivo.
+ *   C5 Caja                    · nunca negativa, y lo vendido en efectivo depositado (CONTROL EFECTIVO).
  *   C6 Filas con tipo dudoso   · filas «REVISAR TIPO» (lib/revisar-tipo.ts) pendientes.
  *   C7 Coherencia de las cifras· las seis cifras cuadran entre sí (si falla es un error de la APP, no del dato).
  *   C8 Carga vigente           · la carga que manda es la última y cubre el mes.
@@ -57,8 +57,8 @@ export type DatosControles = {
   saldosDelMes: { fecha: string; banco: number | null; caja: number }[];
   /** Venta de cada día según el reporte de Byte y según el Control de VTAS del Excel. */
   ventasDia: { byte: { date: string; total: number }[]; excel: { date: string; total: number }[] };
-  /** Ventas en efectivo del mes (Control de VTAS del Excel, columna efectivo). */
-  ventasEfectivo: number;
+  /** La fila TOTAL de la pestaña CONTROL EFECTIVO del Excel vigente (null = no la trae). */
+  efectivo: { ventas: number; depositos: number } | null;
   config?: ConfigProfitFirst;
 };
 
@@ -157,22 +157,36 @@ export function c4Banco(d: DatosControles): Control {
 }
 
 // ─────────────────────────── C5 ───────────────────────────
+/** Hasta cuánto puede no cuadrar lo vendido en efectivo con lo depositado. */
+export const C5_VERDE_HASTA = 1;
+export const C5_AMARILLO_HASTA = 20;
+
+/**
+ * Caja (24-oct-2026, ajuste de Jahnn): en Fonavi y Centro todo el efectivo se deposita al banco y se controla en la
+ * pestaña CONTROL EFECTIVO (fila TOTAL). Que el libro no tenga movimientos en efectivo es lo normal; lo que importa es
+ * que lo vendido en efectivo se haya depositado, y que la caja nunca esté en negativo.
+ */
 export function c5Caja(d: DatosControles): Control {
   const nombre = "Caja (efectivo)";
   const saldos = [...(d.saldoInicial ? [d.saldoInicial] : []), ...d.saldosDelMes];
   const negativos = saldos.filter((s) => s.caja < -0.005);
-  const movEfectivo = d.datos.ingresos.filter((i) => i.metodo === "efectivo" && entroALaCuenta(i)).length
-    + d.datos.gastos.filter((g) => g.metodo === "efectivo" && salioDeLaCuenta(g)).length;
-  const congelada = d.ventasEfectivo > 0.005 && movEfectivo === 0;
-  const problemas = [
-    ...negativos.map((s) => `Caja negativa al ${ddmm(s.fecha)}: ${soles(s.caja)}`),
-    ...(congelada ? [`Hubo ${soles(d.ventasEfectivo)} de ventas en efectivo y la caja no tuvo ni un movimiento en todo el mes (quedó en ${soles(saldos.at(-1)?.caja ?? 0)})`] : []),
-  ];
-  const estado: Semaforo = problemas.length ? "rojo" : saldos.length === 0 ? "amarillo" : "verde";
+  const negTexto = negativos.map((s) => `Caja negativa al ${ddmm(s.fecha)}: ${soles(s.caja)}`);
+  const ef = d.efectivo;
+  const dif = ef ? r2(ef.ventas - ef.depositos) : null;
+  const cuadre = ef && dif !== null
+    ? `CONTROL EFECTIVO: vendido en efectivo ${soles(ef.ventas)}, depositado ${soles(ef.depositos)}, diferencia ${conSigno(dif)}.`
+    : "El Excel no trae la pestaña CONTROL EFECTIVO del mes (o es una carga anterior al 24-oct-2026): no se pudo comprobar que el efectivo se depositó.";
+  const estado: Semaforo = negativos.length || (dif !== null && Math.abs(dif) > C5_AMARILLO_HASTA) ? "rojo"
+    : dif === null || Math.abs(dif) > C5_VERDE_HASTA ? "amarillo" : "verde";
+  const queHacer = estado === "verde" ? "" : [
+    negativos.length ? "Revisar el saldo de caja del Excel (la caja no puede estar en negativo) y volver a subirlo." : "",
+    dif === null ? "Subir el Excel con su pestaña CONTROL EFECTIVO del mes." : Math.abs(dif) > C5_VERDE_HASTA ? "Depositar el efectivo pendiente o corregir la pestaña CONTROL EFECTIVO, y volver a subir el Excel." : "",
+  ].filter(Boolean).join(" ");
   return {
-    id: "C5", nombre, estado, diferencia: negativos.length ? Math.abs(Math.min(...negativos.map((s) => s.caja))) : null,
-    detalle: problemas.length ? problemas.join(". ") + "." : saldos.length === 0 ? "El Excel no trae el saldo de la caja." : `La caja nunca estuvo en negativo y se movió en el mes (${movEfectivo} movimientos en efectivo).`,
-    queHacer: estado === "verde" ? "" : "Registrar en el Excel las entradas y salidas de efectivo (ventas en efectivo, depósitos al banco) y el arqueo de caja; volver a subirlo.",
+    id: "C5", nombre, estado,
+    diferencia: negativos.length ? Math.abs(Math.min(...negativos.map((s) => s.caja))) : dif === null ? null : Math.abs(dif),
+    detalle: [...negTexto.map((t) => `${t}.`), cuadre].join(" "),
+    queHacer,
   };
 }
 

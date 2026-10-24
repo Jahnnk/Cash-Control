@@ -19,6 +19,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { neon } from "@neondatabase/serverless";
 import { controlesDelMes, guardarControles } from "@/lib/controles-fiabilidad-sql";
+import { controlEfectivoANotas, hojaControlEfectivoDelMes, parseControlEfectivo } from "@/lib/control-efectivo-parser";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
 import { requireFullSession } from "@/lib/session-access";
@@ -784,7 +785,19 @@ export async function executeExcelImport(
   // Los resúmenes de Kelly al pie de la hoja (total del mes según la hoja y
   // su análisis de rentabilidad): se guardan para la verificación.
   const notasPie = parseResult ? bloquesANotas(parseResult.bloquesPie) : [];
-  const notasFoto = [...(omitidosEgresos > 0 ? [`omitidos_egresos=${omitidosEgresos}`] : []), ...notasPie];
+  // La pestaña «CONTROL EFECTIVO <MES>» (24-oct-2026): lectura OPCIONAL para el control C5. Si no está o no se
+  // entiende, la carga sigue igual (C5 queda en amarillo).
+  let notasEfectivo: string[] = [];
+  try {
+    const hojaEf = mesDelImport ? hojaControlEfectivoDelMes(XLSX.read(buf, { type: "buffer", bookSheets: true }).SheetNames, mesDelImport) : null;
+    if (hojaEf) {
+      const wbEf = XLSX.read(buf, { type: "buffer", sheets: [hojaEf] });
+      notasEfectivo = controlEfectivoANotas(parseControlEfectivo(XLSX.utils.sheet_to_json(wbEf.Sheets[hojaEf], { header: 1, defval: null }) as unknown[][], hojaEf));
+    }
+  } catch (err) {
+    console.error("[executeExcelImport] CONTROL EFECTIVO no se pudo leer (la carga sigue):", err);
+  }
+  const notasFoto = [...(omitidosEgresos > 0 ? [`omitidos_egresos=${omitidosEgresos}`] : []), ...notasPie, ...notasEfectivo];
   const batchRes = await db.execute(sql`
     INSERT INTO import_batches (
       business_id, file_name, sheet_name, date_range_start, date_range_end,

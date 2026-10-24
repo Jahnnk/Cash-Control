@@ -9,7 +9,8 @@ export default defineConfig({
   test: {
     // Tests unitarios de lógica pura — entorno node, sin DOM ni BD.
     environment: "node",
-    include: ["src/**/*.test.ts"],
+    // scripts/regresion: corre sobre una foto local (fixtures/, fuera de GitHub); sin la foto se salta sola.
+    include: ["src/**/*.test.ts", "scripts/regresion/**/*.test.ts"],
     // Aísla de cualquier setup de red/BD: estos tests no tocan Neon.
     globals: false,
   },

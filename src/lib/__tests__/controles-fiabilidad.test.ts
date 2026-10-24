@@ -10,6 +10,7 @@ import { compensarGastosNoEjecutados, personaDe } from "../gastos-compensados";
 import { filasRevisarTipo, MARCA_REVISAR_TIPO } from "../revisar-tipo";
 import { cifrasDelMes, cajaDelMes, type DatosMesSede, type GastoMes, type IngresoMes } from "../seis-cifras-mes";
 import { cifrasDelGrupo, puntoDeEquilibrio } from "../seis-cifras";
+import { controlEfectivoANotas, controlEfectivoDeNotas, hojaControlEfectivoDelMes, parseControlEfectivo } from "../control-efectivo-parser";
 import {
   c1Movimientos, c2Ventas, c3Clasificacion, c4Banco, c5Caja, c6TipoDudoso, c7Coherencia, c7Grupo, c8CargaVigente,
   controlesDeSede, controlesDelGrupo, estadoDe, type DatosControles,
@@ -153,7 +154,7 @@ function controlesBase(): DatosControles {
     saldoInicial: { fecha: "2026-08-31", banco: 1000, caja: 50 },
     saldosDelMes: [{ fecha: "2026-09-30", banco: r2(1000 + caja.entro - caja.salio), caja: 50 }],
     ventasDia: { byte: [{ date: "2026-09-10", total: 5000 }, { date: "2026-09-20", total: 5000 }], excel: [{ date: "2026-09-10", total: 5000 }, { date: "2026-09-20", total: 5000 }] },
-    ventasEfectivo: 0,
+    efectivo: { ventas: 8031.15, depositos: 8031.1 },
   };
 }
 
@@ -184,11 +185,18 @@ describe("controles de fiabilidad", () => {
     const fin = d.saldosDelMes[0];
     expect(c4Banco({ ...d, saldosDelMes: [{ ...fin, banco: fin.banco! + 3810.52 }] })).toMatchObject({ estado: "rojo", diferencia: 3810.52 });
   });
-  it("C5: caja negativa o quieta todo el mes con ventas en efectivo → rojo", () => {
+  it("C5: lo vendido en efectivo contra lo depositado (CONTROL EFECTIVO): ≤S/1 verde, hasta S/20 amarillo, más rojo", () => {
     const d = controlesBase();
-    expect(c5Caja(d).estado).toBe("verde");
-    expect(c5Caja({ ...d, saldoInicial: { ...d.saldoInicial!, caja: -103 } }).estado).toBe("rojo");
-    expect(c5Caja({ ...d, ventasEfectivo: 7787.7 }).estado).toBe("rojo");
+    // Fonavi setiembre: 8,031.15 vs 8,031.10 → S/0.05.
+    expect(c5Caja(d)).toMatchObject({ estado: "verde", diferencia: 0.05 });
+    expect(c5Caja({ ...d, efectivo: { ventas: 7787.7, depositos: 7787.7 } }).estado).toBe("verde");
+    expect(c5Caja({ ...d, efectivo: { ventas: 1000, depositos: 990 } })).toMatchObject({ estado: "amarillo", diferencia: 10 });
+    expect(c5Caja({ ...d, efectivo: { ventas: 8603.8, depositos: 7384.1 } })).toMatchObject({ estado: "rojo", diferencia: 1219.7 });
+  });
+  it("C5: sin la pestaña CONTROL EFECTIVO → amarillo; con un saldo de caja negativo → rojo", () => {
+    const d = controlesBase();
+    expect(c5Caja({ ...d, efectivo: null }).estado).toBe("amarillo");
+    expect(c5Caja({ ...d, saldoInicial: { ...d.saldoInicial!, caja: -103 } })).toMatchObject({ estado: "rojo", diferencia: 103 });
   });
   it("C6: la fila con el tipo cruzado deja el mes en rojo", () => {
     const c6 = c6TipoDudoso(controlesBase());
@@ -222,5 +230,57 @@ describe("controles de fiabilidad", () => {
     expect(r.controles.filter((c) => c.estado === "rojo").map((c) => c.id)).toEqual(["C3", "C6"]);
     const g = controlesDelGrupo("2026-09", [r], c7Grupo(cifrasDelGrupo([r.cifras]), [r.cifras]));
     expect(g.estado).toBe("no_confiable");
+  });
+});
+
+describe("pestaña CONTROL EFECTIVO (lectura opcional)", () => {
+  // La forma real de la pestaña: encabezado VENTAS / DEPÒSITO / VARIACIÒN (acento grave) y fila TOTAL.
+  const filas = [
+    [null, null, "VENTAS", "DEPÒSITO", "VARIACIÒN"],
+    [null, 46266, 240, null, 240],
+    [null, 46267, 210.5, 261.5, 189],
+    [null, "TOTAL", 7787.700000000001, 7787.700000000001, 0],
+  ];
+  it("lee la fila TOTAL buscando las columnas por su encabezado", () => {
+    expect(parseControlEfectivo(filas, "CONTROL EFECTIVO SEP26")).toEqual({ hoja: "CONTROL EFECTIVO SEP26", ventas: 7787.7, depositos: 7787.7, variacion: 0, filaTotal: 4 });
+  });
+  it("sin encabezado o sin fila TOTAL devuelve null (la carga sigue)", () => {
+    expect(parseControlEfectivo([[1, 2, 3]], "X")).toBeNull();
+    expect(parseControlEfectivo(filas.slice(0, 3), "X")).toBeNull();
+  });
+  it("encuentra la pestaña del mes, con o sin año", () => {
+    const hojas = ["Ing&Gtos SEP26", "CONTROL EFECTIVO AGO26", "CONTROL EFECTIVO SEP26", "CONTROL EFECTIVO OCT"];
+    expect(hojaControlEfectivoDelMes(hojas, "2026-09")).toBe("CONTROL EFECTIVO SEP26");
+    expect(hojaControlEfectivoDelMes(hojas, "2026-11")).toBeNull();
+  });
+  it("viaja en las notas de la carga y se vuelve a leer", () => {
+    const notas = ["hoja_ingresos=1", ...controlEfectivoANotas({ hoja: "x", ventas: 8031.15, depositos: 8031.1, variacion: 0.05, filaTotal: 34 })].join(", ");
+    expect(controlEfectivoDeNotas(notas)).toEqual({ ventas: 8031.15, depositos: 8031.1 });
+    expect(controlEfectivoDeNotas("hoja_ingresos=1")).toBeNull();
+  });
+});
+
+describe("saldo de arrastre del libro (la caja de Centro de −S/103 al 31/08)", () => {
+  const CAB = ["Fecha", "Ing. / Gsto.", "Grupo ", "PROVEEDOR", "RUC", "Concepto", "Comprobante de Pago", "Nro. CP", "ING. EFECTIVO", "ING. CTA. CTE.", "GTOS. EFECTIVO", "GTOS. CTA. CTE.", "SALDO EFECTIVO", "SALDO CTA. CTE."];
+  const serial = (iso: string) => Math.round(new Date(iso + "T00:00:00Z").getTime() / 86400000) + 25569;
+  const libro = (saldo: string) => {
+    const ws = XLSX.utils.aoa_to_sheet([[null], [null], CAB,
+      [serial("2026-07-31"), "I", "SALDO", "SALDO", null, saldo, null, null, 2491.87, 1419.9],
+      [serial("2026-08-03"), "G", "CAJA CHICA", null, null, "PRESTAMO CAJA CHICA NRO 24", null, null, null, null, 103],
+    ]);
+    const wb = XLSX.utils.book_new();
+    XLSX.utils.book_append_sheet(wb, ws, "Ing&Gtos-AGO26");
+    return XLSX.write(wb, { type: "buffer", bookType: "xlsx" }) as Buffer;
+  };
+  it("la fila SALDO da el arrastre aunque no diga «Saldo al …»: 2,491.87 − 103 = 2,388.87 (como el Excel)", () => {
+    const r = parseExcelFile(libro("SALDOS DE MESES ANTERIORS (ENE-JUN)"), "Ing&Gtos-AGO26");
+    expect(r.totales.saldoFinalEfectivo).toBe(2388.87);
+    // El saldo inicial que se APLICA al sistema sigue exigiendo «Saldo al …» (necesita la fecha de corte).
+    expect(r.saldoInicial.fechaCierre).toBeNull();
+  });
+  it("con «Saldo al …» todo sigue como antes", () => {
+    const r = parseExcelFile(libro("Saldo al 31/07/2026"), "Ing&Gtos-AGO26");
+    expect(r.totales.saldoFinalEfectivo).toBe(2388.87);
+    expect(r.saldoInicial.fechaCierre).toBe("2026-07-31");
   });
 });

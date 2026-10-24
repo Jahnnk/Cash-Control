@@ -346,6 +346,10 @@ export function parseExcelFile(
 
   let saldoInicialEfectivo: number | null = null;
   let saldoInicialBcp: number | null = null;
+  // El arrastre del mes anterior, sea cual sea la redacción de la fila SALDO (ver abajo). Solo para el saldo final
+  // del libro: el saldo inicial que se APLICA al sistema sigue exigiendo «Saldo al …» (necesita la fecha de corte).
+  let arrastreEfectivo: number | null = null;
+  let arrastreBcp: number | null = null;
   let fechaCierre: string | null = null;
 
   const movimientos: ParsedMovement[] = [];
@@ -399,6 +403,13 @@ export function parseExcelFile(
     // el candado ya no la ve — y sigue protegiendo contra las fechas
     // que SÍ están equivocadas.
     if (grupoRaw.toUpperCase() === "SALDO") {
+      // El arrastre se toma de la PRIMERA fila SALDO, se redacte como se redacte (24-oct-2026). Antes solo se tomaba
+      // con «Saldo al …» y Centro agosto («SALDOS DE MESES ANTERIORS (ENE-JUN)», S/2,491.87 de efectivo) arrancaba la
+      // caja en 0: con S/103 de gastos en efectivo quedaba en −S/103 cuando el Excel dice S/2,388.87.
+      if (arrastreEfectivo === null && arrastreBcp === null) {
+        arrastreEfectivo = ie || 0;
+        arrastreBcp = ic || 0;
+      }
       // El saldo inicial declarado ("Saldo al 31/07/2026") se sigue
       // capturando igual: es el único que se puede aplicar sin adivinar
       // a qué fecha corresponde el corte.
@@ -805,8 +816,8 @@ export function parseExcelFile(
   const inBcR = r2(inBcp);
   const exEfR = r2(exEfectivo);
   const exBcR = r2(exBcp);
-  const saldoFinalEfectivo = r2((saldoInicialEfectivo ?? 0) + inEfR - exEfR);
-  const saldoFinalBcp = r2((saldoInicialBcp ?? 0) + inBcR - exBcR);
+  const saldoFinalEfectivo = r2((saldoInicialEfectivo ?? arrastreEfectivo ?? 0) + inEfR - exEfR);
+  const saldoFinalBcp = r2((saldoInicialBcp ?? arrastreBcp ?? 0) + inBcR - exBcR);
 
   // El saldo REAL del banco que anotó Kelly. Pasada aparte y 100% por
   // encabezado: el resto de este parser lee por posición fija y no se
