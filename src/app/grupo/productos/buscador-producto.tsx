@@ -7,8 +7,11 @@
  */
 
 import { useMemo, useRef, useState } from "react";
-import { Loader2, Search, X } from "lucide-react";
-import { getHistorialProductos } from "@/app/actions/productos-panorama";
+import { Lightbulb, Loader2, Search, X } from "lucide-react";
+import { getCandidatosReemplazo, getHistorialProductos, type CandidatosReemplazo } from "@/app/actions/productos-panorama";
+import { claveProducto } from "@/lib/productos/historial-producto";
+import { CUADRANTES, fichaDeProducto, type Cuadrante } from "@/lib/productos/matriz-carta";
+import { sugerirProducto, type AccionProducto, type Sugerencia } from "@/lib/productos/sugerencia-producto";
 import { buscarEnHistorial, resumenProducto, type HistorialProductos, type ResumenSede } from "@/lib/productos/historial-producto";
 import { Segmentado } from "@/components/productos/ui";
 
@@ -59,6 +62,66 @@ export function TarjetaSede({ r, periodo }: { r: ResumenSede; periodo: number })
   );
 }
 
+
+const TONO_ACCION: Record<AccionProducto, string> = {
+  potenciar: "border-emerald-200 bg-emerald-50/60 text-emerald-800",
+  mantener: "border-sky-200 bg-sky-50/60 text-sky-800",
+  promocionar: "border-violet-200 bg-violet-50/60 text-violet-800",
+  preparar: "border-amber-200 bg-amber-50/60 text-amber-800",
+  sacar: "border-red-200 bg-red-50/60 text-red-800",
+  revisar: "border-sky-200 bg-sky-50/60 text-sky-800",
+  esperar: "border-gray-200 bg-gray-50 text-gray-700",
+  "sin-costo": "border-gray-200 bg-gray-50 text-gray-700",
+  "sin-datos": "border-gray-200 bg-gray-50 text-gray-700",
+};
+
+/** La matriz en chico: en qué caja cae (ventas × lo que deja cada venta). */
+function MatrizMini({ cuadrante }: { cuadrante: Cuadrante | null }) {
+  // Arriba lo que deja mucho por venta; a la derecha lo que vende mucho.
+  const orden: Cuadrante[] = ["interrogante", "estrella", "perro", "vaca"];
+  return (
+    <div className="shrink-0" aria-label="Dónde cae en la matriz de la carta">
+      <div className="grid w-40 grid-cols-2 gap-1">
+        {orden.map((c) => (
+          <div key={c} className={`rounded-md px-1.5 py-1.5 text-center text-[10px] leading-tight ${c === cuadrante ? "bg-gray-900 font-semibold text-white" : "bg-gray-100 text-gray-500"}`}>
+            {CUADRANTES[c].nombre}<span className="block text-[9px] opacity-80">{CUADRANTES[c].accion}</span>
+          </div>
+        ))}
+      </div>
+      <div className="mt-0.5 flex w-40 justify-between text-[9px] text-gray-400"><span>vende poco</span><span>vende mucho →</span></div>
+    </div>
+  );
+}
+
+export function QueHacer({ s, precio, costo, margen, margenPct, cuadrante }: { s: Sugerencia; precio: number | null; costo: number | null; margen: number | null; margenPct: number | null; cuadrante: Cuadrante | null }) {
+  return (
+    <div className={`rounded-xl border px-4 py-3 ${TONO_ACCION[s.accion]}`}>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0 flex-1">
+          <div className="text-[10px] font-semibold uppercase tracking-wider opacity-80">Qué hacer con este producto{s.caja ? ` · ${s.caja}` : ""}</div>
+          <div className="mt-0.5 text-lg font-semibold">{s.titulo}</div>
+          {(precio !== null || margen !== null) && (
+            <p className="mt-1 text-xs text-gray-700">
+              {precio !== null && <>Precio <b>S/ {precio.toFixed(2)}</b></>}
+              {costo !== null && <> · costo <b>S/ {costo.toFixed(2)}</b></>}
+              {margen !== null && <> · deja <b>S/ {margen.toFixed(2)}</b>{margenPct !== null ? ` (${margenPct}%)` : ""} por venta</>}
+            </p>
+          )}
+          <ul className="mt-2 space-y-0.5 text-xs text-gray-700">{s.porque.map((x) => <li key={x}>· {x}</li>)}</ul>
+          {s.ideas.length > 0 && (
+            <div className="mt-2">
+              <div className="flex items-center gap-1 text-xs font-semibold"><Lightbulb className="h-3.5 w-3.5" aria-hidden />Ideas</div>
+              <ul className="mt-0.5 space-y-0.5 text-xs text-gray-700">{s.ideas.map((x) => <li key={x}>· {x}</li>)}</ul>
+            </div>
+          )}
+          {s.ojo && <p className="mt-2 text-xs font-medium text-amber-800">Ojo: {s.ojo}</p>}
+        </div>
+        {cuadrante && <MatrizMini cuadrante={cuadrante} />}
+      </div>
+    </div>
+  );
+}
+
 export function BuscadorProducto({ month, sedeFija = null }: { month: string; sedeFija?: number | null }) {
   const [hist, setHist] = useState<{ mes: string; data: HistorialProductos | null } | null>(null);
   const [cargando, setCargando] = useState(false);
@@ -78,9 +141,38 @@ export function BuscadorProducto({ month, sedeFija = null }: { month: string; se
       .finally(() => setCargando(false));
   }
 
+  // La ingeniería de menú (carta de Fonavi y Centro): se pide la primera vez que se elige un producto de las cafeterías.
+  const [cand, setCand] = useState<{ mes: string; data: CandidatosReemplazo | null } | null>(null);
+  const pedidoCand = useRef<string | null>(null);
+  function cargarCandidatos() {
+    if (pedidoCand.current === month) return;
+    pedidoCand.current = month;
+    getCandidatosReemplazo(month)
+      .then((r) => setCand({ mes: month, data: r.ok ? r.data : null }))
+      .catch(() => setCand({ mes: month, data: null }));
+  }
+  const candidatos = cand?.mes === month ? cand.data : undefined;
+
   const sugerencias = useMemo(() => (data && texto.trim() && !elegido ? buscarEnHistorial(data.productos, texto) : []), [data, texto, elegido]);
   const producto = data && elegido ? data.productos.find((p) => p.clave === elegido) ?? null : null;
   const resumen = useMemo(() => (data && elegido ? resumenProducto(data, elegido, periodo) : []), [data, elegido, periodo]);
+  const enCafeterias = !!producto && (!!producto.ventas[2] || !!producto.ventas[3]);
+  const menu = useMemo(() => {
+    if (!candidatos || !elegido) return null;
+    const prod = candidatos.matriz.find((x) => x.clave === elegido || claveProducto(x.nombre) === elegido);
+    const ficha = prod ? fichaDeProducto(candidatos.matriz, candidatos.cartas, prod.clave) : null;
+    const candidato = prod ? candidatos.candidatos.find((c) => c.clave === prod.clave) ?? null : null;
+    const precioDe = prod?.sedes.find((x) => x.precio !== null);
+    return {
+      s: sugerirProducto(ficha, candidato),
+      cuadrante: ficha?.punto?.cuadrante ?? null,
+      precio: ficha?.punto?.precio ?? precioDe?.precio ?? null,
+      // Con la ficha, costo = precio − lo que deja (las mismas cifras de la matriz: siempre cuadran).
+      costo: ficha?.punto?.precio != null ? Math.round((ficha.punto.precio - ficha.punto.margenUnidad) * 100) / 100 : precioDe?.costo ?? null,
+      margen: ficha?.punto?.margenUnidad ?? null,
+      margenPct: ficha?.punto?.margenPct ?? null,
+    };
+  }, [candidatos, elegido]);
 
   return (
     <section className="rounded-2xl border border-gray-200/80 bg-white px-4 py-4 sm:px-5" aria-label="Buscar un producto">
@@ -102,7 +194,7 @@ export function BuscadorProducto({ month, sedeFija = null }: { month: string; se
           <ul className="absolute z-20 mt-1 w-full overflow-hidden rounded-xl border border-gray-200 bg-white shadow-lg" role="listbox">
             {sugerencias.map((p) => (
               <li key={p.clave}>
-                <button type="button" role="option" aria-selected={false} onClick={() => { setElegido(p.clave); setTexto(p.nombre); }}
+                <button type="button" role="option" aria-selected={false} onClick={() => { setElegido(p.clave); setTexto(p.nombre); if (p.ventas[2] || p.ventas[3]) cargarCandidatos(); }}
                   className="flex w-full items-center justify-between gap-3 px-3 py-2 text-left text-sm hover:bg-gray-50">
                   <span className="min-w-0 truncate text-gray-800">{p.nombre}</span>
                   <span className="shrink-0 text-[11px] text-gray-400">
@@ -126,6 +218,15 @@ export function BuscadorProducto({ month, sedeFija = null }: { month: string; se
             </div>
             <Segmentado tamano="sm" valor={periodo} onChange={setPeriodo} opciones={PERIODOS} />
           </div>
+          {/* Ingeniería de menú: qué hacer con el producto (carta de Fonavi y Centro). */}
+          {enCafeterias && (candidatos === undefined
+            ? <div className="flex items-center gap-2 rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-500"><Loader2 className="h-4 w-4 animate-spin" aria-hidden />Calculando qué conviene hacer con este producto…</div>
+            : candidatos && menu ? <QueHacer {...menu} /> : null)}
+          {!enCafeterias && producto && (
+            <p className="rounded-xl border border-gray-200 bg-gray-50 px-4 py-3 text-xs text-gray-600">
+              La ingeniería de menú es para la carta de Fonavi y Centro. En Atelier, un producto Y- se decide con lo que venden las cafeterías, y uno P- con su venta a otros clientes (abajo).
+            </p>
+          )}
           {resumen.length === 0
             ? <p className="text-sm text-gray-500">No tiene ventas en estos meses.</p>
             : <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">{resumen.map((r) => <TarjetaSede key={r.id} r={r} periodo={periodo} />)}</div>}
