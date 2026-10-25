@@ -18,6 +18,7 @@ import { getSessionRole } from "@/lib/session-access";
 import { grupoAColumnas, grupoDelCatalogo, type GrupoCategoria } from "@/lib/catalogo-categorias";
 import { enListaUnica, type Opinion } from "@/lib/clasificador-gasto";
 import { tipoDeCategoria } from "@/lib/reglas-gasto";
+import { correccionesFirmesParaKelly, type GastoConGrupo } from "@/lib/reglas-firmes-kelly";
 import { normGrupoPE, type TipoPE } from "@/lib/pe-kelly";
 import { sincronizarRevisiones, inicioRevision } from "@/lib/revision-clasificacion-sql";
 import {
@@ -114,12 +115,27 @@ export async function getPorDefinir(): Promise<Res<{ data: BandejaPorDefinir }>>
       `) as typeof reglasNuevas;
     } catch { /* migración pendiente */ }
 
+    // Lo que una regla firme corrigió del Excel este mes y el anterior (25-oct-2026): Kelly lo pasa a su Excel.
+    let firmes: (GastoConGrupo & { business_id: number })[] = [];
+    try {
+      firmes = (await sql`
+        SELECT business_id, date::text AS fecha, amount::float AS monto, concept AS concepto, category AS categoria, grupo_excel AS "grupoExcel"
+        FROM expenses
+        WHERE archived = false AND imported_from_excel = true AND grupo_excel IS NOT NULL
+          AND date >= date_trunc('month', (now() AT TIME ZONE 'America/Lima') - interval '1 month')
+        ORDER BY date
+      `) as typeof firmes;
+    } catch { /* sin la columna grupo_excel: nada que listar */ }
+
     const paraKelly = SEDES.map((s) => ({
       businessId: s.id,
       sede: s.nombre,
-      lineas: items
-        .filter((i) => i.businessId === s.id && i.kellyPendiente && !i.kellyCorregidoEn && i.decision && !("automatica" in i.decision))
-        .map((i) => lineaParaKelly({ alcance: i.alcance, datos: i.datos, decision: i.decision as DecisionCategoria | DecisionGasto })),
+      lineas: [
+        ...items
+          .filter((i) => i.businessId === s.id && i.kellyPendiente && !i.kellyCorregidoEn && i.decision && !("automatica" in i.decision))
+          .map((i) => lineaParaKelly({ alcance: i.alcance, datos: i.datos, decision: i.decision as DecisionCategoria | DecisionGasto })),
+        ...correccionesFirmesParaKelly(firmes.filter((g) => g.business_id === s.id)),
+      ],
       reglas: reglasNuevas
         .filter((r) => r.business_id === s.id)
         .map((r) => `• Agregar a la pestaña REGLAS: los conceptos que dicen «${r.texto}» → ${r.categoria}.`),

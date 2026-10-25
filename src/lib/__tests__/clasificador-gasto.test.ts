@@ -29,8 +29,14 @@ describe("clasificador experto de egresos (casos reales mar–set 2026)", () => 
   });
 
   it("categorías distintas del mismo tipo → media: el punto de equilibrio no cambia", () => {
-    const c = clasificarEgreso(gasto({ concepto: "15 HUMINTAS (NELIDA ROJAS)", categoria: "PRODUCTOS ATELIER", grupoExcel: null }));
+    const c = clasificarEgreso(gasto({ concepto: "PAN DE MOLDE (METRO)", categoria: "PRODUCTOS ATELIER", grupoExcel: null }));
     expect(c.confianza).toBe("media");
+  });
+
+  it("una regla firme manda sobre el Excel (25-oct-2026): las humitas se compran a terceros → INSUMOS, confianza alta", () => {
+    const c = clasificarEgreso(gasto({ concepto: "15 HUMINTAS (NELIDA ROJAS)", categoria: "PRODUCTOS ATELIER", grupoExcel: null }));
+    expect(c).toMatchObject({ categoria: "INSUMOS", confianza: "alta" });
+    expect(c.motivo).toContain("Regla firme");
   });
 
   it("se contradicen en el tipo → baja, con las opciones para elegir (el trifásico)", () => {
