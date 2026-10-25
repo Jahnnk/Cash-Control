@@ -17,6 +17,7 @@ import type { FotoRegresion } from "./foto";
 import { controlesDeSede, type ControlesMes } from "../../src/lib/controles-fiabilidad";
 import { cifrasDelGrupo, type CifrasSede } from "../../src/lib/seis-cifras";
 import { regla33, CONFIG_PROFIT_FIRST } from "../../src/lib/regla-33";
+import { egresosPorTipo } from "../../src/lib/egresos-por-tipo";
 
 const RUTA_FOTO = join(__dirname, "fixtures", "2026-09-fonavi-centro.json");
 const hayFoto = existsSync(RUTA_FOTO);
@@ -88,6 +89,28 @@ if (!hayFoto) {
     });
     it("A4: «ingresado por ventas» de Centro = 40,184.55, igual que el Excel", () => {
       expect(sedes.Centro.ingresadoVentas).toBe(40184.55);
+    });
+  });
+
+  describe("egresos por tipo de Fonavi (la pestaña «Resumen fijo vs variable», 25-oct-2026)", () => {
+    const e = egresosPorTipo(foto.sedes.Fonavi.datos, sedes.Fonavi);
+    const monto = (t: string) => e.tipos.find((x) => x.tipo === t)!.monto;
+    it("total egresos 33,181.21 e ingresos 37,109.37, y los cinco tipos suman el total", () => {
+      expect(e.totalEgresos).toBe(33181.21);
+      expect(e.ingresos).toBe(37109.37);
+      expect(e.control).toBe(0);
+    });
+    it("Variable 17,272.50 (con IMPUESTOS y la devolución a Josué) · Financiamiento 1,813.50 · Inversión 9.60", () => {
+      expect(monto("Variable")).toBe(17272.5);
+      expect(monto("Financiamiento")).toBe(1813.5);
+      expect(monto("Inversión")).toBe(9.6);
+    });
+    it("Fijo + No es gasto = 14,085.61 (la refrigeradora de S/100 pasa de No es gasto a Fijo; el total no cambia)", () => {
+      expect(Math.round((monto("Fijo") + monto("No es gasto")) * 100) / 100).toBe(14085.61);
+    });
+    it("el puente llega a las seis cifras: costos fijos 13,537.83 y costos variables 17,147.50", () => {
+      expect(e.puente.fijo).toMatchObject({ hasta: 13537.83, sinExplicar: 0 });
+      expect(e.puente.variable).toMatchObject({ hasta: 17147.5, sinExplicar: 0 });
     });
   });
 
