@@ -10,7 +10,11 @@
  *   · Fijo      = tipo Fijo + POR ACLARAR (fijo provisional mientras no se aclare) + lo que no está en el catálogo.
  *   · Variable  = tipo Variable, IMPUESTOS incluidos (en las seis cifras van en su propia línea).
  *   · Financiamiento, Inversión y No es gasto = su tipo del catálogo.
- * La suma de los cinco = el total de egresos del mes (lo que salió de la cuenta, igual al Excel).
+ *   · Un gasto no ejecutado que volvió el mismo mes (lib/gastos-compensados.ts) = No es gasto (Centro set:
+ *     «GASTO NO EJECUTADO (ROSARIO REYES)» S/44.10, como en la pestaña de Jahnn).
+ *   · Una fila con el tipo cruzado (lib/revisar-tipo.ts) = «Por conciliar» hasta que se corrija en el Excel
+ *     (Centro set: fila 114, «DEPÓSITO POR VENTAS EN EFECTIVO» S/63.19, que fue un ingreso en efectivo).
+ * La suma de los tipos = el total de egresos del mes (lo que salió de la cuenta, igual al Excel).
  *
  * El PUENTE explica, línea por línea, cómo se pasa de lo que salió (este cuadro) al costo real de las seis cifras:
  * impuestos aparte, lo que otras sedes o personas devolvieron, la parte de otras sedes en los compartidos, los
@@ -20,17 +24,32 @@
 import { rubroDe, CATEGORIA_IMPUESTOS, type CifrasSede, type Rubro } from "./seis-cifras";
 import { compensacionesDelMes, corteDelMes, gastosEnCifras, revisarTipoDelMes, salioDeLaCuenta, type DatosMesSede, type GastoMes } from "./seis-cifras-mes";
 
-export type TipoEgreso = "Fijo" | "Variable" | "Financiamiento" | "Inversión" | "No es gasto";
-export const TIPOS_EGRESO: TipoEgreso[] = ["Fijo", "Variable", "Financiamiento", "Inversión", "No es gasto"];
+export type TipoEgreso = "Fijo" | "Variable" | "Financiamiento" | "Inversión" | "No es gasto" | "Por conciliar";
+export const TIPOS_EGRESO: TipoEgreso[] = ["Fijo", "Variable", "Financiamiento", "Inversión", "No es gasto", "Por conciliar"];
 
 const DE_RUBRO: Record<Rubro, TipoEgreso> = {
   gastos: "Fijo", costos: "Variable", impuestos: "Variable", deudas: "Financiamiento", inversion: "Inversión", noEsGasto: "No es gasto",
 };
 export const tipoEgreso = (categoria: string): TipoEgreso => DE_RUBRO[rubroDe(categoria)];
 
+/** Etiquetas de las filas que no van por su categoría. */
+export const CAT_NO_EJECUTADO = "GASTOS NO EJECUTADOS (VOLVIERON)";
+export const CAT_POR_CONCILIAR = "POR CONCILIAR (TIPO CRUZADO)";
+
+/** El tipo de CADA fila: por su categoría, salvo los gastos no ejecutados que volvieron y las filas por conciliar. */
+function clasificador(d: DatosMesSede) {
+  const compensados = new Set(compensacionesDelMes(d).map((x) => x.gastoId));
+  const revisar = new Set(revisarTipoDelMes(d).map((x) => x.id));
+  return (g: GastoMes): { tipo: TipoEgreso; categoria: string } =>
+    revisar.has(g.id) ? { tipo: "Por conciliar", categoria: CAT_POR_CONCILIAR }
+      : compensados.has(g.id) ? { tipo: "No es gasto", categoria: CAT_NO_EJECUTADO }
+        : { tipo: tipoEgreso(g.categoria), categoria: g.categoria };
+}
+
 /** ¿Entra al punto de equilibrio? (la columna de la pestaña de Jahnn). */
 export const ENTRA_AL_PE: Record<TipoEgreso, string> = {
   Fijo: "Sí", Variable: "Sí", Financiamiento: "Solo en «PE incluyendo deudas»", "Inversión": "No", "No es gasto": "No",
+  "Por conciliar": "No (hasta corregirla en el Excel)",
 };
 
 /** `detalle`: qué movimientos hay detrás (p. ej. cada devolución), para quien quiera auditar. */
@@ -64,18 +83,22 @@ export function egresosPorTipo(d: DatosMesSede, c: CifrasSede): EgresosPorTipo {
   const salieron = d.gastos.filter(salioDeLaCuenta);
   const total = r2(suma(salieron, (g) => g.monto));
   const pct = (m: number) => (total > 0 ? r1((m / total) * 100) : 0);
+  const clase = clasificador(d);
   const porTipo = new Map<TipoEgreso, number>(TIPOS_EGRESO.map((t) => [t, 0]));
-  const porCat = new Map<string, number>();
+  const porCat = new Map<string, { tipo: TipoEgreso; monto: number }>();
   for (const g of salieron) {
-    porTipo.set(tipoEgreso(g.categoria), (porTipo.get(tipoEgreso(g.categoria)) ?? 0) + g.monto);
-    porCat.set(g.categoria, (porCat.get(g.categoria) ?? 0) + g.monto);
+    const { tipo, categoria } = clase(g);
+    porTipo.set(tipo, (porTipo.get(tipo) ?? 0) + g.monto);
+    porCat.set(categoria, { tipo, monto: (porCat.get(categoria)?.monto ?? 0) + g.monto });
   }
-  const tipos = TIPOS_EGRESO.map((tipo) => ({ tipo, monto: r2(porTipo.get(tipo) ?? 0), pct: pct(porTipo.get(tipo) ?? 0) }));
+  // «Por conciliar» solo aparece cuando hay algo por conciliar.
+  const tipos = TIPOS_EGRESO.map((tipo) => ({ tipo, monto: r2(porTipo.get(tipo) ?? 0), pct: pct(porTipo.get(tipo) ?? 0) }))
+    .filter((t) => t.tipo !== "Por conciliar" || Math.abs(t.monto) >= 0.005);
   const fijo = tipos[0].monto, variable = tipos[1].monto;
   const ingresos = c.caja.entro;
   const orden = new Map(TIPOS_EGRESO.map((t, i) => [t, i]));
   const categorias = [...porCat.entries()]
-    .map(([categoria, monto]) => ({ categoria, tipo: tipoEgreso(categoria), monto: r2(monto), pct: pct(monto) }))
+    .map(([categoria, x]) => ({ categoria, tipo: x.tipo, monto: r2(x.monto), pct: pct(x.monto) }))
     .filter((x) => Math.abs(x.monto) >= 0.005)
     .sort((a, b) => orden.get(a.tipo)! - orden.get(b.tipo)! || b.monto - a.monto);
   return {
@@ -84,14 +107,16 @@ export function egresosPorTipo(d: DatosMesSede, c: CifrasSede): EgresosPorTipo {
     fijoPctIngresos: ingresos > 0 ? r1((fijo / ingresos) * 100) : null,
     variablePctIngresos: ingresos > 0 ? r1((variable / ingresos) * 100) : null,
     categorias,
-    puente: { fijo: puente(d, c, "Fijo"), variable: puente(d, c, "Variable") },
+    puente: { fijo: puente(d, c, "Fijo", clase), variable: puente(d, c, "Variable", clase) },
     control: r2(suma(tipos, (t) => t.monto) - total),
   };
 }
 
 /** De lo que salió (tipo Fijo o Variable) al costo de las seis cifras, con cada diferencia en su línea. */
-function puente(d: DatosMesSede, c: CifrasSede, tipo: "Fijo" | "Variable"): PuenteTipo {
-  const delTipo = (g: GastoMes) => tipoEgreso(g.categoria) === tipo;
+function puente(d: DatosMesSede, c: CifrasSede, tipo: "Fijo" | "Variable", clase: ReturnType<typeof clasificador>): PuenteTipo {
+  // Las filas que en el cuadro son de este tipo (las no ejecutadas y las por conciliar ya están en su propio tipo).
+  // Las que están en las seis cifras se miran por su categoría (pagadas por el socio, que no salieron de la cuenta).
+  const delTipo = (g: GastoMes) => (salioDeLaCuenta(g) ? clase(g).tipo === tipo : tipoEgreso(g.categoria) === tipo);
   const salieron = d.gastos.filter((g) => salioDeLaCuenta(g) && delTipo(g));
   const enCifras = gastosEnCifras(d).filter(delTipo);
   const idsCifras = new Set(enCifras.map((g) => g.id));
