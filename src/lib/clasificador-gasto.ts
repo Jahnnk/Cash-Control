@@ -37,13 +37,13 @@
  * sacarlo del punto de equilibrio lo haría ver mejor de lo que es.
  */
 
-import { CATEGORIAS_GASTO, POR_ACLARAR, clasificarGasto, sinNotaDeFondeo, tipoDeCategoria, type TipoCategoria } from "./reglas-gasto";
+import { CATEGORIAS_GASTO, POR_ACLARAR, clasificarGasto, reglaFirme, sinNotaDeFondeo, tipoDeCategoria, type TipoCategoria } from "./reglas-gasto";
 import { resolverCategoria } from "./categoria-resolver";
 import { esGrupoBolson } from "./categoria-alias";
 import { textoDeRegla } from "./texto-regla";
 
 export type Confianza = "alta" | "media" | "baja";
-export type FuenteOpinion = "decision" | "aprendida" | "excel" | "registro" | "reglas";
+export type FuenteOpinion = "decision" | "aprendida" | "firme" | "excel" | "registro" | "reglas";
 
 export type Opinion = { fuente: FuenteOpinion; categoria: string; tipo: TipoCategoria | null };
 
@@ -89,6 +89,7 @@ export const enListaUnica = (c: string) => EN_LISTA.has(c);
 export const NOMBRE_FUENTE: Record<FuenteOpinion, string> = {
   decision: "Tu decisión",
   aprendida: "Regla que enseñaste",
+  firme: "Regla firme",
   excel: "Excel",
   registro: "Registro a mano",
   reglas: "Reglas del sistema",
@@ -153,10 +154,16 @@ function clasificarSinMonto(g: GastoAClasificar, aprendidas: ReglaAprendida[]): 
   // Excel va en su propia columna. Sin los signos, las reglas lo encuentran igual.
   const porReglas = clasificarGasto(sinNotaDeFondeo(g.concepto).replace(/[()[\]]/g, " "));
   if (porReglas !== POR_ACLARAR) opiniones.push(opinion("reglas", porReglas));
+  // Regla firme (25-oct-2026): manda sobre el Excel, nunca sobre una regla o decisión de Jahnn.
+  const firme = reglaFirme(sinNotaDeFondeo(g.concepto).replace(/[()[\]]/g, " "));
+  if (firme) opiniones.push(opinion("firme", firme.categoria));
 
   // Una regla de Jahnn manda: es su criterio, ya aplicado a gastos parecidos.
   if (apr) {
     return { categoria: apr.categoria, tipo: tipoDeCategoria(apr.categoria), confianza: "alta", opiniones, motivo: `Regla que enseñaste: «${apr.texto}».`, sugerencias: [] };
+  }
+  if (firme) {
+    return { categoria: firme.categoria, tipo: tipoDeCategoria(firme.categoria), confianza: "alta", opiniones, motivo: `Regla firme: lo que dice «${firme.clave.trim().toLowerCase()}» siempre es ${firme.categoria}.`, sugerencias: [] };
   }
 
   const cats = [...new Set(opiniones.map((o) => o.categoria))];
