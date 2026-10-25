@@ -8,8 +8,8 @@
  * No lo usa nada del bono por ticket ni el candado de ventas (solo ventas, no gastos).
  */
 
-import { recuperosDeOtrasSedes, devolucionesDeGastos, type DevolucionRecibida, type GastoRepartido, type Recupero } from "./recuperos-entre-sedes";
-import { CATEGORIAS_FUERA_DE_OPERACION } from "./reglas-gasto";
+import { recuperosDeOtrasSedes, devolucionesDeGastos, type DevolucionRecibida, type GastoDeLaSede, type GastoRepartido, type Recupero } from "./recuperos-entre-sedes";
+import { CATEGORIAS_FUERA_DE_OPERACION, tipoDeCategoria } from "./reglas-gasto";
 
 /** Firma mínima del template tag de @neondatabase/serverless. */
 type SqlTag = (strings: TemplateStringsArray, ...params: unknown[]) => Promise<unknown>;
@@ -39,7 +39,7 @@ export async function recuperosDelPeriodo(sql: SqlTag, bId: number, desde: strin
 }
 
 async function recuperosDeUnMes(sql: SqlTag, bId: number, desde: string, hasta: string): Promise<RecuperosDelPeriodo> {
-  const [devoluciones, repartidos, otrosOp] = await Promise.all([
+  const [devoluciones, repartidos, otrosOp, gastos] = await Promise.all([
     sql`
       SELECT date::text AS fecha, amount::float AS monto, COALESCE(note, '') AS nota FROM bank_income_items
       WHERE business_id = ${bId} AND date BETWEEN ${desde} AND ${hasta} AND archived = false AND is_fonavi_reimbursement = true
@@ -56,9 +56,18 @@ async function recuperosDeUnMes(sql: SqlTag, bId: number, desde: string, hasta: 
       WHERE business_id = ${bId} AND date BETWEEN ${desde} AND ${hasta} AND archived = false AND is_byte_sale = false
         AND is_fonavi_reimbursement = false AND is_special_loan = false AND is_internal_transfer = false AND non_operative_category IS NULL
     ` as Promise<DevolucionRecibida[]>,
+    // Gastos de la sede que una devolución por «pago mal ejecutado» puede estar devolviendo (25-oct-2026).
+    sql`
+      SELECT date::text AS fecha, amount::float AS monto, category AS categoria, COALESCE(concept, '') AS concepto FROM expenses
+      WHERE business_id = ${bId} AND archived = false AND is_shared = false AND is_internal_transfer = false
+        AND date BETWEEN (${desde}::date - 45) AND ${hasta}
+      ORDER BY date, sort_order, created_at
+    ` as Promise<GastoDeLaSede[]>,
   ]);
   const deGastos = devolucionesDeGastos(otrosOp);
-  return { recuperos: [...recuperosDeOtrasSedes(devoluciones, repartidos), ...deGastos], deGastos };
+  // Solo gastos de la operación (fijos, variables o sin aclarar): lo que está en DEVOLUCIONES ya no es gasto.
+  const operacion = gastos.filter((g) => { const t = tipoDeCategoria(g.categoria); return t === null || t === "Fijo" || t === "Variable" || t === "Desconocido"; });
+  return { recuperos: [...recuperosDeOtrasSedes(devoluciones, repartidos, operacion), ...deGastos], deGastos };
 }
 
 /** Suma de una lista de recuperos (S/, 2 decimales). */

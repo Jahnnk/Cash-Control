@@ -21,6 +21,7 @@ import { SelectorMes } from "../dashboard/selector-mes";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { DosMargenes } from "./dos-margenes";
 import { ConciliacionMes } from "./conciliacion-mes";
+import { EgresosPorTipoSeccion } from "./egresos-por-tipo";
 import { EstadoResultados } from "./estado-resultados";
 import { Regla33 } from "./regla-33";
 import { SemaforoMes } from "@/app/grupo/dashboard/semaforo-mes";
@@ -98,6 +99,8 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
       <div className="space-y-3">
         <EstadoResultados cifras={cifras} mes={selectedMonth} periodo={periodo} />
         <ConciliacionMes cifras={cifras} periodo={periodo} />
+        {/* La pestaña «Resumen fijo vs variable» de Jahnn: lo que salió, en cinco tipos, y su puente a las seis cifras (25-oct-2026). */}
+        <EgresosPorTipoSeccion mes={selectedMonth} periodo={periodo} />
       </div>
 
       {/* 3 · Productos (punto 8): qué potenciar y qué reemplazar. */}

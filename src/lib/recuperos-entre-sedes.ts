@@ -15,6 +15,16 @@
  *   · ese gasto ya se repartió en origen: un gasto compartido de la sede con la parte de otra sede por el
  *     MISMO monto (±S/0.05) dentro de 45 días (alquiler, luz y agua del local de Atelier).
  *     Restarla otra vez sería contar la parte de la otra sede como menos gasto dos veces.
+ *
+ * Gasto mal ejecutado que SÍ está como gasto (25-oct-2026, auditoría de Fonavi set con Jahnn): Fonavi pagó S/100
+ * de la reparación de una refrigeradora que era de Atelier («MNTO REFRIGERADORA», MANTENIMIENTO) y Atelier se los
+ * devolvió el 30/09 («DEVOLUCIÓN POR GASTOS MAL EJECUTADO ARREGLO REFRI»). Jahnn quiere ver el egreso en su
+ * categoría real; entonces la devolución tiene que RESTAR de esa categoría. Regla: si la nota dice «mal
+ * ejecutado / mal hecho / duplicado / por error» (no una venta) y la sede tiene un gasto de la operación por el
+ * MISMO monto (±S/0.05) hasta 45 días antes, que además comparte una palabra del concepto con la devolución
+ * («REFRI» ↔ «REFRIGERADORA»: el monto solo no basta, S/100 se repite mucho), la devolución resta de la categoría
+ * de ese gasto. Cada gasto explica una sola devolución. Si no hay ese gasto (lo pagado está en DEVOLUCIONES), sigue
+ * sin restar, como antes.
  */
 
 import { clasificarGasto, POR_ACLARAR } from "./reglas-gasto";
@@ -22,10 +32,22 @@ import { clasificarGasto, POR_ACLARAR } from "./reglas-gasto";
 export type DevolucionRecibida = { fecha: string; monto: number; nota: string };
 /** Un gasto compartido de la sede: `otras` = la parte de las otras sedes (monto − propio). */
 export type GastoRepartido = { fecha: string; otras: number };
+/** Un gasto de la operación de la sede (categoría de costo o gasto), para emparejar un pago mal ejecutado devuelto. */
+export type GastoDeLaSede = { fecha: string; monto: number; categoria: string; concepto: string };
 export type Recupero = { fecha: string; monto: number; categoria: string; nota: string };
 export type MotivoNoResta = "prestamo" | "no-era-de-la-sede" | "ya-repartido";
 
 const VENTANA_DIAS = 45;
+/** Plata pagada por error que otra sede devuelve. */
+const MAL_EJECUTADO = /MAL EJECUTAD|MAL HECHO|POR ERROR|DUPLICAD/;
+/** Palabras que no dicen de qué era el gasto. */
+const VACIAS = new Set(["DEVOLUCION", "DEVOLUCIONES", "GASTO", "GASTOS", "PAGO", "PAGOS", "EJECUTADO", "EJECUTADOS", "HECHO", "ERROR", "DUPLICADO", "PRODUCTOS", "SALUDABLES", "YAYIS", "SERVICIOS", "SERVCIOS", "GASTRONOMICOS", "EXPERIENCIAS", "SETIEMBRE", "SEPTIEMBRE", "OCTUBRE", "AGOSTO", "PARA", "CON", "POR"]);
+const palabras = (t: string) => norm(t).replace(/\([^)]*\)/g, " ").split(/[^A-Z0-9]+/).filter((w) => w.length >= 4 && !VACIAS.has(w));
+/** ¿La devolución y el gasto hablan de lo mismo? (una palabra en común, o una que empieza como la otra: REFRI/REFRIGERADORA). */
+export function hablanDeLoMismo(devolucion: string, gasto: string): boolean {
+  const g = palabras(gasto);
+  return palabras(devolucion).some((w) => g.some((x) => x.startsWith(w) || w.startsWith(x)));
+}
 const TOLERANCIA = 0.05;
 
 const norm = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
@@ -44,14 +66,29 @@ export function motivoNoResta(d: DevolucionRecibida, repartidos: GastoRepartido[
  * Las devoluciones que se restan del gasto, con su categoría. Cada gasto repartido explica UNA sola
  * devolución (dos devoluciones de S/2.31 no se esconden detrás del mismo recibo).
  */
-export function recuperosDeOtrasSedes(devoluciones: DevolucionRecibida[], repartidos: GastoRepartido[]): Recupero[] {
+export function recuperosDeOtrasSedes(devoluciones: DevolucionRecibida[], repartidos: GastoRepartido[], gastos: GastoDeLaSede[] = []): Recupero[] {
   const libres = [...repartidos];
+  const gastosLibres = [...gastos];
   const out: Recupero[] = [];
   for (const d of [...devoluciones].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
     if (!(d.monto > 0)) continue;
     const i = libres.findIndex((g) => Math.abs(g.otras - d.monto) <= TOLERANCIA && dias(g.fecha, d.fecha) <= VENTANA_DIAS);
     const motivo = motivoNoResta(d, i >= 0 ? [libres[i]] : []);
     if (motivo === "ya-repartido") { libres.splice(i, 1); continue; }
+    if (motivo === "no-era-de-la-sede" && MAL_EJECUTADO.test(norm(d.nota)) && !/VENTA /.test(norm(d.nota))) {
+      // El pago mal ejecutado quedó como gasto de la sede: la devolución resta de ESA categoría.
+      // Si hay varios (Fonavi: «REVISIÓN REFRIGERADORA» 27/08 y «MNTO REFRIGERADORA» 09/09, S/100 cada uno), el más cercano.
+      let j = -1;
+      gastosLibres.forEach((g, k) => {
+        if (Math.abs(g.monto - d.monto) <= TOLERANCIA && g.fecha <= d.fecha && dias(g.fecha, d.fecha) <= VENTANA_DIAS && hablanDeLoMismo(d.nota, g.concepto)
+          && (j < 0 || g.fecha > gastosLibres[j].fecha)) j = k;
+      });
+      if (j >= 0) {
+        out.push({ fecha: d.fecha, monto: d.monto, categoria: gastosLibres[j].categoria, nota: d.nota });
+        gastosLibres.splice(j, 1);
+      }
+      continue;
+    }
     if (motivo) continue;
     // El concepto dice de qué era (las reglas quitan el paréntesis con la empresa que devuelve).
     const cat = clasificarGasto(d.nota.replace(/\([^)]*\)/g, " ").replace(/REEMBOLSO|DEVOLUCI[OÓ]N/gi, " "));
