@@ -94,6 +94,13 @@ export type ReglaGasto = { clave: string; categoria: string };
 
 const r = (categoria: string, ...claves: string[]): ReglaGasto[] => claves.map((clave) => ({ clave, categoria }));
 
+/** Frases de plata que no era de Yayi's (pagos mal hechos, propinas, ventas de otra sede): ganan a todo. */
+export const NO_ERA_DE_YAYIS = [
+  "MAL EJECUTADO", "MAL HECHO", "POR ERROR", "ERROR EN PAGO", "DELOCION", "PAGO DOBLE", "EXCESO DE PAGO", "PAGO EN EXCESO", "PAGO DUPLICADO",
+  "COBRO EN EXCESO", "MAL COBRO", "NO ES DE LA EMPRESA", "NO CORRESPONDE", "PROPINA", "SOBRANTE CAJA", "SALDO RESTANTE CAJA",
+  "VENTA TRANSFERIDA", "ENTREGA A KELLY PARA DEPOSITO", "DEVOLUCION A EFECTIVO",
+];
+
 /**
  * Las reglas, de lo general a lo específico (manda la ÚLTIMA que coincide).
  * Las claves van en MAYÚSCULAS y sin tildes.
@@ -175,14 +182,20 @@ export const REGLAS_GASTO: ReglaGasto[] = [
   // "Delivery de pollo" es delivery, no pollo.
   ...r("DELIVERY Y FLETES", "DELIVERY", "DELIVEY", "DELYVERY", "DEVLIVERY", "DELIOVERY", "DELIEVRY", "FLETE", "FELTE", "CARRETILLA", "TRASLADO"),
   ...r("INSUMOS", "BOLSA DE HIELO", "AGUA MINERAL", "BIDON DE AGUA", "BIDONES DE AGUA", "BODONES DE AGUA", "BISDONES", "AGUA SAN LUIS", "AGUA MANANTIAL",
-    "PAN DE ", "PANES"),
-  ...r("LIMPIEZA", "BOLSA DE BASURA", "BOLSAS DE BASURA", "UTILES DE LIMPIE", "UTILES LIMPIEZA"),
-  ...r("PACKAGING", "VASOS DESCARTABLES", "VASO DESCARTABLE", "PACKAGIN PARA DELIVERY", "PACKAGING PARA DELIVERY"),
+    "PAN DE ", "PANES",
+    // 25-oct-2026 (revisión de reglas con Jahnn): «Leche Gloria en bolsa» es leche, no packaging; el agua Manantial es insumo.
+    "LECHE EN BOLSA", "LECHE GLORIA EN BOLSA", "MANANTIAL SANTA ROSA"),
+  // La carreta es flete (no lo que carga). «Jormar» no basta: a veces cobra solo el flete y a veces trae la compra
+  // («1 PISCO COMPRADO POR JORMAR» es pisco). «Venta interna de panes» es de Atelier.
+  ...r("DELIVERY Y FLETES", "CARRETA "),
+  ...r("PRODUCTOS ATELIER", "VENTA INTERNA"),
+  ...r("LIMPIEZA", "BOLSA DE BASURA", "BOLSAS DE BASURA", "UTILES DE LIMPIE", "UTILES LIMPIEZA", "LAVAVAJILLA"),
+  ...r("PACKAGING", "VASOS DESCARTABLES", "VASO DESCARTABLE", "PACKAGIN PARA DELIVERY", "PACKAGING PARA DELIVERY", "CAJAS PARA ENVIO", "CAJA PARA ENVIO"),
   ...r("EQUIPOS", "1 BOMBA", "BOMBA DE AGUA"),
   ...r("MANTENIMIENTO", "GASFITER", "MMTO PREVENTIVO", "MNTO PREVENTIVO", "ARREGLO LICUADORA", "MANTENIMIENTO CAFETERA", "MMTO MAQUINA",
     "REVISION REFRIGERADORA", "DIAGNOSTICO CON", "MNTO CONGELADORA", "MANTENIMIETO CONGELADORA", "CAMBIO DE BOMBA", "ARREGLO BOMBA",
     "ARREGLO DE CELULAR", "CUCHILLA PARA LICUADORA", "CUCHILA LICUADORA", "CAMBIO INTERRUPTOR", "INSTALACION LUCES", "ISTALACION LUCES",
-    "TRABAJOS DE", "TRABAJOS EN"),
+    "TRABAJOS DE", "TRABAJOS EN", "AFILADO"),
   ...r("SS BANCARIOS", "MMTO CTA", "MNTO CTA", "MMNTO CTA", "MNTO CUENTA", "MANTENIMIENTO CTA", "COM MNTO", "COM MMTO", "COM MANTENIMIENTO",
     "ENVIO ESTADO", "ENVIO CTA", "PORTE EXTRACTO", "DESGRAVAMEN EXTRACTOR", "DESGRVAMEN EXTRACTOR", "DESGRAVAMEN LICUADORA"),
   ...r("OFICINA Y SISTEMAS", "SOBRES DE CARTA", "ARCHIVADOR PARA CONTADOR", "PAGO ANUAL DE CANVA", "PAGO ANUAL CANVA"),
@@ -208,9 +221,7 @@ export const REGLAS_GASTO: ReglaGasto[] = [
   ...r("IMPUESTOS", " IR ", "CUOTA SUNAT", "CUOTA (SUNAT"),
   // Plata que no era de Yayi's: gana a todo lo demás (un "pago mal
   // ejecutado de insumos" no es un insumo).
-  ...r("DEVOLUCIONES", "MAL EJECUTADO", "MAL HECHO", "POR ERROR", "ERROR EN PAGO", "DELOCION", "PAGO DOBLE", "EXCESO DE PAGO", "PAGO EN EXCESO", "PAGO DUPLICADO",
-    "COBRO EN EXCESO", "MAL COBRO", "NO ES DE LA EMPRESA", "NO CORRESPONDE", "PROPINA", "SOBRANTE CAJA", "SALDO RESTANTE CAJA",
-    "VENTA TRANSFERIDA", "ENTREGA A KELLY PARA DEPOSITO", "DEVOLUCION A EFECTIVO"),
+  ...r("DEVOLUCIONES", ...NO_ERA_DE_YAYIS),
   // Devolverle plata a un cliente anula una venta que ya se contó: resta (gana incluso a «devolución»).
   ...r("DEVOLUCIONES A CLIENTES", "DEVOLUCION A CLIENT", "REEMBOLSO A CLIENT", "INDECOPI", "QUEJA", "RECLAMO", "LIBRO DE RECLAMACIONES"),
   // …salvo que el cliente haya pagado DE MÁS: lo que sobró nunca fue venta en Byte, así que devolverlo no resta.
@@ -231,6 +242,51 @@ export function textoParaReglas(concepto: string | null | undefined, proveedor?:
     .normalize("NFD").replace(/[̀-ͯ]/g, "")
     .toUpperCase().replace(/\s+/g, " ").trim();
   return ` ${t} `;
+}
+
+/**
+ * REGLAS FIRMES (25-oct-2026, aprobadas por Jahnn): cuando el concepto dice esto, la categoría es esta, AUNQUE el
+ * Excel diga otra. En el Excel es inevitable que a veces se elija mal el Grupo (el papel de impresora como EQUIPOS,
+ * el servicio contable como SERVICIOS); con estas reglas el sistema lo corrige solo al importar y lo anota en la
+ * lista de correcciones para Kelly. Solo entran reglas que nunca se equivocan: las palabras que pueden querer decir
+ * dos cosas («bolsa», «agua», «delivery» en medio de una compra) siguen como opinión normal y, si chocan con el
+ * Excel, van a Por definir. Una decisión de Jahnn o una regla que él enseñó siguen ganando a estas.
+ *   · `alInicio`: el concepto tiene que EMPEZAR así («DELIVERY LECHE» es delivery; «5 PECHUGAS Y DELIVERY», no).
+ * Manda la última que coincide. Nunca aplican a la plata que no era de Yayi's (NO_ERA_DE_YAYIS) ni a un flete.
+ */
+export type ReglaFirme = { clave: string; categoria: string; alInicio?: boolean };
+const f = (categoria: string, ...claves: string[]): ReglaFirme[] => claves.map((clave) => ({ clave, categoria }));
+export const REGLAS_FIRMES: ReglaFirme[] = [
+  ...f("CONTABILIDAD Y ASESORÍAS", "SERVICIO CONTABLE", "SERVICIO CONTABILIDAD", "SERVICIO DE CONTABILIDAD"),
+  ...f("OFICINA Y SISTEMAS", "CANVA", "PAPEL PARA IMPRESORA", "PAPEL IMPRESORA", "TONER", "CARTUCHO"),
+  // Se compran a terceros y se revenden o acompañan productos (la humita en un desayuno, la infusión en un combo).
+  ...f("INSUMOS", "AGUA MINERAL", "INFUSION", "INFUISON", "HUMITA", "HUMINTA"),
+  ...f("PACKAGING", "PACKAGING", "PACKAGIN"),
+  // Reparar deja el equipo como estaba: es mantenimiento (comprar o cambiar el equipo es inversión).
+  ...f("MANTENIMIENTO", "REPARACION", "CUCHILLA PARA LICUADORA", "CUCHILLA LICUADORA", "CUCHILA LICUADORA", "MNTO REFRIGERADORA", "MNTO CONGELADORA"),
+  ...f("PERSONAL", "MANDIL"),
+  // Devolverle plata a un cliente anula una venta (salvo que haya pagado de más: ver abajo).
+  ...f("DEVOLUCIONES A CLIENTES", "DEVOLUCION A CLIENT", "INDECOPI"),
+  { clave: "DELIVERY", categoria: "DELIVERY Y FLETES", alInicio: true },
+];
+/**
+ * Un flete depende de QUÉ se trajo: el de unos mandiles es delivery («50% FELTE MANDILES»), el de un equipo es parte
+ * del equipo («GUÍA CONGELADORA – FLETE», que Jahnn dejó en EQUIPOS). Ahí ninguna regla firme decide.
+ */
+const ES_FLETE = ["FLETE", "FELTE"];
+/** Si el cliente pagó DE MÁS, devolverlo no anula una venta (sigue la regla normal: DEVOLUCIONES). */
+const PAGO_DE_MAS = ["PAGO EN EXCESO", "EXCESO DE PAGO", "PAGO DUPLICADO", "PAGO DOBLE", "COBRO EN EXCESO", "YAPE DOBLE", "PAGO REPETIDO"];
+
+/** La regla firme que manda para este concepto, o null. */
+export function reglaFirme(concepto: string | null | undefined, proveedor?: string | null): ReglaFirme | null {
+  const texto = textoParaReglas(concepto, proveedor);
+  if (NO_ERA_DE_YAYIS.some((k) => texto.includes(k)) || ES_FLETE.some((k) => texto.includes(k))) return null;
+  let elegida: ReglaFirme | null = null;
+  for (const r of REGLAS_FIRMES) {
+    if (r.alInicio ? texto.trimStart().startsWith(r.clave) : texto.includes(r.clave)) elegida = r;
+  }
+  if (elegida?.categoria === "DEVOLUCIONES A CLIENTES" && PAGO_DE_MAS.some((k) => texto.includes(k))) return null;
+  return elegida;
 }
 
 /** La categoría que proponen las reglas (manda la última que coincide), o POR ACLARAR. */

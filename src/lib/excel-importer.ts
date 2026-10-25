@@ -20,7 +20,7 @@
 import * as XLSX from "xlsx";
 import { resolverCategoria, type ResolucionCategoria } from "./categoria-resolver";
 import { esGrupoBolson } from "./categoria-alias";
-import { clasificarGasto, POR_ACLARAR } from "./reglas-gasto";
+import { clasificarGasto, POR_ACLARAR, reglaFirme } from "./reglas-gasto";
 import { grupoDelCatalogo } from "./catalogo-categorias";
 import { CATEGORIA_REVISAR_TIPO, MARCA_REVISAR_TIPO } from "./revisar-tipo";
 
@@ -31,6 +31,10 @@ import { CATEGORIA_REVISAR_TIPO, MARCA_REVISAR_TIPO } from "./revisar-tipo";
  * un bolsón (OTROS, SS GENERALES, FONDOS MUTUOS…) o no se reconoce, manda
  * el CONCEPTO (y el proveedor), con las mismas reglas que usa el Excel. Si
  * tampoco el concepto dice nada, queda POR ACLARAR — nunca se adivina.
+ *
+ * Desde el 25-oct-2026 una REGLA FIRME (lib/reglas-gasto.ts → REGLAS_FIRMES, aprobadas por Jahnn) manda sobre el
+ * Grupo del Excel: «PAPEL PARA IMPRESORA» es OFICINA Y SISTEMAS aunque el Excel diga EQUIPOS. Va a la lista de
+ * correcciones para Kelly (Por definir), así se corrige también en su Excel.
  */
 export function resolverGrupoDelGasto(
   grupoRaw: string, concepto: string, proveedor: string, tipo: "income" | "expense",
@@ -40,6 +44,18 @@ export function resolverGrupoDelGasto(
     if (cat === POR_ACLARAR) return null;
     return { entrada: grupoRaw, canonica: cat, grupo: grupoDelCatalogo(cat), confianza: "alias", motivo };
   };
+  if (tipo === "expense") {
+    const firme = reglaFirme(concepto, proveedor);
+    if (firme) {
+      const deKelly = resolverCategoria(grupoRaw).canonica;
+      return {
+        entrada: grupoRaw, canonica: firme.categoria, grupo: grupoDelCatalogo(firme.categoria), confianza: "alias",
+        motivo: deKelly === firme.categoria
+          ? `Regla firme: «${firme.clave.trim().toLowerCase()}» es ${firme.categoria}.`
+          : `Regla firme: «${firme.clave.trim().toLowerCase()}» siempre es ${firme.categoria} (en el Excel decía «${grupoRaw || "sin grupo"}»).`,
+      };
+    }
+  }
   if (tipo === "expense" && esGrupoBolson(grupoRaw)) {
     return porConcepto(`"${grupoRaw || "sin grupo"}" es un bolsón: se clasificó por el concepto.`)
       ?? { entrada: grupoRaw, canonica: POR_ACLARAR, grupo: grupoDelCatalogo(POR_ACLARAR), confianza: "alias", motivo: "Ni el grupo ni el concepto dicen qué es: queda POR ACLARAR." };
