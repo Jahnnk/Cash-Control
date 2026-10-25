@@ -13,7 +13,11 @@ import type { ControlesMes } from "@/lib/controles-fiabilidad";
 
 const sql = neon(process.env.DATABASE_URL!);
 
-export type ControlesDelMes = { mes: string; sedes: ControlesMes[]; grupo: ControlesMes };
+/**
+ * `vista` (24-oct-2026): a quién se le muestra. Kelly (finanzas) ve el checklist del mes con el «qué hacer»; Jahnn y la
+ * llave de solo lectura ven la línea del CEO (lib/controles-vista.ts). Los datos son los mismos.
+ */
+export type ControlesDelMes = { mes: string; sedes: ControlesMes[]; grupo: ControlesMes; vista: "ceo" | "kelly" };
 
 export async function getControlesDelMes(mes: string): Promise<{ ok: true; data: ControlesDelMes } | { ok: false; error: string }> {
   const role = await getSessionRole();
@@ -22,7 +26,8 @@ export async function getControlesDelMes(mes: string): Promise<{ ok: true; data:
   try {
     const { sedes, grupo } = await controlesDelMesTodas(sql as never, mes);
     if (role?.kind === "full") await Promise.all([...sedes, grupo].map((r) => guardarControles(sql as never, r, "apertura")));
-    return { ok: true, data: { mes, sedes, grupo } };
+    const vista = role?.kind === "full" && role.quien === "kelly" ? "kelly" : "ceo";
+    return { ok: true, data: { mes, sedes, grupo, vista } };
   } catch (err) {
     console.error("[getControlesDelMes] failed:", err);
     return { ok: false, error: "No se pudieron revisar los controles del mes." };
