@@ -78,7 +78,7 @@ describe("egresos por tipo (la pestaña de Jahnn)", () => {
     expect(e.puente.variable).toMatchObject({ desde: 3156.2, hasta: c.costos, sinExplicar: 0 });
     expect(e.puente.variable.lineas).toEqual([{ etiqueta: "Impuestos (van en su propia línea)", monto: -125 }]);
   });
-  it("compartidos, gastos no ejecutados y pagos del socio también tienen su línea", () => {
+  it("compartidos y pagos del socio tienen su línea en el puente; el gasto no ejecutado que volvió es «No es gasto»", () => {
     const d2 = mes();
     d2.gastos.push(
       gasto("2026-09-20", "SERVICIOS", 300, "LUZ", { propio: 150 }),
@@ -90,11 +90,31 @@ describe("egresos por tipo (la pestaña de Jahnn)", () => {
     expect(e2.puente.fijo.lineas.map((l) => [l.etiqueta, l.monto])).toEqual([
       ["Parte de otras sedes en gastos compartidos", -150],
       ["Devuelto por otras sedes o personas", -382.5],
-      ["Gastos no ejecutados que volvieron", -10.9],
     ]);
+    // Centro set: «GASTO NO EJECUTADO (ROSARIO REYES)» volvió el mismo mes → No es gasto (como en la pestaña de Jahnn).
+    expect(e2.tipos.find((t) => t.tipo === "No es gasto")!.monto).toBe(31.9);
+    expect(e2.categorias.find((c) => c.categoria === "GASTOS NO EJECUTADOS (VOLVIERON)")).toMatchObject({ tipo: "No es gasto", monto: 10.9 });
     expect(e2.puente.variable.lineas.map((l) => l.etiqueta)).toContain("Pagado por el socio de su bolsillo");
     expect(e2.puente.fijo.sinExplicar).toBe(0);
     expect(e2.puente.variable.sinExplicar).toBe(0);
+  });
+});
+
+describe("filas por conciliar (Centro set, fila 114: «DEPÓSITO POR VENTAS EN EFECTIVO» S/63.19)", () => {
+  const d = mes();
+  d.gastos.push(gasto("2026-09-11", "TRANSFERENCIA INTERNA", 63.19, "DEPÓSITO POR VENTAS EN EFECTIVO [VO]"));
+  d.avisos = [{ rowNumber: 114, date: "2026-09-11", amount: 63.19, column: "gc", reason: "type_mismatch", severity: "autocorrected", originalType: "I", correctedType: "G", description: "DEPÓSITO POR VENTAS EN EFECTIVO" }];
+  const e = egresosPorTipo(d, cifrasDelMes(d));
+  it("van en su propio tipo «Por conciliar», que sigue sumando al total", () => {
+    expect(e.tipos.at(-1)).toMatchObject({ tipo: "Por conciliar", monto: 63.19 });
+    expect(e.tipos.find((t) => t.tipo === "No es gasto")!.monto).toBe(21);
+    expect(e.totalEgresos).toBe(5077.39);
+    expect(e.control).toBe(0);
+    expect(e.puente.fijo.sinExplicar).toBe(0);
+  });
+  it("sin filas por conciliar, el tipo no aparece", () => {
+    const sin = mes();
+    expect(egresosPorTipo(sin, cifrasDelMes(sin)).tipos.map((t) => t.tipo)).not.toContain("Por conciliar");
   });
 });
 

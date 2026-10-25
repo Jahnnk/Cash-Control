@@ -114,6 +114,21 @@ if (!hayFoto) {
     });
   });
 
+  describe("egresos por tipo de Centro (su pestaña «Resumen fijo vs variable», 25-oct-2026)", () => {
+    const e = egresosPorTipo(foto.sedes.Centro.datos, sedes.Centro);
+    it("total 44,906.85 en seis tipos, con la fila 114 (S/63.19) en «Por conciliar» y los gastos no ejecutados en No es gasto", () => {
+      expect(e.tipos.map((t) => [t.tipo, t.monto])).toEqual([
+        ["Fijo", 18370.96], ["Variable", 16425.14], ["Financiamiento", 0], ["Inversión", 150], ["No es gasto", 9897.56], ["Por conciliar", 63.19],
+      ]);
+      expect(e.totalEgresos).toBe(44906.85);
+      expect(e.control).toBe(0);
+    });
+    it("el puente llega a las seis cifras: costos fijos 18,370.96 y variables 16,349.64 (la mochila devuelta, S/75.50)", () => {
+      expect(e.puente.fijo).toMatchObject({ hasta: 18370.96, sinExplicar: 0 });
+      expect(e.puente.variable).toMatchObject({ hasta: 16349.64, sinExplicar: 0 });
+    });
+  });
+
   describe("controles de fiabilidad de setiembre 2026", () => {
     it("C1: Fonavi verde; Centro rojo (el pie de la hoja no suma todas las filas: +S/33.20 ingresos, +S/9,568.77 egresos)", () => {
       expect(control("Fonavi", "C1").estado).toBe("verde");
