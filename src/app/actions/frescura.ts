@@ -13,6 +13,7 @@ import { getSessionRole, requireLectura, puedeLeerDireccion } from "@/lib/sessio
 import { getDataFreshness, getKellyLoadStatus } from "./grupo";
 import { getDatosCargadosProductos } from "./productos-panorama";
 import { resumirFrescura, type FrescuraGrupo } from "@/lib/frescura-datos";
+import { ventaCubiertaHasta } from "@/lib/frescura-importables";
 
 export async function getFrescuraGrupo(): Promise<FrescuraGrupo | null> {
   // Dirección o llave de solo lectura (18-oct-2026); antes no tenía control propio. Nunca lanza: sin acceso, null.
@@ -58,7 +59,10 @@ export async function getFrescuraImportables(): Promise<FrescuraImportables | nu
     const sql = neon(process.env.DATABASE_URL!);
     const [ventas, productos, excel] = await Promise.all([
       // Solo el reporte oficial de Byte (la venta de la sede o la de dirección), nunca lo tecleado a mano.
-      sql`SELECT business_id, MAX(date)::text AS hasta FROM byte_ventas_efectiva WHERE source = 'import' GROUP BY business_id` as unknown as Promise<{ business_id: number; hasta: string | null }[]>,
+      // Los días con venta de los últimos ~80 días: el último y, si la sede cierra un día de la semana (Atelier los
+      // domingos), ese cierre no cuenta como atraso (lib/frescura-importables.ts → ventaCubiertaHasta).
+      sql`SELECT business_id, date::text AS fecha FROM byte_ventas_efectiva
+          WHERE source = 'import' AND total > 0 AND date >= (${hoy}::date - 80)` as unknown as Promise<{ business_id: number; fecha: string }[]>,
       getDatosCargadosProductos(),
       getKellyLoadStatus(),
     ]);
@@ -70,7 +74,7 @@ export async function getFrescuraImportables(): Promise<FrescuraImportables | nu
         return {
           businessId: id,
           nombre: NOMBRES[id],
-          ventasHasta: ventas.find((v) => v.business_id === id)?.hasta ?? null,
+          ventasHasta: ventaCubiertaHasta(ventas.filter((v) => v.business_id === id).map((v) => v.fecha), hoy),
           mayorHasta: p?.mayor.hasta ?? null,
           menorHasta: p?.menor.hasta ?? null,
           excelHasta: x?.coversThrough ?? null,
