@@ -108,7 +108,10 @@ export function DatosCargados({ version = 0, onVerExcel }: { version?: number; o
 
   const hayAtrasoExcel = sedes.some((x) => tonoDeFecha(x.excelHasta, hoy) !== "al-dia");
   const todoAlDia = !hayAtraso && !hayAtrasoExcel;
-  const masReciente = (fs: (string | null)[]) => fs.reduce<string | null>((m, f) => (f && (!m || f > m) ? f : m), null);
+  // La línea de arriba dice lo MISMO que las píldoras: el grupo vale por su sede más atrasada (26-oct-2026: decía
+  // «Byte al 25/10» —la sede más adelantada— y la píldora «Ventas al 24/10», y parecía una contradicción).
+  const excelGrupo = fechaDelGrupo(sedes.map((x) => x.excelHasta));
+  const byteGrupo = grupo("ventasHasta");
   // Divulgación progresiva: con todo al día es UNA línea; con atrasos se abre sola para mostrar cuál.
   return (
     <details open={!todoAlDia} className="group rounded-2xl border border-gray-200 bg-white px-4 py-3 sm:px-5" aria-label="Hasta qué fecha tenemos datos">
@@ -117,7 +120,7 @@ export function DatosCargados({ version = 0, onVerExcel }: { version?: number; o
           <span className={`h-2 w-2 rounded-full ${todoAlDia ? "bg-emerald-500" : "bg-amber-500"}`} aria-hidden />
           {todoAlDia ? "Datos al día" : "Hay datos atrasados"}
           <span className="font-normal text-gray-500">
-            · Byte al {ddmm(masReciente(sedes.map((x) => x.ventasHasta)) ?? hoy)}{masReciente(sedes.map((x) => x.excelHasta)) ? ` · Excel al ${ddmm(masReciente(sedes.map((x) => x.excelHasta))!)}` : ""}
+            · Byte {byteGrupo ? `al ${ddmm(byteGrupo)}` : "sin datos"} · Excel {excelGrupo ? `al ${ddmm(excelGrupo)}` : "sin datos"}
           </span>
         </h2>
         <span className="inline-flex items-center gap-1 text-xs font-medium text-primary">
