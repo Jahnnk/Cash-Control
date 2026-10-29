@@ -6,6 +6,7 @@ import { getGroupBreakeven } from "@/app/actions/breakeven";
 import { getVerificacionKelly } from "@/app/actions/verificacion-kelly";
 import { getSeisCifras } from "@/app/actions/seis-cifras";
 import { getResumenExtra } from "@/app/actions/resumen-grupo";
+import { fijosDelPlanAprobado } from "@/lib/fijos-plan-sql";
 import { GrupoDashboardClient } from "./grupo-dashboard-client";
 
 export const dynamic = "force-dynamic";
@@ -18,7 +19,7 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
   const mesActual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
   const mes = pedido && /^\d{4}-(0[1-9]|1[0-2])$/.test(pedido) && pedido <= mesActual ? pedido : mesActual;
   const data = await getGroupDashboard(mes);
-  const [be, ventas, frescura, liquidez, cuadre, cifras, extra] = await Promise.all([
+  const [be, ventas, frescura, liquidez, cuadre, cifras, extra, planFijos] = await Promise.all([
     getGroupBreakeven(data.selectedMonth),
     getGroupVentasComparison(data.selectedMonth),
     getFrescuraGrupo(),
@@ -26,6 +27,8 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
     getVerificacionKelly(),
     getSeisCifras(data.selectedMonth),
     getResumenExtra(data.selectedMonth),
+    // Los fijos que espera el presupuesto aprobado: con ellos se estima el EBITDA del mes abierto (lib/cada-100.ts).
+    data.selectedMonth === mesActual ? fijosDelPlanAprobado(data.selectedMonth) : Promise.resolve({}),
   ]);
   return (
     <GrupoDashboardClient
@@ -41,6 +44,7 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
       cuadreKelly={cuadre.ok ? cuadre.items : null}
       cifras={cifras.ok ? cifras.data : null}
       extra={extra}
+      planFijos={planFijos}
       pestanaInicial={pestana === "equipo" ? "equipo" : pestana === "datos" || pestana === "gastos" || pestana === "kelly" ? "datos" : "resumen"}
     />
   );
