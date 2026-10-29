@@ -3,8 +3,9 @@
 /**
  * Grupo → Resumen · una tarjeta por sede, VISUAL (pedido de Jahnn, 19-oct-2026): cuatro barras que se leen de
  * izquierda a derecha como la historia del mes —Ventas, Dinero que entró, Dinero que salió (costos y gastos en una
- * sola barra) y Ganancia— y debajo el termómetro del EBITDA (frágil · en camino · eficiente). El resto (mínimo
- * cubierto, de dónde entró el dinero) se abre con «Ver el detalle».
+ * sola barra) y Ganancia— y debajo «De cada S/ 100 que vendes» (29-oct-2026: la regla 33-33-33 y Profit First, con el EBITDA
+ * estimado mientras el mes está abierto; lib/cada-100.ts). El resto (mínimo cubierto, de dónde entró el dinero) se abre
+ * con «Ver el detalle».
  * Cada parte de una barra apilada dice su monto al pasar el ratón o tocarla.
  * Los números: lib/tarjeta-sede.ts y lib/regla-33.ts (sobre las seis cifras). Vocabulario único: lib/vocabulario.ts.
  */
@@ -13,7 +14,8 @@ import Link from "next/link";
 import type { ReactNode } from "react";
 import { ArrowUpRight, ArrowDownToLine, ArrowUpFromLine, Banknote, ChevronDown, CircleCheck, CircleAlert } from "lucide-react";
 import { tarjetasDelMes, type TarjetaSede } from "@/lib/tarjeta-sede";
-import { CONFIG_PROFIT_FIRST, EBITDA_EFICIENTE_PCT, EBITDA_FRAGIL_PCT, ETIQUETA_TERMOMETRO, reglaDeSede, type FilaRegla } from "@/lib/regla-33";
+import { cada100DelMes, type Cada100, type Cada100Mes } from "@/lib/cada-100";
+import { CadaCien } from "./cada-100";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { GLOSARIO } from "@/lib/vocabulario";
 
@@ -42,7 +44,7 @@ function Segmento({ alto, color, nombre, monto, ayuda, arriba }: { alto: number;
   );
 }
 
-function Barras({ t, ventasHasta }: { t: TarjetaSede; ventasHasta?: string | null }) {
+function Barras({ t, ventasHasta, estimado }: { t: TarjetaSede; ventasHasta?: string | null; estimado?: boolean }) {
   const costos = t.costos ?? 0, gastos = t.gastos ?? 0;
   const salio = t.costos === null && t.gastos === null ? null : Math.round((costos + gastos) * 100) / 100;
   const ingresado = t.caja.ingresado ?? 0, otras = t.caja.otras;
@@ -119,54 +121,11 @@ function Barras({ t, ventasHasta }: { t: TarjetaSede; ventasHasta?: string | nul
         <div className={pie}>
           {neg ? <CircleAlert className="h-4 w-4 text-red-600" aria-hidden /> : <CircleCheck className="h-4 w-4" style={{ color: COLOR.ganancia }} aria-hidden />}
           <span className="text-[11px] font-medium leading-tight text-gray-800">Ganancia</span>
-          <span className="text-[10px] leading-tight text-gray-400">{t.gananciaPct === null ? "después de todo" : `${pct(t.gananciaPct)} de las ventas`}</span>
+          {/* Mes abierto: el % a la fecha sale inflado (faltan la planilla y el alquiler); la estimación está abajo, en «De cada S/ 100». */}
+          <span className="text-[10px] leading-tight text-gray-400">{t.gananciaPct === null ? "después de todo" : estimado ? "a la fecha · faltan pagos de fin de mes" : `${pct(t.gananciaPct)} de las ventas`}</span>
         </div>
       </div>
     </>
-  );
-}
-
-const TOPE_TERMOMETRO = 40;
-const ZONA = { fragil: "bg-red-400", en_camino: "bg-amber-300", eficiente: "bg-emerald-500" };
-const TEXTO = { fragil: "text-red-700", en_camino: "text-amber-700", eficiente: "text-emerald-700" };
-
-/** El EBITDA como termómetro: de cada S/ 100 vendidos, cuánto queda después de costos y gastos (frágil < 10% · eficiente ≥ 30%). */
-function TermometroEbitda({ fila }: { fila: FilaRegla | null }) {
-  const e = fila?.ebitda ?? null;
-  if (!fila || !e || !fila.termometro) {
-    return <p className="mt-4 rounded-xl bg-gray-50 px-3 py-2.5 text-[11px] text-gray-400">EBITDA: todavía sin datos{fila?.sinResultadoPorque ? ` (${fila.sinResultadoPorque.toLowerCase()})` : ""}.</p>;
-  }
-  const t = fila.termometro;
-  const marca = Math.max(0, Math.min(TOPE_TERMOMETRO, e.pct));
-  const ancho = (a: number, b: number) => `${((b - a) / TOPE_TERMOMETRO) * 100}%`;
-  return (
-    <div className="mt-4 rounded-xl bg-gray-50 px-3 py-2.5" role="group" aria-label={`EBITDA ${pct(e.pct)}: ${ETIQUETA_TERMOMETRO[t].toLowerCase()}`}>
-      <div className="flex items-baseline justify-between gap-2">
-        <span className="text-[11px] font-medium uppercase tracking-wider text-gray-500">EBITDA</span>
-        <span className="text-[11px] text-gray-500">
-          <b className={`text-base font-semibold tabular-nums ${TEXTO[t]}`}>{pct(e.pct)}</b>{" "}
-          <span className={`font-medium ${TEXTO[t]}`}>{ETIQUETA_TERMOMETRO[t]}</span>
-          {!fila.mesCompleto && <span className="text-gray-400"> · provisional</span>}
-        </span>
-      </div>
-      <div className="relative mt-2">
-        <div className="flex h-2.5 overflow-hidden rounded-full">
-          <span className={ZONA.fragil} style={{ width: ancho(0, EBITDA_FRAGIL_PCT) }} />
-          <span className={ZONA.en_camino} style={{ width: ancho(EBITDA_FRAGIL_PCT, EBITDA_EFICIENTE_PCT) }} />
-          <span className={ZONA.eficiente} style={{ width: ancho(EBITDA_EFICIENTE_PCT, TOPE_TERMOMETRO) }} />
-        </div>
-        <span className="absolute -top-1 h-4.5 w-1 -translate-x-1/2 rounded-full bg-gray-900 ring-2 ring-white" style={{ left: `${(marca / TOPE_TERMOMETRO) * 100}%`, height: 18 }} aria-hidden />
-      </div>
-      <div className="relative mt-1 h-3 text-[10px] text-gray-400">
-        <span className="absolute left-0">0%</span>
-        <span className="absolute -translate-x-1/2" style={{ left: `${(EBITDA_FRAGIL_PCT / TOPE_TERMOMETRO) * 100}%` }}>{EBITDA_FRAGIL_PCT}%</span>
-        <span className="absolute -translate-x-1/2" style={{ left: `${(EBITDA_EFICIENTE_PCT / TOPE_TERMOMETRO) * 100}%` }}>{EBITDA_EFICIENTE_PCT}%</span>
-        <span className="absolute right-0">{TOPE_TERMOMETRO}%+</span>
-      </div>
-      <p className="mt-1.5 text-[11px] leading-snug text-gray-500">{e.pct >= 0
-        ? `Por cada S/ 100 vendidos, quedan S/ ${Math.round(e.pct).toLocaleString("es-PE")} después de costos y gastos.`
-        : `Por cada S/ 100 vendidos, se pierden S/ ${Math.round(-e.pct).toLocaleString("es-PE")} después de costos y gastos.`}</p>
-    </div>
   );
 }
 
@@ -178,7 +137,7 @@ function periodoDeLaTarjeta(corte: string | null, mes: string): string | null {
   return corte >= fin ? "mes completo" : `Dinero, costos y ganancia hasta el ${corte.slice(8, 10)}/${corte.slice(5, 7)} · último día con Excel`;
 }
 
-function Tarjeta({ t, fila, extra, cajaHref, mes }: { t: TarjetaSede; fila: FilaRegla | null; extra?: ExtraSede; cajaHref: string; mes: string }) {
+function Tarjeta({ t, cada, extra, cajaHref, mes }: { t: TarjetaSede; cada: Cada100 | null; extra?: ExtraSede; cajaHref: string; mes: string }) {
   const sinNada = t.ventas === null || t.ventas <= 0;
   const periodo = periodoDeLaTarjeta(t.corte, mes);
   const cubiertos = extra?.cubiertosPct ?? null;
@@ -199,14 +158,14 @@ function Tarjeta({ t, fila, extra, cajaHref, mes }: { t: TarjetaSede; fila: Fila
           {/* Dinero, costos y ganancia se cuentan hasta el último día con Excel (si no, la ganancia saldría inflada); las ventas llegan
               hasta el último día cargado y la parte clara de su barra es lo que el Excel todavía no cubre. */}
           {periodo && <p className="mt-0.5 text-[11px] text-gray-500">{periodo}</p>}
-          <Barras t={t} ventasHasta={extra?.ventasHasta ?? null} />
+          <Barras t={t} ventasHasta={extra?.ventasHasta ?? null} estimado={cada?.modo === "estimado"} />
           {t.porque && <p className="mt-2 text-xs text-gray-500">Sin ganancia todavía: {t.porque.toLowerCase()}.</p>}
           {t.extraordinario > 0 && t.ganancia !== null && (
             <p className="mt-2 text-[11px] leading-snug text-gray-500">
               Incluye <b className="text-gray-700">{soles(t.extraordinario)}</b> de gasto extraordinario (reparaciones grandes). Sin él, la ganancia sería <b className="text-gray-700">{soles(t.ganancia + t.extraordinario)}</b>.
             </p>
           )}
-          <TermometroEbitda fila={fila} />
+          {cada && <CadaCien c={cada} />}
 
           {/* El detalle, solo si se pide (divulgación progresiva). */}
           <details className="group mt-3 border-t border-gray-100 pt-3">
@@ -229,14 +188,24 @@ function Tarjeta({ t, fila, extra, cajaHref, mes }: { t: TarjetaSede; fila: Fila
 }
 
 /** Las tres tarjetas de sede. `cajaHref`: a dónde lleva «Ver el cuadre» (la conciliación en Reportes). */
-export function TarjetasSede({ cifras, periodo, extras, cajaHref }: { cifras: SeisCifras | null; periodo: string; extras?: Record<number, ExtraSede>; cajaHref: string }) {
+export function TarjetasSede({ cifras, periodo, extras, cajaHref, cada }: {
+  cifras: SeisCifras | null; periodo: string; extras?: Record<number, ExtraSede>; cajaHref: string;
+  /** «De cada S/ 100» ya calculado (con los fijos esperados del mes abierto). Sin él, se calcula con lo real. */
+  cada?: Cada100Mes | null;
+}) {
   const tarjetas = cifras ? tarjetasDelMes(cifras.sedes) : [];
   if (tarjetas.length === 0 || !cifras) return <p className="text-sm text-gray-500">No se pudieron calcular las cifras de {periodo}.</p>;
-  const cfg = cifras.config ?? CONFIG_PROFIT_FIRST;
-  const filas = new Map(cifras.sedes.map((s) => [s.businessId, reglaDeSede(s, cfg)]));
+  const c100 = cada ?? cada100DelMes(cifras);
   return (
     <>
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{tarjetas.map((t) => <Tarjeta key={t.businessId} t={t} fila={filas.get(t.businessId) ?? null} extra={extras?.[t.businessId]} cajaHref={cajaHref} mes={cifras.mes} />)}</div>
+      {/* El Grupo primero: de cada S/ 100 que vende, dónde se queda y dónde se fuga. */}
+      {c100.grupo.modo !== "sin-datos" && (
+        <div className="mb-4 max-w-2xl rounded-2xl border border-gray-200/80 bg-white p-4 sm:p-5">
+          <h4 className="text-base font-semibold text-gray-900">Grupo</h4>
+          <CadaCien c={c100.grupo} />
+        </div>
+      )}
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3">{tarjetas.map((t) => <Tarjeta key={t.businessId} t={t} cada={c100.sedes[t.businessId] ?? null} extra={extras?.[t.businessId]} cajaHref={cajaHref} mes={cifras.mes} />)}</div>
       <details className="group mt-3">
         <summary className="inline-flex cursor-pointer list-none items-center gap-1 text-[11px] font-medium text-gray-500 hover:text-gray-800 [&::-webkit-details-marker]:hidden">
           ¿Qué significa cada palabra? <ChevronDown className="h-3 w-3 transition-transform group-open:rotate-180" aria-hidden />

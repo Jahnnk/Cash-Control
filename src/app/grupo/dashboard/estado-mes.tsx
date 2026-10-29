@@ -33,7 +33,8 @@ export type EstadoMesProps = {
   proyeccion: number | null;
   liquidez: number | null;
   equilibrio: { texto: string; detalle: string; tono: "bien" | "ojo" | "mal" | "neutro" };
-  ganancia: { valor: number | null; detalle: string };
+  /** `titulo`/`tono` solo cuando es una estimación («EBITDA estimado») y no la ganancia real. */
+  ganancia: { valor: number | null; detalle: string; titulo?: string; tono?: "bien" | "ojo" | "mal" | "neutro" };
   flujo: number | null;
   /** A dónde lleva tocar la liquidez (el detalle de banco y efectivo por sede). */
   liquidezHref?: string;
@@ -110,9 +111,9 @@ export function EstadoMes(p: EstadoMesProps) {
           <Dato titulo="Dinero del mes" valor={p.flujo !== null ? `${p.flujo < 0 ? "−" : ""}${soles(p.flujo)}` : "—"} tono={p.flujo !== null && p.flujo < 0 ? "mal" : "neutro"} detalle="Lo que entró menos lo que salió" />
         )}
         <Dato titulo="Mínimo del día" valor={p.equilibrio.texto} detalle={p.equilibrio.detalle} tono={p.equilibrio.tono} />
-        <Dato titulo="Ganancia"
+        <Dato titulo={p.ganancia.titulo ?? "Ganancia"}
           valor={p.ganancia.valor !== null ? `${p.ganancia.valor < 0 ? "−" : ""}${soles(p.ganancia.valor)}` : <span className="text-gray-400">—</span>}
-          tono={p.ganancia.valor === null ? "neutro" : p.ganancia.valor < 0 ? "mal" : "bien"} detalle={p.ganancia.detalle} />
+          tono={p.ganancia.tono ?? (p.ganancia.valor === null ? "neutro" : p.ganancia.valor < 0 ? "mal" : "bien")} detalle={p.ganancia.detalle} />
       </div>
 
       {p.regla && <ReglaDelMes regla={p.regla} />}

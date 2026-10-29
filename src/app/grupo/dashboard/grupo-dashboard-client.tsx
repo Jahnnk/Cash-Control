@@ -18,6 +18,8 @@ import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
 import { TarjetasSede, type ExtraSede } from "./tarjetas-sede";
+import { cada100DelMes, esperadoDe } from "@/lib/cada-100";
+import type { PlanFijos } from "@/lib/fijos-plan-sql";
 import { VentasAlDiaVista, useVentasAlDia } from "./ventas-al-dia";
 import { AtencionCard } from "./atencion-card";
 import { EstadoMes } from "./estado-mes";
@@ -79,13 +81,15 @@ type Props = {
   cifras: SeisCifras | null;
   /** Metas de venta del presupuesto, revisión semanal pendiente y cobros de Atelier. */
   extra: ResumenExtra;
+  /** Los fijos que espera el presupuesto aprobado del mes en curso, por sede (vacío si no hay o el mes está cerrado). */
+  planFijos?: Record<number, PlanFijos>;
   /** Pestaña con la que abre (?pestana=equipo, p. ej. desde Reportes). */
   pestanaInicial?: Pestana;
 };
 
 export function GrupoDashboardClient({
   selectedMonth, mesActual, isCurrentMonth, summaries, breakeven, frescura, liquidez, ventas,
-  cuadreKelly, cifras, extra, pestanaInicial = "resumen",
+  cuadreKelly, cifras, extra, planFijos = {}, pestanaInicial = "resumen",
 }: Props) {
   const [pestana, setPestana] = useState<Pestana>(pestanaInicial);
   // Lo que anotan los administradores contra Byte: se dibuja en el Resumen y alimenta el aviso «no coincide con Byte».
@@ -196,7 +200,14 @@ export function GrupoDashboardClient({
   const proyeccion = isCurrentMonth && ventasDelMes.length ? Math.round(ventasDelMes.reduce((t, v) => t + proyeccionSede(v, diasDelMes), 0)) : null;
   const equilibrio = textoEquilibrio(breakeven?.grupo ?? null, isCurrentMonth);
   const cg = cifras?.grupo ?? null;
-  const ganancia = textoGanancia(cg);
+  // «De cada S/ 100 que vendes»: mientras el mes está abierto el EBITDA se ESTIMA (fijos del presupuesto o promedio de los
+  // meses cerrados, sobre las ventas al ritmo actual): el Excel llega atrasado y lo real a la fecha sale inflado.
+  const esperados = [1, 2, 3].map((id) => esperadoDe(id, beById.get(id) ?? null, planFijos[id] ?? null));
+  const cada = cifras ? cada100DelMes(cifras, esperados, isCurrentMonth) : null;
+  const ebitdaEstimado = cada?.grupo.modo === "estimado" ? cada.grupo.lineas.find((l) => l.clave === "ebitda") ?? null : null;
+  const ganancia = ebitdaEstimado
+    ? { valor: ebitdaEstimado.monto, titulo: "EBITDA estimado", tono: ebitdaEstimado.tono, detalle: `${Math.round(ebitdaEstimado.cien).toLocaleString("es-PE")}% de lo vendido · estimado al cierre` }
+    : textoGanancia(cg);
   // ── Necesita tu atención: lo que pide una acción, agrupado y ordenado ──
   const atencion = isCurrentMonth ? construirAtencion({
     hoy,
@@ -276,7 +287,7 @@ export function GrupoDashboardClient({
 
           <section id="sedes" className="space-y-3 scroll-mt-4" aria-label="Ventas, ganancia y plata por sede">
             <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Por sede · {periodo.toLowerCase()}</h2>
-            <TarjetasSede cifras={cifras} periodo={periodo} extras={extrasSede} cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
+            <TarjetasSede cifras={cifras} cada={cada} periodo={periodo} extras={extrasSede} cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
           </section>
 
           {/* Entre una carga de Byte y la siguiente: la venta diaria que anotan los administradores, contrastada con Byte. */}
