@@ -17,13 +17,28 @@ describe("tarjetas de sede del Resumen (rediseño)", () => {
     cajaHref: "/grupo/reportes?mes=2026-09",
     extras: { 2: { href: "/fonavi/dashboard", flag: "mejor", cubiertosPct: 121, pie: null }, 1: { href: "/atelier/dashboard", flag: "atencion", cubiertosPct: 87, pie: null } },
   }));
-  it("a primera vista: cuatro barras (Ventas, Dinero que entró, Dinero que salió, Ganancia) y el termómetro del EBITDA", () => {
+  it("a primera vista: cuatro barras (Ventas, Dinero que entró, Dinero que salió, Ganancia) y «De cada S/ 100 que vendes»", () => {
     for (const t of ["Ventas", "Dinero que entró", "Dinero que salió", "Ganancia", "EBITDA", "Costos: S/ 17,148", "Gastos: S/ 13,538", "S/ 30,686", "Por ventas", "Otras entradas", "S/ 37,294", "S/ 6,608", "Ver el detalle", "Mínimo cubierto", "121%", "Mejor rendimiento", "Atención", "¿Qué significa cada palabra?"]) expect(html).toContain(t);
   });
-  it("el EBITDA se ve como termómetro con su zona (Fonavi 17.7% = En camino; Atelier negativo = Frágil)", () => {
+  it("el EBITDA se ve con su zona (Fonavi 17.7% = En camino; Atelier negativo = Frágil) dentro de «De cada S/ 100 que vendes»", () => {
     expect(html).toContain("En camino");
     expect(html).toContain("Frágil");
-    expect(html).toContain("Por cada S/ 100 vendidos");
+    expect(html).toContain("De cada S/ 100 que vendes");
+    for (const t of ["Costos variables", "Costos fijos", "Utilidad apartada", "Impuestos, inversión y deudas"]) expect(html).toContain(t);
+  });
+  it("mes abierto: la barra de Ganancia no muestra el % inflado de la fecha; lo estimado está en «De cada S/ 100»", () => {
+    const abierto = renderToStaticMarkup(createElement(TarjetasSede, {
+      cifras: { mes: "2026-10", sedes: [{ ...sede(2, "Fonavi", 16000, 5200, 800), mes: "2026-10", corte: "2026-10-13" }] } as never, periodo: "octubre 2026", cajaHref: "/x",
+      cada: { grupo: { businessId: null, sede: "Grupo", modo: "sin-datos", porque: "x", provisional: false, ventas: null, corte: null, lineas: [], termometro: null, caja: null, fuenteFijos: null, fijosEsperados: null },
+        sedes: { 2: { businessId: 2, sede: "Fonavi", modo: "estimado", porque: null, provisional: false, ventas: 35662, corte: "2026-10-13", termometro: "en_camino", caja: 4794, fuenteFijos: "presupuesto", fijosEsperados: 14550,
+          lineas: [{ clave: "ebitda", etiqueta: "EBITDA", ayuda: "", cien: 12.9, meta: 33.3, sentido: "piso", tono: "ojo", monto: 4600, nota: "estimado al cierre" }] } } },
+    }));
+    expect(abierto).toContain("a la fecha · faltan pagos de fin de mes");
+    expect(abierto).toContain("Estimado al cierre");
+    expect(abierto).not.toContain("de las ventas");
+  });
+  it("el Grupo tiene su propio «De cada S/ 100» arriba de las sedes", () => {
+    expect(html).toContain("aria-label=\"De cada S/ 100 que vende Grupo\"");
   });
   it("ya no usa las palabras que se juntaban (Margen, Costos cubiertos, Caja del mes, Ganancia real, Plata)", () => {
     for (const t of ["Margen", "Costos cubiertos", "Caja del mes", "Ganancia real", "Plata que entró", "Ingresado por ventas"]) expect(html).not.toContain(t);
