@@ -50,15 +50,25 @@ export type FuentesVentaDia = {
   despues?: { byte: VentaRow[]; kelly: VentaRow[]; registro: VentaRow[] };
 };
 
+/** El último día que ya cerró: ayer (hora de Lima). El día en curso tiene la venta a medias y nunca se cuenta. */
+export function ultimoDiaCerrado(ahora: Date = new Date()): string {
+  return sumarDias(ahora.toLocaleDateString("en-CA", { timeZone: "America/Lima" }), -1);
+}
+
 export async function leerFuentesVenta(
   sql: SqlTag,
   bId: number,
   from: string,
-  hasta: string,
+  hastaPedido: string,
 ): Promise<FuentesVentaDia> {
+  // Pedido de Jahnn (30-oct-2026): si hoy es 30, la venta llega hasta el 29. Lo que Byte trae del día en curso (Atelier:
+  // S/1,129.27 de la mañana) o lo que el administrador anota a media jornada no cuenta hasta que el día cierre. Los reportes
+  // de Byte ya descartan hoy al subirse; esto cubre lo demás, para que todas las pantallas digan lo mismo.
+  const tope = ultimoDiaCerrado();
+  const hasta = hastaPedido > tope ? tope : hastaPedido;
   // Se leen unos días más allá del final para detectar los días que Byte junta
   // (venta-del-dia.ts); abajo se separan del periodo.
-  const to = sumarDias(hasta, MAX_DIAS_SIGUIENTES);
+  const to = sumarDias(hasta, MAX_DIAS_SIGUIENTES) > tope ? tope : sumarDias(hasta, MAX_DIAS_SIGUIENTES);
   // Prioridad 1 y 2: reportes de Byte (oficial primero).
   let byte: VentaRow[] = [];
   try {
