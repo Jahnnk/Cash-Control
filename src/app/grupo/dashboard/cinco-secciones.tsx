@@ -24,7 +24,6 @@ const soles = (n: number) => `S/ ${Math.round(Math.abs(n)).toLocaleString("es-PE
 const solesConSigno = (n: number) => `${n < 0 ? "−" : ""}${soles(n)}`;
 const entero = (n: number) => `${n < 0 ? "−" : ""}${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const pct1 = (n: number | null) => (n === null ? "—" : `${n.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%`);
-const ddmm = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`;
 
 const TEXTO: Record<Tono, string> = { bien: "text-emerald-700", ojo: "text-amber-700", mal: "text-red-700", neutro: "text-gray-900" };
 
