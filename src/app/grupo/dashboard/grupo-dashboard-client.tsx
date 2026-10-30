@@ -17,17 +17,16 @@ import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
 import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
-import { TarjetasSede, type ExtraSede } from "./tarjetas-sede";
+import { CincoSecciones, type TarjetaVentas, type VentasAlcance } from "./cinco-secciones";
 import { cada100DelMes, esperadoDe } from "@/lib/cada-100";
 import type { PlanFijos } from "@/lib/fijos-plan-sql";
 import { VentasAlDiaVista, useVentasAlDia } from "./ventas-al-dia";
 import { AtencionCard } from "./atencion-card";
-import { EstadoMes } from "./estado-mes";
 import { SeccionDesplegable } from "@/components/productos/ui";
 import type { ResumenExtra } from "@/app/actions/resumen-grupo";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
 import { construirAtencion } from "@/lib/grupo/atencion";
-import { proyeccionSede, textoEquilibrio, textoGanancia } from "@/lib/grupo/estado-mes";
+import { proyeccionSede, textoEquilibrio } from "@/lib/grupo/estado-mes";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { ScopeCode } from "@/lib/business-theme";
 
@@ -85,13 +84,25 @@ type Props = {
   planFijos?: Record<number, PlanFijos>;
   /** Pestaña con la que abre (?pestana=equipo, p. ej. desde Reportes). */
   pestanaInicial?: Pestana;
+  /** Sede con la que abre (?sede=fonavi); null = el grupo entero. */
+  sedeInicial?: number | null;
 };
 
 export function GrupoDashboardClient({
   selectedMonth, mesActual, isCurrentMonth, summaries, breakeven, frescura, liquidez, ventas,
-  cuadreKelly, cifras, extra, planFijos = {}, pestanaInicial = "resumen",
+  cuadreKelly, cifras, extra, planFijos = {}, pestanaInicial = "resumen", sedeInicial = null,
 }: Props) {
   const [pestana, setPestana] = useState<Pestana>(pestanaInicial);
+  // Qué sede se mira en las cinco secciones del Resumen (null = el Grupo). Viaja en la dirección (?sede=fonavi) sin recargar.
+  const [sede, setSedeEstado] = useState<number | null>(sedeInicial);
+  const elegirSede = (id: number | null) => {
+    setSedeEstado(id);
+    try {
+      const url = new URL(window.location.href);
+      if (id === null) url.searchParams.delete("sede"); else url.searchParams.set("sede", SEDE_CODE[id]);
+      window.history.replaceState(null, "", url);
+    } catch { /* la dirección es un lujo: sin ella todo funciona igual */ }
+  };
   // Lo que anotan los administradores contra Byte: se dibuja en el Resumen y alimenta el aviso «no coincide con Byte».
   const ventasAlDia = useVentasAlDia(selectedMonth);
   // Sube con cada carga (Byte o Excel) para que la franja «Datos cargados» se actualice sola.
@@ -170,26 +181,6 @@ export function GrupoDashboardClient({
   const diasSinRegistrar = (hasta: string | null) => hasta
     ? Math.max(0, Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${hasta}T12:00:00Z`)) / 86_400_000) - 1) : null;
 
-  // Lo que la tarjeta de cada sede dice al pie: hasta qué día está al día, la meta y el equilibrio.
-  const extrasSede: Record<number, ExtraSede> = Object.fromEntries(pulses.map((p) => {
-    const faltan = diasSinRegistrar(p.hasta);
-    const meta = p.meta ? Math.round((p.ventasMes / p.meta) * 100) : null;
-    const eq = p.equilibrioPct !== null ? Math.round(p.equilibrioPct) : null;
-    return [p.businessId, {
-      href: `/${p.code}/dashboard`,
-      flag: p.flag === "atencion" || p.flag === "mejor" ? p.flag : null,
-      cubiertosPct: eq,
-      ventasHasta: p.hasta,
-      pie: (
-        <>
-          {faltan ? <span className="block text-amber-700">⚠ {faltan === 1 ? "Falta 1 día de ventas" : `Faltan ${faltan} días de ventas`} · llegan al {ddmm(p.hasta!)}</span> : null}
-          {meta !== null && <span className="block">Meta de ventas: <b className="text-gray-700">{meta}%</b></span>}
-          {p.deltaPct !== null && <span className="block">Ventas vs mes pasado: <b className={p.deltaPct < 0 ? "text-red-700" : "text-emerald-700"}>{p.deltaPct > 0 ? "+" : ""}{p.deltaPct}%</b></span>}
-        </>
-      ),
-    }];
-  }));
-
   // Hasta qué día llegan las ventas que suma el número grande (la sede más adelantada).
   const ultimaVenta = ventasDelMes.reduce<string | null>((mx, v) => (v.hasta && (!mx || v.hasta > mx) ? v.hasta : mx), null);
   const diasDelMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
@@ -199,32 +190,54 @@ export function GrupoDashboardClient({
   // Al ritmo actual: con menos de 7 días del mes, el de los últimos 7 días con venta (el inicio de mes engaña).
   const proyeccion = isCurrentMonth && ventasDelMes.length ? Math.round(ventasDelMes.reduce((t, v) => t + proyeccionSede(v, diasDelMes), 0)) : null;
   const equilibrio = textoEquilibrio(breakeven?.grupo ?? null, isCurrentMonth);
-  const cg = cifras?.grupo ?? null;
   // «De cada S/ 100 que vendes»: mientras el mes está abierto el EBITDA se ESTIMA (fijos del presupuesto o promedio de los
   // meses cerrados, sobre las ventas al ritmo actual): el Excel llega atrasado y lo real a la fecha sale inflado.
   const esperados = [1, 2, 3].map((id) => esperadoDe(id, beById.get(id) ?? null, planFijos[id] ?? null));
   const cada = cifras ? cada100DelMes(cifras, esperados, isCurrentMonth) : null;
-  const ebitdaEstimado = cada?.grupo.modo === "estimado" ? cada.grupo.lineas.find((l) => l.clave === "ebitda") ?? null : null;
-  const ganancia = ebitdaEstimado
-    ? { valor: ebitdaEstimado.monto, titulo: "EBITDA estimado", tono: ebitdaEstimado.tono, detalle: `${Math.round(ebitdaEstimado.cien).toLocaleString("es-PE")}% de lo vendido · estimado al cierre` }
-    : textoGanancia(cg);
   // ── Necesita tu atención: lo que pide una acción, agrupado y ordenado ──
+  // Con una sede elegida, lo que es de otra sede no estorba; lo del grupo (Excel, presupuesto, Highlight) sigue.
+  const nombreSede = sede === null ? null : pulses.find((p) => p.businessId === sede)?.nombre ?? null;
+  const deLaSede = (nombre: string) => nombreSede === null || nombre.includes(nombreSede);
   const atencion = isCurrentMonth ? construirAtencion({
     hoy,
-    sedes: pulses.map((p) => ({
+    sedes: pulses.filter((p) => sede === null || p.businessId === sede).map((p) => ({
       nombre: p.nombre, code: p.code, deltaPct: p.deltaPct, diasComparados: p.diasComparados, coberturaBaja: p.coberturaBaja,
       diasSinRegistrar: diasSinRegistrar(p.hasta), equilibrioPct: p.equilibrioPct,
       diasConDatos: p.hasta?.startsWith(selectedMonth) ? Number(p.hasta.slice(8, 10)) : 0,
       equilibrioEnRiesgo: beById.get(p.businessId)?.estado === "en_riesgo",
     })),
-    cuadres: (cuadreKelly ?? []).filter((v) => v.month >= mesAnterior(selectedMonth)).map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
+    cuadres: (cuadreKelly ?? []).filter((v) => v.month >= mesAnterior(selectedMonth) && (sede === null || v.businessId === sede)).map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
     excelPendiente: frescura && !alDia ? frescura.accion ?? frescura.titular : null,
-    highlightsSinAsignar: extra.highlightsSinAsignar,
+    highlightsSinAsignar: extra.highlightsSinAsignar ? extra.highlightsSinAsignar.filter(deLaSede) : extra.highlightsSinAsignar,
     presupuesto: extra.presupuesto,
-    utilidadPorSeparar: extra.utilidadPorSeparar,
-    cobrosAtelier: extra.cobrosAtelier,
-    ventasVsByte: ventasAlDia ? ventasAlDia.sedes.map((v) => ({ sede: v.sede, code: SEDE_CODE[v.businessId] ?? "grupo", dias: v.sueltos })) : null,
+    utilidadPorSeparar: extra.utilidadPorSeparar ? { ...extra.utilidadPorSeparar, sedes: extra.utilidadPorSeparar.sedes.filter((x) => deLaSede(x.sede)) } : extra.utilidadPorSeparar,
+    cobrosAtelier: sede === null || sede === 1 ? extra.cobrosAtelier : null,
+    ventasVsByte: ventasAlDia ? ventasAlDia.sedes.filter((v) => sede === null || v.businessId === sede).map((v) => ({ sede: v.sede, code: SEDE_CODE[v.businessId] ?? "grupo", dias: v.sueltos })) : null,
   }) : [];
+  // ── Sección 1: las ventas del grupo o de la sede elegida, y una tarjeta por sede ──
+  const vSede = sede === null ? null : byId.get(sede) ?? null;
+  const proySede = isCurrentMonth && vSede ? Math.round(proyeccionSede(vSede, diasDelMes)) : null;
+  const ventasAlcance: VentasAlcance = sede === null
+    ? { ventas: ventasMes, hasta: isCurrentMonth ? ultimaVenta : null, deltaPct: deltaGrupo, meta: metaGrupo, proyeccion, dia: diaHoy, diasDelMes, equilibrio }
+    : {
+      ventas: vSede?.mes ?? 0, hasta: isCurrentMonth ? vSede?.hasta ?? null : null, deltaPct: vSede?.mesCmp?.sameDay.pct ?? null,
+      meta: extra.metas[sede] ?? null, proyeccion: proySede, dia: diaHoy, diasDelMes,
+      equilibrio: textoEquilibrio(beById.get(sede) ?? null, isCurrentMonth, vSede && proySede ? { ventas: vSede.mes, proyeccion: proySede, diasDelMes } : undefined),
+    };
+  const tarjetas: TarjetaVentas[] = [1, 2, 3].flatMap((id) => {
+    const p = pulses.find((x) => x.businessId === id);
+    if (!p) return [];
+    const c = cada?.sedes[id];
+    const l = c && c.modo !== "sin-datos" ? c.lineas.find((x) => x.clave === "ebitda") ?? null : null;
+    const faltan = isCurrentMonth ? diasSinRegistrar(p.hasta) : null;
+    return [{
+      businessId: id, nombre: p.nombre, ventas: p.ventasMes, pctGrupo: ventasMes > 0 ? (p.ventasMes / ventasMes) * 100 : null,
+      ebitdaPct: l?.cien ?? null, ebitdaTono: l?.tono ?? null, ebitdaEstimado: c?.modo === "estimado",
+      aviso: faltan && p.hasta ? `${faltan === 1 ? "Falta 1 día" : `Faltan ${faltan} días`} de ventas · llegan al ${ddmm(p.hasta)}` : null,
+    }];
+  });
+  const saldoAlcance = sede === null ? liquidez?.total ?? null : liqById.get(sede)?.total ?? null;
+  const ventasAlDiaSede = ventasAlDia && sede !== null ? { ...ventasAlDia, sedes: ventasAlDia.sedes.filter((v) => v.businessId === sede) } : ventasAlDia;
   // Los avisos que se resuelven en esta misma pantalla no navegan: cambian de pestaña o bajan a las sedes.
   const irA = (href: string) => {
     if (href === "#excel") { setPestana("datos"); return true; }
@@ -239,7 +252,17 @@ export function GrupoDashboardClient({
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Grupo Yayi&apos;s</h1>
         <div className="flex flex-wrap items-center gap-2 sm:gap-3">
-          <SelectorMes mes={selectedMonth} mesActual={mesActual} />
+          {/* Qué se mira: el grupo entero o una sede (las cinco secciones del Resumen siguen a este selector). */}
+          <select
+            value={sede ?? ""} onChange={(e) => elegirSede(e.target.value === "" ? null : Number(e.target.value))} aria-label="Sede"
+            className="border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white text-gray-900 font-medium"
+          >
+            <option value="">Grupo Yayi&apos;s</option>
+            <option value="1">Atelier</option>
+            <option value="2">Fonavi</option>
+            <option value="3">Centro</option>
+          </select>
+          <SelectorMes mes={selectedMonth} mesActual={mesActual} sede={sede === null ? undefined : SEDE_CODE[sede]} />
           {/* Los dos importables del Dashboard: las ventas de Byte, que Jahnn sube cada semana, y el Excel de finanzas (la rotación se sube en Productos, 24-oct-2026). */}
           <BotonSubirByte onCambio={() => setVersionCargas((v) => v + 1)} />
           <SubirExcelKelly onCerrar={() => setVersionCargas((v) => v + 1)} />
@@ -273,25 +296,19 @@ export function GrupoDashboardClient({
         <div className="space-y-6">
           {/* Antes de las cifras: si son confiables (controles de fiabilidad, 24-oct-2026). */}
           <SemaforoMes mes={selectedMonth} />
-          {/* Capa 1: lo que se mira cada día. Primero cómo vamos y qué hacer hoy; después cada sede con cuatro datos.
-              El detalle de cada sede se abre con «Ver el detalle»; lo de contador vive en Reportes → Para el contador. */}
-          <div className={`grid grid-cols-1 gap-5 items-start ${isCurrentMonth ? "lg:grid-cols-[minmax(0,1.6fr)_minmax(0,1fr)]" : ""}`}>
-            <EstadoMes
-              periodo={periodo} enCurso={isCurrentMonth} dia={diaHoy} diasDelMes={diasDelMes}
-              ventas={ventasMes} hasta={isCurrentMonth ? ultimaVenta : null} deltaPct={deltaGrupo} meta={metaGrupo} proyeccion={proyeccion}
-              liquidez={liquidez ? liquidez.total : null} equilibrio={equilibrio} ganancia={ganancia}
-              flujo={cg?.caja.flujo ?? null} liquidezHref="/grupo/direccion"
+          {/* Primero lo que pide una acción de Jahnn; después las cinco secciones: ventas → dinero → egresos → EBITDA → alertas. */}
+          {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
+
+          <div id="sedes" className="scroll-mt-4">
+            <CincoSecciones
+              cifras={cifras} cada={cada} sede={sede} onSede={elegirSede} enCurso={isCurrentMonth} periodo={periodo}
+              ventas={ventasAlcance} tarjetas={tarjetas} saldo={saldoAlcance}
+              cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`}
             />
-            {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
           </div>
 
-          <section id="sedes" className="space-y-3 scroll-mt-4" aria-label="Ventas, ganancia y plata por sede">
-            <h2 className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Por sede · {periodo.toLowerCase()}</h2>
-            <TarjetasSede cifras={cifras} cada={cada} periodo={periodo} extras={extrasSede} cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`} />
-          </section>
-
           {/* Entre una carga de Byte y la siguiente: la venta diaria que anotan los administradores, contrastada con Byte. */}
-          <VentasAlDiaVista datos={ventasAlDia} />
+          <VentasAlDiaVista datos={ventasAlDiaSede} />
         </div>
       )}
 
