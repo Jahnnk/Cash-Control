@@ -19,6 +19,7 @@ import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
 import { CincoSecciones, type TarjetaVentas, type VentasAlcance } from "./cinco-secciones";
 import { cada100DelMes, esperadoDe } from "@/lib/cada-100";
+import { textoCortes } from "@/lib/dashboard-cinco";
 import type { PlanFijos } from "@/lib/fijos-plan-sql";
 import { VentasAlDiaVista, useVentasAlDia } from "./ventas-al-dia";
 import { SeccionDesplegable } from "@/components/productos/ui";
@@ -172,8 +173,6 @@ export function GrupoDashboardClient({
   const diasSinRegistrar = (hasta: string | null) => hasta
     ? Math.max(0, Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${hasta}T12:00:00Z`)) / 86_400_000) - 1) : null;
 
-  // Hasta qué día llegan las ventas que suma el número grande (la sede más adelantada).
-  const ultimaVenta = ventasDelMes.reduce<string | null>((mx, v) => (v.hasta && (!mx || v.hasta > mx) ? v.hasta : mx), null);
   const diasDelMes = new Date(Date.UTC(y, m, 0)).getUTCDate();
   const diaHoy = isCurrentMonth ? Number(hoy.slice(8, 10)) : diasDelMes;
   const metas = [1, 2, 3].map((id) => extra.metas[id] ?? null);
@@ -186,12 +185,16 @@ export function GrupoDashboardClient({
   const esperados = [1, 2, 3].map((id) => esperadoDe(id, beById.get(id) ?? null, planFijos[id] ?? null));
   const cada = cifras ? cada100DelMes(cifras, esperados, isCurrentMonth) : null;
   // ── Sección 1: las ventas del grupo o de la sede elegida, y una tarjeta por sede ──
+  // Cada sede llega hasta su propio día: si una va atrasada, el título lo dice en vez de prometer el día de la más adelantada.
+  const hastaTexto = isCurrentMonth
+    ? textoCortes(ventasDelMes.filter((v) => sede === null || v.businessId === sede).map((v) => ({ sede: pulses.find((p) => p.businessId === v.businessId)?.nombre ?? "", corte: v.hasta, mesCompleto: false })))
+    : null;
   const vSede = sede === null ? null : byId.get(sede) ?? null;
   const proySede = isCurrentMonth && vSede ? Math.round(proyeccionSede(vSede, diasDelMes)) : null;
   const ventasAlcance: VentasAlcance = sede === null
-    ? { ventas: ventasMes, hasta: isCurrentMonth ? ultimaVenta : null, deltaPct: deltaGrupo, meta: metaGrupo, proyeccion, dia: diaHoy, diasDelMes, equilibrio }
+    ? { ventas: ventasMes, hastaTexto, deltaPct: deltaGrupo, meta: metaGrupo, proyeccion, dia: diaHoy, diasDelMes, equilibrio }
     : {
-      ventas: vSede?.mes ?? 0, hasta: isCurrentMonth ? vSede?.hasta ?? null : null, deltaPct: vSede?.mesCmp?.sameDay.pct ?? null,
+      ventas: vSede?.mes ?? 0, hastaTexto, deltaPct: vSede?.mesCmp?.sameDay.pct ?? null,
       meta: extra.metas[sede] ?? null, proyeccion: proySede, dia: diaHoy, diasDelMes,
       equilibrio: textoEquilibrio(beById.get(sede) ?? null, isCurrentMonth, vSede && proySede ? { ventas: vSede.mes, proyeccion: proySede, diasDelMes } : undefined),
     };
