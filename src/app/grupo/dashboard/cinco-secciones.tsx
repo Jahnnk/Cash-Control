@@ -24,14 +24,14 @@ const soles = (n: number) => `S/ ${Math.round(Math.abs(n)).toLocaleString("es-PE
 const solesConSigno = (n: number) => `${n < 0 ? "−" : ""}${soles(n)}`;
 const entero = (n: number) => `${n < 0 ? "−" : ""}${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const pct1 = (n: number | null) => (n === null ? "—" : `${n.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%`);
-const ddmm = (f: string) => `${f.slice(8, 10)}/${f.slice(5, 7)}`;
 
 const TEXTO: Record<Tono, string> = { bien: "text-emerald-700", ojo: "text-amber-700", mal: "text-red-700", neutro: "text-gray-900" };
 
 /** Lo que muestra la sección 1 para el grupo o la sede elegida. */
 export type VentasAlcance = {
   ventas: number;
-  hasta: string | null;
+  /** Hasta qué día llegan las ventas, dicho para la pantalla: «hasta el 29/10» o «hasta el 24/10 (Atelier) y el 29/10 (Fonavi, Centro)». */
+  hastaTexto: string | null;
   deltaPct: number | null;
   meta: number | null;
   proyeccion: number | null;
@@ -98,14 +98,14 @@ function SeccionVentas({ v, tarjetas, sede, onSede, enCurso, nombre }: { v: Vent
   const vsMeta = v.meta && final !== null ? final - v.meta : null;
   const total = tarjetas.reduce((t, x) => t + x.ventas, 0);
   return (
-    <Seccion n={1} titulo="Ventas por sede" fuente={`Fuente: Byte${v.hasta && enCurso ? ` · hasta el ${ddmm(v.hasta)}` : ""}`} icono={<BarChart3 className="h-5 w-5" />}>
+    <Seccion n={1} titulo="Ventas por sede" fuente={`Fuente: Byte${v.hastaTexto && enCurso ? ` · ${v.hastaTexto}` : ""}`} icono={<BarChart3 className="h-5 w-5" />}>
       <div className="rounded-2xl bg-gray-50 p-4 sm:p-5">
         <div className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{sede === null ? "Ventas totales del mes" : `Ventas de ${nombre} en el mes`}</div>
         <div className="mt-1.5 flex flex-wrap items-end gap-x-3 gap-y-1">
           <span className="text-4xl font-semibold tabular-nums leading-none tracking-tight text-gray-900 sm:text-5xl">{soles(v.ventas)}</span>
           {v.deltaPct !== null && <span className="inline-flex items-center gap-1 pb-1 text-sm text-gray-500"><Delta pct={v.deltaPct} /> <span className="text-xs">vs. mismos días del mes pasado</span></span>}
         </div>
-        <p className="mt-1.5 text-sm text-gray-500">{sede === null ? "Consolidado de 3 sedes" : nombre}{v.hasta && enCurso ? ` · vendido hasta el ${ddmm(v.hasta)}` : ""}</p>
+        <p className="mt-1.5 text-sm text-gray-500">{sede === null ? "Consolidado de 3 sedes" : nombre}{v.hastaTexto && enCurso ? ` · vendido ${v.hastaTexto}` : ""}</p>
         {v.meta !== null && pctMeta !== null && (
           <div className="mt-4">
             <div className="relative h-2.5 overflow-hidden rounded-full bg-gray-200" role="meter" aria-valuemin={0} aria-valuemax={v.meta} aria-valuenow={v.ventas} aria-label="Ventas contra la meta del mes">

@@ -135,7 +135,7 @@ describe("sección 5 · alertas con el culpable concreto", () => {
 
 describe("la pantalla", () => {
   const todas = cifras([fonavi(), atelier(), centro()]);
-  const ventas = { ventas: 113579, hasta: "2026-09-30", deltaPct: -0.8, meta: 118000, proyeccion: null, dia: 30, diasDelMes: 30, equilibrio: { texto: "Cubierto", detalle: "Las ventas pagaron los costos del mes", tono: "bien" as const } };
+  const ventas = { ventas: 113579, hastaTexto: "hasta el 24/10 (Atelier) y el 29/10 (Fonavi, Centro)", deltaPct: -0.8, meta: 118000, proyeccion: null, dia: 30, diasDelMes: 30, equilibrio: { texto: "Cubierto", detalle: "Las ventas pagaron los costos del mes", tono: "bien" as const } };
   const tarjetas = [
     { businessId: 1, nombre: "Atelier", ventas: 36285, pctGrupo: 32, ebitdaPct: -13.4, ebitdaTono: "mal" as const, ebitdaEstimado: false, aviso: null },
     { businessId: 2, nombre: "Fonavi", ventas: 37294, pctGrupo: 33, ebitdaPct: 17.7, ebitdaTono: "ojo" as const, ebitdaEstimado: false, aviso: "Falta 1 día de ventas · llegan al 28/10" },
@@ -154,6 +154,11 @@ describe("la pantalla", () => {
     expect([...orden].sort((a, b) => a - b)).toEqual(orden);
     expect(h).toContain("Fuente: Byte");
     expect(h).toContain("Fuente: Excel de Finanzas");
+  });
+  it("mes abierto con una sede atrasada: el título dice hasta qué día llega cada una, no el de la más adelantada", () => {
+    const h = html(props(null, { enCurso: true }));
+    expect(h).toContain("Fuente: Byte · hasta el 24/10 (Atelier) y el 29/10 (Fonavi, Centro)");
+    expect(h).toContain("vendido hasta el 24/10 (Atelier) y el 29/10 (Fonavi, Centro)");
   });
   it("sección 1: venta total, meta y las tres sedes con su % del grupo y su EBITDA", () => {
     const h = html(props(null));
