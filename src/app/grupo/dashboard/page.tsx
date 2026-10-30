@@ -11,9 +11,9 @@ import { GrupoDashboardClient } from "./grupo-dashboard-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function GrupoDashboardPage({ searchParams }: { searchParams: Promise<{ mes?: string; pestana?: string }> }) {
+export default async function GrupoDashboardPage({ searchParams }: { searchParams: Promise<{ mes?: string; pestana?: string; sede?: string }> }) {
   // ?mes=2026-09 → cómo nos fue ese mes. Sin parámetro: el mes en curso.
-  const { mes: pedido, pestana } = await searchParams;
+  const { mes: pedido, pestana, sede } = await searchParams;
   // El mes en curso según Lima (getGroupDashboard usa UTC y a las 7 pm del
   // último día del mes ya diría "el mes siguiente"). Un mes futuro no existe.
   const mesActual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
@@ -45,6 +45,7 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
       cifras={cifras.ok ? cifras.data : null}
       extra={extra}
       planFijos={planFijos}
+      sedeInicial={sede === "atelier" ? 1 : sede === "fonavi" ? 2 : sede === "centro" ? 3 : null}
       pestanaInicial={pestana === "equipo" ? "equipo" : pestana === "datos" || pestana === "gastos" || pestana === "kelly" ? "datos" : "resumen"}
     />
   );

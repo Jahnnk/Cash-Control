@@ -24,7 +24,7 @@ function sumar(m: string, n: number): string {
   return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
 }
 
-export function SelectorMes({ mes, mesActual, ruta = "/grupo/dashboard" }: { mes: string; mesActual: string; ruta?: string }) {
+export function SelectorMes({ mes, mesActual, ruta = "/grupo/dashboard", sede }: { mes: string; mesActual: string; ruta?: string; /** La sede que se está mirando (?sede=fonavi): se conserva al cambiar de mes. */ sede?: string }) {
   const router = useRouter();
   const [cargando, ir] = useTransition();
 
@@ -33,7 +33,8 @@ export function SelectorMes({ mes, mesActual, ruta = "/grupo/dashboard" }: { mes
 
   function cambiar(nuevo: string) {
     if (nuevo === mes) return;
-    ir(() => router.push(nuevo === mesActual ? ruta : `${ruta}?mes=${nuevo}`));
+    const consulta = [nuevo === mesActual ? "" : `mes=${nuevo}`, sede ? `sede=${sede}` : ""].filter(Boolean).join("&");
+    ir(() => router.push(consulta ? `${ruta}?${consulta}` : ruta));
   }
 
   const hayAnterior = mes > PRIMER_MES;
