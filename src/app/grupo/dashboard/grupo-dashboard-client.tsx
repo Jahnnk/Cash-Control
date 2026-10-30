@@ -21,11 +21,9 @@ import { CincoSecciones, type TarjetaVentas, type VentasAlcance } from "./cinco-
 import { cada100DelMes, esperadoDe } from "@/lib/cada-100";
 import type { PlanFijos } from "@/lib/fijos-plan-sql";
 import { VentasAlDiaVista, useVentasAlDia } from "./ventas-al-dia";
-import { AtencionCard } from "./atencion-card";
 import { SeccionDesplegable } from "@/components/productos/ui";
 import type { ResumenExtra } from "@/app/actions/resumen-grupo";
 import { CumplimientoEquipo } from "./cumplimiento-equipo";
-import { construirAtencion } from "@/lib/grupo/atencion";
 import { proyeccionSede, textoEquilibrio } from "@/lib/grupo/estado-mes";
 import type { GroupVentasSede } from "@/app/actions/group-ventas";
 import type { ScopeCode } from "@/lib/business-theme";
@@ -53,11 +51,6 @@ import type { ScopeCode } from "@/lib/business-theme";
  */
 
 const SEDE_CODE: Record<number, ScopeCode> = { 1: "atelier", 2: "fonavi", 3: "centro" };
-/** "2026-09" → "2026-08". */
-const mesAnterior = (m: string) => {
-  const [y, mm] = m.split("-").map(Number);
-  return mm === 1 ? `${y - 1}-12` : `${y}-${String(mm - 1).padStart(2, "0")}`;
-};
 const MESES = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
 
 /** Tres pestañas (19-oct-2026): lo de cada día, el equipo y los datos (gastos y Excel). Rentabilidad pasó a Reportes → Para el contador. */
@@ -174,8 +167,6 @@ export function GrupoDashboardClient({
     }
   }
 
-  const alDia = frescura?.estado === "al_dia";
-
   // ── ¿Cómo vamos? Una sola cifra de ventas (Byte, la misma de las sedes), su meta y su ritmo ──
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   const diasSinRegistrar = (hasta: string | null) => hasta
@@ -194,26 +185,6 @@ export function GrupoDashboardClient({
   // meses cerrados, sobre las ventas al ritmo actual): el Excel llega atrasado y lo real a la fecha sale inflado.
   const esperados = [1, 2, 3].map((id) => esperadoDe(id, beById.get(id) ?? null, planFijos[id] ?? null));
   const cada = cifras ? cada100DelMes(cifras, esperados, isCurrentMonth) : null;
-  // ── Necesita tu atención: lo que pide una acción, agrupado y ordenado ──
-  // Con una sede elegida, lo que es de otra sede no estorba; lo del grupo (Excel, presupuesto, Highlight) sigue.
-  const nombreSede = sede === null ? null : pulses.find((p) => p.businessId === sede)?.nombre ?? null;
-  const deLaSede = (nombre: string) => nombreSede === null || nombre.includes(nombreSede);
-  const atencion = isCurrentMonth ? construirAtencion({
-    hoy,
-    sedes: pulses.filter((p) => sede === null || p.businessId === sede).map((p) => ({
-      nombre: p.nombre, code: p.code, deltaPct: p.deltaPct, diasComparados: p.diasComparados, coberturaBaja: p.coberturaBaja,
-      diasSinRegistrar: diasSinRegistrar(p.hasta), equilibrioPct: p.equilibrioPct,
-      diasConDatos: p.hasta?.startsWith(selectedMonth) ? Number(p.hasta.slice(8, 10)) : 0,
-      equilibrioEnRiesgo: beById.get(p.businessId)?.estado === "en_riesgo",
-    })),
-    cuadres: (cuadreKelly ?? []).filter((v) => v.month >= mesAnterior(selectedMonth) && (sede === null || v.businessId === sede)).map((v) => ({ sede: v.sede, mes: v.month, alertas: v.alertas.length })),
-    excelPendiente: frescura && !alDia ? frescura.accion ?? frescura.titular : null,
-    highlightsSinAsignar: extra.highlightsSinAsignar ? extra.highlightsSinAsignar.filter(deLaSede) : extra.highlightsSinAsignar,
-    presupuesto: extra.presupuesto,
-    utilidadPorSeparar: extra.utilidadPorSeparar ? { ...extra.utilidadPorSeparar, sedes: extra.utilidadPorSeparar.sedes.filter((x) => deLaSede(x.sede)) } : extra.utilidadPorSeparar,
-    cobrosAtelier: sede === null || sede === 1 ? extra.cobrosAtelier : null,
-    ventasVsByte: ventasAlDia ? ventasAlDia.sedes.filter((v) => sede === null || v.businessId === sede).map((v) => ({ sede: v.sede, code: SEDE_CODE[v.businessId] ?? "grupo", dias: v.sueltos })) : null,
-  }) : [];
   // ── Sección 1: las ventas del grupo o de la sede elegida, y una tarjeta por sede ──
   const vSede = sede === null ? null : byId.get(sede) ?? null;
   const proySede = isCurrentMonth && vSede ? Math.round(proyeccionSede(vSede, diasDelMes)) : null;
@@ -238,14 +209,6 @@ export function GrupoDashboardClient({
   });
   const saldoAlcance = sede === null ? liquidez?.total ?? null : liqById.get(sede)?.total ?? null;
   const ventasAlDiaSede = ventasAlDia && sede !== null ? { ...ventasAlDia, sedes: ventasAlDia.sedes.filter((v) => v.businessId === sede) } : ventasAlDia;
-  // Los avisos que se resuelven en esta misma pantalla no navegan: cambian de pestaña o bajan a las sedes.
-  const irA = (href: string) => {
-    if (href === "#excel") { setPestana("datos"); return true; }
-    if (href === "#ventas-al-dia") { setPestana("resumen"); setTimeout(() => { const el = document.getElementById("ventas-al-dia"); if (el instanceof HTMLDetailsElement) el.open = true; el?.scrollIntoView({ behavior: "smooth" }); }, 0); return true; }
-    if (href.endsWith("#sedes")) { document.getElementById("sedes")?.scrollIntoView({ behavior: "smooth" }); return true; }
-    return false;
-  };
-
   return (
     <div className="space-y-6 pb-4 max-w-[1400px] min-w-0">
       {/* Cabecera: identidad, hasta cuándo hay datos y la acción de siempre */}
@@ -296,9 +259,7 @@ export function GrupoDashboardClient({
         <div className="space-y-6">
           {/* Antes de las cifras: si son confiables (controles de fiabilidad, 24-oct-2026). */}
           <SemaforoMes mes={selectedMonth} />
-          {/* Primero lo que pide una acción de Jahnn; después las cinco secciones: ventas → dinero → egresos → EBITDA → alertas. */}
-          {isCurrentMonth && <AtencionCard items={atencion} onIr={irA} />}
-
+          {/* Las cinco secciones: ventas → dinero → egresos → EBITDA → alertas. */}
           <div id="sedes" className="scroll-mt-4">
             <CincoSecciones
               cifras={cifras} cada={cada} sede={sede} onSede={elegirSede} enCurso={isCurrentMonth} periodo={periodo}
