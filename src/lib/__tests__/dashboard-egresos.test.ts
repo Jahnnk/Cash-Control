@@ -85,8 +85,8 @@ describe("la pantalla de la sección 3", () => {
   it("el diseño de Jahnn: total, dos tarjetas, barra, 4 familias, detalle y conciliación", () => {
     const h = html(3);
     for (const t of ["Total de salidas de dinero", "S/ 44,906.85", "Costos operativos", "S/ 34,595.10", "77.0% del total", "Movimientos no considerados gasto", "22.3% del total",
-      "Distribución de las salidas de dinero", "4 familias de egresos", "Costos fijos", "S/ 18,289.96", "40.7% de salidas", "Financiamiento",
-      "Categorías", "Participación", "Planilla", "S/ 12,276.55", "Detalle por tipo de egreso", "Costos variables · S/ 16,305.14", "No es gasto · S/ 10,017.56", "Por conciliar · S/ 63.19", "Revisar", "Lo que más pesa: Ahorro, Utilidades a socios, Devoluciones", "Productos Atelier"]) expect(h).toContain(t);
+      "Distribución de las salidas de dinero", "Costos fijos", "S/ 18,289.96", "40.7% de salidas", "Financiamiento",
+      "Categorías", "Participación", "Planilla", "S/ 12,276.55", "Detalle por tipo de egreso", "Costos variables", "S/ 16,305.14", "No es gasto", "S/ 10,017.56", "Por conciliar", "S/ 63.19", "Revisar", "36.3% de salidas"]) expect(h).toContain(t);
   });
   it("mes abierto avisa que faltan pagos; mes cerrado no", () => {
     expect(html(3, true)).toContain("faltan pagos de fin de mes");

@@ -9,10 +9,9 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Info } from "lucide-react";
-import { SeccionDesplegable } from "@/components/productos/ui";
 import { getEgresosPorTipo } from "@/app/actions/egresos-por-tipo";
 import type { EgresosPorTipo } from "@/lib/egresos-por-tipo";
-import { COLOR_SALIDA, vistaEgresos, type FamiliaSalida, type VistaEgresos } from "@/lib/dashboard-egresos";
+import { COLOR_SALIDA, vistaEgresos, type ClaveSalida, type FamiliaSalida, type VistaEgresos } from "@/lib/dashboard-egresos";
 
 const soles = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct1 = (n: number) => `${n.toLocaleString("es-PE", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
@@ -72,27 +71,7 @@ function Vista({ v, enCurso, cajaHref }: { v: VistaEgresos; enCurso: boolean; ca
         </ul>
       </div>
 
-      <div>
-        <h3 className="text-base font-semibold text-gray-900">4 familias de egresos</h3>
-        <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {v.familias.map((f) => (
-            <div key={f.clave} className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
-              <span className="block h-1.5 w-8 rounded-full" style={{ background: COLOR_SALIDA[f.clave] }} aria-hidden />
-              <span className="mt-3 block text-sm font-medium text-gray-900">{f.etiqueta}</span>
-              <span className="mt-0.5 block text-2xl font-semibold tabular-nums tracking-tight text-gray-900">{soles(f.monto)}</span>
-              <span className="mt-0.5 block text-xs text-gray-500">{pct1(f.pct)} de salidas</span>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div>
-        <h3 className="text-base font-semibold text-gray-900">Detalle por tipo de egreso</h3>
-        <div className="mt-2 space-y-3">
-          {v.detalles.map((f) => <Bloque key={f.clave} f={f} abierto={f.clave === "fijos" || f.clave === "variables"} revisar={f.clave === "pendiente" && v.hayPendiente} />)}
-        </div>
-        <p className="mt-2 text-[11px] text-gray-500">«No es gasto» y «Por conciliar» salieron de la cuenta pero no son costo de la operación: se ven aparte para no confundir transferencias, distribuciones y partidas pendientes con gastos.</p>
-      </div>
+      <DetallePorTipo detalles={v.detalles} hayPendiente={v.hayPendiente} />
 
       <p className="text-[11px] leading-snug text-gray-500">
         Esto es lo que salió de la cuenta, tal cual el Excel. Los costos del EBITDA (sección 4) son lo que le toca a cada sede, con las devoluciones y las partes de otras sedes ya restadas.{" "}
@@ -102,17 +81,42 @@ function Vista({ v, enCurso, cajaHref }: { v: VistaEgresos; enCurso: boolean; ca
   );
 }
 
-function Bloque({ f, abierto, revisar }: { f: FamiliaSalida; abierto: boolean; revisar: boolean }) {
-  const top = f.categorias.slice(0, 3).map((c) => c.nombre).join(", ");
+/** Un solo recuadro: arriba el selector de los seis tipos (con su monto y %), abajo el desglose del elegido. */
+function DetallePorTipo({ detalles, hayPendiente }: { detalles: FamiliaSalida[]; hayPendiente: boolean }) {
+  const [elegido, setElegido] = useState<ClaveSalida>("fijos");
+  const actual = detalles.find((d) => d.clave === elegido) ?? detalles[0];
   return (
-    <SeccionDesplegable
-      abiertaAlInicio={abierto}
-      titulo={<span className="flex flex-wrap items-center gap-2"><i className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: COLOR_SALIDA[f.clave] }} aria-hidden />{f.etiqueta} · {soles(f.monto)}{revisar && <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-700">Revisar</span>}</span>}
-      subtitulo={`${pct1(f.pct)} de las salidas`}
-      resumen={<span className="text-xs text-gray-600">{f.categorias.length === 0 ? "Sin movimientos este mes." : `Lo que más pesa: ${top}.`}</span>}
-    >
-      <Detalle f={f} revisar={revisar} />
-    </SeccionDesplegable>
+    <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
+      <h3 className="text-base font-semibold text-gray-900">Detalle por tipo de egreso</h3>
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" role="tablist" aria-label="Tipo de egreso">
+        {detalles.map((d) => {
+          const sel = d.clave === actual.clave;
+          return (
+            <button key={d.clave} type="button" role="tab" aria-selected={sel} onClick={() => setElegido(d.clave)}
+              className={`min-w-0 rounded-xl border p-3 text-left transition-colors hover:border-gray-400 focus-visible:outline-2 focus-visible:outline-primary ${sel ? "border-primary bg-gray-50 ring-1 ring-primary" : "border-gray-200 bg-white"}`}>
+              <span className="block h-1 w-6 rounded-full" style={{ background: COLOR_SALIDA[d.clave] }} aria-hidden />
+              <span className="mt-2 flex items-center gap-1.5 text-xs font-medium text-gray-900">
+                {d.etiqueta}
+                {d.clave === "pendiente" && hayPendiente && <span className="rounded-full bg-orange-50 px-1.5 py-0.5 text-[10px] font-medium text-orange-700">Revisar</span>}
+              </span>
+              <span className="mt-0.5 block text-sm font-semibold tabular-nums text-gray-900">{soles(d.monto)}</span>
+              <span className="block text-[11px] text-gray-500">{pct1(d.pct)} de salidas</span>
+            </button>
+          );
+        })}
+      </div>
+      <div className="mt-4 flex items-start justify-between gap-3 border-t border-gray-100 pt-4">
+        <div>
+          <h4 className="text-lg font-semibold text-gray-900">{actual.etiqueta}</h4>
+          <p className="text-sm text-gray-500">{pct1(actual.pct)} de las salidas</p>
+        </div>
+        <div className="text-xl font-semibold tabular-nums text-gray-900">{soles(actual.monto)}</div>
+      </div>
+      <div className="mt-3"><Detalle key={actual.clave} f={actual} revisar={actual.clave === "pendiente" && hayPendiente} /></div>
+      {(actual.clave === "noGasto" || actual.clave === "pendiente") && (
+        <p className="mt-3 text-xs text-gray-500">Salió de la cuenta pero no es costo de la operación: se ve aparte para no confundir transferencias, distribuciones y partidas pendientes con gastos.</p>
+      )}
+    </div>
   );
 }
 
