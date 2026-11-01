@@ -7,6 +7,7 @@ import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 // El historial de cambios trae su propia acción del servidor (toca la base); aquí solo se dibuja la pantalla.
 vi.mock("../../app/actions/venta-diaria-cambios", () => ({ getCambiosVentaDiaria: vi.fn() }));
+vi.mock("../../app/actions/egresos-por-tipo", () => ({ getEgresosPorTipo: vi.fn() }));
 import { cifrasDeSede, cifrasDelGrupo, type CifrasSede } from "../seis-cifras";
 import { cada100DelMes } from "../cada-100";
 import { alcanceDe, alertasDeNumeros, bonita, familiasDeEgreso, textoCortes } from "../dashboard-cinco";
@@ -52,7 +53,7 @@ describe("alcance: una sede o el grupo", () => {
   });
 });
 
-describe("sección 3 · las cuatro familias, todas «de lo vendido»", () => {
+describe("alertas y familias de las seis cifras (secciones 4 y 5), todas «de lo vendido»", () => {
   const a = alcanceDe(cifras([fonavi()]), 2);
   const fam = familiasDeEgreso(a);
   it("fijos, variables, inversiones y financiamiento, en ese orden, con su % de ventas", () => {
@@ -171,9 +172,11 @@ describe("la pantalla", () => {
     const h = html(props(2));
     for (const t of ["Ingresos", "Egresos", "Flujo neto del mes", "S/ 37,294", "mes completo"]) expect(h).toContain(t);
   });
-  it("sección 3: las 4 familias con % de lo vendido y el detalle de la primera", () => {
+  it("sección 3: queda en «cargando» hasta traer lo que salió de la cuenta (su contenido se prueba en dashboard-egresos.test)", () => {
     const h = html(props(2));
-    for (const t of ["Costos fijos", "Costos variables", "Inversiones", "Financiamiento", "36.3% de lo vendido", "46% de lo vendido", "Detalle · Costos fijos", "Planilla"]) expect(h).toContain(t);
+    expect(h).toContain("3. Egresos");
+    expect(h).toContain("% de las salidas");
+    expect(h).toContain("Cargando los egresos");
   });
   it("sección 4: el modelo 33-33-33 y lo real contra la meta", () => {
     const h = html(props(2, { tarjetas: tarjetas.map((t) => ({ ...t, ebitdaEstimado: false })) }));
@@ -192,7 +195,6 @@ describe("la pantalla", () => {
     const h = html(props(2, { cifras: abierto, cada: cada100DelMes(abierto, esperado, true), enCurso: true }));
     expect(h).toContain("EBITDA estimado al cierre");
     expect(h).toContain("hasta el 13/10");
-    expect(h).toContain("faltan pagos de fin de mes");
   });
   it("sin cifras avisa en vez de romperse", () => {
     expect(html(props(null, { cifras: null, cada: null }))).toContain("No se pudieron calcular las cifras de Septiembre 2026");

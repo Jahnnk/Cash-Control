@@ -8,18 +8,19 @@
  * Todos los porcentajes son «de lo vendido»: así se comparan de frente con las metas del 33-33-33.
  */
 
-import { useState, type ReactNode } from "react";
+import { type ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, Building2, CalendarDays, CircleCheck, Gauge, Landmark, Lightbulb, Package, TriangleAlert, Wallet,
+  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, CircleCheck, Gauge, Lightbulb, Package, TriangleAlert, Wallet,
 } from "lucide-react";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
-import { alcanceDe, alertasDeNumeros, familiasDeEgreso, textoCortes, type ClaveFamilia, type Familia } from "@/lib/dashboard-cinco";
+import { alcanceDe, alertasDeNumeros, familiasDeEgreso, textoCortes } from "@/lib/dashboard-cinco";
 import type { Cada100, Cada100Mes, Tono } from "@/lib/cada-100";
 import { ETIQUETA_TERMOMETRO } from "@/lib/regla-33";
 import { Delta } from "./executive-hero";
 import { CadaCien } from "./cada-100";
 import { CambiosVentaDiaria } from "./cambios-venta-diaria";
+import { EgresosCuerpo, useEgresosPorTipo } from "./egresos-seccion";
 
 const soles = (n: number) => `S/ ${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const solesConSigno = (n: number) => `${n < 0 ? "−" : ""}${soles(n)}`;
@@ -202,65 +203,12 @@ function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref }: { caja: { ent
 }
 
 // ─────────────────────────── 3. Egresos ───────────────────────────
-const FAMILIA: Record<ClaveFamilia, { color: string; icono: ReactNode }> = {
-  fijos: { color: "#5B7FB0", icono: <CalendarDays className="h-5 w-5" /> },
-  variables: { color: "#DCA64F", icono: <Package className="h-5 w-5" /> },
-  inversiones: { color: "#9B84BE", icono: <Building2 className="h-5 w-5" /> },
-  financiamiento: { color: "#7F8C99", icono: <Landmark className="h-5 w-5" /> },
-};
-
-function SeccionEgresos({ familias, hayResultado, porque, impuestos, noEsGasto, cajaHref, estimado }: {
-  familias: Familia[]; hayResultado: boolean; porque: string | null; impuestos: number; noEsGasto: number; cajaHref: string; estimado: boolean;
-}) {
-  const [elegida, setElegida] = useState<ClaveFamilia>("fijos");
-  const actual = familias.find((f) => f.clave === elegida) ?? familias[0];
-  const total = familias.reduce((t, f) => t + f.monto, 0);
+// El cuerpo (diseño de Jahnn, 1-nov-2026) vive en egresos-seccion.tsx: lo que salió de la cuenta, en sus seis tipos.
+function SeccionEgresos({ mes, sede, enCurso, cajaHref }: { mes: string; sede: number | null; enCurso: boolean; cajaHref: string }) {
+  const sedes = useEgresosPorTipo(mes);
   return (
-    <Seccion n={3} titulo="Egresos" fuente="Fuente: Excel de Finanzas · 4 familias · % de lo vendido" icono={<Package className="h-5 w-5" />}
-      derecha={hayResultado ? <span className="text-sm font-medium tabular-nums text-gray-700">{soles(total)}</span> : undefined}>
-      {!hayResultado ? <p className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-500">Todavía sin egresos clasificados: {porque ? porque.charAt(0).toLowerCase() + porque.slice(1) : "falta el Excel del mes"}.</p> : (
-        <>
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            {familias.map((f) => {
-              const sel = f.clave === actual.clave;
-              return (
-                <button
-                  key={f.clave} type="button" onClick={() => setElegida(f.clave)} aria-pressed={sel}
-                  className={`relative min-w-0 rounded-2xl border bg-white p-4 text-left transition-colors hover:border-gray-400 focus-visible:outline-2 focus-visible:outline-primary ${sel ? "border-primary bg-gray-50 ring-1 ring-primary" : "border-gray-200"}`}
-                >
-                  <span className="block h-1.5 w-8 rounded-full" style={{ background: FAMILIA[f.clave].color }} aria-hidden />
-                  <span className="absolute right-4 top-4 text-gray-400" aria-hidden>{FAMILIA[f.clave].icono}</span>
-                  <span className="mt-3 block text-sm font-medium text-gray-900">{f.etiqueta}</span>
-                  <span className="mt-0.5 block text-2xl font-semibold tabular-nums tracking-tight text-gray-900">{soles(f.monto)}</span>
-                  <span className="mt-0.5 block text-xs text-gray-500">{pct1(f.pctVentas)} de lo vendido</span>
-                </button>
-              );
-            })}
-          </div>
-          <div className="mt-3 rounded-2xl bg-gray-50 p-4">
-            <div className="flex items-baseline justify-between gap-3">
-              <h3 className="text-sm font-semibold text-gray-900">Detalle · {actual.etiqueta}</h3>
-              <span className="text-[11px] text-gray-400">Selecciona una familia arriba</span>
-            </div>
-            {actual.detalle.length === 0 ? <p className="mt-2 text-sm text-gray-500">Sin movimientos este mes.</p> : (
-              <ul className="mt-2 divide-y divide-gray-200/70">
-                {actual.detalle.map((d) => (
-                  <li key={d.nombre} className="flex items-baseline justify-between gap-3 py-2 text-sm">
-                    <span className="min-w-0 text-gray-800">{d.nombre}</span>
-                    <span className="shrink-0 tabular-nums text-gray-900">{soles(d.monto)}<span className="ml-2 text-xs text-gray-400">{actual.monto > 0 ? `${Math.round((d.monto / actual.monto) * 100)}%` : ""}</span></span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </div>
-          <p className="mt-3 text-[11px] leading-snug text-gray-500">
-            {estimado ? "Hasta la fecha: faltan pagos de fin de mes, así que los porcentajes de arriba todavía no son los del mes completo. " : ""}
-            Además: {impuestos >= 1 ? <>impuestos <b className="text-gray-700">{soles(impuestos)}</b> (ya restados de la ganancia)</> : "sin impuestos registrados"}
-            {noEsGasto >= 1 ? <> y <b className="text-gray-700">{soles(noEsGasto)}</b> que salió y no es gasto (préstamos entre sedes, ahorro, reparto a socios)</> : null}.{" "}
-            <Link href={cajaHref} className="font-medium text-primary hover:underline">Ver cómo cuadra con el Excel →</Link>
-          </p>
-        </>
-      )}
+    <Seccion n={3} titulo="Egresos" fuente="Fuente: Excel de Finanzas · lo que salió de la cuenta · % de las salidas" icono={<Package className="h-5 w-5" />}>
+      <EgresosCuerpo sedes={sedes} sede={sede} enCurso={enCurso} cajaHref={cajaHref} />
     </Seccion>
   );
 }
@@ -363,7 +311,7 @@ export function CincoSecciones(p: CincoProps) {
     <div className="space-y-5">
       <SeccionVentas v={p.ventas} tarjetas={p.tarjetas} sede={p.sede} onSede={p.onSede} enCurso={p.enCurso} nombre={nombre} mes={p.mes} />
       <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} />
-      <SeccionEgresos key={`${p.sede}`} familias={familias} hayResultado={a.hayResultado} porque={a.porque} impuestos={a.impuestos} noEsGasto={a.noEsGasto} cajaHref={p.cajaHref} estimado={p.enCurso} />
+      <SeccionEgresos key={`${p.sede}`} mes={p.mes} sede={p.sede} enCurso={p.enCurso} cajaHref={p.cajaHref} />
       <SeccionEbitda cada={cada} />
       <SeccionAlertas alertas={alertas} />
     </div>
