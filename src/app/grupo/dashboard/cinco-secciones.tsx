@@ -19,6 +19,7 @@ import type { Cada100, Cada100Mes, Tono } from "@/lib/cada-100";
 import { ETIQUETA_TERMOMETRO } from "@/lib/regla-33";
 import { Delta } from "./executive-hero";
 import { CadaCien } from "./cada-100";
+import { CambiosVentaDiaria } from "./cambios-venta-diaria";
 
 const soles = (n: number) => `S/ ${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const solesConSigno = (n: number) => `${n < 0 ? "−" : ""}${soles(n)}`;
@@ -62,6 +63,8 @@ export type CincoProps = {
   onSede: (id: number | null) => void;
   enCurso: boolean;
   periodo: string;
+  /** YYYY-MM del mes que se mira (para el historial de cambios de la venta diaria). */
+  mes: string;
   ventas: VentasAlcance;
   tarjetas: TarjetaVentas[];
   /** El dinero de hoy en banco y caja del grupo o de la sede (null = no se conoce). */
@@ -91,7 +94,7 @@ function Seccion({ n, titulo, fuente, icono, derecha, children }: { n: number; t
 // ─────────────────────────── 1. Ventas por sede ───────────────────────────
 const COLOR_SEDE: Record<number, string> = { 1: "#4A7C66", 2: "#8AA89D", 3: "#C0CEC7" };
 
-function SeccionVentas({ v, tarjetas, sede, onSede, enCurso, nombre }: { v: VentasAlcance; tarjetas: TarjetaVentas[]; sede: number | null; onSede: (id: number | null) => void; enCurso: boolean; nombre: string }) {
+function SeccionVentas({ v, tarjetas, sede, onSede, enCurso, nombre, mes }: { v: VentasAlcance; tarjetas: TarjetaVentas[]; sede: number | null; onSede: (id: number | null) => void; enCurso: boolean; nombre: string; mes: string }) {
   const avance = enCurso ? Math.min(100, (v.dia / v.diasDelMes) * 100) : 100;
   const pctMeta = v.meta ? Math.min(100, (v.ventas / v.meta) * 100) : null;
   const final = enCurso ? v.proyeccion : v.ventas;
@@ -156,6 +159,7 @@ function SeccionVentas({ v, tarjetas, sede, onSede, enCurso, nombre }: { v: Vent
         </div>
       )}
       {sede === null && <p className="mt-2 text-[11px] text-gray-400">Suma de las 3 sedes: incluye lo que Atelier le vende a Fonavi y Centro. En costos y EBITDA ese monto no se cuenta dos veces.</p>}
+      <CambiosVentaDiaria mes={mes} sede={sede} />
     </Seccion>
   );
 }
@@ -357,7 +361,7 @@ export function CincoSecciones(p: CincoProps) {
   const nombre = p.tarjetas.find((t) => t.businessId === p.sede)?.nombre ?? a.nombre;
   return (
     <div className="space-y-5">
-      <SeccionVentas v={p.ventas} tarjetas={p.tarjetas} sede={p.sede} onSede={p.onSede} enCurso={p.enCurso} nombre={nombre} />
+      <SeccionVentas v={p.ventas} tarjetas={p.tarjetas} sede={p.sede} onSede={p.onSede} enCurso={p.enCurso} nombre={nombre} mes={p.mes} />
       <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} />
       <SeccionEgresos key={`${p.sede}`} familias={familias} hayResultado={a.hayResultado} porque={a.porque} impuestos={a.impuestos} noEsGasto={a.noEsGasto} cajaHref={p.cajaHref} estimado={p.enCurso} />
       <SeccionEbitda cada={cada} />

@@ -2,9 +2,11 @@
  * Dashboard de Grupo en cinco secciones (30-oct-2026): alcance de una sede o del grupo, familias de egresos, alertas y la
  * pantalla con el selector de sede. Datos inventados con la forma de los casos reales (el repo es público).
  */
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { createElement } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
+// El historial de cambios trae su propia acción del servidor (toca la base); aquí solo se dibuja la pantalla.
+vi.mock("../../app/actions/venta-diaria-cambios", () => ({ getCambiosVentaDiaria: vi.fn() }));
 import { cifrasDeSede, cifrasDelGrupo, type CifrasSede } from "../seis-cifras";
 import { cada100DelMes } from "../cada-100";
 import { alcanceDe, alertasDeNumeros, bonita, familiasDeEgreso, textoCortes } from "../dashboard-cinco";
@@ -142,7 +144,7 @@ describe("la pantalla", () => {
     { businessId: 3, nombre: "Centro", ventas: 40000, pctGrupo: 35, ebitdaPct: 16, ebitdaTono: "ojo" as const, ebitdaEstimado: true, aviso: null },
   ];
   const props = (sedeElegida: number | null, extra: Partial<CincoProps> = {}): CincoProps => ({
-    cifras: todas, cada: cada100DelMes(todas), sede: sedeElegida, onSede: () => {}, enCurso: false, periodo: "Septiembre 2026",
+    cifras: todas, cada: cada100DelMes(todas), sede: sedeElegida, onSede: () => {}, enCurso: false, periodo: "Septiembre 2026", mes: "2026-09",
     ventas, tarjetas, saldo: 30254, cajaHref: "/grupo/reportes?mes=2026-09", ...extra,
   });
   const html = (p: CincoProps) => renderToStaticMarkup(createElement(CincoSecciones, p));

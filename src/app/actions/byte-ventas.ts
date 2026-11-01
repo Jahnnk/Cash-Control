@@ -22,6 +22,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import type { ParsedVentaDay } from "@/lib/incentives/byte-ventas-parser";
 import { guardarVentasDiarias } from "@/lib/byte-ventas-sql";
+import { anotarCambioDeVenta } from "@/lib/venta-diaria-historial";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -160,6 +161,13 @@ export async function saveAtelierDay(input: {
   }
 
   try {
+    // Para el historial de cambios: lo que había antes de guardar. Si el día ya viene del reporte oficial
+    // de Byte, lo manual no lo pisa y por eso no hay cambio que anotar.
+    const antes = (await sql`
+      SELECT personas, revenue::float AS revenue, source FROM upselling_daily
+      WHERE business_id = 1 AND date = ${input.date}
+    `.then(undefined, () => [])) as { personas: number | null; revenue: number | null; source: string | null }[];
+
     // Reglas de escritura (patrón "lo medido manda"):
     //  - venta/pedidos: lo manual NUNCA pisa un día del reporte oficial
     //    de Byte (source='import') — se corrige re-subiendo el reporte.
@@ -177,6 +185,13 @@ export async function saveAtelierDay(input: {
             source = CASE WHEN upselling_daily.source = 'import' THEN 'import' ELSE 'manual' END,
             updated_at = NOW()
     `;
+    if (antes[0]?.source !== "import") {
+      await anotarCambioDeVenta(sql, {
+        bId: 1, date: input.date, role: await getSessionRole(),
+        antes: antes.length > 0 ? { personas: antes[0].personas, revenue: antes[0].revenue } : null,
+        despues: { personas: input.pedidos, revenue: input.venta },
+      });
+    }
     // Espejo en byte_ventas_daily para el deck — pero lo manual NUNCA
     // pisa un día que ya vino del reporte oficial de Byte.
     try {
