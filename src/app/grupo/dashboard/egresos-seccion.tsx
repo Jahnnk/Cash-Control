@@ -9,6 +9,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { Info } from "lucide-react";
+import { SeccionDesplegable } from "@/components/productos/ui";
 import { getEgresosPorTipo } from "@/app/actions/egresos-por-tipo";
 import type { EgresosPorTipo } from "@/lib/egresos-por-tipo";
 import { COLOR_SALIDA, vistaEgresos, type FamiliaSalida, type VistaEgresos } from "@/lib/dashboard-egresos";
@@ -37,8 +38,6 @@ export function EgresosCuerpo({ sedes, sede, enCurso, cajaHref }: { sedes: Egres
 }
 
 function Vista({ v, enCurso, cajaHref }: { v: VistaEgresos; enCurso: boolean; cajaHref: string }) {
-  const [elegida, setElegida] = useState<FamiliaSalida["clave"]>("fijos");
-  const actual = v.familias.find((f) => f.clave === elegida) ?? v.familias[0];
   return (
     <div className="space-y-4">
       <div className="rounded-2xl bg-gray-50 p-4 sm:p-5">
@@ -76,24 +75,24 @@ function Vista({ v, enCurso, cajaHref }: { v: VistaEgresos; enCurso: boolean; ca
       <div>
         <h3 className="text-base font-semibold text-gray-900">4 familias de egresos</h3>
         <div className="mt-2 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          {v.familias.map((f) => {
-            const sel = f.clave === actual.clave;
-            return (
-              <button key={f.clave} type="button" onClick={() => setElegida(f.clave)} aria-pressed={sel}
-                className={`min-w-0 rounded-2xl border p-4 text-left transition-colors hover:border-gray-400 focus-visible:outline-2 focus-visible:outline-primary ${sel ? "border-primary bg-gray-50 ring-1 ring-primary" : "border-gray-200 bg-white"}`}>
-                <span className="block h-1.5 w-8 rounded-full" style={{ background: COLOR_SALIDA[f.clave] }} aria-hidden />
-                <span className="mt-3 block text-sm font-medium text-gray-900">{f.etiqueta}</span>
-                <span className="mt-0.5 block text-2xl font-semibold tabular-nums tracking-tight text-gray-900">{soles(f.monto)}</span>
-                <span className="mt-0.5 block text-xs text-gray-500">{pct1(f.pct)} de salidas</span>
-              </button>
-            );
-          })}
+          {v.familias.map((f) => (
+            <div key={f.clave} className="min-w-0 rounded-2xl border border-gray-200 bg-white p-4">
+              <span className="block h-1.5 w-8 rounded-full" style={{ background: COLOR_SALIDA[f.clave] }} aria-hidden />
+              <span className="mt-3 block text-sm font-medium text-gray-900">{f.etiqueta}</span>
+              <span className="mt-0.5 block text-2xl font-semibold tabular-nums tracking-tight text-gray-900">{soles(f.monto)}</span>
+              <span className="mt-0.5 block text-xs text-gray-500">{pct1(f.pct)} de salidas</span>
+            </div>
+          ))}
         </div>
       </div>
 
-      <Detalle f={actual} />
-
-      <Conciliacion c={v.conciliacion} />
+      <div>
+        <h3 className="text-base font-semibold text-gray-900">Detalle por tipo de egreso</h3>
+        <div className="mt-2 space-y-3">
+          {v.detalles.map((f) => <Bloque key={f.clave} f={f} abierto={f.clave === "fijos" || f.clave === "variables"} revisar={f.clave === "pendiente" && v.hayPendiente} />)}
+        </div>
+        <p className="mt-2 text-[11px] text-gray-500">«No es gasto» y «Por conciliar» salieron de la cuenta pero no son costo de la operación: se ven aparte para no confundir transferencias, distribuciones y partidas pendientes con gastos.</p>
+      </div>
 
       <p className="text-[11px] leading-snug text-gray-500">
         Esto es lo que salió de la cuenta, tal cual el Excel. Los costos del EBITDA (sección 4) son lo que le toca a cada sede, con las devoluciones y las partes de otras sedes ya restadas.{" "}
@@ -103,19 +102,26 @@ function Vista({ v, enCurso, cajaHref }: { v: VistaEgresos; enCurso: boolean; ca
   );
 }
 
-function Detalle({ f }: { f: FamiliaSalida }) {
+function Bloque({ f, abierto, revisar }: { f: FamiliaSalida; abierto: boolean; revisar: boolean }) {
+  const top = f.categorias.slice(0, 3).map((c) => c.nombre).join(", ");
+  return (
+    <SeccionDesplegable
+      abiertaAlInicio={abierto}
+      titulo={<span className="flex flex-wrap items-center gap-2"><i className="inline-block h-2.5 w-2.5 rounded-full" style={{ background: COLOR_SALIDA[f.clave] }} aria-hidden />{f.etiqueta} · {soles(f.monto)}{revisar && <span className="rounded-full bg-orange-50 px-2.5 py-0.5 text-xs font-medium text-orange-700">Revisar</span>}</span>}
+      subtitulo={`${pct1(f.pct)} de las salidas`}
+      resumen={<span className="text-xs text-gray-600">{f.categorias.length === 0 ? "Sin movimientos este mes." : `Lo que más pesa: ${top}.`}</span>}
+    >
+      <Detalle f={f} revisar={revisar} />
+    </SeccionDesplegable>
+  );
+}
+
+function Detalle({ f, revisar }: { f: FamiliaSalida; revisar: boolean }) {
   const [vista, setVista] = useState<"categorias" | "participacion">("categorias");
   const max = Math.max(...f.categorias.map((c) => c.monto), 1);
   return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h3 className="text-lg font-semibold text-gray-900">{f.etiqueta}</h3>
-          <p className="text-sm text-gray-500">Desglose de la familia seleccionada</p>
-        </div>
-        <div className="text-xl font-semibold tabular-nums text-gray-900">{soles(f.monto)}</div>
-      </div>
-      <div className="mt-3 flex gap-1" role="tablist" aria-label="Cómo ver el desglose">
+    <div>
+      <div className="flex gap-1" role="tablist" aria-label="Cómo ver el desglose">
         {([["categorias", "Categorías"], ["participacion", "Participación"]] as const).map(([k, etiqueta]) => (
           <button key={k} type="button" role="tab" aria-selected={vista === k} onClick={() => setVista(k)}
             className={`rounded-full px-4 py-1.5 text-sm font-medium ${vista === k ? "bg-gray-100 text-gray-900" : "text-gray-400 hover:text-gray-700"}`}>{etiqueta}</button>
@@ -136,31 +142,7 @@ function Detalle({ f }: { f: FamiliaSalida }) {
           ))}
         </ul>
       )}
-      <p className="mt-4 text-xs text-gray-500">Toca otra familia arriba para ver su distribución. Se omiten las categorías sin movimiento.</p>
-    </div>
-  );
-}
-
-function Conciliacion({ c }: { c: VistaEgresos["conciliacion"] }) {
-  const filas = [...c.noGasto, ...c.porConciliar.map((x) => ({ ...x, nombre: "Por conciliar" }))];
-  if (filas.length === 0) return null;
-  const detalle = c.porConciliar.map((x) => x.nombre).join(", ");
-  return (
-    <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="text-lg font-semibold text-gray-900">Conciliación y movimientos especiales</h3>
-        {c.hayPendiente && <span className="shrink-0 rounded-full bg-orange-50 px-3 py-1 text-sm font-medium text-orange-700">Revisar</span>}
-      </div>
-      <ul className="mt-2 divide-y divide-gray-100">
-        {filas.map((f) => (
-          <li key={f.nombre} className="flex items-baseline justify-between gap-3 py-3 text-sm sm:text-base">
-            <span className="text-gray-900">{f.nombre}</span>
-            <span className="shrink-0 tabular-nums text-gray-900">{soles(f.monto)}</span>
-          </li>
-        ))}
-      </ul>
-      {c.hayPendiente && <p className="mt-1 text-xs text-orange-700">Por conciliar: {detalle.toLowerCase()}. Se corrige en el Excel y vuelve a su familia.</p>}
-      <p className="mt-2 text-sm text-gray-500">Estos movimientos se ven aparte para conservar las cuatro familias sin confundir transferencias, distribuciones y partidas pendientes con gastos operativos.</p>
+      {revisar && <p className="mt-3 text-xs text-orange-700">Se corrige en el Excel (la fila indicada) y el movimiento vuelve a su tipo.</p>}
     </div>
   );
 }

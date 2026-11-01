@@ -73,6 +73,8 @@ export type EgresosPorTipo = {
   puente: { fijo: PuenteTipo; variable: PuenteTipo };
   /** Control: la suma de los tipos − el total de egresos (debe ser 0). */
   control: number;
+  /** Los egresos «Por conciliar» uno por uno (concepto, día y fila del Excel), para decir qué hay que corregir. */
+  pendientes?: { fecha: string; concepto: string; monto: number; fila: number | null }[];
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -109,6 +111,7 @@ export function egresosPorTipo(d: DatosMesSede, c: CifrasSede): EgresosPorTipo {
     categorias,
     puente: { fijo: puente(d, c, "Fijo", clase), variable: puente(d, c, "Variable", clase) },
     control: r2(suma(tipos, (t) => t.monto) - total),
+    pendientes: revisarTipoDelMes(d).filter((x) => x.tipo === "gasto").map((x) => ({ fecha: x.fecha, concepto: x.texto, monto: r2(x.monto), fila: x.fila })),
   };
 }
 

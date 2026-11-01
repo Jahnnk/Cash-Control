@@ -47,13 +47,19 @@ describe("vistaEgresos — Centro, setiembre", () => {
   it("el detalle va de mayor a menor y con nombres legibles", () => {
     expect(v.familias[0].categorias.slice(0, 3).map((x) => x.nombre)).toEqual(["Planilla", "Alquiler", "Servicios"]);
     expect(v.familias[0].categorias[0].pctFamilia).toBe(67.1);
-    expect(v.familias[1].categorias[0].nombre).toBe("Productos atelier");
+    expect(v.familias[1].categorias[0].nombre).toBe("Productos Atelier");
   });
-  it("la barra omite lo que está en cero y la conciliación lleva no-gasto y pendiente", () => {
+  it("la barra omite lo que está en cero y hay desglose de los seis tipos", () => {
     expect(v.barra.map((b) => b.clave)).toEqual(["fijos", "variables", "inversiones", "noGasto", "pendiente"]);
-    expect(v.conciliacion.noGasto.map((x) => x.nombre)).toEqual(["Ahorro", "Utilidades a socios", "Devoluciones"]);
-    expect(v.conciliacion.hayPendiente).toBe(true);
+    expect(v.detalles.map((d) => d.etiqueta)).toEqual(["Costos fijos", "Costos variables", "Inversiones", "Financiamiento", "No es gasto", "Por conciliar"]);
+    expect(v.detalles[4].categorias.map((x) => x.nombre)).toEqual(["Ahorro", "Utilidades a socios", "Devoluciones"]);
+    expect(v.hayPendiente).toBe(true);
     expect(v.control).toBe(0);
+  });
+  it("«Por conciliar» dice qué movimiento es, de qué día y en qué fila del Excel", () => {
+    const e = { ...centro(), pendientes: [{ fecha: "2026-09-12", concepto: "DEPÓSITO POR VENTAS EN EFECTIVO", monto: 63.19, fila: 114 }] };
+    const p = vistaEgresos([e], 3)!.detalles[5];
+    expect(p.categorias).toEqual([{ nombre: "Depósito por ventas en efectivo · 12/09 · fila 114", monto: 63.19, pctFamilia: 100 }]);
   });
 });
 
@@ -80,7 +86,7 @@ describe("la pantalla de la sección 3", () => {
     const h = html(3);
     for (const t of ["Total de salidas de dinero", "S/ 44,906.85", "Costos operativos", "S/ 34,595.10", "77.0% del total", "Movimientos no considerados gasto", "22.3% del total",
       "Distribución de las salidas de dinero", "4 familias de egresos", "Costos fijos", "S/ 18,289.96", "40.7% de salidas", "Financiamiento",
-      "Categorías", "Participación", "Planilla", "S/ 12,276.55", "Conciliación y movimientos especiales", "Revisar", "Utilidades a socios", "S/ 2,400.00", "Ahorro", "Devoluciones", "Por conciliar"]) expect(h).toContain(t);
+      "Categorías", "Participación", "Planilla", "S/ 12,276.55", "Detalle por tipo de egreso", "Costos variables · S/ 16,305.14", "No es gasto · S/ 10,017.56", "Por conciliar · S/ 63.19", "Revisar", "Lo que más pesa: Ahorro, Utilidades a socios, Devoluciones", "Productos Atelier"]) expect(h).toContain(t);
   });
   it("mes abierto avisa que faltan pagos; mes cerrado no", () => {
     expect(html(3, true)).toContain("faltan pagos de fin de mes");
