@@ -150,13 +150,14 @@ describe("la pantalla", () => {
   });
   const html = (p: CincoProps) => renderToStaticMarkup(createElement(CincoSecciones, p));
 
-  it("las cinco secciones, en orden, cada una con su fuente", () => {
+  it("las cuatro secciones, en orden, cada una con su fuente, y sin «Alertas gerenciales»", () => {
     const h = html(props(null));
-    const orden = ["1. Ventas por sede", "2. Movimiento de dinero", "3. Egresos", "4. EBITDA", "5. Alertas gerenciales"].map((t) => h.indexOf(t));
+    const orden = ["1. Ventas por sede", "2. Movimiento de dinero", "3. Egresos", "4. EBITDA"].map((t) => h.indexOf(t));
     expect(orden.every((i) => i >= 0)).toBe(true);
     expect([...orden].sort((a, b) => a - b)).toEqual(orden);
     expect(h).toContain("Fuente: Byte");
     expect(h).toContain("Fuente: Excel de Finanzas");
+    expect(h).not.toContain("Alertas gerenciales");
   });
   it("mes abierto con una sede atrasada: el título dice hasta qué día llega cada una, no el de la más adelantada", () => {
     const h = html(props(null, { enCurso: true }));

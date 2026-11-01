@@ -1,8 +1,8 @@
 "use client";
 
 /**
- * Grupo → Resumen en cinco secciones (pedido de Jahnn, 30-oct-2026, a partir de su esquema):
- *   1. Ventas por sede (Byte) · 2. Movimiento de dinero (Excel) · 3. Egresos en 4 familias · 4. EBITDA · 5. Alertas gerenciales.
+ * Grupo → Resumen en cuatro secciones (esquema de Jahnn, 30-oct-2026; el 1-nov-2026 sacó la 5, «Alertas gerenciales», que sigue calculada en lib/dashboard-cinco.ts):
+ *   1. Ventas por sede (Byte) · 2. Movimiento de dinero (Excel) · 3. Egresos en 4 familias · 4. EBITDA.
  * Una sede a la vez (el selector de arriba o tocando su tarjeta en la sección 1) o el Grupo entero.
  * Los números: lib/dashboard-cinco.ts (sobre las seis cifras) y lib/cada-100.ts (el EBITDA; estimado si el mes está abierto).
  * Todos los porcentajes son «de lo vendido»: así se comparan de frente con las metas del 33-33-33.
@@ -11,10 +11,10 @@
 import { type ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, CircleCheck, Gauge, Lightbulb, Package, TriangleAlert, Wallet,
+  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, Gauge, Package,
 } from "lucide-react";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
-import { alcanceDe, alertasDeNumeros, familiasDeEgreso, textoCortes } from "@/lib/dashboard-cinco";
+import { alcanceDe, textoCortes } from "@/lib/dashboard-cinco";
 import type { Cada100, Cada100Mes, Tono } from "@/lib/cada-100";
 import { ETIQUETA_TERMOMETRO } from "@/lib/regla-33";
 import { Delta } from "./executive-hero";
@@ -276,36 +276,11 @@ function SeccionEbitda({ cada }: { cada: Cada100 }) {
   );
 }
 
-// ─────────────────────────── 5. Alertas gerenciales ───────────────────────────
-function SeccionAlertas({ alertas }: { alertas: ReturnType<typeof alertasDeNumeros> }) {
-  return (
-    <Seccion n={5} titulo="Alertas gerenciales" fuente="Lo que dicen los números, con lo que más pesa" icono={<Lightbulb className="h-5 w-5" />}>
-      {alertas.length === 0 ? <p className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-500">Todavía no hay números para alertar.</p> : (
-        <ul className="divide-y divide-gray-100">
-          {alertas.map((a) => (
-            <li key={a.id} className="flex items-start gap-3 py-3.5 first:pt-0 last:pb-0">
-              {a.id === "flujo" && a.tono === "bien" ? <Wallet className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
-                : a.tono === "bien" ? <CircleCheck className="mt-0.5 h-5 w-5 shrink-0 text-emerald-600" aria-hidden />
-                  : <TriangleAlert className={`mt-0.5 h-5 w-5 shrink-0 ${a.tono === "mal" ? "text-red-600" : "text-amber-600"}`} aria-hidden />}
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-gray-900 sm:text-base">{a.titulo}</div>
-                <p className="mt-0.5 text-sm leading-snug text-gray-500">{a.detalle}</p>
-              </div>
-            </li>
-          ))}
-        </ul>
-      )}
-    </Seccion>
-  );
-}
-
-// ─────────────────────────── Las cinco juntas ───────────────────────────
+// ─────────────────────────── Las cuatro juntas (la 5, «Alertas gerenciales», se sacó el 1-nov-2026) ───────────────────────────
 export function CincoSecciones(p: CincoProps) {
   if (!p.cifras || !p.cada) return <p className="text-sm text-gray-500">No se pudieron calcular las cifras de {p.periodo}.</p>;
   const a = alcanceDe(p.cifras, p.sede);
   const cada = p.sede === null ? p.cada.grupo : p.cada.sedes[p.sede] ?? p.cada.grupo;
-  const familias = familiasDeEgreso(a);
-  const alertas = alertasDeNumeros(a, cada, familias, p.saldo);
   const nombre = p.tarjetas.find((t) => t.businessId === p.sede)?.nombre ?? a.nombre;
   return (
     <div className="space-y-5">
@@ -313,7 +288,6 @@ export function CincoSecciones(p: CincoProps) {
       <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} />
       <SeccionEgresos key={`${p.sede}`} mes={p.mes} sede={p.sede} enCurso={p.enCurso} cajaHref={p.cajaHref} />
       <SeccionEbitda cada={cada} />
-      <SeccionAlertas alertas={alertas} />
     </div>
   );
 }
