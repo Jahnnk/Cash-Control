@@ -265,7 +265,7 @@ export function GrupoDashboardClient({
           {/* Las cinco secciones: ventas → dinero → egresos → EBITDA → alertas. */}
           <div id="sedes" className="scroll-mt-4">
             <CincoSecciones
-              cifras={cifras} cada={cada} sede={sede} onSede={elegirSede} enCurso={isCurrentMonth} periodo={periodo}
+              cifras={cifras} cada={cada} sede={sede} onSede={elegirSede} enCurso={isCurrentMonth} periodo={periodo} mes={selectedMonth}
               ventas={ventasAlcance} tarjetas={tarjetas} saldo={saldoAlcance}
               cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`}
             />

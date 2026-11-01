@@ -28,6 +28,7 @@ import {
 import { filasVentasTrabajador, borrarPeriodosQuePisa } from "@/lib/incentivos/ventas-trabajador-sql";
 import { ventasPorTrabajador, type FilaPeriodo } from "@/lib/incentivos/ventas-trabajador";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
+import { anotarCambioDeVenta } from "@/lib/venta-diaria-historial";
 import {
   pickDailyFocus,
   computeProgress,
@@ -532,6 +533,12 @@ export async function saveDailyEntry(input: {
           SET personas = EXCLUDED.personas, revenue = EXCLUDED.revenue,
               items = EXCLUDED.items, source = 'manual', updated_at = NOW()
       `;
+    });
+
+    await anotarCambioDeVenta(sql, {
+      bId, date: input.date, role: await getSessionRole(),
+      antes: prev.length > 0 ? { personas: prev[0].personas, revenue: prev[0].revenue } : null,
+      despues: { personas: input.personas, revenue: input.revenue },
     });
 
     let firmaAnulada = false;
