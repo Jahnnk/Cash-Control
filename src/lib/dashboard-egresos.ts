@@ -10,7 +10,10 @@
  */
 
 import type { EgresosPorTipo, TipoEgreso } from "./egresos-por-tipo";
-import { bonita } from "./dashboard-cinco";
+import { bonita as bonitaBase } from "./dashboard-cinco";
+
+/** «PRODUCTOS ATELIER» → «Productos Atelier»; «SS BANCARIOS» → «SS bancarios». */
+const bonita = (c: string) => bonitaBase(c).replace(/atelier/gi, "Atelier").replace(/^Ss /, "SS ");
 
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -32,7 +35,7 @@ const ORDEN_BARRA: ClaveSalida[] = ["fijos", "variables", "inversiones", "financ
 
 export type CategoriaSalida = { nombre: string; monto: number; /** % de su familia. */ pctFamilia: number };
 export type FamiliaSalida = {
-  clave: "fijos" | "variables" | "inversiones" | "financiamiento";
+  clave: ClaveSalida;
   etiqueta: string;
   monto: number;
   /** % de las salidas totales. */
@@ -48,8 +51,9 @@ export type VistaEgresos = {
   noGasto: { monto: number; pct: number };
   barra: { clave: ClaveSalida; etiqueta: string; monto: number; pct: number }[];
   familias: FamiliaSalida[];
-  /** «Conciliación y movimientos especiales»: el detalle de «No es gasto» y de «Por conciliar». */
-  conciliacion: { noGasto: { nombre: string; monto: number }[]; porConciliar: { nombre: string; monto: number }[]; hayPendiente: boolean };
+  /** El desglose de los seis tipos, cada uno con sus categorías (los cuatro de arriba, «No es gasto» y «Por conciliar»). */
+  detalles: FamiliaSalida[];
+  hayPendiente: boolean;
   /** Suma de los tipos − total (debe ser 0). */
   control: number;
 };
@@ -88,6 +92,20 @@ export function vistaEgresos(sedes: EgresosPorTipo[], sede: number | null): Vist
       categorias: categoriasDe(clave).map((c) => ({ nombre: bonita(c.nombre), monto: c.monto, pctFamilia: m > 0 ? r1((c.monto / m) * 100) : 0 })),
     };
   });
+  const bloqueDe = (clave: ClaveSalida, etiqueta: string): FamiliaSalida => {
+    const m = monto(clave);
+    return { clave, etiqueta, monto: m, pct: pct(m), categorias: categoriasDe(clave).map((c) => ({ nombre: bonita(c.nombre), monto: c.monto, pctFamilia: m > 0 ? r1((c.monto / m) * 100) : 0 })) };
+  };
+  // «Por conciliar» se muestra movimiento por movimiento: qué es, de qué día y en qué fila del Excel está.
+  const filas = lista.flatMap((s) => (s.pendientes ?? []).map((x) => ({ ...x, sede: lista.length > 1 ? s.sede : null })));
+  const pendiente = bloqueDe("pendiente", "Por conciliar");
+  if (filas.length > 0) {
+    const total = filas.reduce((t, x) => t + x.monto, 0);
+    pendiente.categorias = filas.map((x) => ({
+      nombre: `${x.sede ? `${x.sede} · ` : ""}${bonita(x.concepto)} · ${x.fecha.slice(8, 10)}/${x.fecha.slice(5, 7)}${x.fila ? ` · fila ${x.fila}` : ""}`,
+      monto: x.monto, pctFamilia: total > 0 ? r1((x.monto / total) * 100) : 0,
+    }));
+  }
   const operativos = r2(monto("fijos") + monto("variables"));
   return {
     nombre: sede === null ? "Grupo Yayi's" : lista[0].sede,
@@ -96,11 +114,8 @@ export function vistaEgresos(sedes: EgresosPorTipo[], sede: number | null): Vist
     noGasto: { monto: monto("noGasto"), pct: pct(monto("noGasto")) },
     barra: ORDEN_BARRA.map((clave) => ({ clave, etiqueta: ETIQUETA_SALIDA[clave], monto: monto(clave), pct: pct(monto(clave)) })).filter((b) => Math.abs(b.monto) >= 0.005),
     familias,
-    conciliacion: {
-      noGasto: categoriasDe("noGasto").map((c) => ({ nombre: bonita(c.nombre), monto: c.monto })),
-      porConciliar: categoriasDe("pendiente").map((c) => ({ nombre: bonita(c.nombre), monto: c.monto })),
-      hayPendiente: Math.abs(monto("pendiente")) >= 0.005,
-    },
+    detalles: [...familias, bloqueDe("noGasto", "No es gasto"), pendiente],
+    hayPendiente: Math.abs(monto("pendiente")) >= 0.005,
     control: r2(ORDEN_BARRA.reduce((t, c) => t + monto(c), 0) - total),
   };
 }
