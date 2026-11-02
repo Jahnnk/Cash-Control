@@ -85,7 +85,7 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         {/* La pestaña «Resumen fijo vs variable» de Jahnn: lo que salió, en cinco tipos, y su puente a las seis cifras (25-oct-2026). */}
         <EgresosPorTipoSeccion mes={selectedMonth} periodo={periodo} />
         {/* Lo que Kelly escribe al pie de cada hoja Ing&Gtos, leído bien: el destino de «Ver cómo cuadra con el Excel» del Dashboard. */}
-        <CajaExcel cifras={cifras} periodo={periodo} mesesHref={`/grupo/reportes?mes=${selectedMonth}`} />
+        <CajaExcel cifras={cifras} periodo={periodo} />
       </div>
 
       {showEirs && (

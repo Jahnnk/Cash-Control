@@ -13,8 +13,7 @@
  * contra los Excel: Atelier y Fonavi iguales al céntimo.
  */
 
-import Link from "next/link";
-import { ArrowRight, ChevronDown } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import { resultadoOperativo } from "@/lib/margenes-del-mes";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
@@ -22,7 +21,7 @@ import type { SeisCifras } from "@/app/actions/seis-cifras";
 const pct = (n: number) => `${n < 0 ? "−" : ""}${Math.abs(n).toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}%`;
 const dm = (iso: string) => `${iso.slice(8, 10)}/${iso.slice(5, 7)}`;
 
-export function CajaExcel({ cifras, periodo, mesesHref }: { cifras: SeisCifras | null; periodo: string; mesesHref: string }) {
+export function CajaExcel({ cifras, periodo }: { cifras: SeisCifras | null; periodo: string }) {
   if (!cifras) return null;
   const filas = resultadoOperativo(cifras);
   const cortes = filas.filter((f) => !f.esGrupo && f.corte).map((f) => f.corte!);
@@ -35,9 +34,6 @@ export function CajaExcel({ cifras, periodo, mesesHref }: { cifras: SeisCifras |
         <h2 id="caja-excel-titulo" className="text-sm font-semibold text-gray-900">
           Resultado del mes <span className="font-normal text-gray-500">· según el Excel · {periodo.toLowerCase()}</span>
         </h2>
-        <Link href={mesesHref} className="inline-flex items-center gap-0.5 text-[11px] font-medium text-primary hover:underline">
-          Ver los dos márgenes <ArrowRight className="h-3 w-3" />
-        </Link>
       </div>
 
       <div className="mt-3 grid grid-cols-2 gap-3 lg:grid-cols-4">
