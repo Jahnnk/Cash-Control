@@ -184,7 +184,18 @@ describe("la pantalla", () => {
   });
   it("sección 2: ingresos, egresos y flujo del Excel", () => {
     const h = html(props(2));
-    for (const t of ["Ingresos", "Egresos", "Flujo neto del mes", "S/ 37,294", "mes completo"]) expect(h).toContain(t);
+    for (const t of ["Entró a caja", "Salió de caja", "Flujo neto del mes", "Entró menos salió", "S/ 37,294", "mes completo"]) expect(h).toContain(t);
+    expect(h).not.toContain(">Ingresos<");
+    expect(h).not.toContain("De dónde vino"); // sin desglose en los datos de prueba
+  });
+  it("sección 2: dice de dónde vino lo que entró, solo con lo que no es cero y avisando que no todo es venta", () => {
+    const base = fonavi();
+    const por = { ventas: 30000, devolucionesSedes: 0, prestamos: 6000, rescates: 0, otros: 1294 };
+    const conPor = { ...base, caja: { ...base.caja, entroPor: por } };
+    const h = html({ ...props(2), cifras: { ...props(2).cifras!, sedes: [conPor, atelier(), centro()] } });
+    for (const t of ["De dónde vino", "Ventas cobradas", "S/ 30,000", "Préstamos recibidos", "S/ 6,000", "Otros ingresos", "S/ 1,294", "no es ingreso del negocio"]) expect(h).toContain(t);
+    expect(h).not.toContain("Devoluciones de otras sedes");
+    expect(h).not.toContain("Rescates de fondos mutuos");
   });
   it("sección 3: queda en «cargando» hasta traer lo que salió de la cuenta (su contenido se prueba en dashboard-egresos.test)", () => {
     const h = html(props(2));

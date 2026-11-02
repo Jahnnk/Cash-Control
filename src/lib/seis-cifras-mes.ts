@@ -14,7 +14,7 @@
  * Los filtros replican, fila por fila, las consultas que había (ver lib/seis-cifras-sql.ts para la lectura).
  */
 
-import { cifrasDeSede, corteComun, type CifrasSede, type FilaCifras, type IngresosFuera } from "./seis-cifras";
+import { cifrasDeSede, corteComun, type CifrasSede, type EntroPor, type FilaCifras, type IngresosFuera } from "./seis-cifras";
 import { compensarGastosNoEjecutados, type Compensacion } from "./gastos-compensados";
 import { filasRevisarTipo, type AvisoImportador, type FilaRevisarTipo } from "./revisar-tipo";
 import type { Recupero } from "./recuperos-entre-sedes";
@@ -104,9 +104,28 @@ export function revisarTipoDelMes(d: Pick<DatosMesSede, "gastos" | "ingresos" | 
   });
 }
 
+/**
+ * De dónde vino lo que entró a la cuenta (Dashboard · «Movimiento de dinero»). Cada fila cae en UNA sola categoría, en este
+ * orden: devolución de otra sede · préstamo · rescate de fondos mutuos · venta (Grupo «Ventas» del Excel) · otros; así la suma
+ * da exactamente `entro`.
+ */
+export function entroPorTipo(ingresos: IngresoMes[]): EntroPor {
+  const entran = ingresos.filter(entroALaCuenta);
+  const out = { ventas: 0, devolucionesSedes: 0, prestamos: 0, rescates: 0, otros: 0 };
+  for (const i of entran) {
+    if (esReembolsoEfectivo(i)) out.devolucionesSedes += i.monto;
+    else if (i.prestamoSocio || /pr.stamo/i.test(i.noOperativo ?? "")) out.prestamos += i.monto;
+    else if (i.noOperativo !== null && /rescate|fondos mutuos/i.test(i.nota ?? "")) out.rescates += i.monto;
+    else if (i.venta && i.noOperativo === null) out.ventas += i.monto;
+    else out.otros += i.monto;
+  }
+  return { ventas: r2(out.ventas), devolucionesSedes: r2(out.devolucionesSedes), prestamos: r2(out.prestamos), rescates: r2(out.rescates), otros: r2(out.otros) };
+}
+
 /** Lo que entró y salió de la cuenta en el mes (hasta hastaHoy): el total de ingresos y egresos, igual al Excel. */
-export function cajaDelMes(d: Pick<DatosMesSede, "gastos" | "ingresos">): { entro: number; salio: number; rescate: number } {
+export function cajaDelMes(d: Pick<DatosMesSede, "gastos" | "ingresos">): { entro: number; salio: number; rescate: number; entroPor: EntroPor } {
   return {
+    entroPor: entroPorTipo(d.ingresos),
     entro: r2(suma(d.ingresos.filter(entroALaCuenta), (i) => i.monto)),
     salio: r2(suma(d.gastos.filter(salioDeLaCuenta), (g) => g.monto)),
     // Rescates de fondos mutuos: entran a la caja pero es plata propia que vuelve del ahorro.
@@ -157,7 +176,7 @@ export function gastosEnCifras(d: DatosMesSede): GastoMes[] {
 }
 
 function cifrasHasta(
-  d: DatosMesSede, corte: string | null, caja: { entro: number; salio: number; rescate: number },
+  d: DatosMesSede, corte: string | null, caja: { entro: number; salio: number; rescate: number; entroPor?: EntroPor },
   comp: Compensacion[], revisar: FilaRevisarTipo[],
 ): CifrasSede {
   const { hasta, gastoCompensado, ingresoCompensado, revisarIds, gastos, enCifras } = partesDelCorte(d, corte, comp, revisar);

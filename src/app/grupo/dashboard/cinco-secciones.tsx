@@ -14,6 +14,7 @@ import {
   ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, Gauge, Package,
 } from "lucide-react";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
+import type { EntroPor } from "@/lib/seis-cifras";
 import { alcanceDe, textoCortes } from "@/lib/dashboard-cinco";
 import type { Cada100, Cada100Mes, Tono } from "@/lib/cada-100";
 import { ETIQUETA_TERMOMETRO } from "@/lib/regla-33";
@@ -176,7 +177,33 @@ function SeccionVentas({ v, tarjetas, sede, onSede, enCurso, nombre, mes }: { v:
 }
 
 // ─────────────────────────── 2. Movimiento de dinero ───────────────────────────
-function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo }: { caja: { entro: number; salio: number; flujo: number }; cortes: string | null; saldo: number | null; enCurso: boolean; cajaHref: string; flujo: FlujoCaja | null; periodo: string }) {
+const ENTRO_ETIQUETA: [keyof EntroPor, string][] = [
+  ["ventas", "Ventas cobradas"], ["devolucionesSedes", "Devoluciones de otras sedes"], ["prestamos", "Préstamos recibidos"],
+  ["rescates", "Rescates de fondos mutuos"], ["otros", "Otros ingresos"],
+];
+
+/** De dónde vino lo que entró: solo las ventas son ingreso del negocio; lo demás entró a la cuenta pero no es venta. */
+function EntroDesglose({ por }: { por?: EntroPor }) {
+  if (!por) return null;
+  const filas = ENTRO_ETIQUETA.filter(([k]) => Math.abs(por[k]) >= 0.5);
+  if (filas.length === 0) return null;
+  return (
+    <div className="mt-3 border-t border-emerald-100 pt-2.5">
+      <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">De dónde vino</p>
+      <ul className="mt-1.5 space-y-1 text-sm">
+        {filas.map(([k, etiqueta]) => (
+          <li key={k} className="flex items-baseline justify-between gap-3">
+            <span className={k === "ventas" ? "text-gray-800" : "text-gray-600"}>{etiqueta}</span>
+            <b className="tabular-nums text-gray-900">{soles(por[k])}</b>
+          </li>
+        ))}
+      </ul>
+      {filas.some(([k]) => k !== "ventas") && <p className="mt-1.5 text-[11px] leading-snug text-gray-500">Lo que no es venta entró a la cuenta, pero no es ingreso del negocio.</p>}
+    </div>
+  );
+}
+
+function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo }: { caja: { entro: number; salio: number; flujo: number; entroPor?: EntroPor }; cortes: string | null; saldo: number | null; enCurso: boolean; cajaHref: string; flujo: FlujoCaja | null; periodo: string }) {
   const sinExcel = cortes === null;
   return (
     <Seccion n={2} titulo="Movimiento de dinero" fuente={`Fuente: Excel de Finanzas · flujo de caja${cortes ? ` · ${cortes}` : ""}`} icono={<ArrowLeftRight className="h-5 w-5" />}>
@@ -184,18 +211,20 @@ function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo 
         <>
           <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
             <div className="rounded-2xl bg-emerald-50/60 p-4">
-              <div className="flex items-center gap-1.5 text-sm text-gray-600"><ArrowDownLeft className="h-4 w-4 text-emerald-600" aria-hidden />Ingresos</div>
+              <div className="flex items-center gap-1.5 text-sm text-gray-600"><ArrowDownLeft className="h-4 w-4 text-emerald-600" aria-hidden />Entró a caja</div>
               <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-gray-900">{soles(caja.entro)}</div>
+              <EntroDesglose por={caja.entroPor} />
             </div>
             <div className="rounded-2xl bg-orange-50/60 p-4">
-              <div className="flex items-center gap-1.5 text-sm text-gray-600"><ArrowUpRight className="h-4 w-4 text-red-600" aria-hidden />Egresos</div>
+              <div className="flex items-center gap-1.5 text-sm text-gray-600"><ArrowUpRight className="h-4 w-4 text-red-600" aria-hidden />Salió de caja</div>
               <div className="mt-2 text-3xl font-semibold tabular-nums tracking-tight text-gray-900">{soles(caja.salio)}</div>
+              <p className="mt-2 text-xs text-gray-500">Incluye gastos, deudas, ahorro y reparto a socios. El detalle está en la sección 3.</p>
             </div>
           </div>
           <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gray-50 p-4">
             <div>
               <div className="text-base font-semibold text-gray-900">Flujo neto del mes</div>
-              <div className="text-sm text-gray-500">Ingresos menos egresos</div>
+              <div className="text-sm text-gray-500">Entró menos salió</div>
             </div>
             <div className={`text-2xl font-semibold tabular-nums sm:text-3xl ${caja.flujo < 0 ? "text-red-600" : "text-emerald-600"}`}>{solesConSigno(caja.flujo)}</div>
           </div>
