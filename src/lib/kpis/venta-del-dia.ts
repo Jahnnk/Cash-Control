@@ -11,7 +11,7 @@
  * Byte y el Excel difieran y el administrador confirme el Excel — dos de
  * tres. Caso real: el 30/08 el reporte de Byte de Fonavi decía S/102.10 (se
  * bajó antes de cerrar el día); el Excel S/899.60 y el administrador
- * S/899.60. Gana S/899.60.
+ * S/899.60. Gana S/899.60. Solo cuando Excel y administrador dicen MÁS que Byte: si dicen menos, Byte manda (ver elegirVentaDia).
  *
  * Lo usan el cargador de ventas (dashboard, deck) y la verificación contra
  * el Excel: si eligieran distinto, se contradirían.
@@ -51,7 +51,10 @@ export function elegirVentaDia(byte?: number | null, excel?: number | null, admi
       return { total: b, fuente: "byte", motivo: "sin-desempate" };
     }
     if (cerca(b, e, TOLERANCIA_DESACUERDO)) return { total: b, fuente: "byte", motivo: "coinciden" };
-    if (a !== null && cerca(a, e, TOLERANCIA_COINCIDE) && !cerca(a, b, TOLERANCIA_COINCIDE)) return { total: e, fuente: "excel", motivo: "admin-confirma-excel" };
+    // El Excel y el administrador solo desmienten a Byte cuando dicen MÁS: ahí el reporte de Byte salió incompleto (se bajó antes
+    // de cerrar el día). Si dicen MENOS, son copias del cierre de caja anterior a ventas que Byte registró después (Atelier, 7 y 8 de
+    // agosto de 2026: Byte 2,839.03 y 806.56 contra 2,819.23 y 675.74 en el Excel y en el cierre diario); manda Byte y el caso se avisa.
+    if (a !== null && cerca(a, e, TOLERANCIA_COINCIDE) && !cerca(a, b, TOLERANCIA_COINCIDE) && e > b) return { total: e, fuente: "excel", motivo: "admin-confirma-excel" };
     if (a !== null && cerca(a, b, TOLERANCIA_COINCIDE)) return { total: b, fuente: "byte", motivo: "admin-confirma-byte" };
     return { total: b, fuente: "byte", motivo: "sin-desempate" };
   }
