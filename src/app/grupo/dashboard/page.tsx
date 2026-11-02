@@ -5,6 +5,7 @@ import { getGroupVentasComparison } from "@/app/actions/group-ventas";
 import { getGroupBreakeven } from "@/app/actions/breakeven";
 import { getVerificacionKelly } from "@/app/actions/verificacion-kelly";
 import { getSeisCifras } from "@/app/actions/seis-cifras";
+import { getFlujoCaja } from "@/app/actions/flujo-caja";
 import { getResumenExtra } from "@/app/actions/resumen-grupo";
 import { fijosDelPlanAprobado } from "@/lib/fijos-plan-sql";
 import { GrupoDashboardClient } from "./grupo-dashboard-client";
@@ -19,13 +20,14 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
   const mesActual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
   const mes = pedido && /^\d{4}-(0[1-9]|1[0-2])$/.test(pedido) && pedido <= mesActual ? pedido : mesActual;
   const data = await getGroupDashboard(mes);
-  const [be, ventas, frescura, liquidez, cuadre, cifras, extra, planFijos] = await Promise.all([
+  const [be, ventas, frescura, liquidez, cuadre, cifras, flujo, extra, planFijos] = await Promise.all([
     getGroupBreakeven(data.selectedMonth),
     getGroupVentasComparison(data.selectedMonth),
     getFrescuraGrupo(),
     getLiquidezGrupo(),
     getVerificacionKelly(),
     getSeisCifras(data.selectedMonth),
+    getFlujoCaja(data.selectedMonth),
     getResumenExtra(data.selectedMonth),
     // Los fijos que espera el presupuesto aprobado: con ellos se estima el EBITDA del mes abierto (lib/cada-100.ts).
     data.selectedMonth === mesActual ? fijosDelPlanAprobado(data.selectedMonth) : Promise.resolve({}),
@@ -43,6 +45,7 @@ export default async function GrupoDashboardPage({ searchParams }: { searchParam
       ventas={ventas.ok ? ventas.sedes : null}
       cuadreKelly={cuadre.ok ? cuadre.items : null}
       cifras={cifras.ok ? cifras.data : null}
+      flujo={flujo.ok ? flujo.data : null}
       extra={extra}
       planFijos={planFijos}
       sedeInicial={sede === "atelier" ? 1 : sede === "fonavi" ? 2 : sede === "centro" ? 3 : null}

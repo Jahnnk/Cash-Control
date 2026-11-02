@@ -16,6 +16,7 @@ import { SelectorMes } from "./selector-mes";
 import { CuadreKellySeccion } from "./cuadre-kelly-seccion";
 import type { VerificacionSedeMes } from "@/app/actions/verificacion-kelly";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
+import type { FlujoCaja } from "@/app/actions/flujo-caja";
 import { ddmm, type SedePulse } from "./sede-pulse-card";
 import { CincoSecciones, type TarjetaVentas, type VentasAlcance } from "./cinco-secciones";
 import { cada100DelMes, esperadoDe } from "@/lib/cada-100";
@@ -72,6 +73,8 @@ type Props = {
   cuadreKelly: VerificacionSedeMes[] | null;
   /** Las seis cifras del mes (ventas, costos, gastos, caja, margen, ganancia real); null si falló. */
   cifras: SeisCifras | null;
+  /** El flujo de caja de los últimos meses por sede (entró, salió, acumulado); null si falló. */
+  flujo?: FlujoCaja | null;
   /** Metas de venta del presupuesto, revisión semanal pendiente y cobros de Atelier. */
   extra: ResumenExtra;
   /** Los fijos que espera el presupuesto aprobado del mes en curso, por sede (vacío si no hay o el mes está cerrado). */
@@ -84,7 +87,7 @@ type Props = {
 
 export function GrupoDashboardClient({
   selectedMonth, mesActual, isCurrentMonth, summaries, breakeven, frescura, liquidez, ventas,
-  cuadreKelly, cifras, extra, planFijos = {}, pestanaInicial = "resumen", sedeInicial = null,
+  cuadreKelly, cifras, flujo = null, extra, planFijos = {}, pestanaInicial = "resumen", sedeInicial = null,
 }: Props) {
   const [pestana, setPestana] = useState<Pestana>(pestanaInicial);
   // Qué sede se mira en las cinco secciones del Resumen (null = el Grupo). Viaja en la dirección (?sede=fonavi) sin recargar.
@@ -265,7 +268,7 @@ export function GrupoDashboardClient({
           {/* Las cinco secciones: ventas → dinero → egresos → EBITDA → alertas. */}
           <div id="sedes" className="scroll-mt-4">
             <CincoSecciones
-              cifras={cifras} cada={cada} sede={sede} onSede={elegirSede} enCurso={isCurrentMonth} periodo={periodo} mes={selectedMonth}
+              cifras={cifras} flujo={flujo} cada={cada} sede={sede} onSede={elegirSede} enCurso={isCurrentMonth} periodo={periodo} mes={selectedMonth}
               ventas={ventasAlcance} tarjetas={tarjetas} saldo={saldoAlcance}
               cajaHref={`/grupo/reportes${isCurrentMonth ? "" : `?mes=${selectedMonth}`}`}
             />

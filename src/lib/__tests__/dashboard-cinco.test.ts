@@ -8,6 +8,8 @@ import { renderToStaticMarkup } from "react-dom/server";
 // El historial de cambios trae su propia acción del servidor (toca la base); aquí solo se dibuja la pantalla.
 vi.mock("../../app/actions/venta-diaria-cambios", () => ({ getCambiosVentaDiaria: vi.fn() }));
 vi.mock("../../app/actions/egresos-por-tipo", () => ({ getEgresosPorTipo: vi.fn() }));
+vi.mock("../../app/actions/profit-first", () => ({ guardarConfigProfitFirst: vi.fn() }));
+vi.mock("../../app/actions/breakeven", () => ({ getEquilibrioSede: vi.fn() }));
 import { cifrasDeSede, cifrasDelGrupo, type CifrasSede } from "../seis-cifras";
 import { cada100DelMes } from "../cada-100";
 import { alcanceDe, alertasDeNumeros, bonita, familiasDeEgreso, textoCortes } from "../dashboard-cinco";
@@ -172,6 +174,13 @@ describe("la pantalla", () => {
     expect(h).toContain("Ver las ventas día por día →");
     expect(h).toContain("/grupo/reportes?mes=2026-09&amp;ventas=dia#ventas-dia");
     expect(h).not.toContain("Promedio por día");
+  });
+  it("el flujo de caja, Profit First y el punto de equilibrio cuelgan plegados de las secciones 2 y 4", () => {
+    const h = html(props(null));
+    const s2 = h.indexOf("2. Movimiento de dinero"), s3 = h.indexOf("3. Egresos"), s4 = h.indexOf("4. EBITDA");
+    const flujo = h.indexOf("Flujo de caja"), profit = h.indexOf("Profit First"), pe = h.indexOf("Punto de equilibrio");
+    expect(flujo).toBeGreaterThan(s2); expect(flujo).toBeLessThan(s3);
+    expect(profit).toBeGreaterThan(s4); expect(pe).toBeGreaterThan(profit);
   });
   it("sección 2: ingresos, egresos y flujo del Excel", () => {
     const h = html(props(2));
