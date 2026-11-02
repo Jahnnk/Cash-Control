@@ -3,8 +3,8 @@
 /**
  * Grupo → Reportes. Fase 2 (23-oct-2026, «la epifanía» de Jahnn): el mes en el orden de sus 8 puntos, en 4 secciones —
  * 1 Ventas (Byte, por sede y grupo) · 2 Del sol vendido a la utilidad (costos variables y fijos, EBITDA como termómetro,
- * regla 33-33-33 y Profit First; plegado el estado de resultados y el cuadre con el Excel) · 3 Productos (potenciar y
- * reemplazar) · 4 Para el contador (todo lo técnico, plegado). Arriba: hasta cuándo hay datos y lo que se genera para la
+ * regla 33-33-33 y Profit First; plegado el estado de resultados y el cuadre con el Excel) · 3 Para el contador (todo lo
+ * técnico, plegado). Productos (potenciar y reemplazar) salió el 1-nov-2026: vive solo en Grupo → Productos. Arriba: hasta cuándo hay datos y lo que se genera para la
  * reunión (deck y reporte ejecutivo). El estado de los datos va en una sola línea plegada (1-nov-2026).
  */
 
@@ -30,7 +30,6 @@ import { ProfitFirst } from "./profit-first";
 import { VentasMeses } from "./ventas-meses";
 import { VentasPorDia } from "./ventas-por-dia";
 import { CascadaSol } from "./cascada-sol";
-import { ProductosDecision } from "./productos-decision";
 import { PuntoEquilibrio } from "./punto-equilibrio";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
@@ -101,10 +100,7 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         <EgresosPorTipoSeccion mes={selectedMonth} periodo={periodo} />
       </div>
 
-      {/* 3 · Productos (punto 8): qué potenciar y qué reemplazar. */}
-      <ProductosDecision mes={selectedMonth} />
-
-      {/* 4 · Para el contador: todo lo técnico, plegado (antes eran 8 secciones sueltas). */}
+      {/* 3 · Para el contador: todo lo técnico, plegado (antes eran 8 secciones sueltas). */}
       <SeccionDesplegable
         titulo="Para el contador"
         subtitulo="Los márgenes, los motores del EBITDA, la regla 33-33-33 y Profit First en detalle, el flujo de caja, el punto de equilibrio, las seis cifras y el resultado según el Excel."
@@ -112,7 +108,6 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         <div className="space-y-4">
           <DosMargenes cifras={cifras} periodo={periodo} />
           <MotoresEbitda motores={motores} periodo={periodo} />
-          <SemaforoMes mes={selectedMonth} />
           <Regla33 cifras={cifras} periodo={periodo} />
           <ProfitFirst cifras={cifras} periodo={periodo} />
           <FlujoDeCaja flujo={flujo} periodo={periodo} />
