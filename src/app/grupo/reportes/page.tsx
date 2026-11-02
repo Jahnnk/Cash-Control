@@ -7,9 +7,9 @@ import { GrupoReportesClient } from "./grupo-reportes-client";
 
 export const dynamic = "force-dynamic";
 
-export default async function GrupoReportesPage({ searchParams }: { searchParams: Promise<{ mes?: string }> }) {
+export default async function GrupoReportesPage({ searchParams }: { searchParams: Promise<{ mes?: string; sede?: string; ventas?: string }> }) {
   // ?mes=2026-09 → los reportes de ese mes (igual que el dashboard). Sin parámetro: el mes en curso, según Lima.
-  const { mes: pedido } = await searchParams;
+  const { mes: pedido, sede: sedePedida, ventas } = await searchParams;
   const mesActual = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
   const mes = pedido && /^\d{4}-(0[1-9]|1[0-2])$/.test(pedido) && pedido <= mesActual ? pedido : mesActual;
   // En paralelo: la frescura no debe retrasar el reporte, y si falla
@@ -17,6 +17,8 @@ export default async function GrupoReportesPage({ searchParams }: { searchParams
   const [frescura, cifras, flujo, be] = await Promise.all([getFrescuraGrupo(), getSeisCifras(mes), getFlujoCaja(mes), getGroupBreakeven(mes)]);
   // Los cuatro motores del EBITDA: parten de las seis cifras; si fallan, la página sale igual.
   const motores = cifras.ok ? await leerMotores(cifras.data).catch((e) => { console.error("[leerMotores] failed:", e); return null; }) : null;
+  // ?ventas=dia (desde el Dashboard): el detalle de ventas día por día viene abierto, con la sede pedida (sin sede = el Grupo).
+  const ventasDia = ventas === "dia" ? { sede: [1, 2, 3].includes(Number(sedePedida)) ? Number(sedePedida) : null } : null;
   return (
     <GrupoReportesClient
       selectedMonth={mes}
@@ -26,6 +28,7 @@ export default async function GrupoReportesPage({ searchParams }: { searchParams
       flujo={flujo.ok ? flujo.data : null}
       motores={motores}
       breakeven={be.ok ? be.data : null}
+      ventasDia={ventasDia}
     />
   );
 }

@@ -29,6 +29,7 @@ import { MotoresEbitda } from "./motores-ebitda";
 import type { Motores } from "@/lib/motores-ebitda";
 import { ProfitFirst } from "./profit-first";
 import { VentasMeses } from "./ventas-meses";
+import { VentasPorDia } from "./ventas-por-dia";
 import { CascadaSol } from "./cascada-sol";
 import { ProductosDecision } from "./productos-decision";
 import { PuntoEquilibrio } from "./punto-equilibrio";
@@ -50,9 +51,11 @@ type Props = {
   flujo: FlujoCaja | null;
   motores: Motores[] | null;
   breakeven: GroupBreakeven | null;
+  /** Llegó desde el Dashboard con una sede (o el Grupo) elegida: el detalle por día viene abierto. */
+  ventasDia?: { sede: number | null } | null;
 };
 
-export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, flujo, motores, breakeven }: Props) {
+export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, flujo, motores, breakeven, ventasDia = null }: Props) {
   const [showEirs, setShowEirs] = useState(false);
   const hoyLima = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   // La reunión de los lunes mira la ÚLTIMA semana cerrada (dom→sáb), no la que recién empieza (19-oct-2026).
@@ -91,6 +94,7 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
       {/* Fase 2 (23-oct-2026): los 8 puntos de Jahnn en 4 secciones, en el orden del sol vendido.
           1 · Ventas (punto 1). */}
       <VentasMeses mes={selectedMonth} periodo={periodo} />
+      <VentasPorDia mes={selectedMonth} sedeInicial={ventasDia?.sede ?? null} abierta={ventasDia !== null} />
 
       {/* 2 · Del sol vendido a la utilidad (puntos 2 a 7): la cascada, y plegado el detalle y el cuadre con el Excel.
           Arriba, si esas cifras son confiables (controles de fiabilidad, 24-oct-2026). */}

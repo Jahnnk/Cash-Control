@@ -160,6 +160,10 @@ function SeccionVentas({ v, tarjetas, sede, onSede, enCurso, nombre, mes }: { v:
         </div>
       )}
       {sede === null && <p className="mt-2 text-[11px] text-gray-400">Suma de las 3 sedes: incluye lo que Atelier le vende a Fonavi y Centro. En costos y EBITDA ese monto no se cuenta dos veces.</p>}
+      <Link
+        href={`/grupo/reportes?mes=${mes}${sede !== null ? `&sede=${sede}` : ""}&ventas=dia#ventas-dia`}
+        className="mt-3 inline-block text-xs font-medium text-primary hover:underline"
+      >Ver las ventas día por día{sede !== null ? ` de ${nombre}` : ""} →</Link>
       <CambiosVentaDiaria mes={mes} sede={sede} />
     </Seccion>
   );

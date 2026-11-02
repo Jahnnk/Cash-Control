@@ -168,6 +168,10 @@ describe("la pantalla", () => {
     const h = html(props(null));
     for (const t of ["Ventas totales del mes", "S/ 113,579", "Consolidado de 3 sedes", "32% del grupo", "EBITDA −13%", "EBITDA 18%", "EBITDA 16% est.", "⚠ Falta 1 día de ventas"]) expect(h).toContain(t);
     expect(h).toContain("incluye lo que Atelier le vende a Fonavi y Centro");
+    // El detalle día por día vive en Reportes: aquí solo hay un enlace discreto con el mes (y la sede, si hay una elegida).
+    expect(h).toContain("Ver las ventas día por día →");
+    expect(h).toContain("/grupo/reportes?mes=2026-09&amp;ventas=dia#ventas-dia");
+    expect(h).not.toContain("Promedio por día");
   });
   it("sección 2: ingresos, egresos y flujo del Excel", () => {
     const h = html(props(2));
