@@ -83,6 +83,9 @@ export type IngresosFuera = {
   revisarTipo?: number;
 };
 
+/** De dónde vino lo que entró a la cuenta (todo lo del Excel, sin dobles): suma exactamente `entro`. */
+export type EntroPor = { ventas: number; devolucionesSedes: number; prestamos: number; rescates: number; otros: number };
+
 export type CifrasSede = {
   businessId: number;
   sede: string;
@@ -126,7 +129,7 @@ export type CifrasSede = {
    * del mes (coach)» de lib/equilibrio.ts.
    */
   puntoEquilibrio: number | null;
-  caja: { entro: number; salio: number; flujo: number };
+  caja: { entro: number; salio: number; flujo: number; entroPor?: EntroPor };
   /**
    * Lo que se COBRÓ de las ventas: ingresos operativos del Excel hasta el corte
    * (sin préstamos, rescates ni reembolsos). Es la barra del medio de
@@ -237,7 +240,7 @@ export function cifrasDeSede(input: {
   filas: FilaCifras[];
   ventas: number | null;
   ventasPosteriores?: number;
-  caja: { entro: number; salio: number; rescate?: number };
+  caja: { entro: number; salio: number; rescate?: number; entroPor?: EntroPor };
   /** Ingresos operativos del Excel hasta el corte; null = sin Excel. */
   cobrado?: number | null;
   /** Ingresos con Grupo «Ventas» hasta el corte; null = sin filas marcadas. */
@@ -302,7 +305,7 @@ export function cifrasDeSede(input: {
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / ventas!) * 100) : null,
     puntoEquilibrio: hayResultado ? puntoDeEquilibrio(gastos, costos, ventas) : null,
-    caja: { entro: r2(input.caja.entro), salio: r2(input.caja.salio), flujo: r2(input.caja.entro - input.caja.salio) },
+    caja: { entro: r2(input.caja.entro), salio: r2(input.caja.salio), flujo: r2(input.caja.entro - input.caja.salio), ...(input.caja.entroPor ? { entroPor: input.caja.entroPor } : {}) },
     cobrado: input.cobrado === null || input.cobrado === undefined ? null : r2(input.cobrado),
     ingresadoVentas: input.ingresadoVentas == null ? null : r2(input.ingresadoVentas),
     otrosIngresos: input.ingresadoVentas == null || input.cobrado == null ? null : r2(Math.max(input.cobrado - input.ingresadoVentas, 0)),
@@ -331,7 +334,7 @@ export type CifrasGrupo = {
   gananciaPct: number | null;
   /** Gastos ÷ (1 − Costos ÷ Ventas) con las cifras del grupo (puntoDeEquilibrio). */
   puntoEquilibrio: number | null;
-  caja: { entro: number; salio: number; flujo: number };
+  caja: { entro: number; salio: number; flujo: number; entroPor?: EntroPor };
   fuera: FueraDeLaGanancia;
   /** Lo que Atelier le vendió a las cafeterías: se descontó una vez de ventas y de costos. */
   ventasInternas: number;
@@ -375,7 +378,11 @@ export function cifrasDelGrupo(sedes: CifrasSede[]): CifrasGrupo {
     ganancia,
     gananciaPct: hayResultado && ganancia !== null ? r1((ganancia / vRes) * 100) : null,
     puntoEquilibrio: hayResultado ? puntoDeEquilibrio(gastos, costos, vRes) : null,
-    caja: { entro: r2(entro), salio: r2(salio), flujo: r2(entro - salio) },
+    caja: {
+      entro: r2(entro), salio: r2(salio), flujo: r2(entro - salio),
+      // El desglose del grupo solo existe si todas las sedes lo traen.
+      ...(sedes.length > 0 && sedes.every((x) => x.caja.entroPor) ? { entroPor: sumarEntroPor(sedes.map((x) => x.caja.entroPor!)) } : {}),
+    },
     fuera: {
       deudas: r2(sum((s) => s.fuera.deudas)), inversion: r2(sum((s) => s.fuera.inversion)),
       noEsGasto: r2(sum((s) => s.fuera.noEsGasto)), otrasSedes: r2(sum((s) => s.fuera.otrasSedes)),
@@ -388,4 +395,12 @@ export function cifrasDelGrupo(sedes: CifrasSede[]): CifrasGrupo {
     sinResultado,
     extraordinario: r2(conResultado.reduce((t, s) => t + (s.extraordinario?.total ?? 0), 0)),
   };
+}
+
+const CLAVES_ENTRO: (keyof EntroPor)[] = ["ventas", "devolucionesSedes", "prestamos", "rescates", "otros"];
+/** Suma el desglose de lo que entró de varias sedes. */
+export function sumarEntroPor(xs: EntroPor[]): EntroPor {
+  const out = { ventas: 0, devolucionesSedes: 0, prestamos: 0, rescates: 0, otros: 0 };
+  for (const x of xs) for (const k of CLAVES_ENTRO) out[k] = r2(out[k] + x[k]);
+  return out;
 }
