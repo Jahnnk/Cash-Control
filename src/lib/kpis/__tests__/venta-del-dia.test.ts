@@ -5,6 +5,10 @@ describe("la venta de un día con tres fuentes (dos de tres)", () => {
   it("30/08 Fonavi: Byte incompleto, el administrador confirma el Excel", () => {
     expect(elegirVentaDia(102.1, 899.6, 899.6)).toEqual({ total: 899.6, fuente: "excel", motivo: "admin-confirma-excel" });
   });
+  it("Atelier 7 y 8/08: Excel y cierre diario dicen MENOS que Byte; manda Byte y se avisa (sin desempate)", () => {
+    expect(elegirVentaDia(2839.03, 2819.23, 2819.23)).toEqual({ total: 2839.03, fuente: "byte", motivo: "sin-desempate" });
+    expect(elegirVentaDia(806.56, 675.74, 675.74)).toEqual({ total: 806.56, fuente: "byte", motivo: "sin-desempate" });
+  });
   it("05/08 Fonavi: el administrador confirma Byte (el Excel está mal)", () => {
     expect(elegirVentaDia(1187.3, 1071.3, 1187.3)).toEqual({ total: 1187.3, fuente: "byte", motivo: "admin-confirma-byte" });
   });
