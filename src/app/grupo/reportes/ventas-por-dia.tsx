@@ -32,7 +32,7 @@ function Dato({ etiqueta, valor, nota }: { etiqueta: string; valor: string; nota
 const OPCIONES_SEDE: { id: number | null; nombre: string }[] = [{ id: null, nombre: "Grupo" }, { id: 2, nombre: "Fonavi" }, { id: 3, nombre: "Centro" }, { id: 1, nombre: "Atelier" }];
 
 export function VentasPorDia({ mes, sedeInicial = null, abierta = false }: { mes: string; sedeInicial?: number | null; abierta?: boolean }) {
-  const [estado, setEstado] = useState<"idle" | "cargando" | "listo" | "error">("idle");
+  const [estado, setEstado] = useState<"idle" | "cargando" | "listo" | "error">(abierta ? "cargando" : "idle");
   const [entradas, setEntradas] = useState<EntradaSedeDia[]>([]);
   const [sede, setSede] = useState<number | null>(sedeInicial);
 
@@ -44,7 +44,14 @@ export function VentasPorDia({ mes, sedeInicial = null, abierta = false }: { mes
   }
 
   // Llegó desde el Dashboard: ya abierto, así que se cargan los datos al entrar (el desplegable solo avisa al abrirse a mano).
-  useEffect(() => { if (abierta) void cargar(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    if (!abierta) return;
+    let vivo = true;
+    getVentasPorDia(mes)
+      .then((r) => { if (!vivo) return; if (r.ok) { setEntradas(r.entradas); setEstado("listo"); } else setEstado("error"); })
+      .catch(() => { if (vivo) setEstado("error"); });
+    return () => { vivo = false; };
+  }, [abierta, mes]);
 
   const vista = useMemo(() => armarVentasPorDia(entradas, sede), [entradas, sede]);
   const apilado = vista !== null && vista.sedes.length > 1;
