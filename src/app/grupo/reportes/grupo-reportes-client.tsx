@@ -3,8 +3,9 @@
 /**
  * Grupo → Reportes. Fase 2 (23-oct-2026, «la epifanía» de Jahnn): el mes en el orden de sus 8 puntos, en 4 secciones —
  * 1 Ventas (Byte, por sede y grupo) · 2 Del sol vendido a la utilidad (costos variables y fijos, EBITDA como termómetro,
- * regla 33-33-33 y Profit First; plegado el estado de resultados y el cuadre con el Excel) · 3 Para el contador (todo lo
- * técnico, plegado). Productos (potenciar y reemplazar) salió el 1-nov-2026: vive solo en Grupo → Productos. Arriba: hasta cuándo hay datos y lo que se genera para la
+ * regla 33-33-33 y Profit First; plegado el estado de resultados y el cuadre con el Excel). El 1-nov-2026 salieron lo repetido
+ * («Para el contador») y Productos (vive solo en Grupo → Productos); el flujo de caja, Profit First y el punto de equilibrio
+ * pasaron al Dashboard. Arriba: hasta cuándo hay datos y lo que se genera para la
  * reunión (deck y reporte ejecutivo). El estado de los datos va en una sola línea plegada (1-nov-2026).
  */
 
@@ -17,26 +18,14 @@ import { EstadoDatos } from "./estado-datos";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SelectorMes } from "../dashboard/selector-mes";
-import { FlujoDeCaja } from "./flujo-de-caja";
-import { DosMargenes } from "./dos-margenes";
+import { SemaforoMes } from "../dashboard/semaforo-mes";
 import { ConciliacionMes } from "./conciliacion-mes";
 import { EgresosPorTipoSeccion } from "./egresos-por-tipo";
 import { EstadoResultados } from "./estado-resultados";
-import { Regla33 } from "./regla-33";
-import { SemaforoMes } from "@/app/grupo/dashboard/semaforo-mes";
-import { MotoresEbitda } from "./motores-ebitda";
-import type { Motores } from "@/lib/motores-ebitda";
-import { ProfitFirst } from "./profit-first";
 import { VentasMeses } from "./ventas-meses";
 import { VentasPorDia } from "./ventas-por-dia";
 import { CascadaSol } from "./cascada-sol";
-import { PuntoEquilibrio } from "./punto-equilibrio";
-import type { FlujoCaja } from "@/app/actions/flujo-caja";
-import type { GroupBreakeven } from "@/app/actions/breakeven";
-import { SeccionDesplegable } from "@/components/productos/ui";
 import { CajaExcel } from "../dashboard/caja-excel";
-import { SeisCifrasPanel } from "../dashboard/seis-cifras-panel";
-import { TableroEbitda } from "../dashboard/tablero-ebitda";
 
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "setiembre", "octubre", "noviembre", "diciembre"];
 const nombreMes = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
@@ -46,14 +35,11 @@ type Props = {
   mesActual: string;
   frescura: FrescuraGrupo | null;
   cifras: SeisCifras | null;
-  flujo: FlujoCaja | null;
-  motores: Motores[] | null;
-  breakeven: GroupBreakeven | null;
   /** Llegó desde el Dashboard con una sede (o el Grupo) elegida: el detalle por día viene abierto. */
   ventasDia?: { sede: number | null } | null;
 };
 
-export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, flujo, motores, breakeven, ventasDia = null }: Props) {
+export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras, ventasDia = null }: Props) {
   const [showEirs, setShowEirs] = useState(false);
   const hoyLima = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
   // La reunión de los lunes mira la ÚLTIMA semana cerrada (dom→sáb), no la que recién empieza (19-oct-2026).
@@ -98,25 +84,9 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
         <ConciliacionMes cifras={cifras} periodo={periodo} />
         {/* La pestaña «Resumen fijo vs variable» de Jahnn: lo que salió, en cinco tipos, y su puente a las seis cifras (25-oct-2026). */}
         <EgresosPorTipoSeccion mes={selectedMonth} periodo={periodo} />
+        {/* Lo que Kelly escribe al pie de cada hoja Ing&Gtos, leído bien: el destino de «Ver cómo cuadra con el Excel» del Dashboard. */}
+        <CajaExcel cifras={cifras} periodo={periodo} mesesHref={`/grupo/reportes?mes=${selectedMonth}`} />
       </div>
-
-      {/* 3 · Para el contador: todo lo técnico, plegado (antes eran 8 secciones sueltas). */}
-      <SeccionDesplegable
-        titulo="Para el contador"
-        subtitulo="Los márgenes, los motores del EBITDA, la regla 33-33-33 y Profit First en detalle, el flujo de caja, el punto de equilibrio, las seis cifras y el resultado según el Excel."
-      >
-        <div className="space-y-4">
-          <DosMargenes cifras={cifras} periodo={periodo} />
-          <MotoresEbitda motores={motores} periodo={periodo} />
-          <Regla33 cifras={cifras} periodo={periodo} />
-          <ProfitFirst cifras={cifras} periodo={periodo} />
-          <FlujoDeCaja flujo={flujo} periodo={periodo} />
-          <PuntoEquilibrio mes={selectedMonth} periodo={periodo} />
-          <SeisCifrasPanel cifras={cifras} periodo={periodo} />
-          <CajaExcel cifras={cifras} periodo={periodo} mesesHref={`/grupo/reportes?mes=${selectedMonth}`} />
-          <TableroEbitda cifras={cifras} breakeven={breakeven} motores={motores} selectedMonth={selectedMonth} isCurrentMonth={selectedMonth === mesActual} periodo={periodo} />
-        </div>
-      </SeccionDesplegable>
 
       {showEirs && (
         <GenerateReportModal

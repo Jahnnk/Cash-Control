@@ -21,6 +21,10 @@ import { Delta } from "./executive-hero";
 import { CadaCien } from "./cada-100";
 import { CambiosVentaDiaria } from "./cambios-venta-diaria";
 import { EgresosCuerpo, useEgresosPorTipo } from "./egresos-seccion";
+import { FlujoDeCaja } from "./flujo-de-caja";
+import { ProfitFirst } from "./profit-first";
+import { PuntoEquilibrio } from "./punto-equilibrio";
+import type { FlujoCaja } from "@/app/actions/flujo-caja";
 
 const soles = (n: number) => `S/ ${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const solesConSigno = (n: number) => `${n < 0 ? "−" : ""}${soles(n)}`;
@@ -72,6 +76,8 @@ export type CincoProps = {
   saldo: number | null;
   /** A dónde lleva «Ver cómo cuadra con el Excel» (la conciliación en Reportes). */
   cajaHref: string;
+  /** El flujo de caja de los últimos meses (cuelga de la sección 2); null = no se pudo leer. */
+  flujo?: FlujoCaja | null;
 };
 
 function Seccion({ n, titulo, fuente, icono, derecha, children }: { n: number; titulo: string; fuente: string; icono: ReactNode; derecha?: ReactNode; children: ReactNode }) {
@@ -170,7 +176,7 @@ function SeccionVentas({ v, tarjetas, sede, onSede, enCurso, nombre, mes }: { v:
 }
 
 // ─────────────────────────── 2. Movimiento de dinero ───────────────────────────
-function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref }: { caja: { entro: number; salio: number; flujo: number }; cortes: string | null; saldo: number | null; enCurso: boolean; cajaHref: string }) {
+function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo }: { caja: { entro: number; salio: number; flujo: number }; cortes: string | null; saldo: number | null; enCurso: boolean; cajaHref: string; flujo: FlujoCaja | null; periodo: string }) {
   const sinExcel = cortes === null;
   return (
     <Seccion n={2} titulo="Movimiento de dinero" fuente={`Fuente: Excel de Finanzas · flujo de caja${cortes ? ` · ${cortes}` : ""}`} icono={<ArrowLeftRight className="h-5 w-5" />}>
@@ -202,6 +208,8 @@ function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref }: { caja: { ent
         </div>
       )}
       {!sinExcel && <Link href={cajaHref} className="mt-3 inline-block text-xs font-medium text-primary hover:underline">Ver cómo cuadra con el Excel →</Link>}
+      {/* El historial mes a mes (plegado): entró, salió y el acumulado, sin contar el ahorro. */}
+      <div className="mt-4"><FlujoDeCaja flujo={flujo} periodo={periodo} /></div>
     </Seccion>
   );
 }
@@ -221,7 +229,7 @@ function SeccionEgresos({ mes, sede, enCurso, cajaHref }: { mes: string; sede: n
 const COLOR_MODELO = { variables: "#DCA64F", fijos: "#5B7FB0", utilidad: "#4A8B72", bolsa: "#9B84BE" };
 const TONO_TERMOMETRO = { fragil: "mal", en_camino: "ojo", eficiente: "bien" } as const;
 
-function SeccionEbitda({ cada }: { cada: Cada100 }) {
+function SeccionEbitda({ cada, cifras, mes, periodo }: { cada: Cada100; cifras: SeisCifras; mes: string; periodo: string }) {
   const lin = (k: string) => cada.lineas.find((l) => l.clave === k);
   const e = lin("ebitda"), v = lin("variables"), f = lin("fijos"), u = lin("utilidad"), b = lin("bolsa");
   const estimado = cada.modo === "estimado";
@@ -276,6 +284,11 @@ function SeccionEbitda({ cada }: { cada: Cada100 }) {
           <CadaCien c={cada} />
         </>
       )}
+      {/* Lo que se hace con ese EBITDA y cuánto hay que vender para cubrirlo (plegados). */}
+      <div className="mt-4 space-y-3">
+        <ProfitFirst cifras={cifras} periodo={periodo} />
+        <PuntoEquilibrio mes={mes} periodo={periodo} />
+      </div>
     </Seccion>
   );
 }
@@ -289,9 +302,9 @@ export function CincoSecciones(p: CincoProps) {
   return (
     <div className="space-y-5">
       <SeccionVentas v={p.ventas} tarjetas={p.tarjetas} sede={p.sede} onSede={p.onSede} enCurso={p.enCurso} nombre={nombre} mes={p.mes} />
-      <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} />
+      <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} flujo={p.flujo ?? null} periodo={p.periodo} />
       <SeccionEgresos key={`${p.sede}`} mes={p.mes} sede={p.sede} enCurso={p.enCurso} cajaHref={p.cajaHref} />
-      <SeccionEbitda cada={cada} />
+      <SeccionEbitda cada={cada} cifras={p.cifras} mes={p.mes} periodo={p.periodo} />
     </div>
   );
 }
