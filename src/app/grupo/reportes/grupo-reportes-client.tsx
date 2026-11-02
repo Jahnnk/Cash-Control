@@ -5,16 +5,15 @@
  * 1 Ventas (Byte, por sede y grupo) · 2 Del sol vendido a la utilidad (costos variables y fijos, EBITDA como termómetro,
  * regla 33-33-33 y Profit First; plegado el estado de resultados y el cuadre con el Excel) · 3 Productos (potenciar y
  * reemplazar) · 4 Para el contador (todo lo técnico, plegado). Arriba: hasta cuándo hay datos y lo que se genera para la
- * reunión (deck y reporte ejecutivo).
+ * reunión (deck y reporte ejecutivo). El estado de los datos va en una sola línea plegada (1-nov-2026).
  */
 
 import { useState } from "react";
 import { Sparkles } from "lucide-react";
 import { KpiDeckButton } from "@/components/kpi-deck-button";
 import { semanaDeLaReunion } from "@/lib/kpis/semana-reunion";
-import { EstadoDatosReunion } from "@/components/estado-datos-reunion";
 import { GenerateReportModal } from "@/app/[negocio]/reportes/generate-report-modal";
-import { BandaFrescura } from "@/components/banda-frescura";
+import { EstadoDatos } from "./estado-datos";
 import type { FrescuraGrupo } from "@/lib/frescura-datos";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import { SelectorMes } from "../dashboard/selector-mes";
@@ -63,14 +62,6 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
   const periodo = nombreMes(selectedMonth);
   return (
     <div className="space-y-5 max-w-6xl min-w-0">
-      {/* LO PRIMERO: hasta cuándo tenemos datos. Va antes del título
-          porque un reporte generado sobre datos a medias es peor que no
-          generarlo — es la lección del reporte de agosto. */}
-      {frescura && <BandaFrescura frescura={frescura} />}
-
-      {/* Lo que suben los administradores para la semana de la reunión: KPIs diarios, Byte y archivos del sábado. */}
-      <EstadoDatosReunion start={semana.start} end={semana.end} />
-
       <header className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="text-2xl font-semibold text-gray-900 tracking-tight">Reportes</h1>
@@ -90,6 +81,9 @@ export function GrupoReportesClient({ selectedMonth, mesActual, frescura, cifras
           </button>
         </div>
       </header>
+
+      {/* Hasta cuándo hay datos y lo que falta subir: una línea discreta; el detalle se abre al tocarla (1-nov-2026). */}
+      <EstadoDatos frescura={frescura} start={semana.start} end={semana.end} />
 
       {/* Fase 2 (23-oct-2026): los 8 puntos de Jahnn en 4 secciones, en el orden del sol vendido.
           1 · Ventas (punto 1). */}
