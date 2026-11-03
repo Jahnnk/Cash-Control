@@ -23,9 +23,9 @@ const RUTA_FOTO = join(__dirname, "fixtures", "2026-09-fonavi-centro.json");
 const hayFoto = existsSync(RUTA_FOTO);
 
 const ESPERADO = {
-  Fonavi: { ventas: 37293.99, costos: 17147.5, gastos: 13537.83, ebitda: 6608.66, pe: 25060.43, entro: 37109.37, salio: 33181.21, movimientos: 249 },
+  Fonavi: { ventas: 37293.99, costos: 17739, gastos: 12946.33, ebitda: 6608.66, pe: 24690.39, entro: 37109.37, salio: 33181.21, movimientos: 249 },
   // Centro: costos fijos 18,370.96 = 18,415.06 − S/44.10 de «GASTO NO EJECUTADO (ROSARIO REYES)» (A1, 25/09 y 29/09).
-  Centro: { ventas: 41336.31, costos: 16349.64, gastos: 18370.96, ebitda: 6615.71, pe: 30391.71, entro: 43984.61, salio: 44906.85, movimientos: 245 },
+  Centro: { ventas: 41336.31, costos: 16857.84, gastos: 17862.76, ebitda: 6615.71, pe: 30164.49, entro: 43984.61, salio: 44906.85, movimientos: 245 },
 } as const;
 
 if (!hayFoto) {
@@ -100,17 +100,17 @@ if (!hayFoto) {
       expect(e.ingresos).toBe(37109.37);
       expect(e.control).toBe(0);
     });
-    it("Variable 17,272.50 (con IMPUESTOS y la devolución a Josué) · Financiamiento 1,813.50 · Inversión 9.60", () => {
-      expect(monto("Variable")).toBe(17272.5);
+    it("Variable 17,864.00 (con IMPUESTOS y la devolución a Josué) · Financiamiento 1,813.50 · Inversión 9.60", () => {
+      expect(monto("Variable")).toBe(17864);
       expect(monto("Financiamiento")).toBe(1813.5);
       expect(monto("Inversión")).toBe(9.6);
     });
-    it("Fijo + No es gasto = 14,085.61 (la refrigeradora de S/100 pasa de No es gasto a Fijo; el total no cambia)", () => {
-      expect(Math.round((monto("Fijo") + monto("No es gasto")) * 100) / 100).toBe(14085.61);
+    it("Fijo + No es gasto = 13,494.11 (la refrigeradora de S/100 pasa de No es gasto a Fijo; el total no cambia)", () => {
+      expect(Math.round((monto("Fijo") + monto("No es gasto")) * 100) / 100).toBe(13494.11);
     });
-    it("el puente llega a las seis cifras: costos fijos 13,537.83 y costos variables 17,147.50", () => {
-      expect(e.puente.fijo).toMatchObject({ hasta: 13537.83, sinExplicar: 0 });
-      expect(e.puente.variable).toMatchObject({ hasta: 17147.5, sinExplicar: 0 });
+    it("el puente llega a las seis cifras: costos fijos 12,946.33 y costos variables 17,739.00", () => {
+      expect(e.puente.fijo).toMatchObject({ hasta: 12946.33, sinExplicar: 0 });
+      expect(e.puente.variable).toMatchObject({ hasta: 17739, sinExplicar: 0 });
     });
   });
 
@@ -118,14 +118,14 @@ if (!hayFoto) {
     const e = egresosPorTipo(foto.sedes.Centro.datos, sedes.Centro);
     it("total 44,906.85 en seis tipos, con la fila 114 (S/63.19) en «Por conciliar» y los gastos no ejecutados en No es gasto", () => {
       expect(e.tipos.map((t) => [t.tipo, t.monto])).toEqual([
-        ["Fijo", 18370.96], ["Variable", 16425.14], ["Financiamiento", 0], ["Inversión", 150], ["No es gasto", 9897.56], ["Por conciliar", 63.19],
+        ["Fijo", 17862.76], ["Variable", 16933.34], ["Financiamiento", 0], ["Inversión", 150], ["No es gasto", 9897.56], ["Por conciliar", 63.19],
       ]);
       expect(e.totalEgresos).toBe(44906.85);
       expect(e.control).toBe(0);
     });
-    it("el puente llega a las seis cifras: costos fijos 18,370.96 y variables 16,349.64 (la mochila devuelta, S/75.50)", () => {
-      expect(e.puente.fijo).toMatchObject({ hasta: 18370.96, sinExplicar: 0 });
-      expect(e.puente.variable).toMatchObject({ hasta: 16349.64, sinExplicar: 0 });
+    it("el puente llega a las seis cifras: costos fijos 17,862.76 y variables 16,857.84 (la mochila devuelta, S/75.50)", () => {
+      expect(e.puente.fijo).toMatchObject({ hasta: 17862.76, sinExplicar: 0 });
+      expect(e.puente.variable).toMatchObject({ hasta: 16857.84, sinExplicar: 0 });
     });
   });
 
