@@ -7,7 +7,6 @@
  *     y affogato.
  *   · Café pasado y cold brew — café de filtro y en frío: llevan café pero no pasan por la máquina de espresso
  *     (supuesto a confirmar con Jahnn).
- *   · Licuadora — los frappés: llevan café pero se preparan en licuadora (Jahnn, 3-nov-2026).
  * NO son café las infusiones, el matcha (aunque se llame «latte»), los chocolates ni los jugos o batidos. Solo cuentan los
  * productos de las familias de bebidas, así que una bolsa de café para llevar (retail) no entra.
  *
@@ -22,16 +21,14 @@ const quitarTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").t
 const NO_ES_CAFE = /\b(MATCHA|INFUSION|CHOCOLATE|KOMBUCHA)\b/;
 const ES_CAFE = /\b(CAFE|CAPPUCCINO|CAPUCCINO|ESPRESSO|EXPRESSO|EXPRESO|AMERICANO|LATTE|MOCCACCINO|MOCACCINO|MOCHA|MACCHIATO|CORTADO|AFFOGATO|COLD BREW|FRAPPE)\b/;
 const ES_FRIO = /\b(ICED|COLD BREW|FRAPPE|FRIO|HELADO)\b|BOTELLA/;
-const EN_LICUADORA = /\bFRAPPE\b/;
 const FILTRADO = /\b(CAFE PASADO|COLD BREW)\b/;
 
 export type TipoCafe = "caliente" | "frio";
-export type MetodoCafe = "maquina" | "filtrado" | "licuadora";
+export type MetodoCafe = "maquina" | "filtrado";
 
 export const NOMBRE_METODO: Record<MetodoCafe, string> = {
   maquina: "Con la máquina de espresso",
   filtrado: "Café pasado y cold brew",
-  licuadora: "En licuadora (frappés)",
 };
 
 export function esCafe(nombre: string): boolean {
@@ -43,10 +40,9 @@ export function tipoCafe(nombre: string): TipoCafe {
   return ES_FRIO.test(quitarTildes(nombre)) ? "frio" : "caliente";
 }
 
-/** Dónde se prepara: la licuadora gana (el frappé), luego el filtro; todo lo demás sale de la máquina de espresso. */
+/** Dónde se prepara: solo el café pasado y el cold brew van por filtro; todo lo demás (frappés incluidos) sale de la máquina. */
 export function metodoCafe(nombre: string): MetodoCafe {
   const t = quitarTildes(nombre);
-  if (EN_LICUADORA.test(t)) return "licuadora";
   if (FILTRADO.test(t)) return "filtrado";
   return "maquina";
 }
@@ -84,7 +80,6 @@ export type ResumenCafe = {
   todo: ParteCafe;
   maquina: ParteCafe;
   filtrado: ParteCafe;
-  licuadora: ParteCafe;
   sinCosto: { nombre: string; ingresos: number }[];
 };
 
@@ -120,7 +115,6 @@ export function resumenCafe(d: RentabilidadSede): ResumenCafe {
     todo: parte(productos, d),
     maquina: de("maquina"),
     filtrado: de("filtrado"),
-    licuadora: de("licuadora"),
     sinCosto: productos.filter((p) => p.deja === null).map((p) => ({ nombre: p.nombre, ingresos: p.ingresos })),
   };
 }
