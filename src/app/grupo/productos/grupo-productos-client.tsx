@@ -19,6 +19,7 @@ import { CandidatosReemplazo } from "./candidatos-reemplazo";
 import { RankingPorCategoria, ReglaOchentaVeinte } from "./categorias-y-pareto";
 import { ProductosSinVenta } from "./productos-sin-venta";
 import { RentabilidadProductos } from "./rentabilidad-productos";
+import { CafeSeccion } from "./cafe-seccion";
 import { PisoPrecios } from "./piso-precios";
 import { ManoDeObra } from "./mano-de-obra";
 import { DatosCargados } from "./datos-cargados";
@@ -328,6 +329,8 @@ function PestanaMes({ month, sede, onSede, onMes, onCanal }: { month: string; se
       {!porCanal && (
         <>
           <ReglaOchentaVeinte month={month} sede={sede} />
+          {/* Cuánto se vende y cuánto deja solo el café, para decidir una máquina nueva (3-nov-2026). */}
+          <CafeSeccion key={`cafe-${sede}-${month}`} month={month} sede={sede} />
           {/* Precio, costo, margen y lo que deja cada producto (4-oct-2026). */}
           <RentabilidadProductos key={`rent-${sede}-${month}`} month={month} sede={sede} />
           {/* El piso de precios: costo × 3 y margen bruto de 65–70% (15-oct-2026). */}
