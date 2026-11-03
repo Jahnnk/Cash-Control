@@ -194,7 +194,7 @@ export function CafeSeccion({ month, sede }: { month: string; sede: number }) {
   return (
     <SeccionDesplegable
       titulo="Cafés"
-      subtitulo="Cuánto se vende y cuánto deja solo el café, frío y caliente."
+      subtitulo="Cuánto se vende y cuánto deja el café, según dónde se prepara."
       resumen={resumen}
       onAbrir={cargarAnteriores}
     >
