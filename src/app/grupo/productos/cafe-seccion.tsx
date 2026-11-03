@@ -3,7 +3,7 @@
 /**
  * Grupo → Productos → El mes → «Cafés» (pedido de Jahnn, 3-nov-2026): cuánto se vende y cuánto deja el café, para
  * decidir si Fonavi compra una máquina de café nueva. La cifra principal es lo que se prepara EN la máquina de espresso;
- * los frappés (café en licuadora) y el café pasado van aparte. Plegada (regla de orden visual): cerrada dice lo
+ * el café pasado y el cold brew (filtro) van aparte. Plegada (regla de orden visual): cerrada dice lo
  * esencial; abierta, el detalle por producto y los 3 últimos meses.
  *
  * Sale de la rentabilidad por producto (la misma de «¿Dónde ganamos plata?»), así que el costo es el de la receta de
@@ -28,7 +28,7 @@ function mesAnterior(mes: string, atras: number): string {
 
 type Estado = { clave: string; actual: ResumenCafe | null; error: string | null };
 
-const ETIQUETA_CORTA: Record<MetodoCafe, string> = { maquina: "máquina", filtrado: "filtro", licuadora: "licuadora" };
+const ETIQUETA_CORTA: Record<MetodoCafe, string> = { maquina: "máquina", filtrado: "filtro" };
 
 function Tarjeta({ titulo, valor, nota }: { titulo: string; valor: string; nota: string }) {
   return (
@@ -120,8 +120,8 @@ function Cuerpo({ r, anteriores }: { r: ResumenCafe; anteriores: { mes: string; 
         <Tarjeta titulo="Por taza" valor={soles2(r.maquina.precioPromedio)} nota={r.maquina.unidades > 0 && r.maquina.deja !== null ? `deja ${soles2(r.maquina.deja / r.maquina.unidades)} por taza` : "precio promedio"} />
       </div>
 
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-        {([["maquina", r.maquina], ["filtrado", r.filtrado], ["licuadora", r.licuadora]] as const).map(([m, t]) => (
+      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+        {([["maquina", r.maquina], ["filtrado", r.filtrado]] as const).map(([m, t]) => (
           <div key={m} className="rounded-xl border border-gray-200 bg-white px-4 py-3">
             <div className="text-[11px] font-medium uppercase tracking-wider text-gray-500">{NOMBRE_METODO[m]}</div>
             <div className="mt-1 text-lg font-semibold tabular-nums text-gray-900">{soles0(t.ventas)}</div>
@@ -148,7 +148,7 @@ function Cuerpo({ r, anteriores }: { r: ResumenCafe; anteriores: { mes: string; 
       )}
 
       <div className="rounded-lg bg-gray-50 border border-gray-100 px-3.5 py-3 text-[11px] text-gray-600 leading-relaxed space-y-1.5">
-        <p><strong>Qué cuenta como café:</strong> lo que sale de la máquina de espresso (espresso, americano, cortado, cappuccino, latte con sabores y fríos, macchiato, moccaccino, affogato); el café pasado y el cold brew, que llevan café pero no pasan por la máquina; y los frappés, que llevan café pero se hacen en licuadora. No cuentan las infusiones, el matcha (aunque se llame «latte»), los chocolates, los jugos ni los batidos.</p>
+        <p><strong>Qué cuenta como café:</strong> lo que sale de la máquina de espresso (espresso, americano, cortado, cappuccino, latte con sabores y fríos, macchiato, moccaccino, affogato y frappés, que se hacen con espresso); y aparte el café pasado y el cold brew, que llevan café pero no pasan por la máquina. No cuentan las infusiones, el matcha (aunque se llame «latte»), los chocolates, los jugos ni los batidos.</p>
         <p><strong>Cuánto deja</strong> = lo vendido − lo que cuesta preparar cada taza (la receta de la cafetería). No descuenta planilla, alquiler ni la máquina: sirve para saber cuánto margen aporta el café, no para decir si la máquina se paga sola.</p>
       </div>
     </div>

@@ -30,9 +30,9 @@ describe("qué es café", () => {
 });
 
 describe("dónde se prepara", () => {
-  it("el frappé va en licuadora, el café pasado y el cold brew al filtro, el resto a la máquina", () => {
-    expect(metodoCafe("FRAPPE CLÁSICO")).toBe("licuadora");
-    expect(metodoCafe("FRAPPE DE CARAMELO")).toBe("licuadora");
+  it("solo el café pasado y el cold brew van al filtro; el resto, frappés incluidos, a la máquina", () => {
+    expect(metodoCafe("FRAPPE CLÁSICO")).toBe("maquina");
+    expect(metodoCafe("FRAPPE DE CARAMELO")).toBe("maquina");
     expect(metodoCafe("CAFÉ PASADO")).toBe("filtrado");
     expect(metodoCafe("CAFÉ PASADO BOTELLA 250 ML")).toBe("filtrado");
     expect(metodoCafe("COLD BREW")).toBe("filtrado");
@@ -66,34 +66,30 @@ describe("resumen del café", () => {
     expect(r.todo.unidades).toBe(330);
     expect(r.todo.pctDeCarta).toBe(31.9);
   });
-  it("la máquina cuenta solo lo que sale de ella (sin el frappé)", () => {
-    expect(r.maquina.ventas).toBe(3060);
-    expect(r.maquina.unidades).toBe(320);
-    expect(r.maquina.pctDeCarta).toBe(30.6);
-    expect(r.maquina.tazasPorDia).toBe(10.3);
-    expect(r.maquina.precioPromedio).toBe(9.56);
+  it("la máquina cuenta todo el café menos el pasado y el cold brew (frappés incluidos)", () => {
+    expect(r.maquina.ventas).toBe(3190);
+    expect(r.maquina.unidades).toBe(330);
+    expect(r.maquina.pctDeCarta).toBe(31.9);
+    expect(r.maquina.tazasPorDia).toBe(10.6);
+    expect(r.maquina.precioPromedio).toBe(9.67);
   });
   it("lo que deja la máquina y su cobertura", () => {
     // americano 6×200 + cappuccino 9×100 + iced latte 9.75×20
     expect(r.maquina.deja).toBe(1200 + 900 + 195);
     expect(r.maquina.costo).toBe(400 + 300 + 65);
     expect(r.maquina.margenPct).toBe(75);
-    expect(r.maquina.coberturaPct).toBe(100);
+    expect(r.maquina.coberturaPct).toBe(Math.round((3060 / 3190) * 1000) / 10);
   });
-  it("el frappé va aparte, en licuadora, y sin costo no inventa lo que deja", () => {
-    expect(r.licuadora.ventas).toBe(130);
-    expect(r.licuadora.unidades).toBe(10);
-    expect(r.licuadora.deja).toBeNull();
-    expect(r.licuadora.coberturaPct).toBe(0);
+  it("sin costo no inventa lo que deja, y el filtro queda vacío si no se vendió", () => {
     expect(r.filtrado.ventas).toBe(0);
-    expect(r.todo.coberturaPct).toBe(Math.round((3060 / 3190) * 1000) / 10);
+    expect(r.filtrado.deja).toBeNull();
     expect(r.sinCosto).toEqual([{ nombre: "FRAPPE CLÁSICO", ingresos: 130 }]);
   });
   it("cada taza queda marcada con su método y si es fría o caliente", () => {
     const m = Object.fromEntries(r.productos.map((p) => [p.nombre, [p.metodo, p.tipo]]));
     expect(m["ICED LATTE"]).toEqual(["maquina", "frio"]);
     expect(m["CAPPUCCINO"]).toEqual(["maquina", "caliente"]);
-    expect(m["FRAPPE CLÁSICO"]).toEqual(["licuadora", "frio"]);
+    expect(m["FRAPPE CLÁSICO"]).toEqual(["maquina", "frio"]);
   });
   it("sin cafés vendidos no inventa nada", () => {
     const vacio = resumenCafe({ ...d, productos: [prod("JUGO DE FRESA", "Bebidas frías", 80, 10, 3)] });
