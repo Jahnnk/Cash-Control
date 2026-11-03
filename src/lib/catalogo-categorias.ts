@@ -61,7 +61,7 @@ export type CategoriaCanonica = {
  *   · FINANCIAMIENTO → PRÉSTAMOS Y TARJETAS; UTILIDADES → UTILIDADES A
  *     SOCIOS; PRESTAMO ATELIER → PRÉSTAMOS ENTRE SEDES; VUELTOS Y
  *     DEVOLUCIONES → DEVOLUCIONES.
- *   · CAJA CHICA y LIMPIEZA pasan a fijo; IMPUESTOS sigue variable (el IR
+ *   · LIMPIEZA pasa a fijo (CAJA CHICA pasó a variable el 2-nov-2026: repone insumos, packaging y limpieza); IMPUESTOS sigue variable (el IR
  *     mensual de la MYPE es un % de las ventas).
  *   · OTROS y SS GENERALES desaparecen: eran bolsones. Lo que ninguna
  *     regla reconoce queda POR ACLARAR (fuera del punto de equilibrio).

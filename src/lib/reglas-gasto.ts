@@ -64,8 +64,10 @@ export const CATEGORIAS_GASTO: CategoriaGasto[] = [
   { nombre: "OFICINA Y SISTEMAS", tipo: "Fijo", descripcion: "Administración y software", ejemplos: "Útiles, copias, impresiones, papel contómetro, sellos, Claude, Dropbox, Canva" },
   { nombre: "PERSONAL", tipo: "Fijo", descripcion: "Bienestar del equipo (no sueldos)", ejemplos: "Uniformes, mandiles, almuerzos, capacitaciones, regalos, botiquín, convocatorias" },
   { nombre: "MENAJE Y UTENSILIOS", tipo: "Fijo", descripcion: "Lo que se usa y se repone en cocina y salón", ejemplos: "Vajilla, vasos de vidrio, cubiertos, tápers, moldes, ollas, tablas, domos" },
-  { nombre: "CAJA CHICA", tipo: "Fijo", descripcion: "Reposición de caja chica cuando no se detalla qué se compró", ejemplos: "Reposición caja chica #12, exceso de caja chica" },
   // ─── VARIABLES: suben y bajan con la venta ───
+  // Jahnn (2-nov-2026): la caja chica repone compras de los administradores (insumos, packaging y limpieza, sobre todo)
+  // y no se detalló qué se compró → variable, para que Fijo/Variable no bailen según cómo la anotó cada mes.
+  { nombre: "CAJA CHICA", tipo: "Variable", descripcion: "Reposición de caja chica cuando no se detalla qué se compró (insumos, packaging y limpieza, sobre todo)", ejemplos: "Reposición caja chica #12, exceso de caja chica" },
   { nombre: "INSUMOS", tipo: "Variable", descripcion: "Lo que se transforma o se vende: comida y bebida", ejemplos: "Frutas, verduras, pollo, carnes, lácteos, huevos, harina, café, infusiones, hielo, agua para preparar" },
   { nombre: "PRODUCTOS ATELIER", tipo: "Variable", descripcion: "Lo que las cafeterías le compran a Atelier", ejemplos: "Facturas del 01-03 junio, tickets del 25-26 agosto (Productos Saludables Yayis)" },
   { nombre: "PACKAGING", tipo: "Variable", descripcion: "Empaques que salen con el producto", ejemplos: "Bolsas, cajas, stickers, etiquetas, papel manteca, sorbetes, vasos descartables" },

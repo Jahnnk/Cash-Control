@@ -23,7 +23,7 @@
  *     todos los meses", confirmado por Jahnn.
  *   · SS GENERALES, VAJILLA, DECORACIÓN, CONSULTORÍA, AUSPICIOS, OTROS e
  *     IMPUESTOS quedan EXCLUIDOS: compras esporádicas o no operativas.
- *   · LIMPIEZA, CAJA CHICA y SS BANCARIOS son FIJOS.
+ *   · LIMPIEZA y SS BANCARIOS son FIJOS (CAJA CHICA pasó a variable el 2-nov-2026).
  *
  * La comparación de textos ignora tildes, mayúsculas y espacios de más
  * ("DECORACIÒN" = "DECORACIÓN"): un acento distinto no debe dejar un gasto
