@@ -15,6 +15,7 @@
 import { useMemo, useState, useTransition } from "react";
 import { ListChecks, Copy, Loader2, Check, HelpCircle, Scissors, ChevronDown, ChevronUp, Undo2 } from "lucide-react";
 import { SeccionDesplegable } from "@/components/productos/ui";
+import { BotonRevisionKelly } from "@/components/boton-revision-kelly";
 import { useToast } from "@/components/toast-provider";
 import { formatCurrency } from "@/lib/utils";
 import {
@@ -517,6 +518,7 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
         <p className="text-xs text-gray-500 mt-1">
           Gastos que el sistema no puede clasificar solo. Tu decisión se aplica ya; si enseñas la regla, vale también para los que lleguen.
         </p>
+        <BotonRevisionKelly className="mt-2 inline-block" />
       </div>
 
       <div className="flex flex-wrap gap-2 text-xs">
