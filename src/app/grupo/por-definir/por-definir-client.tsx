@@ -26,8 +26,12 @@ import {
 import type { TipoPE } from "@/lib/pe-kelly";
 import type { GrupoCategoria } from "@/lib/catalogo-categorias";
 import { coincideRegla, textoSugeridoParaRegla } from "@/lib/texto-regla";
+import { mesDeRevision } from "@/lib/revision-clasificacion";
+import { monthLabel } from "@/lib/utils";
 import { CATEGORIAS_GASTO, POR_ACLARAR, tipoDeCategoria } from "@/lib/reglas-gasto";
 import { NOMBRE_FUENTE, type Opinion } from "@/lib/clasificador-gasto";
+
+const SIN_MES = "sin-mes";
 
 const MOTIVO: Record<string, string> = {
   difiere: "El Excel y el sistema lo clasifican distinto",
@@ -507,6 +511,12 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
   }
 
   const pendientes = useMemo(() => data.pendientes.filter((i) => sede === null || i.businessId === sede), [data, sede]);
+  // Por mes, del más reciente al más antiguo (5-nov-2026): lo que falta decidir es el mes cerrado más reciente.
+  const porMes = useMemo(() => {
+    const m = new Map<string, ItemPorDefinir[]>();
+    for (const i of pendientes) { const k = mesDeRevision(i.datos) ?? SIN_MES; (m.get(k) ?? m.set(k, []).get(k)!).push(i); }
+    return [...m].sort((a, b) => (a[0] === SIN_MES ? 1 : b[0] === SIN_MES ? -1 : b[0].localeCompare(a[0])));
+  }, [pendientes]);
   const cuenta = (id: number) => data.pendientes.filter((i) => i.businessId === id).length;
 
   return (
@@ -530,15 +540,32 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
         ))}
       </div>
 
-      <section className="space-y-3">
-        {pendientes.length === 0 ? (
-          <div className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-emerald-700">Nada por definir. 👏</div>
-        ) : pendientes.map((i) => i.alcance === "categoria"
-          ? <TarjetaCategoria key={i.id} item={i} categorias={data.categorias[i.businessId] ?? []} onHecho={recargar} />
-          : i.motivo === "conflicto"
-          ? <TarjetaConflicto key={i.id} item={i} onHecho={recargar} />
-          : <TarjetaGasto key={i.id} item={i} categorias={data.categorias[i.businessId] ?? []} conListaKelly={data.sedesConListaKelly.includes(i.businessId)} onHecho={recargar} />)}
-      </section>
+      {pendientes.length === 0 ? (
+        <section className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-emerald-700">Nada por definir. 👏</section>
+      ) : porMes.map(([mes, items], k) => {
+        const lista = (
+          <div className="space-y-3">
+            {items.map((i) => i.alcance === "categoria"
+              ? <TarjetaCategoria key={i.id} item={i} categorias={data.categorias[i.businessId] ?? []} onHecho={recargar} />
+              : i.motivo === "conflicto"
+              ? <TarjetaConflicto key={i.id} item={i} onHecho={recargar} />
+              : <TarjetaGasto key={i.id} item={i} categorias={data.categorias[i.businessId] ?? []} conListaKelly={data.sedesConListaKelly.includes(i.businessId)} onHecho={recargar} />)}
+          </div>
+        );
+        const titulo = mes === SIN_MES ? "Sin mes claro" : monthLabel(mes);
+        // El mes más reciente va abierto (es lo que falta decidir); los anteriores, plegados con su resumen.
+        return k === 0 ? (
+          <section key={mes} className="space-y-3">
+            <h2 className="text-sm font-semibold text-gray-900">{titulo} <span className="font-normal text-gray-500">· {items.length} por definir</span></h2>
+            {lista}
+          </section>
+        ) : (
+          <SeccionDesplegable key={mes} titulo={titulo}
+            resumen={<p className="text-xs text-gray-600">{items.length} por definir</p>}>
+            {lista}
+          </SeccionDesplegable>
+        );
+      })}
 
       {/* Plegadas con su resumen (UX, 8-oct-2026): la lista para el Excel es larga y se usa al
           pasársela a quien lleva el Excel, no cada vez que se entra. */}

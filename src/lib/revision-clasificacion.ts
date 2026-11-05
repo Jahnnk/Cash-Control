@@ -163,6 +163,8 @@ export function detectarRevisiones(input: {
         tipoSistema,
         grupoSistema: grupoDelSistema(cat),
         filas: p.filas.length,
+        /** Último mes en que aparece el grupo (yyyy-mm): la bandeja lo ordena por mes (5-nov-2026). */
+        mes: p.filas.reduce((m, f) => (f.date > m ? f.date : m), "").slice(0, 7),
         monto: r2(p.filas.reduce((t, f) => t + f.amount, 0)),
         ejemplos,
         otrosGruposEnCategoria: otros,
@@ -267,4 +269,13 @@ export function lineaParaKelly(item: {
     return `• ${gasto}: moverlo del grupo "${d.grupo}" a uno de tipo ${dec.tipoPE}${dec.categoriaDestino ? ` (${dec.categoriaDestino})` : ""}.`;
   }
   return `• ${gasto}: está bien donde está.`;
+}
+
+/** Mes (yyyy-mm) al que pertenece una pregunta de la bandeja: el del gasto, o el último del grupo. null = no se sabe. */
+export function mesDeRevision(datos: Record<string, unknown>): string | null {
+  const d = datos as { fecha?: unknown; mes?: unknown; ejemplos?: { fecha?: string }[] };
+  if (typeof d.fecha === "string" && d.fecha.length >= 7) return d.fecha.slice(0, 7);
+  if (typeof d.mes === "string" && /^\d{4}-\d{2}$/.test(d.mes)) return d.mes;
+  const f = (d.ejemplos ?? []).map((e) => e.fecha ?? "").filter(Boolean).sort().pop();
+  return f ? f.slice(0, 7) : null;
 }
