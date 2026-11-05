@@ -11,6 +11,8 @@ import { fijosDelPlanAprobado } from "@/lib/fijos-plan-sql";
 import { GrupoDashboardClient } from "./grupo-dashboard-client";
 
 export const dynamic = "force-dynamic";
+// El import de varios meses del Excel tarda más que el límite por defecto de Vercel.
+export const maxDuration = 300;
 
 export default async function GrupoDashboardPage({ searchParams }: { searchParams: Promise<{ mes?: string; pestana?: string; sede?: string }> }) {
   // ?mes=2026-09 → cómo nos fue ese mes. Sin parámetro: el mes en curso.

@@ -8,6 +8,8 @@ import { ExcelImportButton } from "./excel-import-button";
 import { SeccionDesplegable } from "@/components/productos/ui";
 
 export const dynamic = "force-dynamic";
+// El import de varios meses del Excel tarda más que el límite por defecto de Vercel.
+export const maxDuration = 300;
 
 export default async function ConfiguracionPage({
   params,
