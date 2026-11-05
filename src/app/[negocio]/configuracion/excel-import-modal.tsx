@@ -2,7 +2,7 @@
 
 import { BotonRevisionKelly } from "@/components/boton-revision-kelly";
 import { CuadreDeCarga } from "@/components/cuadre-kelly";
-import { useState, useTransition } from "react";
+import { useEffect, useRef, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { FileSpreadsheet, Upload, X, AlertTriangle, CheckCircle2, Loader2, Shield } from "lucide-react";
 import { formatCurrency, formatDate } from "@/lib/utils";
@@ -57,6 +57,11 @@ export function ExcelImportModal({
   const [selectedControlVtas, setSelectedControlVtas] = useState<string | null>(null);
   const [preview, setPreview] = useState<ImportPreview | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // Si hay un error, subir al inicio de la ventana: el aviso sale arriba y el botón está abajo.
+  const cajaRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (error) cajaRef.current?.scrollTo({ top: 0, behavior: "smooth" });
+  }, [error]);
   const [result, setResult] = useState<Extract<ImportResult, { success: true }> | null>(null);
 
   const [aplicarSaldoInicial, setAplicarSaldoInicial] = useState(true);
@@ -263,6 +268,7 @@ export function ExcelImportModal({
   return (
     <div className="fixed inset-0 z-50 bg-black/50 flex items-center justify-center p-4" onClick={handleClose}>
       <div
+        ref={cajaRef}
         className="bg-white rounded-2xl shadow-xl w-full max-w-2xl max-h-[90vh] overflow-y-auto"
         onClick={(e) => e.stopPropagation()}
       >
