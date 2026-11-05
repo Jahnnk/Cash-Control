@@ -49,7 +49,7 @@ export function ExcelImportModal({
   const [pending, startTransition] = useTransition();
 
   const [step, setStep] = useState<Step>("select");
-  const [fileBase64, setFileBase64] = useState<string | null>(null);
+  const [fileBase64, setFileBase64] = useState<File | null>(null);
   const [fileName, setFileName] = useState<string>("");
   const [ingGtosCandidates, setIngGtosCandidates] = useState<string[]>([]);
   const [controlVtasCandidates, setControlVtasCandidates] = useState<string[]>([]);
@@ -124,14 +124,13 @@ export function ExcelImportModal({
       setError("El archivo debe ser .xlsx");
       return;
     }
-    const buf = await file.arrayBuffer();
-    const b64 = Buffer.from(buf).toString("base64");
-    setFileBase64(b64);
+    // Se manda el archivo tal cual (no como texto): ver ArchivoExcel en excel-import.ts.
+    setFileBase64(file);
     setFileName(file.name);
 
     startTransition(async () => {
       try {
-        const r = await listExcelSheets(b64);
+        const r = await listExcelSheets(file);
         if (r.candidatesIngGtos.length === 0 && r.candidatesControlVtas.length === 0) {
           setError("El archivo no contiene pestañas 'Ing&Gtos' ni 'Control de VTAS'. ¿Es el Excel con el formato correcto?");
           return;
@@ -211,7 +210,7 @@ export function ExcelImportModal({
     });
   }
 
-  async function loadPreview(b64: string, fName: string, ingGtos: string | null, controlVtas: string | null) {
+  async function loadPreview(b64: File, fName: string, ingGtos: string | null, controlVtas: string | null) {
     setError(null);
     try {
       const p = await previewExcelImport(b64, fName, ingGtos, controlVtas, sedeCentral);

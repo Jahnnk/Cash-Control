@@ -402,14 +402,24 @@ async function importBusinessId(sedeCentral?: string): Promise<number | null> {
 // Public actions
 // ─────────────────────────────────────────────────────────────────
 
+/**
+ * El Excel viaja como archivo (Blob), no como texto base64: Next rechaza argumentos de
+ * acción con más de 1,000,000 de caracteres en total ("Maximum array nesting exceeded"),
+ * y un Excel de ~750 KB en base64 ya lo pasa. El texto base64 sigue aceptándose (tests).
+ */
+export type ArchivoExcel = string | Blob;
+async function aBuffer(a: ArchivoExcel): Promise<Buffer> {
+  return typeof a === "string" ? Buffer.from(a, "base64") : Buffer.from(await a.arrayBuffer());
+}
+
 export async function listExcelSheets(
-  fileBase64: string
+  fileBase64: ArchivoExcel
 ): Promise<{
   sheets: string[];
   candidatesIngGtos: string[];
   candidatesControlVtas: string[];
 }> {
-  const buf = Buffer.from(fileBase64, "base64");
+  const buf = await aBuffer(fileBase64);
   const all = (await import("@/lib/excel-importer")).listAllSheets(buf);
   const candidatesIngGtos = listSheets(buf);
   const candidatesControlVtas = listControlVtasSheets(buf);
@@ -417,7 +427,7 @@ export async function listExcelSheets(
 }
 
 export async function previewExcelImport(
-  fileBase64: string,
+  fileBase64: ArchivoExcel,
   fileName: string,
   ingGtosSheet?: string | null,
   controlVtasSheet?: string | null,
@@ -431,7 +441,7 @@ export async function previewExcelImport(
   if (!IMPORT_ALLOWED_BIDS.includes(bId)) {
     return { error: IMPORT_NOT_ALLOWED_MSG };
   }
-  const buf = Buffer.from(fileBase64, "base64");
+  const buf = await aBuffer(fileBase64);
 
   const parseResult = ingGtosSheet ? parseExcelFile(buf, ingGtosSheet) : null;
   const controlVtasResult = controlVtasSheet ? parseControlVtas(buf, controlVtasSheet) : null;
@@ -649,7 +659,7 @@ export async function previewExcelImport(
 }
 
 export async function executeExcelImport(
-  fileBase64: string,
+  fileBase64: ArchivoExcel,
   fileName: string,
   ingGtosSheet: string | null,
   controlVtasSheet: string | null,
@@ -668,7 +678,7 @@ export async function executeExcelImport(
     return { success: false, error: "Debes seleccionar al menos una pestaña a importar" };
   }
 
-  const buf = Buffer.from(fileBase64, "base64");
+  const buf = await aBuffer(fileBase64);
   const parseResult = ingGtosSheet ? parseExcelFile(buf, ingGtosSheet) : null;
   const controlVtasResult = controlVtasSheet ? parseControlVtas(buf, controlVtasSheet) : null;
 
@@ -1258,7 +1268,7 @@ export type MultiMonthResult = {
  * borra sin que el plan lo indique explícitamente (action="import").
  */
 export async function executeMultiMonthImport(
-  fileBase64: string,
+  fileBase64: ArchivoExcel,
   fileName: string,
   plan: MonthImportPlanItem[],
   options: ImportOptions,
