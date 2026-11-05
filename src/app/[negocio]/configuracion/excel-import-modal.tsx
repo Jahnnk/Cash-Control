@@ -1,5 +1,6 @@
 "use client";
 
+import { BotonRevisionKelly } from "@/components/boton-revision-kelly";
 import { CuadreDeCarga } from "@/components/cuadre-kelly";
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
@@ -1133,6 +1134,7 @@ function AvisoPorDefinir({ pendientes, nuevas }: { pendientes?: number | null; n
         {nuevas ? <> ({nuevas} nueva(s) con este Excel)</> : null}: grupos que el Excel y el sistema clasifican distinto
         o gastos que no se entienden.{" "}
         <a href="/grupo/por-definir" className="font-semibold underline">Revisar ahora</a>
+        <div className="mt-2"><BotonRevisionKelly /></div>
       </div>
     </div>
   );
