@@ -517,6 +517,11 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
     for (const i of pendientes) { const k = mesDeRevision(i.datos) ?? SIN_MES; (m.get(k) ?? m.set(k, []).get(k)!).push(i); }
     return [...m].sort((a, b) => (a[0] === SIN_MES ? 1 : b[0] === SIN_MES ? -1 : b[0].localeCompare(a[0])));
   }, [pendientes]);
+  const ultimoCerrado = useMemo(() => {
+    const [y, m] = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7).split("-").map(Number);
+    const d = new Date(Date.UTC(y, m - 2, 1));
+    return `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, "0")}`;
+  }, []);
   const cuenta = (id: number) => data.pendientes.filter((i) => i.businessId === id).length;
 
   return (
@@ -542,7 +547,7 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
 
       {pendientes.length === 0 ? (
         <section className="bg-white rounded-xl border border-gray-200 p-6 text-sm text-emerald-700">Nada por definir. 👏</section>
-      ) : porMes.map(([mes, items], k) => {
+      ) : porMes.map(([mes, items]) => {
         const lista = (
           <div className="space-y-3">
             {items.map((i) => i.alcance === "categoria"
@@ -553,8 +558,8 @@ export function PorDefinirClient({ inicial }: { inicial: BandejaPorDefinir }) {
           </div>
         );
         const titulo = mes === SIN_MES ? "Sin mes claro" : monthLabel(mes);
-        // El mes más reciente va abierto (es lo que falta decidir); los anteriores, plegados con su resumen.
-        return k === 0 ? (
+        // Va abierto el último mes cerrado y lo que sigue (es lo que falta decidir); los anteriores, plegados con su resumen.
+        return mes !== SIN_MES && mes >= ultimoCerrado ? (
           <section key={mes} className="space-y-3">
             <h2 className="text-sm font-semibold text-gray-900">{titulo} <span className="font-normal text-gray-500">· {items.length} por definir</span></h2>
             {lista}
