@@ -9,6 +9,7 @@ import { useState } from "react";
 import { Download, Loader2 } from "lucide-react";
 import { getPorDefinir } from "@/app/actions/por-definir";
 import { getVerificacionKelly } from "@/app/actions/verificacion-kelly";
+import { mesDeRevision } from "@/lib/revision-clasificacion";
 
 export function BotonRevisionKelly({ className }: { className?: string }) {
   const [cargando, setCargando] = useState(false);
@@ -21,11 +22,12 @@ export function BotonRevisionKelly({ className }: { className?: string }) {
       const [bandeja, ver] = await Promise.all([getPorDefinir(), getVerificacionKelly()]);
       if (!bandeja.ok) throw new Error(bandeja.error);
       if (!ver.ok) throw new Error(ver.error);
-      // Solo el último mes con Excel cargado (el que se acaba de importar): los anteriores ya se revisaron.
+      // Solo el último mes con Excel cargado (el que se acaba de importar).
       const ultimo = ver.items.reduce((m, v) => (v.month > m ? v.month : m), "");
       const { renderRevisionKellyXlsx } = await import("@/lib/revision-kelly-xlsx");
       const { blob, filename } = await renderRevisionKellyXlsx({
-        pendientes: bandeja.data.pendientes,
+        // Solo lo del mes del Excel (los meses anteriores ya se definieron); lo que no tiene mes claro va igual.
+        pendientes: bandeja.data.pendientes.filter((i) => { const m = mesDeRevision(i.datos); return !m || !ultimo || m === ultimo; }),
         paraKelly: bandeja.data.paraKelly,
         verificaciones: ver.items.filter((v) => v.month === ultimo),
         generado: new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }),
