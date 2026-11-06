@@ -14,6 +14,8 @@
  *   C6 Filas con tipo dudoso   · filas «REVISAR TIPO» (lib/revisar-tipo.ts) pendientes.
  *   C7 Coherencia de las cifras· las seis cifras cuadran entre sí (si falla es un error de la APP, no del dato).
  *   C8 Carga vigente           · la carga que manda es la última y cubre el mes.
+ *   C9 Pestaña PE del mes      · la pestaña «PE <MES>» del Excel apunta a las hojas del mes (no a las del mes anterior).
+ *   C10 Parches de cuadre      · filas «CUADRE…» que tapan una diferencia con el banco en vez de explicarla.
  *
  * Estado del mes: «Confiable» si todo está en verde; «Con observaciones» si hay amarillos y ningún rojo;
  * «No confiable» si hay algún rojo.
@@ -24,12 +26,13 @@ import { puntoDeEquilibrio, type CifrasGrupo, type CifrasSede } from "./seis-cif
 import { CONFIG_PROFIT_FIRST, regla33, reglaDeSede, type ConfigProfitFirst, type FilaRegla } from "./regla-33";
 import { esCategoriaDelCatalogo } from "./catalogo-categorias";
 import { POR_ACLARAR } from "./reglas-gasto";
+import type { PeLeido } from "./hoja-pe-excel";
 
 export type Semaforo = "verde" | "amarillo" | "rojo";
 export type EstadoMes = "confiable" | "con_observaciones" | "no_confiable";
 
 export type Control = {
-  id: "C1" | "C2" | "C3" | "C4" | "C5" | "C6" | "C7" | "C8";
+  id: "C1" | "C2" | "C3" | "C4" | "C5" | "C6" | "C7" | "C8" | "C9" | "C10";
   nombre: string;
   estado: Semaforo;
   /** La diferencia en soles (null si el control no mide plata). */
@@ -59,6 +62,8 @@ export type DatosControles = {
   ventasDia: { byte: { date: string; total: number }[]; excel: { date: string; total: number }[] };
   /** La fila TOTAL de la pestaña CONTROL EFECTIVO del Excel vigente (null = no la trae). */
   efectivo: { ventas: number; depositos: number } | null;
+  /** La pestaña PE del mes según el Excel vigente (notas del lote); null = carga anterior al 6-nov-2026. */
+  pe?: PeLeido | null;
   config?: ConfigProfitFirst;
 };
 
@@ -281,12 +286,58 @@ export function c8CargaVigente(d: DatosControles): Control {
   return { id: "C8", nombre, estado: "verde", diferencia: null, detalle: `Manda la última carga: ${ultimo.archivo} (${ddmm(ultimo.cargadoEl)}), con movimientos hasta el ${corteExcel ? ddmm(corteExcel) : "—"}.`, queHacer: "" };
 }
 
-/** Los ocho controles de una sede en un mes, con su estado. */
+// ─────────────────────────── C9 ───────────────────────────
+/** Desde cuándo se guarda la pestaña PE del libro: los meses anteriores no se avisan por no tenerla. */
+export const C9_DESDE_MES = "2026-10";
+
+export function c9PestanaPe(d: DatosControles): Control {
+  const nombre = "Pestaña PE del mes";
+  const pe = d.pe ?? null;
+  if (d.lotes.length === 0) return { id: "C9", nombre, estado: "verde", diferencia: null, detalle: "No hay Excel del mes que revisar.", queHacer: "" };
+  if (!pe) {
+    const viejo = d.datos.mes < C9_DESDE_MES;
+    return {
+      id: "C9", nombre, estado: viejo ? "verde" : "amarillo", diferencia: null,
+      detalle: viejo ? "Carga anterior a este control: no se revisó la pestaña PE." : "Esta carga no guardó la pestaña PE del mes (es anterior al 6-nov-2026): no se pudo comprobar.",
+      queHacer: viejo ? "" : "Volver a subir el Excel del mes.",
+    };
+  }
+  const dondeApunta = pe.apunta ? `«${pe.apunta}»` : "una hoja que no se reconoce";
+  switch (pe.estado) {
+    case "ok": return { id: "C9", nombre, estado: "verde", diferencia: null, detalle: "La pestaña PE del mes usa las hojas del mes.", queHacer: "" };
+    case "sin_pestana": return { id: "C9", nombre, estado: "amarillo", diferencia: null, detalle: "El Excel no trae la pestaña PE del mes.", queHacer: "Copiar la pestaña PE del mes anterior, ponerle el nombre del mes y cambiar sus 2 celdas amarillas." };
+    case "otra_hoja": return { id: "C9", nombre, estado: "amarillo", diferencia: null, detalle: `La pestaña PE del mes sigue apuntando a ${dondeApunta}: su punto de equilibrio es el de otro mes.`, queHacer: "Cambiar las 2 celdas amarillas de la pestaña PE (hoja de gastos y hoja de ventas del mes)." };
+    case "rota": return { id: "C9", nombre, estado: "amarillo", diferencia: null, detalle: `La pestaña PE del mes apunta a ${dondeApunta}, y esa hoja no existe: su punto de equilibrio sale vacío.`, queHacer: "Escribir en las 2 celdas amarillas de la pestaña PE los nombres exactos de las hojas del mes." };
+  }
+}
+
+// ─────────────────────────── C10 ───────────────────────────
+/** Una fila que se llama «CUADRE…» (CUADRE CTAS, CUADRE DE CAJA): ajusta un número para que cuadre, no es un movimiento. */
+const esParcheDeCuadre = (texto: string | null) => /\bcuadre\b/i.test(texto ?? "");
+
+export function c10Parches(d: DatosControles): Control {
+  const nombre = "Parches de cuadre";
+  const ing = d.datos.ingresos.filter((i) => esParcheDeCuadre(i.nota));
+  const gas = d.datos.gastos.filter((g) => esParcheDeCuadre(g.concepto));
+  const monto = r2(suma(ing, (i) => i.monto) + suma(gas, (g) => g.monto));
+  if (ing.length + gas.length === 0) return { id: "C10", nombre, estado: "verde", diferencia: 0, detalle: "Ninguna fila tapa una diferencia con un «cuadre».", queHacer: "" };
+  return {
+    id: "C10", nombre, estado: "amarillo", diferencia: monto,
+    detalle: `${ing.length + gas.length} fila${ing.length + gas.length === 1 ? "" : "s"} de «cuadre» por ${soles(monto)}: sirven para que el banco cuadre, pero no son plata de la operación.`,
+    queHacer: "Buscar el movimiento real que falta o sobra en el Excel y anotarlo con su nombre; quitar el «cuadre».",
+    filas: [
+      ...ing.map((i) => `${ddmm(i.fecha)} · ingreso · ${i.nota ?? ""} · ${soles(i.monto)}`),
+      ...gas.map((g) => `${ddmm(g.fecha)} · gasto · ${g.concepto ?? ""} · ${soles(g.monto)}`),
+    ],
+  };
+}
+
+/** Los controles de una sede en un mes, con su estado. */
 export function controlesDeSede(d: DatosControles): ControlesMes & { cifras: CifrasSede } {
   const cifras = cifrasDelMes(d.datos);
   const controles = [
     c1Movimientos(d), c2Ventas(d, cifras.corte), c3Clasificacion(d), c4Banco(d), c5Caja(d), c6TipoDudoso(d),
-    c7Coherencia(cifras, d.config), c8CargaVigente(d),
+    c7Coherencia(cifras, d.config), c8CargaVigente(d), c9PestanaPe(d), c10Parches(d),
   ];
   return { businessId: d.datos.businessId, sede: d.datos.sede, mes: d.datos.mes, estado: estadoDe(controles), controles, cifras };
 }

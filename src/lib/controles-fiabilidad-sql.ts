@@ -10,6 +10,7 @@ import { leerFuentesVenta } from "./kpis/ventas-loader";
 import { leerConfigProfitFirst } from "./profit-first-config-sql";
 import { bloquesDeNotas } from "./bloques-pie-excel";
 import { controlEfectivoDeNotas } from "./control-efectivo-parser";
+import { peDeNotas } from "./hoja-pe-excel";
 import { leerDatosMesSede, hoyLima } from "./seis-cifras-sql";
 import { cifrasDelGrupo } from "./seis-cifras";
 import { c7Grupo, controlesDeSede, controlesDelGrupo, type ControlesMes, type DatosControles, type LoteMes } from "./controles-fiabilidad";
@@ -47,6 +48,7 @@ export async function leerDatosControles(sql: SqlTag, bId: number, mes: string, 
     saldosDelMes: saldosMes,
     ventasDia: { byte: fuentes.byte, excel: fuentes.kelly },
     efectivo: vigente ? controlEfectivoDeNotas(vigente.notes) : null,
+    pe: vigente ? peDeNotas(vigente.notes) : null,
     config: cfg.config,
   };
 }
