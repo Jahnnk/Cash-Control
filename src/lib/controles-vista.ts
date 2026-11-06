@@ -29,6 +29,8 @@ export function quePasa(c: Control): string {
     case "C6": return "Fila mal anotada";
     case "C7": return "Error de cálculo de la app";
     case "C8": return "Falta Excel del mes";
+    case "C9": return "PE apunta a otro mes";
+    case "C10": return "Parche de cuadre";
   }
 }
 

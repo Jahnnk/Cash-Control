@@ -19,6 +19,7 @@ import { db } from "@/db";
 import { sql } from "drizzle-orm";
 import { neon } from "@neondatabase/serverless";
 import { controlesDelMes, guardarControles } from "@/lib/controles-fiabilidad-sql";
+import { peANotas, peDelLibro } from "@/lib/hoja-pe-excel";
 import { controlEfectivoANotas, hojaControlEfectivoDelMes, parseControlEfectivo } from "@/lib/control-efectivo-parser";
 import { revalidatePath } from "next/cache";
 import { activeBusinessId } from "@/lib/active-business";
@@ -807,7 +808,9 @@ export async function executeExcelImport(
   } catch (err) {
     console.error("[executeExcelImport] CONTROL EFECTIVO no se pudo leer (la carga sigue):", err);
   }
-  const notasFoto = [...(omitidosEgresos > 0 ? [`omitidos_egresos=${omitidosEgresos}`] : []), ...notasPie, ...notasEfectivo];
+  // La pestaña «PE <MES>»: ¿apunta a las hojas del mes? (control C9)
+  const notasPe = mesDelImport ? peANotas(peDelLibro(buf, mesDelImport)) : [];
+  const notasFoto = [...(omitidosEgresos > 0 ? [`omitidos_egresos=${omitidosEgresos}`] : []), ...notasPie, ...notasEfectivo, ...notasPe];
   const batchRes = await db.execute(sql`
     INSERT INTO import_batches (
       business_id, file_name, sheet_name, date_range_start, date_range_end,
