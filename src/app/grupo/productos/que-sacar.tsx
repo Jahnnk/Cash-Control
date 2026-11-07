@@ -147,6 +147,18 @@ function Ficha({ c, puesto }: { c: Candidato; puesto?: number }) {
         Vende <b className="tabular-nums text-gray-700">{porSemana}</b> por semana (las dos sedes)
         {c.impactoMes.ganancia !== null && <> · deja <b className="tabular-nums text-gray-700">{soles(c.impactoMes.ganancia)}</b> de ganancia al mes</>}
       </p>
+      {c.lectura?.tipo === "sacar" && c.compras.length > 0 && (
+        <ul className="mt-1.5 space-y-0.5">
+          {c.compras.map((x) => (
+            <li key={x.insumo} className="text-[11px] text-gray-600">
+              <span className="text-gray-400">Compra · </span>
+              {x.otros.length === 0
+                ? <>Dejas de comprar <b className="text-gray-800">{x.insumo}</b>.</>
+                : <>Seguirías comprando <b className="text-gray-800">{x.insumo}</b> para {x.otros.length === 6 ? "6 o más" : x.otros.length} producto{x.otros.length === 1 ? "" : "s"} más ({x.otros.slice(0, 3).join(", ")}{x.otros.length > 3 ? "…" : ""}).</>}
+            </li>
+          ))}
+        </ul>
+      )}
       <button type="button" onClick={() => setAbierta(!abierta)} className="mt-1 inline-flex items-center gap-1 text-[11px] text-primary hover:underline" aria-expanded={abierta}>
         <ChevronDown className={`w-3 h-3 transition-transform ${abierta ? "rotate-180" : ""}`} /> Ver evolución y por qué aparece
       </button>
