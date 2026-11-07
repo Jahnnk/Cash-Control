@@ -143,7 +143,7 @@ function Cuerpo({ r, anteriores }: { r: ResumenCafe; anteriores: { mes: string; 
 
       {r.sinCosto.length > 0 && (
         <p className="text-xs text-gray-500 leading-relaxed">
-          <strong className="text-gray-700">{r.sinCosto.length === 1 ? "1 café sin costo" : `${r.sinCosto.length} cafés sin costo`}</strong> ({soles0(r.sinCosto.reduce((t, p) => t + p.ingresos, 0))} vendidos): {r.sinCosto.map((p) => p.nombre).join(", ")}. Cuentan en lo vendido pero no en lo que deja. Se cargan en Grupo → Recetas y costos.
+          <strong className="text-gray-700">{r.sinCosto.length === 1 ? "1 café sin costo" : `${r.sinCosto.length} cafés sin costo`}</strong> ({soles0(r.sinCosto.reduce((t, p) => t + p.ingresos, 0))} vendidos): {r.sinCosto.map((p) => p.nombre).join(", ")}. Cuentan en lo vendido pero no en lo que deja. Se cargan en Productos → Reportes de rotación (Excel de pricing).
         </p>
       )}
 
