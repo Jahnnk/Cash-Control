@@ -132,6 +132,14 @@ export function esfuerzoDe(carta: Pick<CostoCarta, "origen" | "insumos"> | null)
 /** Lo que conviene hacer con el producto mirando cuánto cuesta MANTENERLO, no solo cuánto vende. */
 export type Lectura = { tipo: "sacar" | "mantener" | "revisar"; porQue: string };
 
+/**
+ * Insumos que se echan a perder pronto (fruta, helado, lácteos frescos, proteínas, verduras). Es una lista por palabras
+ * del nombre del insumo: se revisa con Jahnn. «En caja», «en polvo» y «en bolsa» duran: no cuentan.
+ */
+const INSUMO_PERECIBLE = /papaya|pl[aá]tano|fresa|ar[aá]ndano|pi[nñ]a|mango|lim[oó]n|naranja|palta|tomate|lechuga|espinaca|cebolla|zanahoria|manzana|durazno|uva|granada|helado|queso|yogur|crema de leche|pollo|jam[oó]n|pavo|carne|lomo|roast|tocino|huevo|pan |leche fresca/i;
+const DURA = /\b(en caja|en polvo|en bolsa|en lata|en grano|jarabe|zumo)\b/i;
+export const insumoPerecible = (nombre: string) => INSUMO_PERECIBLE.test(nombre) && !DURA.test(nombre);
+
 /** Reventas que se vencen pronto: no entran en «dura mucho» aunque se compren hechas. */
 const PERECIBLE = /humita|caf[eé] pasado|cold brew|jugo|leche|bebida vegetal|huevo|fruta|ensalada|yogur/i;
 
@@ -153,6 +161,10 @@ export function lecturaDe(c: { nombre: string; veredicto: Veredicto; origen: Ori
         ? `Lo compras hecho, dura mucho y el mismo insumo lo usas en tus preparaciones (${compartidos.slice(0, 2).join(", ")}): tenerlo en el exhibidor no te cuesta.`
         : "Lo compras hecho, dura mucho y no te quita tiempo ni insumos: solo ocupa un lugar del exhibidor.",
     };
+  }
+  // Lo que preparas en tienda con insumos que duran y que usas en otros productos (los cafés base): mantenerlo casi no cuesta.
+  if (c.origen === "tienda" && (c.insumos?.length ?? 0) > 0 && c.exclusivos.length === 0 && !c.insumos!.some((i) => insumoPerecible(i.nombre))) {
+    return { tipo: "mantener", porQue: "Lo preparas en tienda, pero todos sus insumos duran y los usas en otros productos: mantenerlo casi no te cuesta, y sacarlo no te ahorra ninguna compra." };
   }
   if (c.origen === "tienda" || c.origen === "atelier") {
     const quien = c.origen === "atelier" ? "Lo produce Atelier" : "Lo preparas en tienda";
@@ -189,6 +201,8 @@ export type Candidato = {
   enCarta: boolean | null;
   /** Sección de la carta que ve el cliente. */
   seccion: string | null;
+  /** Insumos perecibles que usa y qué otros productos de la carta los siguen usando (si no hay otros, sacarlo elimina esa compra). */
+  compras: { insumo: string; otros: string[] }[];
   /** Qué hacer según lo que cuesta mantenerlo (null si solo falta confirmar). */
   lectura: Lectura | null;
   /** Lo había archivado y volvió a venderse después. */
@@ -694,6 +708,7 @@ export function armarCandidatos(
       costoEnlazado: enSedes.find((x) => x.enlace)?.enlace ?? null,
       ...esfuerzoDe(enSedes.find((x) => x.carta)?.carta ?? null),
       lectura: null,
+      compras: [],
       enCarta: enSedes.find((x) => x.carta)?.carta?.enCarta ?? null,
       seccion: enSedes.find((x) => x.carta)?.carta?.seccion ?? null,
       volvioAVenderse: archivo.get(clave) ?? null,
@@ -710,6 +725,12 @@ export function armarCandidatos(
 
   for (const c of candidatos) {
     const carta = porSede.map((x) => x.evaluados.get(c.clave)?.carta).find((x) => !!x) ?? null;
+    const usan = new Map<string, Set<string>>();
+    for (const x of costos) if (x.enCarta !== false) for (const i of x.insumos ?? []) usan.set(i.nombre, (usan.get(i.nombre) ?? new Set()).add(x.nombre));
+    const propios = new Set([c.nombre, ...(carta?.nombre ? [carta.nombre] : [])].map((n) => claveByte(n)));
+    c.compras = (carta?.insumos ?? []).filter((i) => insumoPerecible(i.nombre)).map((i) => ({
+      insumo: i.nombre, otros: [...(usan.get(i.nombre) ?? [])].filter((n) => !propios.has(claveByte(n))).slice(0, 6),
+    }));
     c.lectura = lecturaDe({ nombre: c.nombre, veredicto: c.veredicto, origen: c.origen, exclusivos: c.exclusivos, insumos: carta?.insumos, enCarta: carta?.enCarta });
   }
   const orden: Record<Veredicto, number> = { sacar: 0, preparar: 1, revisar: 2, confirmar: 3, observar: 4 };
@@ -762,6 +783,7 @@ export function armarCandidatos(
   for (const [clave, x] of porClaveCarta) {
     if (x.unidadesSemana <= 0 || x.unidadesSemana >= 3 || archivo.has(clave)) continue;
     const e = esfuerzoDe(x.carta);
+    if (e.origen !== "reventa") continue;
     const l = lecturaDe({ nombre: x.nombre, veredicto: "sacar", origen: e.origen, exclusivos: e.exclusivos, insumos: x.carta?.insumos, enCarta: x.carta?.enCarta });
     if (l?.tipo !== "mantener") continue;
     reventaQueSeMantiene.push({ nombre: x.nombre, porQue: l.porQue, unidadesSemana: Math.round(x.unidadesSemana * 10) / 10, enCarta: x.carta?.enCarta ?? null, seccion: x.carta?.seccion ?? null, gananciaMes: x.ganancia === null ? null : Math.round(x.ganancia), sedes: x.sedes });

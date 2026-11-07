@@ -33,3 +33,28 @@ describe("lecturaDe · hoja Carta", () => {
     expect(l?.porQue).not.toMatch(/exhibidor, no en la carta/);
   });
 });
+
+import { insumoPerecible } from "./candidatos";
+
+describe("café base y perecibles", () => {
+  it("reconoce perecibles y duraderos", () => {
+    expect(insumoPerecible("Papaya")).toBe(true);
+    expect(insumoPerecible("Plátano de Seda")).toBe(true);
+    expect(insumoPerecible("Bola de helado - Vainilla, 25g")).toBe(true);
+    expect(insumoPerecible("Leche Entera en Caja Gloria")).toBe(false);
+    expect(insumoPerecible("Café en Grano")).toBe(false);
+    expect(insumoPerecible("Zumo de Piña")).toBe(false);
+  });
+  it("espresso (insumos que duran y compartidos) se mantiene", () => {
+    const l = lecturaDe({ ...base, nombre: "Café Espresso", veredicto: "sacar", origen: "tienda", insumos: [{ nombre: "Café en Grano", exclusivo: false }, { nombre: "Agua en Bidón", exclusivo: false }] });
+    expect(l?.tipo).toBe("mantener");
+  });
+  it("batido de plátano (insumo perecible exclusivo) se saca", () => {
+    const l = lecturaDe({ ...base, nombre: "Batido de Plátano", veredicto: "sacar", origen: "tienda", exclusivos: ["Plátano de Seda"], insumos: [{ nombre: "Plátano de Seda", exclusivo: true }] });
+    expect(l?.tipo).toBe("sacar");
+  });
+  it("affogato (helado perecible) se saca aunque sea café", () => {
+    const l = lecturaDe({ ...base, nombre: "Affogato", veredicto: "sacar", origen: "tienda", insumos: [{ nombre: "Café en Grano", exclusivo: false }, { nombre: "Bola de helado - Vainilla, 25g", exclusivo: false }] });
+    expect(l?.tipo).toBe("sacar");
+  });
+});
