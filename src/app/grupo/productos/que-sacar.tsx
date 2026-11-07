@@ -77,6 +77,9 @@ function Ficha({ c }: { c: Candidato }) {
         <span className="text-sm font-medium text-gray-900 leading-snug">{c.nombre}</span>
         {o && <Pastilla tono={o.tono}>{o.texto}</Pastilla>}
       </div>
+      {(c.seccion || c.enCarta === false) && (
+        <p className="text-[11px] text-gray-400 mt-0.5">{c.enCarta === false ? "Solo exhibidor · no está en la carta" : `En la carta · ${c.seccion}`}</p>
+      )}
       <p className="text-xs text-gray-600 mt-1 leading-relaxed">{c.lectura!.porQue}</p>
       <p className="text-[11px] text-gray-500 mt-1">
         Vende <b className="tabular-nums text-gray-700">{porSemana}</b> por semana (las dos sedes)

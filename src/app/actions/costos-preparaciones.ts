@@ -91,6 +91,30 @@ export async function guardarCostos(input: {
 async function guardarCarta(carta: CostoCarta[], archivo: string): Promise<void> {
   const ok = carta.filter((c) => c?.ref?.trim() && c.nombre?.trim() && Number.isFinite(c.costo) && c.costo >= 0).slice(0, 5000);
   if (ok.length === 0) return;
+  // Antes de la migración de sección y en-carta (7-nov-2026) se guarda sin esas dos columnas.
+  try {
+    await sql.transaction([
+      sql`DELETE FROM costos_carta`,
+      sql`
+        INSERT INTO costos_carta (ref, nombre, nombre_carta, categoria, costo, precio, archivo, origen, insumos, seccion, en_carta)
+        SELECT t.ref, t.nombre, t.nombre_carta, t.categoria, t.costo, t.precio, ${archivo}, t.origen, t.insumos::jsonb, t.seccion, t.en_carta
+        FROM unnest(
+          ${ok.map((c) => c.ref.trim())}::text[], ${ok.map((c) => c.nombre.trim())}::text[], ${ok.map((c) => c.nombreCarta ?? null)}::text[],
+          ${ok.map((c) => c.categoria ?? null)}::text[], ${ok.map((c) => c.costo)}::numeric[], ${ok.map((c) => (c.precio && Number.isFinite(c.precio) ? c.precio : null))}::numeric[],
+          ${ok.map((c) => (typeof c.origen === "string" ? c.origen.slice(0, 40) : null))}::text[],
+          ${ok.map((c) => (Array.isArray(c.insumos) ? JSON.stringify(c.insumos.slice(0, 60).map((i) => ({ sku: i.sku ?? null, nombre: String(i.nombre).slice(0, 120), exclusivo: !!i.exclusivo }))) : null))}::text[],
+          ${ok.map((c) => (typeof c.seccion === "string" ? c.seccion.slice(0, 60) : null))}::text[],
+          ${ok.map((c) => (typeof c.enCarta === "boolean" ? c.enCarta : null))}::boolean[]
+        ) AS t(ref, nombre, nombre_carta, categoria, costo, precio, origen, insumos, seccion, en_carta)
+        ON CONFLICT (ref) DO NOTHING`,
+    ]);
+  } catch (e) {
+    console.warn("[guardarCarta] sin columnas de sección, se guarda la versión anterior:", e instanceof Error ? e.message : e);
+    await guardarCartaAnterior(ok, archivo);
+  }
+}
+
+async function guardarCartaAnterior(ok: CostoCarta[], archivo: string): Promise<void> {
   try {
     await sql.transaction([
       sql`DELETE FROM costos_carta`,
