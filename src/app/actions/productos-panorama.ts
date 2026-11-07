@@ -694,12 +694,16 @@ export async function getAtelierQueSacar(hastaMes: string): Promise<Res<{ data: 
   try {
     const [yh, mh] = hastaMes.split("-").map(Number), [y0, m0] = PRIMER_MES_PRODUCTOS.split("-").map(Number);
     const lista = mesesAntes(hastaMes, Math.min(12, Math.max(6, (yh - y0) * 12 + (mh - m0) + 1)));
-    const [costos, vinculos] = await Promise.all([
+    const [costos, vinculos, catalogoAtelier] = await Promise.all([
       (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>)
         .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>))
         .catch(() => [] as CostoCarta[]),
       (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
+      leerCatalogo(sql, 1).then((c) => c.efectivo).catch(() => []),
     ]);
+    // Lo que cuesta producir en insumos (no el precio interno al que Atelier se lo vende a la cafetería).
+    const insumosAtelier = new Map(catalogoAtelier.map((i) => [i.reemplaza ?? i.ref, i.costo]));
+    for (const c of costos) c.costoInsumos = c.ref.startsWith("AT-") ? (insumosAtelier.get(c.ref) ?? null) : c.costo;
     const datos = await Promise.all(lista.map(async (month) => {
       const { filas, desde, hasta } = await filasDelMes(ATELIER, month);
       return { month, desde: desde ?? `${month}-01`, hasta: hasta ?? `${month}-01`, filas };
