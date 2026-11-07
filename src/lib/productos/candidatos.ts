@@ -256,7 +256,7 @@ export function plazoDe(desde: string, hoy: string): { desde: string; vence: str
 }
 
 /** Una reventa que dura y vende poco, para «Mantener» aunque el motor no la juzgue (producto nuevo, sin ventas recientes…). */
-export type ReventaQueSeMantiene = { nombre: string; porQue: string; unidadesSemana: number; enCarta: boolean | null; seccion: string | null; gananciaMes: number | null };
+export type ReventaQueSeMantiene = { nombre: string; porQue: string; unidadesSemana: number; enCarta: boolean | null; seccion: string | null; gananciaMes: number | null; sedes: { sede: string; businessId: number; porMes: { month: string; completo: boolean; unidadesDia: number }[] }[] };
 
 export type ResultadoCandidatos = {
   candidatos: Candidato[];
@@ -747,11 +747,12 @@ export function armarCandidatos(
   // sede, o dejó de venderse en otra (las bolsitas de infusión, nov-2026). Poco = menos de 3 unidades por semana entre las sedes.
   const yaEnLista = new Set(candidatos.map((c) => c.clave));
   const reventaQueSeMantiene: ReventaQueSeMantiene[] = [];
-  const porClaveCarta = new Map<string, { nombre: string; carta: CostoCarta | null; unidadesSemana: number; ganancia: number | null }>();
+  const porClaveCarta = new Map<string, { nombre: string; carta: CostoCarta | null; unidadesSemana: number; ganancia: number | null; sedes: ReventaQueSeMantiene["sedes"] }>();
   for (const { evaluados } of porSede) {
     for (const [clave, e] of evaluados) {
       if (e.estado === "acompanamiento" || yaEnLista.has(clave)) continue;
-      const x = porClaveCarta.get(clave) ?? { nombre: e.nombre, carta: e.carta, unidadesSemana: 0, ganancia: 0 };
+      const x = porClaveCarta.get(clave) ?? { nombre: e.nombre, carta: e.carta, unidadesSemana: 0, ganancia: 0, sedes: [] };
+      x.sedes.push({ sede: e.sede, businessId: e.businessId, porMes: e.porMes.map((m) => ({ month: m.month, completo: m.completo, unidadesDia: m.unidadesDia })) });
       x.unidadesSemana += e.unidadesSemana;
       x.ganancia = x.ganancia !== null && e.gananciaDia !== null ? x.ganancia + e.gananciaDia * 30 : null;
       x.carta = x.carta ?? e.carta;
@@ -763,7 +764,7 @@ export function armarCandidatos(
     const e = esfuerzoDe(x.carta);
     const l = lecturaDe({ nombre: x.nombre, veredicto: "sacar", origen: e.origen, exclusivos: e.exclusivos, insumos: x.carta?.insumos, enCarta: x.carta?.enCarta });
     if (l?.tipo !== "mantener") continue;
-    reventaQueSeMantiene.push({ nombre: x.nombre, porQue: l.porQue, unidadesSemana: Math.round(x.unidadesSemana * 10) / 10, enCarta: x.carta?.enCarta ?? null, seccion: x.carta?.seccion ?? null, gananciaMes: x.ganancia === null ? null : Math.round(x.ganancia) });
+    reventaQueSeMantiene.push({ nombre: x.nombre, porQue: l.porQue, unidadesSemana: Math.round(x.unidadesSemana * 10) / 10, enCarta: x.carta?.enCarta ?? null, seccion: x.carta?.seccion ?? null, gananciaMes: x.ganancia === null ? null : Math.round(x.ganancia), sedes: x.sedes });
   }
   reventaQueSeMantiene.sort((a, b) => a.unidadesSemana - b.unidadesSemana);
   return {
