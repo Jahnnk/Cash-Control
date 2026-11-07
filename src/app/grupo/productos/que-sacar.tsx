@@ -79,7 +79,7 @@ function Ficha({ c }: { c: Candidato }) {
         {o && <Pastilla tono={o.tono}>{o.texto}</Pastilla>}
       </div>
       {(c.seccion || c.enCarta === false) && (
-        <p className="text-[11px] text-gray-400 mt-0.5">{c.enCarta === false ? "Solo exhibidor · no está en la carta" : `En la carta · ${c.seccion}`}</p>
+        <p className="text-[11px] text-gray-400 mt-0.5">{c.enCarta === false ? (c.origen === "reventa" ? "Solo exhibidor · no está en la carta" : "Fuera de la carta digital") : `En la carta · ${c.seccion}`}</p>
       )}
       <p className="text-xs text-gray-600 mt-1 leading-relaxed">{c.lectura!.porQue}</p>
       <p className="text-[11px] text-gray-500 mt-1">
