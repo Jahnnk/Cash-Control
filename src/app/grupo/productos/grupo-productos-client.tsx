@@ -3,7 +3,7 @@
 import { useEffect, useState } from "react";
 import Link from "next/link";
 import { ControlCargasProductos } from "./control-cargas";
-import { ArrowRight, Upload, Loader2, AlertTriangle } from "lucide-react";
+import { ArrowRight, Upload, Loader2, AlertTriangle, Calculator, X } from "lucide-react";
 import { monthLabel } from "@/lib/utils";
 import {
   getPanoramaProductosGrupo, getPanoramaCafeterias, getInformeTrimestral, getCruceFuentes, getCoberturaRotacion,
@@ -84,6 +84,7 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
   const [version, setVersion] = useState(0);
   const [importar, setImportar] = useState<{ periodos: PeriodoCargado[] } | null>(null);
   const [abriendo, setAbriendo] = useState(false);
+  const [pricing, setPricing] = useState(false);
 
   async function abrirImportador() {
     setAbriendo(true);
@@ -123,6 +124,15 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
           >
             {abriendo ? <Loader2 className="w-4 h-4 animate-spin" /> : <Upload className="w-4 h-4" />} Subir rotación de Byte
           </button>
+          {sedeFija === null && (
+            <button
+              type="button"
+              onClick={() => setPricing(true)}
+              className="inline-flex items-center justify-center gap-2 px-4 py-2 text-sm font-medium text-primary border border-primary/40 bg-white hover:bg-primary-50/60 rounded-xl whitespace-nowrap"
+            >
+              <Calculator className="w-4 h-4" /> Subir pricing
+            </button>
+          )}
         </div>
       </header>
 
@@ -154,9 +164,22 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
       {pestana === "trimestre" && <PestanaTrimestre key={`t-${version}-${month}-${sede}`} month={month} sede={sede} onSede={sedeFija === null ? setSede : null} onCanal={setCanal} />}
       {pestana === "cargas" && (
         <div className="space-y-5">
-          <PricingAdmin onActualizado={() => setVersion((v) => v + 1)} />
           <CargasByte key={`c-${version}`} onImportado={() => setVersion((v) => v + 1)} />
           <ControlCargasProductos />
+        </div>
+      )}
+
+      {pricing && (
+        <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={() => setPricing(false)}>
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-3xl max-h-[90vh] overflow-y-auto" onClick={(e) => e.stopPropagation()}>
+            <div className="px-6 py-4 border-b border-gray-100 flex items-center justify-between">
+              <h2 className="text-base font-semibold text-gray-900">Excel de pricing</h2>
+              <button onClick={() => setPricing(false)} className="text-gray-400 hover:text-gray-600 p-1 rounded hover:bg-gray-100" aria-label="Cerrar"><X className="w-4 h-4" /></button>
+            </div>
+            <div className="p-6">
+              <PricingAdmin onActualizado={() => { setVersion((v) => v + 1); setPricing(false); }} />
+            </div>
+          </div>
         </div>
       )}
 

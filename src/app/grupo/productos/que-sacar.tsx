@@ -40,7 +40,7 @@ export function QueSacar({ candidatos }: { candidatos: Candidato[] }) {
       {sinOrigen > 0 && (
         <p className="text-xs rounded-lg bg-amber-50 border border-amber-200 text-amber-900 px-3 py-2">
           {sinOrigen === lista.length
-            ? "Todavía no sé de dónde sale cada producto. Sube el Excel de pricing en la pestaña «Reportes de rotación» de Productos y esta lectura se afina sola."
+            ? "Todavía no sé de dónde sale cada producto. Sube el Excel de pricing con el botón «Subir pricing» de Productos y esta lectura se afina sola."
             : `${sinOrigen} producto${sinOrigen === 1 ? "" : "s"} sin origen en el Excel de pricing: ${sinOrigen === 1 ? "queda" : "quedan"} en «Revisar».`}
         </p>
       )}
