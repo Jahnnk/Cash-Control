@@ -58,3 +58,10 @@ describe("café base y perecibles", () => {
     expect(l?.tipo).toBe("sacar");
   });
 });
+
+import { pesoDeMantener } from "./candidatos";
+it("pesa más lo que tiene perecibles cuya compra se elimina", () => {
+  const fruta = { esfuerzo: 3, compras: [{ insumo: "Plátano", otros: [] }] };
+  const cafe = { esfuerzo: 3, compras: [] };
+  expect(pesoDeMantener(fruta)).toBeGreaterThan(pesoDeMantener(cafe));
+});

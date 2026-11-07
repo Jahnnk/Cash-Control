@@ -272,6 +272,10 @@ export function plazoDe(desde: string, hoy: string): { desde: string; vence: str
 /** Una reventa que dura y vende poco, para «Mantener» aunque el motor no la juzgue (producto nuevo, sin ventas recientes…). */
 export type ReventaQueSeMantiene = { nombre: string; porQue: string; unidadesSemana: number; enCarta: boolean | null; seccion: string | null; gananciaMes: number | null; sedes: { sede: string; businessId: number; porMes: { month: string; completo: boolean; unidadesDia: number }[] }[] };
 
+/** Lo que cuesta mantenerlo: el esfuerzo, más cada insumo perecible (y más si sacarlo elimina esa compra por completo). */
+export const pesoDeMantener = (c: Pick<Candidato, "esfuerzo" | "compras">) =>
+  c.esfuerzo + c.compras.length * 0.75 + c.compras.filter((x) => x.otros.length === 0).length * 0.75;
+
 export type ResultadoCandidatos = {
   candidatos: Candidato[];
   /** Reventas de larga vida que venden poco y no están en «Sacar»: se quedan (ver lecturaDe). */
@@ -737,7 +741,7 @@ export function armarCandidatos(
   // En «Sacar de carta», primero lo que más cuesta mantener (pedido de Jahnn, 8-oct-2026): lo que
   // se prepara en tienda con insumos propios antes que una reventa que se va sola con el stock.
   candidatos.sort((a, b) => orden[a.veredicto] - orden[b.veredicto]
-    || (a.veredicto === "sacar" ? b.esfuerzo - a.esfuerzo : 0)
+    || (a.veredicto === "sacar" ? pesoDeMantener(b) - pesoDeMantener(a) : 0)
     || b.puntos - a.puntos);
 
   // Cuánto de lo analizado tiene costo.
