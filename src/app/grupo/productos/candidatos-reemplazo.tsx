@@ -20,7 +20,6 @@ import { UMBRAL_CANDIDATO, UMBRAL_OBSERVAR } from "@/lib/productos/candidatos";
 import { evidenciaDe, TEXTO_TENDENCIA } from "@/lib/productos/tendencia";
 import { GraficoDemanda, type SerieDemanda } from "@/components/productos/grafico-demanda";
 import { MatrizCarta } from "./matriz-carta";
-import { QueSacar } from "./que-sacar";
 import { armarMatriz } from "@/lib/productos/matriz-carta";
 import { Barra, Pastilla, PuntoFamilia, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 import { useToast } from "@/components/toast-provider";
@@ -187,8 +186,6 @@ export function CandidatosReemplazo({ month }: { month: string }) {
         <div className="flex justify-center py-10 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
       ) : (
         <div className="space-y-5">
-          <QueSacar candidatos={data.candidatos} />
-          <hr className="border-gray-200" />
           {/* La vista de toda la carta: dónde está la ganancia y quién la pone en riesgo (5-oct-2026). */}
           <MatrizCarta matriz={data.matriz} cartas={data.cartas} veredictos={veredictos} lanzamiento={lanzamiento} />
           <hr className="border-gray-200" />

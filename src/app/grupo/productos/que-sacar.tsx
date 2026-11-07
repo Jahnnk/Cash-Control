@@ -6,8 +6,9 @@
  * `lecturaDe` (lib/productos/candidatos.ts), con las reglas a la vista abajo.
  */
 
-import { useState } from "react";
-import { ChevronDown } from "lucide-react";
+import { useEffect, useState } from "react";
+import { ChevronDown, Loader2 } from "lucide-react";
+import { getCandidatosReemplazo, type CandidatosReemplazo } from "@/app/actions/productos-panorama";
 import type { Candidato, Lectura } from "@/lib/productos/candidatos";
 import { Pastilla } from "@/components/productos/ui";
 
@@ -90,5 +91,26 @@ function Ficha({ c }: { c: Candidato }) {
       </button>
       {abierta && <p className="text-[11px] text-gray-500 mt-1">{c.razon} {c.cuando}.</p>}
     </li>
+  );
+}
+
+/** La pestaña «Qué sacar» de Productos: carga los candidatos del mes y muestra el apartado. */
+export function QueSacarPestana({ month }: { month: string }) {
+  const [data, setData] = useState<CandidatosReemplazo | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    void getCandidatosReemplazo(month).then((r) => {
+      if (!vivo) return;
+      if (r.ok) { setData(r.data); setError(null); } else setError(r.error);
+    });
+    return () => { vivo = false; };
+  }, [month]);
+  if (error) return <p className="text-sm text-gray-500">{error}</p>;
+  if (!data) return <div className="flex justify-center py-10 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>;
+  return (
+    <section className="bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-6">
+      <QueSacar candidatos={data.candidatos} />
+    </section>
   );
 }

@@ -26,6 +26,7 @@ import { DatosCargados } from "./datos-cargados";
 import { BuscadorProducto } from "./buscador-producto";
 import { ImportarReportesModal } from "./importar-reportes";
 import { PricingAdmin } from "../recetas/pricing-admin";
+import { QueSacarPestana } from "./que-sacar";
 import { VistaMes } from "@/components/productos/vista-mes";
 import { VistaTrimestre } from "@/components/productos/vista-trimestre";
 import { fechaCorta, Segmentado } from "@/components/productos/ui";
@@ -58,7 +59,7 @@ function currentMonth() {
   return new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
 }
 
-type Pestana = "mes" | "trimestre" | "cargas";
+type Pestana = "mes" | "sacar" | "trimestre" | "cargas";
 
 /** Las opciones de la tira: «Fonavi + Centro» (las dos cafeterías juntas) y cada sede. */
 const OPCIONES_SEDE: { id: number; name: string }[] = [
@@ -95,6 +96,8 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
 
   const pestanas: [Pestana, string][] = [["mes", "El mes"], ["trimestre", "Últimos 3 meses"]];
   // Una sola puerta por reporte (24-oct-2026): aquí la mayor y menor rotación; las ventas de Byte, en el Dashboard.
+  // «Qué sacar y qué mantener» (nov-2026): pestaña propia, la segunda.
+  if (sedeFija === null) pestanas.splice(1, 0, ["sacar", "Qué sacar"]);
   if (sedeFija === null) pestanas.push(["cargas", "Reportes de rotación"]);
 
   return (
@@ -161,6 +164,7 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
       </div>
 
       {pestana === "mes" && <PestanaMes key={`m-${version}-${month}`} month={month} sede={sede} onSede={sedeFija === null ? setSede : null} onMes={setMonth} onCanal={setCanal} />}
+      {pestana === "sacar" && <QueSacarPestana key={`q-${version}-${month}`} month={month} />}
       {pestana === "trimestre" && <PestanaTrimestre key={`t-${version}-${month}-${sede}`} month={month} sede={sede} onSede={sedeFija === null ? setSede : null} onCanal={setCanal} />}
       {pestana === "cargas" && (
         <div className="space-y-5">
