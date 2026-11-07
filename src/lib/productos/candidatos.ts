@@ -129,6 +129,41 @@ export function esfuerzoDe(carta: Pick<CostoCarta, "origen" | "insumos"> | null)
   return { origen, exclusivos, esfuerzo: base + Math.min(exclusivos.length, 2) * 0.5 };
 }
 
+/** Lo que conviene hacer con el producto mirando cuánto cuesta MANTENERLO, no solo cuánto vende. */
+export type Lectura = { tipo: "sacar" | "mantener" | "revisar"; porQue: string };
+
+/** Reventas que se vencen pronto: no entran en «dura mucho» aunque se compren hechas. */
+const PERECIBLE = /humita|caf[eé] pasado|cold brew|jugo|leche|bebida vegetal|huevo|fruta|ensalada|yogur/i;
+
+/**
+ * La decisión de Jahnn (nov-2026): lo que producimos (insumos, tiempo, energía, se pierde) se saca si rota poco;
+ * lo que se compra hecho y dura mucho se mantiene en el exhibidor aunque rote poco, sobre todo si el mismo
+ * insumo se usa en nuestras preparaciones (la bolsita de infusión sirve también para la infusión en taza).
+ */
+export function lecturaDe(c: { nombre: string; veredicto: Veredicto; origen: OrigenCarta | null; exclusivos: string[]; insumos?: { nombre: string; exclusivo: boolean }[] | null }): Lectura | null {
+  if (c.veredicto === "confirmar") return null;
+  const flojo = c.veredicto === "sacar" || c.veredicto === "preparar";
+  if (c.origen === "reventa") {
+    if (PERECIBLE.test(c.nombre)) return { tipo: flojo ? "sacar" : "revisar", porQue: "Lo compras hecho, pero se vence pronto: si no rota, se pierde." };
+    if (c.exclusivos.length > 0) return { tipo: "revisar", porQue: `Lo compras hecho, pero tiene insumo propio (${c.exclusivos.slice(0, 2).join(", ")}): mira si vale la pena.` };
+    const compartidos = (c.insumos ?? []).filter((i) => !i.exclusivo).map((i) => i.nombre);
+    return {
+      tipo: "mantener",
+      porQue: compartidos.length > 0
+        ? `Lo compras hecho, dura mucho y el mismo insumo lo usas en tus preparaciones (${compartidos.slice(0, 2).join(", ")}): tenerlo en el exhibidor no te cuesta.`
+        : "Lo compras hecho, dura mucho y no te quita tiempo ni insumos: solo ocupa un lugar del exhibidor.",
+    };
+  }
+  if (c.origen === "tienda" || c.origen === "atelier") {
+    const quien = c.origen === "atelier" ? "Lo produce Atelier" : "Lo preparas en tienda";
+    const extra = c.exclusivos.length > 0 ? `, con ${c.exclusivos.length === 1 ? "un insumo" : `${c.exclusivos.length} insumos`} que solo usa este producto` : "";
+    return flojo
+      ? { tipo: "sacar", porQue: `${quien}${extra}: gasta insumos, tiempo y energía, y se pierde si no se vende.` }
+      : { tipo: "revisar", porQue: `${quien}${extra}. Está flojo en una sede: antes de sacarlo, mira qué pasa ahí.` };
+  }
+  return { tipo: flojo ? "sacar" : "revisar", porQue: "Falta saber de dónde sale (cafetería, Atelier o reventa): sube el Excel de pricing para afinar esta lectura." };
+}
+
 export type Candidato = {
   clave: string;
   nombre: string;
@@ -150,6 +185,8 @@ export type Candidato = {
   exclusivos: string[];
   /** Cuánto cuesta mantenerlo en la carta, de 0 (reventa) a 4 (tienda + insumos propios). */
   esfuerzo: number;
+  /** Qué hacer según lo que cuesta mantenerlo (null si solo falta confirmar). */
+  lectura: Lectura | null;
   /** Lo había archivado y volvió a venderse después. */
   volvioAVenderse: Archivado | null;
   /** Si se saca: venta y ganancia de un mes entre las sedes (ganancia null si falta el costo en alguna). */
@@ -647,6 +684,7 @@ export function armarCandidatos(
       referencia: lider && lider.nombre !== primero.nombre ? { nombre: lider.nombre, gananciaDia: lider.gananciaDia, ventaDia: lider.ventaDia } : null,
       costoEnlazado: enSedes.find((x) => x.enlace)?.enlace ?? null,
       ...esfuerzoDe(enSedes.find((x) => x.carta)?.carta ?? null),
+      lectura: null,
       volvioAVenderse: archivo.get(clave) ?? null,
       impactoMes: {
         venta: Math.round(enSedes.reduce((s, x) => s + x.ventaDia, 0) * 30),
@@ -659,6 +697,10 @@ export function armarCandidatos(
     });
   }
 
+  for (const c of candidatos) {
+    const carta = porSede.map((x) => x.evaluados.get(c.clave)?.carta).find((x) => !!x) ?? null;
+    c.lectura = lecturaDe({ nombre: c.nombre, veredicto: c.veredicto, origen: c.origen, exclusivos: c.exclusivos, insumos: carta?.insumos });
+  }
   const orden: Record<Veredicto, number> = { sacar: 0, preparar: 1, revisar: 2, confirmar: 3, observar: 4 };
   // En «Sacar de carta», primero lo que más cuesta mantener (pedido de Jahnn, 8-oct-2026): lo que
   // se prepara en tienda con insumos propios antes que una reventa que se va sola con el stock.

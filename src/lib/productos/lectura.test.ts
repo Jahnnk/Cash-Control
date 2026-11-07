@@ -1,0 +1,27 @@
+import { describe, it, expect } from "vitest";
+import { lecturaDe } from "./candidatos";
+
+const base = { exclusivos: [] as string[], insumos: [] as { nombre: string; exclusivo: boolean }[] };
+
+describe("lecturaDe", () => {
+  it("bolsita de infusión (reventa que dura, insumo compartido) se mantiene", () => {
+    const l = lecturaDe({ ...base, nombre: "Bolsa de Infusión: Masala Chai", veredicto: "sacar", origen: "reventa", insumos: [{ nombre: "Masala Chai - Infusión, bolsa", exclusivo: false }] });
+    expect(l?.tipo).toBe("mantener");
+    expect(l?.porQue).toMatch(/usas en tus preparaciones/);
+  });
+  it("reventa perecible floja se saca", () => {
+    expect(lecturaDe({ ...base, nombre: "Humita", veredicto: "sacar", origen: "reventa" })?.tipo).toBe("sacar");
+  });
+  it("lo que produce Atelier y rota poco se saca", () => {
+    expect(lecturaDe({ ...base, nombre: "Carrot cake", veredicto: "sacar", origen: "atelier", exclusivos: ["Zanahoria"] })?.tipo).toBe("sacar");
+  });
+  it("producido pero flojo en una sola sede se revisa", () => {
+    expect(lecturaDe({ ...base, nombre: "Brownie", veredicto: "revisar", origen: "tienda" })?.tipo).toBe("revisar");
+  });
+  it("sin origen y en duda: revisar", () => {
+    expect(lecturaDe({ ...base, nombre: "X", veredicto: "revisar", origen: null })?.tipo).toBe("revisar");
+  });
+  it("confirmar no tiene lectura", () => {
+    expect(lecturaDe({ ...base, nombre: "X", veredicto: "confirmar", origen: "tienda" })).toBeNull();
+  });
+});
