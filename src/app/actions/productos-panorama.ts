@@ -37,6 +37,7 @@ import { armarHistorial, type FilaRotacion, type HistorialProductos, type MesSed
 import { ATELIER, VISTAS_ATELIER, esCanalAtelier, filtrarPorCanal, repartoPorCanal, sedeReal, type RepartoCanal } from "@/lib/productos/canal-atelier";
 import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
+import { armarAtelier, type ResultadoAtelier } from "@/lib/productos/atelier-sacar";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -679,6 +680,41 @@ export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ da
   } catch (e) {
     console.error("[getCandidatosReemplazo] failed:", e);
     return { ok: false, error: "No se pudieron armar los candidatos a reemplazo." };
+  }
+}
+
+/**
+ * «Qué sacar» de Atelier (B2B): la demanda de cada producto junta lo que piden las cafeterías (Y-) y los clientes
+ * externos (P-). Lee SIEMPRE de las filas crudas de Atelier (con prefijo), nunca de product_month_sales. Solo dirección.
+ */
+export async function getAtelierQueSacar(hastaMes: string): Promise<Res<{ data: ResultadoAtelier }>> {
+  if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
+  const role = await getSessionRole();
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
+  try {
+    const [yh, mh] = hastaMes.split("-").map(Number), [y0, m0] = PRIMER_MES_PRODUCTOS.split("-").map(Number);
+    const lista = mesesAntes(hastaMes, Math.min(12, Math.max(6, (yh - y0) * 12 + (mh - m0) + 1)));
+    const [costos, vinculos] = await Promise.all([
+      (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>)
+        .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>))
+        .catch(() => [] as CostoCarta[]),
+      (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
+    ]);
+    const datos = await Promise.all(lista.map(async (month) => {
+      const { filas, desde, hasta } = await filasDelMes(ATELIER, month);
+      return { month, desde: desde ?? `${month}-01`, hasta: hasta ?? `${month}-01`, filas };
+    }));
+    const trim = armarTrimestral(datos);
+    const meses = datos.map((d, i) => ({
+      month: d.month,
+      dias: d.filas.length > 0 ? armarPanorama(d.filas, d.desde, d.hasta, 10).dias : 0,
+      sospechoso: trim.meses[i]?.sospechoso ?? false,
+      filas: d.filas,
+    }));
+    return { ok: true, data: armarAtelier(meses, costos, new Map(vinculos.map((v) => [v.clave, v.ref]))) };
+  } catch (e) {
+    console.error("[getAtelierQueSacar] failed:", e);
+    return { ok: false, error: "No se pudo armar el análisis de Atelier." };
   }
 }
 
