@@ -146,14 +146,12 @@ export function lecturaDe(c: { nombre: string; veredicto: Veredicto; origen: Ori
   if (c.origen === "reventa") {
     if (PERECIBLE.test(c.nombre)) return { tipo: flojo ? "sacar" : "revisar", porQue: "Lo compras hecho, pero se vence pronto: si no rota, se pierde." };
     if (c.exclusivos.length > 0) return { tipo: "revisar", porQue: `Lo compras hecho, pero tiene insumo propio (${c.exclusivos.slice(0, 2).join(", ")}): mira si vale la pena.` };
-    // Solo se vende en el exhibidor (no está en la carta que ve el cliente): no ocupa un lugar en la carta.
-    const exhibidor = c.enCarta === false ? " Está solo en el exhibidor, no en la carta." : "";
     const compartidos = (c.insumos ?? []).filter((i) => !i.exclusivo).map((i) => i.nombre);
     return {
       tipo: "mantener",
       porQue: compartidos.length > 0
-        ? `Lo compras hecho, dura mucho y el mismo insumo lo usas en tus preparaciones (${compartidos.slice(0, 2).join(", ")}): tenerlo en el exhibidor no te cuesta.${exhibidor}`
-        : `Lo compras hecho, dura mucho y no te quita tiempo ni insumos: solo ocupa un lugar del exhibidor.${exhibidor}`,
+        ? `Lo compras hecho, dura mucho y el mismo insumo lo usas en tus preparaciones (${compartidos.slice(0, 2).join(", ")}): tenerlo en el exhibidor no te cuesta.`
+        : "Lo compras hecho, dura mucho y no te quita tiempo ni insumos: solo ocupa un lugar del exhibidor.",
     };
   }
   if (c.origen === "tienda" || c.origen === "atelier") {
