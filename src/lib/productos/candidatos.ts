@@ -257,8 +257,13 @@ export function plazoDe(desde: string, hoy: string): { desde: string; vence: str
   return { desde, vence, diasRestantes, vencido: diasRestantes <= 0 };
 }
 
+/** Una reventa que dura y vende poco, para «Mantener» aunque el motor no la juzgue (producto nuevo, sin ventas recientes…). */
+export type ReventaQueSeMantiene = { nombre: string; porQue: string; unidadesSemana: number; enCarta: boolean | null; seccion: string | null; gananciaMes: number | null };
+
 export type ResultadoCandidatos = {
   candidatos: Candidato[];
+  /** Reventas de larga vida que venden poco y no están en «Sacar»: se quedan (ver lecturaDe). */
+  reventaQueSeMantiene: ReventaQueSeMantiene[];
   /** Meses que se usaron para decidir. */
   meses: string[];
   /** Todos los productos evaluados, para la matriz de la carta (matriz-carta.ts). */
@@ -740,8 +745,32 @@ export function armarCandidatos(
       porClave.set(clave, m);
     }
   }
+  // Lo que compras hecho, dura mucho y vende poco se ve en «Mantener» aunque el motor no lo juzgue: es producto nuevo en una
+  // sede, o dejó de venderse en otra (las bolsitas de infusión, nov-2026). Poco = menos de 3 unidades por semana entre las sedes.
+  const yaEnLista = new Set(candidatos.map((c) => c.clave));
+  const reventaQueSeMantiene: ReventaQueSeMantiene[] = [];
+  const porClaveCarta = new Map<string, { nombre: string; carta: CostoCarta | null; unidadesSemana: number; ganancia: number | null }>();
+  for (const { evaluados } of porSede) {
+    for (const [clave, e] of evaluados) {
+      if (e.estado === "acompanamiento" || yaEnLista.has(clave)) continue;
+      const x = porClaveCarta.get(clave) ?? { nombre: e.nombre, carta: e.carta, unidadesSemana: 0, ganancia: 0 };
+      x.unidadesSemana += e.unidadesSemana;
+      x.ganancia = x.ganancia !== null && e.gananciaDia !== null ? x.ganancia + e.gananciaDia * 30 : null;
+      x.carta = x.carta ?? e.carta;
+      porClaveCarta.set(clave, x);
+    }
+  }
+  for (const [clave, x] of porClaveCarta) {
+    if (x.unidadesSemana <= 0 || x.unidadesSemana >= 3 || archivo.has(clave)) continue;
+    const e = esfuerzoDe(x.carta);
+    const l = lecturaDe({ nombre: x.nombre, veredicto: "sacar", origen: e.origen, exclusivos: e.exclusivos, insumos: x.carta?.insumos, enCarta: x.carta?.enCarta });
+    if (l?.tipo !== "mantener") continue;
+    reventaQueSeMantiene.push({ nombre: x.nombre, porQue: l.porQue, unidadesSemana: Math.round(x.unidadesSemana * 10) / 10, enCarta: x.carta?.enCarta ?? null, seccion: x.carta?.seccion ?? null, gananciaMes: x.ganancia === null ? null : Math.round(x.ganancia) });
+  }
+  reventaQueSeMantiene.sort((a, b) => a.unidadesSemana - b.unidadesSemana);
   return {
     candidatos,
+    reventaQueSeMantiene,
     meses,
     matriz: [...porClave.values()],
     cartas: porSede.map((x) => ({ businessId: x.sede.businessId, sede: x.sede.sede, serie: x.cartaSerie })),
