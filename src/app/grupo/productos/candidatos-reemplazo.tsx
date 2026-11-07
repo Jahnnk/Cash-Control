@@ -20,6 +20,7 @@ import { UMBRAL_CANDIDATO, UMBRAL_OBSERVAR } from "@/lib/productos/candidatos";
 import { evidenciaDe, TEXTO_TENDENCIA } from "@/lib/productos/tendencia";
 import { GraficoDemanda, type SerieDemanda } from "@/components/productos/grafico-demanda";
 import { MatrizCarta } from "./matriz-carta";
+import { QueSacar } from "./que-sacar";
 import { armarMatriz } from "@/lib/productos/matriz-carta";
 import { Barra, Pastilla, PuntoFamilia, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 import { useToast } from "@/components/toast-provider";
@@ -163,6 +164,14 @@ export function CandidatosReemplazo({ month }: { month: string }) {
               Nuevos que van muy bien <b className="tabular-nums">{nuevosQueDestacan}</b>
             </span>
           )}
+          {(["sacar", "mantener"] as const).map((t) => {
+            const n = data.candidatos.filter((c) => c.lectura?.tipo === t && c.veredicto !== "observar").length;
+            return n > 0 && (
+              <span key={t} className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-[11px] font-medium ${t === "sacar" ? "border-red-200 bg-red-50 text-red-900" : "border-emerald-300 bg-emerald-50 text-emerald-900"}`}>
+                {t === "sacar" ? "Para sacar" : "Mantener aunque venda poco"} <b className="tabular-nums">{n}</b>
+              </span>
+            );
+          })}
           {ORDEN.filter((v) => conteo[v] > 0).map((v) => (
             <span key={v} className="inline-flex items-center gap-1.5 rounded-full border border-gray-200 px-2.5 py-0.5 text-[11px] text-gray-700">
               <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: VEREDICTOS[v].barra }} />
@@ -178,6 +187,8 @@ export function CandidatosReemplazo({ month }: { month: string }) {
         <div className="flex justify-center py-10 text-gray-400"><Loader2 className="w-5 h-5 animate-spin" /></div>
       ) : (
         <div className="space-y-5">
+          <QueSacar candidatos={data.candidatos} />
+          <hr className="border-gray-200" />
           {/* La vista de toda la carta: dónde está la ganancia y quién la pone en riesgo (5-oct-2026). */}
           <MatrizCarta matriz={data.matriz} cartas={data.cartas} veredictos={veredictos} lanzamiento={lanzamiento} />
           <hr className="border-gray-200" />
