@@ -2,9 +2,9 @@ import { RecetasClient } from "./recetas-client";
 
 /**
  * Grupo → Recetas y costos (solo dirección: el middleware bloquea /grupo a
- * las sesiones con alcance y cada action re-verifica). Arriba el Excel
- * maestro de pricing; abajo las recetas, que se pueden crear o modificar
- * sin volver a subir el Excel.
+ * las sesiones con alcance y cada action re-verifica). El Excel maestro
+ * de pricing se sube ahora en Productos → Cargas; acá solo están las recetas, que
+ * se pueden crear o modificar sin volver a subir el Excel.
  */
 export default function RecetasPage() {
   return (

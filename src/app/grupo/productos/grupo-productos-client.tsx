@@ -25,6 +25,7 @@ import { ManoDeObra } from "./mano-de-obra";
 import { DatosCargados } from "./datos-cargados";
 import { BuscadorProducto } from "./buscador-producto";
 import { ImportarReportesModal } from "./importar-reportes";
+import { PricingAdmin } from "../recetas/pricing-admin";
 import { VistaMes } from "@/components/productos/vista-mes";
 import { VistaTrimestre } from "@/components/productos/vista-trimestre";
 import { fechaCorta, Segmentado } from "@/components/productos/ui";
@@ -153,6 +154,7 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
       {pestana === "trimestre" && <PestanaTrimestre key={`t-${version}-${month}-${sede}`} month={month} sede={sede} onSede={sedeFija === null ? setSede : null} onCanal={setCanal} />}
       {pestana === "cargas" && (
         <div className="space-y-5">
+          <PricingAdmin onActualizado={() => setVersion((v) => v + 1)} />
           <CargasByte key={`c-${version}`} onImportado={() => setVersion((v) => v + 1)} />
           <ControlCargasProductos />
         </div>

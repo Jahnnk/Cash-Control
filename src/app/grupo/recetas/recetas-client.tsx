@@ -15,7 +15,6 @@ import { costoDeReceta, refDeReceta, type RecetaSistema } from "@/lib/recetas";
 import type { Catalogo } from "@/lib/catalogo-costos-sql";
 import type { CostoPreparacion } from "@/lib/costos-preparaciones";
 import { EditorReceta, type Borrador } from "./editor-receta";
-import { PricingAdmin } from "./pricing-admin";
 
 type Filtro = "todas" | "producto" | "preparacion" | "sistema" | "insumo";
 
@@ -82,7 +81,6 @@ export function RecetasClient() {
 
   return (
     <>
-    <PricingAdmin onActualizado={() => void cargar()} />
     <section className="bg-white rounded-2xl border border-gray-200/80 p-4 sm:p-6 space-y-5">
       <header className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0 max-w-2xl">
