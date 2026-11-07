@@ -37,6 +37,10 @@ export type CostoCarta = {
   costoInsumos?: number | null;
   /** Insumos de su receta (sin empaques); `exclusivo` = ningún otro producto del Excel lo usa. */
   insumos?: InsumoCarta[] | null;
+  /** Sección de la carta que ve el cliente («Postres», «Café Fríos»…), de la hoja «Carta» del Excel (nov-2026). */
+  seccion?: string | null;
+  /** true = está en la carta que ve el cliente; false = solo se vende en el exhibidor/fuera de carta; null = no se sabe. */
+  enCarta?: boolean | null;
 };
 
 export type InsumoCarta = { sku: string | null; nombre: string; exclusivo: boolean };

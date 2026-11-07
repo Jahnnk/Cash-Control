@@ -25,3 +25,11 @@ describe("lecturaDe", () => {
     expect(lecturaDe({ ...base, nombre: "X", veredicto: "confirmar", origen: "tienda" })).toBeNull();
   });
 });
+
+describe("lecturaDe · hoja Carta", () => {
+  it("bolsita fuera de carta: se mantiene y lo dice", () => {
+    const l = lecturaDe({ ...base, nombre: "Bolsa de Infusión: Valentina", veredicto: "sacar", origen: "reventa", enCarta: false });
+    expect(l?.tipo).toBe("mantener");
+    expect(l?.porQue).toMatch(/solo en el exhibidor/);
+  });
+});

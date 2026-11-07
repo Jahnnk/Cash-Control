@@ -117,6 +117,26 @@ function leerCarta(rows: Fila[], avisos: string[]): CostoCarta[] {
   return out;
 }
 
+/**
+ * La hoja «Carta» (nov-2026): los productos y precios tal cual los ve el cliente. Cada fila trae el ID de PRICING,
+ * que enlaza sin adivinar por nombre. Devuelve ID → sección, nombre y precio de carta; null si el Excel no la trae.
+ */
+export function leerHojaCarta(rows: Fila[] | null): Map<string, { seccion: string; nombre: string; precio: number | null }> | null {
+  if (!rows) return null;
+  const h = rows.findIndex((r) => r.some((c) => c === "ID en PRICING"));
+  if (h === -1) return null;
+  const cab = rows[h].map((c) => (typeof c === "string" ? c.trim() : ""));
+  const cSec = cab.indexOf("Sección"), cProd = cab.indexOf("Producto en carta"), cPre = cab.findIndex((c) => c.startsWith("Precio carta")), cId = cab.indexOf("ID en PRICING");
+  if (cSec === -1 || cProd === -1 || cId === -1) return null;
+  const out = new Map<string, { seccion: string; nombre: string; precio: number | null }>();
+  for (const r of rows.slice(h + 1)) {
+    const id = typeof r[cId] === "string" ? (r[cId] as string).trim() : "";
+    if (!id || typeof r[cProd] !== "string") continue;
+    out.set(id, { seccion: String(r[cSec] ?? "").trim(), nombre: limpiarNombre(r[cProd] as string), precio: cPre === -1 ? null : num(r[cPre]) });
+  }
+  return out.size > 0 ? out : null;
+}
+
 function leerPricing(rows: Fila[], avisos: string[], fuentes: Map<string, Fuente>): CostoPreparacion[] {
   const h = rows.findIndex((r) => r.some((c) => c === "Producto maestro"));
   if (h === -1) { avisos.push(`No encontré la columna "Producto maestro" en la hoja ${HOJA_PRICING}.`); return []; }
@@ -367,6 +387,15 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
   const fuentes = new Map<string, Fuente>();
   const productos = pricing ? leerPricing(pricing, avisos, fuentes) : [];
   const carta = pricing ? leerCarta(pricing, avisos) : [];
+  // La hoja «Carta» manda: nombre y precio que ve el cliente, sección, y quién NO está en carta (exhibidor).
+  const enLaCarta = leerHojaCarta(filas(wb, "Carta"));
+  if (enLaCarta) {
+    for (const c of carta) {
+      const x = enLaCarta.get(c.ref);
+      c.enCarta = !!x;
+      if (x) { c.seccion = x.seccion; c.nombreCarta = x.nombre; if (x.precio && x.precio > 0) c.precio = x.precio; }
+    }
+  }
   const subRecetas = sub ? leerSubRecetas(sub, primeraFila(wb, HOJA_SUBRECETAS), avisos) : { items: [], bloques: [] };
   const { items: insumos, sr } = ins ? leerInsumos(ins, avisos) : { items: [], sr: [] };
 
