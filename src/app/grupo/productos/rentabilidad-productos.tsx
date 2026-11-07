@@ -145,7 +145,7 @@ function Cuerpo({ d }: { d: RentabilidadSede }) {
 
       {d.sinCosto.length > 0 && (
         <p className="text-xs text-gray-500 leading-relaxed">
-          <strong className="text-gray-700">{d.sinCosto.length} {d.sinCosto.length === 1 ? "producto sin costo" : "productos sin costo"}</strong> ({soles0(sinCostoVentas)} vendidos, no entran al cálculo): {d.sinCosto.slice(0, 4).map((p) => p.nombre).join(", ")}{d.sinCosto.length > 4 ? "…" : ""}. Se cargan en Productos → Reportes de rotación (Excel de pricing).
+          <strong className="text-gray-700">{d.sinCosto.length} {d.sinCosto.length === 1 ? "producto sin costo" : "productos sin costo"}</strong> ({soles0(sinCostoVentas)} vendidos, no entran al cálculo): {d.sinCosto.slice(0, 4).map((p) => p.nombre).join(", ")}{d.sinCosto.length > 4 ? "…" : ""}. Se cargan en el botón «Subir pricing» de Productos.
         </p>
       )}
 
