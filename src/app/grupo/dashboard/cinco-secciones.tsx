@@ -26,6 +26,7 @@ import { FlujoDeCaja } from "./flujo-de-caja";
 import { ProfitFirst } from "./profit-first";
 import { PuntoEquilibrio } from "./punto-equilibrio";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
+import { armarSerie, sumarSedes, ahorroNuevo, type PuntoFlujo } from "@/lib/flujo-caja";
 
 const soles = (n: number) => `S/ ${Math.round(Math.abs(n)).toLocaleString("es-PE")}`;
 const solesConSigno = (n: number) => `${n < 0 ? "−" : ""}${soles(n)}`;
@@ -203,8 +204,69 @@ function EntroDesglose({ por }: { por?: EntroPor }) {
   );
 }
 
-function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo }: { caja: { entro: number; salio: number; flujo: number; entroPor?: EntroPor }; cortes: string | null; saldo: number | null; enCurso: boolean; cajaHref: string; flujo: FlujoCaja | null; periodo: string }) {
+/**
+ * El flujo del mes explicado: lo que dejó la operación (sin mover el ahorro) y, aparte, lo que se ahorró o se rescató.
+ * Pedido de Jahnn (8-nov-2026): Centro mandó S/6,200 a fondos mutuos en octubre y la tarjeta mostraba −S/1,314 en rojo,
+ * como si la operación perdiera. El negativo es real, pero lo explica el ahorro, que sigue siendo plata de los socios.
+ */
+function FlujoDelMes({ flujo, p }: { flujo: number; p: PuntoFlujo | null }) {
+  const nuevo = p ? ahorroNuevo(p) : 0, vuelve = p?.recuperado ?? 0;
+  const hayAhorro = !!p && (nuevo > 0.5 || vuelve > 0.5 || p.rescate > 0.5 || p.reparto > 0.5);
+  if (!p || !hayAhorro || Math.abs(p.flujo - flujo) > 1) {
+    return (
+      <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gray-50 p-4">
+        <div>
+          <div className="text-base font-semibold text-gray-900">Flujo neto del mes</div>
+          <div className="text-sm text-gray-500">Entró menos salió</div>
+        </div>
+        <div className={`text-2xl font-semibold tabular-nums sm:text-3xl ${flujo < 0 ? "text-red-600" : "text-emerald-600"}`}>{solesConSigno(flujo)}</div>
+      </div>
+    );
+  }
+  const linea = (texto: string, monto: number, signo: "+" | "−", nota?: string) => (
+    <li className="flex items-baseline justify-between gap-3">
+      <span className="text-gray-600">{texto}{nota && <span className="block text-[11px] text-gray-400">{nota}</span>}</span>
+      <b className="tabular-nums text-gray-900">{signo}{soles(monto)}</b>
+    </li>
+  );
+  const explicadoPorAhorro = p.flujo < 0 && p.neto >= 0;
+  return (
+    <div className="mt-3 rounded-2xl bg-gray-50 p-4">
+      <div className="flex items-center justify-between gap-3">
+        <div>
+          <div className="text-base font-semibold text-gray-900">Lo que dejó el mes, sin mover el ahorro</div>
+          <div className="text-sm text-gray-500">Entró menos salió, sin contar lo que se ahorró ni lo que se rescató</div>
+        </div>
+        <div className={`text-2xl font-semibold tabular-nums sm:text-3xl ${p.neto < 0 ? "text-red-600" : "text-emerald-600"}`}>{solesConSigno(p.neto)}</div>
+      </div>
+      <ul className="mt-3 space-y-1.5 border-t border-gray-200 pt-2.5 text-sm">
+        {nuevo > 0.5 && linea("Ahorro nuevo a fondos mutuos", nuevo, "−", "sigue siendo plata de ustedes")}
+        {vuelve > 0.5 && (
+          <li className="flex items-baseline justify-between gap-3">
+            <span className="text-gray-600">Cuota de préstamo devuelta al fondo<span className="block text-[11px] text-gray-400">entró {soles(vuelve)} y se depositó {soles(vuelve)}: ni suma ni resta</span></span>
+            <b className="tabular-nums text-gray-400">S/ 0</b>
+          </li>
+        )}
+        {p.rescate > 0.5 && linea("Rescatado del fondo", p.rescate, "+")}
+        {p.reparto > 0.5 && linea("Utilidades a socios", p.reparto, "−")}
+        <li className="flex items-baseline justify-between gap-3 border-t border-gray-200 pt-2">
+          <span className="font-medium text-gray-800">Entró menos salió, con todo</span>
+          <b className={`tabular-nums ${p.neto < 0 && p.flujo < 0 ? "text-red-600" : "text-gray-800"}`}>{solesConSigno(p.flujo)}</b>
+        </li>
+      </ul>
+      {explicadoPorAhorro && (
+        <p className="mt-2 rounded-lg bg-sky-50 px-3 py-2 text-xs leading-snug text-sky-800">
+          La caja bajó porque se ahorraron {soles(nuevo)}, no porque la operación pierda: ese dinero sigue en el fondo.
+        </p>
+      )}
+    </div>
+  );
+}
+
+function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo, sede, mes }: { caja: { entro: number; salio: number; flujo: number; entroPor?: EntroPor }; cortes: string | null; saldo: number | null; enCurso: boolean; cajaHref: string; flujo: FlujoCaja | null; periodo: string; sede: number | null; mes: string }) {
   const sinExcel = cortes === null;
+  const meses = flujo ? (sede === null ? sumarSedes(flujo.sedes.map((x) => x.meses)) : flujo.sedes.find((x) => x.businessId === sede)?.meses ?? []) : [];
+  const puntoDelMes = armarSerie(meses, 99).find((x) => x.mes === mes) ?? null;
   return (
     <Seccion n={2} titulo="Movimiento de dinero" fuente={`Fuente: Excel de Finanzas · flujo de caja${cortes ? ` · ${cortes}` : ""}`} icono={<ArrowLeftRight className="h-5 w-5" />}>
       {sinExcel ? <p className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-500">Todavía no hay Excel de Finanzas de este mes.</p> : (
@@ -221,13 +283,7 @@ function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo 
               <p className="mt-2 text-xs text-gray-500">Incluye gastos, deudas, ahorro y reparto a socios. El detalle está en la sección 3.</p>
             </div>
           </div>
-          <div className="mt-3 flex items-center justify-between gap-3 rounded-2xl bg-gray-50 p-4">
-            <div>
-              <div className="text-base font-semibold text-gray-900">Flujo neto del mes</div>
-              <div className="text-sm text-gray-500">Entró menos salió</div>
-            </div>
-            <div className={`text-2xl font-semibold tabular-nums sm:text-3xl ${caja.flujo < 0 ? "text-red-600" : "text-emerald-600"}`}>{solesConSigno(caja.flujo)}</div>
-          </div>
+          <FlujoDelMes flujo={caja.flujo} p={puntoDelMes} />
         </>
       )}
       {saldo !== null && enCurso && (
@@ -331,7 +387,7 @@ export function CincoSecciones(p: CincoProps) {
   return (
     <div className="space-y-5">
       <SeccionVentas v={p.ventas} tarjetas={p.tarjetas} sede={p.sede} onSede={p.onSede} enCurso={p.enCurso} nombre={nombre} mes={p.mes} />
-      <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} flujo={p.flujo ?? null} periodo={p.periodo} />
+      <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} flujo={p.flujo ?? null} periodo={p.periodo} sede={p.sede} mes={p.mes} />
       <SeccionEgresos key={`${p.sede}`} mes={p.mes} sede={p.sede} enCurso={p.enCurso} cajaHref={p.cajaHref} />
       <SeccionEbitda cada={cada} cifras={p.cifras} mes={p.mes} periodo={p.periodo} />
     </div>

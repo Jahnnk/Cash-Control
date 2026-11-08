@@ -44,7 +44,7 @@ export async function getFlujoCaja(mes: string): Promise<{ ok: true; data: Flujo
   const meses = mesesHasta(mes);
   try {
     const sedes = await Promise.all(SEDES.map(async ([bId, sede]) => {
-      const [totales, ahorros, rescates] = await Promise.all([
+      const [totales, ahorros, rescates, cuotas] = await Promise.all([
         Promise.all(meses.map((m) => totalesMesSede(bId, `${m}-01`, finDeMes(m) < hoy ? finDeMes(m) : hoy))),
         // Lo que salió a ahorro y a socios, mes a mes (mismos filtros que "salió").
         sql`
@@ -65,6 +65,16 @@ export async function getFlujoCaja(mes: string): Promise<{ ok: true; data: Flujo
             AND note ILIKE '%rescate%'
           GROUP BY 1
         ` as unknown as Promise<{ mes: string; rescate: number }[]>,
+        // Cuotas de un préstamo entre sedes que se devuelven a quien lo prestó desde su fondo (Atelier → Centro, S/1,200 al mes):
+        // entran como «otros no operativos» y se depositan al fondo. Se suman para no contarlas como ahorro nuevo.
+        sql`
+          SELECT to_char(date, 'YYYY-MM') AS mes, COALESCE(SUM(amount), 0)::float AS cuota
+          FROM bank_income_items
+          WHERE business_id = ${bId} AND date BETWEEN ${`${PRIMER_MES}-01`} AND ${finDeMes(mes)} AND archived = false
+            AND is_internal_transfer = false AND is_special_loan = false AND non_operative_category IS NOT NULL
+            AND note ILIKE '%pr_stamo%' AND note ILIKE '%cuota%'
+          GROUP BY 1
+        ` as unknown as Promise<{ mes: string; cuota: number }[]>,
       ]);
       return {
         businessId: bId, sede,
@@ -73,6 +83,8 @@ export async function getFlujoCaja(mes: string): Promise<{ ok: true; data: Flujo
           ahorro: ahorros.find((x) => x.mes === m)?.ahorro ?? 0,
           reparto: ahorros.find((x) => x.mes === m)?.reparto ?? 0,
           rescate: rescates.find((x) => x.mes === m)?.rescate ?? 0,
+          // Nunca más de lo que de verdad se depositó al fondo ese mes.
+          recuperado: Math.min(cuotas.find((x) => x.mes === m)?.cuota ?? 0, ahorros.find((x) => x.mes === m)?.ahorro ?? 0),
         })),
       };
     }));
