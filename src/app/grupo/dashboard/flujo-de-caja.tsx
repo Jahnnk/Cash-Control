@@ -88,7 +88,7 @@ function Grafico({ puntos }: { puntos: PuntoFlujo[] }) {
 
         {puntos.map((p, i) => {
           const xE = cx(i) - bw - 1, xS = cx(i) + 1;
-          const hEop = alto(entroOperativo(p)), hResc = alto(p.rescate);
+          const hEop = alto(entroOperativo(p)), hResc = alto(p.rescate + (p.recuperado ?? 0));
           const hSop = alto(salioOperativo(p)), hAh = alto(p.ahorro + p.reparto);
           const topE = base - hEop - hResc, topS = base - hSop - hAh;
           return (

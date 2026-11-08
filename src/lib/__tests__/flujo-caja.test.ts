@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { armarSerie, sumarSedes, textoMovimientosAhorro, type MesFlujo } from "../flujo-caja";
+import { armarSerie, sumarSedes, textoMovimientosAhorro, ahorroNuevo, type MesFlujo } from "../flujo-caja";
 
 const m = (mes: string, entro: number, salio: number, o: Partial<MesFlujo> = {}): MesFlujo => ({ mes, entro, salio, ahorro: 0, reparto: 0, rescate: 0, ...o });
 
@@ -42,5 +42,24 @@ describe("flujo de caja mensual", () => {
   it("dice los movimientos del ahorro como un solo hecho cuando el rescate paga las utilidades", () => {
     expect(textoMovimientosAhorro({ ahorro: 7200, rescate: 2400, reparto: 2400 })).toBe("al ahorro S/7,200.00 · del ahorro S/2,400.00 → utilidades a socios S/2,400.00");
     expect(textoMovimientosAhorro({ ahorro: 0, rescate: 0, reparto: 0 })).toBe("");
+  });
+
+  it("la cuota de préstamo que vuelve al fondo no es ingreso ni ahorro nuevo (Centro, octubre 2026)", () => {
+    // Entró 44,379.64 y salió 45,693.41; de lo que salió: 6,200 al fondo (5,000 nuevos + 1,200 de la cuota que Atelier devolvió) y 2,400 a socios.
+    const mes = m("2026-10", 44379.64, 45693.41, { ahorro: 6200, reparto: 2400, rescate: 2400, recuperado: 1200 });
+    const [oct] = armarSerie([mes]);
+    expect(oct.flujo).toBe(-1313.77);
+    expect(oct.neto).toBe(3686.23);
+    expect(ahorroNuevo(mes)).toBe(5000);
+    // Con todo: neto + rescate − ahorro nuevo − utilidades = el flujo real.
+    expect(Math.round((oct.neto + 2400 - 5000 - 2400) * 100) / 100).toBe(oct.flujo);
+    expect(textoMovimientosAhorro(mes)).toContain("al ahorro S/5,000.00");
+    expect(textoMovimientosAhorro(mes)).toContain("cuota de préstamo devuelta al fondo S/1,200.00");
+  });
+
+  it("al sumar las sedes no se resta la cuota dos veces", () => {
+    const g = sumarSedes([[m("2026-10", 20, 20, { ahorro: 20, recuperado: 20 })], [m("2026-10", 0, 20)]]);
+    expect(g[0].recuperado).toBeUndefined();
+    expect(armarSerie(g)[0].neto).toBe(0);
   });
 });

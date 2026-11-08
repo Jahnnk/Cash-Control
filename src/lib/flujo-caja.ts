@@ -30,6 +30,12 @@ export type MesFlujo = {
   reparto: number;
   /** Rescatado del fondo mutuo (parte de lo que entró). */
   rescate: number;
+  /**
+   * Cuota de un préstamo que otra sede devolvió y que se depositó de inmediato al fondo (Atelier le devuelve S/1,200 al mes
+   * a Centro, que los suscribe al fondo): es plata que SALIÓ del fondo para prestar y vuelve a él. Entró y salió por
+   * el mismo monto, así que ni es ingreso del negocio ni ahorro nuevo. Va dentro de `entro` y de `ahorro`. 0 si no hubo.
+   */
+  recuperado?: number;
 };
 
 export type PuntoFlujo = MesFlujo & {
@@ -43,8 +49,10 @@ export type PuntoFlujo = MesFlujo & {
 
 /** Lo que salió sin contar el ahorro ni los socios: lo que el negocio paga de verdad. */
 export const salioOperativo = (m: Pick<MesFlujo, "salio" | "ahorro" | "reparto">) => m.salio - m.ahorro - m.reparto;
-/** Lo que entró sin contar lo que volvió del fondo. */
-export const entroOperativo = (m: Pick<MesFlujo, "entro" | "rescate">) => m.entro - m.rescate;
+/** Lo que entró sin contar lo que volvió del fondo ni la cuota de préstamo que se devolvió al fondo. */
+export const entroOperativo = (m: Pick<MesFlujo, "entro" | "rescate" | "recuperado">) => m.entro - m.rescate - (m.recuperado ?? 0);
+/** Lo depositado al fondo que es plata NUEVA: sin la cuota de préstamo que solo volvió a su lugar. */
+export const ahorroNuevo = (m: Pick<MesFlujo, "ahorro" | "recuperado">) => m.ahorro - (m.recuperado ?? 0);
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
@@ -55,6 +63,7 @@ export function sumarSedes(series: MesFlujo[][]): MesFlujo[] {
     for (const m of serie) {
       const a = por.get(m.mes) ?? { mes: m.mes, entro: 0, salio: 0, ahorro: 0, reparto: 0, rescate: 0 };
       a.entro += m.entro; a.salio += m.salio; a.ahorro += m.ahorro; a.reparto += m.reparto; a.rescate += m.rescate;
+      // Sumadas las sedes, la cuota devuelta ya se cancela sola (lo que entra a una lo paga la otra): no se resta dos veces.
       por.set(m.mes, a);
     }
   }
@@ -82,9 +91,11 @@ export function armarSerie(meses: MesFlujo[], ventana = 6): PuntoFlujo[] {
  * Lo que se movió con el ahorro, en una frase. El rescate y el pago a socios
  * son UN movimiento cuando van juntos (se rescata para pagar las utilidades).
  */
-export function textoMovimientosAhorro(f: { ahorro: number; rescate: number; reparto: number }): string {
+export function textoMovimientosAhorro(f: { ahorro: number; rescate: number; reparto: number; recuperado?: number }): string {
   const partes: string[] = [];
-  if (f.ahorro > 0) partes.push(`al ahorro ${formatCurrency(f.ahorro)}`);
+  const nuevo = ahorroNuevo(f), vuelve = f.recuperado ?? 0;
+  if (nuevo > 0) partes.push(`al ahorro ${formatCurrency(nuevo)}`);
+  if (vuelve > 0) partes.push(`cuota de préstamo devuelta al fondo ${formatCurrency(vuelve)}`);
   if (f.rescate > 0 && f.reparto > 0) partes.push(`del ahorro ${formatCurrency(f.rescate)} → utilidades a socios ${formatCurrency(f.reparto)}`);
   else if (f.rescate > 0) partes.push(`del ahorro ${formatCurrency(f.rescate)}`);
   else if (f.reparto > 0) partes.push(`utilidades a socios ${formatCurrency(f.reparto)}`);
