@@ -25,6 +25,7 @@ import { EgresosCuerpo, useEgresosPorTipo } from "./egresos-seccion";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { FondosMutuos } from "./fondos-mutuos";
 import { PrestamosEntreSedes } from "./prestamos-entre-sedes";
+import { Financiamientos } from "./financiamientos";
 import { ProfitFirst } from "./profit-first";
 import { PuntoEquilibrio } from "./punto-equilibrio";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
@@ -296,6 +297,7 @@ function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo,
       )}
       <FondosMutuos sede={sede} />
       <PrestamosEntreSedes sede={sede} />
+      <Financiamientos sede={sede} />
       {!sinExcel && <Link href={cajaHref} className="mt-3 inline-block text-xs font-medium text-primary hover:underline">Ver cómo cuadra con el Excel →</Link>}
       {/* El historial mes a mes (plegado): entró, salió y el acumulado, sin contar el ahorro. */}
       <div className="mt-4"><FlujoDeCaja flujo={flujo} periodo={periodo} /></div>
