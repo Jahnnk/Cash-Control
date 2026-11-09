@@ -10,6 +10,8 @@ vi.mock("../../app/actions/venta-diaria-cambios", () => ({ getCambiosVentaDiaria
 vi.mock("../../app/actions/egresos-por-tipo", () => ({ getEgresosPorTipo: vi.fn() }));
 vi.mock("../../app/actions/profit-first", () => ({ guardarConfigProfitFirst: vi.fn() }));
 vi.mock("../../app/actions/breakeven", () => ({ getEquilibrioSede: vi.fn() }));
+vi.mock("../../app/actions/fondos-mutuos", () => ({ getFondosMutuos: vi.fn() }));
+vi.mock("../../app/actions/decision", () => ({ guardarFondosMutuos: vi.fn() }));
 import { cifrasDeSede, cifrasDelGrupo, type CifrasSede } from "../seis-cifras";
 import { cada100DelMes } from "../cada-100";
 import { alcanceDe, alertasDeNumeros, bonita, familiasDeEgreso, textoCortes } from "../dashboard-cinco";

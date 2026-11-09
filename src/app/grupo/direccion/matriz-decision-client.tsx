@@ -296,7 +296,7 @@ function Fuentes({ sedes, onGuardado }: { sedes: SedeDecision[]; onGuardado: () 
                 ))}
               </ul>
             )}
-            {s.businessId !== 1 && <FondoForm s={s} onGuardado={onGuardado} />}
+            {s.businessId !== 2 && <FondoForm s={s} onGuardado={onGuardado} />}
           </div>
         );
       })}
