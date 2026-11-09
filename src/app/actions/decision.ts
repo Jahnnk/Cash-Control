@@ -21,6 +21,7 @@ import { getEquilibrioSede, getResumenEquilibrio } from "./breakeven";
 import { getLiquidezGrupo } from "./liquidez";
 import type { LiquidezGrupo } from "@/lib/liquidez";
 import { reservaDe, type DatosDecision } from "@/lib/decisiones";
+import { leerFondo } from "@/lib/fondos-mutuos-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
 const SEDES = [{ id: 2, nombre: "Fonavi" }, { id: 3, nombre: "Centro" }, { id: 1, nombre: "Atelier" }];
@@ -49,16 +50,10 @@ async function lecturaBanco(liq: LiquidezGrupo | null, bId: number): Promise<{ b
   return { banco: s.banco, efectivo: s.caja, al: s.fecha };
 }
 
+/** Lo que hay en el fondo mutuo: lo último que anotó Jahnn más lo depositado y menos lo rescatado desde entonces. */
 async function ultimoFondo(bId: number): Promise<{ saldo: number; fecha: string } | null> {
-  try {
-    const r = (await sql`
-      SELECT saldo::float AS saldo, fecha::text AS fecha FROM fondos_mutuos_saldo
-      WHERE business_id = ${bId} ORDER BY fecha DESC LIMIT 1
-    `) as { saldo: number; fecha: string }[];
-    return r[0] ?? null;
-  } catch {
-    return null;
-  }
+  const f = await leerFondo(sql, bId);
+  return f.anotado && f.estimado !== null ? { saldo: f.estimado, fecha: f.anotado.fecha } : null;
 }
 
 async function configReserva(bId: number): Promise<{ semanas: number | null; monto: number | null } | null> {
@@ -91,7 +86,7 @@ async function datosDeSede(bId: number, nombre: string, mes: string, liq: Liquid
 
   if (!banco) avisos.push("No hay lectura del banco en el Excel de esta sede: sin ella no se puede decir cuánta plata hay.");
   else if (diasEntre(banco.al, hoy) > 10) avisos.push(`La lectura del banco es del ${banco.al} (hace ${diasEntre(banco.al, hoy)} días): sube el Excel actualizado para que la respuesta esté al día.`);
-  if (!fondo && bId !== 1) avisos.push("No hay saldo de fondos mutuos anotado: si la sede guarda ahorro allí, anótalo para que cuente como reserva.");
+  if (!fondo && bId !== 2) avisos.push("No hay saldo de fondos mutuos anotado: si la sede guarda ahorro allí, anótalo para que cuente como reserva.");
   else if (fondo && diasEntre(fondo.fecha, hoy) > 40) avisos.push(`El saldo de fondos mutuos es del ${fondo.fecha}: actualízalo con el último estado de cuenta.`);
   if (eq.data.ventasBase === "promedio") avisos.push("Mes recién empezado: se usa la venta promedio de los meses cerrados como «un mes».");
 
