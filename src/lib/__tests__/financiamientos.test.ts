@@ -41,16 +41,19 @@ describe("financiamientos", () => {
     expect(cuotaMensualTotal(deudas)).toBe(1595.89);
   });
   it("cuenta por calendario las cuotas de antes del sistema y dice cuándo termina", () => {
-    const kelly = { ...antigua, nombre: "Préstamo de Kelly", desde: "2025-03-01", cuotasTotal: 49, montoOriginal: 36750 };
+    const kelly = { ...antigua, nombre: "Préstamo de Kelly", desde: "2025-05-01", cuotasTotal: 47, montoOriginal: 35000 };
     const pagos = ["2026-03-17", "2026-04-17"].map((f) => p(f, 750, "PRESTAMOS ANTIGUO"));
     const [d] = armarFinanciamientos([kelly], pagos).deudas;
-    expect(d).toMatchObject({ cuotasAnteriores: 12, cuotasPagadas: 14, cuotasFaltan: 35, terminaEn: "2029-03", pagado: 10500, saldo: 26250 });
+    expect(d).toMatchObject({ cuotasAnteriores: 11, cuotasPagadas: 13, cuotasFaltan: 34, terminaEn: "2029-03", pagado: 9750, saldo: 25250 });
   });
   it("una deuda que empieza dentro del sistema no estima nada y una futura tampoco", () => {
     const futura = { ...diners, desde: "2027-02-01", cuotasTotal: 6, cuota: 653 };
     const [d] = armarFinanciamientos([futura], []).deudas;
     expect(d).toMatchObject({ cuotasAnteriores: 0, cuotasPagadas: 0, cuotasFaltan: 6, terminaEn: "2027-07" });
+    // Diners empezó en marzo 2026 y el Excel trae pagos desde abril: la cuota de marzo cuenta como anterior.
     const [e] = armarFinanciamientos([{ ...diners, desde: "2026-03-01", cuotasTotal: 24 }], []).deudas;
-    expect(e.cuotasAnteriores).toBe(0);
+    expect(e.cuotasAnteriores).toBe(1);
+    const [g] = armarFinanciamientos([{ ...diners, desde: "2026-04-01", cuotasTotal: 24 }], []).deudas;
+    expect(g.cuotasAnteriores).toBe(0);
   });
 });
