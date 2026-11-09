@@ -57,3 +57,13 @@ describe("financiamientos", () => {
     expect(g.cuotasAnteriores).toBe(0);
   });
 });
+
+describe("una cuota «Diners – congeladora» es de la congeladora", () => {
+  it("no se la lleva el préstamo Diners aunque el concepto diga Diners", () => {
+    const dinersSede: Financiamiento = { ...diners, patron: "^(?!.*congeladora).*diners" };
+    const cong: Financiamiento = { ...base, id: 9, businessId: 1, sede: "Atelier", nombre: "Congeladora", patron: "congeladora", diaPago: 4, cuota: 653 };
+    const r = armarFinanciamientos([dinersSede, cong], [p("2026-10-05", 661.13, "2DA CUOTA DINERS – CONGELADORA ATELIER (DINERS)")]);
+    expect(r.deudas.find((d) => d.id === 9)?.pagado).toBe(661.13);
+    expect(r.deudas.find((d) => d.id === 1)?.pagado).toBe(0);
+  });
+});
