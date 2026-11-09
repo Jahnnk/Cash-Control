@@ -10,7 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Landmark, Loader2 } from "lucide-react";
 import { getFinanciamientos, guardarFinanciamiento } from "@/app/actions/financiamientos";
-import { cuotaMensualTotal, type EstadoFinanciamiento } from "@/lib/financiamientos";
+import { cuotaMensualTotal, nombreMes, type EstadoFinanciamiento } from "@/lib/financiamientos";
 import { useToast } from "@/components/toast-provider";
 
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
@@ -114,7 +114,9 @@ export function Financiamientos({ sede }: { sede: number | null }) {
               {d.acreedor && <>{d.acreedor} · </>}
               {d.cuota !== null && <>Cuota {soles(d.cuota)}{d.diaPago ? ` (día ${d.diaPago})` : ""} · </>}
               pagado {soles(d.pagado)} en {d.cuotasPagadas} {d.cuotasPagadas === 1 ? "mes" : "meses"}
+              {d.cuotasAnteriores > 0 && <> (con {d.cuotasAnteriores} cuotas de antes del sistema, estimadas)</>}
               {d.cuotasFaltan !== null && <> · faltan {d.cuotasFaltan} cuotas</>}
+              {d.terminaEn && <> · termina en {nombreMes(d.terminaEn)}</>}
               {d.incluyeIntereses === true && <> · la cuota trae intereses</>}
               {d.faltaDato.length > 0 && <> · pendiente de saber: {d.faltaDato.join(", ")}</>}
             </p>
