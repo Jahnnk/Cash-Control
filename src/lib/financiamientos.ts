@@ -22,14 +22,14 @@ export type EstadoFinanciamiento = Financiamiento & {
   /** Qué datos faltan para calcular el saldo, en palabras de Jahnn. */
   faltaDato: string[];
   saldado: boolean;
-  /** Cuotas pagadas ANTES de que el sistema llevara el control (marzo 2026), contadas por calendario desde `desde`. Son estimadas: cuota × meses. */
+  /** Cuotas pagadas ANTES de que el sistema viera pagos (abril 2026), contadas por calendario desde `desde`. Son estimadas: cuota × meses. */
   cuotasAnteriores: number;
   /** Mes en que se paga la última cuota (AAAA-MM), si se sabe cuándo empezó y cuántas son. */
   terminaEn: string | null;
 };
 
-/** Primer mes del que el sistema ve pagos. Lo anterior no está en el Excel ni en Byte: se cuenta por calendario. */
-export const INICIO_SISTEMA = "2026-03";
+/** Primer mes del que el sistema ve pagos de deudas (el Excel trae pagos desde abril 2026). Lo anterior se cuenta por calendario. */
+export const INICIO_SISTEMA = "2026-04";
 const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
 const mesIndice = (aaaamm: string) => Number(aaaamm.slice(0, 4)) * 12 + Number(aaaamm.slice(5, 7)) - 1;
 const indiceMes = (i: number) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
