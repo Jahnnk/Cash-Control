@@ -208,7 +208,7 @@ export const REGLAS_GASTO: ReglaGasto[] = [
   ...r("PLANILLA", "REGULARIZACION ESSALUD", "PRESTAMO VEHICULAR", "PRESTAMOS VEHICULAR", "SALDO POR AFP", "BONO POR MANDO", "AFP LIQUIDACION", "HORAS EXTRAS"),
   // «SUELDO LUANA MARKETING» es planilla aunque la persona sea de marketing (16-oct-2026).
   ...r("PLANILLA", "SUELDO", " AFP "),
-  ...r("PRÉSTAMOS Y TARJETAS", "1ERA CUOTA", "CUOTA CONGELADORA", "CUOTA SET", "CUOTA –"),
+  ...r("PRÉSTAMOS Y TARJETAS", "1ERA CUOTA", "CUOTA CONGELADORA", "CUOTA SET", "CUOTA –", "CUOTA DINERS"),
   ...r("PERSONAL", "PRESTAMO PARA UNIFORMES", "UNIFORMES DE COCINA", "ALMUERZO", "CAPACITACION A PERSONAL", "ASESORIA KERLY"),
   ...r("MENAJE Y UTENSILIOS", "MOLDES DE PAN", "TAPERS PARA", "ROLLOS ALUMINIO"),
   ...r("REMODELACIÓN", "INSTALACION TRIFASICO", "INSTALCION DE CAJAS", "MEDIDOR TRIFASICO", "PINTURA PARED", "LETRERO NUEVO", "LETERO INTERIOR",
@@ -266,6 +266,9 @@ export const REGLAS_FIRMES: ReglaFirme[] = [
   ...f("PACKAGING", "PACKAGING", "PACKAGIN"),
   // Reparar deja el equipo como estaba: es mantenimiento (comprar o cambiar el equipo es inversión).
   ...f("MANTENIMIENTO", "REPARACION", "CUCHILLA PARA LICUADORA", "CUCHILLA LICUADORA", "CUCHILA LICUADORA", "MNTO REFRIGERADORA", "MNTO CONGELADORA"),
+  // Una cuota de la tarjeta Diners es pago de deuda aunque el concepto nombre el equipo que se financió
+  // («2DA CUOTA DINERS – CONGELADORA ATELIER», que el Excel de octubre dejó en EQUIPOS; Kelly lo confirmó el 9-nov-2026).
+  ...f("PRÉSTAMOS Y TARJETAS", "CUOTA DINERS"),
   ...f("PERSONAL", "MANDIL"),
   // Devolverle plata a un cliente anula una venta (salvo que haya pagado de más: ver abajo).
   ...f("DEVOLUCIONES A CLIENTES", "DEVOLUCION A CLIENT", "INDECOPI"),
