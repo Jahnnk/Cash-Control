@@ -22,7 +22,19 @@ export type EstadoFinanciamiento = Financiamiento & {
   /** Qué datos faltan para calcular el saldo, en palabras de Jahnn. */
   faltaDato: string[];
   saldado: boolean;
+  /** Cuotas pagadas ANTES de que el sistema llevara el control (marzo 2026), contadas por calendario desde `desde`. Son estimadas: cuota × meses. */
+  cuotasAnteriores: number;
+  /** Mes en que se paga la última cuota (AAAA-MM), si se sabe cuándo empezó y cuántas son. */
+  terminaEn: string | null;
 };
+
+/** Primer mes del que el sistema ve pagos. Lo anterior no está en el Excel ni en Byte: se cuenta por calendario. */
+export const INICIO_SISTEMA = "2026-03";
+const MESES = ["enero", "febrero", "marzo", "abril", "mayo", "junio", "julio", "agosto", "septiembre", "octubre", "noviembre", "diciembre"];
+const mesIndice = (aaaamm: string) => Number(aaaamm.slice(0, 4)) * 12 + Number(aaaamm.slice(5, 7)) - 1;
+const indiceMes = (i: number) => `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
+/** «2029-03» → «marzo 2029». */
+export const nombreMes = (aaaamm: string) => `${MESES[Number(aaaamm.slice(5, 7)) - 1]} ${aaaamm.slice(0, 4)}`;
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const norm = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
@@ -55,15 +67,21 @@ export function armarFinanciamientos(deudas: Financiamiento[], pagos: PagoDeuda[
     const mios = (porDeuda.get(d.id) ?? []).sort((a, b) => a.fecha.localeCompare(b.fecha));
     const pagado = r2(mios.reduce((t, p) => t + p.monto, 0));
     const meses = new Set(mios.map((p) => p.fecha.slice(0, 7)));
-    const saldo = d.montoOriginal !== null ? Math.max(0, r2(d.montoOriginal - pagado)) : null;
+    // Cuotas de antes del sistema: solo si sabemos cuándo empezó, cuántas son y cuánto vale cada una.
+    const calendario = d.desde !== null && d.cuotasTotal !== null && d.cuota !== null;
+    const anteriores = calendario ? Math.min(d.cuotasTotal!, Math.max(0, mesIndice(INICIO_SISTEMA) - mesIndice(d.desde!.slice(0, 7)))) : 0;
+    const pagadoTotal = r2(pagado + anteriores * (d.cuota ?? 0));
+    const cuotasPagadas = Math.min(d.cuotasTotal ?? Infinity, meses.size + anteriores);
+    const saldo = d.montoOriginal !== null ? Math.max(0, r2(d.montoOriginal - pagadoTotal)) : null;
     const faltaDato: string[] = [];
     if (d.montoOriginal === null) faltaDato.push("monto original");
     if (d.cuotasTotal === null) faltaDato.push("número de cuotas");
     if (d.incluyeIntereses === null) faltaDato.push("si la cuota trae intereses");
     return {
-      ...d, pagado, cuotasPagadas: meses.size, ultimoPago: mios.length ? mios[mios.length - 1].fecha : null,
+      ...d, pagado: pagadoTotal, cuotasPagadas, cuotasAnteriores: anteriores, ultimoPago: mios.length ? mios[mios.length - 1].fecha : null,
       saldo,
-      cuotasFaltan: d.cuotasTotal !== null ? Math.max(0, d.cuotasTotal - meses.size) : null,
+      cuotasFaltan: d.cuotasTotal !== null ? Math.max(0, d.cuotasTotal - cuotasPagadas) : null,
+      terminaEn: d.desde !== null && d.cuotasTotal !== null ? indiceMes(mesIndice(d.desde.slice(0, 7)) + d.cuotasTotal - 1) : null,
       faltaDato,
       saldado: saldo !== null && saldo < 0.5,
     };
