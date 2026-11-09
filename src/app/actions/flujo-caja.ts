@@ -71,7 +71,8 @@ export async function getFlujoCaja(mes: string): Promise<{ ok: true; data: Flujo
           SELECT to_char(date, 'YYYY-MM') AS mes, COALESCE(SUM(amount), 0)::float AS cuota
           FROM bank_income_items
           WHERE business_id = ${bId} AND date BETWEEN ${`${PRIMER_MES}-01`} AND ${finDeMes(mes)} AND archived = false
-            AND is_internal_transfer = false AND is_special_loan = false AND non_operative_category IS NOT NULL
+            AND is_internal_transfer = false AND is_special_loan = false
+            AND (non_operative_category IS NOT NULL OR is_fonavi_reimbursement = true)
             AND note ILIKE '%pr_stamo%' AND note ILIKE '%cuota%'
           GROUP BY 1
         ` as unknown as Promise<{ mes: string; cuota: number }[]>,
