@@ -8,10 +8,10 @@
  * Todos los porcentajes son «de lo vendido»: así se comparan de frente con las metas del 33-33-33.
  */
 
-import { type ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, Gauge, Package,
+  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, ChevronDown, Gauge, Package,
 } from "lucide-react";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import type { EntroPor } from "@/lib/seis-cifras";
@@ -187,22 +187,32 @@ const ENTRO_ETIQUETA: [keyof EntroPor, string][] = [
 ];
 
 /** De dónde vino lo que entró: solo las ventas son ingreso del negocio; lo demás entró a la cuenta pero no es venta. */
-function EntroDesglose({ por }: { por?: EntroPor }) {
+/** `abiertoAlInicio` solo lo usan las pruebas: en pantalla empieza cerrado. */
+export function EntroDesglose({ por, abiertoAlInicio = false }: { por?: EntroPor; abiertoAlInicio?: boolean }) {
+  const [abierto, setAbierto] = useState(abiertoAlInicio);
   if (!por) return null;
   const filas = ENTRO_ETIQUETA.filter(([k]) => Math.abs(por[k]) >= 0.5);
   if (filas.length === 0) return null;
+  const hayNoVenta = filas.some(([k]) => k !== "ventas");
   return (
-    <div className="mt-3 border-t border-emerald-100 pt-2.5">
-      <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">De dónde vino</p>
-      <ul className="mt-1.5 space-y-1 text-sm">
-        {filas.map(([k, etiqueta]) => (
-          <li key={k} className="flex items-baseline justify-between gap-3">
-            <span className={k === "ventas" ? "text-gray-800" : "text-gray-600"}>{etiqueta}</span>
-            <b className="tabular-nums text-gray-900">{soles(por[k])}</b>
-          </li>
-        ))}
-      </ul>
-      {filas.some(([k]) => k !== "ventas") && <p className="mt-1.5 text-[11px] leading-snug text-gray-500">Lo que no es venta entró a la cuenta, pero no es ingreso del negocio.</p>}
+    <div className="mt-3 border-t border-emerald-100 pt-2">
+      <button type="button" onClick={() => setAbierto(!abierto)} aria-expanded={abierto} className="flex w-full items-center justify-between gap-2 text-left text-xs text-gray-600">
+        <span>{hayNoVenta ? `Solo ${soles(por.ventas)} son ventas` : "De dónde vino"}</span>
+        <span className="inline-flex shrink-0 items-center gap-1 font-medium text-primary">{abierto ? "Cerrar" : "Ver de dónde vino"}<ChevronDown className={`h-3.5 w-3.5 transition-transform ${abierto ? "rotate-180" : ""}`} aria-hidden /></span>
+      </button>
+      {abierto && (
+        <>
+          <ul className="mt-1.5 space-y-1 text-sm">
+            {filas.map(([k, etiqueta]) => (
+              <li key={k} className="flex items-baseline justify-between gap-3">
+                <span className={k === "ventas" ? "text-gray-800" : "text-gray-600"}>{etiqueta}</span>
+                <b className="tabular-nums text-gray-900">{soles(por[k])}</b>
+              </li>
+            ))}
+          </ul>
+          {hayNoVenta && <p className="mt-1.5 text-[11px] leading-snug text-gray-500">Lo que no es venta entró a la cuenta, pero no es ingreso del negocio.</p>}
+        </>
+      )}
     </div>
   );
 }
@@ -213,6 +223,7 @@ function EntroDesglose({ por }: { por?: EntroPor }) {
  * como si la operación perdiera. El negativo es real, pero lo explica el ahorro, que sigue siendo plata de los socios.
  */
 function FlujoDelMes({ flujo, p }: { flujo: number; p: PuntoFlujo | null }) {
+  const [abierto, setAbierto] = useState(false);
   const nuevo = p ? ahorroNuevo(p) : 0, vuelve = p?.recuperado ?? 0;
   const hayAhorro = !!p && (nuevo > 0.5 || vuelve > 0.5 || p.rescate > 0.5 || p.reparto > 0.5);
   if (!p || !hayAhorro || Math.abs(p.flujo - flujo) > 1) {
@@ -242,7 +253,10 @@ function FlujoDelMes({ flujo, p }: { flujo: number; p: PuntoFlujo | null }) {
         </div>
         <div className={`text-2xl font-semibold tabular-nums sm:text-3xl ${p.neto < 0 ? "text-red-600" : "text-emerald-600"}`}>{solesConSigno(p.neto)}</div>
       </div>
-      <ul className="mt-3 space-y-1.5 border-t border-gray-200 pt-2.5 text-sm">
+      <button type="button" onClick={() => setAbierto(!abierto)} aria-expanded={abierto} className="mt-2 inline-flex items-center gap-1 text-xs font-medium text-primary">
+        {abierto ? "Cerrar el detalle" : "Ver cómo se llega a este número"}<ChevronDown className={`h-3.5 w-3.5 transition-transform ${abierto ? "rotate-180" : ""}`} aria-hidden />
+      </button>
+      {abierto && <ul className="mt-2 space-y-1.5 border-t border-gray-200 pt-2.5 text-sm">
         {nuevo > 0.5 && linea("Ahorro nuevo a fondos mutuos", nuevo, "−", "sigue siendo plata de ustedes")}
         {vuelve > 0.5 && (
           <li className="flex items-baseline justify-between gap-3">
@@ -256,7 +270,7 @@ function FlujoDelMes({ flujo, p }: { flujo: number; p: PuntoFlujo | null }) {
           <span className="font-medium text-gray-800">Entró menos salió, con todo</span>
           <b className={`tabular-nums ${p.neto < 0 && p.flujo < 0 ? "text-red-600" : "text-gray-800"}`}>{solesConSigno(p.flujo)}</b>
         </li>
-      </ul>
+      </ul>}
       {explicadoPorAhorro && (
         <p className="mt-2 rounded-lg bg-sky-50 px-3 py-2 text-xs leading-snug text-sky-800">
           La caja bajó porque se ahorraron {soles(nuevo)}, no porque la operación pierda: ese dinero sigue en el fondo.
