@@ -10,6 +10,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Landmark, Loader2 } from "lucide-react";
 import { getFinanciamientos, guardarFinanciamiento } from "@/app/actions/financiamientos";
+import { BloquePlegable } from "./bloque-plegable";
 import { cuotaMensualTotal, nombreMes, type EstadoFinanciamiento } from "@/lib/financiamientos";
 import { useToast } from "@/components/toast-provider";
 
@@ -95,13 +96,9 @@ export function Financiamientos({ sede }: { sede: number | null }) {
   const ver = datos.deudas.filter((d) => !d.saldado && (sede === null || d.businessId === sede));
   const listo = () => { setEditando(null); cargar(); };
   return (
-    <div className="mt-3 rounded-2xl bg-amber-50/60 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 text-sm text-gray-600"><Landmark className="h-4 w-4 text-amber-600" aria-hidden />Deudas que estamos pagando · sale cada mes</div>
-        {ver.length > 0 && <b className="text-xl font-semibold tabular-nums text-gray-900">{soles(cuotaMensualTotal(ver))}</b>}
-      </div>
+    <BloquePlegable tono="amber" icono={<Landmark className="h-4 w-4 text-amber-600" aria-hidden />} titulo="Deudas que estamos pagando · sale cada mes" cifra={ver.length > 0 ? soles(cuotaMensualTotal(ver)) : undefined}>
       {ver.length === 0 && <p className="mt-1 text-sm text-gray-500">No hay deudas registradas{sede !== null ? " para esta sede" : ""}.</p>}
-      <ul className="mt-1 divide-y divide-amber-100">
+      <ul className="divide-y divide-amber-100">
         {ver.map((d) => (
           <li key={d.id} className="py-2.5">
             <div className="flex items-baseline justify-between gap-3">
@@ -133,6 +130,6 @@ export function Financiamientos({ sede }: { sede: number | null }) {
       </button>
       {editando === "nuevo" && <Ficha sedeInicial={sede} onListo={listo} onCancelar={() => setEditando(null)} />}
       <p className="mt-1 text-[11px] text-gray-500">Devolver el capital de una deuda no es gasto del negocio; solo lo son los intereses.</p>
-    </div>
+    </BloquePlegable>
   );
 }
