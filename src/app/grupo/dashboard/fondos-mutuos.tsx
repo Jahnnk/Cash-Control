@@ -11,6 +11,7 @@ import { Loader2, PiggyBank } from "lucide-react";
 import { getFondosMutuos, type FondoSede } from "@/app/actions/fondos-mutuos";
 import { guardarFondosMutuos } from "@/app/actions/decision";
 import { useToast } from "@/components/toast-provider";
+import { BloquePlegable } from "./bloque-plegable";
 
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 const fecha = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-PE", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -84,15 +85,11 @@ export function FondosMutuos({ sede }: { sede: number | null }) {
   if (lista.length === 0) return null;
   const total = lista.every((f) => f.estimado !== null) ? lista.reduce((t, f) => t + (f.estimado ?? 0), 0) : null;
   return (
-    <div className="mt-3 rounded-2xl bg-sky-50/60 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 text-sm text-gray-600"><PiggyBank className="h-4 w-4 text-sky-600" aria-hidden />Ahorrado en fondos mutuos</div>
-        {lista.length > 1 && total !== null && <b className="text-xl font-semibold tabular-nums text-gray-900">{soles(total)}</b>}
-      </div>
-      <ul className="mt-1 divide-y divide-sky-100">
+    <BloquePlegable tono="sky" icono={<PiggyBank className="h-4 w-4 text-sky-600" aria-hidden />} titulo="Ahorrado en fondos mutuos" cifra={total !== null ? soles(total) : "sin anotar"}>
+      <ul className="divide-y divide-sky-100">
         {lista.map((f) => <Fila key={f.businessId} f={f} onCambio={cargar} />)}
       </ul>
       <p className="mt-1 text-[11px] text-gray-500">Es plata de ustedes que no está en el banco ni en la caja.</p>
-    </div>
+    </BloquePlegable>
   );
 }

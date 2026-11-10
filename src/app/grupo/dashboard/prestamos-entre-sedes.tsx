@@ -10,6 +10,7 @@ import { useEffect, useState } from "react";
 import { ArrowLeftRight } from "lucide-react";
 import { getPrestamosEntreSedes } from "@/app/actions/prestamos-entre-sedes";
 import type { PrestamoEntreSedes } from "@/lib/prestamos-entre-sedes";
+import { BloquePlegable } from "./bloque-plegable";
 
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 const fecha = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-PE", { day: "numeric", month: "short", timeZone: "UTC" });
@@ -23,12 +24,8 @@ export function PrestamosEntreSedes({ sede }: { sede: number | null }) {
   if (ver.length === 0) return null;
   const falta = ver.reduce((t, p) => t + p.pendiente, 0);
   return (
-    <div className="mt-3 rounded-2xl bg-violet-50/60 p-4">
-      <div className="flex items-center justify-between gap-3">
-        <div className="flex items-center gap-1.5 text-sm text-gray-600"><ArrowLeftRight className="h-4 w-4 text-violet-600" aria-hidden />Préstamos entre sedes · falta devolver</div>
-        {ver.length > 1 && <b className="text-xl font-semibold tabular-nums text-gray-900">{soles(falta)}</b>}
-      </div>
-      <ul className="mt-1 divide-y divide-violet-100">
+    <BloquePlegable tono="violet" icono={<ArrowLeftRight className="h-4 w-4 text-violet-600" aria-hidden />} titulo="Préstamos entre sedes · falta devolver" cifra={soles(falta)}>
+      <ul className="divide-y divide-violet-100">
         {ver.map((p) => (
           <li key={`${p.prestamistaId}-${p.fecha}`} className="py-2.5">
             <div className="flex items-baseline justify-between gap-3">
@@ -44,6 +41,6 @@ export function PrestamosEntreSedes({ sede }: { sede: number | null }) {
         ))}
       </ul>
       <p className="mt-1 text-[11px] text-gray-500">Esta plata cambia de bolsillo dentro del grupo: no es venta, ni gasto, ni ahorro nuevo.</p>
-    </div>
+    </BloquePlegable>
   );
 }
