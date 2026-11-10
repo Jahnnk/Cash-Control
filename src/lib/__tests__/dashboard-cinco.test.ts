@@ -17,7 +17,7 @@ vi.mock("../../app/actions/decision", () => ({ guardarFondosMutuos: vi.fn() }));
 import { cifrasDeSede, cifrasDelGrupo, type CifrasSede } from "../seis-cifras";
 import { cada100DelMes } from "../cada-100";
 import { alcanceDe, alertasDeNumeros, bonita, familiasDeEgreso, textoCortes } from "../dashboard-cinco";
-import { CincoSecciones, type CincoProps } from "../../app/grupo/dashboard/cinco-secciones";
+import { CincoSecciones, EntroDesglose, type CincoProps } from "../../app/grupo/dashboard/cinco-secciones";
 import { CONFIG_PROFIT_FIRST } from "../regla-33";
 
 type Fila = { categoria: string; propio: number; monto: number };
@@ -192,12 +192,18 @@ describe("la pantalla", () => {
     expect(h).not.toContain(">Ingresos<");
     expect(h).not.toContain("De dónde vino"); // sin desglose en los datos de prueba
   });
-  it("sección 2: dice de dónde vino lo que entró, solo con lo que no es cero y avisando que no todo es venta", () => {
+  it("sección 2: el desglose de lo que entró empieza cerrado y avisa cuánto es venta", () => {
     const base = fonavi();
     const por = { ventas: 30000, devolucionesSedes: 0, prestamos: 6000, rescates: 0, otros: 1294 };
     const conPor = { ...base, caja: { ...base.caja, entroPor: por } };
     const h = html({ ...props(2), cifras: { ...props(2).cifras!, sedes: [conPor, atelier(), centro()] } });
-    for (const t of ["De dónde vino", "Ventas cobradas", "S/ 30,000", "Préstamos recibidos", "S/ 6,000", "Otros ingresos", "S/ 1,294", "no es ingreso del negocio"]) expect(h).toContain(t);
+    for (const t of ["Solo S/ 30,000 son ventas", "Ver de dónde vino"]) expect(h).toContain(t);
+    expect(h).not.toContain("Préstamos recibidos");
+  });
+  it("sección 2: abierto, dice de dónde vino lo que entró, solo con lo que no es cero y avisando que no todo es venta", () => {
+    const por = { ventas: 30000, devolucionesSedes: 0, prestamos: 6000, rescates: 0, otros: 1294 };
+    const h = renderToStaticMarkup(createElement(EntroDesglose, { por, abiertoAlInicio: true }));
+    for (const t of ["Ventas cobradas", "S/ 30,000", "Préstamos recibidos", "S/ 6,000", "Otros ingresos", "S/ 1,294", "no es ingreso del negocio"]) expect(h).toContain(t);
     expect(h).not.toContain("Devoluciones de otras sedes");
     expect(h).not.toContain("Rescates de fondos mutuos");
   });
