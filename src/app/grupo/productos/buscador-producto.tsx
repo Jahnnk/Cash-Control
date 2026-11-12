@@ -17,6 +17,9 @@ import { Segmentado } from "@/components/productos/ui";
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Set", "Oct", "Nov", "Dic"];
 const corto = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]}`;
+const MESES_LARGOS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
+/** «2026-10» → «Octubre 2026». */
+const mesLargo = (m: string) => `${MESES_LARGOS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 const solesDia = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: n < 100 ? 1 : 0, maximumFractionDigits: n < 100 ? 1 : 0 })}`;
 const unid = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: n < 10 ? 1 : 0 });
@@ -43,13 +46,23 @@ export function TarjetaSede({ r, periodo }: { r: ResumenSede; periodo: number })
       {r.pctSede !== null && <p className="mt-1 text-[11px] text-gray-500">Es el {r.pctSede}% de lo que vendió {r.sede} en el periodo.</p>}
 
       {/* Venta por día, mes a mes: así un mes a medias se compara con uno completo. */}
-      <div className="mt-3 flex h-20 items-end gap-1" role="img" aria-label={`Venta por día de cada mes en ${r.sede}`}>
-        {r.serie.map((x) => {
+      {/* Al pasar el cursor (o tocar / enfocar con teclado) cada barra muestra lo vendido ese mes. Pedido de Jahnn, 12-nov-2026. */}
+      <div className="mt-3 flex h-20 items-end gap-1" role="group" aria-label={`Venta por día de cada mes en ${r.sede}`}>
+        {r.serie.map((x, i) => {
           const enPeriodo = ultimos.includes(x.mes);
           const h = Math.max((x.ventaDia / tope) * 100, x.ventaDia > 0 ? 3 : 0);
+          // La burbuja se alinea al borde en la primera y la última barra para no salirse de la tarjeta.
+          const lado = i === 0 ? "left-0" : i === r.serie.length - 1 ? "right-0" : "left-1/2 -translate-x-1/2";
           return (
-            <div key={x.mes} className="flex h-full min-w-0 flex-1 flex-col items-center justify-end" title={`${corto(x.mes)}: ${solesDia(x.ventaDia)} por día · ${unid(x.unidades)} u · ${soles(x.venta)}${x.aMedias ? " (mes a medias)" : ""}${!x.confiable ? " · reporte no confiable" : ""}`}>
-              <div className={`w-full rounded-t ${!x.confiable ? "bg-gray-200 bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,rgba(255,255,255,.7)_3px,rgba(255,255,255,.7)_6px)]" : enPeriodo ? "bg-primary" : "bg-primary/25"}`} style={{ height: `${h}%` }} />
+            <div key={x.mes} tabIndex={0} aria-label={`${mesLargo(x.mes)}: ${soles(x.venta)}, ${unid(x.unidades)} unidades`} className="group relative flex h-full min-w-0 flex-1 cursor-default flex-col items-center justify-end outline-none">
+              <div className={`w-full rounded-t transition-opacity group-hover:opacity-80 group-focus-visible:ring-2 group-focus-visible:ring-primary ${!x.confiable ? "bg-gray-200 bg-[repeating-linear-gradient(45deg,transparent,transparent_3px,rgba(255,255,255,.7)_3px,rgba(255,255,255,.7)_6px)]" : enPeriodo ? "bg-primary" : "bg-primary/25"}`} style={{ height: `${h}%` }} />
+              <div role="tooltip" className={`pointer-events-none absolute bottom-full z-20 mb-1.5 hidden whitespace-nowrap rounded-lg bg-gray-900 px-2.5 py-1.5 text-[11px] leading-snug text-white shadow-lg group-hover:block group-focus-visible:block ${lado}`}>
+                <div className="font-semibold">{mesLargo(x.mes)}</div>
+                <div className="tabular-nums">{soles(x.venta)} · {unid(x.unidades)} u</div>
+                <div className="tabular-nums text-gray-300">{solesDia(x.ventaDia)} por día</div>
+                {x.aMedias && <div className="text-amber-300">mes a medias</div>}
+                {!x.confiable && <div className="text-amber-300">reporte no confiable</div>}
+              </div>
             </div>
           );
         })}
