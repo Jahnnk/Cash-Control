@@ -14,12 +14,10 @@ import { CUADRANTES, fichaDeProducto, type Cuadrante } from "@/lib/productos/mat
 import { sugerirProducto, type AccionProducto, type Sugerencia } from "@/lib/productos/sugerencia-producto";
 import { buscarEnHistorial, resumenProducto, type HistorialProductos, type ResumenSede } from "@/lib/productos/historial-producto";
 import { Segmentado } from "@/components/productos/ui";
+import { mesLargo, textoTramo } from "@/lib/productos/texto-tramo";
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Set", "Oct", "Nov", "Dic"];
 const corto = (m: string) => `${MESES[Number(m.slice(5, 7)) - 1]}`;
-const MESES_LARGOS = ["Enero", "Febrero", "Marzo", "Abril", "Mayo", "Junio", "Julio", "Agosto", "Septiembre", "Octubre", "Noviembre", "Diciembre"];
-/** «2026-10» → «Octubre 2026». */
-const mesLargo = (m: string) => `${MESES_LARGOS[Number(m.slice(5, 7)) - 1]} ${m.slice(0, 4)}`;
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 const solesDia = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: n < 100 ? 1 : 0, maximumFractionDigits: n < 100 ? 1 : 0 })}`;
 const unid = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: n < 10 ? 1 : 0 });
@@ -34,9 +32,11 @@ export function TarjetaSede({ r, periodo }: { r: ResumenSede; periodo: number })
         <h4 className="text-sm font-semibold text-gray-900">{r.sede}</h4>
         {r.puesto && <span className="text-[11px] text-gray-500">n.º <b className="text-gray-800">{r.puesto.n}</b> de {r.puesto.de} en {corto(r.puesto.mes).toLowerCase()}</span>}
       </div>
+      {/* Pedido de Jahnn (12-nov-2026): que se entienda de qué meses son la venta y las unidades. Son la SUMA de las barras oscuras. */}
+      <p className="mt-1 text-[11px] text-gray-500">Venta y unidades: <b className="font-medium text-gray-700">{textoTramo(r.serie.filter((x) => ultimos.includes(x.mes) && x.confiable && x.dias > 0).map((x) => x.mes))}</b> (barras oscuras)</p>
       <div className="mt-2 grid grid-cols-3 gap-2">
-        <div><div className="text-[10px] uppercase tracking-wider text-gray-500">Venta</div><div className="text-lg font-semibold tabular-nums text-gray-900">{soles(r.venta)}</div><div className="text-[11px] text-gray-500">{solesDia(r.ventaDia)} por día</div></div>
-        <div><div className="text-[10px] uppercase tracking-wider text-gray-500">Unidades</div><div className="text-lg font-semibold tabular-nums text-gray-900">{unid(r.unidades)}</div><div className="text-[11px] text-gray-500">{unid(r.unidadesDia)} por día</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-gray-500">Venta total</div><div className="text-lg font-semibold tabular-nums text-gray-900">{soles(r.venta)}</div><div className="text-[11px] text-gray-500">promedio {solesDia(r.ventaDia)} por día</div></div>
+        <div><div className="text-[10px] uppercase tracking-wider text-gray-500">Unidades totales</div><div className="text-lg font-semibold tabular-nums text-gray-900">{unid(r.unidades)}</div><div className="text-[11px] text-gray-500">promedio {unid(r.unidadesDia)} por día</div></div>
         <div>
           <div className="text-[10px] uppercase tracking-wider text-gray-500">Contra antes</div>
           <div className={`text-lg font-semibold tabular-nums ${r.cambioPct === null ? "text-gray-400" : r.cambioPct < 0 ? "text-red-600" : "text-emerald-700"}`}>{r.cambioPct === null ? "—" : `${r.cambioPct > 0 ? "+" : ""}${r.cambioPct}%`}</div>
