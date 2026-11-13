@@ -47,9 +47,13 @@ describe("cruzar", () => {
     expect(c.filas[0]).toMatchObject({ sinExplicar: -8, estado: "sobra", valor: 0 });
   });
   it("no cruza el entero sin porciones conocidas ni lo que la cafetería no vende con ese nombre", () => {
-    const c = cruzar({ atelier: [v("Y-TORTA TROPICAL ENTERA", 31), v("Y-PAN IMG TIPO MOLDE 750G", 258)], fonavi: [v("TORTA TROPICAL ENTERA", 3), v("TORTA TROPICAL - PORCIÓN", 200)], centro: [], mermas: [] });
+    const c = cruzar({ atelier: [v("Y-TORTA SELVA NEGRA ENTERA", 31), v("Y-PAN IMG TIPO MOLDE 750G", 258)], fonavi: [v("TORTA SELVA NEGRA ENTERA", 3), v("TORTA SELVA NEGRA - PORCIÓN", 200)], centro: [], mermas: [] });
     expect(c.filas).toEqual([]);
-    expect(c.sinCruce).toEqual([{ nombre: "PAN IMG TIPO MOLDE 750G", salio: 258, motivo: "sin-pareja" }, { nombre: "TORTA TROPICAL ENTERA", salio: 31, motivo: "entero" }]);
+    expect(c.sinCruce).toEqual([{ nombre: "PAN IMG TIPO MOLDE 750G", salio: 258, motivo: "sin-pareja" }, { nombre: "TORTA SELVA NEGRA ENTERA", salio: 31, motivo: "entero" }]);
+  });
+  it("la torta tropical: Byte la escribe con guion y da 8 porciones", () => {
+    const c = cruzar({ atelier: [v("Y-TORTA TROPICAL ENTERA", 12)], fonavi: [v("TORTA TROPICAL - PORCIÓN", 38)], centro: [v("TORTA TROPICAL - PORCIÓN", 23), v("TORTA TROPICAL - ENTERA", 1)], mermas: [{ sedeId: 2, producto: "torta tropical", cantidad: 4, unidad: "und" }] });
+    expect(c.filas[0]).toMatchObject({ nombre: "Torta tropical", porEntero: 8, salio: 96, vendido: { fonavi: 38, centro: 31 }, mermas: { fonavi: 4, centro: 0 }, sinExplicar: 23, estado: "falta" });
   });
   it("el entero con porciones conocidas se cruza en porciones", () => {
     const c = cruzar({
