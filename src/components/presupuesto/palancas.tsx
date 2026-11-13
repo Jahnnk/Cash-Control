@@ -1,14 +1,18 @@
 "use client";
 
 /**
- * Palancas del EBITDA (pedido de Jahnn, 13-nov-2026) · Fase 1: simulador. Perillas a la izquierda, medidores a la
- * derecha. Parte de la realidad (promedio de los últimos meses cerrados) y NO guarda nada. El cálculo vive en
- * lib/palancas.ts.
+ * Palancas del EBITDA (pedido de Jahnn, 13-nov-2026). Perillas a la izquierda, medidores a la derecha. Parte de la
+ * realidad (promedio de los últimos meses cerrados). Fase 1: simulador (lib/palancas.ts). Fase 2: la ruta de 90 días y
+ * «Convertir en presupuesto», que guarda un BORRADOR del plan del mes (lib/palancas-presupuesto.ts).
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { Loader2, RotateCcw, SlidersHorizontal } from "lucide-react";
 import { getBasePalancas, type DatosPalancas } from "@/app/actions/palancas";
+import { getPresupuesto, guardarPresupuesto } from "@/app/actions/presupuesto";
+import { sugerir } from "@/lib/presupuesto";
+import { planDesdePalancas, rutaDe90Dias, type Grupo, type PlanDesdePalancas } from "@/lib/palancas-presupuesto";
+import { useToast } from "@/components/toast-provider";
 import { paraLlegar, simular, type Camino, type Palancas as Pos } from "@/lib/palancas";
 import { ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, type Termometro } from "@/lib/regla-33";
 import { nombreMes } from "@/lib/financiamientos";
@@ -76,7 +80,105 @@ function Fila({ etiqueta, valor, nota, tono }: { etiqueta: string; valor: string
   );
 }
 
-export function Palancas() {
+
+const mesMas = (mes: string, n: number) => {
+  const i = Number(mes.slice(0, 4)) * 12 + Number(mes.slice(5, 7)) - 1 + n;
+  return `${Math.floor(i / 12)}-${String((i % 12) + 1).padStart(2, "0")}`;
+};
+const mesDeHoy = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
+const bonita = (c: string) => c.charAt(0) + c.slice(1).toLowerCase();
+const NOMBRE_GRUPO: Record<Grupo, string> = { variable: "Costo variable", planilla: "Planilla", otrosFijos: "Otros fijos", sinMover: "No se mueve (sale del EBITDA)" };
+
+type Vista = { plan: PlanDesdePalancas; aprobado: boolean; habiaPlan: boolean };
+
+/** Fase 2: lo que marcan las palancas se guarda como BORRADOR del presupuesto del mes elegido. Nunca aprueba. */
+function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNombre: string; pos: Pos; onGuardado?: () => void }) {
+  const { showToast } = useToast();
+  const actual = mesDeHoy();
+  const [mes, setMes] = useState(mesMas(actual, 1));
+  const [vista, setVista] = useState<Vista | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"ver" | "guardar" | null>(null);
+  const [guardado, setGuardado] = useState(false);
+  // Si se mueve una palanca, la sede o el mes, lo que se veía ya no vale.
+  const huella = `${sede}|${mes}|${pos.ventas}|${pos.variablePct}|${pos.planilla}|${pos.otrosFijos}`;
+  const [huellaVista, setHuellaVista] = useState<string | null>(null);
+  const vigente = huellaVista === huella ? vista : null;
+
+  async function ver() {
+    setBusy("ver"); setError(null); setGuardado(false);
+    const r = await getPresupuesto(mes, sede);
+    setBusy(null);
+    if (!r.ok) { setError(r.error); return; }
+    const s = r.data.sedes[0];
+    if (!s) { setError("No encontré esa sede."); return; }
+    const plan = planDesdePalancas(pos, sugerir(s.historial).lineas, { ventaEsperada: s.cabecera?.ventaEsperada ?? null, lineas: s.lineas });
+    setVista({ plan, aprobado: !!s.cabecera?.aprobadoEl, habiaPlan: s.lineas.length > 0 });
+    setHuellaVista(huella);
+  }
+  async function guardar() {
+    if (!vigente || vigente.aprobado) return;
+    setBusy("guardar");
+    const r = await guardarPresupuesto({ businessId: sede, mes, ventaEsperada: vigente.plan.ventaEsperada, lineas: vigente.plan.lineas });
+    setBusy(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    setGuardado(true);
+    showToast(`Borrador de ${nombreMes(mes)} guardado para ${sedeNombre}.`, "success");
+    onGuardado?.();
+  }
+  const total = (g: Grupo, campo: "antes" | "ahora") => (vigente?.plan.cambios ?? []).filter((c) => c.grupo === g).reduce((t, c) => t + (c[campo] ?? 0), 0);
+
+  return (
+    <div className="rounded-2xl border border-gray-200/80 bg-white p-4">
+      <h3 className="text-sm font-semibold text-gray-900">Convertir en presupuesto</h3>
+      <p className="mt-0.5 text-xs text-gray-500">Lo que marcan las palancas pasa a ser el borrador del plan de {sedeNombre}. No se aprueba solo: lo revisas y lo apruebas en «Plan del mes».</p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <Segmentado tamano="sm" opciones={[{ valor: actual, etiqueta: nombreMes(actual) }, { valor: mesMas(actual, 1), etiqueta: nombreMes(mesMas(actual, 1)) }]} valor={mes} onChange={setMes} />
+        <button type="button" onClick={ver} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-primary hover:text-primary disabled:opacity-50">
+          {busy === "ver" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Ver cómo quedaría
+        </button>
+      </div>
+      {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
+      {vigente && (
+        <div className="mt-3">
+          <p className="text-xs text-gray-600">Venta esperada: <b className="tabular-nums text-gray-900">{soles(vigente.plan.ventaEsperada)}</b></p>
+          <div className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-gray-100">
+            <table className="w-full text-xs">
+              <thead className="sticky top-0 bg-gray-50 text-gray-500"><tr><th className="px-3 py-1.5 text-left font-medium">Categoría</th><th className="px-3 py-1.5 text-right font-medium">{vigente.habiaPlan ? "Plan de hoy" : "Sin plan"}</th><th className="px-3 py-1.5 text-right font-medium">Con las palancas</th></tr></thead>
+              <tbody>
+                {(["variable", "planilla", "otrosFijos", "sinMover"] as Grupo[]).map((g) => {
+                  const filas = vigente.plan.cambios.filter((c) => c.grupo === g);
+                  if (filas.length === 0) return null;
+                  return [
+                    <tr key={g} className="border-t border-gray-100 bg-gray-50/60"><td className="px-3 py-1.5 font-semibold text-gray-800">{NOMBRE_GRUPO[g]}</td><td className="px-3 py-1.5 text-right font-semibold tabular-nums text-gray-500">{vigente.habiaPlan ? soles(total(g, "antes")) : "—"}</td><td className="px-3 py-1.5 text-right font-semibold tabular-nums text-gray-900">{soles(total(g, "ahora"))}</td></tr>,
+                    ...filas.map((c) => (
+                      <tr key={c.categoria} className="border-t border-gray-100"><td className="px-3 py-1 pl-5 text-gray-600">{bonita(c.categoria)}</td><td className="px-3 py-1 text-right tabular-nums text-gray-400">{c.antes === null ? "—" : soles(c.antes)}</td><td className="px-3 py-1 text-right tabular-nums text-gray-800">{c.ahora === null ? "se quita" : soles(c.ahora)}</td></tr>
+                    )),
+                  ];
+                })}
+              </tbody>
+            </table>
+          </div>
+          {vigente.plan.sinRepartir > 0 && <p className="mt-2 text-[11px] text-amber-700">No hay historial de gastos fijos para repartir {soles(vigente.plan.sinRepartir)} de «Otros fijos»: agrégalos a mano en «Plan del mes».</p>}
+          {vigente.aprobado
+            ? <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">El plan de {nombreMes(mes)} ya está aprobado. Para cambiarlo, primero reábrelo en «Plan del mes».</p>
+            : guardado
+              ? <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Borrador guardado. Míralo en «Plan del mes», eligiendo {nombreMes(mes)}, y apruébalo cuando estés conforme.</p>
+              : (
+                <div className="mt-3 flex flex-wrap items-center gap-2">
+                  <button type="button" onClick={guardar} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
+                    {busy === "guardar" && <Loader2 className="h-3.5 w-3.5 animate-spin" />} Guardar como borrador de {nombreMes(mes)}
+                  </button>
+                  {vigente.habiaPlan && <span className="text-[11px] text-amber-700">Reemplaza el borrador que ya existe de ese mes.</span>}
+                </div>
+              )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
   const [datos, setDatos] = useState<DatosPalancas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sede, setSede] = useState<number>(2);
@@ -104,6 +206,7 @@ export function Palancas() {
     }
   };
   const metaDestino = Math.round(datos.ebitdaMetaPct * 10) / 10;
+  const ruta = lecturaReal ? rutaDe90Dias(lecturaReal.ebitdaPct, 25) : [];
   const hayCambios = !!movidas[sede];
 
   return (
@@ -111,7 +214,7 @@ export function Palancas() {
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900"><SlidersHorizontal className="h-5 w-5 text-primary" aria-hidden />Palancas del EBITDA</h2>
-          <p className="text-sm text-gray-500">Mueve una palanca y mira qué pasa. Es un simulador: no guarda ni cambia nada.</p>
+          <p className="text-sm text-gray-500">Mueve una palanca y mira qué pasa. Nada se guarda hasta que pulses «Guardar como borrador».</p>
         </div>
         <Segmentado opciones={datos.sedes.map((s) => ({ valor: s.businessId, etiqueta: s.sede }))} valor={sede} onChange={setSede} />
       </div>
@@ -174,9 +277,29 @@ export function Palancas() {
                   <h3 className="text-sm font-semibold text-gray-900">Llévame a la meta</h3>
                   <Segmentado tamano="sm" opciones={[{ valor: 25, etiqueta: "25% · paso" }, { valor: metaDestino, etiqueta: `${pct(metaDestino)} · destino` }]} valor={meta} onChange={setMeta} />
                 </div>
+                {ruta.length > 0 && (
+                  <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2">
+                    <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Ruta de 90 días a 25%</p>
+                    <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
+                      <span className="tabular-nums">Hoy {pct(lecturaReal.ebitdaPct)}</span>
+                      {ruta.map((paso, i) => (
+                        <span key={i} className="inline-flex items-center gap-1.5">
+                          <span aria-hidden>→</span>
+                          <button type="button" onClick={() => setMeta(paso)} aria-pressed={meta === paso} className={`rounded-lg border px-2 py-1 tabular-nums ${meta === paso ? "border-primary bg-white font-semibold text-primary" : "border-gray-300 bg-white text-gray-700 hover:border-primary"}`}>
+                            {nombreMes(mesMas(mesDeHoy(), i + 1)).split(" ")[0]} {pct(paso)}
+                          </button>
+                        </span>
+                      ))}
+                    </div>
+                    <p className="mt-1 text-[11px] text-gray-400">Toca un escalón para ver qué palanca mover ese mes. La ruta parte del promedio real y se recalcula cuando cierra un mes.</p>
+                  </div>
+                )}
+                <p className="mt-2 text-xs text-gray-600">Para llegar a <b className="tabular-nums text-gray-900">{pct(meta)}</b>:</p>
                 <Caminos pos={pos} meta={meta} onAplicar={aplicar} />
                 <p className="mt-2 text-[11px] text-gray-400">Cada línea mueve una sola palanca y deja las demás quietas. En la práctica se combinan.</p>
               </div>
+
+              <Convertir sede={sede} sedeNombre={actual?.sede ?? ""} pos={pos} onGuardado={onGuardado} />
             </div>
           </div>
         </>
