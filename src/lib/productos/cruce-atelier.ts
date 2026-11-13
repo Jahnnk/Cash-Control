@@ -86,6 +86,8 @@ export type Cruce = {
 export const ENTEROS: { nombre: string; porEntero: number; atelier: string[]; enteros: string[]; porciones: string[] }[] = [
   { nombre: "Carrot cake", porEntero: 8, atelier: ["CARROT CAKE ENTERA"], enteros: ["CARROT CAKE ENTERO", "CARROT CAKE ENTERA"], porciones: ["CARROT CAKE PORCION", "CARROT CAKE"] },
   { nombre: "Cake de chocolate", porEntero: 8, atelier: ["CAKE DE CHOCOLATE ENTERA"], enteros: ["CAKE DE CHOCOLATE ENTERO", "CAKE DE CHOCOLATE ENTERA"], porciones: ["CAKE DE CHOCOLATE PORCION", "CAKE DE CHOCOLATE"] },
+  // Salió de carta en octubre de 2026 (Jahnn, 13-nov-2026): queda para leer los meses anteriores.
+  { nombre: "Torta tropical", porEntero: 8, atelier: ["TORTA TROPICAL ENTERA"], enteros: ["TORTA TROPICAL ENTERA", "TORTA TROPICAL ENTERO"], porciones: ["TORTA TROPICAL PORCION", "TORTA TROPICAL"] },
   { nombre: "Budín de masa madre", porEntero: 4, atelier: ["BUDIN DE MASA MADRE 500G"], enteros: ["BUDIN DE MASA MADRE 500G", "BUDIN DE MASA MADRE ENTERO"], porciones: ["BUDIN DE MASA MADRE PORCION"] },
 ];
 const DE_TAMANO = new Set(["PORCION", "PORCIONES", "ENTERO", "ENTERA", "ENTEROS", "ENTERAS"]);
