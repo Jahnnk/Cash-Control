@@ -25,6 +25,7 @@ import { ManoDeObra } from "./mano-de-obra";
 import { DatosCargados } from "./datos-cargados";
 import { BuscadorProducto } from "./buscador-producto";
 import { ComparativoCategorias } from "./comparativo-categorias";
+import { CruceAtelier } from "./cruce-atelier";
 import { ImportarReportesModal } from "./importar-reportes";
 import { PricingAdmin } from "../recetas/pricing-admin";
 import { QueSacarPestana } from "./que-sacar";
@@ -148,6 +149,9 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
 
       {/* ¿Bajó la categoría o bajó toda la sede? Meses elegidos, sede por sede (13-nov-2026). Solo en Grupo. */}
       {sedeFija === null && <ComparativoCategorias key={`cmp-${version}-${month}`} month={month} />}
+
+      {/* Lo que salió de Atelier contra lo que las cafeterías vendieron y mermaron (13-nov-2026). Solo en Grupo. */}
+      {sedeFija === null && <CruceAtelier key={`cruce-${version}-${month}`} month={month} />}
 
       <div className="border-b border-gray-200">
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
