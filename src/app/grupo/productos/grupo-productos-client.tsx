@@ -24,6 +24,7 @@ import { PisoPrecios } from "./piso-precios";
 import { ManoDeObra } from "./mano-de-obra";
 import { DatosCargados } from "./datos-cargados";
 import { BuscadorProducto } from "./buscador-producto";
+import { ComparativoCategorias } from "./comparativo-categorias";
 import { ImportarReportesModal } from "./importar-reportes";
 import { PricingAdmin } from "../recetas/pricing-admin";
 import { QueSacarPestana } from "./que-sacar";
@@ -144,6 +145,9 @@ export function GrupoProductosClient({ sedeFija = null }: { sedeFija?: number | 
 
       {/* «Jahnn, el batido de plátano no se vende»: buscarlo y ver sus ventas por sede, mes a mes (24-oct-2026). */}
       <BuscadorProducto key={`b-${version}`} month={month} sedeFija={sedeFija} />
+
+      {/* ¿Bajó la categoría o bajó toda la sede? Meses elegidos, sede por sede (13-nov-2026). Solo en Grupo. */}
+      {sedeFija === null && <ComparativoCategorias key={`cmp-${version}-${month}`} month={month} />}
 
       <div className="border-b border-gray-200">
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">
