@@ -88,7 +88,9 @@ export function simular(p: Palancas): Lectura {
     planillaPct, planillaPasada: planillaPct > TOPE_PLANILLA_PCT,
     equilibrio: mc > 0.001 ? r2(fijos / mc) : null,
     pisoDiario: r2((fijos + variables) / 30),
-    utilidad, bolsa: r2(ebitda - utilidad), cabe: ebitda >= utilidad,
+    utilidad, bolsa: r2(ebitda - utilidad),
+    // Con 0.1 punto de tolerancia: el costo variable se mueve de a medio punto y deja céntimos de diferencia.
+    cabe: ebitdaPct >= p.utilidadPct - 0.1,
   };
 }
 

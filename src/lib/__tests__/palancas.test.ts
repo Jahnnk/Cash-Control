@@ -29,6 +29,7 @@ describe("palancas del EBITDA", () => {
     // Y aplicando cada una se llega de verdad.
     expect(simular({ ...real, ventas: ventas.valor! }).ebitdaPct).toBe(25);
     expect(simular({ ...real, variablePct: variable.valor! }).ebitdaPct).toBe(25);
+    expect(simular({ ventas: 37504, variablePct: 37.7, planilla: 10612, otrosFijos: 3383, utilidadPct: 25 }).cabe).toBe(true); // a S/6 de la utilidad por redondeo
     expect(simular({ ...real, planilla: 9000 - 2800 }).ebitdaPct).toBe(25);
   });
   it("si el costo variable más la meta se comen toda la venta, vender más no alcanza", () => {
