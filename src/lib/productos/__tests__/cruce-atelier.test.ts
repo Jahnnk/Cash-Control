@@ -46,10 +46,22 @@ describe("cruzar", () => {
     const c = cruzar({ atelier: [v("Y-BLONDIE DE LIMON", 65)], fonavi: [v("BLONDIE DE LIMON", 46)], centro: [v("BLONDIE DE LIMON", 27)], mermas: [] });
     expect(c.filas[0]).toMatchObject({ sinExplicar: -8, estado: "sobra", valor: 0 });
   });
-  it("no cruza enteros ni lo que la cafetería no vende con ese nombre", () => {
-    const c = cruzar({ atelier: [v("Y-CARROT CAKE ENTERA", 31), v("Y-PAN IMG TIPO MOLDE 750G", 258)], fonavi: [v("CARROT CAKE ENTERO", 3), v("CARROT CAKE PORCIÓN", 200)], centro: [], mermas: [] });
+  it("no cruza el entero sin porciones conocidas ni lo que la cafetería no vende con ese nombre", () => {
+    const c = cruzar({ atelier: [v("Y-TORTA TROPICAL ENTERA", 31), v("Y-PAN IMG TIPO MOLDE 750G", 258)], fonavi: [v("TORTA TROPICAL ENTERA", 3), v("TORTA TROPICAL - PORCIÓN", 200)], centro: [], mermas: [] });
     expect(c.filas).toEqual([]);
-    expect(c.sinCruce).toEqual([{ nombre: "PAN IMG TIPO MOLDE 750G", salio: 258, motivo: "sin-pareja" }, { nombre: "CARROT CAKE ENTERA", salio: 31, motivo: "entero" }]);
+    expect(c.sinCruce).toEqual([{ nombre: "PAN IMG TIPO MOLDE 750G", salio: 258, motivo: "sin-pareja" }, { nombre: "TORTA TROPICAL ENTERA", salio: 31, motivo: "entero" }]);
+  });
+  it("el entero con porciones conocidas se cruza en porciones", () => {
+    const c = cruzar({
+      atelier: [v("Y-CARROT CAKE ENTERA", 10, 466.5), v("Y-BUDIN DE MASA MADRE 500G", 5, 27.5)],
+      fonavi: [v("CARROT CAKE PORCIÓN", 40), v("CARROT CAKE ENTERO", 2), v("BUDIN DE MASA MADRE PORCION", 7), v("BUDIN DE MASA MADRE 500G", 1)],
+      centro: [v("CARROT CAKE", 18), v("BUDIN DE MASA MADRE ENTERO", 1)],
+      mermas: [{ sedeId: 3, producto: "CARROT", cantidad: 2, unidad: "und" }, { sedeId: 2, producto: "porción budin", cantidad: 1, unidad: "und" }, { sedeId: 2, producto: "budin entero", cantidad: 1, unidad: "und" }],
+    });
+    const carrot = c.filas.find((f) => f.nombre === "Carrot cake")!, budin = c.filas.find((f) => f.nombre === "Budín de masa madre")!;
+    expect(carrot).toMatchObject({ porEntero: 8, salio: 80, vendido: { fonavi: 56, centro: 18 }, mermas: { fonavi: 0, centro: 2 }, sinExplicar: 4, estado: "falta", precioInterno: 5.83 });
+    expect(budin).toMatchObject({ porEntero: 4, salio: 20, vendido: { fonavi: 11, centro: 4 }, mermas: { fonavi: 5, centro: 0 }, sinExplicar: 0, estado: "cuadra" });
+    expect(c.sinCruce).toEqual([]);
   });
   it("lo que la cafetería casi no vende con ese nombre no se cruza", () => {
     const c = cruzar({ atelier: [v("Y-FOCACCIA CLASICA 1/4", 109)], fonavi: [v("FOCACCIA CLASICA 1/4", 8)], centro: [v("FOCACCIA CLASICA 1/4", 6)], mermas: [] });

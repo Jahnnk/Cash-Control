@@ -25,7 +25,7 @@ function Fila({ f }: { f: FilaCruce }) {
   const vendido = f.vendido.fonavi + f.vendido.centro, mermas = f.mermas.fonavi + f.mermas.centro;
   return (
     <tr>
-      <td className="py-2 pr-3 text-gray-800">{f.nombre}</td>
+      <td className="py-2 pr-3 text-gray-800">{f.nombre}{f.porEntero && <span className="block text-[11px] text-gray-500">en porciones · {f.porEntero} por entero</span>}</td>
       <td className="px-2 py-2 text-right tabular-nums text-gray-900">{u(f.salio)}</td>
       <td className="px-2 py-2 text-right tabular-nums text-gray-700" title={`Fonavi ${u(f.vendido.fonavi)} · Centro ${u(f.vendido.centro)}`}>{u(vendido)} <span className="text-[11px] text-gray-400">({u(f.vendido.fonavi)} + {u(f.vendido.centro)})</span></td>
       <td className="px-2 py-2 text-right tabular-nums text-gray-700" title={`Fonavi ${u(f.mermas.fonavi)} · Centro ${u(f.mermas.centro)}${f.mermasComo.length ? ` · anotadas como: ${f.mermasComo.join(", ")}` : ""}`}>{u(mermas)}{mermas > 0 && <span className="text-[11px] text-gray-400"> ({u(f.mermas.fonavi)} + {u(f.mermas.centro)})</span>}</td>
@@ -96,7 +96,7 @@ export function CruceAtelier({ month }: { month: string }) {
             {filas.length === 0 && <p className="py-3 text-sm text-emerald-700">Todos los productos cruzados cuadran.</p>}
           </div>
           {cuadran > 0 && <button type="button" onClick={() => setVerTodo(!verTodo)} className="text-xs font-medium text-primary hover:underline">{verTodo ? "Ver solo los que no cuadran" : `Ver también los ${cuadran} que cuadran`}</button>}
-          <p className="text-[11px] text-gray-400">Cuadra si la diferencia no pasa de {TOLERANCIA_UNIDADES} unidades ni del {TOLERANCIA_PCT}% de lo que salió. Atelier no separa Fonavi de Centro en su reporte: el cruce es de las dos juntas. «Falta explicar» puede ser merma sin registrar, cortesía, consumo del personal o producto que quedó en vitrina al cierre del mes.</p>
+          <p className="text-[11px] text-gray-400">Cuadra si la diferencia no pasa de {TOLERANCIA_UNIDADES} unidades ni del {TOLERANCIA_PCT}% de lo que salió. Atelier no separa Fonavi de Centro en su reporte: el cruce es de las dos juntas. Los enteros se cuentan en porciones; su merma también, salvo que el administrador escriba «entero». «Falta explicar» puede ser merma sin registrar, cortesía, consumo del personal o producto que quedó en vitrina al cierre del mes.</p>
 
           {d.mermasSinEmparejar.length > 0 && (
             <details className="rounded-xl bg-gray-50 p-3 text-xs text-gray-600">

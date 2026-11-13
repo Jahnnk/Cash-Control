@@ -10,7 +10,10 @@
  * Qué se cruza y qué no (se dice en pantalla, nunca se adivina):
  *   · SE CRUZA lo que se vende tal cual, unidad por unidad: el mismo nombre en Atelier (sin «Y-») y en la cafetería.
  *     «de», «con»… no cuentan: «COOKIE DE ALMENDRA CON MANJAR» = «COOKIE ALMENDRA CON MANJAR».
- *   · NO se cruza lo que sale ENTERO y se vende en porciones (falta saber cuántas porciones da cada entero) ni lo que es
+ *   · Lo que sale ENTERO y se vende en porciones se cruza EN PORCIONES cuando Jahnn dio cuántas salen de cada entero
+ *     (ENTEROS, abajo): salió = enteros × porciones; vendido = porciones + enteros vendidos × porciones. Una merma cuenta
+ *     como porciones salvo que el administrador escriba «entero».
+ *   · NO se cruza el entero del que aún no se sabe cuántas porciones da, ni lo que es
  *     insumo de cocina (pan de molde para sánguches, bases, mermeladas): la cafetería no lo vende con ese nombre.
  *   · Tampoco se cruza lo que la cafetería vende poco con ese nombre (menos de la mitad de lo que salió, contando
  *     mermas): casi todo se usa en cocina (focaccia para sánguches) o se vende con otro nombre.
@@ -54,6 +57,8 @@ export type FilaCruce = {
   precioInterno: number;
   vendido: { fonavi: number; centro: number };
   mermas: { fonavi: number; centro: number };
+  /** Solo en los enteros: todas las cifras de la fila van en PORCIONES, a tantas por entero. */
+  porEntero?: number;
   /** Cómo escribió el administrador las mermas que se cargaron a este producto. */
   mermasComo: string[];
   /** salió − vendido − mermas. Positivo = falta explicar; negativo = se vendió más de lo que salió. */
@@ -74,12 +79,24 @@ export type Cruce = {
   totales: { salio: number; vendido: number; mermas: number; falta: number; valorFalta: number; productosConFalta: number };
 };
 
+/**
+ * Enteros que las cafeterías cortan en porciones (dato de Jahnn, 13-nov-2026). `atelier`: cómo sale de Atelier;
+ * `enteros` y `porciones`: cómo lo vende la cafetería (Fonavi dice «CARROT CAKE PORCIÓN», Centro «CARROT CAKE»).
+ */
+export const ENTEROS: { nombre: string; porEntero: number; atelier: string[]; enteros: string[]; porciones: string[] }[] = [
+  { nombre: "Carrot cake", porEntero: 8, atelier: ["CARROT CAKE ENTERA"], enteros: ["CARROT CAKE ENTERO", "CARROT CAKE ENTERA"], porciones: ["CARROT CAKE PORCION", "CARROT CAKE"] },
+  { nombre: "Cake de chocolate", porEntero: 8, atelier: ["CAKE DE CHOCOLATE ENTERA"], enteros: ["CAKE DE CHOCOLATE ENTERO", "CAKE DE CHOCOLATE ENTERA"], porciones: ["CAKE DE CHOCOLATE PORCION", "CAKE DE CHOCOLATE"] },
+  { nombre: "Budín de masa madre", porEntero: 4, atelier: ["BUDIN DE MASA MADRE 500G"], enteros: ["BUDIN DE MASA MADRE 500G", "BUDIN DE MASA MADRE ENTERO"], porciones: ["BUDIN DE MASA MADRE PORCION"] },
+];
+const DE_TAMANO = new Set(["PORCION", "PORCIONES", "ENTERO", "ENTERA", "ENTEROS", "ENTERAS"]);
+
 const r2 = (n: number) => Math.round(n * 100) / 100;
 const compatibles = (a: string, b: string) => a === b || (Math.min(a.length, b.length) >= 4 && (a.startsWith(b) || b.startsWith(a)));
 
 /** A qué producto del cruce pertenece una merma escrita a mano (null = ninguno o más de uno). */
 export function emparejarMerma(producto: string, claves: string[]): string | null {
-  const m = palabras(producto);
+  // «porción budín» o «carrot entero» son el budín y el carrot: el tamaño no identifica al producto.
+  const m = palabras(producto).filter((w) => !DE_TAMANO.has(w));
   if (m.length === 0) return null;
   const candidatas = claves.filter((c) => { const f = c.split(" "); return m.every((w) => f.some((x) => compatibles(w, x))); });
   const exactas = candidatas.filter((c) => c.split(" ").length === m.length);
@@ -108,6 +125,16 @@ export function cruzar(e: { atelier: LineaVenta[]; fonavi: LineaVenta[]; centro:
     s.u += l.unidades; s.r += l.ingresos; salidas.set(k, s);
   }
   const filas: FilaCruce[] = [], sinCruce: SinCruce[] = [];
+  // Los enteros con porciones conocidas: todo a porciones. Sus nombres salen de las listas para no cruzarse dos veces.
+  const tomar = (m: Map<string, number>, nombres: string[]) => nombres.reduce((t, n) => { const k = clave(n), v = m.get(k) ?? 0; m.delete(k); return t + v; }, 0);
+  for (const e2 of ENTEROS) {
+    let u = 0, ing = 0;
+    for (const n of e2.atelier) { const s = salidas.get(clave(n)); if (s) { u += s.u; ing += s.r; salidas.delete(clave(n)); } }
+    const venta = (m: Map<string, number>) => { const ent = tomar(m, e2.enteros); return tomar(m, e2.porciones) + ent * e2.porEntero; };
+    const vF = venta(fonavi), vC = venta(centro);
+    if (u <= 0) continue;
+    filas.push({ clave: clave(e2.porciones[e2.porciones.length - 1]), nombre: e2.nombre, salio: u * e2.porEntero, precioInterno: r2(ing / (u * e2.porEntero)), vendido: { fonavi: vF, centro: vC }, mermas: { fonavi: 0, centro: 0 }, porEntero: e2.porEntero, mermasComo: [], sinExplicar: 0, valor: 0, estado: "cuadra" });
+  }
   for (const [k, s] of salidas) {
     if (s.u <= 0) continue;
     const enCafeterias = fonavi.has(k) || centro.has(k);
@@ -122,7 +149,9 @@ export function cruzar(e: { atelier: LineaVenta[]; fonavi: LineaVenta[]; centro:
     const k = emparejarMerma(m.producto, claves);
     if (!k) { mermasSinEmparejar.push({ sedeId: m.sedeId, producto: m.producto.trim(), cantidad: m.cantidad }); continue; }
     const f = porClave.get(k)!;
-    if (m.sedeId === FONAVI) f.mermas.fonavi += m.cantidad; else f.mermas.centro += m.cantidad;
+    // En un entero, la merma va en porciones salvo que diga «entero».
+    const cantidad = f.porEntero && ENTERO.test(limpiar(m.producto)) ? m.cantidad * f.porEntero : m.cantidad;
+    if (m.sedeId === FONAVI) f.mermas.fonavi += cantidad; else f.mermas.centro += cantidad;
     if (!f.mermasComo.includes(m.producto.trim())) f.mermasComo.push(m.producto.trim());
   }
   // Lo que casi no se vende con ese nombre sale del cruce (y sus mermas no cuentan en los totales del cruce).
