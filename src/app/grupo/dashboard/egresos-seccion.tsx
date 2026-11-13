@@ -88,7 +88,7 @@ function DetallePorTipo({ detalles, hayPendiente }: { detalles: FamiliaSalida[];
   return (
     <div className="rounded-2xl border border-gray-200 bg-white p-4 sm:p-5">
       <h3 className="text-base font-semibold text-gray-900">Detalle por tipo de egreso</h3>
-      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-6" role="tablist" aria-label="Tipo de egreso">
+      <div className="mt-3 grid grid-cols-2 gap-2 sm:grid-cols-3 lg:grid-cols-7" role="tablist" aria-label="Tipo de egreso">
         {detalles.map((d) => {
           const sel = d.clave === actual.clave;
           return (

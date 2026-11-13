@@ -8,7 +8,11 @@
  *
  * Los tipos salen del catálogo, con los mismos criterios de las seis cifras (lib/seis-cifras.ts → rubroDe):
  *   · Fijo      = tipo Fijo + POR ACLARAR (fijo provisional mientras no se aclare) + lo que no está en el catálogo.
- *   · Variable  = tipo Variable, IMPUESTOS incluidos (en las seis cifras van en su propia línea).
+ *   · Variable  = tipo Variable, SIN los impuestos.
+ *   · Impuestos = la categoría IMPUESTOS, en su propio tipo (decisión de Jahnn, 13-nov-2026): no son costo de operar;
+ *     salen del EBITDA, junto con inversión y deudas (la «bolsa» de la regla 33-33-33). Así Fijo + Variable es
+ *     exactamente el costo que usan el EBITDA, el presupuesto y el punto de equilibrio. En el CATÁLOGO del Excel
+ *     siguen como Variable hasta que Finanzas cambie esa línea: el total cuadra igual, el reparto por tipo no.
  *   · Financiamiento, Inversión y No es gasto = su tipo del catálogo.
  *   · Un gasto no ejecutado que volvió el mismo mes (lib/gastos-compensados.ts) = No es gasto (Centro set:
  *     «GASTO NO EJECUTADO (ROSARIO REYES)» S/44.10, como en la pestaña de Jahnn).
@@ -24,11 +28,12 @@
 import { rubroDe, CATEGORIA_IMPUESTOS, type CifrasSede, type Rubro } from "./seis-cifras";
 import { compensacionesDelMes, corteDelMes, gastosEnCifras, revisarTipoDelMes, salioDeLaCuenta, type DatosMesSede, type GastoMes } from "./seis-cifras-mes";
 
-export type TipoEgreso = "Fijo" | "Variable" | "Financiamiento" | "Inversión" | "No es gasto" | "Por conciliar";
-export const TIPOS_EGRESO: TipoEgreso[] = ["Fijo", "Variable", "Financiamiento", "Inversión", "No es gasto", "Por conciliar"];
+export type TipoEgreso = "Fijo" | "Variable" | "Impuestos" | "Financiamiento" | "Inversión" | "No es gasto" | "Por conciliar";
+/** Fijo y Variable van primero: son el costo de operar (lo único que define el EBITDA y el punto de equilibrio). */
+export const TIPOS_EGRESO: TipoEgreso[] = ["Fijo", "Variable", "Impuestos", "Financiamiento", "Inversión", "No es gasto", "Por conciliar"];
 
 const DE_RUBRO: Record<Rubro, TipoEgreso> = {
-  gastos: "Fijo", costos: "Variable", impuestos: "Variable", deudas: "Financiamiento", inversion: "Inversión", noEsGasto: "No es gasto",
+  gastos: "Fijo", costos: "Variable", impuestos: "Impuestos", deudas: "Financiamiento", inversion: "Inversión", noEsGasto: "No es gasto",
 };
 export const tipoEgreso = (categoria: string): TipoEgreso => DE_RUBRO[rubroDe(categoria)];
 
@@ -48,7 +53,7 @@ function clasificador(d: DatosMesSede) {
 
 /** ¿Entra al punto de equilibrio? (la columna de la pestaña de Jahnn). */
 export const ENTRA_AL_PE: Record<TipoEgreso, string> = {
-  Fijo: "Sí", Variable: "Sí", Financiamiento: "Solo en «PE incluyendo deudas»", "Inversión": "No", "No es gasto": "No",
+  Fijo: "Sí", Variable: "Sí", Impuestos: "No (salen del EBITDA)", Financiamiento: "Solo en «PE incluyendo deudas»", "Inversión": "No", "No es gasto": "No",
   "Por conciliar": "No (hasta corregirla en el Excel)",
 };
 

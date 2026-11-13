@@ -48,35 +48,36 @@ describe("egresos por tipo (la pestaña de Jahnn)", () => {
   const d = mes();
   const e = egresosPorTipo(d, cifrasDelMes(d));
 
-  it("cinco tipos que suman el total de egresos (control = 0)", () => {
+  it("seis tipos que suman el total de egresos (control = 0); los impuestos van en su propio tipo", () => {
     expect(e.tipos.map((t) => [t.tipo, t.monto])).toEqual([
-      ["Fijo", 1227.4], ["Variable", 3156.2], ["Financiamiento", 600], ["Inversión", 9.6], ["No es gasto", 21],
+      ["Fijo", 1227.4], ["Variable", 3031.2], ["Impuestos", 125], ["Financiamiento", 600], ["Inversión", 9.6], ["No es gasto", 21],
     ]);
     expect(e.totalEgresos).toBe(5014.2);
     expect(e.control).toBe(0);
   });
-  it("criterios acordados con Jahnn: POR ACLARAR es fijo provisional; DEVOLUCIONES A CLIENTES e IMPUESTOS son variables; la reparación es mantenimiento (fijo)", () => {
+  it("criterios acordados con Jahnn: POR ACLARAR es fijo provisional; DEVOLUCIONES A CLIENTES es variable; IMPUESTOS tiene su tipo (13-nov-2026); la reparación es mantenimiento (fijo)", () => {
     expect(tipoEgreso("POR ACLARAR")).toBe("Fijo");
     expect(tipoEgreso("DEVOLUCIONES A CLIENTES")).toBe("Variable");
-    expect(tipoEgreso("IMPUESTOS")).toBe("Variable");
+    expect(tipoEgreso("IMPUESTOS")).toBe("Impuestos");
     expect(tipoEgreso("MANTENIMIENTO")).toBe("Fijo");
     expect(tipoEgreso("DEVOLUCIONES")).toBe("No es gasto");
     expect(tipoEgreso("UNA CATEGORÍA NUEVA")).toBe("Fijo");
   });
   it("porcentajes de los egresos y de los ingresos", () => {
     expect(e.tipos[0].pct).toBe(24.5);
-    expect(e.fijoMasVariable).toBe(4383.6);
+    expect(e.fijoMasVariable).toBe(4258.6); // sin los S/125 de impuestos: el costo de operar
     expect(e.ingresos).toBe(9000);
     expect(e.fijoPctIngresos).toBe(13.6);
-    expect(e.variablePctIngresos).toBe(35.1);
+    expect(e.variablePctIngresos).toBe(33.7);
   });
   it("el puente cierra al céntimo con las seis cifras", () => {
     const c = cifrasDelMes(d);
     expect(e.puente.fijo).toMatchObject({ desde: 1227.4, hasta: c.gastos, seisCifras: c.gastos, sinExplicar: 0 });
     expect(e.puente.fijo.lineas).toEqual([expect.objectContaining({ etiqueta: "Devuelto por otras sedes o personas", monto: -382.5 })]);
     expect(e.puente.fijo.lineas[0].detalle).toHaveLength(2);
-    expect(e.puente.variable).toMatchObject({ desde: 3156.2, hasta: c.costos, sinExplicar: 0 });
-    expect(e.puente.variable.lineas).toEqual([{ etiqueta: "Impuestos (van en su propia línea)", monto: -125 }]);
+    // Los impuestos ya no están en Variable: no hace falta restarlos para llegar a los costos de las seis cifras.
+    expect(e.puente.variable).toMatchObject({ desde: 3031.2, hasta: c.costos, sinExplicar: 0 });
+    expect(e.puente.variable.lineas).toEqual([]);
   });
   it("compartidos y pagos del socio tienen su línea en el puente; el gasto no ejecutado que volvió es «No es gasto»", () => {
     const d2 = mes();
