@@ -42,7 +42,7 @@ export function DondeSeVa({ d, sede }: { d: Diagnostico; sede: string }) {
                     <span className="text-sm font-medium text-gray-900">{i + 1}. {f.titulo}</span>
                     <b className="shrink-0 text-base font-semibold tabular-nums text-gray-900">{soles(f.soles)}</b>
                   </div>
-                  <p className="mt-0.5 text-[11px] leading-snug text-gray-500">{f.porque} Vale {pct(f.puntos)} de EBITDA.{f.dentroDeOtro && " Ya está dentro del costo variable."}</p>
+                  <p className="mt-0.5 text-[11px] leading-snug text-gray-500">{f.porque} Vale {(Math.round(f.puntos * 10) / 10).toLocaleString("es-PE")} {f.puntos === 1 ? "punto" : "puntos"} de EBITDA.{f.dentroDeOtro && " Ya está dentro del costo variable."}</p>
                 </li>
               ))}
             </ol>
