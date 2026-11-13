@@ -38,6 +38,7 @@ import { ATELIER, VISTAS_ATELIER, esCanalAtelier, filtrarPorCanal, repartoPorCan
 import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 import { armarAtelier, type ResultadoAtelier } from "@/lib/productos/atelier-sacar";
+import { cruzar, type Cruce, type LineaMerma, type LineaVenta } from "@/lib/productos/cruce-atelier";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -1117,5 +1118,43 @@ export async function getRevisarEnMiSede(hastaMes: string): Promise<Res<{ data: 
   } catch (e) {
     console.error("[getRevisarEnMiSede] failed:", e);
     return { ok: false, error: "No se pudo armar la lista." };
+  }
+}
+
+export type CruceAtelier = Cruce & {
+  /** Qué días cubre el reporte de productos de cada sede en el mes (null = sin reporte). */
+  cobertura: { sedeId: number; sede: string; desde: string | null; hasta: string | null }[];
+};
+
+/**
+ * Cruce Atelier → cafeterías → mermas del mes (13-nov-2026, lib/productos/cruce-atelier.ts): lo que Atelier vendió a las
+ * cafeterías (líneas Y-), lo que Fonavi y Centro vendieron al público y las mermas que registraron. Solo lectura, solo dirección.
+ */
+export async function getCruceAtelier(month: string): Promise<Res<{ data: CruceAtelier }>> {
+  if (!mesValido(month)) return { ok: false, error: "Mes inválido." };
+  if (!puedeLeerDireccion(await getSessionRole())) return { ok: false, error: "Solo dirección." };
+  try {
+    const [y, m] = month.split("-").map(Number);
+    const desde = `${month}-01`, hasta = `${month}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+    const ventasDe = async (bId: number) => (await sql`
+      SELECT product_name_raw AS nombre, SUM(units)::float AS unidades, SUM(revenue)::float AS ingresos,
+             MIN(period_start)::text AS desde, MAX(period_end)::text AS hasta
+      FROM rotacion_efectiva(${bId}, ${month}) GROUP BY 1
+    `) as (LineaVenta & { desde: string; hasta: string })[];
+    const [atelier, fonavi, centro, mermas] = await Promise.all([
+      ventasDe(ATELIER), ventasDe(2), ventasDe(3),
+      sql`SELECT business_id AS "sedeId", producto, SUM(cantidad)::float AS cantidad, MIN(unidad) AS unidad
+          FROM merma_items WHERE business_id IN (2, 3) AND date BETWEEN ${desde} AND ${hasta}
+          GROUP BY business_id, producto, lower(COALESCE(unidad, ''))` as unknown as Promise<LineaMerma[]>,
+    ]);
+    const rango = (sedeId: number, sede: string, l: { desde: string; hasta: string }[]) => ({
+      sedeId, sede,
+      desde: l.length ? l.reduce((a, x) => (x.desde < a ? x.desde : a), l[0].desde) : null,
+      hasta: l.length ? l.reduce((a, x) => (x.hasta > a ? x.hasta : a), l[0].hasta) : null,
+    });
+    return { ok: true, data: { ...cruzar({ atelier, fonavi, centro, mermas }), cobertura: [rango(ATELIER, "Atelier", atelier), rango(2, "Fonavi", fonavi), rango(3, "Centro", centro)] } };
+  } catch (e) {
+    console.error("[getCruceAtelier] failed:", e);
+    return { ok: false, error: "No se pudo armar el cruce de Atelier con las cafeterías." };
   }
 }
