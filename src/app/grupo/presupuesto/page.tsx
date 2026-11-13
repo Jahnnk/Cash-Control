@@ -3,6 +3,7 @@ import { getFrescuraGrupo } from "@/app/actions/frescura";
 import { BandaFrescura } from "@/components/banda-frescura";
 import { SeccionDesplegable } from "@/components/productos/ui";
 import { PresupuestoVista } from "@/components/presupuesto/presupuesto-vista";
+import { PresupuestoPestanas } from "@/components/presupuesto/presupuesto-pestanas";
 import { PanelGastoCard } from "./panel-gasto";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +20,7 @@ export default async function GrupoPresupuestoPage() {
   return (
     <div className="space-y-5">
       {frescura && <BandaFrescura frescura={frescura} />}
+      <PresupuestoPestanas plan={<>
       <PresupuestoVista />
       <div className="max-w-6xl">
         <SeccionDesplegable
@@ -28,6 +30,7 @@ export default async function GrupoPresupuestoPage() {
           {panel.ok ? <PanelGastoCard inicial={panel.data} /> : <p className="text-sm text-red-700">{panel.error}</p>}
         </SeccionDesplegable>
       </div>
+      </>} />
     </div>
   );
 }
