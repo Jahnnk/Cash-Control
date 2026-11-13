@@ -2,7 +2,7 @@
 
 /**
  * Palancas del EBITDA (pedido de Jahnn, 13-nov-2026). Perillas a la izquierda, medidores a la derecha. Parte de la
- * realidad (promedio de los últimos meses cerrados). Fase 1: simulador (lib/palancas.ts). Fase 2: la ruta de 90 días y
+ * realidad (promedio de los últimos meses cerrados). Fase 1: simulador (lib/palancas.ts). Fase 3: «¿Dónde se va la plata?» (donde-se-va.tsx). Fase 2: la ruta de 90 días y
  * «Convertir en presupuesto», que guarda un BORRADOR del plan del mes (lib/palancas-presupuesto.ts).
  */
 
@@ -17,6 +17,7 @@ import { paraLlegar, simular, type Camino, type Palancas as Pos } from "@/lib/pa
 import { ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, type Termometro } from "@/lib/regla-33";
 import { nombreMes } from "@/lib/financiamientos";
 import { Segmentado } from "@/components/productos/ui";
+import { DondeSeVa } from "./donde-se-va";
 
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 const conSigno = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}S/ ${Math.abs(Math.round(n)).toLocaleString("es-PE")}`;
@@ -302,6 +303,7 @@ export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
               <Convertir sede={sede} sedeNombre={actual?.sede ?? ""} pos={pos} onGuardado={onGuardado} />
             </div>
           </div>
+          {actual?.diagnostico && <DondeSeVa key={sede} d={actual.diagnostico} sede={actual.sede} />}
         </>
       )}
     </div>
