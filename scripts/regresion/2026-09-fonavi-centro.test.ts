@@ -100,8 +100,9 @@ if (!hayFoto) {
       expect(e.ingresos).toBe(37109.37);
       expect(e.control).toBe(0);
     });
-    it("Variable 17,864.00 (con IMPUESTOS y la devolución a Josué) · Financiamiento 1,813.50 · Inversión 9.60", () => {
-      expect(monto("Variable")).toBe(17864);
+    it("Variable 17,739.00 (con la devolución a Josué) · Impuestos 125.00 en su propio tipo (13-nov-2026) · Financiamiento 1,813.50 · Inversión 9.60", () => {
+      expect(monto("Variable")).toBe(17739);
+      expect(monto("Impuestos")).toBe(125);
       expect(monto("Financiamiento")).toBe(1813.5);
       expect(monto("Inversión")).toBe(9.6);
     });
@@ -116,9 +117,9 @@ if (!hayFoto) {
 
   describe("egresos por tipo de Centro (su pestaña «Resumen fijo vs variable», 25-oct-2026)", () => {
     const e = egresosPorTipo(foto.sedes.Centro.datos, sedes.Centro);
-    it("total 44,906.85 en seis tipos, con la fila 114 (S/63.19) en «Por conciliar» y los gastos no ejecutados en No es gasto", () => {
+    it("total 44,906.85 en siete tipos, con la fila 114 (S/63.19) en «Por conciliar» y los gastos no ejecutados en No es gasto", () => {
       expect(e.tipos.map((t) => [t.tipo, t.monto])).toEqual([
-        ["Fijo", 17862.76], ["Variable", 16933.34], ["Financiamiento", 0], ["Inversión", 150], ["No es gasto", 9897.56], ["Por conciliar", 63.19],
+        ["Fijo", 17862.76], ["Variable", 16933.34], ["Impuestos", 0], ["Financiamiento", 0], ["Inversión", 150], ["No es gasto", 9897.56], ["Por conciliar", 63.19],
       ]);
       expect(e.totalEgresos).toBe(44906.85);
       expect(e.control).toBe(0);

@@ -18,20 +18,20 @@ const bonita = (c: string) => bonitaBase(c).replace(/atelier/gi, "Atelier").repl
 const r1 = (n: number) => Math.round(n * 10) / 10;
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
-export type ClaveSalida = "fijos" | "variables" | "financiamiento" | "inversiones" | "noGasto" | "pendiente";
+export type ClaveSalida = "fijos" | "variables" | "impuestos" | "financiamiento" | "inversiones" | "noGasto" | "pendiente";
 
 const DE_TIPO: Record<TipoEgreso, ClaveSalida> = {
-  Fijo: "fijos", Variable: "variables", Financiamiento: "financiamiento", "Inversión": "inversiones", "No es gasto": "noGasto", "Por conciliar": "pendiente",
+  Fijo: "fijos", Variable: "variables", Impuestos: "impuestos", Financiamiento: "financiamiento", "Inversión": "inversiones", "No es gasto": "noGasto", "Por conciliar": "pendiente",
 };
 
 /** Etiquetas de la barra y su leyenda (como en la pantalla que dibujó Jahnn). */
 export const ETIQUETA_SALIDA: Record<ClaveSalida, string> = {
-  fijos: "Fijos", variables: "Variables", inversiones: "Inversiones", financiamiento: "Financiamiento", noGasto: "No gasto", pendiente: "Pendiente",
+  fijos: "Fijos", variables: "Variables", impuestos: "Impuestos", inversiones: "Inversiones", financiamiento: "Financiamiento", noGasto: "No gasto", pendiente: "Pendiente",
 };
 export const COLOR_SALIDA: Record<ClaveSalida, string> = {
-  fijos: "#5B7FB0", variables: "#DCA64F", inversiones: "#9B84BE", financiamiento: "#5E9C94", noGasto: "#8F96A3", pendiente: "#B87D68",
+  fijos: "#5B7FB0", variables: "#DCA64F", impuestos: "#C2788F", inversiones: "#9B84BE", financiamiento: "#5E9C94", noGasto: "#8F96A3", pendiente: "#B87D68",
 };
-const ORDEN_BARRA: ClaveSalida[] = ["fijos", "variables", "inversiones", "financiamiento", "noGasto", "pendiente"];
+const ORDEN_BARRA: ClaveSalida[] = ["fijos", "variables", "impuestos", "inversiones", "financiamiento", "noGasto", "pendiente"];
 
 export type CategoriaSalida = { nombre: string; monto: number; /** % de su familia. */ pctFamilia: number };
 export type FamiliaSalida = {
@@ -58,8 +58,9 @@ export type VistaEgresos = {
   control: number;
 };
 
-const ETIQUETA_FAMILIA = { fijos: "Costos fijos", variables: "Costos variables", inversiones: "Inversiones", financiamiento: "Financiamiento" } as const;
-const ORDEN_FAMILIAS = ["fijos", "variables", "inversiones", "financiamiento"] as const;
+const ETIQUETA_FAMILIA = { fijos: "Costos fijos", variables: "Costos variables", impuestos: "Impuestos", inversiones: "Inversiones", financiamiento: "Financiamiento" } as const;
+// Impuestos tiene su familia desde el 13-nov-2026: no es costo de operar, sale del EBITDA (con inversión y deudas).
+const ORDEN_FAMILIAS = ["fijos", "variables", "impuestos", "inversiones", "financiamiento"] as const;
 
 /** Las sedes elegidas (una, o las tres si `sede` es null) sumadas en una sola vista. */
 export function vistaEgresos(sedes: EgresosPorTipo[], sede: number | null): VistaEgresos | null {

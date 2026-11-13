@@ -39,9 +39,9 @@ describe("vistaEgresos — Centro, setiembre", () => {
     expect(v.operativos).toEqual({ monto: 34595.1, pct: 77 });
     expect(v.noGasto).toEqual({ monto: 10017.56, pct: 22.3 });
   });
-  it("las cuatro familias, con % de las salidas", () => {
+  it("las cinco familias (impuestos aparte desde el 13-nov-2026), con % de las salidas", () => {
     expect(v.familias.map((f) => [f.etiqueta, f.monto, f.pct])).toEqual([
-      ["Costos fijos", 18289.96, 40.7], ["Costos variables", 16305.14, 36.3], ["Inversiones", 231, 0.5], ["Financiamiento", 0, 0],
+      ["Costos fijos", 18289.96, 40.7], ["Costos variables", 16305.14, 36.3], ["Impuestos", 0, 0], ["Inversiones", 231, 0.5], ["Financiamiento", 0, 0],
     ]);
   });
   it("el detalle va de mayor a menor y con nombres legibles", () => {
@@ -49,16 +49,16 @@ describe("vistaEgresos — Centro, setiembre", () => {
     expect(v.familias[0].categorias[0].pctFamilia).toBe(67.1);
     expect(v.familias[1].categorias[0].nombre).toBe("Productos Atelier");
   });
-  it("la barra omite lo que está en cero y hay desglose de los seis tipos", () => {
+  it("la barra omite lo que está en cero y hay desglose de los siete tipos", () => {
     expect(v.barra.map((b) => b.clave)).toEqual(["fijos", "variables", "inversiones", "noGasto", "pendiente"]);
-    expect(v.detalles.map((d) => d.etiqueta)).toEqual(["Costos fijos", "Costos variables", "Inversiones", "Financiamiento", "No es gasto", "Por conciliar"]);
-    expect(v.detalles[4].categorias.map((x) => x.nombre)).toEqual(["Ahorro", "Utilidades a socios", "Devoluciones"]);
+    expect(v.detalles.map((d) => d.etiqueta)).toEqual(["Costos fijos", "Costos variables", "Impuestos", "Inversiones", "Financiamiento", "No es gasto", "Por conciliar"]);
+    expect(v.detalles[5].categorias.map((x) => x.nombre)).toEqual(["Ahorro", "Utilidades a socios", "Devoluciones"]);
     expect(v.hayPendiente).toBe(true);
     expect(v.control).toBe(0);
   });
   it("«Por conciliar» dice qué movimiento es, de qué día y en qué fila del Excel", () => {
     const e = { ...centro(), pendientes: [{ fecha: "2026-09-12", concepto: "DEPÓSITO POR VENTAS EN EFECTIVO", monto: 63.19, fila: 114 }] };
-    const p = vistaEgresos([e], 3)!.detalles[5];
+    const p = vistaEgresos([e], 3)!.detalles[6];
     expect(p.categorias).toEqual([{ nombre: "Depósito por ventas en efectivo · 12/09 · fila 114", monto: 63.19, pctFamilia: 100 }]);
   });
 });
