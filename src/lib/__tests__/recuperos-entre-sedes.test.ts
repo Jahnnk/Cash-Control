@@ -1,6 +1,6 @@
 /** Casos reales de ago–set 2026 (conciliación con Jahnn, 16-oct). */
 import { describe, it, expect } from "vitest";
-import { recuperosDeOtrasSedes, motivoNoResta } from "../recuperos-entre-sedes";
+import { recuperosDeOtrasSedes, motivoNoResta, hablanDelMismoPago } from "../recuperos-entre-sedes";
 
 const dev = (fecha: string, monto: number, nota: string) => ({ fecha, monto, nota });
 
@@ -69,5 +69,36 @@ describe("devoluciones de personas por un gasto (auditoría abr–set)", () => {
       dev("2026-09-16", 1500, "PRÉSTAMO PARA 50% ARREGLO ABATIDOR"),
       dev("2026-09-01", 50, "DEVOLUCION VARIOS"),
     ])).toEqual([]);
+  });
+});
+
+describe("gasto pagado entero y repartido después (14-nov-2026)", () => {
+  const gastos = [
+    { fecha: "2026-10-26", monto: 1000, categoria: "PERSONAL", concepto: "ADELANTO 50% CAPACITACIÓN PERSONAL (ALAN ORDOÑEZ)" },
+    { fecha: "2026-10-12", monto: 55, categoria: "CONTABILIDAD Y ASESORÍAS", concepto: "LEGALIZACIÒN FIRMAS (SOCIOS)" },
+    { fecha: "2026-10-03", monto: 750, categoria: "PERSONAL", concepto: "ALMUERZOS ANIVERSARIO YAYIS (LA GUARDIA)" },
+  ];
+  it("la devolución de Fonavi por el adelanto de Alan resta de PERSONAL", () => {
+    const r = recuperosDeOtrasSedes([{ fecha: "2026-10-29", monto: 500, nota: "DEVOLUCIÓN POR 50% ADELANTO ALAN ORDOÑEZ (EXPERIENCIAS GASTRONOMICAS SRL)" }], [], gastos);
+    expect(r).toEqual([{ fecha: "2026-10-29", monto: 500, categoria: "PERSONAL", nota: "DEVOLUCIÓN POR 50% ADELANTO ALAN ORDOÑEZ (EXPERIENCIAS GASTRONOMICAS SRL)" }]);
+  });
+  it("dos sedes devuelven su parte del mismo pago, sin pasar de lo pagado", () => {
+    const r = recuperosDeOtrasSedes([
+      { fecha: "2026-10-14", monto: 20.63, nota: "REEMBOLSO POR LEGALIZACION FIRMAS (EXPERIENCIAS GASTRONOMICAS SRL)" },
+      { fecha: "2026-10-14", monto: 13.73, nota: "REEMBOLSO POR LEGALIZACION FIRMAS (PRODUCTOS SALUDABLES YAYI´S SRL)" },
+      { fecha: "2026-10-15", monto: 30, nota: "REEMBOLSO POR LEGALIZACION FIRMAS (OTRA)" },
+    ], [], gastos);
+    expect(r.map((x) => x.categoria)).toEqual(["CONTABILIDAD Y ASESORÍAS", "CONTABILIDAD Y ASESORÍAS", "POR ACLARAR"]);
+  });
+  it("sin un pago que hable de lo mismo, o pagado después, queda por aclarar", () => {
+    const r = recuperosDeOtrasSedes([
+      { fecha: "2026-10-29", monto: 300, nota: "DEVOLUCIÓN POR TALLER DE BARISTA (EXPERIENCIAS GASTRONOMICAS SRL)" },
+      { fecha: "2026-10-20", monto: 500, nota: "DEVOLUCIÓN POR 50% ADELANTO ALAN ORDOÑEZ (EXPERIENCIAS GASTRONOMICAS SRL)" },
+    ], [], gastos);
+    expect(r.map((x) => x.categoria)).toEqual(["POR ACLARAR", "POR ACLARAR"]);
+  });
+  it("hablanDelMismoPago: el proveedor del gasto cuenta; la empresa que devuelve, no", () => {
+    expect(hablanDelMismoPago("DEVOLUCIÓN 50% ADELANTO ALAN ORDOÑEZ (EXPERIENCIAS)", "ADELANTO 50% CAPACITACIÓN (ALAN ORDOÑEZ)")).toBe(true);
+    expect(hablanDelMismoPago("DEVOLUCIÓN 50% ADELANTO (ALAN ORDOÑEZ)", "ADELANTO DE SUELDO (KELLY)")).toBe(false);
   });
 });
