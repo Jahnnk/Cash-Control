@@ -73,7 +73,7 @@ export function DondeSeVa({ d, sede }: { d: Diagnostico; sede: string }) {
         {/* ── De qué está hecho el costo variable ── */}
         <div>
           <h4 className="text-sm font-semibold text-gray-900">De qué está hecho el costo variable</h4>
-          <p className="text-[11px] text-gray-500">Promedio al mes y % de la venta. Juntos: {pct(variables.reduce((t, f) => t + f.pctVenta, 0))} (su tercio es 33.3%).</p>
+          <p className="text-[11px] text-gray-500">Promedio al mes y % de la venta. Todo el costo variable: {pct(d.ventas > 0 ? (d.variables.reduce((t, f) => t + f.monto, 0) / d.ventas) * 100 : 0)} (su tercio es 33.3%).</p>
           <ul className="mt-2 divide-y divide-gray-100">{variables.map((f) => <FilaGasto key={f.categoria} f={f} />)}</ul>
           {esGrupo
             ? <p className="mt-1 text-[11px] text-gray-400">Sin lo que las cafeterías le compran a Atelier: dentro del Grupo no es costo.</p>
