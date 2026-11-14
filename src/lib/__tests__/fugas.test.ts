@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { diagnosticar, esFijoDeOperacion, focos, mapaDeFugas, radiografiaFijos, type MesGasto } from "../fugas";
+import { diagnosticar, esFijoDeOperacion, focos, mapaDeFugas, radiografiaFijos, radiografiaVariables, type MesGasto } from "../fugas";
 
 const mes = (m: string, ventas: number, porCategoria: Record<string, number>): MesGasto => ({ mes: m, ventas, porCategoria });
 const SIN_FUGAS = { mermas: null, porMotivo: [], metaMermaPct: 4, descuentos: null, descuentosAntes: null };
@@ -32,6 +32,15 @@ describe("radiografiaFijos", () => {
   });
   it("sin meses anteriores no compara", () => {
     expect(radiografiaFijos(recientes, [])[0]).toMatchObject({ antes: null, cambio: null, sube: false });
+  });
+});
+
+describe("radiografiaVariables", () => {
+  it("solo lo variable de la operación, con su % de la venta", () => {
+    const f = radiografiaVariables([mes("2026-10", 40000, { INSUMOS: 12000, "PRODUCTOS ATELIER": 6000, PLANILLA: 10000, IMPUESTOS: 500 })], [mes("2026-09", 40000, { INSUMOS: 10000, "PRODUCTOS ATELIER": 6000 })]);
+    expect(f.map((x) => x.categoria)).toEqual(["INSUMOS", "PRODUCTOS ATELIER"]);
+    expect(f[0]).toMatchObject({ monto: 12000, pctVenta: 30, antes: 10000, cambio: 2000, sube: true });
+    expect(f[1].sube).toBe(false);
   });
 });
 

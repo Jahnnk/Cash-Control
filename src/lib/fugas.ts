@@ -35,6 +35,11 @@ export function esFijoDeOperacion(categoria: string): boolean {
   return areaDe(categoria).bloque === "operacion" && categoria !== CAT_IMPUESTOS && tipoDeCategoria(categoria) !== "Variable";
 }
 
+/** ¿La categoría es un costo variable de la operación? (la palanca 2: insumos, productos de Atelier, empaques…). */
+export function esVariableDeOperacion(categoria: string): boolean {
+  return areaDe(categoria).bloque === "operacion" && categoria !== CAT_IMPUESTOS && tipoDeCategoria(categoria) === "Variable";
+}
+
 export type FilaFijo = {
   categoria: string;
   /** Promedio mensual de los meses recientes. */
@@ -54,10 +59,19 @@ const esCambioReal = (cambio: number, antes: number) =>
 
 /** Todos los gastos fijos de la operación, del que más pesa al que menos. */
 export function radiografiaFijos(recientes: MesGasto[], previos: MesGasto[]): FilaFijo[] {
+  return radiografia(recientes, previos, esFijoDeOperacion);
+}
+
+/** De qué está hecho el costo variable: cada categoría, del que más pesa al que menos. */
+export function radiografiaVariables(recientes: MesGasto[], previos: MesGasto[]): FilaFijo[] {
+  return radiografia(recientes, previos, esVariableDeOperacion);
+}
+
+function radiografia(recientes: MesGasto[], previos: MesGasto[], entra: (categoria: string) => boolean): FilaFijo[] {
   if (recientes.length === 0) return [];
   const ventas = prom(recientes.map((m) => m.ventas));
   const cats = new Set<string>();
-  for (const m of [...recientes, ...previos]) for (const c of Object.keys(m.porCategoria)) if (esFijoDeOperacion(c)) cats.add(c);
+  for (const m of [...recientes, ...previos]) for (const c of Object.keys(m.porCategoria)) if (entra(c)) cats.add(c);
   return [...cats].map((categoria): FilaFijo => {
     const monto = r2(prom(recientes.map((m) => m.porCategoria[categoria] ?? 0)));
     const antes = previos.length ? r2(prom(previos.map((m) => m.porCategoria[categoria] ?? 0))) : null;
@@ -163,6 +177,8 @@ export type Diagnostico = {
   ventas: number;
   fijos: FilaFijo[];
   totalFijos: number;
+  /** El costo variable por categoría (mismas columnas que los fijos). */
+  variables: FilaFijo[];
   fugas: Fugas;
   focos: Foco[];
 };
@@ -174,6 +190,6 @@ export function diagnosticar(e: { recientes: MesGasto[]; previos: MesGasto[]; va
   const fugas = mapaDeFugas({ ...e.fugas, ventas, meses: e.recientes.length, mesesAntes: e.previos.length });
   return {
     meses: e.recientes.map((m) => m.mes), mesesAntes: e.previos.map((m) => m.mes), ventas, fijos,
-    totalFijos: r2(fijos.reduce((t, f) => t + f.monto, 0)), fugas, focos: focos({ ventas, variablePct: e.variablePct, fijos, fugas }),
+    totalFijos: r2(fijos.reduce((t, f) => t + f.monto, 0)), variables: radiografiaVariables(e.recientes, e.previos), fugas, focos: focos({ ventas, variablePct: e.variablePct, fijos, fugas }),
   };
 }
