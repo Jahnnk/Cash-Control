@@ -10,6 +10,7 @@ import { TrendingUp } from "lucide-react";
 import { SeccionDesplegable } from "@/components/productos/ui";
 import { nombreMes } from "@/lib/financiamientos";
 import type { Diagnostico, FilaFijo } from "@/lib/fugas";
+import { NOMBRE_GRUPO } from "@/lib/palancas";
 
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 const conSigno = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}S/ ${Math.abs(Math.round(n)).toLocaleString("es-PE")}`;
@@ -40,7 +41,7 @@ export function DondeSeVa({ d, sede }: { d: Diagnostico; sede: string }) {
   const tresFocos = d.focos.slice(0, CUANTOS_FOCOS);
   const fijos = d.fijos.slice(0, CUANTOS_FIJOS);
   const variables = d.variables.filter((f) => f.monto > 0).slice(0, CUANTOS_FIJOS);
-  const esGrupo = sede === "Grupo";
+  const esGrupo = sede === NOMBRE_GRUPO;
   const { merma, sobreproduccion, descuentos } = d.fugas;
   const hayAntes = d.mesesAntes.length > 0;
   return (
@@ -77,7 +78,7 @@ export function DondeSeVa({ d, sede }: { d: Diagnostico; sede: string }) {
           <ul className="mt-2 divide-y divide-gray-100">{variables.map((f) => <FilaGasto key={f.categoria} f={f} />)}</ul>
           {esGrupo
             ? <p className="mt-1 text-[11px] text-gray-400">Sin lo que las cafeterías le compran a Atelier: dentro del Grupo no es costo.</p>
-            : variables.some((f) => f.categoria === "PRODUCTOS ATELIER") && <p className="mt-1 text-[11px] text-gray-400">«Productos Atelier» va a precio interno: para el Grupo no es costo. Mira «Grupo» para ver el costo real.</p>}
+            : variables.some((f) => f.categoria === "PRODUCTOS ATELIER") && <p className="mt-1 text-[11px] text-gray-400">«Productos Atelier» es lo que esta sede le paga a Atelier, a precio interno.</p>}
         </div>
 
         {/* ── Radiografía de fijos ── */}

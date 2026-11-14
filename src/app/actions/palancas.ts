@@ -11,7 +11,7 @@ import { requireLectura } from "@/lib/session-access";
 import { cifrasDeSedeEnMes, hoyLima } from "@/lib/seis-cifras-sql";
 import { cifrasDelGrupo, CATEGORIA_COMPRA_ATELIER, type CifrasSede } from "@/lib/seis-cifras";
 import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
-import { baseDePalancas, GRUPO, type BasePalancas, type MesBase } from "@/lib/palancas";
+import { baseDePalancas, GRUPO, NOMBRE_GRUPO, type BasePalancas, type MesBase } from "@/lib/palancas";
 import { gastoPorCategoria } from "@/lib/presupuesto-datos";
 import { diagnosticar, type Diagnostico, type MesGasto } from "@/lib/fugas";
 
@@ -102,8 +102,8 @@ export async function getBasePalancas(): Promise<{ ok: true; data: DatosPalancas
       return g.ventas === null ? [] : [{ mes, ventas: g.ventas, costos: g.costos, gastos: g.gastos, planilla: g.planilla, bolsa: g.fuera.deudas + g.fuera.inversion + g.impuestos }];
     });
     const baseGrupo = baseDePalancas(cerradosGrupo, config.utilidadPct);
-    const grupo: PalancasSede = { businessId: GRUPO, sede: "Grupo", base: baseGrupo, diagnostico: baseGrupo ? await leerDiagnostico(SEDES.map(([id]) => id), cerradosGrupo, baseGrupo, CATEGORIA_COMPRA_ATELIER) : null };
-    return { ok: true, data: { sedes: [grupo, ...sedes], ebitdaMetaPct: config.ebitdaPct } };
+    const grupo: PalancasSede = { businessId: GRUPO, sede: NOMBRE_GRUPO, base: baseGrupo, diagnostico: baseGrupo ? await leerDiagnostico(SEDES.map(([id]) => id), cerradosGrupo, baseGrupo, CATEGORIA_COMPRA_ATELIER) : null };
+    return { ok: true, data: { sedes: [...sedes, grupo], ebitdaMetaPct: config.ebitdaPct } };
   } catch (e) {
     console.error("[getBasePalancas] failed:", e);
     return { ok: false, error: "No se pudo leer el punto de partida de las palancas." };

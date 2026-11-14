@@ -182,7 +182,7 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
 export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
   const [datos, setDatos] = useState<DatosPalancas | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sede, setSede] = useState<number>(GRUPO);
+  const [sede, setSede] = useState<number>(2);
   const [movidas, setMovidas] = useState<Record<number, Pos>>({});
   const [meta, setMeta] = useState<number>(25);
   useEffect(() => { void getBasePalancas().then((r) => { if (r.ok) setDatos(r.data); else setError(r.error); }); }, []);
@@ -217,7 +217,7 @@ export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
           <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900"><SlidersHorizontal className="h-5 w-5 text-primary" aria-hidden />Palancas del EBITDA</h2>
           <p className="text-sm text-gray-500">Mueve una palanca y mira qué pasa. Nada se guarda hasta que pulses «Guardar como borrador».</p>
         </div>
-        <Segmentado opciones={datos.sedes.map((s) => ({ valor: s.businessId, etiqueta: s.sede }))} valor={sede} onChange={setSede} />
+        <Segmentado opciones={datos.sedes.map((s) => ({ valor: s.businessId, etiqueta: s.businessId === GRUPO ? `${s.sede} · referencia` : s.sede }))} valor={sede} onChange={setSede} />
       </div>
 
       {!base || !pos || !lectura || !lecturaReal ? <p className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-500">{actual?.sede ?? "Esta sede"} todavía no tiene un mes cerrado con ventas y Excel completos para partir de la realidad.</p> : (
@@ -225,7 +225,7 @@ export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
           <p className="text-xs text-gray-500">
             Punto de partida: promedio de {base.meses.length === 1 ? nombreMes(base.meses[0]) : `${nombreMes(base.meses[0])} a ${nombreMes(base.meses[base.meses.length - 1])}`} ({base.meses.length} {base.meses.length === 1 ? "mes cerrado" : "meses cerrados"}).
             {sede === 1 && <> Atelier vende a las sedes a precio interno: su meta propia está por definir.</>}
-            {sede === GRUPO && <> Las tres sedes juntas. Lo que Atelier le vende a las cafeterías se cuenta una sola vez: no es venta ni costo del Grupo.</>}
+            {sede === GRUPO && <> Las tres sedes juntas, solo como referencia: lo que Atelier le vende a las cafeterías se cuenta una sola vez. Cada empresa se dirige y se presupuesta con su propia vista.</>}
           </p>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* ── Perillas ── */}

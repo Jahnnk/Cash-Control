@@ -19,6 +19,11 @@ import { termometroEbitda, TOPE_PLANILLA_PCT, type Termometro } from "./regla-33
 
 /** El Grupo va con businessId 0: las tres sedes juntas, sin lo que Atelier le vende a las cafeterías. */
 export const GRUPO = 0;
+/**
+ * El Grupo es solo REFERENCIA (Jahnn, 14-nov-2026): las tres empresas llevan finanzas independientes y los socios tienen
+ * distinto porcentaje en cada una, así que se dirige y se presupuesta por sede. Va al final y marcado.
+ */
+export const NOMBRE_GRUPO = "Grupo";
 
 export type Palancas = {
   ventas: number;
