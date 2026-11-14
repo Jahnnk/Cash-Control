@@ -25,6 +25,15 @@
  * («REFRI» ↔ «REFRIGERADORA»: el monto solo no basta, S/100 se repite mucho), la devolución resta de la categoría
  * de ese gasto. Cada gasto explica una sola devolución. Si no hay ese gasto (lo pagado está en DEVOLUCIONES), sigue
  * sin restar, como antes.
+ *
+ * Gasto pagado entero y repartido DESPUÉS (14-nov-2026, Jahnn): «hay pagos que se hacen por completo de la cuenta de
+ * una sede y después la otra o las otras le devuelven lo que les corresponde». Centro pagó S/1,000 de adelanto a Alan
+ * Ordóñez por una capacitación (PERSONAL) y Fonavi le devolvió S/500; Centro pagó S/55 de legalización de firmas y
+ * Fonavi y Atelier le devolvieron su parte. La nota de la devolución («50% ADELANTO ALAN ORDOÑEZ») no dice la
+ * categoría y quedaba en POR ACLARAR. Regla: si las reglas no saben la categoría, se busca el gasto de la sede que
+ * habla de lo mismo (una palabra en común, CON el proveedor que va entre paréntesis en el gasto), pagado hasta 45 días
+ * antes y por un monto mayor que lo devuelto; la devolución resta de su categoría. Varias devoluciones pueden venir del
+ * mismo gasto (la legalización la devolvieron dos sedes), pero entre todas no pasan de lo que se pagó.
  */
 
 import { clasificarGasto, POR_ACLARAR } from "./reglas-gasto";
@@ -50,6 +59,19 @@ export function hablanDeLoMismo(devolucion: string, gasto: string): boolean {
 }
 const TOLERANCIA = 0.05;
 
+/** Palabras que no identifican un gasto repartido (cualquier adelanto o reembolso las tiene). */
+const VACIAS_REPARTO = new Set([...VACIAS, "ADELANTO", "REEMBOLSO", "MITAD", "PARTE", "CORRESPONDE", "TOTAL"]);
+const palabrasReparto = (t: string, conParentesis: boolean) =>
+  (conParentesis ? norm(t) : norm(t).replace(/\([^)]*\)/g, " ")).split(/[^A-Z0-9]+/).filter((w) => w.length >= 4 && !VACIAS_REPARTO.has(w));
+/**
+ * ¿La devolución habla del mismo pago que el gasto? En la devolución, el paréntesis es la empresa que devuelve (no
+ * cuenta); en el gasto, el paréntesis es el proveedor (sí cuenta: «ALAN ORDOÑEZ»).
+ */
+export function hablanDelMismoPago(devolucion: string, gasto: string): boolean {
+  const g = palabrasReparto(gasto, true);
+  return palabrasReparto(devolucion, false).some((w) => g.some((x) => x === w || (Math.min(w.length, x.length) >= 6 && (x.startsWith(w) || w.startsWith(x)))));
+}
+
 const norm = (t: string) => t.normalize("NFD").replace(/[̀-ͯ]/g, "").toUpperCase();
 const dias = (a: string, b: string) => Math.abs(Date.parse(`${a}T12:00:00Z`) - Date.parse(`${b}T12:00:00Z`)) / 86_400_000;
 
@@ -69,6 +91,8 @@ export function motivoNoResta(d: DevolucionRecibida, repartidos: GastoRepartido[
 export function recuperosDeOtrasSedes(devoluciones: DevolucionRecibida[], repartidos: GastoRepartido[], gastos: GastoDeLaSede[] = []): Recupero[] {
   const libres = [...repartidos];
   const gastosLibres = [...gastos];
+  // Lo que todavía puede explicar cada gasto pagado entero (varias sedes pueden devolver su parte del mismo pago).
+  const saldoRepartible = new Map<GastoDeLaSede, number>(gastos.map((g) => [g, g.monto]));
   const out: Recupero[] = [];
   for (const d of [...devoluciones].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
     if (!(d.monto > 0)) continue;
@@ -92,7 +116,17 @@ export function recuperosDeOtrasSedes(devoluciones: DevolucionRecibida[], repart
     if (motivo) continue;
     // El concepto dice de qué era (las reglas quitan el paréntesis con la empresa que devuelve).
     const cat = clasificarGasto(d.nota.replace(/\([^)]*\)/g, " ").replace(/REEMBOLSO|DEVOLUCI[OÓ]N/gi, " "));
-    out.push({ fecha: d.fecha, monto: d.monto, categoria: cat === POR_ACLARAR ? POR_ACLARAR : cat, nota: d.nota });
+    if (cat !== POR_ACLARAR) { out.push({ fecha: d.fecha, monto: d.monto, categoria: cat, nota: d.nota }); continue; }
+    // Las reglas no saben de qué era: el gasto que esta sede pagó entero y del que la otra devuelve su parte.
+    let elegido: GastoDeLaSede | null = null;
+    for (const g of gastos) {
+      const saldo = saldoRepartible.get(g) ?? 0;
+      if (g.categoria === POR_ACLARAR || g.fecha > d.fecha || dias(g.fecha, d.fecha) > VENTANA_DIAS) continue;
+      if (!(g.monto > d.monto + TOLERANCIA) || saldo + TOLERANCIA < d.monto || !hablanDelMismoPago(d.nota, g.concepto)) continue;
+      if (!elegido || g.fecha > elegido.fecha) elegido = g;
+    }
+    if (elegido) saldoRepartible.set(elegido, (saldoRepartible.get(elegido) ?? 0) - d.monto);
+    out.push({ fecha: d.fecha, monto: d.monto, categoria: elegido ? elegido.categoria : POR_ACLARAR, nota: d.nota });
   }
   return out;
 }
