@@ -17,6 +17,9 @@
 
 import { termometroEbitda, TOPE_PLANILLA_PCT, type Termometro } from "./regla-33";
 
+/** El Grupo va con businessId 0: las tres sedes juntas, sin lo que Atelier le vende a las cafeterías. */
+export const GRUPO = 0;
+
 export type Palancas = {
   ventas: number;
   /** Costo variable como % de la venta (0–100). */

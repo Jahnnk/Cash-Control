@@ -13,7 +13,7 @@ import { getPresupuesto, guardarPresupuesto } from "@/app/actions/presupuesto";
 import { sugerir } from "@/lib/presupuesto";
 import { planDesdePalancas, rutaDe90Dias, type Grupo, type PlanDesdePalancas } from "@/lib/palancas-presupuesto";
 import { useToast } from "@/components/toast-provider";
-import { paraLlegar, simular, type Camino, type Palancas as Pos } from "@/lib/palancas";
+import { GRUPO, paraLlegar, simular, type Camino, type Palancas as Pos } from "@/lib/palancas";
 import { ETIQUETA_TERMOMETRO, TOPE_PLANILLA_PCT, type Termometro } from "@/lib/regla-33";
 import { nombreMes } from "@/lib/financiamientos";
 import { Segmentado } from "@/components/productos/ui";
@@ -182,7 +182,7 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
 export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
   const [datos, setDatos] = useState<DatosPalancas | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sede, setSede] = useState<number>(2);
+  const [sede, setSede] = useState<number>(GRUPO);
   const [movidas, setMovidas] = useState<Record<number, Pos>>({});
   const [meta, setMeta] = useState<number>(25);
   useEffect(() => { void getBasePalancas().then((r) => { if (r.ok) setDatos(r.data); else setError(r.error); }); }, []);
@@ -225,6 +225,7 @@ export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
           <p className="text-xs text-gray-500">
             Punto de partida: promedio de {base.meses.length === 1 ? nombreMes(base.meses[0]) : `${nombreMes(base.meses[0])} a ${nombreMes(base.meses[base.meses.length - 1])}`} ({base.meses.length} {base.meses.length === 1 ? "mes cerrado" : "meses cerrados"}).
             {sede === 1 && <> Atelier vende a las sedes a precio interno: su meta propia está por definir.</>}
+            {sede === GRUPO && <> Las tres sedes juntas. Lo que Atelier le vende a las cafeterías se cuenta una sola vez: no es venta ni costo del Grupo.</>}
           </p>
           <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
             {/* ── Perillas ── */}
@@ -300,7 +301,9 @@ export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
                 <p className="mt-2 text-[11px] text-gray-400">Cada línea mueve una sola palanca y deja las demás quietas. En la práctica se combinan.</p>
               </div>
 
-              <Convertir sede={sede} sedeNombre={actual?.sede ?? ""} pos={pos} onGuardado={onGuardado} />
+              {sede === GRUPO
+                ? <p className="rounded-2xl border border-gray-200/80 bg-white p-4 text-xs text-gray-500">El presupuesto se guarda sede por sede. Elige una sede arriba para convertir sus palancas en el borrador del mes.</p>
+                : <Convertir sede={sede} sedeNombre={actual?.sede ?? ""} pos={pos} onGuardado={onGuardado} />}
             </div>
           </div>
           {actual?.diagnostico && <DondeSeVa key={sede} d={actual.diagnostico} sede={actual.sede} />}

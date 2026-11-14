@@ -1,12 +1,13 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useId, useState } from "react";
 import { X, Plus, Trash2, Loader2, Save, Lock } from "lucide-react";
 import { formatCurrency } from "@/lib/utils";
 import {
   getMermaItems,
   saveMermaDetail,
   getMermasMonthSummary,
+  getProductosParaMerma,
   type MermaItem,
   type MermaMonthSummary,
 } from "@/app/actions/mermas";
@@ -19,6 +20,7 @@ import {
   UNIDADES_REGISTRO,
   type CostoPreparacion,
 } from "@/lib/costos-preparaciones";
+import { estaEnLaLista } from "@/lib/productos/lista-mermas";
 
 const MOTIVOS = ["Merma de calidad", "Vencimiento", "Error de preparación", "Daño en almacén", "Otro"];
 const ACCIONES = ["Descarte", "Reproceso", "Consumo interno", "Donación", "Otro"];
@@ -77,15 +79,20 @@ export function MermaDetailModal({
   const [rows, setRows] = useState<Row[]>([emptyRow()]);
   const [summary, setSummary] = useState<MermaMonthSummary | null>(null);
   const [catalogo, setCatalogo] = useState<CostoPreparacion[]>([]);
+  // Cafeterías: los nombres de la carta y de lo que manda Atelier, para que la merma se cruce con su producto.
+  const [productos, setProductos] = useState<string[]>([]);
+  const listaId = useId();
 
   useEffect(() => {
     (async () => {
-      const [r, s, lista] = await Promise.all([
+      const [r, s, lista, nombres] = await Promise.all([
         getMermaItems(date),
         getMermasMonthSummary(date.slice(0, 7)),
         getCatalogoCostos(),
+        getProductosParaMerma(),
       ]);
       setCatalogo(lista);
+      setProductos(nombres);
       const porRef = new Map(lista.map((i) => [i.ref, i]));
       if (r.ok) {
         setTableReady(r.tableReady);
@@ -179,6 +186,12 @@ export function MermaDetailModal({
                   insumos sale solo del Excel de pricing (ej. 70 Cookie XL, 500 g de Frosting de Chocolate). Si no
                   está en la lista, escríbelo con su costo a mano. Al guardar, las mermas del día se actualizan con la suma.
                 </p>
+              ) : productos.length > 0 ? (
+                <p className="text-xs text-gray-500">
+                  Escribe el producto y <strong>elígelo de la lista</strong> (ej. escribe «mixta» y elige EMPANADA MIXTA).
+                  Así el sistema sabe de qué producto es la merma. Si es porción o entero, elige el que corresponde. Si no
+                  está en la lista (una fruta, un insumo), escríbelo a mano. Al guardar, las mermas del día se actualizan con la suma.
+                </p>
               ) : (
                 <p className="text-xs text-gray-500">
                   Registra <strong>qué</strong> se mermó, cuánto y a qué costo. Al guardar, el
@@ -186,6 +199,7 @@ export function MermaDetailModal({
                 </p>
               )}
 
+              {productos.length > 0 && <datalist id={listaId}>{productos.map((n) => <option key={n} value={n} />)}</datalist>}
               <div className="overflow-x-auto">
                 <table className="w-full text-xs">
                   <thead>
@@ -208,8 +222,13 @@ export function MermaDetailModal({
                             <BuscadorCosto value={r.producto} elegido={!!r.item} catalogo={catalogo}
                               onTexto={(t) => setProducto(i, t)} onElegir={(item) => elegirItem(i, item)} />
                           ) : (
-                            <input value={r.producto} onChange={(e) => setProducto(i, e.target.value)}
-                              placeholder="ej. Piña Golden" className="w-full border border-gray-200 rounded px-2 py-1" />
+                            <input value={r.producto} onChange={(e) => setProducto(i, e.target.value)} list={productos.length > 0 ? listaId : undefined}
+                              placeholder={productos.length > 0 ? "ej. empanada mixta" : "ej. Piña Golden"} className="w-full border border-gray-200 rounded px-2 py-1" />
+                          )}
+                          {catalogo.length === 0 && productos.length > 0 && r.producto.trim() && (
+                            estaEnLaLista(r.producto, productos)
+                              ? <div className="text-[10px] text-primary mt-0.5 px-0.5">De la lista</div>
+                              : <div className="text-[10px] text-amber-700 mt-0.5 px-0.5">No está en la lista. Si es un producto de la carta, elígelo.</div>
                           )}
                           {r.item && (
                             <div className="text-[10px] text-primary mt-0.5 px-0.5">

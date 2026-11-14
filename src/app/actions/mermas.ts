@@ -23,6 +23,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole } from "@/lib/session-access";
 import { costoPorUnidadRegistrada, type UnidadBase } from "@/lib/costos-preparaciones";
 import { leerCatalogo } from "@/lib/catalogo-costos-sql";
+import { listaParaMermas } from "@/lib/productos/lista-mermas";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -174,5 +175,31 @@ export async function getMermasMonthSummary(month: string): Promise<
     return { ok: true, data: { totalMes, top: rows.slice(0, 10).map((r) => ({ ...r, total: r2(r.total) })) }, tableReady: true };
   } catch {
     return { ok: true, data: { totalMes: 0, top: [] }, tableReady: false };
+  }
+}
+
+/**
+ * La lista de productos para anotar una merma en una cafetería (14-nov-2026): lo que la sede vendió en los últimos
+ * meses (nombres de Byte) más lo que Atelier le manda a las cafeterías. Con el nombre de la lista, la merma se cruza
+ * sola con el producto (lib/productos/cruce-atelier.ts). Solo nombres: el costo lo sigue poniendo quien registra.
+ * Atelier no la usa: tiene su lista de costos (getCatalogoCostos).
+ */
+export async function getProductosParaMerma(): Promise<string[]> {
+  const bId = await activeBusinessId();
+  if (bId === 1 || !(await hasAccess(bId))) return [];
+  try {
+    const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+    let a = Number(hoy.slice(0, 4)), m = Number(hoy.slice(5, 7));
+    const meses: string[] = [];
+    for (let i = 0; i < 4; i++) { meses.push(`${a}-${String(m).padStart(2, "0")}`); m -= 1; if (m === 0) { m = 12; a -= 1; } }
+    const nombres = async (sede: number) => ((await sql`
+      SELECT DISTINCT r.product_name_raw AS nombre
+      FROM unnest(${meses}::text[]) AS mes CROSS JOIN LATERAL rotacion_efectiva(${sede}, mes) r
+    `) as { nombre: string }[]).map((r) => r.nombre);
+    const [sede, atelier] = await Promise.all([nombres(bId), nombres(1)]);
+    return listaParaMermas(sede, atelier);
+  } catch (e) {
+    console.error("[getProductosParaMerma] failed:", e);
+    return [];
   }
 }

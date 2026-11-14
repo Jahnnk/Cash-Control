@@ -9,7 +9,7 @@
 import { TrendingUp } from "lucide-react";
 import { SeccionDesplegable } from "@/components/productos/ui";
 import { nombreMes } from "@/lib/financiamientos";
-import type { Diagnostico } from "@/lib/fugas";
+import type { Diagnostico, FilaFijo } from "@/lib/fugas";
 
 const soles = (n: number) => `S/ ${Math.round(n).toLocaleString("es-PE")}`;
 const conSigno = (n: number) => `${n > 0 ? "+" : n < 0 ? "−" : ""}S/ ${Math.abs(Math.round(n)).toLocaleString("es-PE")}`;
@@ -18,9 +18,29 @@ const nombre = (c: string) => c.charAt(0) + c.slice(1).toLowerCase();
 const tramo = (meses: string[]) => (meses.length === 0 ? "" : meses.length === 1 ? nombreMes(meses[0]) : `${nombreMes(meses[0]).split(" ")[0]} a ${nombreMes(meses[meses.length - 1])}`);
 const CUANTOS_FOCOS = 3, CUANTOS_FIJOS = 5;
 
+/** Una categoría de gasto: lo que pesa al mes, su % de la venta y si subió contra los meses anteriores. */
+function FilaGasto({ f }: { f: FilaFijo }) {
+  return (
+    <li className="py-2">
+      <div className="flex items-baseline justify-between gap-2 text-sm">
+        <span className="min-w-0 truncate text-gray-700">{nombre(f.categoria)}</span>
+        <span className="shrink-0 tabular-nums"><b className="font-semibold text-gray-900">{soles(f.monto)}</b> <span className="text-xs text-gray-500">· {pct(f.pctVenta)}</span></span>
+      </div>
+      {f.cambio !== null && f.antes !== null && (
+        <p className={`mt-0.5 inline-flex items-center gap-1 text-[11px] tabular-nums ${f.sube ? "font-medium text-red-600" : "text-gray-500"}`}>
+          {f.sube && <TrendingUp className="h-3 w-3" aria-hidden />}
+          {f.sube ? "Subió" : "Antes"} {f.sube ? conSigno(f.cambio) : soles(f.antes)}{f.sube ? ` (antes ${soles(f.antes)})` : ` (${conSigno(f.cambio)})`}
+        </p>
+      )}
+    </li>
+  );
+}
+
 export function DondeSeVa({ d, sede }: { d: Diagnostico; sede: string }) {
   const tresFocos = d.focos.slice(0, CUANTOS_FOCOS);
   const fijos = d.fijos.slice(0, CUANTOS_FIJOS);
+  const variables = d.variables.filter((f) => f.monto > 0).slice(0, CUANTOS_FIJOS);
+  const esGrupo = sede === "Grupo";
   const { merma, sobreproduccion, descuentos } = d.fugas;
   const hayAntes = d.mesesAntes.length > 0;
   return (
@@ -29,7 +49,7 @@ export function DondeSeVa({ d, sede }: { d: Diagnostico; sede: string }) {
       subtitulo={`${sede} · promedio al mes de ${tramo(d.meses)}${hayAntes ? `, comparado con ${tramo(d.mesesAntes)}` : ""}`}
       resumen={tresFocos[0] ? <>Foco 1: <b className="text-gray-900">{tresFocos[0].titulo}</b> · {soles(tresFocos[0].soles)} al mes</> : "Sin focos: nada pasa de su meta ni subió."}
     >
-      <div className="grid grid-cols-1 gap-5 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-x-8 gap-y-6 lg:grid-cols-2">
         {/* ── Los 3 focos ── */}
         <div>
           <h4 className="text-sm font-semibold text-gray-900">Los {CUANTOS_FOCOS} focos</h4>
@@ -50,25 +70,22 @@ export function DondeSeVa({ d, sede }: { d: Diagnostico; sede: string }) {
           <p className="mt-2 text-[11px] text-gray-400">Costo variable y planilla: lo que pasan de su meta. Lo demás: lo que subió.</p>
         </div>
 
+        {/* ── De qué está hecho el costo variable ── */}
+        <div>
+          <h4 className="text-sm font-semibold text-gray-900">De qué está hecho el costo variable</h4>
+          <p className="text-[11px] text-gray-500">Promedio al mes y % de la venta. Juntos: {pct(variables.reduce((t, f) => t + f.pctVenta, 0))} (su tercio es 33.3%).</p>
+          <ul className="mt-2 divide-y divide-gray-100">{variables.map((f) => <FilaGasto key={f.categoria} f={f} />)}</ul>
+          {esGrupo
+            ? <p className="mt-1 text-[11px] text-gray-400">Sin lo que las cafeterías le compran a Atelier: dentro del Grupo no es costo.</p>
+            : variables.some((f) => f.categoria === "PRODUCTOS ATELIER") && <p className="mt-1 text-[11px] text-gray-400">«Productos Atelier» va a precio interno: para el Grupo no es costo. Mira «Grupo» para ver el costo real.</p>}
+        </div>
+
         {/* ── Radiografía de fijos ── */}
         <div>
           <h4 className="text-sm font-semibold text-gray-900">Los {CUANTOS_FIJOS} gastos fijos que más pesan</h4>
           <p className="text-[11px] text-gray-500">Promedio al mes y % de la venta.</p>
           <ul className="mt-2 divide-y divide-gray-100">
-            {fijos.map((f) => (
-              <li key={f.categoria} className="py-2">
-                <div className="flex items-baseline justify-between gap-2 text-sm">
-                  <span className="min-w-0 truncate text-gray-700">{nombre(f.categoria)}</span>
-                  <span className="shrink-0 tabular-nums"><b className="font-semibold text-gray-900">{soles(f.monto)}</b> <span className="text-xs text-gray-500">· {pct(f.pctVenta)}</span></span>
-                </div>
-                {f.cambio !== null && f.antes !== null && (
-                  <p className={`mt-0.5 inline-flex items-center gap-1 text-[11px] tabular-nums ${f.sube ? "font-medium text-red-600" : "text-gray-500"}`}>
-                    {f.sube && <TrendingUp className="h-3 w-3" aria-hidden />}
-                    {f.sube ? "Subió" : "Antes"} {f.sube ? conSigno(f.cambio) : soles(f.antes)}{f.sube ? ` (antes ${soles(f.antes)})` : ` (${conSigno(f.cambio)})`}
-                  </p>
-                )}
-              </li>
-            ))}
+            {fijos.map((f) => <FilaGasto key={f.categoria} f={f} />)}
           </ul>
         </div>
 
