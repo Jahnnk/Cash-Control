@@ -177,14 +177,18 @@ export function ComparativoCategorias({ month }: { month: string }) {
       return lista.find((x) => x.f.familia === TODAS)?.t.ventaDia ?? null;
     };
     const ahora = base(tramos);
-    // El periodo anterior del mismo largo, si el historial lo tiene.
+    // El periodo anterior del mismo largo, si el historial lo tiene. Se compara SOLO con las mismas filas que tienen
+    // datos en los dos periodos: si una sede no tenía reportes antes, no entra (cambiaría el promedio sin que nada cambie).
     const pd = mesAntes(desde, meses.length), ph = mesAntes(desde, 1);
-    const previo = h.meses.includes(pd) ? comparativo(h, pd, ph).filas.filter((f) => (vista === "sedes" ? f.familia === familia : f.sedeId === sede)) : [];
-    const totalPrevio = (sedeId: number) => (h.meses.includes(pd) ? comparativo(h, pd, ph).filas.find((f) => f.sedeId === sedeId && f.familia === TODAS)?.serie ?? null : null);
-    const antes = base(previo.map((f) => ({ f, t: tramoCompleto(f.serie, f.familia === TODAS ? null : totalPrevio(f.sedeId)) })).filter((x) => x.t.dias > 0));
+    const compPrevio = h.meses.includes(pd) ? comparativo(h, pd, ph).filas : [];
+    const totalPrevio = (sedeId: number) => compPrevio.find((f) => f.sedeId === sedeId && f.familia === TODAS)?.serie ?? null;
+    const previos = compPrevio.filter((f) => (vista === "sedes" ? f.familia === familia : f.sedeId === sede))
+      .map((f) => ({ f, t: tramoCompleto(f.serie, f.familia === TODAS ? null : totalPrevio(f.sedeId)) })).filter((x) => x.t.dias > 0);
+    const enAmbos = (lista: typeof tramos, otra: typeof tramos) => lista.filter((x) => otra.some((y) => y.f.sedeId === x.f.sedeId && y.f.familia === x.f.familia));
+    const ahoraComparable = base(enAmbos(tramos, previos)), antes = base(enAmbos(previos, tramos));
     const sinTotal = tramos.filter((x) => vista === "sedes" || x.f.familia !== TODAS);
     const mayor = [...sinTotal].sort((a, b) => b.t.ventaDia - a.t.ventaDia)[0] ?? null;
-    return { ahora, cambio: ahora !== null && antes !== null && antes > 0 ? Math.round(((ahora - antes) / antes) * 1000) / 10 : null, mayor };
+    return { ahora, cambio: ahoraComparable !== null && antes !== null && antes > 0 ? Math.round(((ahoraComparable - antes) / antes) * 1000) / 10 : null, mayor };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [h, filas, vista, familia, sede, desde, meses.length]);
 
@@ -210,8 +214,10 @@ export function ComparativoCategorias({ month }: { month: string }) {
       return { puntos: [...porDia.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, p]) => p), notaGrafico: "Venta total de cada día según Byte." };
     }
     const porSemana = new Map<string, Punto>();
+    // Una semana de un mes cuyo reporte no cuadra con Byte (†) tampoco es de fiar: no se dibuja.
+    const noCuadra = new Set((h?.sedes ?? []).flatMap((s) => s.meses.filter((m) => !m.confiable).map((m) => `${s.id}|${m.mes}`)));
     for (const w of finas.semanas) {
-      if (w.hasta < ini || w.desde > fin || !filas.some((f) => f.sedeId === w.sedeId)) continue;
+      if (w.hasta < ini || w.desde > fin || !filas.some((f) => f.sedeId === w.sedeId) || noCuadra.has(`${w.sedeId}|${w.hasta.slice(0, 7)}`)) continue;
       const p = porSemana.get(w.hasta) ?? { x: diaCorto(w.hasta), nombre: `Semana que termina el ${diaCorto(w.hasta)}` };
       const total = w.porFamilia[TODAS]?.r ?? 0;
       for (const f of filas) {
@@ -221,9 +227,9 @@ export function ComparativoCategorias({ month }: { month: string }) {
       }
       porSemana.set(w.hasta, p);
     }
-    return { puntos: [...porSemana.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, p]) => p), notaGrafico: "Semanas armadas con las cargas semanales del reporte de productos: existen desde fines de septiembre de 2026 y se guardan las 8 últimas por sede." };
+    return { puntos: [...porSemana.entries()].sort((a, b) => a[0].localeCompare(b[0])).map(([, p]) => p), notaGrafico: "Semanas armadas con las cargas semanales del reporte de productos: existen desde fines de septiembre de 2026 y se guardan las 8 últimas por sede. No se dibujan las semanas de un mes cuyo reporte no cuadra con Byte (†)." };
      
-  }, [granoReal, meses, filas, medida, finas, desde, hasta]);
+  }, [granoReal, meses, filas, medida, finas, desde, hasta, h]);
 
   // ── Promedio de las sedes (última fila de la tabla) ──
   const promedio = vista === "sedes" && filas.length > 1 ? meses.map((_, i) => { const v = filas.map((f) => valorDe(f.serie[i], medida)).filter((x): x is number => x !== null); return v.length ? v.reduce((s, x) => s + x, 0) / v.length : null; }) : null;
@@ -333,17 +339,17 @@ export function ComparativoCategorias({ month }: { month: string }) {
                     <thead>
                       <tr className="text-left text-xs text-gray-600">
                         <th className="rounded-l-lg bg-gray-50 px-3 py-2.5 font-medium">{vista === "sedes" ? "Sede" : "Categoría"}</th>
-                        {meses.map((m, i) => <th key={m} className={`px-2 py-2.5 text-right font-medium ${m === mesActual ? "bg-emerald-50 text-primary" : "bg-gray-50"} ${i === meses.length - 1 ? "rounded-r-lg" : ""} ${corte && m === corte ? "border-l-2 border-primary/40" : ""}`}>{corto(m)}</th>)}
+                        {meses.map((m, i) => <th key={m} className={`whitespace-nowrap px-2 py-2.5 text-right font-medium ${m === mesActual ? "bg-emerald-50 text-primary" : "bg-gray-50"} ${i === meses.length - 1 ? "rounded-r-lg" : ""} ${corte && m === corte ? "border-l-2 border-primary/40" : ""}`}>{corto(m)}</th>)}
                       </tr>
                     </thead>
                     <tbody className="divide-y divide-gray-100">
                       {filas.map((f, n) => (
                         <tr key={idFila(f)} className={f.familia === TODAS && vista === "categorias" ? "font-semibold" : ""}>
-                          <td className="px-3 py-2.5 text-gray-800"><span className="inline-flex items-center gap-2"><i className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: lineas[n].color }} />{etiqueta(f)}</span></td>
+                          <td className="whitespace-nowrap px-3 py-2.5 text-gray-800"><span className="inline-flex items-center gap-2"><i className="inline-block h-2.5 w-2.5 shrink-0 rounded-full" style={{ background: lineas[n].color }} />{etiqueta(f)}</span></td>
                           {f.serie.map((c) => {
                             const v = valorDe(c, medida);
                             return (
-                              <td key={c.mes} className={`px-2 py-2.5 text-right tabular-nums ${c.mes === mesActual ? "bg-emerald-50/50" : ""} ${corte && c.mes === corte ? "border-l-2 border-primary/40" : ""} ${c.dias > 0 && (!c.confiable || c.aMedias) ? "text-gray-400" : "text-gray-900"}`} title={c.dias > 0 ? `${mesLargo(c.mes)}: ${soles(c.venta)} · ${Math.round(c.unidades).toLocaleString("es-PE")} u · ${c.dias} días` : "Sin reporte de productos"}>
+                              <td key={c.mes} className={`whitespace-nowrap px-2 py-2.5 text-right tabular-nums ${c.mes === mesActual ? "bg-emerald-50/50" : ""} ${corte && c.mes === corte ? "border-l-2 border-primary/40" : ""} ${c.dias > 0 && (!c.confiable || c.aMedias) ? "text-gray-400" : "text-gray-900"}`} title={c.dias > 0 ? `${mesLargo(c.mes)}: ${soles(c.venta)} · ${Math.round(c.unidades).toLocaleString("es-PE")} u · ${c.dias} días` : "Sin reporte de productos"}>
                                 {v === null ? "—" : fmt(v, medida)}{c.dias > 0 && c.aMedias ? "*" : c.dias > 0 && !c.confiable ? "†" : ""}
                               </td>
                             );
@@ -354,8 +360,8 @@ export function ComparativoCategorias({ month }: { month: string }) {
                     {promedio && (
                       <tfoot>
                         <tr className="font-semibold text-gray-900">
-                          <td className="rounded-l-lg bg-emerald-50 px-3 py-2.5">Promedio <span className="font-normal text-gray-500">(de las sedes)</span></td>
-                          {promedio.map((v, i) => <td key={meses[i]} className={`bg-emerald-50 px-2 py-2.5 text-right tabular-nums ${meses[i] === mesActual ? "text-primary" : ""} ${i === meses.length - 1 ? "rounded-r-lg" : ""}`}>{v === null ? "—" : fmt(v, medida)}</td>)}
+                          <td className="whitespace-nowrap rounded-l-lg bg-emerald-50 px-3 py-2.5">Promedio <span className="font-normal text-gray-500">(sedes)</span></td>
+                          {promedio.map((v, i) => <td key={meses[i]} className={`whitespace-nowrap bg-emerald-50 px-2 py-2.5 text-right tabular-nums ${meses[i] === mesActual ? "text-primary" : ""} ${i === meses.length - 1 ? "rounded-r-lg" : ""}`}>{v === null ? "—" : fmt(v, medida)}</td>)}
                         </tr>
                       </tfoot>
                     )}
