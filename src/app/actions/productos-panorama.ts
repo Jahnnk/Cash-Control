@@ -39,6 +39,7 @@ import type { VentasDelMes } from "@/lib/productos/estado-reportes";
 import { semanasDeCortes, type Corte } from "@/lib/productos/semanas";
 import { armarAtelier, type ResultadoAtelier } from "@/lib/productos/atelier-sacar";
 import { cruzar, type Cruce, type LineaMerma, type LineaVenta } from "@/lib/productos/cruce-atelier";
+import { semanaPorFamilias, type SemanaFamilias } from "@/lib/productos/comparativo";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -1156,5 +1157,38 @@ export async function getCruceAtelier(month: string): Promise<Res<{ data: CruceA
   } catch (e) {
     console.error("[getCruceAtelier] failed:", e);
     return { ok: false, error: "No se pudo armar el cruce de Atelier con las cafeterías." };
+  }
+}
+
+export type SeriesFinas = {
+  /** La venta de cada día por sede (Byte): solo el total, Byte no da ventas por producto y por día. */
+  dias: { sedeId: number; fecha: string; total: number }[];
+  /** Las semanas que salen de las cargas semanales del reporte de productos (hasta las 8 últimas por sede), por categoría. */
+  semanas: SemanaFamilias[];
+};
+
+/**
+ * Lo fino del comparativo por sede y categoría (14-nov-2026): la venta por día (total de Byte) y por semana (cargas
+ * semanales del reporte de productos) de los `meses` que terminan en `hastaMes`. Solo lectura, solo dirección.
+ */
+export async function getSeriesFinas(hastaMes: string, meses = 12): Promise<Res<{ data: SeriesFinas }>> {
+  if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
+  if (!puedeLeerDireccion(await getSessionRole())) return { ok: false, error: "Solo dirección." };
+  const lista = mesesAntes(hastaMes, Math.min(12, Math.max(1, meses)));
+  const [y, m] = hastaMes.split("-").map(Number);
+  const desde = `${lista[0]}-01`, hasta = `${hastaMes}-${String(new Date(y, m, 0).getDate()).padStart(2, "0")}`;
+  try {
+    const [dias, cortes] = await Promise.all([
+      sql`SELECT business_id AS "sedeId", date::text AS fecha, total::float AS total FROM byte_ventas_efectiva
+          WHERE business_id IN (1, 2, 3) AND date BETWEEN ${desde} AND ${hasta} ORDER BY date` as unknown as Promise<SeriesFinas["dias"]>,
+      (sql`SELECT business_id AS "sedeId", origen, month, period_start::text AS "periodStart", period_end::text AS "periodEnd", cargado_el::text AS "cargadoEl",
+                  product_name_raw AS nombre, units::float AS unidades, revenue::float AS ingresos
+           FROM rotacion_cortes WHERE business_id IN (1, 2, 3) AND month = ANY(${lista}::text[])` as unknown as Promise<(Corte & { sedeId: number })[]>).catch(() => []),
+    ]);
+    const semanas = SEDES.flatMap((s) => semanasDeCortes(cortes.filter((c) => c.sedeId === s.id)).map((w) => semanaPorFamilias(s.id, w)));
+    return { ok: true, data: { dias, semanas } };
+  } catch (e) {
+    console.error("[getSeriesFinas] failed:", e);
+    return { ok: false, error: "No se pudo leer la venta por día y por semana." };
   }
 }

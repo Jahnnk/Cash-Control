@@ -154,3 +154,22 @@ export function productosQueCambian(h: HistorialProductos, sedeId: number, f: Fi
   }
   return out.sort((a, b) => a.cambioDia - b.cambioDia);
 }
+
+/** Una semana de una sede, ya sumada por categoría («Todas» = toda la venta). Sale de las cargas semanales (lib/productos/semanas.ts). */
+export type SemanaFamilias = { sedeId: number; desde: string; hasta: string; dias: number; porFamilia: Record<string, { u: number; r: number }> };
+
+export function semanaPorFamilias(sedeId: number, s: { desde: string; hasta: string; dias: number; productos: { nombre: string; unidades: number; ingresos: number }[] }): SemanaFamilias {
+  const porFamilia: Record<string, { u: number; r: number }> = { [TODAS]: { u: 0, r: 0 } };
+  for (const p of s.productos) {
+    const f = familiaDeProducto(p.nombre);
+    const c = (porFamilia[f] ??= { u: 0, r: 0 });
+    c.u += p.unidades; c.r = r2(c.r + p.ingresos);
+    porFamilia[TODAS].u += p.unidades; porFamilia[TODAS].r = r2(porFamilia[TODAS].r + p.ingresos);
+  }
+  return { sedeId, desde: s.desde, hasta: s.hasta, dias: s.dias, porFamilia };
+}
+
+/** La fila entera como un solo tramo (venta y unidades por día y parte de la sede), sin los meses que no cuadran. */
+export function tramoCompleto(serie: CeldaMes[], total: CeldaMes[] | null): Tramo {
+  return tramo(serie, total);
+}

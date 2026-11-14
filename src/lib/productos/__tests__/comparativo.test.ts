@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { armarHistorial } from "../historial-producto";
-import { antesDespues, comparativo, mesesDelRango, productosQueCambian, TODAS } from "../comparativo";
+import { antesDespues, comparativo, mesesDelRango, productosQueCambian, semanaPorFamilias, TODAS, tramoCompleto } from "../comparativo";
 
 const POSTRES = "Postres y pastelería";
 const mesSede = (mes: string, total: number, confiable = true, hasta?: string) => ({ mes, total, desde: `${mes}-01`, hasta: hasta ?? `${mes}-30`, confiable });
@@ -72,5 +72,21 @@ describe("productosQueCambian", () => {
   });
   it("vacío si falta un lado", () => {
     expect(productosQueCambian(h, 2, POSTRES, "2026-07", "2026-08", "2026-07")).toEqual([]);
+  });
+});
+
+describe("semanaPorFamilias y tramoCompleto", () => {
+  it("suma la semana por categoría y deja el total en «Todas»", () => {
+    const s = semanaPorFamilias(2, { desde: "2026-10-18", hasta: "2026-10-24", dias: 7, productos: [{ nombre: "CARROT CAKE", unidades: 10, ingresos: 120 }, { nombre: "BROWNIE VEGANO", unidades: 5, ingresos: 35 }, { nombre: "CAPPUCCINO", unidades: 20, ingresos: 180 }] });
+    expect(s.porFamilia[POSTRES]).toEqual({ u: 15, r: 155 });
+    expect(s.porFamilia[TODAS]).toEqual({ u: 35, r: 335 });
+    expect(s.dias).toBe(7);
+  });
+  it("el tramo completo deja fuera el mes que no cuadra", () => {
+    const c = comparativo(h, "2026-07", "2026-10");
+    const postres = c.filas.find((f) => f.familia === POSTRES)!, total = c.filas.find((f) => f.familia === TODAS)!;
+    const t = tramoCompleto(postres.serie, total.serie);
+    expect(t.meses).toEqual(["2026-07", "2026-08", "2026-09"]);
+    expect(t.ventaDia).toBeCloseTo(7800 / 90, 5);
   });
 });
