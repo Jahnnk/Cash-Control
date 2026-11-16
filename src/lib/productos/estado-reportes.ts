@@ -42,6 +42,12 @@ export type VentasDelMes = { businessId: number; month: string; desde: string; h
 export const TOLERANCIA_PRODUCTOS_VS_VENTAS = 0.15;
 
 export const TOLERANCIA_DIAS = 3;
+/**
+ * En el mes en curso, el reporte de ventas tiene que llegar a ayer o a anteayer (un día cerrado, como el domingo
+ * de Atelier). Con 3 días de tolerancia, un lunes 16 daba «Completo» a un reporte que llegaba al 13 y le faltaban
+ * dos días de venta (Jahnn, 16-nov-2026).
+ */
+export const TOLERANCIA_DIAS_EN_CURSO = 1;
 
 const MESES = ["ene", "feb", "mar", "abr", "may", "jun", "jul", "ago", "set", "oct", "nov", "dic"];
 const corta = (f: string) => `${Number(f.slice(8, 10))} ${MESES[Number(f.slice(5, 7)) - 1]}`;
@@ -57,11 +63,11 @@ export function limitesDelMes(month: string, hoy: string): { ini: string; fin: s
   return { ini, fin: enCurso ? iso(dia(hoy) - 1) : ultimo };
 }
 
-function contra(desde: string, hasta: string, month: string, hoy: string): DetalleReporte {
+function contra(desde: string, hasta: string, month: string, hoy: string, toleranciaFin = TOLERANCIA_DIAS): DetalleReporte {
   const { ini, fin } = limitesDelMes(month, hoy);
   if (fin < ini) return { estado: "completo", texto: "mes recién empieza" };
   const empiezaBien = dia(desde) <= dia(ini) + TOLERANCIA_DIAS;
-  const llegaBien = dia(hasta) >= dia(fin) - TOLERANCIA_DIAS;
+  const llegaBien = dia(hasta) >= dia(fin) - toleranciaFin;
   if (empiezaBien && llegaBien) return { estado: "completo", texto: `${corta(desde)} → ${corta(hasta)}` };
   if (!empiezaBien && !llegaBien) return { estado: "parcial", texto: `${corta(desde)} → ${corta(hasta)}` };
   return { estado: "parcial", texto: llegaBien ? `empieza el ${corta(desde)}` : `llega al ${corta(hasta)}` };
@@ -69,7 +75,11 @@ function contra(desde: string, hasta: string, month: string, hoy: string): Detal
 
 export function estadoVentas(v: VentasDelMes | undefined, month: string, hoy: string): DetalleReporte {
   if (!v || v.dias === 0) return { estado: "vacio", texto: "sin subir" };
-  return contra(v.desde, v.hasta, month, hoy);
+  if (hoy.slice(0, 7) !== month) return contra(v.desde, v.hasta, month, hoy);
+  // Mes en curso: siempre dice hasta qué día llega la venta guardada.
+  const r = contra(v.desde, v.hasta, month, hoy, TOLERANCIA_DIAS_EN_CURSO);
+  if (r.texto === "mes recién empieza") return r;
+  return { estado: r.estado, texto: r.texto.startsWith("empieza") ? `${r.texto}, hasta el ${corta(v.hasta)}` : `hasta el ${corta(v.hasta)}` };
 }
 
 export function estadoMenor(rangos: Rango[], month: string, hoy: string): DetalleReporte {

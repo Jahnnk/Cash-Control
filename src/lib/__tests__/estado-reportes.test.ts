@@ -11,6 +11,16 @@ describe("cuál de los tres reportes falta", () => {
     expect(limitesDelMes("2026-08", HOY)).toEqual({ ini: "2026-08-01", fin: "2026-08-31" });
   });
 
+  it("ventas del mes en curso: dice hasta qué día llega y solo perdona un día (lunes 16-nov-2026)", () => {
+    const lunes = "2026-11-16";
+    // Atelier: llega al sábado 14 y el domingo no abre → completo.
+    expect(estadoVentas(ventas("2026-11", "2026-11-02", "2026-11-14", 12), "2026-11", lunes)).toEqual({ estado: "completo", texto: "hasta el 14 nov" });
+    // Fonavi: llega al viernes 13; le faltan el 14 y el 15 → incompleto (antes salía «Completo»).
+    expect(estadoVentas(ventas("2026-11", "2026-11-01", "2026-11-13", 13), "2026-11", lunes)).toEqual({ estado: "parcial", texto: "hasta el 13 nov" });
+    expect(estadoVentas(ventas("2026-11", "2026-11-01", "2026-11-15", 15), "2026-11", lunes)).toEqual({ estado: "completo", texto: "hasta el 15 nov" });
+    expect(estadoVentas(ventas("2026-11", "2026-11-01", "2026-11-01", 1), "2026-11", "2026-11-01").texto).toBe("mes recién empieza");
+  });
+
   it("ventas: sin subir, completo, o llega antes del cierre", () => {
     expect(estadoVentas(undefined, "2026-08", HOY)).toEqual({ estado: "vacio", texto: "sin subir" });
     expect(estadoVentas(ventas("2026-09", "2026-09-01", "2026-09-30", 26), "2026-09", HOY).estado).toBe("completo");
