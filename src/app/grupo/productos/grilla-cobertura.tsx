@@ -150,10 +150,14 @@ export function GrillaCobertura({ datos, compacto = false, elegido = null, tipos
                             {c.quien && <div className="opacity-80">{QUIEN[c.quien]}{c.cargadoEl ? ` · ${fechaCorta(c.cargadoEl)}` : ""}</div>}
                           </div>
                         )}
-                        {/* Un solo reporte (ventas en el Dashboard): hasta dónde llega, si no está completo. */}
-                        {!conMayor && tipos.length === 1 && tres[tipos[0]].estado !== "completo" && tres[tipos[0]].estado !== "vacio" && (
+                        {/* Un solo reporte (ventas en el Dashboard): hasta dónde llega (siempre en el mes en curso) y cuánto suma. */}
+                        {!conMayor && tipos.length === 1 && tres[tipos[0]].estado !== "vacio" && (enCurso || tres[tipos[0]].estado !== "completo") && tres[tipos[0]].texto !== "mes recién empieza" && (
                           <div className={`mt-0.5 ${compacto ? "" : "text-[11px]"}`}>{tres[tipos[0]].texto}</div>
                         )}
+                        {!conMayor && tipos.length === 1 && tipos[0] === "ventas" && (() => {
+                          const v = datos.ventas.find((x) => x.businessId === s.id && x.month === c.month);
+                          return v && v.dias > 0 ? <div className={`tabular-nums opacity-80 ${compacto ? "" : "text-[11px]"}`}>S/ {Math.round(v.total).toLocaleString("es-PE")}</div> : null;
+                        })()}
                         {conMayor && c.sospechosa && <div className="mt-0.5 font-semibold">vende muy poco: ¿carga parcial? vuelve a subirlo</div>}
                       </button>
                     </td>
@@ -205,7 +209,11 @@ export function FaltaSubir({ datos, soloSede = null, tipos = TODOS_LOS_REPORTES 
         }
         const detalleMayor = [...mayorPorRazon.entries()].map(([razon, ms]) => (razon ? `${mesesEnPalabras(ms)}: ${razon}` : mesesEnPalabras(ms)));
         const lineas: string[] = [];
-        if (porReporte.ventas.length) lineas.push(`Reporte de ventas: ${mesesEnPalabras(porReporte.ventas)}`);
+        if (porReporte.ventas.length) {
+          const enCurso = datos.hoy.slice(0, 7);
+          const detalle = porReporte.ventas.includes(enCurso) ? ` (${nombreMes(enCurso)}: ${casilla(datos, s.id, enCurso).tres.ventas.texto})` : "";
+          lineas.push(`Reporte de ventas: ${mesesEnPalabras(porReporte.ventas)}${detalle}`);
+        }
         if (detalleMayor.length) lineas.push(`Mayor rotación: ${detalleMayor.join(" · ")}`);
         if (porReporte.menor.length) lineas.push(`Menor rotación: ${mesesEnPalabras(porReporte.menor)}`);
         // Ya están guardados: no hay que subirlos otra vez, hay que revisar el reporte en Byte.
