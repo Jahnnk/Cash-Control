@@ -156,14 +156,20 @@ describe("la pantalla", () => {
   });
   const html = (p: CincoProps) => renderToStaticMarkup(createElement(CincoSecciones, p));
 
-  it("las cuatro secciones, en orden, cada una con su fuente, y sin «Alertas gerenciales»", () => {
+  it("una franja con las cuatro cifras clave y UNA sección abierta a la vez (17-nov-2026: «hay que scrollear mucho»)", () => {
     const h = html(props(null));
-    const orden = ["1. Ventas por sede", "2. Movimiento de dinero", "3. Egresos", "4. EBITDA"].map((t) => h.indexOf(t));
+    const orden = ["1. Ventas", "2. Dinero", "3. Egresos", "4. EBITDA"].map((t) => h.indexOf(t));
     expect(orden.every((i) => i >= 0)).toBe(true);
     expect([...orden].sort((a, b) => a - b)).toEqual(orden);
+    expect(h).toContain("S/ 113,579"); // la venta en la franja
+    expect(h).toContain("entró menos salió");
+    // Al entrar se abre la 1; las otras quedan ocultas hasta tocarlas.
+    expect(h).toContain("1. Ventas por sede");
+    expect(h).not.toContain("2. Movimiento de dinero");
     expect(h).toContain("Fuente: Byte");
-    expect(h).toContain("Fuente: Excel de Finanzas");
     expect(h).not.toContain("Alertas gerenciales");
+    expect(html(props(null, { abierta: 2 }))).toContain("Fuente: Excel de Finanzas");
+    expect(html(props(null, { abierta: 2 }))).not.toContain("1. Ventas por sede");
   });
   it("mes abierto con una sede atrasada: el título dice hasta qué día llega cada una, no el de la más adelantada", () => {
     const h = html(props(null, { enCurso: true }));
@@ -179,15 +185,15 @@ describe("la pantalla", () => {
     expect(h).toContain("/grupo/reportes?mes=2026-09&amp;ventas=dia#ventas-dia");
     expect(h).not.toContain("Promedio por día");
   });
-  it("el flujo de caja, Profit First y el punto de equilibrio cuelgan plegados de las secciones 2 y 4", () => {
-    const h = html(props(null));
-    const s2 = h.indexOf("2. Movimiento de dinero"), s3 = h.indexOf("3. Egresos"), s4 = h.indexOf("4. EBITDA");
-    const flujo = h.indexOf("Flujo de caja"), profit = h.indexOf("Profit First"), pe = h.indexOf("Punto de equilibrio");
-    expect(flujo).toBeGreaterThan(s2); expect(flujo).toBeLessThan(s3);
+  it("el flujo de caja cuelga de la sección 2; Profit First y el punto de equilibrio, de la 4", () => {
+    const h2 = html(props(null, { abierta: 2 }));
+    expect(h2.indexOf("Flujo de caja")).toBeGreaterThan(h2.indexOf("2. Movimiento de dinero"));
+    const h4 = html(props(null, { abierta: 4 }));
+    const s4 = h4.indexOf("4. EBITDA ·"), profit = h4.indexOf("Profit First"), pe = h4.indexOf("Punto de equilibrio");
     expect(profit).toBeGreaterThan(s4); expect(pe).toBeGreaterThan(profit);
   });
   it("sección 2: ingresos, egresos y flujo del Excel", () => {
-    const h = html(props(2));
+    const h = html(props(2, { abierta: 2 }));
     for (const t of ["Entró a caja", "Salió de caja", "Flujo neto del mes", "Entró menos salió", "S/ 37,294", "mes completo"]) expect(h).toContain(t);
     expect(h).not.toContain(">Ingresos<");
     expect(h).not.toContain("De dónde vino"); // sin desglose en los datos de prueba
@@ -196,7 +202,7 @@ describe("la pantalla", () => {
     const base = fonavi();
     const por = { ventas: 30000, devolucionesSedes: 0, prestamos: 6000, rescates: 0, otros: 1294 };
     const conPor = { ...base, caja: { ...base.caja, entroPor: por } };
-    const h = html({ ...props(2), cifras: { ...props(2).cifras!, sedes: [conPor, atelier(), centro()] } });
+    const h = html({ ...props(2, { abierta: 2 }), cifras: { ...props(2).cifras!, sedes: [conPor, atelier(), centro()] } });
     for (const t of ["Solo S/ 30,000 son ventas", "Ver de dónde vino"]) expect(h).toContain(t);
     expect(h).not.toContain("Préstamos recibidos");
   });
@@ -208,13 +214,13 @@ describe("la pantalla", () => {
     expect(h).not.toContain("Rescates de fondos mutuos");
   });
   it("sección 3: queda en «cargando» hasta traer lo que salió de la cuenta (su contenido se prueba en dashboard-egresos.test)", () => {
-    const h = html(props(2));
+    const h = html(props(2, { abierta: 3 }));
     expect(h).toContain("3. Egresos");
     expect(h).toContain("% de las salidas");
     expect(h).toContain("Cargando los egresos");
   });
   it("sección 4: el modelo 33-33-33 y lo real contra la meta", () => {
-    const h = html(props(2, { tarjetas: tarjetas.map((t) => ({ ...t, ebitdaEstimado: false })) }));
+    const h = html(props(2, { abierta: 4, tarjetas: tarjetas.map((t) => ({ ...t, ebitdaEstimado: false })) }));
     for (const t of ["Modelo financiero Yayi", "Objetivo", "25% ", "De cada S/ 100 que vendes", "Margen EBITDA"]) expect(h).toContain(t.trim());
     expect(h).toContain("EBITDA");
     expect(h).not.toContain("EBITDA estimado al cierre");
@@ -227,9 +233,9 @@ describe("la pantalla", () => {
   it("mes abierto: el EBITDA se dice estimado", () => {
     const abierto = cifras([{ ...fonavi(), mes: "2026-10", corte: "2026-10-13", mesCompleto: false } as CifrasSede]);
     const esperado = [{ businessId: 2, fijos: 14550, fuente: "presupuesto" as const, ventasAlCierre: 36000, varPct: 40 }];
-    const h = html(props(2, { cifras: abierto, cada: cada100DelMes(abierto, esperado, true), enCurso: true }));
+    const h = html(props(2, { abierta: 4, cifras: abierto, cada: cada100DelMes(abierto, esperado, true), enCurso: true }));
     expect(h).toContain("EBITDA estimado al cierre");
-    expect(h).toContain("hasta el 13/10");
+    expect(html(props(2, { abierta: 2, cifras: abierto, cada: cada100DelMes(abierto, esperado, true), enCurso: true }))).toContain("hasta el 13/10");
   });
   it("sin cifras avisa en vez de romperse", () => {
     expect(html(props(null, { cifras: null, cada: null }))).toContain("No se pudieron calcular las cifras de Septiembre 2026");
