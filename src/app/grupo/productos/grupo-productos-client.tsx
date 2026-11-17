@@ -21,6 +21,7 @@ import { ProductosSinVenta } from "./productos-sin-venta";
 import { RentabilidadProductos } from "./rentabilidad-productos";
 import { CafeSeccion } from "./cafe-seccion";
 import { PisoPrecios } from "./piso-precios";
+import { SubidaPrecios } from "./subida-precios";
 import { ManoDeObra } from "./mano-de-obra";
 import { DatosCargados } from "./datos-cargados";
 import { BuscadorProducto } from "./buscador-producto";
@@ -372,6 +373,8 @@ function PestanaMes({ month, sede, onSede, onMes, onCanal }: { month: string; se
           <RentabilidadProductos key={`rent-${sede}-${month}`} month={month} sede={sede} />
           {/* El piso de precios: costo × 3 y margen bruto de 65–70% (15-oct-2026). */}
           <PisoPrecios key={`piso-${sede}-${month}`} month={month} sede={sede} />
+          {/* Qué precios subir en la próxima carta, cuánto y cuántas ventas aguanta perder cada uno (17-nov-2026). */}
+          <SubidaPrecios key={`subida-${sede}-${month}`} month={month} sede={sede} />
           {/* La planilla repartida por ventas: método 1 y 2 del coach (15-oct-2026). */}
           <ManoDeObra key={`mo-${sede}-${month}`} month={month} sede={sede} />
           {/* Del reporte «Platos con menor rotación» que sube dirección (28-sep-2026). */}
