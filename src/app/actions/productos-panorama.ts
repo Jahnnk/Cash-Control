@@ -26,7 +26,8 @@ import {
   armarCandidatos, plazoDe, type AccionPlan, type Archivado, type Candidato, type Decision, type MotivoArchivo, type PlanConResultado,
   type PlanSede, type ProductoEnSede, type ResultadoCandidatos, type SedeCandidatos,
 } from "@/lib/productos/candidatos";
-import { claveByte, type CostoCarta } from "@/lib/productos/costos-carta";
+import { claveByte, enlazarCosto, type CostoCarta } from "@/lib/productos/costos-carta";
+import { medirPruebas, type ResultadoPrueba, type SemanaSede } from "@/lib/productos/prueba-precios";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
@@ -757,6 +758,60 @@ export async function getDatosCargadosProductos(): Promise<Res<{ hoy: string; se
  * carta de una cafetería en el mes (motor: lib/productos/rentabilidad.ts).
  * Solo dirección. null = la sede no tiene reporte de rotación de ese mes.
  */
+/**
+ * La lista de costos de la carta (Excel de pricing) con su costo de INSUMOS y los vínculos Byte → Excel.
+ * Food cost real: lo de Atelier (AT-) al costo de Atelier; lo que se prepara en la cafetería (CF-, MN-), a su costo.
+ */
+async function costosDeCarta(): Promise<{ costos: CostoCarta[]; vinculos: Map<string, string> }> {
+  const [costos, vinculos, catalogoAtelier] = await Promise.all([
+    (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>)
+    // Antes de la migración de sección y en-carta (7-nov-2026): sin esas dos columnas.
+    .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>))
+    // Antes de la migración de origen e insumos (8-oct-2026): sin esas dos columnas.
+    .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>))
+    .catch(() => [] as CostoCarta[]),
+    (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
+    // El costo de insumos de lo que hace Atelier (recetas del sistema encima del Excel).
+    leerCatalogo(sql, 1).then((c) => c.efectivo).catch(() => []),
+  ]);
+  const insumosAtelier = new Map(catalogoAtelier.map((i) => [i.reemplaza ?? i.ref, i.costo]));
+  for (const c of costos) c.costoInsumos = c.ref.startsWith("AT-") ? (insumosAtelier.get(c.ref) ?? null) : c.costo;
+  return { costos, vinculos: new Map(vinculos.map((v) => [v.clave, v.ref])) };
+}
+
+/**
+ * Prueba de precios (fase 2 de «¿Qué precios subir?», 17-nov-2026): las semanas de Fonavi y Centro de los
+ * últimos 6 meses (cargas semanales del reporte de Byte) y el costo de insumos de cada producto. El motor
+ * (lib/productos/prueba-precios.ts) detecta solo las subidas y las mide contra la otra sede. Solo lectura.
+ */
+export async function getPruebaPrecios(hastaMes: string): Promise<Res<{ data: ResultadoPrueba }>> {
+  if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };
+  if (!puedeLeerDireccion(await getSessionRole())) return { ok: false, error: "Solo dirección." };
+  const lista = mesesAntes(hastaMes, 6);
+  try {
+    const [cortes, { costos, vinculos }] = await Promise.all([
+      (sql`SELECT business_id AS "sedeId", origen, month, period_start::text AS "periodStart", period_end::text AS "periodEnd", cargado_el::text AS "cargadoEl",
+                  product_name_raw AS nombre, units::float AS unidades, revenue::float AS ingresos
+           FROM rotacion_cortes WHERE business_id IN (2, 3) AND month = ANY(${lista}::text[])` as unknown as Promise<(Corte & { sedeId: number })[]>).catch(() => []),
+      costosDeCarta(),
+    ]);
+    const sedes = SEDES.filter((s) => s.id === 2 || s.id === 3);
+    const semanas: SemanaSede[] = sedes.flatMap((s) => semanasDeCortes(cortes.filter((c) => c.sedeId === s.id), 40).map((w) => ({ ...w, sedeId: s.id })));
+    // Costo de insumos de cada producto vendido, con el mismo enlace que «¿Dónde ganamos plata?».
+    const costoPorClave = new Map<string, number>();
+    for (const w of semanas) for (const p of w.productos) {
+      const k = claveByte(p.nombre) || p.nombre;
+      if (costoPorClave.has(k) || p.unidades <= 0) continue;
+      const c = enlazarCosto(p.nombre, costos, vinculos, p.ingresos / p.unidades)?.item.costoInsumos;
+      if (c != null && c > 0) costoPorClave.set(k, c);
+    }
+    return { ok: true, data: medirPruebas({ semanas, sedes, costos: costoPorClave }) };
+  } catch (e) {
+    console.error("[getPruebaPrecios] failed:", e);
+    return { ok: false, error: "No se pudo medir la prueba de precios." };
+  }
+}
+
 export async function getRentabilidadProductos(mes: string, businessId: number): Promise<Res<{ data: RentabilidadSede | null }>> {
   if (!mesValido(mes)) return { ok: false, error: "Mes inválido." };
   const role = await getSessionRole();
@@ -764,29 +819,15 @@ export async function getRentabilidadProductos(mes: string, businessId: number):
   const sede = businessId === CAFETERIAS ? { id: CAFETERIAS, nombre: NOMBRE_CAFETERIAS } : SEDES.find((s) => s.id === businessId && (s.id === 2 || s.id === 3));
   if (!sede) return { ok: false, error: "Solo Fonavi y Centro tienen carta con precio al público." };
   try {
-    const [costos, vinculos, mesDatos, catalogoAtelier] = await Promise.all([
-      (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>)
-      // Antes de la migración de sección y en-carta (7-nov-2026): sin esas dos columnas.
-      .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>))
-      // Antes de la migración de origen e insumos (8-oct-2026): sin esas dos columnas.
-      .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>))
-      .catch(() => [] as CostoCarta[]),
-      (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
-      filasPara(sede.id, mes),
-      // El costo de insumos de lo que hace Atelier (recetas del sistema encima del Excel).
-      leerCatalogo(sql, 1).then((c) => c.efectivo).catch(() => []),
-    ]);
+    const [{ costos, vinculos }, mesDatos] = await Promise.all([costosDeCarta(), filasPara(sede.id, mes)]);
     if (mesDatos.filas.length === 0 || !mesDatos.desde || !mesDatos.hasta) return { ok: true, data: null };
     const p = armarPanorama(mesDatos.filas, mesDatos.desde, mesDatos.hasta);
-    // Food cost real: lo de Atelier (AT-) al costo de Atelier; lo que se prepara en la cafetería (CF-, MN-), a su costo.
-    const insumosAtelier = new Map(catalogoAtelier.map((i) => [i.reemplaza ?? i.ref, i.costo]));
-    for (const c of costos) c.costoInsumos = c.ref.startsWith("AT-") ? (insumosAtelier.get(c.ref) ?? null) : c.costo;
     return {
       ok: true,
       data: rentabilidadDeSede({
         businessId: sede.id, sede: sede.nombre, mes, desde: mesDatos.desde, hasta: mesDatos.hasta, dias: p.dias,
         carta: p.carta.map((c) => ({ nombre: c.nombre, familia: c.familia, unidades: c.unidades, ingresos: c.ingresos })),
-        costos, vinculos: new Map(vinculos.map((v) => [v.clave, v.ref])),
+        costos, vinculos,
       }),
     };
   } catch (e) {

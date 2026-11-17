@@ -40,7 +40,8 @@ function sumar(filas: Corte[]): Map<string, { unidades: number; ingresos: number
   return m;
 }
 
-export function semanasDeCortes(cortes: Corte[]): SemanaCandidatos[] {
+/** `maxSemanas`: cuántas de las últimas se devuelven (la prueba de precios necesita más de 8). */
+export function semanasDeCortes(cortes: Corte[], maxSemanas = MAX_SEMANAS): SemanaCandidatos[] {
   const semanas: SemanaCandidatos[] = [];
   const meses = [...new Set(cortes.map((c) => c.month))].sort();
   for (const month of meses) {
@@ -77,7 +78,7 @@ export function semanasDeCortes(cortes: Corte[]): SemanaCandidatos[] {
       if (dias > 0) semanas.push({ desde: p[0].periodStart, hasta: p[0].periodEnd, dias, productos: [...sumar(p).entries()].map(([nombre, x]) => ({ nombre, ...x })) });
     }
   }
-  return semanas.filter((x) => x.dias <= MAX_DIAS_SEMANA).sort((a, b) => a.desde.localeCompare(b.desde)).slice(-MAX_SEMANAS);
+  return semanas.filter((x) => x.dias <= MAX_DIAS_SEMANA).sort((a, b) => a.desde.localeCompare(b.desde)).slice(-maxSemanas);
 }
 
 function siguienteDia(iso: string): string {

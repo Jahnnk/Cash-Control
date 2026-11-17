@@ -22,6 +22,7 @@ import { RentabilidadProductos } from "./rentabilidad-productos";
 import { CafeSeccion } from "./cafe-seccion";
 import { PisoPrecios } from "./piso-precios";
 import { SubidaPrecios } from "./subida-precios";
+import { PruebaPrecios } from "./prueba-precios";
 import { ManoDeObra } from "./mano-de-obra";
 import { DatosCargados } from "./datos-cargados";
 import { BuscadorProducto } from "./buscador-producto";
@@ -375,6 +376,8 @@ function PestanaMes({ month, sede, onSede, onMes, onCanal }: { month: string; se
           <PisoPrecios key={`piso-${sede}-${month}`} month={month} sede={sede} />
           {/* Qué precios subir en la próxima carta, cuánto y cuántas ventas aguanta perder cada uno (17-nov-2026). */}
           <SubidaPrecios key={`subida-${sede}-${month}`} month={month} sede={sede} />
+          {/* Fase 2: subir en una sede, comparar con la otra y medir la sensibilidad real (17-nov-2026). */}
+          <PruebaPrecios key={`prueba-${month}`} month={month} sede={sede} />
           {/* La planilla repartida por ventas: método 1 y 2 del coach (15-oct-2026). */}
           <ManoDeObra key={`mo-${sede}-${month}`} month={month} sede={sede} />
           {/* Del reporte «Platos con menor rotación» que sube dirección (28-sep-2026). */}
