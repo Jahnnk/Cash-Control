@@ -28,6 +28,8 @@ import {
 } from "@/lib/productos/candidatos";
 import { claveByte, enlazarCosto, type CostoCarta } from "@/lib/productos/costos-carta";
 import { medirPruebas, type ResultadoPrueba, type SemanaSede } from "@/lib/productos/prueba-precios";
+import type { MesCostos } from "@/lib/productos/cuando-subir";
+import { cifrasDeSedeEnMes, hoyLima } from "@/lib/seis-cifras-sql";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
@@ -809,6 +811,34 @@ export async function getPruebaPrecios(hastaMes: string): Promise<Res<{ data: Re
   } catch (e) {
     console.error("[getPruebaPrecios] failed:", e);
     return { ok: false, error: "No se pudo medir la prueba de precios." };
+  }
+}
+
+/**
+ * ¿Cuándo subir? (fase 3, 17-nov-2026): ventas y costos (las seis cifras, la misma cifra «Costos» del
+ * Dashboard) de cada mes CERRADO de Fonavi y Centro desde que hay reportes de productos. Solo lectura.
+ */
+export async function getCostosPorMes(): Promise<Res<{ hoy: string; sedes: { businessId: number; sede: string; meses: MesCostos[] }[] }>> {
+  if (!puedeLeerDireccion(await getSessionRole())) return { ok: false, error: "Solo dirección." };
+  const hoy = hoyLima();
+  const meses: string[] = [];
+  for (let m = PRIMER_MES_PRODUCTOS; m < hoy.slice(0, 7); ) {
+    meses.push(m);
+    const [y, mm] = m.split("-").map(Number);
+    m = mm === 12 ? `${y + 1}-01` : `${y}-${String(mm + 1).padStart(2, "0")}`;
+  }
+  try {
+    const sedes = await Promise.all(SEDES.filter((s) => s.id === 2 || s.id === 3).map(async (s) => {
+      const cifras = await Promise.all(meses.map((m) => cifrasDeSedeEnMes(sql as never, s.id, s.nombre, m, hoy)));
+      return {
+        businessId: s.id, sede: s.nombre,
+        meses: cifras.filter((c) => c.mesCompleto && (c.ventas ?? 0) > 0).map((c) => ({ mes: c.mes, ventas: c.ventas ?? 0, costos: c.costos })),
+      };
+    }));
+    return { ok: true, hoy, sedes };
+  } catch (e) {
+    console.error("[getCostosPorMes] failed:", e);
+    return { ok: false, error: "No se pudieron leer los costos por mes." };
   }
 }
 
