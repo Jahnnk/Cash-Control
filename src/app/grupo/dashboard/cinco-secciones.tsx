@@ -29,8 +29,10 @@ import { Financiamientos } from "./financiamientos";
 import { ProfitFirst } from "./profit-first";
 import { PuntoEquilibrio } from "./punto-equilibrio";
 import { SeccionDesplegable } from "@/components/productos/ui";
-import { Palancas } from "@/components/presupuesto/palancas";
+import dynamic from "next/dynamic";
 import { GRUPO } from "@/lib/palancas";
+// Se carga recién al abrir el bloque: así el Dashboard no arrastra el simulador (ni sus consultas) al inicio.
+const Palancas = dynamic(() => import("@/components/presupuesto/palancas").then((m) => m.Palancas), { ssr: false });
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
 import { armarSerie, sumarSedes, ahorroNuevo, type PuntoFlujo } from "@/lib/flujo-caja";
 
