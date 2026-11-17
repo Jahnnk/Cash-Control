@@ -145,7 +145,7 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
           <p className="text-xs text-gray-600">Venta esperada: <b className="tabular-nums text-gray-900">{soles(vigente.plan.ventaEsperada)}</b></p>
           <div className="mt-2 max-h-72 overflow-y-auto rounded-xl border border-gray-100">
             <table className="w-full text-xs">
-              <thead className="sticky top-0 bg-gray-50 text-gray-500"><tr><th className="px-3 py-1.5 text-left font-medium">Categoría</th><th className="px-3 py-1.5 text-right font-medium">{vigente.habiaPlan ? "Plan de hoy" : "Sin plan"}</th><th className="px-3 py-1.5 text-right font-medium">Con las palancas</th></tr></thead>
+              <thead className="sticky top-0 bg-gray-50 text-gray-500"><tr><th className="px-3 py-1.5 text-left font-medium">Categoría</th><th className="px-3 py-1.5 text-right font-medium">{vigente.habiaPlan ? "Presupuesto guardado" : "Sin presupuesto guardado"}</th><th className="px-3 py-1.5 text-right font-medium">Propuesta de las palancas</th></tr></thead>
               <tbody>
                 {(["variable", "planilla", "otrosFijos", "sinMover"] as Grupo[]).map((g) => {
                   const filas = vigente.plan.cambios.filter((c) => c.grupo === g);
