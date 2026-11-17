@@ -33,7 +33,7 @@ describe("resolverCategoria · lo que ya está bien escrito", () => {
 describe("resolverCategoria · el diccionario de equivalencias", () => {
   it("traduce las equivalencias decididas a mano", () => {
     expect(resolverCategoria("COCINA").canonica).toBe("MENAJE Y UTENSILIOS");
-    expect(resolverCategoria("FLETE").canonica).toBe("DELIVERY Y FLETES");
+    expect(resolverCategoria("FLETE").canonica).toBe("FLETES");
     expect(resolverCategoria("PRODUCTOS").canonica).toBe("PRODUCTOS ATELIER");
     expect(resolverCategoria("UTILES ESCRITORIO").canonica).toBe("OFICINA Y SISTEMAS");
     expect(resolverCategoria("SUNAT").canonica).toBe("IMPUESTOS");

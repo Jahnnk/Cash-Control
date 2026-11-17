@@ -19,8 +19,8 @@
 
 import * as XLSX from "xlsx";
 import { resolverCategoria, type ResolucionCategoria } from "./categoria-resolver";
-import { esGrupoBolson } from "./categoria-alias";
-import { clasificarGasto, POR_ACLARAR, reglaFirme } from "./reglas-gasto";
+import { categoriaCanonica, esGrupoBolson } from "./categoria-alias";
+import { clasificarGasto, DELIVERY_Y_FLETES, POR_ACLARAR, reglaFirme, repartirDeliveryYFletes } from "./reglas-gasto";
 import { grupoDelCatalogo } from "./catalogo-categorias";
 import { CATEGORIA_REVISAR_TIPO, MARCA_REVISAR_TIPO } from "./revisar-tipo";
 
@@ -55,6 +55,11 @@ export function resolverGrupoDelGasto(
           : `Regla firme: «${firme.clave.trim().toLowerCase()}» siempre es ${firme.categoria} (en el Excel decía «${grupoRaw || "sin grupo"}»).`,
       };
     }
+  }
+  // 17-nov-2026: «DELIVERY Y FLETES» se separó en tres. Si el Excel aún dice el nombre viejo, el concepto decide cuál.
+  if (tipo === "expense" && categoriaCanonica(grupoRaw).toUpperCase() === DELIVERY_Y_FLETES) {
+    const cat = repartirDeliveryYFletes(concepto, proveedor);
+    return { entrada: grupoRaw, canonica: cat, grupo: grupoDelCatalogo(cat), confianza: "alias", motivo: `"${grupoRaw}" ya se separó en tres: por el concepto es ${cat}.` };
   }
   if (tipo === "expense" && esGrupoBolson(grupoRaw)) {
     return porConcepto(`"${grupoRaw || "sin grupo"}" es un bolsón: se clasificó por el concepto.`)

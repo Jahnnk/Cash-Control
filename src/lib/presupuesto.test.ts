@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { AREAS, areaDe, armarEmpresa, armarSede, mayoresDesvios, modoPorDefecto, montoDe, sugerir, CATEGORIAS_PRESUPUESTABLES, type EntradaSede } from "./presupuesto";
+import { AREAS, areaDe, lineaDePresupuesto, armarEmpresa, armarSede, mayoresDesvios, modoPorDefecto, montoDe, sugerir, CATEGORIAS_PRESUPUESTABLES, type EntradaSede } from "./presupuesto";
 import { CATEGORIAS_GASTO } from "./reglas-gasto";
 
 const cerrado = { enCurso: false, avanceMes: 100 };
@@ -18,7 +18,7 @@ const fonavi = (o: Partial<EntradaSede> = {}): EntradaSede => ({
 
 describe("áreas", () => {
   it("cada categoría de la lista única está en exactamente un área", () => {
-    for (const c of CATEGORIAS_GASTO) expect(AREAS.filter((a) => a.categorias.includes(c.nombre)).length, c.nombre).toBe(1);
+    for (const c of CATEGORIAS_GASTO) expect(AREAS.filter((a) => a.categorias.includes(lineaDePresupuesto(c.nombre))).length, c.nombre).toBe(1);
   });
   it("lo desconocido no se presupuesta", () => {
     expect(areaDe("CATEGORÍA RARA").bloque).toBe("fuera");

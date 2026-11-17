@@ -37,9 +37,9 @@
  * sacarlo del punto de equilibrio lo haría ver mejor de lo que es.
  */
 
-import { CATEGORIAS_GASTO, POR_ACLARAR, clasificarGasto, reglaFirme, sinNotaDeFondeo, tipoDeCategoria, type TipoCategoria } from "./reglas-gasto";
+import { CATEGORIAS_GASTO, CATEGORIAS_HISTORICAS, DELIVERY_Y_FLETES, POR_ACLARAR, clasificarGasto, reglaFirme, sinNotaDeFondeo, tipoDeCategoria, type TipoCategoria } from "./reglas-gasto";
 import { resolverCategoria } from "./categoria-resolver";
-import { esGrupoBolson } from "./categoria-alias";
+import { categoriaCanonica, esGrupoBolson } from "./categoria-alias";
 import { textoDeRegla } from "./texto-regla";
 
 export type Confianza = "alta" | "media" | "baja";
@@ -85,6 +85,8 @@ export type Clasificacion = {
 
 const EN_LISTA = new Set(CATEGORIAS_GASTO.map((c) => c.nombre));
 export const enListaUnica = (c: string) => EN_LISTA.has(c);
+/** Lo guardado con un nombre que ya se retiró (abril–julio-2026 en DELIVERY Y FLETES) no es una duda. */
+const VALIDA_GUARDADA = new Set([...EN_LISTA, ...CATEGORIAS_HISTORICAS.map((c) => c.nombre)]);
 
 export const NOMBRE_FUENTE: Record<FuenteOpinion, string> = {
   decision: "Tu decisión",
@@ -111,6 +113,8 @@ export function reglaAprendidaDe(concepto: string | null, reglas: ReglaAprendida
 /** Lo que dice el grupo del Excel, si dice algo concreto (no un bolsón ni algo desconocido). */
 function categoriaDelGrupo(grupo: string | null): string | null {
   if (!grupo || !grupo.trim() || esGrupoBolson(grupo)) return null;
+  // «DELIVERY Y FLETES» ya no dice cuál de las tres es: que decidan las reglas.
+  if (categoriaCanonica(grupo).toUpperCase() === DELIVERY_Y_FLETES) return null;
   const r = resolverCategoria(grupo);
   if (r.confianza === "desconocida" || !EN_LISTA.has(r.canonica) || r.canonica === POR_ACLARAR) return null;
   return r.canonica;
@@ -172,7 +176,7 @@ function clasificarSinMonto(g: GastoAClasificar, aprendidas: ReglaAprendida[]): 
     sugerencias: [...new Set([...cats, ...(EN_LISTA.has(actual) && actual !== POR_ACLARAR ? [actual] : [])])],
   });
 
-  if (!EN_LISTA.has(actual)) return baja(`«${actual}» ya no está en la lista única de categorías.`);
+  if (!VALIDA_GUARDADA.has(actual)) return baja(`«${actual}» ya no está en la lista única de categorías.`);
   if (opiniones.length === 0) return baja("Nadie sabe qué es: ni el Excel ni las reglas lo reconocen.");
   if (cats.length === 1) {
     if (cats[0] !== actual && tipoDeCategoria(cats[0]) === tipoDeCategoria(actual)) {

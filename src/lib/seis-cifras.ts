@@ -20,7 +20,7 @@
  * Cómo se traduce con las categorías de la lista única (reglas-gasto.ts):
  *
  *   Costos   = tipo Variable, menos IMPUESTOS: PRODUCTOS ATELIER, INSUMOS,
- *              PACKAGING, DELIVERY Y FLETES, SS BANCARIOS (suben y bajan con
+ *              PACKAGING, FLETES, DELIVERY COMPRAS, DELIVERY CLIENTES, SS BANCARIOS (suben y bajan con
  *              la venta).
  *   Gastos   = tipo Fijo (planilla, alquiler, servicios…) + lo Desconocido
  *              (POR ACLARAR cuenta como fijo, igual que en el punto de

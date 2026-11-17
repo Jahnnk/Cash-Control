@@ -71,7 +71,10 @@ export const CATEGORIAS_GASTO: CategoriaGasto[] = [
   { nombre: "INSUMOS", tipo: "Variable", descripcion: "Lo que se transforma o se vende: comida y bebida", ejemplos: "Frutas, verduras, pollo, carnes, lácteos, huevos, harina, café, infusiones, hielo, agua para preparar" },
   { nombre: "PRODUCTOS ATELIER", tipo: "Variable", descripcion: "Lo que las cafeterías le compran a Atelier", ejemplos: "Facturas del 01-03 junio, tickets del 25-26 agosto (Productos Saludables Yayis)" },
   { nombre: "PACKAGING", tipo: "Variable", descripcion: "Empaques que salen con el producto", ejemplos: "Bolsas, cajas, stickers, etiquetas, papel manteca, sorbetes, vasos descartables" },
-  { nombre: "DELIVERY Y FLETES", tipo: "Variable", descripcion: "Traer compras y llevar pedidos", ejemplos: "Delivery Metro, delivery Akemy, carretilla, flete, traslado" },
+  // Jahnn (17-nov-2026): «DELIVERY Y FLETES» juntaba tres cosas distintas; desde agosto-2026 van separadas.
+  { nombre: "FLETES", tipo: "Variable", descripcion: "Carga pesada o envíos por agencia", ejemplos: "Envío a Trujillo por agencia, flete de mangas, carretilla de frutas, traslado de una congeladora" },
+  { nombre: "DELIVERY COMPRAS", tipo: "Variable", descripcion: "Que nos traigan lo que compramos", ejemplos: "Delivery Metro, delivery Akemy, delivery Sodimac, combustible de compras, taxi" },
+  { nombre: "DELIVERY CLIENTES", tipo: "Variable", descripcion: "Llevarle un pedido a un cliente", ejemplos: "Delivery cliente, delivery de tortas, mochila de delivery, reparto de Atelier a las cafeterías" },
   { nombre: "IMPUESTOS", tipo: "Variable", descripcion: "Pagos a SUNAT: el IR mensual de la MYPE es un % de las ventas", ejemplos: "IR del mes, regularización de IR" },
   { nombre: "SS BANCARIOS", tipo: "Variable", descripcion: "Lo que cobra el banco", ejemplos: "ITF, mantenimiento de cuenta, comisiones, estado de cuenta, desgravamen" },
   // 16-oct-2026 (conciliación de setiembre con Jahnn): Centro devolvió S/120 a unas clientas por un reclamo en
@@ -90,6 +93,23 @@ export const CATEGORIAS_GASTO: CategoriaGasto[] = [
   { nombre: "DEVOLUCIONES", tipo: "No es gasto", descripcion: "Plata que no era de Yayi's o que sale y vuelve", ejemplos: "Pagos por error que se recuperan, pagos dobles, propinas entregadas al equipo (las devoluciones a clientes van aparte)" },
   // ─── DESCONOCIDO: nadie sabe qué fue ───
   { nombre: POR_ACLARAR, tipo: "Desconocido", descripcion: "Nadie sabe qué fue: cuenta como gasto fijo en el punto de equilibrio mientras no se aclare", ejemplos: "Lo que ninguna regla reconoce, pagos sin descripción" },
+];
+
+/**
+ * La categoría vieja (19-sep → 17-nov-2026). Jahnn (17-nov-2026) la separó en tres: FLETES, DELIVERY COMPRAS y
+ * DELIVERY CLIENTES, y se reclasificó desde agosto-2026. Los gastos de abril a julio siguen con este nombre: es
+ * Variable igual que las tres nuevas, así que ningún total cambia. El presupuesto y Control de Caja la siguen
+ * usando como UNA línea (la suma de las tres) hasta que Control de Caja también las separe.
+ */
+export const DELIVERY_Y_FLETES = "DELIVERY Y FLETES";
+export const CATEGORIAS_DELIVERY = ["FLETES", "DELIVERY COMPRAS", "DELIVERY CLIENTES"] as const;
+/** Categorías que ya no se usan pero siguen en gastos viejos: tienen tipo, no se ofrecen para elegir. */
+export const CATEGORIAS_HISTORICAS: CategoriaGasto[] = [
+  { nombre: DELIVERY_Y_FLETES, tipo: "Variable", descripcion: "Fletes y deliverys juntos (hasta julio-2026; desde agosto van separados)", ejemplos: "" },
+];
+const CLAVES_DELIVERY_CLIENTES = [
+  "DELIVERY CLIENTE", "DELIVERY A CLIENTE", "DELIVERY TORTA", "DELIVERY DE TORTA", "DELIVERY PEDIDO", "DELIVERY DE PEDIDO",
+  "MOCHILA DELIVERY", "MOCHILA DE DELIVERY", "DELIVERY CENTRO", "DELIVERY FONAVI", "DELIVERY A CENTRO", "DELIVERY A FONAVI", "DELIVERY DEL ",
 ];
 
 export type ReglaGasto = { clave: string; categoria: string };
@@ -120,7 +140,7 @@ export const REGLAS_GASTO: ReglaGasto[] = [
   ...r("SERVICIOS", "HIDRANDINA", "SEDACAJ", "CAXAGAS", "CAXAMARCA GAS", "QUAVI", "QUIAVI", " CLARO ", "MOVISTAR", " ENTEL ", " BITEL ", " WOW ", "HERNAN CELI", "HERNAN CALI"),
   ...r("CONTABILIDAD Y ASESORÍAS", "EDUARDO ROBLES", "MANUEL ROBLES", "REST PRO", "RESTA PRO"),
   ...r("IMPUESTOS", "SUNAT"),
-  ...r("DELIVERY Y FLETES", "JORMAR"),
+  ...r("DELIVERY COMPRAS", "JORMAR"),
   ...r("MANTENIMIENTO", "LUIS LINAN", "ROYAL SERVICES", "RIEGO TECNIFICADO"),
   ...r("OFICINA Y SISTEMAS", "LIBRERIA", "LA SOLUCION", "INV & NEG", "INVERSIONES & NEGOCIAC"),
   ...r("MARKETING", "KAREN RUJEL", "ANDY TERRONES", "SEBASTIAN TERRONES", "ANDY SEBASTIAN", "PATEPERRO"),
@@ -140,8 +160,8 @@ export const REGLAS_GASTO: ReglaGasto[] = [
     "AGUA MINERAL", "BIDON", "BODONES", "AGUA SAN LUIS", "COMPRAS EN METRO", "COMPRAS METRO", "1 PISCO ", "PISCOOCUCAJE", "QUEBRANTA", "COPAS Y TRAGOS", "ARROZ", "FIDEO", "CANELA", "COCO", "PLATANO", "MANGO", "PINA ", "MARACUYA"),
   ...r("PACKAGING", "PACKAGING", "PACKAGIN", "EMPAQUE", "BOLSA", "STICKER", "ETIQUETA", "PAPEL MANTECA", "SORBET", "CAJA PARA TORTA",
     "BASES PARA TORTA", "BASE PARA TORTA", "COMPRAS AKEMY", "PAPEL CON LOGO", "PAPEL A3", "DESCARTABLE", "SERVILLETA", "FECHADO", "TICKETS PARA FECHAS", "TAPAS "),
-  ...r("DELIVERY Y FLETES", "DELIVERY", "DELIVEY", "DELYVERY", "DEVLIVERY", "DELIOVERY", "DELIVERS", "FLETE", "FELTE", "CARRETILLA", "TRASLADO",
-    "MOVILIDAD", "TAXI", "MOTO PARA COMPRAS", "ENVIO "),
+  ...r("DELIVERY COMPRAS", "DELIVERY", "DELIVEY", "DELYVERY", "DEVLIVERY", "DELIOVERY", "DELIVERS", "MOVILIDAD", "TAXI", "MOTO PARA COMPRAS"),
+  ...r("FLETES", "FLETE", "FELTE", "CARRETILLA", "TRASLADO", "ENVIO ", "AGENCIA", "ENCOMIENDA", "EMTRAFESA"),
   ...r("LIMPIEZA", "LIMPIEZA", "LIMIPEZA", "DETERGENTE", "LEJIA", "JABON", "ESCOBA", "RECOGEDOR", "TRAPEADOR", "MOPA", "PAPEL TOALLA",
     "PAPEL HIGIENICO", "GUANTES", "MASCARILLA", "TACHO", "AMBIENTADOR", "DESINFECTANTE", "LAVAVAJILLA", "ESPONJA", "FELPUDO"),
   ...r("SERVICIOS", " LUZ ", "LUZ ", " AGUA ", " GAS ", "BALON", "INTERNET", "INETRNET", "TELEFONO", "CELULAR", "RECARGA", "POST PAGO"),
@@ -182,14 +202,17 @@ export const REGLAS_GASTO: ReglaGasto[] = [
 
   // ═══ 3 · EXCEPCIONES (frases que ganan a las palabras sueltas) ═══
   // "Delivery de pollo" es delivery, no pollo.
-  ...r("DELIVERY Y FLETES", "DELIVERY", "DELIVEY", "DELYVERY", "DEVLIVERY", "DELIOVERY", "DELIEVRY", "FLETE", "FELTE", "CARRETILLA", "TRASLADO"),
+  ...r("DELIVERY COMPRAS", "DELIVERY", "DELIVEY", "DELYVERY", "DEVLIVERY", "DELIOVERY", "DELIEVRY"),
+  ...r("FLETES", "FLETE", "FELTE", "CARRETILLA", "TRASLADO"),
+  // Llevar un pedido a un cliente (y el reparto de Atelier a las cafeterías, que son sus clientes) gana a «delivery».
+  ...r("DELIVERY CLIENTES", ...CLAVES_DELIVERY_CLIENTES),
   ...r("INSUMOS", "BOLSA DE HIELO", "AGUA MINERAL", "BIDON DE AGUA", "BIDONES DE AGUA", "BODONES DE AGUA", "BISDONES", "AGUA SAN LUIS", "AGUA MANANTIAL",
     "PAN DE ", "PANES",
     // 25-oct-2026 (revisión de reglas con Jahnn): «Leche Gloria en bolsa» es leche, no packaging; el agua Manantial es insumo.
     "LECHE EN BOLSA", "LECHE GLORIA EN BOLSA", "MANANTIAL SANTA ROSA"),
   // La carreta es flete (no lo que carga). «Jormar» no basta: a veces cobra solo el flete y a veces trae la compra
   // («1 PISCO COMPRADO POR JORMAR» es pisco). «Venta interna de panes» es de Atelier.
-  ...r("DELIVERY Y FLETES", "CARRETA "),
+  ...r("FLETES", "CARRETA "),
   ...r("PRODUCTOS ATELIER", "VENTA INTERNA"),
   ...r("LIMPIEZA", "BOLSA DE BASURA", "BOLSAS DE BASURA", "UTILES DE LIMPIE", "UTILES LIMPIEZA", "LAVAVAJILLA"),
   ...r("PACKAGING", "VASOS DESCARTABLES", "VASO DESCARTABLE", "PACKAGIN PARA DELIVERY", "PACKAGING PARA DELIVERY", "CAJAS PARA ENVIO", "CAJA PARA ENVIO"),
@@ -272,7 +295,8 @@ export const REGLAS_FIRMES: ReglaFirme[] = [
   ...f("PERSONAL", "MANDIL"),
   // Devolverle plata a un cliente anula una venta (salvo que haya pagado de más: ver abajo).
   ...f("DEVOLUCIONES A CLIENTES", "DEVOLUCION A CLIENT", "INDECOPI"),
-  { clave: "DELIVERY", categoria: "DELIVERY Y FLETES", alInicio: true },
+  { clave: "DELIVERY", categoria: "DELIVERY COMPRAS", alInicio: true },
+  ...f("DELIVERY CLIENTES", ...CLAVES_DELIVERY_CLIENTES),
 ];
 /**
  * Un flete depende de QUÉ se trajo: el de unos mandiles es delivery («50% FELTE MANDILES»), el de un equipo es parte
@@ -302,7 +326,16 @@ export function clasificarGasto(concepto: string | null | undefined, proveedor?:
   return elegida ?? POR_ACLARAR;
 }
 
-const PORNOMBRE = new Map(CATEGORIAS_GASTO.map((c) => [c.nombre, c]));
+/**
+ * Un gasto que el Excel dice «DELIVERY Y FLETES» (o «DELIVERY»): ¿cuál de las tres es? Lo decide el concepto con las
+ * mismas reglas; si el concepto no lo dice, es DELIVERY COMPRAS (la mayoría de los deliverys son de compras).
+ */
+export function repartirDeliveryYFletes(concepto: string | null | undefined, proveedor?: string | null): string {
+  const c = reglaFirme(concepto, proveedor)?.categoria ?? clasificarGasto(concepto, proveedor);
+  return (CATEGORIAS_DELIVERY as readonly string[]).includes(c) ? c : "DELIVERY COMPRAS";
+}
+
+const PORNOMBRE = new Map([...CATEGORIAS_GASTO, ...CATEGORIAS_HISTORICAS].map((c) => [c.nombre, c]));
 
 export function tipoDeCategoria(nombre: string): TipoCategoria | null {
   // Pasar plata entre cuentas propias no es gasto (Centro, 11-set-2026: S/63.19 se contaban como gasto).

@@ -119,7 +119,7 @@ describe("16-oct-2026: lo que el Excel y las reglas tenían mal a la vez", () =>
     expect(clasificarGasto("PAPEL PARA IMPRESORA (GRUPO PAPELERO COSTA)")).toBe("OFICINA Y SISTEMAS");
     expect(clasificarGasto("IMPRESORA EPSON")).toBe("EQUIPOS");
     expect(clasificarGasto("TONER HP")).toBe("OFICINA Y SISTEMAS");
-    expect(clasificarGasto("DELIVERY PAPEL IMPRESORA (JORMAR)")).toBe("DELIVERY Y FLETES");
+    expect(clasificarGasto("DELIVERY PAPEL IMPRESORA (JORMAR)")).toBe("DELIVERY COMPRAS");
   });
 
   it("devolverle plata a un cliente anula una venta: resta (variable), no es «devolución» que no cuenta", () => {
