@@ -7,7 +7,8 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import { requireLectura } from "@/lib/session-access";
+import { getSessionRole, requireLectura } from "@/lib/session-access";
+import { admiteCandado, candadosDe } from "@/lib/candados";
 import { cifrasDeSedeEnMes, hoyLima } from "@/lib/seis-cifras-sql";
 import { cifrasDelGrupo, CATEGORIA_COMPRA_ATELIER, type CifrasSede } from "@/lib/seis-cifras";
 import { leerConfigProfitFirst } from "@/lib/profit-first-config-sql";
@@ -21,8 +22,45 @@ const SEDES: [number, string][] = [[2, "Fonavi"], [3, "Centro"], [1, "Atelier"]]
 const MESES_ATRAS = 7;
 const META_MERMA_POR_DEFECTO = 4;
 
-export type PalancasSede = { businessId: number; sede: string; base: BasePalancas | null; /** Fase 3: gastos fijos, fugas y focos. */ diagnostico: Diagnostico | null };
-export type DatosPalancas = { sedes: PalancasSede[]; /** EBITDA objetivo del CEO (% de la venta). */ ebitdaMetaPct: number };
+export type PalancasSede = {
+  businessId: number; sede: string; base: BasePalancas | null; /** Fase 3: gastos fijos, fugas y focos. */ diagnostico: Diagnostico | null;
+  /** Lo gastado en promedio por categoría en los mismos meses cerrados de la base (16-nov-2026). */
+  promedio: Record<string, number>;
+  /** Categorías con candado: no se recortan (lib/candados.ts). */
+  candados: string[];
+};
+export type DatosPalancas = {
+  sedes: PalancasSede[]; /** EBITDA objetivo del CEO (% de la venta). */ ebitdaMetaPct: number;
+  /** false = falta la tabla presupuesto_candados: valen los de por defecto y no se pueden cambiar. */
+  candadosGuardables: boolean;
+};
+
+/** Los candados guardados de todas las sedes. Sin la tabla, ninguno (valen los de por defecto). */
+async function leerCandados(): Promise<{ filas: { business_id: number; categoria: string; bloqueado: boolean }[]; guardable: boolean }> {
+  try {
+    const filas = await sql`SELECT business_id, categoria, bloqueado FROM presupuesto_candados` as unknown as { business_id: number; categoria: string; bloqueado: boolean }[];
+    return { filas, guardable: true };
+  } catch {
+    return { filas: [], guardable: false };
+  }
+}
+
+/** Pone o quita el candado de una categoría en una sede (solo dirección con llave completa). */
+export async function setCandado(businessId: number, categoria: string, bloqueado: boolean): Promise<{ ok: true } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (!SEDES.some(([id]) => id === businessId)) return { ok: false, error: "Sede inválida." };
+  if (typeof categoria !== "string" || !admiteCandado(categoria)) return { ok: false, error: "Esa categoría no lleva candado." };
+  try {
+    await sql`INSERT INTO presupuesto_candados (business_id, categoria, bloqueado, cambiado_por)
+              VALUES (${businessId}, ${categoria}, ${!!bloqueado}, ${role.quien === "kelly" ? "Kelly" : "Jahnn"})
+              ON CONFLICT (business_id, categoria) DO UPDATE SET bloqueado = EXCLUDED.bloqueado, cambiado_por = EXCLUDED.cambiado_por, cambiado_en = now()`;
+    return { ok: true };
+  } catch (e) {
+    console.error("[setCandado] failed:", e);
+    return { ok: false, error: "No se pudo guardar el candado." };
+  }
+}
 
 function mesesAnteriores(hoy: string, n: number): string[] {
   const out: string[] = [];
@@ -37,7 +75,7 @@ const finDe = (mes: string) => { const [a, m] = mes.split("-").map(Number); retu
  * Fase 3 · gastos por categoría, mermas y descuentos de los mismos meses cerrados (solo lectura). `ids`: una sede o las
  * tres (Grupo). En el Grupo no cuenta `sinCategoria` (lo que las cafeterías le compran a Atelier: es venta interna).
  */
-async function leerDiagnostico(ids: number[], cerrados: MesBase[], base: BasePalancas, sinCategoria: string | null = null): Promise<Diagnostico | null> {
+async function leerDiagnostico(ids: number[], cerrados: MesBase[], base: BasePalancas, sinCategoria: string | null = null): Promise<{ diagnostico: Diagnostico | null; promedio: Record<string, number> }> {
   const orden = [...cerrados].sort((a, b) => a.mes.localeCompare(b.mes));
   const recientes = orden.filter((m) => base.meses.includes(m.mes));
   const previos = orden.filter((m) => !base.meses.includes(m.mes)).slice(-3);
@@ -66,7 +104,11 @@ async function leerDiagnostico(ids: number[], cerrados: MesBase[], base: BasePal
   const descRec = descuentos.filter((d) => enRecientes(d.mes)), descPrev = descuentos.filter((d) => enPrevios(d.mes));
   const porMotivo = new Map<string, number>();
   for (const m of motivos) if (enRecientes(m.mes)) porMotivo.set(m.motivo, (porMotivo.get(m.motivo) ?? 0) + m.total);
-  return diagnosticar({
+  const promedio: Record<string, number> = {};
+  const rec = recientes.map(aMes);
+  for (const m of rec) for (const [c, v] of Object.entries(m.porCategoria)) promedio[c] = (promedio[c] ?? 0) + v / rec.length;
+  for (const c of Object.keys(promedio)) promedio[c] = Math.round(promedio[c] * 100) / 100;
+  const diagnostico = diagnosticar({
     recientes: recientes.map(aMes), previos: previos.map(aMes), variablePct: base.palancas.variablePct,
     fugas: {
       mermas: mermasRec.length ? suma(mermasRec) : null,
@@ -76,6 +118,7 @@ async function leerDiagnostico(ids: number[], cerrados: MesBase[], base: BasePal
       descuentosAntes: previos.length && descPrev.length ? suma(descPrev) : null,
     },
   });
+  return { diagnostico, promedio };
 }
 
 const cerrado = (c: CifrasSede) => c.mesCompleto && c.conResultado && (c.ventas ?? 0) > 0;
@@ -85,13 +128,15 @@ export async function getBasePalancas(): Promise<{ ok: true; data: DatosPalancas
   try {
     const hoy = hoyLima();
     const meses = mesesAnteriores(hoy, MESES_ATRAS);
-    const { config } = await leerConfigProfitFirst(sql);
+    const [{ config }, guardados] = await Promise.all([leerConfigProfitFirst(sql), leerCandados()]);
+    const candadosDeSede = (bId: number) => candadosDe(guardados.filas.filter((f) => f.business_id === bId));
     const cifrasPorSede = await Promise.all(SEDES.map(([bId, sede]) => Promise.all(meses.map((mes) => cifrasDeSedeEnMes(sql as never, bId, sede, mes, hoy)))));
     const sedes = await Promise.all(SEDES.map(async ([bId, sede], i): Promise<PalancasSede> => {
       const cerrados: MesBase[] = cifrasPorSede[i].filter(cerrado)
         .map((c) => ({ mes: c.mes, ventas: c.ventas ?? 0, costos: c.costos, gastos: c.gastos, planilla: c.planilla, bolsa: c.fuera.deudas + c.fuera.inversion + c.impuestos }));
       const base = baseDePalancas(cerrados, config.utilidadPct);
-      return { businessId: bId, sede, base, diagnostico: base ? await leerDiagnostico([bId], cerrados, base) : null };
+      const d = base ? await leerDiagnostico([bId], cerrados, base) : null;
+      return { businessId: bId, sede, base, diagnostico: d?.diagnostico ?? null, promedio: d?.promedio ?? {}, candados: candadosDeSede(bId) };
     }));
     // El Grupo: solo los meses que las TRES sedes tienen cerrados, con el mismo consolidado del Dashboard
     // (lib/seis-cifras.ts → cifrasDelGrupo: lo que Atelier le vende a las cafeterías se cuenta una sola vez).
@@ -102,8 +147,10 @@ export async function getBasePalancas(): Promise<{ ok: true; data: DatosPalancas
       return g.ventas === null ? [] : [{ mes, ventas: g.ventas, costos: g.costos, gastos: g.gastos, planilla: g.planilla, bolsa: g.fuera.deudas + g.fuera.inversion + g.impuestos }];
     });
     const baseGrupo = baseDePalancas(cerradosGrupo, config.utilidadPct);
-    const grupo: PalancasSede = { businessId: GRUPO, sede: NOMBRE_GRUPO, base: baseGrupo, diagnostico: baseGrupo ? await leerDiagnostico(SEDES.map(([id]) => id), cerradosGrupo, baseGrupo, CATEGORIA_COMPRA_ATELIER) : null };
-    return { ok: true, data: { sedes: [...sedes, grupo], ebitdaMetaPct: config.ebitdaPct } };
+    const dg = baseGrupo ? await leerDiagnostico(SEDES.map(([id]) => id), cerradosGrupo, baseGrupo, CATEGORIA_COMPRA_ATELIER) : null;
+    // El Grupo es solo referencia: no lleva candados propios (se ponen sede por sede).
+    const grupo: PalancasSede = { businessId: GRUPO, sede: NOMBRE_GRUPO, base: baseGrupo, diagnostico: dg?.diagnostico ?? null, promedio: dg?.promedio ?? {}, candados: [] };
+    return { ok: true, data: { sedes: [...sedes, grupo], ebitdaMetaPct: config.ebitdaPct, candadosGuardables: guardados.guardable } };
   } catch (e) {
     console.error("[getBasePalancas] failed:", e);
     return { ok: false, error: "No se pudo leer el punto de partida de las palancas." };
