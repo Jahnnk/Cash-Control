@@ -399,7 +399,7 @@ function SeccionEbitda({ cada, cifras, mes, periodo, sede, nombre }: { cada: Cad
         {/* Las palancas viven aquí desde el 16-nov-2026 (antes, pestaña de Presupuesto): leer el EBITDA y moverlo en un solo lugar. */}
         <SeccionDesplegable
           titulo="¿Cómo subo este EBITDA? · Palancas"
-          subtitulo={`Mueve venta, costo variable, planilla y fijos de ${sede === null ? "el Grupo (solo referencia)" : nombre} y mira qué pasa. Parte del promedio de los últimos meses cerrados; nada se guarda hasta que pulses «Guardar como borrador».`}
+          subtitulo={`Mueve venta, costo variable, planilla y fijos ${sede === null ? "del Grupo (solo referencia)" : `de ${nombre}`} y mira qué pasa. Parte del promedio de los últimos meses cerrados; nada se guarda hasta que pulses «Guardar como borrador».`}
         >
           <Palancas sede={sede ?? GRUPO} />
         </SeccionDesplegable>
