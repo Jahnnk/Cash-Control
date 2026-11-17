@@ -21,7 +21,9 @@ const relleno = (n: number) => Array.from({ length: n }, (_, i) => prod(`Relleno
 describe("redondeo como la carta", () => {
   it("bajo S/ 10 sube de S/ 0.50 en S/ 0.50; desde S/ 10, de sol en sol", () => {
     expect(precioRedondo(8, 0.05)).toBe(8.5);
-    expect(precioRedondo(8, 0.10)).toBe(9);
+    expect(precioRedondo(8, 0.10)).toBe(8.5);
+    // Nunca pasa el tope: 25 × 1.10 = 27.50 → 27 (no 28).
+    expect(precioRedondo(25, 0.10)).toBe(27);
     expect(precioRedondo(21, 0.10)).toBe(23);
     expect(precioRedondo(12, 0.05)).toBe(13);
   });
