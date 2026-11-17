@@ -112,9 +112,10 @@ export function DatosCargados({ version = 0, onVerExcel }: { version?: number; o
   // «Byte al 25/10» —la sede más adelantada— y la píldora «Ventas al 24/10», y parecía una contradicción).
   const excelGrupo = fechaDelGrupo(sedes.map((x) => x.excelHasta));
   const byteGrupo = grupo("ventasHasta");
-  // Divulgación progresiva: con todo al día es UNA línea; con atrasos se abre sola para mostrar cuál.
+  // Divulgación progresiva: siempre UNA línea (17-nov-2026, «hay que scrollear mucho»); el punto ámbar y el texto
+  // dicen si hay atraso, y al tocarla se ve cuál sede y qué archivo.
   return (
-    <details open={!todoAlDia} className="group rounded-2xl border border-gray-200 bg-white px-4 py-3 sm:px-5" aria-label="Hasta qué fecha tenemos datos">
+    <details className="group rounded-2xl border border-gray-200 bg-white px-4 py-3 sm:px-5" aria-label="Hasta qué fecha tenemos datos">
       <summary className="flex cursor-pointer list-none flex-wrap items-center justify-between gap-x-3 gap-y-0.5 [&::-webkit-details-marker]:hidden">
         <h2 className="flex items-center gap-2 text-sm font-semibold text-gray-900">
           <span className={`h-2 w-2 rounded-full ${todoAlDia ? "bg-emerald-500" : "bg-amber-500"}`} aria-hidden />

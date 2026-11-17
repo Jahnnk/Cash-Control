@@ -8,10 +8,10 @@
  * Todos los porcentajes son «de lo vendido»: así se comparan de frente con las metas del 33-33-33.
  */
 
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
 import Link from "next/link";
 import {
-  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, ChevronDown, Gauge, Package,
+  ArrowDownLeft, ArrowLeftRight, ArrowUpRight, BarChart3, ChevronDown, ChevronLeft, ChevronRight, Gauge, Package,
 } from "lucide-react";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import type { EntroPor } from "@/lib/seis-cifras";
@@ -22,6 +22,8 @@ import { Delta } from "./executive-hero";
 import { CadaCien } from "./cada-100";
 import { CambiosVentaDiaria } from "./cambios-venta-diaria";
 import { EgresosCuerpo, useEgresosPorTipo } from "./egresos-seccion";
+import { vistaEgresos } from "@/lib/dashboard-egresos";
+import type { EgresosPorTipo } from "@/lib/egresos-por-tipo";
 import { FlujoDeCaja } from "./flujo-de-caja";
 import { FondosMutuos } from "./fondos-mutuos";
 import { PrestamosEntreSedes } from "./prestamos-entre-sedes";
@@ -88,7 +90,54 @@ export type CincoProps = {
   cajaHref: string;
   /** El flujo de caja de los últimos meses (cuelga de la sección 2); null = no se pudo leer. */
   flujo?: FlujoCaja | null;
+  /** La sección que se abre al entrar (si la dirección no trae ?vista=). Las pruebas la usan para dibujar cada una. */
+  abierta?: NumSeccion;
 };
+
+/** Una sección a la vez (pedido de Jahnn, 17-nov-2026: «hay que scrollear mucho»). La elegida va en ?vista= de la dirección. */
+export type NumSeccion = 1 | 2 | 3 | 4;
+const VISTAS: Record<NumSeccion, string> = { 1: "ventas", 2: "dinero", 3: "egresos", 4: "ebitda" };
+const NOMBRE_SECCION: Record<NumSeccion, string> = { 1: "Ventas", 2: "Dinero", 3: "Egresos", 4: "EBITDA" };
+const deVista = (v: string | null): NumSeccion | null => {
+  const n = (Object.keys(VISTAS) as unknown as NumSeccion[]).map(Number).find((k) => VISTAS[k as NumSeccion] === v);
+  return n ? (n as NumSeccion) : null;
+};
+
+type Ficha = { n: NumSeccion; cifra: string; tono: string; nota: string; icono: ReactNode };
+
+/** La franja: las cuatro cifras clave a la vista; tocar una abre su sección debajo. */
+function Franja({ fichas, abierta, onAbrir }: { fichas: Ficha[]; abierta: NumSeccion; onAbrir: (n: NumSeccion) => void }) {
+  return (
+    <nav aria-label="Secciones del resumen" className="grid grid-cols-2 gap-2 sm:gap-3 lg:grid-cols-4">
+      {fichas.map((f) => {
+        const activa = f.n === abierta;
+        return (
+          <button key={f.n} type="button" onClick={() => onAbrir(f.n)} aria-pressed={activa} aria-controls={`seccion-${f.n}`}
+            className={`min-w-0 rounded-2xl border p-3 text-left transition-colors focus-visible:outline-2 focus-visible:outline-primary sm:p-4 ${activa ? "border-primary bg-white ring-1 ring-primary" : "border-gray-200 bg-white/70 hover:border-gray-400 hover:bg-white"}`}>
+            <span className="flex items-center justify-between gap-2 text-xs font-medium text-gray-500">
+              <span className={activa ? "text-primary" : ""}>{f.n}. {NOMBRE_SECCION[f.n]}</span>
+              <span aria-hidden className={activa ? "text-primary" : "text-gray-400"}>{f.icono}</span>
+            </span>
+            <span className={`mt-1 block truncate text-xl font-semibold tabular-nums tracking-tight sm:text-2xl ${f.tono}`}>{f.cifra}</span>
+            <span className="mt-0.5 block truncate text-[11px] text-gray-500">{f.nota}</span>
+          </button>
+        );
+      })}
+    </nav>
+  );
+}
+
+/** Al pie de la sección: pasar a la anterior o a la siguiente sin volver arriba. */
+function Pasar({ abierta, onAbrir }: { abierta: NumSeccion; onAbrir: (n: NumSeccion) => void }) {
+  const ant = abierta > 1 ? (abierta - 1) as NumSeccion : null, sig = abierta < 4 ? (abierta + 1) as NumSeccion : null;
+  const boton = "inline-flex items-center gap-1 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-primary hover:text-primary";
+  return (
+    <div className="flex items-center justify-between gap-3">
+      {ant ? <button type="button" className={boton} onClick={() => onAbrir(ant)}><ChevronLeft className="h-3.5 w-3.5" aria-hidden />{ant}. {NOMBRE_SECCION[ant]}</button> : <span />}
+      {sig ? <button type="button" className={boton} onClick={() => onAbrir(sig)}>{sig}. {NOMBRE_SECCION[sig]}<ChevronRight className="h-3.5 w-3.5" aria-hidden /></button> : <span />}
+    </div>
+  );
+}
 
 function Seccion({ n, titulo, fuente, icono, derecha, children }: { n: number; titulo: string; fuente: string; icono: ReactNode; derecha?: ReactNode; children: ReactNode }) {
   return (
@@ -326,8 +375,7 @@ function SeccionDinero({ caja, cortes, saldo, enCurso, cajaHref, flujo, periodo,
 
 // ─────────────────────────── 3. Egresos ───────────────────────────
 // El cuerpo (diseño de Jahnn, 1-nov-2026) vive en egresos-seccion.tsx: lo que salió de la cuenta, en sus seis tipos.
-function SeccionEgresos({ mes, sede, enCurso, cajaHref }: { mes: string; sede: number | null; enCurso: boolean; cajaHref: string }) {
-  const sedes = useEgresosPorTipo(mes);
+function SeccionEgresos({ sedes, sede, enCurso, cajaHref }: { sedes: EgresosPorTipo[] | null | undefined; sede: number | null; enCurso: boolean; cajaHref: string }) {
   return (
     <Seccion n={3} titulo="Egresos" fuente="Fuente: Excel de Finanzas · lo que salió de la cuenta · % de las salidas" icono={<Package className="h-5 w-5" />}>
       <EgresosCuerpo sedes={sedes} sede={sede} enCurso={enCurso} cajaHref={cajaHref} />
@@ -412,16 +460,47 @@ function SeccionEbitda({ cada, cifras, mes, periodo, sede, nombre }: { cada: Cad
 
 // ─────────────────────────── Las cuatro juntas (la 5, «Alertas gerenciales», se sacó el 1-nov-2026) ───────────────────────────
 export function CincoSecciones(p: CincoProps) {
+  const [abierta, setAbierta] = useState<NumSeccion>(p.abierta ?? 1);
+  // Los egresos se leen aquí (no dentro de la sección 3) porque su total también va en la franja.
+  const egresos = useEgresosPorTipo(p.mes);
+  // Al entrar, la sección que diga la dirección (?vista=egresos…): recargar o compartir el enlace abre la misma.
+  useEffect(() => {
+    const v = deVista(new URLSearchParams(window.location.search).get("vista"));
+    // eslint-disable-next-line react-hooks/set-state-in-effect -- se lee la dirección solo al montar
+    if (v) setAbierta(v);
+  }, []);
+  const abrir = (n: NumSeccion) => {
+    setAbierta(n);
+    const url = new URL(window.location.href);
+    url.searchParams.set("vista", VISTAS[n]);
+    window.history.replaceState(window.history.state, "", url);
+  };
+
   if (!p.cifras || !p.cada) return <p className="text-sm text-gray-500">No se pudieron calcular las cifras de {p.periodo}.</p>;
   const a = alcanceDe(p.cifras, p.sede);
   const cada = p.sede === null ? p.cada.grupo : p.cada.sedes[p.sede] ?? p.cada.grupo;
   const nombre = p.tarjetas.find((t) => t.businessId === p.sede)?.nombre ?? a.nombre;
+  const sinExcel = textoCortes(a.cortes) === null;
+  const ve = egresos ? vistaEgresos(egresos, p.sede) : null;
+  const e = cada.modo !== "sin-datos" ? cada.lineas.find((l) => l.clave === "ebitda") ?? null : null;
+  const fichas: Ficha[] = [
+    { n: 1, cifra: soles(p.ventas.ventas), tono: "text-gray-900", icono: <BarChart3 className="h-4 w-4" />,
+      nota: p.ventas.meta ? `${Math.round((p.ventas.ventas / p.ventas.meta) * 100)}% de la meta` : p.sede === null ? "vendido · 3 sedes" : `vendido · ${nombre}` },
+    { n: 2, cifra: sinExcel ? "—" : solesConSigno(a.caja.flujo), tono: sinExcel ? "text-gray-400" : a.caja.flujo < 0 ? "text-red-600" : "text-emerald-700", icono: <ArrowLeftRight className="h-4 w-4" />,
+      nota: sinExcel ? "falta el Excel" : "entró menos salió" },
+    { n: 3, cifra: egresos === undefined ? "…" : ve && ve.total > 0 ? soles(ve.total) : "—", tono: ve && ve.total > 0 ? "text-gray-900" : "text-gray-400", icono: <Package className="h-4 w-4" />,
+      nota: egresos === undefined ? "cargando" : ve && ve.total > 0 ? "salió de la cuenta" : "falta el Excel" },
+    { n: 4, cifra: e ? pct1(e.cien) : "—", tono: e ? TEXTO[e.tono] : "text-gray-400", icono: <Gauge className="h-4 w-4" />,
+      nota: e ? `${cada.modo === "estimado" ? "estimado · " : ""}${cada.termometro ? ETIQUETA_TERMOMETRO[cada.termometro] : "margen"} · ${solesConSigno(e.monto)}` : "sin datos" },
+  ];
   return (
-    <div className="space-y-5">
-      <SeccionVentas v={p.ventas} tarjetas={p.tarjetas} sede={p.sede} onSede={p.onSede} enCurso={p.enCurso} nombre={nombre} mes={p.mes} />
-      <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} flujo={p.flujo ?? null} periodo={p.periodo} sede={p.sede} mes={p.mes} />
-      <SeccionEgresos key={`${p.sede}`} mes={p.mes} sede={p.sede} enCurso={p.enCurso} cajaHref={p.cajaHref} />
-      <SeccionEbitda cada={cada} cifras={p.cifras} mes={p.mes} periodo={p.periodo} sede={p.sede} nombre={nombre} />
+    <div className="space-y-4">
+      <Franja fichas={fichas} abierta={abierta} onAbrir={abrir} />
+      {abierta === 1 && <SeccionVentas v={p.ventas} tarjetas={p.tarjetas} sede={p.sede} onSede={p.onSede} enCurso={p.enCurso} nombre={nombre} mes={p.mes} />}
+      {abierta === 2 && <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} flujo={p.flujo ?? null} periodo={p.periodo} sede={p.sede} mes={p.mes} />}
+      {abierta === 3 && <SeccionEgresos key={`${p.sede}`} sedes={egresos} sede={p.sede} enCurso={p.enCurso} cajaHref={p.cajaHref} />}
+      {abierta === 4 && <SeccionEbitda cada={cada} cifras={p.cifras} mes={p.mes} periodo={p.periodo} sede={p.sede} nombre={nombre} />}
+      <Pasar abierta={abierta} onAbrir={abrir} />
     </div>
   );
 }
