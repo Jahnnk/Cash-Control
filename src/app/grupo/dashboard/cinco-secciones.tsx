@@ -401,7 +401,7 @@ function SeccionEbitda({ cada, cifras, mes, periodo, sede, nombre }: { cada: Cad
           titulo="¿Cómo subo este EBITDA? · Palancas"
           subtitulo={`Mueve venta, costo variable, planilla y fijos ${sede === null ? "del Grupo (solo referencia)" : `de ${nombre}`} y mira qué pasa. Parte del promedio de los últimos meses cerrados; nada se guarda hasta que pulses «Guardar como borrador».`}
         >
-          <Palancas sede={sede ?? GRUPO} />
+          <Palancas sede={sede ?? GRUPO} mesVisto={e && cada.modo !== "sin-datos" ? { nombre: periodo.split(" ")[0], ebitda: e.monto, pct: e.cien, estimado } : null} />
         </SeccionDesplegable>
         <ProfitFirst cifras={cifras} periodo={periodo} />
         <PuntoEquilibrio mes={mes} periodo={periodo} />

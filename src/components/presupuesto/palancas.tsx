@@ -366,7 +366,10 @@ function Convertir({ sede, sedeNombre, pos, onGuardado, real, candados }: { sede
  * diferentes lados»). Con `sede` fija sigue a la sede elegida en el Dashboard (GRUPO = el Grupo, solo referencia)
  * y no muestra su propio selector ni su título.
  */
-export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => void; sede?: number } = {}) {
+/** El mes que se mira en el Dashboard, para conectarlo con el promedio (Jahnn, 16-nov-2026: «octubre dice 12.7% y aquí 14.1%»). */
+export type MesVisto = { nombre: string; ebitda: number; pct: number; estimado: boolean };
+
+export function Palancas({ onGuardado, sede: sedeFija, mesVisto }: { onGuardado?: () => void; sede?: number; mesVisto?: MesVisto | null } = {}) {
   const [datos, setDatos] = useState<DatosPalancas | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [sedePropia, setSede] = useState<number>(2);
@@ -462,7 +465,7 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
               <div className="rounded-2xl bg-gray-50 p-4 sm:p-5" aria-live="polite">
                 <div className="flex items-start justify-between gap-3">
                   <div>
-                    <div className="text-sm text-gray-600">EBITDA del mes</div>
+                    <div className="text-sm text-gray-600">{hayCambios ? "EBITDA con las palancas" : <>EBITDA de un mes típico <span className="text-gray-400">· promedio {periodo}</span></>}</div>
                     <div className={`mt-1 text-4xl font-semibold tabular-nums tracking-tight ${TONO[lectura.termometro]}`}>{soles(lectura.ebitda)}</div>
                     {hayCambios && <div className="mt-0.5 text-xs text-gray-500">Real · promedio {periodo}: {soles(lecturaReal.ebitda)} · cambio {conSigno(lectura.ebitda - lecturaReal.ebitda)}</div>}
                   </div>
@@ -472,6 +475,12 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
                     {hayCambios && <div className="text-xs text-gray-500">Real · promedio {periodo}: {pct(lecturaReal.ebitdaPct)}</div>}
                   </div>
                 </div>
+                {mesVisto && (
+                  <p className="mt-2 text-xs text-gray-500">
+                    {mesVisto.nombre}{mesVisto.estimado ? " (estimado al cierre)" : ""} solo: <b className="tabular-nums text-gray-700">{soles(mesVisto.ebitda)} · {pct(mesVisto.pct)}</b>
+                    {Math.abs(mesVisto.pct - lecturaReal.ebitdaPct) >= 0.1 && <> · {mesVisto.pct < lecturaReal.ebitdaPct ? "por debajo" : "por encima"} del promedio</>}
+                  </p>
+                )}
                 {/* De cada S/ 100: variables, fijos y lo que queda. */}
                 <div className="mt-4 flex h-3 gap-0.5 overflow-hidden rounded-full bg-gray-200" role="img" aria-label="De cada S/ 100 vendidos: costos variables, costos fijos y EBITDA">
                   <span style={{ width: `${Math.min(100, pos.variablePct)}%`, background: "#DCA64F" }} />
