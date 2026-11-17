@@ -16,13 +16,21 @@
  *     muestra pero no se presupuesta.
  */
 
-import { CATEGORIAS_GASTO, tipoDeCategoria } from "./reglas-gasto";
+import { CATEGORIAS_DELIVERY, CATEGORIAS_GASTO, DELIVERY_Y_FLETES, tipoDeCategoria } from "./reglas-gasto";
 
 export type Bloque = "operacion" | "deudas" | "inversion" | "ahorro" | "fuera";
 export type Modo = "soles" | "pct";
 export type Semaforo = "verde" | "ambar" | "rojo" | "sin-plan" | "neutro";
 
 export type Area = { id: string; nombre: string; bloque: Bloque; categorias: string[] };
+
+/**
+ * La línea del presupuesto de una categoría. Fletes, delivery de compras y delivery a clientes se separaron el
+ * 17-nov-2026, pero el presupuesto y los topes de Control de Caja siguen con UNA línea «DELIVERY Y FLETES» (la suma
+ * de las tres) hasta que Control de Caja también las separe.
+ */
+export const lineaDePresupuesto = (categoria: string) =>
+  (CATEGORIAS_DELIVERY as readonly string[]).includes(categoria) ? DELIVERY_Y_FLETES : categoria;
 
 /** Las áreas por función (orden de la pantalla). */
 export const AREAS: Area[] = [
@@ -52,7 +60,9 @@ export const areaDe = (categoria: string): Area => AREA_DE.get(categoria) ?? ARE
 /** Fijos en soles; los que suben con la venta (tipo Variable de la lista única), en %. */
 export const modoPorDefecto = (categoria: string): Modo => (tipoDeCategoria(categoria) === "Variable" ? "pct" : "soles");
 
-export const descripcionDe = (categoria: string) => CATEGORIAS_GASTO.find((c) => c.nombre === categoria)?.descripcion ?? "";
+export const descripcionDe = (categoria: string) =>
+  categoria === DELIVERY_Y_FLETES ? "Fletes, delivery de compras y delivery a clientes (las tres juntas)"
+    : CATEGORIAS_GASTO.find((c) => c.nombre === categoria)?.descripcion ?? "";
 
 export type Linea = {
   categoria: string; modo: Modo; valor: number;

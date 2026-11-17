@@ -44,8 +44,10 @@ const ALIAS: Record<string, string> = {
   limipeza: "LIMPIEZA",
   marketink: "MARKETING",
   servicio: "SERVICIOS",
+  // «DELIVERY» no dice si fue de compras o a un cliente: queda en el nombre viejo y el importador lo reparte por el
+  // concepto (lib/reglas-gasto.ts → repartirDeliveryYFletes, 17-nov-2026).
   delivery: "DELIVERY Y FLETES", delivers: "DELIVERY Y FLETES", deliverys: "DELIVERY Y FLETES",
-  flete: "DELIVERY Y FLETES", fletes: "DELIVERY Y FLETES",
+  flete: "FLETES",
 
   // Compras a Atelier (decisión de Jahnn, 27-ago-2026)
   productos: "PRODUCTOS ATELIER",

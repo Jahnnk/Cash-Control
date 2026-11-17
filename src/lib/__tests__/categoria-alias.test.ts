@@ -39,7 +39,7 @@ describe("absorciones aprobadas por Jahnn", () => {
     expect(categoriaCanonica("PROVEEDOR")).toBe("CAJA CHICA");
     expect(categoriaCanonica("MEDICINA")).toBe("PERSONAL");
     expect(categoriaCanonica("BONO")).toBe("PLANILLA");
-    expect(categoriaCanonica("FLETE")).toBe("DELIVERY Y FLETES");
+    expect(categoriaCanonica("FLETE")).toBe("FLETES");
     expect(categoriaCanonica("SOFTWARE")).toBe("OFICINA Y SISTEMAS");
     expect(categoriaCanonica("SS CONTABLES")).toBe("CONTABILIDAD Y ASESORÍAS");
     expect(categoriaCanonica("FINANCIAMIENTO")).toBe("PRÉSTAMOS Y TARJETAS");

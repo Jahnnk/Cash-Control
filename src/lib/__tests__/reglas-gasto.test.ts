@@ -31,7 +31,7 @@ describe("las excepciones ganan a las palabras sueltas", () => {
     expect(clasificarGasto("1 BOLSA DE HIELO – CAJA CHICA #03", "PROVEEDOR")).toBe("INSUMOS");
   });
   it("el delivery de un producto es delivery, no el producto", () => {
-    expect(clasificarGasto("DELIVERY PECHUGAS DE POLLO", "ELENA CUEVA")).toBe("DELIVERY Y FLETES");
+    expect(clasificarGasto("DELIVERY PECHUGAS DE POLLO", "ELENA CUEVA")).toBe("DELIVERY COMPRAS");
   });
   it("el mantenimiento de cuenta es del banco, no de los equipos", () => {
     expect(clasificarGasto("COM MNTO CTA", "BCP")).toBe("SS BANCARIOS");

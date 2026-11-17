@@ -26,8 +26,8 @@ describe("reglas firmes", () => {
     expect(firme("MNTO REFRIGERADORA (LUIS LINAN)")).toBe("MANTENIMIENTO");
   });
   it("«delivery» solo cuando el concepto EMPIEZA así", () => {
-    expect(firme("Delivery leche")).toBe("DELIVERY Y FLETES");
-    expect(firme("DELIVERY (ONDA ORGANICA)")).toBe("DELIVERY Y FLETES");
+    expect(firme("Delivery leche")).toBe("DELIVERY COMPRAS");
+    expect(firme("DELIVERY (ONDA ORGANICA)")).toBe("DELIVERY COMPRAS");
     expect(firme("5 PECHUGAS DE POLLO Y DELIVERY (ELENA CUEVA)")).toBeNull();
   });
   it("un flete depende de qué se trajo: ninguna regla firme decide", () => {
@@ -72,7 +72,7 @@ describe("reglas que se equivocaban (grupo B de la revisión del 25-oct-2026)", 
     expect(clasificarGasto("Leche Gloria en Bolsa")).toBe("INSUMOS");
     expect(clasificarGasto("AGUA  MANANTIAL SANTA ROSA  [FE]")).toBe("INSUMOS");
     expect(clasificarGasto("VENTA INTERNA DE PANES (EXPERIENCIAS SALUDABLES)")).toBe("PRODUCTOS ATELIER");
-    expect(clasificarGasto("Carreta pechugas de pollo")).toBe("DELIVERY Y FLETES");
+    expect(clasificarGasto("Carreta pechugas de pollo")).toBe("FLETES");
   });
 });
 

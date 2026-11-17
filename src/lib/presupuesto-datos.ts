@@ -7,7 +7,7 @@
 import { neon } from "@neondatabase/serverless";
 import { loadVentaRowsBlended } from "./kpis/ventas-loader";
 import { recuperosDelPeriodo } from "./recuperos-sql";
-import { armarSede, type FilaSede, type Linea } from "./presupuesto";
+import { armarSede, lineaDePresupuesto, type FilaSede, type Linea } from "./presupuesto";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -44,10 +44,18 @@ export async function gastoPorCategoria(bId: number, desde: string, hasta: strin
   ` as unknown as Promise<{ mes: string; categoria: string; monto: number }[]>,
     // Lo que otras sedes o personas devolvieron resta de su categoría (una sola fuente, lib/recuperos-sql.ts).
     recuperosDelPeriodo(sql as never, bId, desde, hasta)]);
-  const out = new Map(filas.map((f) => [`${f.mes}|${f.categoria}`, { ...f }]));
+  const out = new Map<string, { mes: string; categoria: string; monto: number }>();
+  for (const f0 of filas) {
+    const categoria = lineaDePresupuesto(f0.categoria);
+    const k = `${f0.mes}|${categoria}`;
+    const f = out.get(k) ?? { mes: f0.mes, categoria, monto: 0 };
+    f.monto = Math.round((f.monto + f0.monto) * 100) / 100;
+    out.set(k, f);
+  }
   for (const r of recup.recuperos) {
-    const k = `${r.fecha.slice(0, 7)}|${r.categoria}`;
-    const f = out.get(k) ?? { mes: r.fecha.slice(0, 7), categoria: r.categoria, monto: 0 };
+    const categoria = lineaDePresupuesto(r.categoria);
+    const k = `${r.fecha.slice(0, 7)}|${categoria}`;
+    const f = out.get(k) ?? { mes: r.fecha.slice(0, 7), categoria, monto: 0 };
     f.monto = Math.round((f.monto - r.monto) * 100) / 100;
     out.set(k, f);
   }

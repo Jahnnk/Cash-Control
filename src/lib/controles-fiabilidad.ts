@@ -25,6 +25,7 @@ import { cifrasDelMes, cajaDelMes, entroALaCuenta, gastosEnCifras, revisarTipoDe
 import { puntoDeEquilibrio, type CifrasGrupo, type CifrasSede } from "./seis-cifras";
 import { CONFIG_PROFIT_FIRST, regla33, reglaDeSede, type ConfigProfitFirst, type FilaRegla } from "./regla-33";
 import { esCategoriaDelCatalogo } from "./catalogo-categorias";
+import { CATEGORIAS_HISTORICAS } from "./reglas-gasto";
 import { POR_ACLARAR } from "./reglas-gasto";
 import type { PeLeido } from "./hoja-pe-excel";
 
@@ -126,7 +127,7 @@ export function c2Ventas(d: DatosControles, corte: string | null): Control {
 export function c3Clasificacion(d: DatosControles): Control {
   const nombre = "Clasificación de gastos";
   const egresos = cajaDelMes(d.datos).salio;
-  const dudosos = gastosEnCifras(d.datos).filter((g) => g.categoria === POR_ACLARAR || !esCategoriaDelCatalogo(g.categoria));
+  const dudosos = gastosEnCifras(d.datos).filter((g) => g.categoria === POR_ACLARAR || (!esCategoriaDelCatalogo(g.categoria) && !CATEGORIAS_HISTORICAS.some((h) => h.nombre === g.categoria)));
   const monto = r2(suma(dudosos, (g) => g.monto));
   const pct = egresos > 0 ? (monto / egresos) * 100 : 0;
   const estado: Semaforo = monto < 0.005 ? "verde" : pct <= 1 ? "amarillo" : "rojo";
