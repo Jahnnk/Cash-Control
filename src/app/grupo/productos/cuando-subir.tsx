@@ -25,6 +25,8 @@ const ESTADO: Record<Estado, { texto: string; tono: "rojo" | "ambar" | "verde" }
 
 const fechaLarga = (iso: string) =>
   new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long", year: "numeric", timeZone: "UTC" });
+/** «Domingo, 6 de diciembre de 2026»: solo la primera letra en mayúscula. */
+const fechaInicio = (iso: string) => { const f = fechaLarga(iso); return f.charAt(0).toUpperCase() + f.slice(1); };
 const mesCorto = (m: string) => new Date(`${m}-15T12:00:00Z`).toLocaleDateString("es-PE", { month: "short", year: "numeric", timeZone: "UTC" });
 
 function Senal({ activa, texto }: { activa: boolean; texto: string }) {
@@ -145,9 +147,9 @@ export function CuandoSubir({ month, sede }: { month: string; sede: number }) {
             <div>
               <h4 className="mb-2 text-sm font-semibold text-gray-900">Calendario sugerido</h4>
               <ol className="rounded-xl border border-gray-200 bg-white divide-y divide-gray-100 text-[13px]">
-                <li className="px-4 py-2.5"><strong className="text-gray-900 capitalize">{fechaLarga(domingo)}</strong> · Centro empieza la prueba con los precios nuevos. Las semanas del reporte de Byte van de domingo a sábado: cambiar el precio un domingo deja la prueba limpia.</li>
-                <li className="px-4 py-2.5"><strong className="text-gray-900 capitalize">{fechaLarga(sumarDias(domingo, SEMANAS_IDEALES * 7))}</strong> · Pasaron {SEMANAS_IDEALES} semanas. Revisa «Prueba de precios»: lo que funciona sube también en Fonavi; lo que no, vuelve a su precio.</li>
-                <li className="px-4 py-2.5"><strong className="text-gray-900 capitalize">{fechaLarga(sumarMeses(domingo, MESES_REVISION))}</strong> · Próxima revisión de precios ({MESES_REVISION} meses después).</li>
+                <li className="px-4 py-2.5"><strong className="text-gray-900">{fechaInicio(domingo)}</strong> · Centro empieza la prueba con los precios nuevos. Las semanas del reporte de Byte van de domingo a sábado: cambiar el precio un domingo deja la prueba limpia.</li>
+                <li className="px-4 py-2.5"><strong className="text-gray-900">{fechaInicio(sumarDias(domingo, SEMANAS_IDEALES * 7))}</strong> · Pasaron {SEMANAS_IDEALES} semanas. Revisa «Prueba de precios»: lo que funciona sube también en Fonavi; lo que no, vuelve a su precio.</li>
+                <li className="px-4 py-2.5"><strong className="text-gray-900">{fechaInicio(sumarMeses(domingo, MESES_REVISION))}</strong> · Próxima revisión de precios ({MESES_REVISION} meses después).</li>
               </ol>
               <p className="mt-1.5 text-[11px] text-gray-500">La fecha es el primer domingo con al menos 2 semanas para preparar la carta, cambiar Byte y avisar al equipo. Si quieres otra fecha, que también sea un domingo.</p>
             </div>
