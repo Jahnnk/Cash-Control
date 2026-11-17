@@ -141,14 +141,15 @@ export function pasoDe(precio: number): number {
 }
 
 /**
- * El precio nuevo, redondeado como la carta: el más cercano a precio × (1 + tope) que sea mayor al
- * de hoy. Un precio que termina en .9 sigue terminando en .9.
+ * El precio nuevo, redondeado como la carta: el más alto que no pasa precio × (1 + tope), y al menos
+ * un paso más que el de hoy. Un precio que termina en .9 sigue terminando en .9.
  */
 export function precioRedondo(precio: number, tope: number): number {
   const conNueve = Math.abs(Math.round(precio * 10) % 10) === 9 && precio >= 10;
   const base = conNueve ? precio + 0.1 : precio;
   const paso = pasoDe(base);
-  let nuevo = Math.round((base * (1 + tope)) / paso) * paso;
+  // Hacia abajo: el precio redondo más alto que NO pasa el tope (25 × 1.10 = 27.50 → 27, no 28).
+  let nuevo = Math.floor((base * (1 + tope)) / paso + 1e-9) * paso;
   if (nuevo <= base + 1e-9) nuevo = base + paso;
   return r2(conNueve ? nuevo - 0.1 : nuevo);
 }
