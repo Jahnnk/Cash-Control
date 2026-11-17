@@ -23,6 +23,8 @@ describe("delivery y fletes, separados", () => {
       ["CARRETILLA FRUTAS Y VERDURAS (ELENA CUEVA)", "FLETES"],
       ["TRASLADO DE CONGELADORA (MANUEL CAHVEZ)", "FLETES"],
       ["Cajas envío de Trujillo (EMTRAFESA)", "FLETES"],
+      // El envío del estado de cuenta lo cobra el banco (Fonavi, 31-oct-2026).
+      ["ENVIO EST CTA", "SS BANCARIOS"],
       ["DELIVERY METRO (JORMAR)", "DELIVERY COMPRAS"],
       ["DELIVERY AKEMY (ROSARIO REYES)", "DELIVERY COMPRAS"],
       ["DELIVERY HARINA INTEGRAL (SEBASTIAN ROJAS)", "DELIVERY COMPRAS"],
