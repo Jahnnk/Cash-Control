@@ -39,6 +39,8 @@ export type ProductoRentable = {
   unidades: number;
   ingresos: number;
   precio: number | null;
+  /** Precio de la carta (Excel de pricing), si el producto enlaza con uno. El de arriba es el promedio que cobró Byte. */
+  precioCarta?: number | null;
   costo: number | null;
   /** De dónde sale el costo («Cafetería», «Atelier», «Externo»…): si es «Atelier», el costo es el precio interno de Atelier. */
   origen: string | null;
@@ -107,7 +109,7 @@ export function rentabilidadDeSede(input: {
     const margenUnidad = precio !== null && costo !== null ? precio - costo : null;
     return {
       nombre: a.nombre, familia: a.familia, unidades: a.unidades, ingresos: r2(a.ingresos),
-      precio: precio !== null ? r2(precio) : null, costo: costo !== null ? r2(costo) : null, origen: enlace?.item.origen ?? null,
+      precio: precio !== null ? r2(precio) : null, precioCarta: enlace?.item.precio ?? null, costo: costo !== null ? r2(costo) : null, origen: enlace?.item.origen ?? null,
       costoInsumos: enlace?.item.costoInsumos != null ? r2(enlace.item.costoInsumos) : null,
       deAtelier: enlace?.item.ref.startsWith("AT-") ?? false,
       margenUnidad: margenUnidad !== null ? r2(margenUnidad) : null,
