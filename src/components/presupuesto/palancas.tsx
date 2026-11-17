@@ -132,7 +132,7 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
   return (
     <div className="rounded-2xl border border-gray-200/80 bg-white p-4">
       <h3 className="text-sm font-semibold text-gray-900">Convertir en presupuesto</h3>
-      <p className="mt-0.5 text-xs text-gray-500">Lo que marcan las palancas pasa a ser el borrador del plan de {sedeNombre}. No se aprueba solo: lo revisas y lo apruebas en «Plan del mes».</p>
+      <p className="mt-0.5 text-xs text-gray-500">Lo que marcan las palancas pasa a ser el borrador del plan de {sedeNombre}. No se aprueba solo: lo revisas y lo apruebas en Grupo → Presupuesto.</p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
         <Segmentado tamano="sm" opciones={[{ valor: actual, etiqueta: nombreMes(actual) }, { valor: mesMas(actual, 1), etiqueta: nombreMes(mesMas(actual, 1)) }]} valor={mes} onChange={setMes} />
         <button type="button" onClick={ver} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 px-3 py-1.5 text-xs font-medium text-gray-700 hover:border-primary hover:text-primary disabled:opacity-50">
@@ -160,11 +160,11 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
               </tbody>
             </table>
           </div>
-          {vigente.plan.sinRepartir > 0 && <p className="mt-2 text-[11px] text-amber-700">No hay historial de gastos fijos para repartir {soles(vigente.plan.sinRepartir)} de «Otros fijos»: agrégalos a mano en «Plan del mes».</p>}
+          {vigente.plan.sinRepartir > 0 && <p className="mt-2 text-[11px] text-amber-700">No hay historial de gastos fijos para repartir {soles(vigente.plan.sinRepartir)} de «Otros fijos»: agrégalos a mano en Grupo → Presupuesto.</p>}
           {vigente.aprobado
-            ? <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">El plan de {nombreMes(mes)} ya está aprobado. Para cambiarlo, primero reábrelo en «Plan del mes».</p>
+            ? <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">El plan de {nombreMes(mes)} ya está aprobado. Para cambiarlo, primero reábrelo en Grupo → Presupuesto.</p>
             : guardado
-              ? <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Borrador guardado. Míralo en «Plan del mes», eligiendo {nombreMes(mes)}, y apruébalo cuando estés conforme.</p>
+              ? <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-xs text-emerald-800">Borrador guardado. Míralo en Grupo → Presupuesto, eligiendo {nombreMes(mes)}, y apruébalo cuando estés conforme.</p>
               : (
                 <div className="mt-3 flex flex-wrap items-center gap-2">
                   <button type="button" onClick={guardar} disabled={busy !== null} className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">
@@ -179,10 +179,17 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
   );
 }
 
-export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
+/**
+ * Desde el 16-nov-2026 viven en el Dashboard de Grupo, sección 4 (pedido de Jahnn: «no tener dos conceptos en
+ * diferentes lados»). Con `sede` fija sigue a la sede elegida en el Dashboard (GRUPO = el Grupo, solo referencia)
+ * y no muestra su propio selector ni su título.
+ */
+export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => void; sede?: number } = {}) {
   const [datos, setDatos] = useState<DatosPalancas | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [sede, setSede] = useState<number>(2);
+  const [sedePropia, setSede] = useState<number>(2);
+  const enDashboard = sedeFija !== undefined;
+  const sede = sedeFija ?? sedePropia;
   const [movidas, setMovidas] = useState<Record<number, Pos>>({});
   const [meta, setMeta] = useState<number>(25);
   useEffect(() => { void getBasePalancas().then((r) => { if (r.ok) setDatos(r.data); else setError(r.error); }); }, []);
@@ -212,13 +219,13 @@ export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
 
   return (
     <div className="max-w-6xl space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
+      {!enDashboard && <div className="flex flex-wrap items-center justify-between gap-3">
         <div>
           <h2 className="flex items-center gap-2 text-lg font-semibold text-gray-900"><SlidersHorizontal className="h-5 w-5 text-primary" aria-hidden />Palancas del EBITDA</h2>
           <p className="text-sm text-gray-500">Mueve una palanca y mira qué pasa. Nada se guarda hasta que pulses «Guardar como borrador».</p>
         </div>
         <Segmentado opciones={datos.sedes.map((s) => ({ valor: s.businessId, etiqueta: s.businessId === GRUPO ? `${s.sede} · referencia` : s.sede }))} valor={sede} onChange={setSede} />
-      </div>
+      </div>}
 
       {!base || !pos || !lectura || !lecturaReal ? <p className="rounded-2xl bg-gray-50 p-4 text-sm text-gray-500">{actual?.sede ?? "Esta sede"} todavía no tiene un mes cerrado con ventas y Excel completos para partir de la realidad.</p> : (
         <>
@@ -302,7 +309,7 @@ export function Palancas({ onGuardado }: { onGuardado?: () => void } = {}) {
               </div>
 
               {sede === GRUPO
-                ? <p className="rounded-2xl border border-gray-200/80 bg-white p-4 text-xs text-gray-500">El presupuesto se guarda sede por sede. Elige una sede arriba para convertir sus palancas en el borrador del mes.</p>
+                ? <p className="rounded-2xl border border-gray-200/80 bg-white p-4 text-xs text-gray-500">El presupuesto se guarda sede por sede. {enDashboard ? "Toca una sede en la sección 1" : "Elige una sede arriba"} para convertir sus palancas en el borrador del mes.</p>
                 : <Convertir sede={sede} sedeNombre={actual?.sede ?? ""} pos={pos} onGuardado={onGuardado} />}
             </div>
           </div>

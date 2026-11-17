@@ -28,6 +28,9 @@ import { PrestamosEntreSedes } from "./prestamos-entre-sedes";
 import { Financiamientos } from "./financiamientos";
 import { ProfitFirst } from "./profit-first";
 import { PuntoEquilibrio } from "./punto-equilibrio";
+import { SeccionDesplegable } from "@/components/productos/ui";
+import { Palancas } from "@/components/presupuesto/palancas";
+import { GRUPO } from "@/lib/palancas";
 import type { FlujoCaja } from "@/app/actions/flujo-caja";
 import { armarSerie, sumarSedes, ahorroNuevo, type PuntoFlujo } from "@/lib/flujo-caja";
 
@@ -334,7 +337,7 @@ function SeccionEgresos({ mes, sede, enCurso, cajaHref }: { mes: string; sede: n
 const COLOR_MODELO = { variables: "#DCA64F", fijos: "#5B7FB0", utilidad: "#4A8B72", bolsa: "#9B84BE" };
 const TONO_TERMOMETRO = { fragil: "mal", en_camino: "ojo", eficiente: "bien" } as const;
 
-function SeccionEbitda({ cada, cifras, mes, periodo }: { cada: Cada100; cifras: SeisCifras; mes: string; periodo: string }) {
+function SeccionEbitda({ cada, cifras, mes, periodo, sede, nombre }: { cada: Cada100; cifras: SeisCifras; mes: string; periodo: string; sede: number | null; nombre: string }) {
   const lin = (k: string) => cada.lineas.find((l) => l.clave === k);
   const e = lin("ebitda"), v = lin("variables"), f = lin("fijos"), u = lin("utilidad"), b = lin("bolsa");
   const estimado = cada.modo === "estimado";
@@ -391,6 +394,13 @@ function SeccionEbitda({ cada, cifras, mes, periodo }: { cada: Cada100; cifras: 
       )}
       {/* Lo que se hace con ese EBITDA y cuánto hay que vender para cubrirlo (plegados). */}
       <div className="mt-4 space-y-3">
+        {/* Las palancas viven aquí desde el 16-nov-2026 (antes, pestaña de Presupuesto): leer el EBITDA y moverlo en un solo lugar. */}
+        <SeccionDesplegable
+          titulo="¿Cómo subo este EBITDA? · Palancas"
+          subtitulo={`Mueve venta, costo variable, planilla y fijos de ${sede === null ? "el Grupo (solo referencia)" : nombre} y mira qué pasa. Parte del promedio de los últimos meses cerrados; nada se guarda hasta que pulses «Guardar como borrador».`}
+        >
+          <Palancas sede={sede ?? GRUPO} />
+        </SeccionDesplegable>
         <ProfitFirst cifras={cifras} periodo={periodo} />
         <PuntoEquilibrio mes={mes} periodo={periodo} />
       </div>
@@ -409,7 +419,7 @@ export function CincoSecciones(p: CincoProps) {
       <SeccionVentas v={p.ventas} tarjetas={p.tarjetas} sede={p.sede} onSede={p.onSede} enCurso={p.enCurso} nombre={nombre} mes={p.mes} />
       <SeccionDinero caja={a.caja} cortes={textoCortes(a.cortes)} saldo={p.saldo} enCurso={p.enCurso} cajaHref={p.cajaHref} flujo={p.flujo ?? null} periodo={p.periodo} sede={p.sede} mes={p.mes} />
       <SeccionEgresos key={`${p.sede}`} mes={p.mes} sede={p.sede} enCurso={p.enCurso} cajaHref={p.cajaHref} />
-      <SeccionEbitda cada={cada} cifras={p.cifras} mes={p.mes} periodo={p.periodo} />
+      <SeccionEbitda cada={cada} cifras={p.cifras} mes={p.mes} periodo={p.periodo} sede={p.sede} nombre={nombre} />
     </div>
   );
 }

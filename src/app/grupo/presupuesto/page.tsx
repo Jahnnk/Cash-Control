@@ -3,7 +3,8 @@ import { getFrescuraGrupo } from "@/app/actions/frescura";
 import { BandaFrescura } from "@/components/banda-frescura";
 import { SeccionDesplegable } from "@/components/productos/ui";
 import { PresupuestoVista } from "@/components/presupuesto/presupuesto-vista";
-import { PresupuestoPestanas } from "@/components/presupuesto/presupuesto-pestanas";
+import Link from "next/link";
+import { SlidersHorizontal } from "lucide-react";
 import { PanelGastoCard } from "./panel-gasto";
 
 export const dynamic = "force-dynamic";
@@ -20,7 +21,11 @@ export default async function GrupoPresupuestoPage() {
   return (
     <div className="space-y-5">
       {frescura && <BandaFrescura frescura={frescura} />}
-      <PresupuestoPestanas plan={<>
+      {/* Las palancas del EBITDA se mudaron al Dashboard, sección 4 (16-nov-2026): aquí solo queda el aviso. */}
+      <Link href="/grupo/dashboard" className="flex max-w-6xl items-center gap-2 rounded-2xl border border-gray-200/80 bg-white px-4 py-3 text-sm text-gray-600 hover:border-primary">
+        <SlidersHorizontal className="h-4 w-4 shrink-0 text-primary" aria-hidden />
+        <span>Las <b className="font-semibold text-gray-900">palancas del EBITDA</b> están en el Dashboard → sección 4 «¿Cómo subo este EBITDA?». Desde ahí guardas el borrador del plan.</span>
+      </Link>
       <PresupuestoVista />
       <div className="max-w-6xl">
         <SeccionDesplegable
@@ -30,7 +35,6 @@ export default async function GrupoPresupuestoPage() {
           {panel.ok ? <PanelGastoCard inicial={panel.data} /> : <p className="text-sm text-red-700">{panel.error}</p>}
         </SeccionDesplegable>
       </div>
-      </>} />
     </div>
   );
 }
