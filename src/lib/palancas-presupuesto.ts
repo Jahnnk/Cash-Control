@@ -60,7 +60,9 @@ export type PlanDesdePalancas = {
  * @param sugerido  Las líneas que propone el historial (la mezcla).
  * @param actual    El plan que ya tiene ese mes (puede estar vacío) y su venta esperada.
  */
-export function planDesdePalancas(p: Palancas, sugerido: Linea[], actual: { ventaEsperada: number | null; lineas: Linea[] }): PlanDesdePalancas {
+export function planDesdePalancas(p: Palancas, sugerido: Linea[], actual: { ventaEsperada: number | null; lineas: Linea[] },
+  /** Otros fijos con candado (lib/candados.ts) y su monto: quedan tal cual y el resto de la perilla 4 se reparte entre los demás. */
+  fijas: Record<string, number> = {}): PlanDesdePalancas {
   const ventaEsperada = Math.round(p.ventas);
   const de = (g: Grupo, lista: Linea[]) => lista.filter((l) => grupoDe(l) === g);
   // La mezcla sale del historial; si el historial no dice nada de un grupo, del plan actual.
@@ -71,8 +73,10 @@ export function planDesdePalancas(p: Palancas, sugerido: Linea[], actual: { vent
     ? escalar(mezclaVar.map((l) => ({ categoria: l.categoria, modo: "pct" as const, valor: l.valor })), r1(p.variablePct), 0.1)
     : p.variablePct > 0 ? [{ categoria: CAT_VARIABLE_POR_DEFECTO, modo: "pct" as const, valor: r1(p.variablePct) }] : [];
   const planilla: Linea[] = p.planilla > 0 ? [{ categoria: CAT_PLANILLA, modo: "soles", valor: Math.round(p.planilla / 10) * 10 }] : [];
-  const mezclaFijos = mezcla("otrosFijos");
-  const otros = escalar(mezclaFijos.map((l) => ({ categoria: l.categoria, modo: "soles" as const, valor: l.valor })), Math.round(p.otrosFijos / 10) * 10, 10);
+  const conCandado: Linea[] = Object.entries(fijas).filter(([, v]) => v > 0).map(([categoria, v]) => ({ categoria, modo: "soles" as const, valor: Math.round(v / 10) * 10 }));
+  const resto = Math.max(0, Math.round(p.otrosFijos / 10) * 10 - conCandado.reduce((t, l) => t + l.valor, 0));
+  const mezclaFijos = mezcla("otrosFijos").filter((l) => !(l.categoria in fijas));
+  const otros = [...conCandado, ...escalar(mezclaFijos.map((l) => ({ categoria: l.categoria, modo: "soles" as const, valor: l.valor })), resto, 10)];
   // Lo que no es costo de operar: como está en el plan del mes; si no hay plan, como lo sugiere el historial.
   const quietas = (de("sinMover", actual.lineas).length ? de("sinMover", actual.lineas) : de("sinMover", sugerido)).map((l) => ({ categoria: l.categoria, modo: l.modo, valor: l.valor }));
 
@@ -91,7 +95,7 @@ export function planDesdePalancas(p: Palancas, sugerido: Linea[], actual: { vent
     return { categoria, grupo: grupoDe(linea), antes: antes.get(categoria) ?? null, ahora: ahora.get(categoria) ?? null };
   }).sort((a, b) => ORDEN.indexOf(a.grupo) - ORDEN.indexOf(b.grupo) || (b.ahora ?? 0) - (a.ahora ?? 0));
 
-  return { ventaEsperada, lineas, cambios, sinRepartir: mezclaFijos.length ? 0 : Math.round(p.otrosFijos) };
+  return { ventaEsperada, lineas, cambios, sinRepartir: mezclaFijos.length ? 0 : resto };
 }
 
 /**

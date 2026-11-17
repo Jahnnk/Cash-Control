@@ -118,16 +118,17 @@ export type Camino = {
  *   · variable = 1 − meta% − fijos ÷ ventas           (bajar el costo del producto o subir precios)
  *   · fijos    = ventas × (1 − variable% − meta%)     (recortar la estructura)
  */
-export function paraLlegar(p: Palancas, metaPct: number): Camino[] {
+export function paraLlegar(p: Palancas, metaPct: number, /** Lo mínimo de fijos por los candados (lib/candados.ts). */ pisoFijos = 0): Camino[] {
   const v = p.variablePct / 100, m = metaPct / 100, fijos = Math.max(0, p.planilla) + Math.max(0, p.otrosFijos);
   const ya = simular(p).ebitdaPct >= metaPct;
   const margen = 1 - v - m;
   const ventas = margen > 0.001 ? r2(fijos / margen) : null;
   const variable = p.ventas > 0 ? r1((1 - m - fijos / p.ventas) * 100) : null;
   const fijosMeta = r2(p.ventas * margen);
+  const fijosAlcanza = fijosMeta > 0 && fijosMeta >= pisoFijos - 0.5;
   return [
     { palanca: "ventas", valor: ya ? r2(p.ventas) : ventas, cambio: ya ? 0 : ventas === null ? null : r2(ventas - p.ventas), yaLlego: ya },
     { palanca: "variable", valor: ya ? p.variablePct : variable !== null && variable > 0 ? variable : null, cambio: ya ? 0 : variable !== null && variable > 0 ? r1(variable - p.variablePct) : null, yaLlego: ya },
-    { palanca: "fijos", valor: ya ? r2(fijos) : fijosMeta > 0 ? fijosMeta : null, cambio: ya ? 0 : fijosMeta > 0 ? r2(fijosMeta - fijos) : null, yaLlego: ya },
+    { palanca: "fijos", valor: ya ? r2(fijos) : fijosAlcanza ? fijosMeta : null, cambio: ya ? 0 : fijosAlcanza ? r2(fijosMeta - fijos) : null, yaLlego: ya },
   ];
 }

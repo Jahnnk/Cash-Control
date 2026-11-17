@@ -6,9 +6,10 @@
  * «Convertir en presupuesto», que guarda un BORRADOR del plan del mes (lib/palancas-presupuesto.ts).
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { Loader2, RotateCcw, SlidersHorizontal } from "lucide-react";
-import { getBasePalancas, type DatosPalancas } from "@/app/actions/palancas";
+import { useEffect, useState } from "react";
+import { Loader2, Lock, LockOpen, RotateCcw, SlidersHorizontal } from "lucide-react";
+import { getBasePalancas, setCandado, type DatosPalancas } from "@/app/actions/palancas";
+import { admiteCandado, pisoOtrosFijos } from "@/lib/candados";
 import { getPresupuesto, guardarPresupuesto } from "@/app/actions/presupuesto";
 import { sugerir } from "@/lib/presupuesto";
 import { planDesdePalancas, rutaDe90Dias, type Grupo, type PlanDesdePalancas } from "@/lib/palancas-presupuesto";
@@ -53,21 +54,34 @@ function NivelBarra({ n }: { n: Nivel }) {
   );
 }
 
-function Perilla({ titulo, ayuda, valor, real, min, max, paso, formato, onChange, nivel, comoSeMueve }: {
+/** El candado de un costo que no se puede bajar (alquiler por contrato, sueldos). */
+function BotonCandado({ bloqueado, onToggle, deshabilitado }: { bloqueado: boolean; onToggle: () => void; deshabilitado?: boolean }) {
+  const Icono = bloqueado ? Lock : LockOpen;
+  return (
+    <button type="button" onClick={onToggle} disabled={deshabilitado} aria-pressed={bloqueado}
+      title={bloqueado ? "Con candado: las palancas no lo bajan. Toca para quitarlo." : "Sin candado: las palancas pueden bajarlo. Toca si no se puede reducir."}
+      className={`inline-flex shrink-0 items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] font-medium disabled:opacity-50 ${bloqueado ? "bg-amber-100 text-amber-800" : "text-gray-400 hover:bg-gray-100 hover:text-gray-600"}`}>
+      <Icono className="h-3 w-3" aria-hidden />{bloqueado ? "fijo" : ""}
+    </button>
+  );
+}
+
+function Perilla({ titulo, ayuda, valor, real, min, max, paso, formato, onChange, nivel, comoSeMueve, candado }: {
   titulo: string; ayuda: string; valor: number; real: number; min: number; max: number; paso: number;
   formato: (n: number) => string; onChange: (n: number) => void;
   nivel?: Nivel;
   /** Qué tan fácil se mueve en la vida real (no todas las palancas se mueven igual). */
   comoSeMueve?: string;
+  candado?: { bloqueado: boolean; onToggle: () => void; deshabilitado?: boolean };
 }) {
   const movida = Math.abs(valor - real) > paso / 2;
   return (
     <div className="rounded-2xl border border-gray-200/80 bg-white p-4">
       <div className="flex items-baseline justify-between gap-3">
-        <label className="text-sm font-medium text-gray-900">{titulo}</label>
+        <span className="flex items-center gap-1.5"><label className="text-sm font-medium text-gray-900">{titulo}</label>{candado && <BotonCandado {...candado} />}</span>
         <b className="text-xl font-semibold tabular-nums text-gray-900">{formato(valor)}</b>
       </div>
-      <input type="range" aria-label={titulo} min={min} max={Math.max(max, valor)} step={paso} value={valor} onChange={(e) => onChange(Number(e.target.value))} className="mt-2 w-full accent-[#004C40]" />
+      <input type="range" aria-label={titulo} min={Math.min(min, valor)} max={Math.max(max, valor)} step={paso} value={valor} onChange={(e) => onChange(Number(e.target.value))} className="mt-2 w-full accent-[#004C40]" />
       <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-gray-500">
         <span>{ayuda}</span>
         <span className="shrink-0 tabular-nums">
@@ -83,8 +97,8 @@ function Perilla({ titulo, ayuda, valor, real, min, max, paso, formato, onChange
 
 const NOMBRE_CAMINO: Record<Camino["palanca"], string> = { ventas: "Solo vendiendo más", variable: "Solo bajando el costo variable", fijos: "Solo recortando fijos" };
 
-function Caminos({ pos, meta, onAplicar }: { pos: Pos; meta: number; onAplicar: (c: Camino) => void }) {
-  const caminos = paraLlegar(pos, meta);
+function Caminos({ pos, meta, onAplicar, piso }: { pos: Pos; meta: number; onAplicar: (c: Camino) => void; piso: number }) {
+  const caminos = paraLlegar(pos, meta, piso);
   if (caminos[0].yaLlego) return <p className="mt-2 rounded-lg bg-emerald-50 px-3 py-2 text-sm text-emerald-800">Con las palancas así ya llegas a {pct(meta)} de EBITDA.</p>;
   return (
     <ul className="mt-2 divide-y divide-gray-100">
@@ -93,7 +107,7 @@ function Caminos({ pos, meta, onAplicar }: { pos: Pos; meta: number; onAplicar: 
           <span className="min-w-0 text-gray-700">
             {NOMBRE_CAMINO[c.palanca]}
             <span className="block text-[11px] text-gray-500">
-              {c.valor === null || c.cambio === null ? "No alcanza con esta sola palanca." : c.palanca === "ventas"
+              {c.valor === null || c.cambio === null ? (c.palanca === "fijos" && piso > 0 ? "No alcanza: los gastos con candado no se pueden bajar." : "No alcanza con esta sola palanca.") : c.palanca === "ventas"
                 ? `vender ${soles(c.valor)} al mes (${conSigno(c.cambio)}, ${pct((c.cambio / pos.ventas) * 100)} más)`
                 : c.palanca === "variable" ? `llevarlo a ${pct(c.valor)} (${Math.abs(c.cambio).toLocaleString("es-PE")} puntos menos)`
                 : `dejarlos en ${soles(c.valor)} (${conSigno(c.cambio)} al mes)`}
@@ -152,47 +166,56 @@ function Dif({ antes, ahora, subirEsBueno = false }: { antes: number | null; aho
 }
 const deVenta = (monto: number, venta: number | null) => (venta && venta > 0 ? pct((monto / venta) * 100) : "");
 
-function Resumen({ v }: { v: Vista }) {
+/** Lo gastado en promedio en los meses cerrados de la base: el «de dónde partimos» del cuadro. */
+type Real = { venta: number; variable: number; planilla: number; otrosFijos: number; porCategoria: Record<string, number>; meses: string };
+
+function Resumen({ v, real }: { v: Vista; real: Real }) {
   const suma = (g: Grupo, campo: "antes" | "ahora") => v.plan.cambios.filter((c) => c.grupo === g).reduce((t, c) => t + (c[campo] ?? 0), 0);
-  const ventaA = v.habiaPlan ? v.ventaGuardada : null, ventaN = v.plan.ventaEsperada;
-  const costoA = (g: Grupo) => (v.habiaPlan ? suma(g, "antes") : null);
+  const ventaG = v.habiaPlan ? v.ventaGuardada : null, ventaN = v.plan.ventaEsperada;
+  const realDe: Record<Exclude<Grupo, "sinMover">, number> = { variable: real.variable, planilla: real.planilla, otrosFijos: real.otrosFijos };
+  const ebitdaR = real.venta - real.variable - real.planilla - real.otrosFijos;
   const ebitdaN = ventaN - COSTOS.reduce((t, c) => t + suma(c.g, "ahora"), 0);
-  const ebitdaA = ventaA !== null ? ventaA - COSTOS.reduce((t, c) => t + suma(c.g, "antes"), 0) : null;
+  const ebitdaG = ventaG !== null ? ventaG - COSTOS.reduce((t, c) => t + suma(c.g, "antes"), 0) : null;
   const celda = "px-3 py-2 text-right tabular-nums";
+  const sub = (monto: number | null, venta: number | null, tono = "text-gray-400") => monto === null ? null : <span className={`block text-[10px] ${tono}`}>{deVenta(monto, venta)}</span>;
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200">
-      <table className="w-full min-w-[480px] text-xs">
+      <table className="w-full min-w-[520px] text-xs">
         <thead className="bg-gray-50 text-gray-500">
           <tr>
             <th className="px-3 py-1.5 text-left font-medium">En resumen</th>
-            <th className="px-3 py-1.5 text-right font-medium">{v.habiaPlan ? "Presupuesto guardado" : "Sin presupuesto guardado"}</th>
+            <th className="px-3 py-1.5 text-right font-medium">Promedio real<span className="block text-[10px] font-normal">{real.meses}</span></th>
+            {v.habiaPlan && <th className="px-3 py-1.5 text-right font-medium">Presupuesto guardado</th>}
             <th className="px-3 py-1.5 text-right font-medium">Propuesta de las palancas</th>
-            <th className="px-3 py-1.5 text-right font-medium">Diferencia</th>
+            <th className="px-3 py-1.5 text-right font-medium">Ajuste<span className="block text-[10px] font-normal">propuesta − real</span></th>
           </tr>
         </thead>
         <tbody>
           <tr className="border-t border-gray-100">
             <td className="px-3 py-2 font-medium text-gray-900">Venta esperada</td>
-            <td className={`${celda} text-gray-500`}>{ventaA === null ? "—" : soles(ventaA)}</td>
+            <td className={`${celda} text-gray-600`}>{soles(real.venta)}</td>
+            {v.habiaPlan && <td className={`${celda} text-gray-400`}>{ventaG === null ? "—" : soles(ventaG)}</td>}
             <td className={`${celda} font-semibold text-gray-900`}>{soles(ventaN)}</td>
-            <td className={celda}><Dif antes={ventaA} ahora={ventaN} subirEsBueno /></td>
+            <td className={celda}><Dif antes={real.venta} ahora={ventaN} subirEsBueno /></td>
           </tr>
           {COSTOS.map((c) => {
-            const a = costoA(c.g), n = suma(c.g, "ahora"), nPct = ventaN > 0 ? (n / ventaN) * 100 : 0;
+            const r = realDe[c.g], g = v.habiaPlan ? suma(c.g, "antes") : null, n = suma(c.g, "ahora"), nPct = ventaN > 0 ? (n / ventaN) * 100 : 0;
             return (
               <tr key={c.g} className="border-t border-gray-100">
                 <td className="px-3 py-2 text-gray-700">− {c.nombre}<span className="block text-[10px] text-gray-400">{c.nombreMeta} {pct(c.meta)} de la venta</span></td>
-                <td className={`${celda} text-gray-500`}>{a === null ? "—" : soles(a)}<span className="block text-[10px] text-gray-400">{a === null ? "" : deVenta(a, ventaA)}</span></td>
+                <td className={`${celda} text-gray-600`}>{soles(r)}{sub(r, real.venta)}</td>
+                {v.habiaPlan && <td className={`${celda} text-gray-400`}>{g === null ? "—" : soles(g)}{sub(g, ventaG)}</td>}
                 <td className={`${celda} font-semibold text-gray-900`}>{soles(n)}<span className={`block text-[10px] font-medium ${nPct > c.meta + 0.05 ? "text-red-600" : "text-emerald-700"}`}>{pct(nPct)}</span></td>
-                <td className={celda}><Dif antes={a} ahora={n} /></td>
+                <td className={celda}><Dif antes={r} ahora={n} /></td>
               </tr>
             );
           })}
           <tr className="border-t-2 border-gray-300 bg-gray-50/70">
             <td className="px-3 py-2 font-semibold text-gray-900">= EBITDA<span className="block text-[10px] font-normal text-gray-400">lo que deja la operación</span></td>
-            <td className={`${celda} text-gray-500`}>{ebitdaA === null ? "—" : soles(ebitdaA)}<span className="block text-[10px] text-gray-400">{ebitdaA === null ? "" : deVenta(ebitdaA, ventaA)}</span></td>
-            <td className={`${celda} font-semibold text-gray-900`}>{soles(ebitdaN)}<span className="block text-[10px] text-gray-500">{deVenta(ebitdaN, ventaN)}</span></td>
-            <td className={`${celda} font-semibold`}><Dif antes={ebitdaA} ahora={ebitdaN} subirEsBueno /></td>
+            <td className={`${celda} text-gray-600`}>{soles(ebitdaR)}{sub(ebitdaR, real.venta)}</td>
+            {v.habiaPlan && <td className={`${celda} text-gray-400`}>{ebitdaG === null ? "—" : soles(ebitdaG)}{sub(ebitdaG, ventaG)}</td>}
+            <td className={`${celda} font-semibold text-gray-900`}>{soles(ebitdaN)}{sub(ebitdaN, ventaN, "text-gray-500")}</td>
+            <td className={`${celda} font-semibold`}><Dif antes={ebitdaR} ahora={ebitdaN} subirEsBueno /></td>
           </tr>
         </tbody>
       </table>
@@ -200,36 +223,54 @@ function Resumen({ v }: { v: Vista }) {
   );
 }
 
-function Detalle({ v, total }: { v: Vista; total: (g: Grupo, campo: "antes" | "ahora") => number }) {
+type Candados = { lista: string[]; onToggle: (categoria: string) => void; deshabilitado: boolean };
+
+function Detalle({ v, total, real, candados }: { v: Vista; total: (g: Grupo, campo: "antes" | "ahora") => number; real: Real; candados: Candados }) {
+  const prom = (c: string) => real.porCategoria[c] ?? null;
   return (
-    <details className="group rounded-xl border border-gray-200">
+    <details className="group rounded-xl border border-gray-200" open>
       <summary className="flex cursor-pointer list-none items-center justify-between gap-3 px-3 py-2 text-xs font-semibold text-gray-900">
-        Detalle por categoría
-        <span className="font-medium text-primary"><span className="group-open:hidden">Ver</span><span className="hidden group-open:inline">Ocultar</span></span>
+        <span>Detalle por categoría<span className="block text-[10px] font-normal text-gray-500">Toca el candado de un gasto que no se puede bajar (alquiler, sueldos): queda en su promedio real y el ajuste se reparte entre los demás.</span></span>
+        <span className="shrink-0 font-medium text-primary"><span className="group-open:hidden">Ver</span><span className="hidden group-open:inline">Ocultar</span></span>
       </summary>
-      <div className="max-h-96 overflow-auto border-t border-gray-100">
-        <table className="w-full min-w-[480px] text-xs">
-          <thead className="sticky top-0 bg-gray-50 text-gray-500"><tr><th className="px-3 py-1.5 text-left font-medium">Categoría</th><th className="px-3 py-1.5 text-right font-medium">{v.habiaPlan ? "Guardado" : "Sin guardar"}</th><th className="px-3 py-1.5 text-right font-medium">Propuesta</th><th className="px-3 py-1.5 text-right font-medium">Diferencia</th></tr></thead>
+      <div className="max-h-[28rem] overflow-auto border-t border-gray-100">
+        <table className="w-full min-w-[560px] text-xs">
+          <thead className="sticky top-0 z-10 bg-gray-50 text-gray-500"><tr>
+            <th className="px-3 py-1.5 text-left font-medium">Categoría</th>
+            <th className="px-3 py-1.5 text-right font-medium">Promedio real<span className="block text-[10px] font-normal">{real.meses}</span></th>
+            {v.habiaPlan && <th className="px-3 py-1.5 text-right font-medium">Guardado</th>}
+            <th className="px-3 py-1.5 text-right font-medium">Propuesta</th>
+            <th className="px-3 py-1.5 text-right font-medium">Ajuste</th>
+          </tr></thead>
           <tbody>
             {(["variable", "planilla", "otrosFijos", "sinMover"] as Grupo[]).map((g) => {
               const filas = v.plan.cambios.filter((c) => c.grupo === g);
               if (filas.length === 0) return null;
-              const a = v.habiaPlan ? total(g, "antes") : null, n = total(g, "ahora");
+              const r = filas.reduce((t, c) => t + (prom(c.categoria) ?? 0), 0), a = total(g, "antes"), n = total(g, "ahora");
               return [
                 <tr key={g} className="border-t border-gray-200 bg-gray-50/60">
                   <td className="px-3 py-1.5 font-semibold text-gray-800">{NOMBRE_GRUPO[g]}<span className="block text-[10px] font-normal leading-snug text-gray-500">{POR_QUE[g]}</span></td>
-                  <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums text-gray-500">{a === null ? "—" : soles(a)}</td>
+                  <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums text-gray-600">{soles(r)}</td>
+                  {v.habiaPlan && <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums text-gray-400">{soles(a)}</td>}
                   <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums text-gray-900">{soles(n)}</td>
-                  <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums"><Dif antes={a} ahora={n} subirEsBueno={false} /></td>
+                  <td className="px-3 py-1.5 text-right align-top font-semibold tabular-nums"><Dif antes={r} ahora={n} /></td>
                 </tr>,
-                ...filas.map((c) => (
-                  <tr key={c.categoria} className="border-t border-gray-100">
-                    <td className="px-3 py-1 pl-5 text-gray-600">{bonita(c.categoria)}{c.antes === null && c.ahora !== null && <span className="ml-1.5 rounded bg-sky-50 px-1 text-[10px] text-sky-700">nueva</span>}</td>
-                    <td className="px-3 py-1 text-right tabular-nums text-gray-400">{c.antes === null ? "—" : soles(c.antes)}</td>
-                    <td className="px-3 py-1 text-right tabular-nums text-gray-800">{c.ahora === null ? "se quita" : soles(c.ahora)}</td>
-                    <td className="px-3 py-1 text-right tabular-nums"><Dif antes={c.antes} ahora={c.ahora} /></td>
-                  </tr>
-                )),
+                ...filas.map((c) => {
+                  const p = prom(c.categoria), fijo = candados.lista.includes(c.categoria);
+                  return (
+                    <tr key={c.categoria} className={`border-t border-gray-100 ${fijo ? "bg-amber-50/40" : ""}`}>
+                      <td className="px-3 py-1 pl-5 text-gray-600">
+                        <span className="inline-flex items-center gap-1.5">{bonita(c.categoria)}
+                          {admiteCandado(c.categoria) && <BotonCandado bloqueado={fijo} onToggle={() => candados.onToggle(c.categoria)} deshabilitado={candados.deshabilitado} />}
+                        </span>
+                      </td>
+                      <td className="px-3 py-1 text-right tabular-nums text-gray-600">{p === null ? "—" : soles(p)}</td>
+                      {v.habiaPlan && <td className="px-3 py-1 text-right tabular-nums text-gray-400">{c.antes === null ? "—" : soles(c.antes)}</td>}
+                      <td className="px-3 py-1 text-right tabular-nums text-gray-800">{c.ahora === null ? "se quita" : soles(c.ahora)}</td>
+                      <td className="px-3 py-1 text-right tabular-nums">{fijo ? <span className="text-amber-700">con candado</span> : <Dif antes={p} ahora={c.ahora} />}</td>
+                    </tr>
+                  );
+                }),
               ];
             })}
           </tbody>
@@ -240,7 +281,7 @@ function Detalle({ v, total }: { v: Vista; total: (g: Grupo, campo: "antes" | "a
 }
 
 /** Fase 2: lo que marcan las palancas se guarda como BORRADOR del presupuesto del mes elegido. Nunca aprueba. */
-function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNombre: string; pos: Pos; onGuardado?: () => void }) {
+function Convertir({ sede, sedeNombre, pos, onGuardado, real, candados }: { sede: number; sedeNombre: string; pos: Pos; onGuardado?: () => void; real: Real; candados: Candados }) {
   const { showToast } = useToast();
   const actual = mesDeHoy();
   const [mes, setMes] = useState(mesMas(actual, 1));
@@ -249,9 +290,13 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
   const [busy, setBusy] = useState<"ver" | "guardar" | null>(null);
   const [guardado, setGuardado] = useState(false);
   // Si se mueve una palanca, la sede o el mes, lo que se veía ya no vale.
-  const huella = `${sede}|${mes}|${pos.ventas}|${pos.variablePct}|${pos.planilla}|${pos.otrosFijos}`;
+  const huella = `${sede}|${mes}|${pos.ventas}|${pos.variablePct}|${pos.planilla}|${pos.otrosFijos}|${candados.lista.join(",")}`;
   const [huellaVista, setHuellaVista] = useState<string | null>(null);
   const vigente = huellaVista === huella ? vista : null;
+  const listaCandados = candados.lista.join(",");
+  // Al poner o quitar un candado con el cuadro abierto, se vuelve a calcular solo (no hay que pulsar otra vez).
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { if (vista) void ver(); }, [listaCandados]);
 
   async function ver() {
     setBusy("ver"); setError(null); setGuardado(false);
@@ -260,7 +305,8 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
     if (!r.ok) { setError(r.error); return; }
     const s = r.data.sedes[0];
     if (!s) { setError("No encontré esa sede."); return; }
-    const plan = planDesdePalancas(pos, sugerir(s.historial).lineas, { ventaEsperada: s.cabecera?.ventaEsperada ?? null, lineas: s.lineas });
+    const fijas = Object.fromEntries(candados.lista.filter((c) => c !== "PLANILLA").map((c) => [c, real.porCategoria[c] ?? 0]));
+    const plan = planDesdePalancas(pos, sugerir(s.historial).lineas, { ventaEsperada: s.cabecera?.ventaEsperada ?? null, lineas: s.lineas }, fijas);
     setVista({ plan, aprobado: !!s.cabecera?.aprobadoEl, habiaPlan: s.lineas.length > 0, ventaGuardada: s.cabecera?.ventaEsperada ?? null });
     setHuellaVista(huella);
   }
@@ -294,8 +340,8 @@ function Convertir({ sede, sedeNombre, pos, onGuardado }: { sede: number; sedeNo
       {error && <p className="mt-2 rounded-lg bg-red-50 px-3 py-2 text-xs text-red-700">{error}</p>}
       {vigente && (
         <div className="mt-3 space-y-3">
-          <Resumen v={vigente} />
-          <Detalle v={vigente} total={total} />
+          <Resumen v={vigente} real={real} />
+          <Detalle v={vigente} total={total} real={real} candados={candados} />
           {vigente.plan.sinRepartir > 0 && <p className="mt-2 text-[11px] text-amber-700">No hay historial de gastos fijos para repartir {soles(vigente.plan.sinRepartir)} de «Otros fijos»: agrégalos a mano en Grupo → Presupuesto.</p>}
           {vigente.aprobado
             ? <p className="mt-2 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800">El plan de {nombreMes(mes)} ya está aprobado. Para cambiarlo, primero reábrelo en Grupo → Presupuesto.</p>
@@ -328,27 +374,53 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
   const sede = sedeFija ?? sedePropia;
   const [movidas, setMovidas] = useState<Record<number, Pos>>({});
   const [meta, setMeta] = useState<number>(25);
-  useEffect(() => { void getBasePalancas().then((r) => { if (r.ok) setDatos(r.data); else setError(r.error); }); }, []);
+  const { showToast } = useToast();
+  // Candados por sede (16-nov-2026): parten de lo guardado y se cambian aquí mismo.
+  const [candados, setCandados] = useState<Record<number, string[]>>({});
+  useEffect(() => { void getBasePalancas().then((r) => {
+    if (r.ok) { setDatos(r.data); setCandados(Object.fromEntries(r.data.sedes.map((x) => [x.businessId, x.candados]))); } else setError(r.error);
+  }); }, []);
 
   const actual = datos?.sedes.find((s) => s.businessId === sede) ?? null;
   const base = actual?.base ?? null;
   const pos = movidas[sede] ?? base?.palancas ?? null;
-  const lectura = useMemo(() => (pos ? simular(pos) : null), [pos]);
-  const lecturaReal = useMemo(() => (base ? simular(base.palancas) : null), [base]);
+  const lectura = pos ? simular(pos) : null;
+  const lecturaReal = base ? simular(base.palancas) : null;
 
   if (error) return <p className="rounded-2xl bg-red-50 p-4 text-sm text-red-700">{error}</p>;
   if (!datos) return <p className="inline-flex items-center gap-2 p-4 text-sm text-gray-500"><Loader2 className="h-4 w-4 animate-spin" /> Leyendo los últimos meses cerrados…</p>;
 
   const mover = (cambio: Partial<Pos>) => { if (pos) setMovidas({ ...movidas, [sede]: { ...pos, ...cambio } }); };
+  const lista = candados[sede] ?? [];
+  const planillaFija = lista.includes("PLANILLA");
+  const promedio = actual?.promedio ?? {};
+  const pisoOtros = pisoOtrosFijos(lista, promedio);
+  const pisoPlanilla = planillaFija && base ? base.palancas.planilla : 0;
+  const nombresFijos = lista.filter((c) => c !== "PLANILLA").map(bonita).join(", ");
   const aplicar = (c: Camino) => {
     if (!pos || c.valor === null) return;
     if (c.palanca === "ventas") mover({ ventas: Math.ceil(c.valor) });
     else if (c.palanca === "variable") mover({ variablePct: c.valor });
-    else { // el recorte de fijos se reparte en proporción entre planilla y otros fijos
-      const total = pos.planilla + pos.otrosFijos, k = total > 0 ? c.valor / total : 1;
-      mover({ planilla: Math.floor(pos.planilla * k), otrosFijos: Math.floor(pos.otrosFijos * k) });
+    else { // el recorte se reparte en proporción entre lo que NO tiene candado
+      const libreP = Math.max(0, pos.planilla - pisoPlanilla), libreO = Math.max(0, pos.otrosFijos - pisoOtros);
+      const recorte = pos.planilla + pos.otrosFijos - c.valor, k = libreP + libreO > 0 ? Math.min(1, recorte / (libreP + libreO)) : 0;
+      mover({ planilla: Math.floor(pos.planilla - libreP * k), otrosFijos: Math.floor(pos.otrosFijos - libreO * k) });
     }
   };
+  const cambiarCandado = async (categoria: string) => {
+    if (sede === GRUPO) return;
+    const antes = lista, bloquear = !antes.includes(categoria);
+    const nueva = bloquear ? [...antes, categoria].sort() : antes.filter((c) => c !== categoria);
+    setCandados({ ...candados, [sede]: nueva });
+    // Al poner el candado, la palanca vuelve a lo real si estaba por debajo.
+    if (bloquear && pos && base) {
+      if (categoria === "PLANILLA" && pos.planilla < base.palancas.planilla) mover({ planilla: base.palancas.planilla });
+      if (categoria !== "PLANILLA") { const piso = pisoOtrosFijos(nueva, promedio); if (pos.otrosFijos < piso) mover({ otrosFijos: piso }); }
+    }
+    const r = await setCandado(sede, categoria, bloquear);
+    if (!r.ok) { setCandados((c) => ({ ...c, [sede]: antes })); showToast(r.error, "error"); }
+  };
+  const candadosProps: Candados = { lista, onToggle: (c) => void cambiarCandado(c), deshabilitado: !datos.candadosGuardables || sede === GRUPO };
   const metaDestino = Math.round(datos.ebitdaMetaPct * 10) / 10;
   const pctVenta = (monto: number, venta = pos?.ventas ?? 0) => (venta > 0 ? (monto / venta) * 100 : 0);
   const ruta = lecturaReal ? rutaDe90Dias(lecturaReal.ebitdaPct, 25) : [];
@@ -376,8 +448,8 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
             <div className="space-y-3">
               <Perilla titulo="1. Venta del mes" ayuda="Lo que esperas vender" comoSeMueve="Se mueve con precio, ticket promedio y número de clientes." valor={pos.ventas} real={base.palancas.ventas} min={Math.round(base.palancas.ventas * 0.5 / 100) * 100} max={Math.round(base.palancas.ventas * 2 / 100) * 100} paso={100} formato={soles} onChange={(n) => mover({ ventas: n })} />
               <Perilla titulo="2. Costo variable" ayuda="Insumos, empaques… de cada S/ 100 vendidos" nivel={{ pct: pos.variablePct, realPct: base.palancas.variablePct, meta: META_VARIABLE, nombreMeta: "meta" }} comoSeMueve={sede === 2 || sede === 3 ? "Se mueve con recetas, mermas y precios de compra. En las cafeterías la mayor parte es lo que se le compra a Atelier." : "Se mueve con recetas, mermas y precios de compra."} valor={pos.variablePct} real={base.palancas.variablePct} min={15} max={75} paso={0.5} formato={pct} onChange={(n) => mover({ variablePct: n })} />
-              <Perilla titulo="3. Planilla" ayuda="Sueldos y cargas del mes" nivel={{ pct: pctVenta(pos.planilla), realPct: pctVenta(base.palancas.planilla, base.palancas.ventas), meta: TOPE_PLANILLA_PCT, nombreMeta: "tope" }} comoSeMueve="Es la más difícil de bajar: significa menos horas o menos personas, y se mueve despacio. La otra forma de acercarla al tope es vender más con el mismo equipo." valor={pos.planilla} real={base.palancas.planilla} min={Math.round(base.palancas.planilla * 0.4 / 50) * 50} max={Math.round(base.palancas.planilla * 1.5 / 50) * 50} paso={50} formato={soles} onChange={(n) => mover({ planilla: n })} />
-              <Perilla titulo="4. Otros fijos" ayuda="Alquiler, servicios y el resto de la estructura" nivel={{ pct: pctVenta(pos.otrosFijos), realPct: pctVenta(base.palancas.otrosFijos, base.palancas.ventas), meta: META_OTROS_FIJOS, nombreMeta: "meta" }} comoSeMueve="Alquiler y servicios casi no se mueven en el corto plazo. Revisa los que más pesan en «¿Dónde se va la plata?»." valor={pos.otrosFijos} real={base.palancas.otrosFijos} min={Math.round(base.palancas.otrosFijos * 0.4 / 50) * 50} max={Math.round(base.palancas.otrosFijos * 1.5 / 50) * 50} paso={50} formato={soles} onChange={(n) => mover({ otrosFijos: n })} />
+              <Perilla titulo="3. Planilla" ayuda="Sueldos y cargas del mes" nivel={{ pct: pctVenta(pos.planilla), realPct: pctVenta(base.palancas.planilla, base.palancas.ventas), meta: TOPE_PLANILLA_PCT, nombreMeta: "tope" }} comoSeMueve={planillaFija ? "Con candado: no baja del monto real, porque los sueldos no se rebajan. Para bajarla habría que decidir menos horas o menos personas (quita el candado). La otra forma de acercarla al tope es vender más con el mismo equipo." : "Es la más difícil de bajar: significa menos horas o menos personas, y se mueve despacio. La otra forma de acercarla al tope es vender más con el mismo equipo."} candado={sede === GRUPO ? undefined : { bloqueado: planillaFija, onToggle: () => void cambiarCandado("PLANILLA"), deshabilitado: candadosProps.deshabilitado }} valor={pos.planilla} real={base.palancas.planilla} min={planillaFija ? Math.ceil(base.palancas.planilla) : Math.round(base.palancas.planilla * 0.4 / 50) * 50} max={Math.round(base.palancas.planilla * 1.5 / 50) * 50} paso={50} formato={soles} onChange={(n) => mover({ planilla: n })} />
+              <Perilla titulo="4. Otros fijos" ayuda="Alquiler, servicios y el resto de la estructura" nivel={{ pct: pctVenta(pos.otrosFijos), realPct: pctVenta(base.palancas.otrosFijos, base.palancas.ventas), meta: META_OTROS_FIJOS, nombreMeta: "meta" }} comoSeMueve={pisoOtros > 0 ? `No baja de ${soles(pisoOtros)}: ${nombresFijos} ${lista.filter((c) => c !== "PLANILLA").length === 1 ? "tiene" : "tienen"} candado. Pon o quita candados en «Convertir en presupuesto» → Detalle por categoría.` : "Alquiler y servicios casi no se mueven en el corto plazo. Revisa los que más pesan en «¿Dónde se va la plata?»."} valor={pos.otrosFijos} real={base.palancas.otrosFijos} min={Math.max(Math.round(base.palancas.otrosFijos * 0.4 / 50) * 50, Math.ceil(pisoOtros / 50) * 50)} max={Math.round(base.palancas.otrosFijos * 1.5 / 50) * 50} paso={50} formato={soles} onChange={(n) => mover({ otrosFijos: n })} />
               <Perilla titulo="5. Utilidad que apartas primero" ayuda="Profit First: % de la venta" valor={pos.utilidadPct} real={base.palancas.utilidadPct} min={0} max={40} paso={1} formato={pct} onChange={(n) => mover({ utilidadPct: n })} />
               {hayCambios && <button type="button" onClick={() => { const r = { ...movidas }; delete r[sede]; setMovidas(r); }} className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"><RotateCcw className="h-3.5 w-3.5" aria-hidden />Volver todo a la realidad</button>}
             </div>
@@ -441,7 +513,7 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
                   </div>
                 )}
                 <p className="mt-2 text-xs text-gray-600">Para llegar a <b className="tabular-nums text-gray-900">{pct(meta)}</b>:</p>
-                <Caminos pos={pos} meta={meta} onAplicar={aplicar} />
+                <Caminos pos={pos} meta={meta} onAplicar={aplicar} piso={pisoPlanilla + pisoOtros} />
                 <p className="mt-2 text-[11px] text-gray-400">Cada línea mueve una sola palanca y deja las demás quietas. En la práctica se combinan.</p>
               </div>
 
@@ -450,7 +522,9 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
           {/* A todo el ancho: el cuadro de guardado vs propuesta necesita espacio para leerse (16-nov-2026). */}
           {sede === GRUPO
             ? <p className="rounded-2xl border border-gray-200/80 bg-white p-4 text-xs text-gray-500">El presupuesto se guarda sede por sede. {enDashboard ? "Toca una sede en la sección 1" : "Elige una sede arriba"} para convertir sus palancas en el borrador del mes.</p>
-            : <Convertir sede={sede} sedeNombre={actual?.sede ?? ""} pos={pos} onGuardado={onGuardado} />}
+            : <Convertir sede={sede} sedeNombre={actual?.sede ?? ""} pos={pos} onGuardado={onGuardado} candados={candadosProps}
+                real={{ venta: base.palancas.ventas, variable: base.palancas.ventas * base.palancas.variablePct / 100, planilla: base.palancas.planilla, otrosFijos: base.palancas.otrosFijos, porCategoria: promedio,
+                  meses: base.meses.length === 1 ? nombreMes(base.meses[0]) : `${nombreMes(base.meses[0]).split(" ")[0].slice(0, 3)}–${nombreMes(base.meses[base.meses.length - 1]).split(" ")[0].slice(0, 3)}` }} />}
           {actual?.diagnostico && <DondeSeVa key={sede} d={actual.diagnostico} sede={actual.sede} />}
         </>
       )}
