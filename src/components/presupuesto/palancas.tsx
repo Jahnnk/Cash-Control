@@ -32,7 +32,7 @@ const TONO: Record<Termometro, string> = { fragil: "text-red-600", en_camino: "t
  * Dónde está la palanca frente a su meta, en % de la venta (pedido de Jahnn, 16-nov-2026: «Tope sano 25%… pero
  * ¿en qué nivel nos encontramos?»). La barra va de 0 a 2× la meta; la raya marca la meta.
  */
-type Nivel = { pct: number; realPct: number; meta: number; nombreMeta: string };
+type Nivel = { pct: number; realPct: number; meta: number; nombreMeta: string; /** «ago–oct»: los meses del promedio real. */ periodo: string };
 function NivelBarra({ n }: { n: Nivel }) {
   const escala = Math.max(n.meta * 2, n.pct, n.realPct) || 1;
   const ancho = (x: number) => `${Math.min(100, Math.max(0, (x / escala) * 100))}%`;
@@ -46,9 +46,9 @@ function NivelBarra({ n }: { n: Nivel }) {
         <div className="absolute -top-1 h-4 w-0.5 bg-gray-700" style={{ left: ancho(n.meta) }} title={`${n.nombreMeta} ${pct(n.meta)}`} />
       </div>
       <p className={`mt-1 text-[11px] font-medium ${tono.texto}`}>
-        {movida ? "Con la palanca: " : "Hoy: "}{pct(n.pct)} de la venta · {n.nombreMeta} {pct(n.meta)} ·{" "}
+        {movida ? "Con la palanca: " : `Real · promedio ${n.periodo}: `}{pct(n.pct)} de la venta · {n.nombreMeta} {pct(n.meta)} ·{" "}
         {dif <= 0.05 ? "dentro de la meta" : `${pct(dif).replace("%", "")} puntos encima`}
-        {movida && <span className="font-normal text-gray-500"> (hoy {pct(n.realPct)})</span>}
+        {movida && <span className="font-normal text-gray-500"> (real {pct(n.realPct)})</span>}
       </p>
     </div>
   );
@@ -392,6 +392,9 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
 
   const mover = (cambio: Partial<Pos>) => { if (pos) setMovidas({ ...movidas, [sede]: { ...pos, ...cambio } }); };
   const lista = candados[sede] ?? [];
+  // Los meses del promedio real, en corto («ago–oct»): reemplaza el «Hoy» que confundía (Jahnn, 16-nov-2026).
+  const corto = (m: string) => nombreMes(m).split(" ")[0].slice(0, 3);
+  const periodo = !base ? "" : base.meses.length === 1 ? nombreMes(base.meses[0]) : `${corto(base.meses[0])}–${corto(base.meses[base.meses.length - 1])}`;
   const planillaFija = lista.includes("PLANILLA");
   const promedio = actual?.promedio ?? {};
   const pisoOtros = pisoOtrosFijos(lista, promedio);
@@ -447,9 +450,9 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
             {/* ── Perillas ── */}
             <div className="space-y-3">
               <Perilla titulo="1. Venta del mes" ayuda="Lo que esperas vender" comoSeMueve="Se mueve con precio, ticket promedio y número de clientes." valor={pos.ventas} real={base.palancas.ventas} min={Math.round(base.palancas.ventas * 0.5 / 100) * 100} max={Math.round(base.palancas.ventas * 2 / 100) * 100} paso={100} formato={soles} onChange={(n) => mover({ ventas: n })} />
-              <Perilla titulo="2. Costo variable" ayuda="Insumos, empaques… de cada S/ 100 vendidos" nivel={{ pct: pos.variablePct, realPct: base.palancas.variablePct, meta: META_VARIABLE, nombreMeta: "meta" }} comoSeMueve={sede === 2 || sede === 3 ? "Se mueve con recetas, mermas y precios de compra. En las cafeterías la mayor parte es lo que se le compra a Atelier." : "Se mueve con recetas, mermas y precios de compra."} valor={pos.variablePct} real={base.palancas.variablePct} min={15} max={75} paso={0.5} formato={pct} onChange={(n) => mover({ variablePct: n })} />
-              <Perilla titulo="3. Planilla" ayuda="Sueldos y cargas del mes" nivel={{ pct: pctVenta(pos.planilla), realPct: pctVenta(base.palancas.planilla, base.palancas.ventas), meta: TOPE_PLANILLA_PCT, nombreMeta: "tope" }} comoSeMueve={planillaFija ? "Con candado: no baja del monto real, porque los sueldos no se rebajan. Para bajarla habría que decidir menos horas o menos personas (quita el candado). La otra forma de acercarla al tope es vender más con el mismo equipo." : "Es la más difícil de bajar: significa menos horas o menos personas, y se mueve despacio. La otra forma de acercarla al tope es vender más con el mismo equipo."} candado={sede === GRUPO ? undefined : { bloqueado: planillaFija, onToggle: () => void cambiarCandado("PLANILLA"), deshabilitado: candadosProps.deshabilitado }} valor={pos.planilla} real={base.palancas.planilla} min={planillaFija ? Math.ceil(base.palancas.planilla) : Math.round(base.palancas.planilla * 0.4 / 50) * 50} max={Math.round(base.palancas.planilla * 1.5 / 50) * 50} paso={50} formato={soles} onChange={(n) => mover({ planilla: n })} />
-              <Perilla titulo="4. Otros fijos" ayuda="Alquiler, servicios y el resto de la estructura" nivel={{ pct: pctVenta(pos.otrosFijos), realPct: pctVenta(base.palancas.otrosFijos, base.palancas.ventas), meta: META_OTROS_FIJOS, nombreMeta: "meta" }} comoSeMueve={pisoOtros > 0 ? `No baja de ${soles(pisoOtros)}: ${nombresFijos} ${lista.filter((c) => c !== "PLANILLA").length === 1 ? "tiene" : "tienen"} candado. Pon o quita candados en «Convertir en presupuesto» → Detalle por categoría.` : "Alquiler y servicios casi no se mueven en el corto plazo. Revisa los que más pesan en «¿Dónde se va la plata?»."} valor={pos.otrosFijos} real={base.palancas.otrosFijos} min={Math.max(Math.round(base.palancas.otrosFijos * 0.4 / 50) * 50, Math.ceil(pisoOtros / 50) * 50)} max={Math.round(base.palancas.otrosFijos * 1.5 / 50) * 50} paso={50} formato={soles} onChange={(n) => mover({ otrosFijos: n })} />
+              <Perilla titulo="2. Costo variable" ayuda="Insumos, empaques… de cada S/ 100 vendidos" nivel={{ pct: pos.variablePct, realPct: base.palancas.variablePct, meta: META_VARIABLE, nombreMeta: "meta", periodo }} comoSeMueve={sede === 2 || sede === 3 ? "Se mueve con recetas, mermas y precios de compra. En las cafeterías la mayor parte es lo que se le compra a Atelier." : "Se mueve con recetas, mermas y precios de compra."} valor={pos.variablePct} real={base.palancas.variablePct} min={15} max={75} paso={0.5} formato={pct} onChange={(n) => mover({ variablePct: n })} />
+              <Perilla titulo="3. Planilla" ayuda="Sueldos y cargas del mes" nivel={{ pct: pctVenta(pos.planilla), realPct: pctVenta(base.palancas.planilla, base.palancas.ventas), meta: TOPE_PLANILLA_PCT, nombreMeta: "tope", periodo }} comoSeMueve={planillaFija ? "Con candado: no baja del monto real, porque los sueldos no se rebajan. Para bajarla habría que decidir menos horas o menos personas (quita el candado). La otra forma de acercarla al tope es vender más con el mismo equipo." : "Es la más difícil de bajar: significa menos horas o menos personas, y se mueve despacio. La otra forma de acercarla al tope es vender más con el mismo equipo."} candado={sede === GRUPO ? undefined : { bloqueado: planillaFija, onToggle: () => void cambiarCandado("PLANILLA"), deshabilitado: candadosProps.deshabilitado }} valor={pos.planilla} real={base.palancas.planilla} min={planillaFija ? Math.ceil(base.palancas.planilla) : Math.round(base.palancas.planilla * 0.4 / 50) * 50} max={Math.round(base.palancas.planilla * 1.5 / 50) * 50} paso={50} formato={soles} onChange={(n) => mover({ planilla: n })} />
+              <Perilla titulo="4. Otros fijos" ayuda="Alquiler, servicios y el resto de la estructura" nivel={{ pct: pctVenta(pos.otrosFijos), realPct: pctVenta(base.palancas.otrosFijos, base.palancas.ventas), meta: META_OTROS_FIJOS, nombreMeta: "meta", periodo }} comoSeMueve={pisoOtros > 0 ? `No baja de ${soles(pisoOtros)}: ${nombresFijos} ${lista.filter((c) => c !== "PLANILLA").length === 1 ? "tiene" : "tienen"} candado. Pon o quita candados en «Convertir en presupuesto» → Detalle por categoría.` : "Alquiler y servicios casi no se mueven en el corto plazo. Revisa los que más pesan en «¿Dónde se va la plata?»."} valor={pos.otrosFijos} real={base.palancas.otrosFijos} min={Math.max(Math.round(base.palancas.otrosFijos * 0.4 / 50) * 50, Math.ceil(pisoOtros / 50) * 50)} max={Math.round(base.palancas.otrosFijos * 1.5 / 50) * 50} paso={50} formato={soles} onChange={(n) => mover({ otrosFijos: n })} />
               <Perilla titulo="5. Utilidad que apartas primero" ayuda="Profit First: % de la venta" valor={pos.utilidadPct} real={base.palancas.utilidadPct} min={0} max={40} paso={1} formato={pct} onChange={(n) => mover({ utilidadPct: n })} />
               {hayCambios && <button type="button" onClick={() => { const r = { ...movidas }; delete r[sede]; setMovidas(r); }} className="inline-flex items-center gap-1.5 text-xs font-medium text-primary hover:underline"><RotateCcw className="h-3.5 w-3.5" aria-hidden />Volver todo a la realidad</button>}
             </div>
@@ -461,12 +464,12 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
                   <div>
                     <div className="text-sm text-gray-600">EBITDA del mes</div>
                     <div className={`mt-1 text-4xl font-semibold tabular-nums tracking-tight ${TONO[lectura.termometro]}`}>{soles(lectura.ebitda)}</div>
-                    {hayCambios && <div className="mt-0.5 text-xs text-gray-500">Hoy: {soles(lecturaReal.ebitda)} · cambio {conSigno(lectura.ebitda - lecturaReal.ebitda)}</div>}
+                    {hayCambios && <div className="mt-0.5 text-xs text-gray-500">Real · promedio {periodo}: {soles(lecturaReal.ebitda)} · cambio {conSigno(lectura.ebitda - lecturaReal.ebitda)}</div>}
                   </div>
                   <div className="text-right">
                     <div className={`text-3xl font-semibold tabular-nums ${TONO[lectura.termometro]}`}>{pct(lectura.ebitdaPct)}</div>
                     <div className={`text-xs font-semibold ${TONO[lectura.termometro]}`}>{ETIQUETA_TERMOMETRO[lectura.termometro]}</div>
-                    {hayCambios && <div className="text-xs text-gray-500">Hoy: {pct(lecturaReal.ebitdaPct)}</div>}
+                    {hayCambios && <div className="text-xs text-gray-500">Real · promedio {periodo}: {pct(lecturaReal.ebitdaPct)}</div>}
                   </div>
                 </div>
                 {/* De cada S/ 100: variables, fijos y lo que queda. */}
@@ -487,7 +490,7 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
                 <Fila etiqueta="Piso diario de ventas" nota="(fijos + costo variable) ÷ 30" valor={soles(lectura.pisoDiario)} />
                 <Fila etiqueta="Planilla sobre la venta" nota={`tope ${TOPE_PLANILLA_PCT}%`} valor={pct(lectura.planillaPct)} tono={lectura.planillaPasada ? "text-red-600" : undefined} />
                 <Fila etiqueta="Utilidad que se aparta" nota={lectura.cabe ? "la operación cabe en lo que queda" : "el EBITDA no alcanza para apartarla"} valor={soles(lectura.utilidad)} tono={lectura.cabe ? undefined : "text-red-600"} />
-                <Fila etiqueta="Queda para impuestos, inversión y deudas" nota={`hoy salen en promedio ${soles(base.bolsaComprometida)} al mes por esto`} valor={conSigno(lectura.bolsa)} tono={lectura.bolsa < base.bolsaComprometida ? "text-red-600" : "text-emerald-700"} />
+                <Fila etiqueta="Queda para impuestos, inversión y deudas" nota={`en promedio (${periodo}) salen ${soles(base.bolsaComprometida)} al mes por esto`} valor={conSigno(lectura.bolsa)} tono={lectura.bolsa < base.bolsaComprometida ? "text-red-600" : "text-emerald-700"} />
               </ul>
 
               <div className="rounded-2xl border border-gray-200/80 bg-white p-4">
@@ -499,7 +502,7 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
                   <div className="mt-2 rounded-lg bg-gray-50 px-3 py-2">
                     <p className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Ruta de 90 días a 25%</p>
                     <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs text-gray-600">
-                      <span className="tabular-nums">Hoy {pct(lecturaReal.ebitdaPct)}</span>
+                      <span className="tabular-nums">Real {periodo} {pct(lecturaReal.ebitdaPct)}</span>
                       {ruta.map((paso, i) => (
                         <span key={i} className="inline-flex items-center gap-1.5">
                           <span aria-hidden>→</span>
@@ -524,7 +527,7 @@ export function Palancas({ onGuardado, sede: sedeFija }: { onGuardado?: () => vo
             ? <p className="rounded-2xl border border-gray-200/80 bg-white p-4 text-xs text-gray-500">El presupuesto se guarda sede por sede. {enDashboard ? "Toca una sede en la sección 1" : "Elige una sede arriba"} para convertir sus palancas en el borrador del mes.</p>
             : <Convertir sede={sede} sedeNombre={actual?.sede ?? ""} pos={pos} onGuardado={onGuardado} candados={candadosProps}
                 real={{ venta: base.palancas.ventas, variable: base.palancas.ventas * base.palancas.variablePct / 100, planilla: base.palancas.planilla, otrosFijos: base.palancas.otrosFijos, porCategoria: promedio,
-                  meses: base.meses.length === 1 ? nombreMes(base.meses[0]) : `${nombreMes(base.meses[0]).split(" ")[0].slice(0, 3)}–${nombreMes(base.meses[base.meses.length - 1]).split(" ")[0].slice(0, 3)}` }} />}
+                  meses: periodo }} />}
           {actual?.diagnostico && <DondeSeVa key={sede} d={actual.diagnostico} sede={actual.sede} />}
         </>
       )}
