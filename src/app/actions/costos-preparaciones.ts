@@ -148,16 +148,26 @@ async function guardarPrecios(precios: PrecioInsumo[], archivo: string): Promise
     && UNIDADES_PRECIO.has(p.unidad) && Number.isFinite(p.precio) && p.precio > 0).slice(0, 3000);
   if (ok.length === 0) return;
   const fecha = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  const cols = [ok.map((p) => p.origen), ok.map((p) => p.sku), ok.map((p) => p.nombre.slice(0, 120)), ok.map((p) => p.unidad), ok.map((p) => p.precio)] as const;
   try {
+    // Con la columna «fuente» (migración 2026-11-18-precios-insumos-sistema): la foto del Excel no pisa un cambio hecho en el sistema.
     await sql`
-      INSERT INTO insumos_precios (fecha, origen, sku, nombre, unidad, precio, archivo)
-      SELECT ${fecha}::date, t.origen, t.sku, t.nombre, t.unidad, t.precio, ${archivo}
-      FROM unnest(${ok.map((p) => p.origen)}::text[], ${ok.map((p) => p.sku)}::text[], ${ok.map((p) => p.nombre.slice(0, 120))}::text[],
-                  ${ok.map((p) => p.unidad)}::text[], ${ok.map((p) => p.precio)}::numeric[]) AS t(origen, sku, nombre, unidad, precio)
-      ON CONFLICT (fecha, origen, sku) DO UPDATE SET nombre = EXCLUDED.nombre, unidad = EXCLUDED.unidad, precio = EXCLUDED.precio,
+      INSERT INTO insumos_precios (fecha, origen, sku, nombre, unidad, precio, archivo, fuente)
+      SELECT ${fecha}::date, t.origen, t.sku, t.nombre, t.unidad, t.precio, ${archivo}, 'excel'
+      FROM unnest(${cols[0]}::text[], ${cols[1]}::text[], ${cols[2]}::text[], ${cols[3]}::text[], ${cols[4]}::numeric[]) AS t(origen, sku, nombre, unidad, precio)
+      ON CONFLICT (fecha, origen, sku, fuente) DO UPDATE SET nombre = EXCLUDED.nombre, unidad = EXCLUDED.unidad, precio = EXCLUDED.precio,
         archivo = EXCLUDED.archivo, cargado_el = NOW()`;
-  } catch (e) {
-    console.warn("[guardarPrecios] sin tabla insumos_precios (migración pendiente):", e instanceof Error ? e.message : e);
+  } catch {
+    try {
+      await sql`
+        INSERT INTO insumos_precios (fecha, origen, sku, nombre, unidad, precio, archivo)
+        SELECT ${fecha}::date, t.origen, t.sku, t.nombre, t.unidad, t.precio, ${archivo}
+        FROM unnest(${cols[0]}::text[], ${cols[1]}::text[], ${cols[2]}::text[], ${cols[3]}::text[], ${cols[4]}::numeric[]) AS t(origen, sku, nombre, unidad, precio)
+        ON CONFLICT (fecha, origen, sku) DO UPDATE SET nombre = EXCLUDED.nombre, unidad = EXCLUDED.unidad, precio = EXCLUDED.precio,
+          archivo = EXCLUDED.archivo, cargado_el = NOW()`;
+    } catch (e) {
+      console.warn("[guardarPrecios] sin tabla insumos_precios (migración pendiente):", e instanceof Error ? e.message : e);
+    }
   }
 }
 
