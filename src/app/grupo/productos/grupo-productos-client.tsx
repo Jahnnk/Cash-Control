@@ -21,9 +21,6 @@ import { ProductosSinVenta } from "./productos-sin-venta";
 import { RentabilidadProductos } from "./rentabilidad-productos";
 import { CafeSeccion } from "./cafe-seccion";
 import { PisoPrecios } from "./piso-precios";
-import { SubidaPrecios } from "./subida-precios";
-import { PruebaPrecios } from "./prueba-precios";
-import { CuandoSubir } from "./cuando-subir";
 import { ManoDeObra } from "./mano-de-obra";
 import { DatosCargados } from "./datos-cargados";
 import { BuscadorProducto } from "./buscador-producto";
@@ -375,12 +372,13 @@ function PestanaMes({ month, sede, onSede, onMes, onCanal }: { month: string; se
           <RentabilidadProductos key={`rent-${sede}-${month}`} month={month} sede={sede} />
           {/* El piso de precios: costo × 3 y margen bruto de 65–70% (15-oct-2026). */}
           <PisoPrecios key={`piso-${sede}-${month}`} month={month} sede={sede} />
-          {/* Qué precios subir en la próxima carta, cuánto y cuántas ventas aguanta perder cada uno (17-nov-2026). */}
-          <SubidaPrecios key={`subida-${sede}-${month}`} month={month} sede={sede} />
-          {/* Fase 2: subir en una sede, comparar con la otra y medir la sensibilidad real (17-nov-2026). */}
-          <PruebaPrecios key={`prueba-${month}`} month={month} sede={sede} />
-          {/* Fase 3: cuándo subir (tres señales por sede), calendario y cómo comunicarlo (17-nov-2026). */}
-          <CuandoSubir key={`cuando-${month}`} month={month} sede={sede} />
+          {/* La subida de precios (qué subir, prueba, cuándo) se mudó a Sistema de Dirección → Precios (18-nov-2026). */}
+          {sede !== ATELIER && (
+            <p className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-xs text-gray-600">
+              ¿Vas a subir precios? Qué productos subir, la prueba en una sede y cuándo hacerlo están en{" "}
+              <Link href="/grupo/direccion?vista=precios" className="font-medium text-primary hover:underline">Sistema de Dirección → Precios</Link>.
+            </p>
+          )}
           {/* La planilla repartida por ventas: método 1 y 2 del coach (15-oct-2026). */}
           <ManoDeObra key={`mo-${sede}-${month}`} month={month} sede={sede} />
           {/* Del reporte «Platos con menor rotación» que sube dirección (28-sep-2026). */}

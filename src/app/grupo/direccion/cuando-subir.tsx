@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * «¿Cuándo subir y cómo comunicarlo?» (Grupo → Productos → El mes), fase 3 de «¿Qué precios subir?»
+ * «¿Cuándo subir y cómo comunicarlo?» (Grupo → Sistema de Dirección → Precios; antes en Productos), fase 3 de «¿Qué precios subir?»
  * (17-nov-2026). Por sede: tres señales (tiempo sin subir, costos sobre la venta, carta sobre el 35%) y un
  * semáforo; la fecha sugerida (un domingo) con el calendario de la prueba; y la guía para comunicar la
  * subida sin perder la percepción de valor. Solo lectura. Motor: lib/productos/cuando-subir.ts.
@@ -15,6 +15,7 @@ import { PRIMER_MES_PRODUCTOS } from "@/lib/productos/cobertura-datos";
 import { MESES_REVISION, cuandoSubir, domingoSugerido, sumarMeses, type CuandoSede, type Estado } from "@/lib/productos/cuando-subir";
 import { SEMANAS_IDEALES } from "@/lib/productos/prueba-precios";
 import { subidaDePrecios } from "@/lib/productos/subida-precios";
+import { ConPaso } from "./con-paso";
 import { Pastilla, SeccionDesplegable } from "@/components/productos/ui";
 
 const ESTADO: Record<Estado, { texto: string; tono: "rojo" | "ambar" | "verde" }> = {
@@ -86,7 +87,7 @@ const GUIA: { titulo: string; puntos: string[] }[] = [
 
 type Datos = { sedes: CuandoSede[]; hoy: string };
 
-export function CuandoSubir({ month, sede }: { month: string; sede: number }) {
+export function CuandoSubir({ month, sede, paso }: { month: string; sede: number; /** Número del paso dentro de Sistema de Dirección → Precios. */ paso?: number }) {
   const [estado, setEstado] = useState<{ clave: string; data: Datos | null; error: string | null } | null>(null);
   const clave = month;
 
@@ -132,7 +133,7 @@ export function CuandoSubir({ month, sede }: { month: string; sede: number }) {
 
   return (
     <SeccionDesplegable
-      titulo="¿Cuándo subir y cómo comunicarlo?"
+      titulo={<ConPaso paso={paso}>{"¿Cuándo subir y cómo comunicarlo?"}</ConPaso>}
       subtitulo="Tres señales por sede para saber si ya toca, la fecha sugerida y cómo avisar sin perder la percepción de valor."
       resumen={resumen}
     >

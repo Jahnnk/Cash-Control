@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * «Prueba de precios» (Grupo → Productos → El mes), fase 2 de «¿Qué precios subir?» (17-nov-2026).
+ * «Prueba de precios» (Grupo → Sistema de Dirección → Precios; antes en Productos), fase 2 de «¿Qué precios subir?» (17-nov-2026).
  * Arriba, el resultado: las subidas que el sistema detectó solo en las cargas semanales de Byte, medidas
  * contra la otra sede. Abajo, el plan para hacer la prueba: en qué sede subir, qué productos y cómo.
  * Nada que registrar ni guardar. Motor: lib/productos/prueba-precios.ts.
@@ -12,6 +12,7 @@ import { getPruebaPrecios, getRentabilidadProductos } from "@/app/actions/produc
 import { esCafeteria } from "@/lib/productos/cafeterias";
 import { SEMANAS_IDEALES, SEMANAS_MINIMAS, SUBIDA_MINIMA, type FilaPrueba, type ResultadoPrueba, type Sensibilidad, type VeredictoPrueba } from "@/lib/productos/prueba-precios";
 import { subidaDePrecios, type FilaSubida } from "@/lib/productos/subida-precios";
+import { ConPaso } from "./con-paso";
 import { Pastilla, SeccionDesplegable, fechaCorta } from "@/components/productos/ui";
 
 const soles = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -135,7 +136,7 @@ function armarPlan(r2: Awaited<ReturnType<typeof getRentabilidadProductos>>, r3:
   return { ...mejor, control: otra.sede };
 }
 
-export function PruebaPrecios({ month, sede }: { month: string; sede: number }) {
+export function PruebaPrecios({ month, sede, paso }: { month: string; sede: number; /** Número del paso dentro de Sistema de Dirección → Precios. */ paso?: number }) {
   const [estado, setEstado] = useState<{ clave: string; data: ResultadoPrueba | null; plan: Plan; error: string | null } | null>(null);
   const clave = month;
 
@@ -169,7 +170,7 @@ export function PruebaPrecios({ month, sede }: { month: string; sede: number }) 
 
   return (
     <SeccionDesplegable
-      titulo="Prueba de precios"
+      titulo={<ConPaso paso={paso}>{"Prueba de precios"}</ConPaso>}
       subtitulo="Sube en una sede, compara con la otra y mide cuánto bajó de verdad la venta de cada producto."
       resumen={resumen}
     >
