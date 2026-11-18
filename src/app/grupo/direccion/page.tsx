@@ -1,27 +1,25 @@
 import Link from "next/link";
 import { MatrizDecisionClient } from "./matriz-decision-client";
-import { ControlMensualClient } from "./control-mensual-client";
 import { PreciosClient } from "./precios-client";
 
 export const dynamic = "force-dynamic";
 
 const PESTANAS = [
   { id: "matriz", nombre: "Matriz de decisión" },
-  { id: "control", nombre: "Control mensual" },
   { id: "precios", nombre: "Precios" },
 ] as const;
 
 /**
- * Grupo → Sistema de Dirección: tres pestañas.
+ * Grupo → Sistema de Dirección: dos pestañas («Control mensual» se quitó el 18-nov-2026, pedido de Jahnn;
+ * sus datos siguen en la base).
  *   · Matriz de decisión: número → interpretación → acción para las preguntas del dueño.
- *   · Control mensual: la rutina semanal (lunes) y de cierre de mes, con su checklist.
  *   · Precios: la subida de precios en tres pasos (¿ya toca?, qué subir, prueba en una sede).
  * Solo dirección: el middleware ya bloquea /grupo a las sesiones con alcance y cada
  * action re-verifica con requireFullSession.
  */
 export default async function DireccionPage({ searchParams }: { searchParams: Promise<{ vista?: string }> }) {
   const { vista } = await searchParams;
-  const activa = vista === "control" ? "control" : vista === "precios" ? "precios" : "matriz";
+  const activa = vista === "precios" ? "precios" : "matriz";
   return (
     <div className="space-y-5">
       <nav className="inline-flex rounded-xl bg-gray-100 p-1 gap-1" aria-label="Sistema de Dirección">
@@ -33,7 +31,7 @@ export default async function DireccionPage({ searchParams }: { searchParams: Pr
           </Link>
         ))}
       </nav>
-      {activa === "control" ? <ControlMensualClient /> : activa === "precios" ? <PreciosClient /> : <MatrizDecisionClient />}
+      {activa === "precios" ? <PreciosClient /> : <MatrizDecisionClient />}
     </div>
   );
 }
