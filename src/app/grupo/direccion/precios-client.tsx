@@ -1,13 +1,14 @@
 "use client";
 
 /**
- * Grupo → Sistema de Dirección → Precios (pedido de Jahnn, 18-nov-2026). Las tres secciones de la subida
- * de precios vivían en Productos; se juntan aquí, en un solo bloque y en el orden en que se usan:
+ * Grupo → Sistema de Dirección → Precios (pedido de Jahnn, 18-nov-2026). Las secciones de la subida de
+ * precios vivían en Productos; se juntan aquí, en un solo bloque y en el orden en que se usan:
  *   1 · ¿Cuándo subir y cómo comunicarlo?  — ¿ya toca?, fecha y guía
  *   2 · ¿Qué precios subir?                — qué productos y cuánto
- *   3 · Prueba de precios                  — plan de la prueba y resultado
- * La sede elegida arriba manda en el paso 2; los pasos 1 y 3 miran siempre las dos cafeterías (la prueba
- * compara una sede con la otra). El mes es el actual (lo último que subieron las sedes).
+ *   3 · ¿Y si sube un insumo?              — simulador de alzas e historial de precios de compra
+ *   4 · Prueba de precios                  — plan de la prueba y resultado
+ * La sede elegida arriba manda en los pasos 2 y 3; los pasos 1 y 4 miran siempre las dos cafeterías (la
+ * prueba compara una sede con la otra). El mes es el actual (lo último que subieron las sedes).
  */
 
 import { useState } from "react";
@@ -15,6 +16,7 @@ import { CAFETERIAS, NOMBRE_CAFETERIAS } from "@/lib/productos/cafeterias";
 import { CuandoSubir } from "./cuando-subir";
 import { SubidaPrecios } from "./subida-precios";
 import { PruebaPrecios } from "./prueba-precios";
+import { SimuladorInsumos } from "./simulador-insumos";
 
 const SEDES = [
   { id: 3, nombre: "Centro" },
@@ -34,7 +36,7 @@ export function PreciosClient() {
         <div className="min-w-0">
           <h2 className="text-lg font-semibold text-gray-900">Subida de precios</h2>
           <p className="text-xs text-gray-500 mt-1 max-w-2xl leading-relaxed">
-            Tres pasos para subir precios sin perder clientes: saber si ya toca, elegir qué productos y cuánto, y probarlo en una sede antes de subir en las dos.
+            Cuatro pasos para subir precios sin perder clientes: saber si ya toca, elegir qué productos y cuánto, ver qué pasa si sube un insumo, y probarlo en una sede antes de subir en las dos.
           </p>
         </div>
         <div className="inline-flex rounded-xl bg-white border border-gray-200 p-1 gap-1" role="group" aria-label="Sede">
@@ -53,9 +55,10 @@ export function PreciosClient() {
       </div>
       <CuandoSubir key={`cuando-${month}`} month={month} sede={sede} paso={1} />
       <SubidaPrecios key={`subida-${sede}-${month}`} month={month} sede={sede} paso={2} />
-      <PruebaPrecios key={`prueba-${month}`} month={month} sede={sede} paso={3} />
+      <SimuladorInsumos key={`simulador-${sede}-${month}`} month={month} sede={sede} paso={3} />
+      <PruebaPrecios key={`prueba-${month}`} month={month} sede={sede} paso={4} />
       <p className="text-[11px] text-gray-500 px-1">
-        La sede elegida cambia el paso 2. Los pasos 1 y 3 miran siempre Fonavi y Centro, porque la prueba compara una sede con la otra.
+        La sede elegida cambia los pasos 2 y 3. Los pasos 1 y 4 miran siempre Fonavi y Centro, porque la prueba compara una sede con la otra.
       </p>
     </div>
   );

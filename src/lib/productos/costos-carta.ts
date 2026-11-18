@@ -14,6 +14,8 @@
  * enlaza solo, Jahnn lo vincula a mano (carta_vinculos).
  */
 
+import type { AporteInsumo } from "./desglose-insumos";
+
 export type CostoCarta = {
   /** ID de PRICING (CF-011, AT-046…). */
   ref: string;
@@ -41,6 +43,8 @@ export type CostoCarta = {
   seccion?: string | null;
   /** true = está en la carta que ve el cliente; false = solo se vende en el exhibidor/fuera de carta; null = no se sabe. */
   enCarta?: boolean | null;
+  /** El costo de una unidad repartido por insumo, con las sub-recetas abiertas (lib/productos/desglose-insumos.ts, 18-nov-2026). */
+  desglose?: AporteInsumo[] | null;
 };
 
 export type InsumoCarta = { sku: string | null; nombre: string; exclusivo: boolean };

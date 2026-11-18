@@ -18,6 +18,7 @@ import { activeBusinessId } from "@/lib/active-business";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import type { CostoPreparacion, TipoCosto } from "@/lib/costos-preparaciones";
 import type { CostoCarta } from "@/lib/productos/costos-carta";
+import type { PrecioInsumo } from "@/lib/productos/insumos-precios";
 import { leerCatalogo } from "@/lib/catalogo-costos-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -44,6 +45,8 @@ export async function guardarCostos(input: {
   quedarmeConExcel?: { id: number; ref: string }[];
   /** Costo y precio de carta de las cafeterías (ver lib/productos/costos-carta.ts). */
   carta?: CostoCarta[];
+  /** Precio de compra de cada insumo: la foto del historial (lib/productos/insumos-precios.ts, 18-nov-2026). */
+  precios?: PrecioInsumo[];
 }): Promise<{ ok: true; guardados: number; reemplazadas: number } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
   const it = Array.isArray(input.items) ? input.items : [];
@@ -82,6 +85,8 @@ export async function guardarCostos(input: {
     return { ok: false, error: "No se pudo guardar la lista de costos." };
   }
   await guardarCarta(input.carta ?? [], archivo);
+  await guardarDesglose(input.carta ?? []);
+  await guardarPrecios(input.precios ?? [], archivo);
   const reemplazadas = await quedarmeConLasDelExcel(input.quedarmeConExcel ?? [], refs);
   revalidatePath("/grupo/recetas");
   return { ok: true, guardados: it.length, reemplazadas };
@@ -111,6 +116,48 @@ async function guardarCarta(carta: CostoCarta[], archivo: string): Promise<void>
   } catch (e) {
     console.warn("[guardarCarta] sin columnas de sección, se guarda la versión anterior:", e instanceof Error ? e.message : e);
     await guardarCartaAnterior(ok, archivo);
+  }
+}
+
+/**
+ * El desglose del costo por insumo de cada producto (simulador de alzas, 18-nov-2026). Va aparte para no
+ * tocar el guardado de la carta: si la columna todavía no existe, la carta se guarda igual.
+ */
+async function guardarDesglose(carta: CostoCarta[]): Promise<void> {
+  const con = carta.filter((c) => c?.ref?.trim() && Array.isArray(c.desglose)).slice(0, 5000);
+  if (con.length === 0) return;
+  const limpio = (c: CostoCarta) => JSON.stringify(c.desglose!.slice(0, 80)
+    .filter((x) => x && typeof x.nombre === "string" && Number.isFinite(x.costo) && x.costo > 0)
+    .map((x) => ({ sku: typeof x.sku === "string" ? x.sku.slice(0, 20) : null, nombre: x.nombre.slice(0, 120), costo: Math.round(x.costo * 10000) / 10000 })));
+  try {
+    await sql`
+      UPDATE costos_carta c SET desglose = t.d::jsonb
+      FROM unnest(${con.map((c) => c.ref.trim())}::text[], ${con.map(limpio)}::text[]) AS t(ref, d)
+      WHERE c.ref = t.ref`;
+  } catch (e) {
+    console.warn("[guardarDesglose] sin columna desglose (migración pendiente):", e instanceof Error ? e.message : e);
+  }
+}
+
+const ORIGENES = new Set(["Atelier", "Cafetería"]);
+const UNIDADES_PRECIO = new Set(["kg", "l", "und"]);
+
+/** La foto de precios de compra del día (una por fecha, hoja y SKU: subir dos veces el mismo día la corrige). */
+async function guardarPrecios(precios: PrecioInsumo[], archivo: string): Promise<void> {
+  const ok = precios.filter((p) => p && ORIGENES.has(p.origen) && /^[A-Z]{2}\d{3}$/.test(p.sku ?? "") && typeof p.nombre === "string"
+    && UNIDADES_PRECIO.has(p.unidad) && Number.isFinite(p.precio) && p.precio > 0).slice(0, 3000);
+  if (ok.length === 0) return;
+  const fecha = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  try {
+    await sql`
+      INSERT INTO insumos_precios (fecha, origen, sku, nombre, unidad, precio, archivo)
+      SELECT ${fecha}::date, t.origen, t.sku, t.nombre, t.unidad, t.precio, ${archivo}
+      FROM unnest(${ok.map((p) => p.origen)}::text[], ${ok.map((p) => p.sku)}::text[], ${ok.map((p) => p.nombre.slice(0, 120))}::text[],
+                  ${ok.map((p) => p.unidad)}::text[], ${ok.map((p) => p.precio)}::numeric[]) AS t(origen, sku, nombre, unidad, precio)
+      ON CONFLICT (fecha, origen, sku) DO UPDATE SET nombre = EXCLUDED.nombre, unidad = EXCLUDED.unidad, precio = EXCLUDED.precio,
+        archivo = EXCLUDED.archivo, cargado_el = NOW()`;
+  } catch (e) {
+    console.warn("[guardarPrecios] sin tabla insumos_precios (migración pendiente):", e instanceof Error ? e.message : e);
   }
 }
 

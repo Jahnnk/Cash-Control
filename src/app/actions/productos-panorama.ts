@@ -29,6 +29,7 @@ import {
 import { claveByte, enlazarCosto, type CostoCarta } from "@/lib/productos/costos-carta";
 import { medirPruebas, type ResultadoPrueba, type SemanaSede } from "@/lib/productos/prueba-precios";
 import type { MesCostos } from "@/lib/productos/cuando-subir";
+import { historialDePrecios, type FotoPrecio, type HistorialPrecios } from "@/lib/productos/insumos-precios";
 import { cifrasDeSedeEnMes, hoyLima } from "@/lib/seis-cifras-sql";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { leerCatalogo } from "@/lib/catalogo-costos-sql";
@@ -766,7 +767,9 @@ export async function getDatosCargadosProductos(): Promise<Res<{ hoy: string; se
  */
 async function costosDeCarta(): Promise<{ costos: CostoCarta[]; vinculos: Map<string, string> }> {
   const [costos, vinculos, catalogoAtelier] = await Promise.all([
-    (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>)
+    (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta", desglose FROM costos_carta` as unknown as Promise<CostoCarta[]>)
+    // Antes de la migración del desglose por insumo (18-nov-2026): sin esa columna.
+    .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>))
     // Antes de la migración de sección y en-carta (7-nov-2026): sin esas dos columnas.
     .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>))
     // Antes de la migración de origen e insumos (8-oct-2026): sin esas dos columnas.
@@ -839,6 +842,23 @@ export async function getCostosPorMes(): Promise<Res<{ hoy: string; sedes: { bus
   } catch (e) {
     console.error("[getCostosPorMes] failed:", e);
     return { ok: false, error: "No se pudieron leer los costos por mes." };
+  }
+}
+
+/**
+ * Historial de precios de compra de los insumos (mejora C, 18-nov-2026): las fotos que se guardan al subir
+ * el Excel de pricing, comparadas (lib/productos/insumos-precios.ts). Solo lectura.
+ */
+export async function getHistorialInsumos(): Promise<Res<{ data: HistorialPrecios }>> {
+  if (!puedeLeerDireccion(await getSessionRole())) return { ok: false, error: "Solo dirección." };
+  try {
+    const fotos = (await sql`
+      SELECT fecha::text AS fecha, origen, sku, nombre, unidad, precio::float AS precio FROM insumos_precios
+      WHERE fecha >= (CURRENT_DATE - INTERVAL '400 days')`) as unknown as FotoPrecio[];
+    return { ok: true, data: historialDePrecios(fotos) };
+  } catch (e) {
+    console.error("[getHistorialInsumos] failed:", e);
+    return { ok: true, data: { fechas: [], cambios: [] } };
   }
 }
 

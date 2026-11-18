@@ -35,6 +35,7 @@ export function claveNombre(s: string): string {
     .replace(/cheescake/g, "cheesecake"); // así está escrito en algunas filas del Excel
 }
 
+import type { PrecioInsumo } from "@/lib/productos/insumos-precios";
 import type { CostoCarta } from "@/lib/productos/costos-carta";
 
 export type TipoCosto = "producto" | "preparacion" | "insumo";
@@ -93,6 +94,8 @@ export type LecturaPricing = {
    * reemplazo" en Grupo → Productos.
    */
   carta?: CostoCarta[];
+  /** Precio de compra de cada insumo (hojas ATE y CAF · Insumos): el historial de precios (18-nov-2026). */
+  precios?: PrecioInsumo[];
 };
 
 export type ResumenPricing = {
