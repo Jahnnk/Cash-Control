@@ -5,6 +5,7 @@ import { Calculator, Loader2, Upload, Check, AlertTriangle } from "lucide-react"
 import { useToast } from "@/components/toast-provider";
 import { getEstadoPricing, guardarCostos, type EstadoPricing } from "@/app/actions/costos-preparaciones";
 import { claveNombre, type CostoPreparacion, type ResumenPricing } from "@/lib/costos-preparaciones";
+import type { PrecioInsumo } from "@/lib/productos/insumos-precios";
 import type { CostoCarta } from "@/lib/productos/costos-carta";
 
 const TIPO_PLURAL = { producto: "productos", preparacion: "preparaciones", insumo: "insumos" } as const;
@@ -21,7 +22,7 @@ const fechaLarga = (iso: string) =>
 export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } = {}) {
   const { showToast } = useToast();
   const [estado, setEstado] = useState<EstadoPricing | undefined>(undefined);
-  const [leido, setLeido] = useState<{ archivo: string; items: CostoPreparacion[]; carta: CostoCarta[] } | null>(null);
+  const [leido, setLeido] = useState<{ archivo: string; items: CostoPreparacion[]; carta: CostoCarta[]; precios: PrecioInsumo[] } | null>(null);
   const [resumen, setResumen] = useState<ResumenPricing | null>(null);
   const [busy, setBusy] = useState<"leyendo" | "guardando" | null>(null);
   /** Recetas del sistema que el Excel trae con el mismo nombre y se reemplazan por la del Excel (id → sí/no). */
@@ -59,7 +60,7 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
         limpiar();
         return;
       }
-      setLeido({ archivo: f.name, items: lectura.items, carta: lectura.carta ?? [] });
+      setLeido({ archivo: f.name, items: lectura.items, carta: lectura.carta ?? [], precios: lectura.precios ?? [] });
       setResumen(resumirPricing(f.name, lectura));
     } catch {
       showToast("No se pudo leer el Excel. Revisa que no esté dañado o protegido con contraseña.", "error");

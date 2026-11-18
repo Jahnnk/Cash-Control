@@ -10,6 +10,8 @@ import * as XLSX from "xlsx";
 import { claveNombre, type CostoPreparacion, type DetalleReceta, type Ingrediente, type LecturaPricing, type UnidadBase } from "@/lib/costos-preparaciones";
 import { costoDeReceta } from "@/lib/recetas";
 import { palabras, type CostoCarta, type InsumoCarta } from "@/lib/productos/costos-carta";
+import { desglosar, type BloqueReceta, type LineaReceta } from "@/lib/productos/desglose-insumos";
+import type { PrecioInsumo } from "@/lib/productos/insumos-precios";
 
 const HOJA_PRICING = "PRICING";
 const HOJA_SUBRECETAS = "ATE · Sub-Recetas";
@@ -185,7 +187,13 @@ type Bloque = {
   costoUnidad: number | null;
   /** El rendimiento dice "KG": la receta rinde kilos, no unidades. */
   rindeKg: boolean;
-  ingredientes: { sku: string; nombre: string; unidad: string; cantidad: number }[];
+  ingredientes: {
+    sku: string; nombre: string; unidad: string; cantidad: number;
+    /** «Costo Unitario» de la línea: lo que aporta a una unidad (S/, con merma). Desglose por insumo (18-nov-2026). */
+    aporte?: number | null;
+    /** «Costo Total de Receta» de la línea: su peso dentro de la receta entera. */
+    total?: number | null;
+  }[];
 };
 
 /**
@@ -197,7 +205,7 @@ type Bloque = {
 function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
   const out: Bloque[] = [];
   let b: Bloque | null = null;
-  let col: { sku: number; nom: number; und: number; q: number; precioG: number; unit: number } | null = null;
+  let col: { sku: number; nom: number; und: number; q: number; precioG: number; unit: number; total: number } | null = null;
   for (const [n, r] of rows.entries()) {
     const i = r.findIndex((c) => typeof c === "string" && c.trim() !== "");
     if (i === -1) continue;
@@ -234,6 +242,7 @@ function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
         q: cab.findIndex((c) => c.startsWith("q x receta")),
         precioG: cab.findIndex((c) => c.startsWith("precio unt")),
         unit: cab.findIndex((c) => c.startsWith("costo unitario")),
+        total: cab.findIndex((c) => c.startsWith("costo total de receta")),
       };
       if (col.nom === -1 || col.und === -1 || col.q === -1) col = null;
       continue;
@@ -250,7 +259,10 @@ function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
     const unit = col.unit === -1 ? null : num(r[col.unit]);
     const porUnidad = hoja !== HOJA_SUBRECETAS && b.rendimiento && precioG && unit !== null ? (unit / precioG) * b.rendimiento : null;
     const final = porUnidad !== null && porUnidad > 0 ? Math.round(porUnidad * 1000) / 1000 : cantidad;
-    b.ingredientes.push({ sku, nombre: limpiarNombre(r[col.nom] as string), unidad: String(r[col.und] ?? "").trim().toLowerCase(), cantidad: final });
+    b.ingredientes.push({
+      sku, nombre: limpiarNombre(r[col.nom] as string), unidad: String(r[col.und] ?? "").trim().toLowerCase(), cantidad: final,
+      aporte: unit, total: col.total === -1 ? null : num(r[col.total]),
+    });
   }
   return out;
 }
@@ -323,6 +335,41 @@ function leerInsumos(rows: Fila[], avisos: string[]): { items: CostoPreparacion[
   return { items: out, sr };
 }
 
+/**
+ * El precio de compra de cada insumo de una hoja de insumos (ATE o CAF), para el historial (18-nov-2026).
+ * Precio por kg o litro si se compra por peso o volumen; por unidad si no. Sin sub-recetas (SR) ni lo que
+ * produce Atelier (PN): no se compran.
+ */
+export function preciosDeInsumos(rows: Fila[] | null, origen: PrecioInsumo["origen"]): { precios: PrecioInsumo[]; srNombre: Map<string, string> } {
+  const srNombre = new Map<string, string>();
+  if (!rows) return { precios: [], srNombre };
+  const h = rows.findIndex((r) => r.some((c) => typeof c === "string" && /^\s*sku\s*$/i.test(c)));
+  if (h === -1) return { precios: [], srNombre };
+  const cab = rows[h].map((c) => (typeof c === "string" ? norm(c) : ""));
+  const cSku = cab.findIndex((c) => c === "sku");
+  const cNom = cab.findIndex((c) => c.startsWith("nombre"));
+  const cUni = cab.findIndex((c) => c.startsWith("unidad de compra"));
+  const cPeso = cab.findIndex((c) => c.startsWith("costo por peso"));
+  if ([cSku, cNom, cUni, cPeso].some((c) => c === -1)) return { precios: [], srNombre };
+  const vistos = new Set<string>();
+  const precios: PrecioInsumo[] = [];
+  for (const r of rows.slice(h + 1)) {
+    const sku = typeof r[cSku] === "string" ? (r[cSku] as string).trim().toUpperCase() : "";
+    if (!/^[A-Z]{2}\d{3}$/.test(sku)) continue;
+    const nombre = typeof r[cNom] === "string" ? limpiarNombre(r[cNom] as string) : "";
+    if (!nombre) continue;
+    if (/^SR/.test(sku)) { srNombre.set(sku, nombre); continue; }
+    if (/^PN/.test(sku) || vistos.has(sku)) continue;
+    const porPeso = num(r[cPeso]);
+    if (!porPeso || porPeso <= 0) continue;
+    const u = typeof r[cUni] === "string" ? (r[cUni] as string).trim().toLowerCase() : "";
+    const unidad: PrecioInsumo["unidad"] = u === "g" ? "kg" : u === "ml" || u === "cm3" || u === "l" ? "l" : "und";
+    vistos.add(sku);
+    precios.push({ origen, sku, nombre, unidad, precio: Math.round((u === "g" || u === "ml" || u === "cm3" ? porPeso * 1000 : porPeso) * 10000) / 10000 });
+  }
+  return { precios, srNombre };
+}
+
 /** Lee el Excel maestro de pricing y arma la lista de costos de Atelier. */
 /** Hojas con recetas de productos (los bloques "▼" que PRICING costea). */
 const HOJAS_RECETAS = ["ATE · Empanadas", "ATE · Pastelería", "ATE · Panadería", "ATE · Cuchareables", "ATE · Croissant"];
@@ -341,7 +388,7 @@ const esEmpaque = (sku: string | null) => !!sku && /^PK/i.test(sku.trim());
  * Un insumo es exclusivo si una sola línea de producto del Excel lo usa (las presentaciones de
  * un mismo producto cuentan como una; una sub-receta cuenta como un usuario más).
  */
-export function insumosDeCarta(carta: CostoCarta[], atelier: Bloque[], cafeteria: Bloque[]): void {
+export function insumosDeCarta(carta: CostoCarta[], atelier: Bloque[], cafeteria: Bloque[], srNombre: Map<string, string> = new Map()): void {
   const todos = [...atelier, ...cafeteria].filter((b) => !b.archivado && b.ingredientes.length > 0);
   const clave = (g: Bloque["ingredientes"][number]) => (g.sku?.trim() ? g.sku.trim().toUpperCase() : `N:${nombreSinKg(g.nombre)}`);
   const usuarios = new Map<string, Set<string>>();
@@ -363,7 +410,27 @@ export function insumosDeCarta(carta: CostoCarta[], atelier: Bloque[], cafeteria
     // Primero el mismo nombre; si no, la misma línea sin tamaños («Focaccia Clásica 1/4» = «Focaccia Clásica»).
     const b = vivos.find((x) => nombres.some((n) => mismo(x.nombre, n)))
       ?? vivos.find((x) => nombres.some((n) => lineaDe(n) !== "" && lineaDe(x.nombre) === lineaDe(n)));
-    if (!b) { c.insumos = null; continue; }
+    if (!b) { c.insumos = null; c.desglose = null; continue; }
+    // Desglose del costo por insumo, abriendo las sub-recetas (simulador de alzas, 18-nov-2026).
+    const subs = vivos.filter((x) => /Sub-Recetas/.test(x.hoja));
+    const sub = (l: LineaReceta) => {
+      if (!l.sku || /^(PN|PK)/i.test(l.sku)) return undefined; // lo que se compra a Atelier y los empaques son hojas
+      const n = srNombre.get(l.sku.toUpperCase()) ?? l.nombre;
+      const exacta = subs.find((x) => mismo(x.nombre, n) || mismo(x.nombre, l.nombre));
+      if (exacta) return exacta;
+      // «Pepinos Encurtidos (Pickles)» = «Pepinos Encurtidos»; «Mayonesa Mustard» = «Mustard» (y no «Mayonesa»):
+      // la sub-receta cuyas palabras están todas en el nombre, la de más palabras.
+      const w = new Set(palabras(n.replace(/\([^)]*\)/g, " ")));
+      return subs
+        .map((x) => ({ x, p: palabras(x.nombre) }))
+        .filter(({ p }) => p.length > 0 && p.every((t) => w.has(t)))
+        .sort((a, b) => b.p.length - a.p.length)[0]?.x;
+    };
+    const aBloque = (x: Bloque): BloqueReceta => ({ nombre: x.nombre, lineas: x.ingredientes.map((g) => ({ sku: g.sku, nombre: g.nombre, aporte: g.aporte ?? null, total: g.total ?? null })) });
+    const bloquesReceta = new Map<Bloque, BloqueReceta>();
+    const receta = (x: Bloque) => { let r = bloquesReceta.get(x); if (!r) { r = aBloque(x); bloquesReceta.set(x, r); } return r; };
+    const desglose = desglosar(receta(b), (l) => { const x = sub(l); return x ? receta(x) : undefined; });
+    c.desglose = desglose.length > 0 ? desglose.slice(0, 80) : null;
     const vistos = new Set<string>();
     c.insumos = b.ingredientes.filter((g) => !esEmpaque(g.sku)).flatMap((g): InsumoCarta[] => {
       const k = clave(g);
@@ -501,6 +568,22 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
 
   // Insumos de cada producto de la carta y cuáles son solo suyos (Candidatos a reemplazo).
   const deCafeteria = HOJAS_CAFETERIA.flatMap((h) => { const f = filas(wb, h); return f ? leerBloques(f, h, primeraFila(wb, h)) : []; });
-  insumosDeCarta(carta, [...subRecetas.bloques, ...deProductos], deCafeteria);
-  return { items: unicos, avisos, sinPricing, carta };
+  // Precios de compra de las dos hojas de insumos (historial) y el nombre de cada sub-receta SR (desglose).
+  const pa = preciosDeInsumos(ins, "Atelier");
+  const pc = preciosDeInsumos(filas(wb, "CAF · Insumos"), "Cafetería");
+  const srNombre = new Map([...pc.srNombre, ...pa.srNombre]);
+  insumosDeCarta(carta, [...subRecetas.bloques, ...deProductos], deCafeteria, srNombre);
+  // El desglose a la escala del costo del Excel: una porción sale de la receta de la torta entera (se divide
+  // entre las porciones). Lo de Atelier, contra su «Costo insumos Atelier»; lo de la cafetería, contra su costo.
+  const costoAtelier = new Map(productos.map((p) => [p.ref, p.costo]));
+  for (const c of carta) {
+    const meta = c.origen === "Atelier" ? costoAtelier.get(c.ref) : c.costo;
+    if (!c.desglose || !meta || meta <= 0) continue;
+    const suma = c.desglose.reduce((t, x) => t + x.costo, 0);
+    if (suma > 0 && Math.abs(suma - meta) / meta > 0.03) {
+      const f = meta / suma;
+      c.desglose = c.desglose.map((x) => ({ ...x, costo: Math.round(x.costo * f * 10000) / 10000 }));
+    }
+  }
+  return { items: unicos, avisos, sinPricing, carta, precios: [...pa.precios, ...pc.precios] };
 }
