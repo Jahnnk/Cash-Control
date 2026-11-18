@@ -40,6 +40,13 @@
  * S/ 2.50 es +25%), no se sube en esta ronda.
  *
  *   Punto de quiebre = subida ÷ (precio nuevo − costo): el % de ventas que puede perder y dejar lo mismo.
+ *
+ * DOS MIRADAS DEL COSTO (18-nov-2026, del Excel de pricing): el veredicto usa el costo de INSUMOS (la mirada
+ * del Grupo: lo que de verdad cuesta hacerlo). Pero la cafetería es otra empresa y no paga insumos: paga el
+ * precio interno de Atelier (Y-). En los productos de Atelier esa segunda mirada puede pasar el 35% aunque
+ * los insumos estén bien (rollo de canela: S/ 1.73 de insumos, S/ 5.90 de precio interno, S/ 8 en carta).
+ * Ahí se marca `alertaInterno`: subirle al cliente para cubrir un precio entre empresas propias puede ser la
+ * palanca equivocada; lo que hay que revisar es el precio interno.
  */
 
 import type { ProductoRentable, RentabilidadSede } from "./rentabilidad";
@@ -95,6 +102,19 @@ export type FilaSubida = {
   extraMes: number[] | null;
   /** El producto no se sube porque el paso más chico de la carta ya es demasiado (+25% en una cookie de S/ 2). */
   pasoMuyGrande: boolean;
+  /** Lo produce Atelier: la cafetería no paga sus insumos, paga el precio interno (Y-). */
+  deAtelier: boolean;
+  /**
+   * La OTRA mirada del costo (18-nov-2026): lo que le cuesta a la CAFETERÍA. En lo que hace Atelier es el
+   * precio interno; en lo que se prepara en la cafetería es igual al costo de insumos. null = no se conoce.
+   */
+  costoCafeteria: number | null;
+  costoCafeteriaPct: number | null;
+  /**
+   * Para el Grupo el producto está bien (insumos ≤ 35%), pero la cafetería paga más del 35% por el precio
+   * interno de Atelier: el problema es el precio interno, no el de carta.
+   */
+  alertaInterno: boolean;
 };
 
 export type SubidaSede = {
@@ -110,6 +130,8 @@ export type SubidaSede = {
   extraTotal: number[];
   /** Cuánto sube, en promedio, lo que paga el cliente (ponderado por lo vendido). */
   subidaPromedioPct: number | null;
+  /** Productos de Atelier cuyo problema es el precio interno (alertaInterno). */
+  conAlertaInterno: number;
 };
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -181,9 +203,14 @@ function fila(p: ProductoRentable, medianaUnidades: number, aMes: number): FilaS
   const demandaFuerte = p.unidades >= medianaUnidades;
   const riesgo = riesgoDe(p.nombre);
   const { v, motivo } = veredictoDe(demandaFuerte, riesgo, necesidad);
+  // La mirada de la cafetería: lo que paga por el producto (precio interno de Atelier o su propia receta).
+  const costoCafeteria = p.deAtelier ? (p.costo !== null && p.costo > 0 ? p.costo : null) : costo;
+  const costoCafeteriaPct = costoCafeteria !== null ? r1((costoCafeteria / precio) * 100) : null;
   const base = {
     nombre: p.nombre, familia: p.familia, unidades: p.unidades, precio: r2(precio), precioDeCarta: precioCarta !== null,
     costo: r2(costo), costoPct, necesidad, demandaFuerte, riesgo,
+    deAtelier: p.deAtelier, costoCafeteria: costoCafeteria !== null ? r2(costoCafeteria) : null, costoCafeteriaPct,
+    alertaInterno: p.deAtelier && costoCafeteriaPct !== null && costoCafeteriaPct > NECESIDAD_ALTA_PCT && costoPct <= NECESIDAD_ALTA_PCT,
   };
   if (v === "no-tocar") return { ...base, veredicto: v, motivo, precioNuevo: null, subidaPct: null, quiebrePct: null, extraMes: null, pasoMuyGrande: false };
 
@@ -232,5 +259,6 @@ export function subidaDePrecios(r: RentabilidadSede): SubidaSede {
     fuera: Math.max(0, conPrecio - filas.length),
     extraTotal,
     subidaPromedioPct: ventas > 0 ? r1((subida / ventas) * 100) : null,
+    conAlertaInterno: filas.filter((f) => f.alertaInterno).length,
   };
 }

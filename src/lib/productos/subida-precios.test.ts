@@ -114,4 +114,20 @@ describe("veredicto, punto de quiebre y escenarios", () => {
     // Los rellenos (S/ 10, costo 20%, riesgo medio) entran como «Subir poco» y van después de Cappuccino.
     expect(r.conteo).toEqual({ subir: 2, "subir-poco": 5, "no-tocar": 1 });
   });
+
+  it("dos miradas: insumos bien pero la cafetería paga más del 35% por el precio interno de Atelier", () => {
+    // Rollo de canela: S/ 1.73 de insumos (21.6%) y S/ 5.90 de precio interno (73.8%) sobre S/ 8 de carta.
+    const rollo: ProductoRentable = { ...prod("ROLLO DE CANELA", 8, 1.73, 50), costo: 5.9, deAtelier: true };
+    const r = subidaDePrecios(sede([rollo, prod("CAPPUCCINO", 12, 3, 100), ...relleno(4)]));
+    const f = r.filas.find((x) => x.nombre === "ROLLO DE CANELA")!;
+    expect(f).toMatchObject({ costoPct: 21.6, costoCafeteria: 5.9, costoCafeteriaPct: 73.8, alertaInterno: true });
+    // Lo que se prepara en la cafetería: las dos miradas son iguales y no hay alerta.
+    expect(r.filas.find((x) => x.nombre === "CAPPUCCINO")).toMatchObject({ costoCafeteriaPct: 25, alertaInterno: false });
+    expect(r.conAlertaInterno).toBe(1);
+  });
+
+  it("si los insumos ya pasan el 35%, no es un problema solo del precio interno", () => {
+    const caro: ProductoRentable = { ...prod("CHEESECAKE DE FRESA", 14, 6.5, 50), costo: 9, deAtelier: true };
+    expect(subidaDePrecios(sede([caro, ...relleno(4)])).filas.find((x) => x.nombre === "CHEESECAKE DE FRESA")!.alertaInterno).toBe(false);
+  });
 });
