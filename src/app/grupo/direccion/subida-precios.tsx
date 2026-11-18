@@ -44,7 +44,7 @@ function Tabla({ filas }: { filas: FilaSubida[] }) {
           <tr className="text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
             <th className="text-left font-medium py-2.5 pl-4 pr-3">Producto</th>
             <th className="text-right font-medium py-2.5 px-3">Precio hoy → nuevo</th>
-            <th className="text-right font-medium py-2.5 px-3">Costo</th>
+            <th className="text-right font-medium py-2.5 px-3">Costo<div className="normal-case tracking-normal font-normal text-[10px]">insumos · para la cafetería</div></th>
             <th className="text-right font-medium py-2.5 px-3">Aguanta perder</th>
             <th className="text-right font-medium py-2.5 pl-3 pr-4">Extra al mes<div className="normal-case tracking-normal font-normal text-[10px]">igual · −5% · −10% de ventas</div></th>
           </tr>
@@ -59,6 +59,11 @@ function Tabla({ filas }: { filas: FilaSubida[] }) {
                   <span className="text-[10px] text-gray-400">{RIESGO[f.riesgo]} · {f.unidades.toLocaleString("es-PE")} u</span>
                 </div>
                 <p className="mt-1 text-[11px] text-gray-500 leading-snug">{f.motivo}</p>
+                {f.alertaInterno && f.costoCafeteria !== null && (
+                  <p className="mt-1 text-[11px] text-amber-800 leading-snug">
+                    Para la cafetería cuesta {pct(f.costoCafeteriaPct)} del precio: paga {soles(f.costoCafeteria)} de precio interno a Atelier. El problema es el precio interno, no el de carta.
+                  </p>
+                )}
               </td>
               <td className="py-2.5 px-3 text-right tabular-nums align-top whitespace-nowrap">
                 {f.precioNuevo !== null ? (
@@ -76,7 +81,13 @@ function Tabla({ filas }: { filas: FilaSubida[] }) {
               </td>
               <td className={`py-2.5 px-3 text-right tabular-nums align-top whitespace-nowrap ${f.costoPct > NECESIDAD_ALTA_PCT ? "text-amber-700 font-medium" : "text-gray-700"}`}>
                 {pct(f.costoPct)}
-                <div className="text-[10px] text-gray-400 font-normal">del precio</div>
+                <div className="text-[10px] text-gray-400 font-normal">insumos</div>
+                {f.deAtelier && f.costoCafeteriaPct !== null && (
+                  <div className={`mt-1 ${f.costoCafeteriaPct > NECESIDAD_ALTA_PCT ? "text-amber-700 font-medium" : "text-gray-700"}`}>
+                    {pct(f.costoCafeteriaPct)}
+                    <div className="text-[10px] text-gray-400 font-normal">cafetería</div>
+                  </div>
+                )}
               </td>
               <td className="py-2.5 px-3 text-right tabular-nums align-top whitespace-nowrap">
                 {f.quiebrePct !== null ? (
@@ -106,19 +117,21 @@ function Tabla({ filas }: { filas: FilaSubida[] }) {
   );
 }
 
-const FILTROS: { id: Veredicto | "candidatos"; texto: string }[] = [
+type Filtro = Veredicto | "candidatos" | "interno";
+const FILTROS: { id: Filtro; texto: string }[] = [
   { id: "candidatos", texto: "Candidatos a subir" },
   { id: "subir", texto: "Subir" },
   { id: "subir-poco", texto: "Subir poco" },
   { id: "no-tocar", texto: "No tocar" },
+  { id: "interno", texto: "Precio interno alto" },
 ];
 
 function Cuerpo({ d }: { d: SubidaSede }) {
-  const [filtro, setFiltro] = useState<Veredicto | "candidatos">("candidatos");
-  const visibles = d.filas.filter((f) => (filtro === "candidatos" ? f.veredicto !== "no-tocar" : f.veredicto === filtro));
+  const [filtro, setFiltro] = useState<Filtro>("candidatos");
+  const visibles = d.filas.filter((f) => (filtro === "candidatos" ? f.veredicto !== "no-tocar" : filtro === "interno" ? f.alertaInterno : f.veredicto === filtro));
   const aMedias = d.hasta < finDeMes(d.mes);
   const candidatos = d.conteo.subir + d.conteo["subir-poco"];
-  const cuenta = (id: Veredicto | "candidatos") => (id === "candidatos" ? candidatos : d.conteo[id]);
+  const cuenta = (id: Filtro) => (id === "candidatos" ? candidatos : id === "interno" ? d.conAlertaInterno : d.conteo[id]);
 
   return (
     <div className="space-y-5">
@@ -149,6 +162,14 @@ function Cuerpo({ d }: { d: SubidaSede }) {
         </div>
       </div>
 
+      {d.conAlertaInterno > 0 && (
+        <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-xs text-gray-700 leading-relaxed">
+          <strong>Dos miradas del costo.</strong> En <strong>{d.conAlertaInterno} productos de Atelier</strong> los insumos están bien, pero la cafetería paga más del {NECESIDAD_ALTA_PCT}% del precio por el precio interno.
+          Ahí subirle al cliente no arregla la causa: lo que conviene revisar es el precio interno de Atelier.{" "}
+          <button type="button" onClick={() => setFiltro("interno")} className="font-medium text-primary hover:underline">Ver cuáles</button>
+        </div>
+      )}
+
       <div>
         <div className="mb-2 flex flex-wrap gap-1.5">
           {FILTROS.map((x) => (
@@ -171,7 +192,7 @@ function Cuerpo({ d }: { d: SubidaSede }) {
         <p><strong>Cómo decide.</strong> Mira tres cosas de cada producto. <strong>Demanda</strong>: si vende al menos lo que vende el producto del medio de la carta, los clientes lo piden y aguanta mejor una subida. <strong>Costo</strong>: si pasa el {NECESIDAD_ALTA_PCT}% del precio, hace falta subirlo. <strong>Riesgo</strong>: los básicos que el cliente compara con otros locales (agua, americano, empanada) se notan más; los productos propios de Yayi&apos;s (desayunos, cheesecakes, Triple Yayi&apos;s) se notan menos.</p>
         <p><strong>Cuánto.</strong> Hasta +{Math.round(TOPE_SUBIR.bajo * 100)}% en los propios, +{Math.round(TOPE_SUBIR.medio * 100)}% en el resto y +{Math.round(TOPE_SUBIR.poco * 100)}% en «Subir poco», redondeado como la carta (S/ 0.50 bajo S/ 10, de sol en sol desde S/ 10, y el .9 se conserva). Si el paso más chico es demasiado (una cookie de S/ 2 a S/ 2.50 es +25%), espera a otra ronda.</p>
         <p><strong>Aguanta perder</strong> = subida ÷ (precio nuevo − costo). Ejemplo: un Triple Yayi&apos;s de S/ 21 con S/ 6 de costo que sube a S/ 23 puede perder hasta 11.8% de sus ventas y aún deja lo mismo. <strong>«No tocar»</strong> no es «nunca»: es «no en esta ronda». Un producto que vende poco no se sube, porque vendería menos todavía.</p>
-        <p>El precio de partida es el de la carta (Excel de pricing); si no enlaza, el promedio que cobró Byte. El costo es el de insumos. {d.fuera > 0 ? `${d.fuera} productos no entran: no tienen costo de insumos o vendieron menos de 8 unidades.` : ""}</p>
+        <p>El precio de partida es el de la carta (Excel de pricing); si no enlaza, el promedio que cobró Byte. El veredicto usa el costo de insumos: lo que de verdad cuesta hacerlo, la mirada del Grupo. Debajo, en los productos de Atelier, va el costo para la cafetería: el precio interno que le paga a Atelier, porque la cafetería es otra empresa. En lo que se prepara en la cafetería las dos miradas son iguales. {d.fuera > 0 ? `${d.fuera} productos no entran: no tienen costo de insumos o vendieron menos de 8 unidades.` : ""}</p>
       </div>
     </div>
   );
