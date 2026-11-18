@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * «¿Qué precios subir?» (Grupo → Productos → El mes). Pedido de Jahnn (17-nov-2026): para la próxima
+ * «¿Qué precios subir?» (Grupo → Sistema de Dirección → Precios; antes en Productos). Pedido de Jahnn (17-nov-2026): para la próxima
  * carta, qué productos subir, cuánto y con qué riesgo, sin «subir por subir». Usa los mismos datos que
  * «¿Dónde ganamos plata?» (precio de carta o de Byte, costo de insumos del Excel de pricing): nada
  * nuevo que cargar ni guardar. Reglas y supuestos: lib/productos/subida-precios.ts. Va plegada.
@@ -14,6 +14,7 @@ import {
   NECESIDAD_ALTA_PCT, TOPE_SUBIR, subidaDePrecios,
   type FilaSubida, type Riesgo, type SubidaSede, type Veredicto,
 } from "@/lib/productos/subida-precios";
+import { ConPaso } from "./con-paso";
 import { Pastilla, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
 
 const soles = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -176,7 +177,7 @@ function Cuerpo({ d }: { d: SubidaSede }) {
   );
 }
 
-export function SubidaPrecios({ month, sede }: { month: string; sede: number }) {
+export function SubidaPrecios({ month, sede, paso }: { month: string; sede: number; /** Número del paso dentro de Sistema de Dirección → Precios. */ paso?: number }) {
   const [estado, setEstado] = useState<{ clave: string; data: SubidaSede | null; error: string | null } | null>(null);
   const clave = `${month}-${sede}`;
 
@@ -206,7 +207,7 @@ export function SubidaPrecios({ month, sede }: { month: string; sede: number }) 
 
   return (
     <SeccionDesplegable
-      titulo="¿Qué precios subir?"
+      titulo={<ConPaso paso={paso}>{"¿Qué precios subir?"}</ConPaso>}
       subtitulo="Para la próxima carta: en qué productos, cuánto y cuántas ventas aguanta perder cada uno."
       resumen={resumen}
     >
