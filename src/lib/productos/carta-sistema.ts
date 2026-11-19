@@ -12,6 +12,7 @@
  */
 
 import type { CostoCarta } from "./costos-carta";
+import type { RecetaCarta } from "./receta-carta";
 
 export type CambioCarta = {
   ref: string;
@@ -23,6 +24,8 @@ export type CambioCarta = {
   precio: number | null;
   costo: number | null;
   nuevo: boolean;
+  /** Solo productos nuevos (fase 2b): cómo se hace y de dónde sale su costo (lib/productos/receta-carta.ts). */
+  receta?: RecetaCarta | null;
   actualizadoEl?: string | null;
 };
 

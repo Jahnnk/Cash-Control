@@ -8,8 +8,9 @@
  */
 
 import { useEffect, useMemo, useState } from "react";
-import { ChevronDown, Loader2, Search } from "lucide-react";
-import { getCarta, guardarCambioCarta, type ProductoCarta } from "@/app/actions/carta";
+import { ChevronDown, Loader2, Plus, Search } from "lucide-react";
+import { getCarta, getOpcionesAlta, guardarCambioCarta, type OpcionesAlta, type ProductoCarta } from "@/app/actions/carta";
+import { AltaProducto } from "./alta-producto";
 import { archivarProductos, restaurarProducto } from "@/app/actions/productos-panorama";
 import { Pastilla } from "@/components/productos/ui";
 
@@ -34,6 +35,20 @@ export function CartaCafeterias() {
   const [b, setB] = useState<Borrador>({ precio: "", costo: "", seccion: "" });
   const [ocupado, setOcupado] = useState(false);
   const [aviso, setAviso] = useState<{ tono: "ok" | "error"; texto: string } | null>(null);
+  /** Formulario de producto nuevo abierto (con el producto creado aquí que se corrige, o null = uno nuevo). */
+  const [alta, setAlta] = useState<{ producto: ProductoCarta | null } | null>(null);
+  const [opciones, setOpciones] = useState<OpcionesAlta | null>(null);
+
+  const abrirAlta = async (producto: ProductoCarta | null) => {
+    setAviso(null);
+    setEditando(null);
+    if (!opciones) {
+      const r = await getOpcionesAlta();
+      if (!r.ok) { setAviso({ tono: "error", texto: r.error }); return; }
+      setOpciones(r.data);
+    }
+    setAlta({ producto });
+  };
 
   const cargar = async () => {
     const r = await getCarta();
@@ -119,7 +134,7 @@ export function CartaCafeterias() {
 
       <div className="mt-3 space-y-3">
         <p className="text-xs text-gray-500 leading-relaxed max-w-2xl">
-          Cambia aquí el precio de carta, el precio interno de lo que hace Atelier o la sección. No hace falta tocar el Excel: el cambio vale también después de subir otro. Productos, Precios y el simulador lo usan al momento.
+          Cambia aquí el precio de carta, el precio interno de lo que hace Atelier o la sección, o crea un producto nuevo con su receta. No hace falta tocar el Excel: el cambio vale también después de subir otro. Productos, Precios y el simulador lo usan al momento.
         </p>
 
         {error ? (
@@ -134,6 +149,10 @@ export function CartaCafeterias() {
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar producto o sección, ej. latte"
                   className="w-full border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm" />
               </label>
+              <button type="button" onClick={() => void abrirAlta(null)} disabled={!!alta}
+                className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl whitespace-nowrap disabled:opacity-50">
+                <Plus className="w-4 h-4" /> Nuevo producto
+              </button>
               <label className="inline-flex items-center gap-1.5 text-xs text-gray-600">
                 <input type="checkbox" checked={soloCambiados} onChange={(e) => setSoloCambiados(e.target.checked)} /> Solo los cambiados aquí
               </label>
@@ -141,6 +160,12 @@ export function CartaCafeterias() {
                 <input type="checkbox" checked={verRetirados} onChange={(e) => setVerRetirados(e.target.checked)} /> Ver retirados
               </label>
             </div>
+
+            {alta && opciones && (
+              <AltaProducto key={alta.producto?.ref ?? "nuevo"} opciones={opciones} secciones={secciones} producto={alta.producto}
+                onCancelar={() => setAlta(null)}
+                onListo={(m) => { setAlta(null); setAviso({ tono: "ok", texto: m }); void cargar(); }} />
+            )}
 
             {aviso && (
               <p className={`text-xs rounded-lg px-3 py-2 border ${aviso.tono === "ok" ? "text-emerald-800 bg-emerald-50 border-emerald-200" : "text-red-800 bg-red-50 border-red-200"}`}>{aviso.texto}</p>
@@ -175,7 +200,8 @@ export function CartaCafeterias() {
                                   <div className="font-medium text-gray-900">{p.nombre}</div>
                                   <div className="mt-0.5 flex flex-wrap gap-1">
                                     <Pastilla>{p.origen === "Atelier" ? "Lo hace Atelier" : p.origen === "Externo" ? "Reventa" : p.origen === "Cafetería" ? "Se prepara en tienda" : p.origen ?? "Por definir"}</Pastilla>
-                                    {cambiado(p) && <Pastilla tono="azul">Cambiado aquí{p.actualizadoEl ? ` · ${p.actualizadoEl.slice(8, 10)}/${p.actualizadoEl.slice(5, 7)}` : ""}</Pastilla>}
+                                    {p.marca.nuevo && <Pastilla tono="verde">Nuevo</Pastilla>}
+                                    {cambiado(p) && !p.marca.nuevo && <Pastilla tono="azul">Cambiado aquí{p.actualizadoEl ? ` · ${p.actualizadoEl.slice(8, 10)}/${p.actualizadoEl.slice(5, 7)}` : ""}</Pastilla>}
                                     {fuera && <Pastilla tono="ambar">Retirado</Pastilla>}
                                   </div>
                                   {abierto && (
@@ -204,7 +230,7 @@ export function CartaCafeterias() {
                                     <>
                                       <div className="text-gray-900">{soles(p.costo)}</div>
                                       <div className="text-[11px] text-gray-500">
-                                        {p.marca.costo && p.excel ? `Excel: ${soles(p.excel.costo)}` : p.origen === "Atelier" ? "precio interno" : p.origen === "Cafetería" ? "su receta" : ""}
+                                        {p.marca.nuevo && p.costo === 0 ? <span className="text-amber-700">falta un precio</span> : p.marca.costo && p.excel ? `Excel: ${soles(p.excel.costo)}` : p.origen === "Atelier" ? "precio interno" : p.origen === "Cafetería" ? "su receta" : ""}
                                       </div>
                                     </>
                                   )}
@@ -226,7 +252,7 @@ export function CartaCafeterias() {
                                     </span>
                                   ) : (
                                     <span className="inline-flex flex-col items-end gap-1">
-                                      <button type="button" onClick={() => abrir(p)} className="text-xs font-medium text-primary">Cambiar</button>
+                                      <button type="button" onClick={() => (p.marca.nuevo ? void abrirAlta(p) : abrir(p))} className="text-xs font-medium text-primary">Cambiar</button>
                                       {p.byte.length === 0 ? null : fuera ? (
                                         <button type="button" disabled={ocupado} onClick={() => void reactivar(p)} className="text-xs text-gray-600">Volver a la carta</button>
                                       ) : (
