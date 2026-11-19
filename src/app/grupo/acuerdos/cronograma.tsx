@@ -2,7 +2,7 @@
 
 /**
  * Acuerdos y tareas → Cronograma (referencia: línea de tiempo de Jira, 19-nov-2026). Cada tarea abierta es una
- * barra desde que se asignó hasta su fecha límite, por semanas, con la línea de HOY. Si venció, la barra se
+ * barra desde su inicio (el «Desde» del plazo, o el día en que se asignó) hasta su fecha límite, por semanas, con la línea de HOY. Si venció, la barra se
  * pone roja y una línea punteada muestra el atraso hasta hoy. Sin dependencias entre tareas: no hacen falta.
  */
 
@@ -26,7 +26,7 @@ export function Cronograma({ acuerdos, hoy, onAbrir }: { acuerdos: Acuerdo[]; ho
   if (filas.length === 0) return <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-4 sm:px-6"><p className="text-sm text-gray-500">No hay tareas abiertas para mostrar.</p></section>;
 
   // El rango: desde la semana más antigua que hace falta (máx. 8 atrás) hasta la última fecha (máx. 12 adelante).
-  const minimo = Math.max(ms(hoy) - SEMANAS_ATRAS * 7 * DIA, Math.min(ms(hoy) - 7 * DIA, ...filas.map((a) => ms(a.creadoDia))));
+  const minimo = Math.max(ms(hoy) - SEMANAS_ATRAS * 7 * DIA, Math.min(ms(hoy) - 7 * DIA, ...filas.map((a) => ms(a.fechaInicio ?? a.creadoDia))));
   const maximo = Math.min(ms(hoy) + SEMANAS_ADELANTE * 7 * DIA, Math.max(ms(hoy) + 21 * DIA, ...filas.map((a) => ms(a.fechaLimite))));
   const inicio = ms(lunes(fecha(minimo)));
   const semanas = Math.ceil((maximo - inicio) / (7 * DIA)) + 1;
@@ -50,7 +50,7 @@ export function Cronograma({ acuerdos, hoy, onAbrir }: { acuerdos: Acuerdo[]; ho
         <ul>
           {filas.map((a) => {
             const v = estadoVisible(a, hoy);
-            const desde = Math.max(ms(a.creadoDia), inicio);
+            const desde = Math.max(ms(a.fechaInicio ?? a.creadoDia), inicio);
             const x1 = pos(desde), x2 = pos(ms(a.fechaLimite) + DIA);
             return (
               <li key={a.id} className="grid grid-cols-[220px_1fr] items-center border-b border-gray-50 hover:bg-gray-50/70 cursor-pointer" onClick={() => onAbrir(a.id)}>

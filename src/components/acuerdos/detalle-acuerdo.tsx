@@ -23,7 +23,7 @@ const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> 
 const cuando = (ts: string) => new Date(ts).toLocaleString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const VERBO: Record<string, string> = {
   estado: "", devuelto: "lo devolvió", fecha: "cambió la fecha", responsable: "cambió el responsable",
-  confirmado: "confirmó el cumplido", prioridad: "cambió la prioridad", anulado: "lo anuló", editado: "lo editó",
+  confirmado: "confirmó el cumplido", prioridad: "cambió la prioridad", plazo: "cambió el plazo", anulado: "lo anuló", editado: "lo editó",
 };
 
 const CAMPO = "w-full rounded-lg border border-transparent hover:border-gray-200 focus:border-gray-300 px-2 py-1.5 text-sm bg-transparent disabled:hover:border-transparent";
