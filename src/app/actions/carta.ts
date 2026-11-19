@@ -84,7 +84,8 @@ export async function getCarta(): Promise<{ ok: true; productos: ProductoCarta[]
           byte: (byte.get(c.ref) ?? []).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
         };
       })
-      .sort((a, b) => (a.seccion ?? "~").localeCompare(b.seccion ?? "~", "es") || a.nombre.localeCompare(b.nombre, "es"));
+      // Lo que está fuera de la carta (exhibidor) va al final.
+      .sort((a, b) => Number(!a.seccion) - Number(!b.seccion) || (a.seccion ?? "").localeCompare(b.seccion ?? "", "es") || a.nombre.localeCompare(b.nombre, "es"));
     const secciones = [...new Set(costos.map((c) => c.seccion).filter((s): s is string => !!s))].sort((a, b) => a.localeCompare(b, "es"));
     return { ok: true, productos, secciones };
   } catch (e) {
