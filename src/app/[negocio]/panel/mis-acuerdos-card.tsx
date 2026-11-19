@@ -5,19 +5,29 @@
  * importante de la semana; aquí está todo lo demás que le asignaron al administrador. Plegada por defecto,
  * con el resumen visible. Lo urgente (vencido, vence hoy o mañana, nuevo) va en una franja siempre
  * visible encima. Sin acuerdos asignados, no se muestra.
+ *
+ * Las mismas vistas que Grupo → Acuerdos y tareas (Jahnn, 19-nov-2026: «todos tienen las mismas vistas, según
+ * sus accesos»): Mis tareas, Tablero, Cronograma y Lista. El administrador ve SOLO lo suyo y no crea tareas
+ * (la dirección asigna); cambia el estado, comenta y ve el detalle.
  */
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { getMisAcuerdos, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
 import { conAlerta, conteos, ordenAcuerdos } from "@/lib/acuerdos";
-import { FilaAcuerdo } from "@/components/acuerdos/fila-acuerdo";
 import { DetalleAcuerdo } from "@/components/acuerdos/detalle-acuerdo";
 import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
-import { Pastilla, SeccionDesplegable } from "@/components/productos/ui";
+import { MisTareasPorUrgencia } from "@/components/acuerdos/mis-tareas";
+import { Pastilla, SeccionDesplegable, Segmentado } from "@/components/productos/ui";
+import { Kanban } from "@/app/grupo/acuerdos/kanban";
+import { Cronograma } from "@/app/grupo/acuerdos/cronograma";
+import { Agrupado } from "@/app/grupo/acuerdos/tablero";
+
+type Vista = "mios" | "tablero" | "cronograma" | "lista";
 
 export function MisAcuerdosCard() {
   const [d, setD] = useState<{ hoy: string; yo: YoSesion; acuerdos: Acuerdo[] } | null>(null);
   const [abierto, setAbierto] = useState<number | null>(null);
+  const [vista, setVista] = useState<Vista>("mios");
 
   const cargar = useCallback(async () => {
     const r = await getMisAcuerdos();
@@ -29,12 +39,14 @@ export function MisAcuerdosCard() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [cargar]);
 
+  const abiertas = useMemo(() => (d ? ordenAcuerdos(d.acuerdos.filter((a) => a.estado === "pendiente" || a.estado === "en_proceso"), d.hoy) : []), [d]);
+
   if (!d || d.acuerdos.length === 0) return null;
   const c = conteos(d.acuerdos, d.hoy);
-  const lista = ordenAcuerdos(d.acuerdos, d.hoy);
   // Lo urgente se ve siempre, sin abrir nada (Jahnn, 19-nov-2026: los avisos en cada panel, no por correo).
   const alertas = conAlerta(d.acuerdos, d.hoy);
   const enDetalle = abierto !== null ? d.acuerdos.find((a) => a.id === abierto) ?? null : null;
+  const recargar = () => void cargar();
 
   return (
     <>
@@ -50,14 +62,28 @@ export function MisAcuerdosCard() {
         </div>
       }
     >
-      <p className="text-xs text-gray-500 mb-1">Cambia el estado con el botón de color: No iniciado, En progreso o Hecho. Toca la tarea para ver el detalle o comentar.</p>
-      <ul>
-        {lista.map((a) => (
-          <FilaAcuerdo key={a.id} a={a} yo={d.yo} hoy={d.hoy} comoResponsable mostrarResponsable={false} onAbrir={() => setAbierto(a.id)} onCambio={() => void cargar()} />
-        ))}
-      </ul>
+      <div className="space-y-3">
+        <Segmentado valor={vista} onChange={setVista} tamano="sm" opciones={[
+          { valor: "mios", etiqueta: `Mis tareas${abiertas.length ? ` (${abiertas.length})` : ""}` },
+          { valor: "tablero", etiqueta: "Tablero" },
+          { valor: "cronograma", etiqueta: "Cronograma" },
+          { valor: "lista", etiqueta: "Lista" },
+        ]} />
+        <p className="text-xs text-gray-500">
+          {vista === "tablero" ? "Arrastra la tarjeta a otra columna para cambiar su estado. Toca la tarjeta para ver el detalle o comentar."
+            : vista === "cronograma" ? "Cada barra va desde el inicio del plazo hasta la fecha límite. La línea marca hoy."
+              : "Cambia el estado con el botón de color: No iniciado, En progreso o Hecho. Toca la tarea para ver el detalle o comentar."}
+        </p>
+
+        {vista === "mios" && <MisTareasPorUrgencia items={abiertas} yo={d.yo} hoy={d.hoy} comoResponsable onAbrir={setAbierto} onCambio={recargar} />}
+        {vista === "tablero" && <Kanban acuerdos={d.acuerdos} yo={d.yo} hoy={d.hoy} comoResponsable onAbrir={setAbierto} onCambio={recargar} />}
+        {vista === "cronograma" && <Cronograma acuerdos={d.acuerdos} hoy={d.hoy} onAbrir={setAbierto} />}
+        {vista === "lista" && (
+          <Agrupado items={ordenAcuerdos(d.acuerdos, d.hoy)} por="estado" hoy={d.hoy} yo={d.yo} comoResponsable onAbrir={setAbierto} onCambio={recargar} />
+        )}
+      </div>
     </SeccionDesplegable>
-    {enDetalle && <DetalleAcuerdo key={enDetalle.id} a={enDetalle} yo={d.yo} hoy={d.hoy} comoResponsable onCambio={() => void cargar()} onCerrar={() => setAbierto(null)} />}
+    {enDetalle && <DetalleAcuerdo key={enDetalle.id} a={enDetalle} yo={d.yo} hoy={d.hoy} comoResponsable onCambio={recargar} onCerrar={() => setAbierto(null)} />}
     </>
   );
 }

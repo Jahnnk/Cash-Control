@@ -11,7 +11,7 @@
 import { useState } from "react";
 import { MessageSquare } from "lucide-react";
 import type { Acuerdo, YoSesion } from "@/app/actions/acuerdos";
-import { useCambiarEstado } from "@/components/acuerdos/fila-acuerdo";
+import { useCambiarEstado, yoPara } from "@/components/acuerdos/fila-acuerdo";
 import { ESTADO_LABEL, estadoVisible, puede, type EstadoGuardado } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
 import { Avatar, AreaTag, COLOR_ESTADO, FechaChip, PrioridadIcono } from "@/components/acuerdos/ui";
@@ -22,10 +22,12 @@ const COLUMNAS: { estado: "pendiente" | "en_proceso" | "cumplido" }[] = [
 /** Cumplidos que se ven en el tablero: los de las últimas dos semanas (lo demás está en Lista). */
 const DIAS_CUMPLIDOS = 14;
 
-export function Kanban({ acuerdos, yo, hoy, onAbrir, onCambio }: {
+export function Kanban({ acuerdos, yo, hoy, comoResponsable = false, onAbrir, onCambio }: {
   acuerdos: Acuerdo[];
   yo: YoSesion;
   hoy: string;
+  /** Panel de Sede con la contraseña de la sede: cuenta como el responsable de cada tarea (ver yoPara). */
+  comoResponsable?: boolean;
   onAbrir: (id: number) => void;
   onCambio: () => void;
 }) {
@@ -38,7 +40,7 @@ export function Kanban({ acuerdos, yo, hoy, onAbrir, onCambio }: {
 
   async function mover(a: Acuerdo, destino: "pendiente" | "en_proceso" | "cumplido") {
     if (a.estado === destino) return;
-    if (!puede(yo, a, "avanzar")) { showToast("Solo el responsable o la dirección pueden moverlo.", "error"); return; }
+    if (!puede(yoPara(yo, a, comoResponsable), a, "avanzar")) { showToast("Solo el responsable o la dirección pueden moverlo.", "error"); return; }
     await cambiar(a, destino);
   }
 
