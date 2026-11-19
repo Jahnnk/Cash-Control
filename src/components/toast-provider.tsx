@@ -11,12 +11,14 @@ import { AlertCircle, CheckCircle2 } from "lucide-react";
  * Uso: const { showToast } = useToast();
  *      showToast("Guardado correctamente");            // éxito
  *      showToast("No se pudo guardar", "error");       // error
+ *      showToast("Hecho", "success", { label: "Deshacer", onClick }); // con botón (dura más)
  */
 
 type Tone = "success" | "error";
-type ToastState = { msg: string; tone: Tone } | null;
+type Accion = { label: string; onClick: () => void };
+type ToastState = { msg: string; tone: Tone; accion?: Accion } | null;
 
-const ToastContext = createContext<{ showToast: (msg: string, tone?: Tone) => void } | null>(null);
+const ToastContext = createContext<{ showToast: (msg: string, tone?: Tone, accion?: Accion) => void } | null>(null);
 
 export function useToast() {
   const ctx = useContext(ToastContext);
@@ -30,12 +32,13 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
   // Auto-cierre: errores duran más (hay que poder leerlos)
   useEffect(() => {
     if (!toast) return;
-    const t = setTimeout(() => setToast(null), toast.tone === "error" ? 5000 : 2500);
+    // Con botón (p. ej. «Deshacer») dura más: hay que alcanzar a tocarlo.
+    const t = setTimeout(() => setToast(null), toast.accion ? 7000 : toast.tone === "error" ? 5000 : 2500);
     return () => clearTimeout(t);
   }, [toast]);
 
-  const showToast = useCallback((msg: string, tone: Tone = "success") => {
-    setToast({ msg, tone });
+  const showToast = useCallback((msg: string, tone: Tone = "success", accion?: Accion) => {
+    setToast({ msg, tone, accion });
   }, []);
 
   return (
@@ -55,6 +58,12 @@ export function ToastProvider({ children }: { children: React.ReactNode }) {
             <CheckCircle2 className="w-4 h-4 shrink-0" />
           )}
           {toast.msg}
+          {toast.accion && (
+            <button type="button" className="ml-2 rounded-md bg-white/20 px-2.5 py-1 font-semibold hover:bg-white/30"
+              onClick={(e) => { e.stopPropagation(); const f = toast.accion!.onClick; setToast(null); f(); }}>
+              {toast.accion.label}
+            </button>
+          )}
         </div>
       )}
     </ToastContext.Provider>

@@ -10,7 +10,8 @@
 
 import { useState } from "react";
 import { MessageSquare } from "lucide-react";
-import { avanzarAcuerdo, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
+import type { Acuerdo, YoSesion } from "@/app/actions/acuerdos";
+import { useCambiarEstado } from "@/components/acuerdos/fila-acuerdo";
 import { ESTADO_LABEL, estadoVisible, puede, type EstadoGuardado } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
 import { Avatar, AreaTag, COLOR_ESTADO, FechaChip, PrioridadIcono } from "@/components/acuerdos/ui";
@@ -29,6 +30,7 @@ export function Kanban({ acuerdos, yo, hoy, onAbrir, onCambio }: {
   onCambio: () => void;
 }) {
   const { showToast } = useToast();
+  const { cambiar } = useCambiarEstado(onCambio);
   const [arrastrando, setArrastrando] = useState<number | null>(null);
   const [sobre, setSobre] = useState<EstadoGuardado | null>(null);
   const limite = new Date(Date.parse(`${hoy}T12:00:00Z`) - DIAS_CUMPLIDOS * 86_400_000).toISOString().slice(0, 10);
@@ -37,9 +39,7 @@ export function Kanban({ acuerdos, yo, hoy, onAbrir, onCambio }: {
   async function mover(a: Acuerdo, destino: "pendiente" | "en_proceso" | "cumplido") {
     if (a.estado === destino) return;
     if (!puede(yo, a, "avanzar")) { showToast("Solo el responsable o la dirección pueden moverlo.", "error"); return; }
-    const r = await avanzarAcuerdo(a.id, destino);
-    if (!r.ok) { showToast(r.error ?? "No se pudo mover.", "error"); return; }
-    onCambio();
+    await cambiar(a, destino);
   }
 
   return (

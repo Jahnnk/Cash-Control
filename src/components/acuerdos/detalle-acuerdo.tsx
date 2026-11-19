@@ -9,13 +9,13 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import {
-  anularAcuerdo, avanzarAcuerdo, comentarAcuerdo, editarAcuerdo, getHistorialAcuerdo,
+  anularAcuerdo, comentarAcuerdo, editarAcuerdo, getHistorialAcuerdo,
   type Acuerdo, type Evento, type YoSesion,
 } from "@/app/actions/acuerdos";
 import { AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { Pastilla } from "@/components/productos/ui";
 import { Avatar, EstadoCelda, PrioridadIcono, diaCorto } from "./ui";
-import { yoPara } from "./fila-acuerdo";
+import { useCambiarEstado, yoPara } from "./fila-acuerdo";
 
 const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> = {
   pendiente: "gris", en_proceso: "ambar", cumplido: "verde", vencido: "rojo", anulado: "gris",
@@ -68,6 +68,9 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
     return () => window.removeEventListener("keydown", esc);
   }, [onCerrar]);
 
+  // Cambiar el estado avisa con «Deshacer» (mismo aviso que en las filas).
+  const estado = useCambiarEstado(() => { onCambio(); void cargarHistorial(); });
+
   async function correr(f: () => Promise<{ ok: boolean; error?: string }>) {
     setOcupado(true);
     setError(null);
@@ -92,7 +95,7 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
         <div className="flex flex-wrap items-center gap-2 px-5 py-3 border-b border-gray-100">
           {/* El estado se cambia aquí mismo, como en Monday: No iniciado, En progreso o Hecho. */}
           <span className="w-[120px] h-8 rounded-md overflow-hidden">
-            <EstadoCelda estado={a.estado} puede={puede(y, a, "avanzar")} ocupado={ocupado} onCambiar={(n) => void correr(() => avanzarAcuerdo(a.id, n))} />
+            <EstadoCelda estado={a.estado} puede={puede(y, a, "avanzar")} ocupado={ocupado || estado.ocupado === a.id} onCambiar={(n) => void estado.cambiar(a, n)} />
           </span>
           {v === "vencido" && <Pastilla tono={TONO[v]}>{ESTADO_LABEL[v]}</Pastilla>}
           {ocupado && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
