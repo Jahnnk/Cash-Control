@@ -6,10 +6,11 @@
  *   · Columnas: Tarea · Estado · Responsable · Fecha límite · Plazo · Prioridad · Área. El Estado va segundo
  *     para que en el celular se vea junto a la tarea sin deslizar.
  *   · El Estado es un bloque de color que se cambia de un toque (No iniciado, En progreso, Hecho).
- *   · El Plazo es una barra de «desde que se asignó» hasta la fecha límite, rellena hasta hoy.
+ *   · El Plazo es una barra Desde → Hasta (fecha límite), rellena hasta hoy. «Desde» lo elige quien edita
+ *     (p. ej. del 19 al 21); si no se eligió, es el día en que se creó la tarea.
  *   · Al pie de cada grupo, la barra de estados (cuánto hay de cada color) y el plazo total del grupo.
- * Celdas que se editan ahí mismo (Jahnn, 19-nov-2026): Responsable abre la lista del equipo, Fecha límite y Plazo
- * abren el calendario (y piden el motivo, regla de siempre), Prioridad y Área abren su lista. Solo para quien puede
+ * Celdas que se editan ahí mismo (Jahnn, 19-nov-2026): Responsable abre la lista del equipo, Fecha límite abre el
+ * calendario, Plazo abre Desde / Hasta (mover la fecha límite pide el motivo, regla de siempre), Prioridad y Área abren su lista. Solo para quien puede
  * editar (dirección o quien la creó); a los demás el toque les abre el detalle. La Tarea siempre abre el detalle.
  * En el celular la tabla se desliza de lado, como en Monday.
  */
@@ -52,28 +53,55 @@ function Plazo({ desde, hasta, hoy, color, lleno }: { desde: string; hasta: stri
   );
 }
 
-/** Mover la fecha pide el motivo (queda en la actividad), igual que en el detalle. */
-function MoverFecha({ a, fecha, onGuardar, onCancelar }: { a: Acuerdo; fecha: string; onGuardar: (motivo: string) => Promise<boolean>; onCancelar: () => void }) {
+/**
+ * Cambiar fechas: Desde / Hasta (Plazo) o solo la fecha límite. Hasta = fecha límite: si cambia, pide el motivo
+ * (queda en la actividad), igual que en el detalle. Cambiar solo el Desde no pide motivo.
+ */
+function CambiarFechas({ a, hoy, desdeInicial, hastaInicial, conDesde, onGuardar, onCancelar }: {
+  a: Acuerdo; hoy: string; desdeInicial: string; hastaInicial: string; conDesde: boolean;
+  onGuardar: (c: { fechaInicio?: string; fechaLimite: string; motivoFecha?: string }) => Promise<boolean>; onCancelar: () => void;
+}) {
+  const [desde, setDesde] = useState(desdeInicial);
+  const [hasta, setHasta] = useState(hastaInicial);
   const [motivo, setMotivo] = useState("");
   const [ocupado, setOcupado] = useState(false);
+  const mueveLimite = hasta !== a.fechaLimite;
+  const dias = desde && hasta ? Math.round((ms(hasta) - ms(desde)) / 86_400_000) + 1 : 0;
+  const error = !hasta ? "Elige la fecha límite." : conDesde && !desde ? "Elige desde cuándo." : conDesde && desde > hasta ? "«Desde» no puede ser después de «Hasta»." : null;
+  const listo = !error && (!mueveLimite || motivo.trim()) && (mueveLimite || (conDesde && desde !== desdeInicial));
   async function guardar() {
-    if (!motivo.trim()) return;
+    if (!listo) return;
     setOcupado(true);
-    const ok = await onGuardar(motivo);
+    const ok = await onGuardar({ ...(conDesde ? { fechaInicio: desde } : {}), fechaLimite: hasta, ...(mueveLimite ? { motivoFecha: motivo } : {}) });
     setOcupado(false);
     if (ok) onCancelar();
   }
+  const CAMPO = "w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm";
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-label="Cambiar fecha límite">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-label={conDesde ? "Cambiar plazo" : "Cambiar fecha límite"}
+      onKeyDown={(e) => { if (e.key === "Escape") onCancelar(); if (e.key === "Enter") void guardar(); }}>
       <div className="absolute inset-0 bg-black/20" onClick={onCancelar} />
       <div className="relative w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl space-y-3">
-        <p className="text-sm text-gray-900"><span className="font-semibold">{a.que}</span></p>
-        <p className="text-sm text-gray-600">Fecha límite: {diaCorto(a.fechaLimite)} → <span className="font-semibold text-gray-900">{diaCorto(fecha)}</span></p>
-        <input autoFocus value={motivo} maxLength={MAX_MOTIVO} onChange={(e) => setMotivo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void guardar(); if (e.key === "Escape") onCancelar(); }}
-          placeholder="¿Por qué cambia la fecha?" className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm" />
+        <p className="text-sm font-semibold text-gray-900">{a.que}</p>
+        <div className={`grid gap-2 ${conDesde ? "grid-cols-2" : ""}`}>
+          {conDesde && (
+            <label className="text-xs text-gray-500 space-y-1">Desde
+              <input type="date" value={desde} max={hasta || undefined} onChange={(e) => setDesde(e.target.value)} className={CAMPO} />
+            </label>
+          )}
+          <label className="text-xs text-gray-500 space-y-1">{conDesde ? "Hasta (fecha límite)" : "Fecha límite"}
+            <input type="date" value={hasta} min={mueveLimite ? hoy : undefined} onChange={(e) => setHasta(e.target.value)} className={CAMPO} />
+          </label>
+        </div>
+        {conDesde && !error && <p className="text-xs text-gray-600">{dias} {dias === 1 ? "día" : "días"}: {rango(desde, hasta)}</p>}
+        {error && <p className="text-xs text-red-700">{error}</p>}
+        {mueveLimite && (
+          <input autoFocus value={motivo} maxLength={MAX_MOTIVO} onChange={(e) => setMotivo(e.target.value)}
+            placeholder={`¿Por qué cambia la fecha límite? (${diaCorto(a.fechaLimite)} → ${hasta ? diaCorto(hasta) : "…"})`} className={CAMPO} />
+        )}
         <div className="flex justify-end gap-2">
           <button type="button" onClick={onCancelar} className="px-3 py-1.5 text-xs font-medium text-gray-600">Cancelar</button>
-          <button type="button" onClick={() => void guardar()} disabled={ocupado || !motivo.trim()}
+          <button type="button" onClick={() => void guardar()} disabled={ocupado || !listo}
             className="px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-primary hover:bg-primary-light disabled:opacity-50">{ocupado ? "Guardando…" : "Guardar"}</button>
         </div>
       </div>
@@ -96,24 +124,25 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, o
   const [abierto, setAbierto] = useState(true);
   const { cambiar, ocupado } = useCambiarEstado(onCambio);
   const { showToast } = useToast();
-  const [mover, setMover] = useState<{ a: Acuerdo; fecha: string } | null>(null);
+  const [fechas, setFechas] = useState<{ a: Acuerdo; hasta: string; conDesde: boolean } | null>(null);
+  const inicio = (a: Acuerdo) => a.fechaInicio ?? a.creadoDia;
 
-  async function editar(a: Acuerdo, cambio: Partial<{ responsable: string; fechaLimite: string; motivoFecha: string; prioridad: string; area: string }>) {
+  async function editar(a: Acuerdo, cambio: Partial<{ responsable: string; fechaLimite: string; motivoFecha: string; prioridad: string; area: string; fechaInicio: string }>) {
     const r = await editarAcuerdo(a.id, { que: a.que, detalle: a.detalle ?? "", area: a.area, responsable: a.responsableClave, fechaLimite: a.fechaLimite, prioridad: a.prioridad, ...cambio });
     if (!r.ok) { showToast(r.error, "error"); return false; }
     showToast("Guardado", "success");
     onCambio();
     return true;
   }
-  /** El calendario: se abre al tocar (Fecha límite o Plazo). */
+  /** El calendario de la fecha límite: se abre al tocar. */
   const calendario = (a: Acuerdo) => (
     <input type="date" aria-label="Cambiar fecha límite" value={a.fechaLimite} min={hoy} className={ENCIMA}
       onClick={(e) => { e.stopPropagation(); try { e.currentTarget.showPicker(); } catch { /* el navegador lo abre solo */ } }}
       onKeyDown={sinAbrir.onKeyDown}
-      onChange={(e) => { if (e.target.value && e.target.value !== a.fechaLimite) setMover({ a, fecha: e.target.value }); }} />
+      onChange={(e) => { if (e.target.value && e.target.value !== a.fechaLimite) setFechas({ a, hasta: e.target.value, conDesde: false }); }} />
   );
   const vencidos = items.filter((a) => estadoVisible(a, hoy) === "vencido").length;
-  const desde = items.reduce((m, a) => (a.creadoDia < m ? a.creadoDia : m), items[0].creadoDia);
+  const desde = items.reduce((m, a) => (inicio(a) < m ? inicio(a) : m), inicio(items[0]));
   const hasta = items.reduce((m, a) => (a.fechaLimite > m ? a.fechaLimite : m), items[0].fechaLimite);
   const porEstado = (["cumplido", "en_proceso", "pendiente", "anulado"] as const).map((e) => ({ e, n: items.filter((a) => a.estado === e).length })).filter((x) => x.n);
 
@@ -164,9 +193,10 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, o
                       {ed && calendario(a)}
                     </span>
                     <span className={`${CELDA} ${ed ? EDITABLE : ""}`}>
-                      <Plazo desde={a.creadoDia} hasta={a.fechaLimite} hoy={hoy} lleno={cerrado}
+                      <Plazo desde={inicio(a)} hasta={a.fechaLimite} hoy={hoy} lleno={cerrado}
                         color={v === "vencido" ? ROJO : a.estado === "cumplido" ? COLOR_ESTADO.cumplido : color} />
-                      {ed && calendario(a)}
+                      {ed && <button type="button" aria-label="Cambiar plazo" className={ENCIMA}
+                        onClick={(e) => { e.stopPropagation(); setFechas({ a, hasta: a.fechaLimite, conDesde: true }); }} onKeyDown={sinAbrir.onKeyDown} />}
                     </span>
                     <span className={`${CELDA} justify-center ${ed ? EDITABLE : ""}`}>
                       <PrioridadIcono p={a.prioridad} conTexto />
@@ -204,8 +234,8 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, o
           </div>
         </div>
       )}
-      {mover && <MoverFecha a={mover.a} fecha={mover.fecha} onCancelar={() => setMover(null)}
-        onGuardar={(motivo) => editar(mover.a, { fechaLimite: mover.fecha, motivoFecha: motivo })} />}
+      {fechas && <CambiarFechas a={fechas.a} hoy={hoy} desdeInicial={inicio(fechas.a)} hastaInicial={fechas.hasta} conDesde={fechas.conDesde}
+        onCancelar={() => setFechas(null)} onGuardar={(c) => editar(fechas.a, c)} />}
     </div>
   );
 }
