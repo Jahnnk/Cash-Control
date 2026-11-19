@@ -357,3 +357,42 @@ export function resumenSemanal(lista: AcuerdoResumen[], reuniones: ReunionResume
     recomendaciones: rec.slice(0, 3),
   };
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Carga del equipo y avance por estado (referencia: informes de Jira, 19-nov-2026)
+
+export type CargaPersona = { clave: string; nombre: string; abiertos: number; vencidos: number; pct: number };
+
+/** Cuánto del trabajo abierto (pendiente o en proceso) tiene cada persona. El que más carga, primero. */
+export function cargaEquipo(lista: (AcuerdoBase & { responsableClave: string; responsableNombre: string })[], hoy: string): CargaPersona[] {
+  const abiertos = lista.filter((a) => estaAbierto(a.estado));
+  const m = new Map<string, CargaPersona>();
+  for (const a of abiertos) {
+    const p = m.get(a.responsableClave) ?? { clave: a.responsableClave, nombre: a.responsableNombre, abiertos: 0, vencidos: 0, pct: 0 };
+    p.abiertos++;
+    if (a.fechaLimite < hoy) p.vencidos++;
+    m.set(a.responsableClave, p);
+  }
+  const total = abiertos.length;
+  return [...m.values()].map((p) => ({ ...p, pct: Math.round((p.abiertos / total) * 100) }))
+    .sort((a, b) => b.abiertos - a.abiertos || b.vencidos - a.vencidos || a.nombre.localeCompare(b.nombre, "es"));
+}
+
+export const ESTADOS_AVANCE = ["cumplido", "por_confirmar", "en_proceso", "vencido", "pendiente"] as const;
+export type Avance = { conteo: Record<(typeof ESTADOS_AVANCE)[number], number>; total: number; pctCumplido: number | null };
+
+/**
+ * Avance por estado: todo lo abierto más lo que vencía en los últimos `dias` días. El centro de la dona es el
+ * % cumplido (confirmado). Sin nada, null (no 0%).
+ */
+export function avancePorEstado(lista: AcuerdoBase[], hoy: string, dias = 30): Avance {
+  const desde = new Date(Date.parse(`${hoy}T12:00:00Z`) - dias * 86_400_000).toISOString().slice(0, 10);
+  const conteo = { cumplido: 0, por_confirmar: 0, en_proceso: 0, vencido: 0, pendiente: 0 };
+  for (const a of lista) {
+    if (a.estado === "anulado") continue;
+    if (!estaAbierto(a.estado) && a.estado !== "por_confirmar" && a.fechaLimite < desde) continue;
+    conteo[estadoVisible(a, hoy) as keyof typeof conteo]++;
+  }
+  const total = Object.values(conteo).reduce((t, n) => t + n, 0);
+  return { conteo, total, pctCumplido: total ? Math.round((conteo.cumplido / total) * 100) : null };
+}

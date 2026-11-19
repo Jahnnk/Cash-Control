@@ -21,8 +21,10 @@ import { Avatar, AreaTag, diaCorto } from "@/components/acuerdos/ui";
 import { Kanban } from "./kanban";
 import { PanelEjecutivo } from "./panel-ejecutivo";
 import { FormReunion } from "./form-reunion";
+import { Cronograma } from "./cronograma";
+import { TablaAcuerdos } from "./tabla-acuerdos";
 
-type Vista = "mios" | "tablero" | "lista" | "reuniones" | "panel";
+type Vista = "mios" | "tablero" | "cronograma" | "lista" | "reuniones" | "panel";
 type Datos = { hoy: string; yo: YoSesion; personas: Persona[]; acuerdos: Acuerdo[]; reuniones: Reunion[] };
 type FiltroEstado = "abiertos" | "vencido" | "por_confirmar" | "cerrados" | "todos";
 
@@ -33,7 +35,7 @@ function deUrl(): { vista: Vista; estado: FiltroEstado; panel: "semana" | "mes" 
   if (v === "todos" || v === "lista") return { vista: "lista", estado: "abiertos", panel: "semana" };
   if (v === "indicadores") return { vista: "panel", estado: "abiertos", panel: "mes" };
   if (v === "resumen" || v === "panel") return { vista: "panel", estado: "abiertos", panel: "semana" };
-  if (v === "tablero" || v === "reuniones") return { vista: v, estado: "abiertos", panel: "semana" };
+  if (v === "tablero" || v === "cronograma" || v === "reuniones") return { vista: v, estado: "abiertos", panel: "semana" };
   return { vista: "mios", estado: "abiertos", panel: "semana" };
 }
 
@@ -167,6 +169,7 @@ export function TableroAcuerdos() {
       <Segmentado valor={vista} onChange={setVista} opciones={[
         { valor: "mios", etiqueta: `Mis tareas${mios.length ? ` (${mios.length})` : ""}` },
         { valor: "tablero", etiqueta: "Tablero" },
+        { valor: "cronograma", etiqueta: "Cronograma" },
         { valor: "lista", etiqueta: "Lista" },
         { valor: "reuniones", etiqueta: "Reuniones" },
         { valor: "panel", etiqueta: "Panel ejecutivo" },
@@ -208,6 +211,13 @@ export function TableroAcuerdos() {
         </div>
       )}
 
+      {vista === "cronograma" && (
+        <div className="space-y-3">
+          {filtros}
+          <Cronograma acuerdos={filtrar(d.acuerdos)} hoy={d.hoy} onAbrir={setAbierto} />
+        </div>
+      )}
+
       {vista === "lista" && (
         <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5 space-y-3">
           {filtros}
@@ -225,7 +235,7 @@ export function TableroAcuerdos() {
             ]} />
           </div>
           {filtrados.length === 0 ? <p className="text-sm text-gray-500 py-2">No hay acuerdos con ese filtro.</p> : (
-            <Agrupado items={filtrados} por={agrupar} hoy={d.hoy} render={(l) => filas(l, agrupar !== "responsable")} />
+            <Agrupado items={filtrados} por={agrupar} hoy={d.hoy} render={(l) => <TablaAcuerdos items={l} yo={d.yo} hoy={d.hoy} onAbrir={setAbierto} onCambio={recargar} />} />
           )}
         </section>
       )}

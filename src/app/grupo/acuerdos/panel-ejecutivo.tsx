@@ -10,11 +10,14 @@ import type { Acuerdo, Reunion } from "@/app/actions/acuerdos";
 import { Segmentado } from "@/components/productos/ui";
 import { IndicadoresAcuerdos } from "./indicadores";
 import { ResumenSemanalVista } from "./resumen-semanal";
+import { InformesEquipo } from "./informes-equipo";
 
 export function PanelEjecutivo({ acuerdos, reuniones, hoy, inicial = "semana" }: { acuerdos: Acuerdo[]; reuniones: Reunion[]; hoy: string; inicial?: "semana" | "mes" }) {
   const [vista, setVista] = useState<"semana" | "mes">(inicial);
   return (
     <div className="space-y-4">
+      {/* Cómo está el equipo HOY (referencia Jira): carga por persona y avance por estado. */}
+      <InformesEquipo acuerdos={acuerdos} hoy={hoy} />
       <Segmentado tamano="sm" valor={vista} onChange={setVista} opciones={[
         { valor: "semana", etiqueta: "Semana de la reunión" },
         { valor: "mes", etiqueta: "Indicadores por mes" },
