@@ -1,5 +1,6 @@
 import { RecetasClient } from "./recetas-client";
 import { PreciosInsumos } from "./precios-insumos";
+import { CartaCafeterias } from "./carta-cafeterias";
 
 /**
  * Grupo → Recetas y costos (solo dirección: el middleware bloquea /grupo a
@@ -13,10 +14,11 @@ export default function RecetasPage() {
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Recetas y costos</h1>
         <p className="text-sm text-gray-500 mt-1">
-          El costo en insumos de cada producto, preparación e insumo de Atelier. Es lo que usa el detalle de mermas.
+          Los precios de insumos, la carta de las cafeterías y las recetas de Atelier. Lo que cambias aquí vale sin volver a subir el Excel.
         </p>
       </div>
       <PreciosInsumos />
+      <CartaCafeterias />
       <RecetasClient />
     </div>
   );
