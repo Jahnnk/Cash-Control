@@ -38,11 +38,15 @@ function fechaLarga(iso: string): string {
 
 export function DiasNoOperativosCard({
   onCambio,
+  comoAdmin = false,
 }: {
   /** Para que el panel recalcule el ticket sin recargar la página. */
   onCambio?: () => void;
+  /** «Ver como administrador»: la dirección lo ve sin el formulario, como el admin. */
+  comoAdmin?: boolean;
 }) {
-  const [data, setData] = useState<DiasPausadosSede | null>(null);
+  const [leido, setData] = useState<DiasPausadosSede | null>(null);
+  const data = leido && comoAdmin ? { ...leido, puedeMarcar: false } : leido;
   const [fecha, setFecha] = useState(getToday());
   const [motivo, setMotivo] = useState("");
   const [guardando, setGuardando] = useState(false);

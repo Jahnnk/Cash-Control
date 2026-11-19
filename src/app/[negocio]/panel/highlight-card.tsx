@@ -381,7 +381,8 @@ export function HighlightCard({
  * `activeBusinessId()` dentro del action), así el mismo componente sirve
  * igual en Atelier, Fonavi y Centro.
  */
-export function HighlightSlot() {
+/** `comoAdmin`: la dirección lo ve como el administrador (sin subir ni borrar archivos). */
+export function HighlightSlot({ comoAdmin = false }: { comoAdmin?: boolean }) {
   const [data, setData] = useState<HighlightSede | null>(null);
 
   const cargar = useCallback(async () => {
@@ -403,7 +404,7 @@ export function HighlightSlot() {
   if (!data) {
     return <div className="rounded-2xl border border-gray-200 bg-white h-48 animate-pulse" />;
   }
-  return <HighlightCard data={data} onRecargar={cargar} />;
+  return <HighlightCard data={comoAdmin ? { ...data, esDireccion: false } : data} onRecargar={cargar} />;
 }
 
 /**
