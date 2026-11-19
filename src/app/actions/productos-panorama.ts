@@ -32,7 +32,8 @@ import type { MesCostos } from "@/lib/productos/cuando-subir";
 import { historialDePrecios, type FotoPrecio, type HistorialPrecios } from "@/lib/productos/insumos-precios";
 import { cifrasDeSedeEnMes, hoyLima } from "@/lib/seis-cifras-sql";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
-import { leerCatalogo } from "@/lib/catalogo-costos-sql";
+import { leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
+import { ajustarDesglose } from "@/lib/productos/precios-vigentes";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
 import { CAFETERIAS, IDS_CAFETERIAS, NOMBRE_CAFETERIAS, juntarFilas, juntarRango } from "@/lib/productos/cafeterias";
 import { confiabilidadDelMes } from "@/lib/productos/confiabilidad-sql";
@@ -779,6 +780,17 @@ async function costosDeCarta(): Promise<{ costos: CostoCarta[]; vinculos: Map<st
     // El costo de insumos de lo que hace Atelier (recetas del sistema encima del Excel).
     leerCatalogo(sql, 1).then((c) => c.efectivo).catch(() => []),
   ]);
+  // Precios de insumos cambiados en el sistema (fase 1 de «la carta vive en el sistema», 18-nov-2026): lo que
+  // prepara la cafetería sube con sus precios; lo de Atelier ya sube por la lista de Atelier (leerCatalogo) y
+  // aquí solo se ajusta su desglose, para que el simulador parta de hoy.
+  const { factores } = await leerPreciosVigentes(sql);
+  for (const c of costos) {
+    if (!c.desglose || c.desglose.length === 0) continue;
+    const deAtelier = c.ref.startsWith("AT-");
+    const { desglose, delta } = ajustarDesglose(c.desglose, deAtelier ? "Atelier" : "Cafetería", factores);
+    c.desglose = desglose;
+    if (!deAtelier && delta !== 0) c.costo = Math.max(0, c.costo + delta);
+  }
   const insumosAtelier = new Map(catalogoAtelier.map((i) => [i.reemplaza ?? i.ref, i.costo]));
   for (const c of costos) c.costoInsumos = c.ref.startsWith("AT-") ? (insumosAtelier.get(c.ref) ?? null) : c.costo;
   return { costos, vinculos: new Map(vinculos.map((v) => [v.clave, v.ref])) };
