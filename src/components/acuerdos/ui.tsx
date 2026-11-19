@@ -9,15 +9,19 @@
 import { Check } from "lucide-react";
 import { AREA_LABEL, diasRestantes, estaAbierto, type Area, type EstadoGuardado, type Resumen } from "@/lib/acuerdos";
 
-const AVATAR = ["bg-emerald-600", "bg-sky-600", "bg-violet-600", "bg-amber-600", "bg-rose-600", "bg-teal-700", "bg-indigo-600", "bg-orange-600"];
-
-/** Iniciales con un color fijo por persona (la misma persona, el mismo color en todas las pantallas). */
-export function Avatar({ nombre, clave, tam = "sm" }: { nombre: string; clave: string; tam?: "sm" | "md" }) {
+/** Un color fijo por persona (el mismo en el avatar, la carga del equipo y el cronograma). */
+const PALETA = ["#059669", "#0284C7", "#7C3AED", "#D97706", "#E11D48", "#0F766E", "#4F46E5", "#EA580C"];
+export function colorPersona(clave: string): string {
   let h = 0;
   for (const ch of clave) h = (h * 31 + ch.charCodeAt(0)) >>> 0;
+  return PALETA[h % PALETA.length];
+}
+
+/** Iniciales con el color de la persona. */
+export function Avatar({ nombre, clave, tam = "sm" }: { nombre: string; clave: string; tam?: "sm" | "md" }) {
   const ini = nombre.split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("") || "?";
   const t = tam === "md" ? "w-8 h-8 text-xs" : "w-6 h-6 text-[10px]";
-  return <span title={nombre} className={`${t} ${AVATAR[h % AVATAR.length]} inline-flex items-center justify-center rounded-full font-semibold text-white shrink-0`}>{ini}</span>;
+  return <span title={nombre} style={{ backgroundColor: colorPersona(clave) }} className={`${t} inline-flex items-center justify-center rounded-full font-semibold text-white shrink-0`}>{ini}</span>;
 }
 
 const AREA_COLOR: Record<Area, string> = {

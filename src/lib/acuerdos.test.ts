@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
+import { avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -168,5 +168,24 @@ describe("resumen semanal", () => {
   });
   it("sin nada pendiente, lo dice", () => {
     expect(resumenSemanal([], [], hoyL, sem).recomendaciones[0]).toMatch(/^Sin acuerdos que vencieran/);
+  });
+});
+
+describe("carga del equipo y avance por estado", () => {
+  const x = (estado: "pendiente" | "en_proceso" | "por_confirmar" | "cumplido" | "anulado", fechaLimite: string, clave = "u:1", nombre = "Luis") =>
+    ({ estado, fechaLimite, responsableClave: clave, responsableNombre: nombre });
+  const l = [x("pendiente", "2026-11-10"), x("en_proceso", "2026-11-25"), x("pendiente", "2026-11-30", "u:2", "Ana"),
+    x("cumplido", "2026-11-12", "u:2", "Ana"), x("cumplido", "2026-09-01"), x("por_confirmar", "2026-11-18"), x("anulado", "2026-11-18")];
+  it("reparte lo abierto por persona", () => {
+    expect(cargaEquipo(l, HOY)).toEqual([
+      { clave: "u:1", nombre: "Luis", abiertos: 2, vencidos: 1, pct: 67 },
+      { clave: "u:2", nombre: "Ana", abiertos: 1, vencidos: 0, pct: 33 },
+    ]);
+  });
+  it("cuenta por estado y deja fuera lo cerrado viejo y lo anulado", () => {
+    const r = avancePorEstado(l, HOY);
+    expect(r.conteo).toEqual({ cumplido: 1, por_confirmar: 1, en_proceso: 1, vencido: 1, pendiente: 1 });
+    expect(r.pctCumplido).toBe(20);
+    expect(avancePorEstado([], HOY).pctCumplido).toBeNull();
   });
 });
