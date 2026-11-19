@@ -6,6 +6,7 @@ import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getAtelierPanel, saveAtelierDay, type AtelierPanelData, type AtelierDaily } from "@/app/actions/byte-ventas";
 import { useToast } from "@/components/toast-provider";
 import { HighlightSlot } from "./highlight-card";
+import { MisAcuerdosCard } from "./mis-acuerdos-card";
 import { ProponerHighlight } from "./proponer-highlight";
 import { TuSemana } from "./tu-semana";
 import { Proposito } from "@/components/proposito";
@@ -200,6 +201,7 @@ export function AtelierPanel() {
       {/* Lo más importante de la semana — va primero a propósito: si
           compitiera con los KPIs, dejaría de ser lo más importante. */}
       <HighlightSlot />
+      <MisAcuerdosCard />
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso va y qué sigue, estilo pedido de
           delivery. El registro del día y la rutina del sábado quedan como su detalle. */}

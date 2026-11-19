@@ -16,6 +16,9 @@ export const USER_SCOPES = [
   // Solo lectura (18-oct-2026): para herramientas externas como Muse (Meta) que entran a MIRAR el
   // Dashboard de Grupo y Reportes. No puede guardar, subir ni borrar nada. Se apaga con un clic.
   "lector",
+  // Acuerdos y tareas (19-nov-2026): coordinadora de marketing, socias. Ve todos los acuerdos, crea y
+  // asigna tareas; sin acceso financiero.
+  "equipo",
 ] as const;
 
 export type UserScope = (typeof USER_SCOPES)[number];
@@ -32,5 +35,6 @@ export const SCOPE_LABELS: Record<UserScope, string> = {
   "verif-fonavi": "Verificador de conteo · Fonavi",
   "verif-centro": "Verificador de conteo · Centro",
   highlight: "Highlight y supervisiones · 3 sedes (sin acceso financiero)",
+  equipo: "Acuerdos y tareas · ve, crea y asigna (sin acceso financiero)",
   lector: "Solo lectura · Dashboard de Grupo y Reportes (no puede cambiar nada)",
 };

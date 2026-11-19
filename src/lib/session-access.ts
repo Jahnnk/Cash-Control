@@ -57,8 +57,11 @@ export type SessionRole =
   // contraseñas por sede heredadas (ADMIN_PASSWORD_FONAVI) no saben
   // quién entró, así que queda undefined y quien lo use debe tener un
   // respaldo — no es un dato garantizado.
-  | { kind: "admin" | "verif"; sede: number; nombre?: string }
+  | { kind: "admin" | "verif"; sede: number; nombre?: string; userId?: number }
   | { kind: "highlight"; userId: number; nombre: string }
+  // Acuerdos y tareas (19-nov-2026): coordinadora de marketing, socias. Ve todos los acuerdos, crea y
+  // asigna; NO ve finanzas ni confirma cumplidos (eso es de la dirección y del rol highlight).
+  | { kind: "equipo"; userId: number; nombre: string }
   // Solo lectura (18-oct-2026): ve el Dashboard de Grupo y Reportes; NO pasa requireFullSession, así que
   // toda acción que guarda, sube o borra lo rechaza por defecto. Las lecturas lo admiten con requireLectura.
   | { kind: "lector"; userId: number; nombre: string }
@@ -89,12 +92,16 @@ async function resolveUserToken(token: string, now: number): Promise<SessionRole
     if (rows[0].scope === "lector") {
       return { kind: "lector", userId, nombre: rows[0].nombre };
     }
+    if (rows[0].scope === "equipo") {
+      return { kind: "equipo", userId, nombre: rows[0].nombre };
+    }
     const sede = SEDE_BY_SCOPE[rows[0].scope];
     if (sede === undefined) return null;
     return {
       kind: rows[0].scope.startsWith("admin-") ? "admin" : "verif",
       sede,
       nombre: rows[0].nombre,
+      userId,
     };
   } catch {
     return null; // BD caída o tabla sin migrar → fail-closed

@@ -16,10 +16,10 @@ describe("menú lateral", () => {
   it("Grupo agrupa por para qué se entra y no pierde ninguna pantalla", () => {
     expect(MENU.grupo.map((s) => s.titulo)).toEqual([null, "Dirección", "Equipo", "Datos"]);
     const g = segmentos("grupo");
-    for (const s of ["dashboard", "reportes", "direccion", "productos", "presupuesto", "highlight", "supervisiones", "incentivos", "recetas", "por-definir", "configuracion"]) {
+    for (const s of ["dashboard", "reportes", "direccion", "productos", "presupuesto", "acuerdos", "highlight", "supervisiones", "incentivos", "recetas", "por-definir", "configuracion"]) {
       expect(g.filter((x) => x === s), s).toHaveLength(1);
     }
-    expect(g).toHaveLength(11);
+    expect(g).toHaveLength(12);
   });
 
   it("las sedes: lo principal arriba y Configuración al final; solo Atelier tiene Clientes y lo de antes va en Datos", () => {
