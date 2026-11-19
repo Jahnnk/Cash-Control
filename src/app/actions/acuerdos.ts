@@ -183,14 +183,25 @@ export async function getTableroAcuerdos(): Promise<R<{ hoy: string; yo: YoSesio
   }
 }
 
-/** Para el Panel de Sede (y cualquiera): lo que tengo asignado. */
-export async function getMisAcuerdos(): Promise<R<{ hoy: string; yo: YoSesion; acuerdos: Acuerdo[] }>> {
+/**
+ * Para el Panel de Sede (y cualquiera): lo que tengo asignado.
+ * `comoAdminDe` («Ver como administrador», 19-nov-2026): la dirección pide lo asignado a los administradores
+ * activos de esa sede (atelier | fonavi | centro), para ver el panel tal cual lo ven ellos. Para cualquier otra
+ * sesión se ignora: cada quien solo ve lo suyo.
+ */
+export async function getMisAcuerdos(comoAdminDe?: string): Promise<R<{ hoy: string; yo: YoSesion; acuerdos: Acuerdo[] }>> {
   const s = await sesion();
   if (!s) return SIN_ACCESO;
   try {
-    const acuerdos = s.mias.length === 0 ? [] : ((await sql`
+    let mias = s.mias;
+    const scope = comoAdminDe && ["atelier", "fonavi", "centro"].includes(comoAdminDe) ? `admin-${comoAdminDe}` : null;
+    if (scope && s.yo.tipo === "direccion") {
+      const rows = (await sql`SELECT id FROM app_users WHERE active AND scope = ${scope}`) as { id: number }[];
+      mias = rows.map((r) => `u:${r.id}`);
+    }
+    const acuerdos = mias.length === 0 ? [] : ((await sql`
       SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id
-      WHERE a.responsable_clave = ANY(${s.mias})
+      WHERE a.responsable_clave = ANY(${mias})
         AND (a.estado IN ('pendiente','en_proceso')
              OR (a.estado IN ('cumplido','por_confirmar') AND a.actualizado_el > now() - interval '30 days'))
       ORDER BY a.fecha_limite, a.id

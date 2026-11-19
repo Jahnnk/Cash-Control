@@ -12,6 +12,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { useParams } from "next/navigation";
 import { getMisAcuerdos, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
 import { conAlerta, conteos, ordenAcuerdos } from "@/lib/acuerdos";
 import { DetalleAcuerdo } from "@/components/acuerdos/detalle-acuerdo";
@@ -24,15 +25,17 @@ import { Agrupado } from "@/app/grupo/acuerdos/tablero";
 
 type Vista = "mios" | "tablero" | "cronograma" | "lista";
 
-export function MisAcuerdosCard() {
+/** `comoAdmin`: «Ver como administrador» — la dirección ve las tareas del administrador de esta sede. */
+export function MisAcuerdosCard({ comoAdmin = false }: { comoAdmin?: boolean }) {
+  const { negocio } = useParams<{ negocio: string }>();
   const [d, setD] = useState<{ hoy: string; yo: YoSesion; acuerdos: Acuerdo[] } | null>(null);
   const [abierto, setAbierto] = useState<number | null>(null);
   const [vista, setVista] = useState<Vista>("mios");
 
   const cargar = useCallback(async () => {
-    const r = await getMisAcuerdos();
+    const r = await getMisAcuerdos(comoAdmin ? negocio : undefined);
     if (r.ok) setD({ hoy: r.hoy, yo: r.yo, acuerdos: r.acuerdos });
-  }, []);
+  }, [comoAdmin, negocio]);
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
     void cargar();

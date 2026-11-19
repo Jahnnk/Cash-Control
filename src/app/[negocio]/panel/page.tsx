@@ -27,6 +27,7 @@ import { BaseModal } from "./base-modal";
 import { AtelierPanel } from "./atelier-panel";
 import { HighlightSlot } from "./highlight-card";
 import { MisAcuerdosCard } from "./mis-acuerdos-card";
+import { BarraComoAdmin, useComoAdmin } from "./ver-como-admin";
 import { DiasNoOperativosCard } from "./dias-no-operativos-card";
 import { ProponerHighlight } from "./proponer-highlight";
 import { TuSemana } from "./tu-semana";
@@ -96,6 +97,8 @@ function IncentivosPage() {
   const [weekRefresh, setWeekRefresh] = useState(0);
   const [showMermaDetail, setShowMermaDetail] = useState(false);
   const [editingDate, setEditingDate] = useState<string | null>(null);
+  // «Ver como administrador» (19-nov-2026): la dirección ve el panel tal cual lo ve el admin de la sede.
+  const comoAdmin = useComoAdmin();
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -226,9 +229,12 @@ function IncentivosPage() {
   }
 
   const p = data?.progress ?? null;
+  /** La vista del administrador: su sesión real, o la dirección con «Ver como administrador» encendido. */
+  const vistaAdmin = !!data?.isAdminSession || comoAdmin.activo;
 
   return (
     <div className="space-y-6">
+      {comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo negocio={params.negocio} onChange={comoAdmin.cambiar} />}
       {/* Cabecera: el título y lo que se sube (UX, 8-oct-2026: antes quedaba en medio de la página). */}
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -245,7 +251,8 @@ function IncentivosPage() {
               onChange={(e) => setMonth(e.target.value)}
               className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
             />
-            {data && !data.isAdminSession && (
+            {!comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo={false} negocio={params.negocio} onChange={comoAdmin.cambiar} />}
+            {data && !vistaAdmin && (
               <button
                 onClick={() => setShowLiquidation(true)}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
@@ -277,8 +284,8 @@ function IncentivosPage() {
 
       {/* Lo más importante de la semana — va primero a propósito: si
           compitiera con los KPIs, dejaría de ser lo más importante. */}
-      <HighlightSlot />
-      <MisAcuerdosCard />
+      <HighlightSlot comoAdmin={comoAdmin.activo} />
+      <MisAcuerdosCard comoAdmin={comoAdmin.activo} />
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso vas y qué sigue, estilo pedido de
           delivery. El registro del día y la rutina del sábado quedan como su detalle. */}
@@ -287,7 +294,7 @@ function IncentivosPage() {
       {/* Días que no cuentan (corte de luz, feriado). Va pegado al
           estado de KPIs porque es la respuesta a "¿por qué ese día está
           distinto?". El administrador solo la ve si hay algo marcado. */}
-      <DiasNoOperativosCard onCambio={() => { setWeekRefresh((n) => n + 1); void load(month); }} />
+      <DiasNoOperativosCard comoAdmin={comoAdmin.activo} onCambio={() => { setWeekRefresh((n) => n + 1); void load(month); }} />
 
       {/* Proponer va después del Highlight y del aviso de KPIs: primero
           lo que hay que hacer hoy, después lo que uno sugiere. */}
@@ -482,7 +489,7 @@ function IncentivosPage() {
           </div>
 
           {/* 4b · KPIs de la semana (reemplaza el cuadro de Notion) */}
-          <KpisWeekSection key={weekRefresh} fullSession={!data.isAdminSession} />
+          <KpisWeekSection key={weekRefresh} fullSession={!vistaAdmin} />
 
           {/* ── Lo de consulta, plegado (UX, 8-oct-2026): se abre cuando se necesita. ── */}
           <SeccionDesplegable
@@ -564,7 +571,7 @@ function IncentivosPage() {
               </span>
               {/* La base la mueve solo la dirección: el bono del admin
                   depende de ella. */}
-              {!data.isAdminSession && (
+              {!vistaAdmin && (
                 <button
                   onClick={() => setShowBase(true)}
                   className="text-xs px-2.5 py-1 border border-gray-200 rounded-lg text-gray-600 hover:bg-gray-50 flex items-center gap-1 shrink-0"

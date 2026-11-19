@@ -7,6 +7,7 @@ import { getAtelierPanel, saveAtelierDay, type AtelierPanelData, type AtelierDai
 import { useToast } from "@/components/toast-provider";
 import { HighlightSlot } from "./highlight-card";
 import { MisAcuerdosCard } from "./mis-acuerdos-card";
+import { BarraComoAdmin, useComoAdmin } from "./ver-como-admin";
 import { ProponerHighlight } from "./proponer-highlight";
 import { TuSemana } from "./tu-semana";
 import { Proposito } from "@/components/proposito";
@@ -48,6 +49,8 @@ export function AtelierPanel() {
   const [data, setData] = useState<AtelierPanelData | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  // «Ver como administrador» (19-nov-2026): la dirección ve el panel tal cual lo ve el admin de Atelier.
+  const comoAdmin = useComoAdmin();
   // Detalle de mermas: Atelier solo podía anotar el importe total, y
   // en producción es donde MÁS interesa saber QUÉ se mermó (Jahnn,
   // 31-ago-2026). Mismo modal y misma tabla que Fonavi y Centro.
@@ -170,6 +173,7 @@ export function AtelierPanel() {
 
   return (
     <div className="space-y-6">
+      {comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo negocio="atelier" onChange={comoAdmin.cambiar} />}
       {/* Cabecera arriba (UX, 8-oct-2026: antes quedaba en medio de la página). */}
       <div className="space-y-1.5">
         <div className="flex flex-wrap items-center justify-between gap-3">
@@ -180,6 +184,7 @@ export function AtelierPanel() {
             </h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
+            {!comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo={false} negocio="atelier" onChange={comoAdmin.cambiar} />}
             <input
               type="month"
               value={month}
@@ -200,8 +205,8 @@ export function AtelierPanel() {
 
       {/* Lo más importante de la semana — va primero a propósito: si
           compitiera con los KPIs, dejaría de ser lo más importante. */}
-      <HighlightSlot />
-      <MisAcuerdosCard />
+      <HighlightSlot comoAdmin={comoAdmin.activo} />
+      <MisAcuerdosCard comoAdmin={comoAdmin.activo} />
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso va y qué sigue, estilo pedido de
           delivery. El registro del día y la rutina del sábado quedan como su detalle. */}
