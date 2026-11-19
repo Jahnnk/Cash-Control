@@ -8,19 +8,28 @@
  *   · El Estado es un bloque de color que se cambia de un toque (No iniciado, En progreso, Hecho).
  *   · El Plazo es una barra de «desde que se asignó» hasta la fecha límite, rellena hasta hoy.
  *   · Al pie de cada grupo, la barra de estados (cuánto hay de cada color) y el plazo total del grupo.
- * Un toque en la fila abre el detalle. En el celular la tabla se desliza de lado, como en Monday.
+ * Celdas que se editan ahí mismo (Jahnn, 19-nov-2026): Responsable abre la lista del equipo, Fecha límite y Plazo
+ * abren el calendario (y piden el motivo, regla de siempre), Prioridad y Área abren su lista. Solo para quien puede
+ * editar (dirección o quien la creó); a los demás el toque les abre el detalle. La Tarea siempre abre el detalle.
+ * En el celular la tabla se desliza de lado, como en Monday.
  */
 
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
-import type { Acuerdo, YoSesion } from "@/app/actions/acuerdos";
-import { ESTADO_LABEL, estadoVisible, puede } from "@/lib/acuerdos";
+import { editarAcuerdo, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
+import { AREA_LABEL, AREAS, ESTADO_LABEL, MAX_MOTIVO, PRIORIDAD_LABEL, PRIORIDADES, estadoVisible, puede, type Persona } from "@/lib/acuerdos";
 import { useCambiarEstado } from "@/components/acuerdos/fila-acuerdo";
+import { SelectorPersona } from "@/components/acuerdos/alta-rapida";
+import { useToast } from "@/components/toast-provider";
 import { Avatar, AreaTag, COLOR_ESTADO, EstadoCelda, PrioridadIcono, diaCorto } from "@/components/acuerdos/ui";
 
 const COLS = "grid grid-cols-[minmax(170px,1fr)_118px_150px_104px_150px_92px_120px] sm:grid-cols-[minmax(240px,1fr)_128px_150px_104px_150px_92px_120px]";
 const CELDA = "flex items-center h-10 px-3 border-r border-gray-200 min-w-0";
 const ROJO = "#DC2626";
+/** Un control invisible encima de la celda: el toque abre directo la lista o el calendario. */
+const ENCIMA = "absolute inset-0 h-full w-full cursor-pointer opacity-0";
+const EDITABLE = "relative hover:bg-gray-100";
+const sinAbrir = { onClick: (e: React.MouseEvent) => e.stopPropagation(), onKeyDown: (e: React.KeyboardEvent) => e.stopPropagation() };
 
 const ms = (f: string) => Date.parse(`${f}T12:00:00Z`);
 
@@ -43,18 +52,66 @@ function Plazo({ desde, hasta, hoy, color, lleno }: { desde: string; hasta: stri
   );
 }
 
-export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, onAbrir, onCambio }: {
+/** Mover la fecha pide el motivo (queda en la actividad), igual que en el detalle. */
+function MoverFecha({ a, fecha, onGuardar, onCancelar }: { a: Acuerdo; fecha: string; onGuardar: (motivo: string) => Promise<boolean>; onCancelar: () => void }) {
+  const [motivo, setMotivo] = useState("");
+  const [ocupado, setOcupado] = useState(false);
+  async function guardar() {
+    if (!motivo.trim()) return;
+    setOcupado(true);
+    const ok = await onGuardar(motivo);
+    setOcupado(false);
+    if (ok) onCancelar();
+  }
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4" role="dialog" aria-label="Cambiar fecha límite">
+      <div className="absolute inset-0 bg-black/20" onClick={onCancelar} />
+      <div className="relative w-full max-w-sm rounded-2xl bg-white p-4 shadow-2xl space-y-3">
+        <p className="text-sm text-gray-900"><span className="font-semibold">{a.que}</span></p>
+        <p className="text-sm text-gray-600">Fecha límite: {diaCorto(a.fechaLimite)} → <span className="font-semibold text-gray-900">{diaCorto(fecha)}</span></p>
+        <input autoFocus value={motivo} maxLength={MAX_MOTIVO} onChange={(e) => setMotivo(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void guardar(); if (e.key === "Escape") onCancelar(); }}
+          placeholder="¿Por qué cambia la fecha?" className="w-full border border-gray-200 rounded-lg px-2.5 py-2 text-sm" />
+        <div className="flex justify-end gap-2">
+          <button type="button" onClick={onCancelar} className="px-3 py-1.5 text-xs font-medium text-gray-600">Cancelar</button>
+          <button type="button" onClick={() => void guardar()} disabled={ocupado || !motivo.trim()}
+            className="px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-primary hover:bg-primary-light disabled:opacity-50">{ocupado ? "Guardando…" : "Guardar"}</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, onAbrir, onCambio }: {
   titulo: string;
   color: string;
   avatar?: { nombre: string; clave: string };
   items: Acuerdo[];
   yo: YoSesion;
   hoy: string;
+  /** Con la lista del equipo, las celdas se editan ahí mismo (si la sesión puede editar). */
+  personas?: Persona[];
   onAbrir: (id: number) => void;
   onCambio: () => void;
 }) {
   const [abierto, setAbierto] = useState(true);
   const { cambiar, ocupado } = useCambiarEstado(onCambio);
+  const { showToast } = useToast();
+  const [mover, setMover] = useState<{ a: Acuerdo; fecha: string } | null>(null);
+
+  async function editar(a: Acuerdo, cambio: Partial<{ responsable: string; fechaLimite: string; motivoFecha: string; prioridad: string; area: string }>) {
+    const r = await editarAcuerdo(a.id, { que: a.que, detalle: a.detalle ?? "", area: a.area, responsable: a.responsableClave, fechaLimite: a.fechaLimite, prioridad: a.prioridad, ...cambio });
+    if (!r.ok) { showToast(r.error, "error"); return false; }
+    showToast("Guardado", "success");
+    onCambio();
+    return true;
+  }
+  /** El calendario: se abre al tocar (Fecha límite o Plazo). */
+  const calendario = (a: Acuerdo) => (
+    <input type="date" aria-label="Cambiar fecha límite" value={a.fechaLimite} min={hoy} className={ENCIMA}
+      onClick={(e) => { e.stopPropagation(); try { e.currentTarget.showPicker(); } catch { /* el navegador lo abre solo */ } }}
+      onKeyDown={sinAbrir.onKeyDown}
+      onChange={(e) => { if (e.target.value && e.target.value !== a.fechaLimite) setMover({ a, fecha: e.target.value }); }} />
+  );
   const vencidos = items.filter((a) => estadoVisible(a, hoy) === "vencido").length;
   const desde = items.reduce((m, a) => (a.creadoDia < m ? a.creadoDia : m), items[0].creadoDia);
   const hasta = items.reduce((m, a) => (a.fechaLimite > m ? a.fechaLimite : m), items[0].fechaLimite);
@@ -86,6 +143,7 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, onAbrir, on
               {items.map((a) => {
                 const v = estadoVisible(a, hoy);
                 const cerrado = a.estado === "cumplido" || a.estado === "anulado";
+                const ed = !!personas && puede(yo, a, "editar");
                 return (
                   <li key={a.id} role="button" tabIndex={0} onClick={() => onAbrir(a.id)} onKeyDown={(e) => { if (e.key === "Enter") onAbrir(a.id); }}
                     className={`${COLS} border-b border-gray-200 bg-white cursor-pointer hover:bg-gray-50 ${a.estado === "anulado" ? "opacity-50" : ""}`}>
@@ -95,17 +153,39 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, onAbrir, on
                     <span className="h-10 border-r border-white">
                       <EstadoCelda estado={a.estado} puede={puede(yo, a, "avanzar")} ocupado={ocupado === a.id} onCambiar={(n) => void cambiar(a, n)} />
                     </span>
-                    <span className={`${CELDA} gap-2`}>
+                    <span className={`${CELDA} gap-2 ${ed ? EDITABLE : ""}`}>
                       <Avatar nombre={a.responsableNombre} clave={a.responsableClave} />
                       <span className="text-xs text-gray-700 truncate">{a.responsableNombre}</span>
+                      {ed && <span {...sinAbrir}><SelectorPersona personas={personas!} valor={a.responsableClave} className={ENCIMA}
+                        onChange={(c) => { if (c && c !== a.responsableClave) void editar(a, { responsable: c }); }} /></span>}
                     </span>
-                    <span className={`${CELDA} justify-center text-xs ${v === "vencido" ? "font-semibold text-red-700" : "text-gray-700"}`}>{diaCorto(a.fechaLimite)}</span>
-                    <span className={CELDA}>
+                    <span className={`${CELDA} justify-center text-xs ${ed ? EDITABLE : ""} ${v === "vencido" ? "font-semibold text-red-700" : "text-gray-700"}`}>
+                      {diaCorto(a.fechaLimite)}
+                      {ed && calendario(a)}
+                    </span>
+                    <span className={`${CELDA} ${ed ? EDITABLE : ""}`}>
                       <Plazo desde={a.creadoDia} hasta={a.fechaLimite} hoy={hoy} lleno={cerrado}
                         color={v === "vencido" ? ROJO : a.estado === "cumplido" ? COLOR_ESTADO.cumplido : color} />
+                      {ed && calendario(a)}
                     </span>
-                    <span className={`${CELDA} justify-center`}><PrioridadIcono p={a.prioridad} conTexto /></span>
-                    <span className={`${CELDA} justify-center`}><AreaTag area={a.area} /></span>
+                    <span className={`${CELDA} justify-center ${ed ? EDITABLE : ""}`}>
+                      <PrioridadIcono p={a.prioridad} conTexto />
+                      {ed && (
+                        <select aria-label="Prioridad" value={a.prioridad} className={ENCIMA} {...sinAbrir}
+                          onChange={(e) => void editar(a, { prioridad: e.target.value })}>
+                          {PRIORIDADES.map((p) => <option key={p} value={p}>{PRIORIDAD_LABEL[p]}</option>)}
+                        </select>
+                      )}
+                    </span>
+                    <span className={`${CELDA} justify-center ${ed ? EDITABLE : ""}`}>
+                      <AreaTag area={a.area} />
+                      {ed && (
+                        <select aria-label="Área" value={a.area} className={ENCIMA} {...sinAbrir}
+                          onChange={(e) => void editar(a, { area: e.target.value })}>
+                          {AREAS.map((x) => <option key={x} value={x}>{AREA_LABEL[x]}</option>)}
+                        </select>
+                      )}
+                    </span>
                   </li>
                 );
               })}
@@ -124,6 +204,8 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, onAbrir, on
           </div>
         </div>
       )}
+      {mover && <MoverFecha a={mover.a} fecha={mover.fecha} onCancelar={() => setMover(null)}
+        onGuardar={(motivo) => editar(mover.a, { fechaLimite: mover.fecha, motivoFecha: motivo })} />}
     </div>
   );
 }

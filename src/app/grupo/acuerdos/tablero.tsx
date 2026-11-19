@@ -225,7 +225,7 @@ export function TableroAcuerdos() {
             ]} />
           </div>
           {filtrados.length === 0 ? <p className="text-sm text-gray-500 py-2">No hay acuerdos con ese filtro.</p> : (
-            <Agrupado items={filtrados} por={agrupar} hoy={d.hoy} yo={d.yo} onAbrir={setAbierto} onCambio={recargar} />
+            <Agrupado items={filtrados} por={agrupar} hoy={d.hoy} yo={d.yo} personas={d.personas} onAbrir={setAbierto} onCambio={recargar} />
           )}
         </section>
       )}
@@ -282,8 +282,8 @@ const COLOR_AREA: Record<Area, string> = {
 };
 
 /** La lista agrupada, como los grupos de Monday: por persona, por área o por estado, cada uno con su color. */
-function Agrupado({ items, por, hoy, yo, onAbrir, onCambio }: {
-  items: Acuerdo[]; por: "responsable" | "area" | "estado"; hoy: string; yo: YoSesion; onAbrir: (id: number) => void; onCambio: () => void;
+function Agrupado({ items, por, hoy, yo, personas, onAbrir, onCambio }: {
+  items: Acuerdo[]; por: "responsable" | "area" | "estado"; hoy: string; yo: YoSesion; personas: Persona[]; onAbrir: (id: number) => void; onCambio: () => void;
 }) {
   const grupos = new Map<string, Acuerdo[]>();
   for (const a of items) {
@@ -302,7 +302,7 @@ function Agrupado({ items, por, hoy, yo, onAbrir, onCambio }: {
         const color = por === "responsable" ? colorPersona(k) : por === "area" ? COLOR_AREA[k as Area] : COLOR_GRUPO_ESTADO[k as EstadoVisible];
         return (
           <GrupoMonday key={k} titulo={titulo} color={color} avatar={por === "responsable" ? { nombre: titulo, clave: k } : undefined}
-            items={l} yo={yo} hoy={hoy} onAbrir={onAbrir} onCambio={onCambio} />
+            items={l} yo={yo} hoy={hoy} personas={personas} onAbrir={onAbrir} onCambio={onCambio} />
         );
       })}
     </div>
