@@ -12,7 +12,7 @@ import type { Acuerdo, Reunion } from "@/app/actions/acuerdos";
 import { AREA_LABEL, resumenSemanal } from "@/lib/acuerdos";
 import { semanaDeLaReunion } from "@/lib/kpis/semana-reunion";
 import { Kpi, Pastilla } from "@/components/productos/ui";
-import { fechaLarga } from "@/components/acuerdos/acuerdo-item";
+import { diaCorto } from "@/components/acuerdos/ui";
 
 const mover = (f: string, n: number) => {
   const d = new Date(`${f}T12:00:00Z`);
@@ -80,7 +80,7 @@ export function ResumenSemanalVista({ acuerdos, reuniones, hoy }: { acuerdos: Ac
         <Lista titulo="Vencidos que arrastramos" vacio="Ninguno. Todo lo vencido se cumplió."
           filas={r.arrastrados.map((a) => ({ id: a.id, que: a.que, quien: a.responsableNombre, extra: <Pastilla tono="rojo">hace {a.diasAtraso} {a.diasAtraso === 1 ? "día" : "días"}</Pastilla> }))} />
         <Lista titulo="Vencen esta semana" vacio="Nada vence esta semana."
-          filas={r.proximos.map((a) => ({ id: a.id, que: a.que, quien: a.responsableNombre, extra: <span className="text-gray-500">{fechaLarga(a.fechaLimite)}</span> }))} />
+          filas={r.proximos.map((a) => ({ id: a.id, que: a.que, quien: a.responsableNombre, extra: <span className="text-gray-500">{diaCorto(a.fechaLimite)}</span> }))} />
         {r.porConfirmar.length > 0 && (
           <Lista titulo="Esperan confirmación" vacio=""
             filas={r.porConfirmar.map((a) => ({ id: a.id, que: a.que, quien: a.responsableNombre, extra: <Pastilla tono="ambar">por confirmar</Pastilla> }))} />

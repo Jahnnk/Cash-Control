@@ -10,12 +10,14 @@
 import { useCallback, useEffect, useState } from "react";
 import { getMisAcuerdos, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
 import { conAlerta, conteos, ordenAcuerdos } from "@/lib/acuerdos";
-import { AcuerdoItem } from "@/components/acuerdos/acuerdo-item";
+import { FilaAcuerdo } from "@/components/acuerdos/fila-acuerdo";
+import { DetalleAcuerdo } from "@/components/acuerdos/detalle-acuerdo";
 import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
 import { Pastilla, SeccionDesplegable } from "@/components/productos/ui";
 
 export function MisAcuerdosCard() {
   const [d, setD] = useState<{ hoy: string; yo: YoSesion; acuerdos: Acuerdo[] } | null>(null);
+  const [abierto, setAbierto] = useState<number | null>(null);
 
   const cargar = useCallback(async () => {
     const r = await getMisAcuerdos();
@@ -32,13 +34,14 @@ export function MisAcuerdosCard() {
   const lista = ordenAcuerdos(d.acuerdos, d.hoy);
   // Lo urgente se ve siempre, sin abrir nada (Jahnn, 19-nov-2026: los avisos en cada panel, no por correo).
   const alertas = conAlerta(d.acuerdos, d.hoy);
+  const enDetalle = abierto !== null ? d.acuerdos.find((a) => a.id === abierto) ?? null : null;
 
   return (
     <>
     <FranjaAlertas items={alertas} />
     <SeccionDesplegable
       titulo="Mis acuerdos y tareas"
-      subtitulo="Lo que te asignaron, con su fecha límite. Márcalo cumplido cuando lo termines."
+      subtitulo="Lo que te asignaron, con su fecha límite."
       resumen={
         <div className="flex flex-wrap gap-1.5">
           <Pastilla>{c.abiertos} {c.abiertos === 1 ? "abierto" : "abiertos"}</Pastilla>
@@ -48,12 +51,14 @@ export function MisAcuerdosCard() {
         </div>
       }
     >
-      <ul className="divide-y divide-gray-100">
+      <p className="text-xs text-gray-500 mb-1">Toca el círculo cuando termines. Toca la tarea para ver el detalle o comentar.</p>
+      <ul>
         {lista.map((a) => (
-          <AcuerdoItem key={`${a.id}-${a.estado}-${a.comentarios}`} a={a} yo={d.yo} hoy={d.hoy} mostrarResponsable={false} onCambio={() => void cargar()} />
+          <FilaAcuerdo key={a.id} a={a} yo={d.yo} hoy={d.hoy} comoResponsable mostrarResponsable={false} onAbrir={() => setAbierto(a.id)} onCambio={() => void cargar()} />
         ))}
       </ul>
     </SeccionDesplegable>
+    {enDetalle && <DetalleAcuerdo key={enDetalle.id} a={enDetalle} yo={d.yo} hoy={d.hoy} comoResponsable onCambio={() => void cargar()} onCerrar={() => setAbierto(null)} />}
     </>
   );
 }
