@@ -3,13 +3,15 @@
 /**
  * Panel de Sede → «Mis acuerdos y tareas» (19-nov-2026). Va debajo del Highlight: el Highlight es lo MÁS
  * importante de la semana; aquí está todo lo demás que le asignaron al administrador. Plegada por defecto,
- * con el resumen visible (vencidos en rojo). Sin acuerdos asignados, no se muestra.
+ * con el resumen visible. Lo urgente (vencido, devuelto, vence hoy o mañana, nuevo) va en una franja siempre
+ * visible encima. Sin acuerdos asignados, no se muestra.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import { getMisAcuerdos, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
-import { conteos, ordenAcuerdos } from "@/lib/acuerdos";
+import { conAlerta, conteos, ordenAcuerdos } from "@/lib/acuerdos";
 import { AcuerdoItem } from "@/components/acuerdos/acuerdo-item";
+import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
 import { Pastilla, SeccionDesplegable } from "@/components/productos/ui";
 
 export function MisAcuerdosCard() {
@@ -28,8 +30,12 @@ export function MisAcuerdosCard() {
   if (!d || d.acuerdos.length === 0) return null;
   const c = conteos(d.acuerdos, d.hoy);
   const lista = ordenAcuerdos(d.acuerdos, d.hoy);
+  // Lo urgente se ve siempre, sin abrir nada (Jahnn, 19-nov-2026: los avisos en cada panel, no por correo).
+  const alertas = conAlerta(d.acuerdos, d.hoy);
 
   return (
+    <>
+    <FranjaAlertas items={alertas} />
     <SeccionDesplegable
       titulo="Mis acuerdos y tareas"
       subtitulo="Lo que te asignaron, con su fecha límite. Márcalo cumplido cuando lo termines."
@@ -48,5 +54,6 @@ export function MisAcuerdosCard() {
         ))}
       </ul>
     </SeccionDesplegable>
+    </>
   );
 }

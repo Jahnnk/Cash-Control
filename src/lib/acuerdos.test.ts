@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
+import { alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -112,5 +112,23 @@ describe("indicadores de cumplimiento", () => {
   it("meses y periodos", () => {
     expect(periodoMes("2026-02")).toEqual({ desde: "2026-02-01", hasta: "2026-02-28" });
     expect(mesesHasta("2026-02", 3)).toEqual(["2025-12", "2026-01", "2026-02"]);
+  });
+});
+
+describe("alertas en pantalla", () => {
+  const base = { estado: "pendiente" as const, fechaLimite: "2026-11-25", creadoDia: "2026-11-01" };
+  it("la más urgente gana", () => {
+    expect(alertaDe({ ...base, fechaLimite: "2026-11-18", devuelto: true }, HOY)).toBe("vencido");
+    expect(alertaDe({ ...base, devuelto: true }, HOY)).toBe("devuelto");
+    expect(alertaDe({ ...base, fechaLimite: HOY }, HOY)).toBe("hoy");
+    expect(alertaDe({ ...base, fechaLimite: "2026-11-20" }, HOY)).toBe("manana");
+    expect(alertaDe({ ...base, creadoDia: "2026-11-18" }, HOY)).toBe("nuevo");
+    expect(alertaDe({ ...base, estado: "en_proceso", creadoDia: "2026-11-18" }, HOY)).toBeNull();
+    expect(alertaDe(base, HOY)).toBeNull();
+    expect(alertaDe({ ...base, estado: "por_confirmar", fechaLimite: "2026-11-01" }, HOY)).toBeNull();
+  });
+  it("ordena por urgencia", () => {
+    const l = [{ ...base, id: 1, fechaLimite: "2026-11-20" }, { ...base, id: 2, fechaLimite: "2026-11-10" }, { ...base, id: 3, fechaLimite: HOY }];
+    expect(conAlerta(l, HOY).map((x) => x.a.id)).toEqual([2, 3, 1]);
   });
 });
