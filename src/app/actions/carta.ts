@@ -17,6 +17,8 @@ import { marcaDe, precioValido, type MarcaSistema } from "@/lib/productos/carta-
 import { claveByte, enlazarCosto } from "@/lib/productos/costos-carta";
 import { ORIGEN_DE, erroresDeAlta, refNueva, type LineaTienda, type RecetaCarta } from "@/lib/productos/receta-carta";
 import { leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
+import type { PrecioVigente } from "@/lib/productos/precios-vigentes";
+import type { CostoPreparacion } from "@/lib/costos-preparaciones";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -240,5 +242,18 @@ export async function quitarProductoNuevo(ref: string): Promise<{ ok: true } | {
   } catch (e) {
     console.error("[quitarProductoNuevo] failed:", e);
     return { ok: false, error: "No se pudo quitar." };
+  }
+}
+
+/** Todo lo que lleva el Excel de la carta (fase 3): se arma en el navegador (lib/carta-xlsx.ts). Solo dirección. */
+export async function getDatosExcelCarta(): Promise<{ ok: true; carta: ProductoCarta[]; insumos: PrecioVigente[]; atelier: CostoPreparacion[] } | { ok: false; error: string }> {
+  const carta = await getCarta();
+  if (!carta.ok) return carta;
+  try {
+    const [{ vigentes }, catalogo] = await Promise.all([leerPreciosVigentes(sql), leerCatalogo(sql, 1)]);
+    return { ok: true, carta: carta.productos, insumos: vigentes, atelier: catalogo.efectivo.map((i) => ({ ...i, detalle: undefined })) };
+  } catch (e) {
+    console.error("[getDatosExcelCarta] failed:", e);
+    return { ok: false, error: "No se pudo armar el Excel." };
   }
 }

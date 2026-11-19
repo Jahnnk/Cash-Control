@@ -4,6 +4,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { Calculator, Loader2, Upload, Check, AlertTriangle } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { getEstadoPricing, guardarCostos, type EstadoPricing } from "@/app/actions/costos-preparaciones";
+import { getPreciosInsumos } from "@/app/actions/precios-insumos";
 import { claveNombre, type CostoPreparacion, type ResumenPricing } from "@/lib/costos-preparaciones";
 import type { PrecioInsumo } from "@/lib/productos/insumos-precios";
 import type { CostoCarta } from "@/lib/productos/costos-carta";
@@ -27,6 +28,11 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
   const [busy, setBusy] = useState<"leyendo" | "guardando" | null>(null);
   /** Recetas del sistema que el Excel trae con el mismo nombre y se reemplazan por la del Excel (id → sí/no). */
   const [conExcel, setConExcel] = useState<Record<number, boolean>>({});
+  /**
+   * Precios de insumos cambiados en el sistema que este Excel trae distinto (fase 3, 18-nov-2026): al subirlo,
+   * el Excel pasa a ser la base y esos cambios quedan solo en el historial.
+   */
+  const [pisados, setPisados] = useState<{ nombre: string; sistema: number; excel: number }[]>([]);
   const input = useRef<HTMLInputElement>(null);
 
   const load = useCallback(async () => setEstado(await getEstadoPricing()), []);
@@ -40,6 +46,7 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
   function limpiar() {
     setLeido(null);
     setConExcel({});
+    setPisados([]);
     setResumen(null);
     if (input.current) input.current.value = "";
   }
@@ -61,6 +68,14 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
         return;
       }
       setLeido({ archivo: f.name, items: lectura.items, carta: lectura.carta ?? [], precios: lectura.precios ?? [] });
+      const sistema = await getPreciosInsumos();
+      if (sistema.ok) {
+        const delExcel = new Map((lectura.precios ?? []).map((p) => [`${p.origen}|${p.sku}`, p.precio]));
+        setPisados(sistema.insumos.flatMap((i) => {
+          const ex = delExcel.get(`${i.origen}|${i.sku}`);
+          return i.delSistema && ex != null && Math.abs(ex - i.precio) > 0.00005 ? [{ nombre: i.nombre, sistema: i.precio, excel: ex }] : [];
+        }));
+      }
       setResumen(resumirPricing(f.name, lectura));
     } catch {
       showToast("No se pudo leer el Excel. Revisa que no esté dañado o protegido con contraseña.", "error");
@@ -103,12 +118,13 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
             <Calculator className="w-4 h-4 text-primary" /> Excel maestro de pricing
           </h2>
           <p className="text-[11px] text-gray-500 mt-0.5 leading-relaxed">
-            Súbelo cada vez que cambien precios, insumos o recetas: actualiza los costos de Atelier, la carta de las cafeterías
-            (costo, precio, origen e insumos de cada producto) y lo que usan Productos y las mermas. Las mermas ya registradas no cambian.
+            <strong className="text-gray-700">Ya no hace falta subirlo.</strong> Los precios de insumos, la carta y los productos nuevos se cambian en
+            Grupo → Recetas y costos, y desde ahí se descarga el Excel. Súbelo solo si hiciste un costeo grande en el Excel: reemplaza los costos de
+            Atelier y de la carta. Los cambios de carta y los productos nuevos hechos en el sistema se mantienen. Las mermas ya registradas no cambian.
           </p>
         </div>
         <label className={`inline-flex items-center gap-2 px-3 py-2 text-xs font-medium rounded-lg cursor-pointer whitespace-nowrap ${
-          busy ? "bg-gray-100 text-gray-400 pointer-events-none" : "bg-primary text-white hover:bg-primary-light"
+          busy ? "bg-gray-100 text-gray-400 pointer-events-none" : "bg-white text-primary border border-primary/40 hover:bg-emerald-50"
         }`}>
           {busy === "leyendo" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Upload className="w-3.5 h-3.5" />}
           {busy === "leyendo" ? "Leyendo…" : "Subir Excel de pricing"}
@@ -157,6 +173,18 @@ export function PricingAdmin({ onActualizado }: { onActualizado?: () => void } =
             <div className="text-[11px] text-gray-700">
               <span className="font-medium">Entran aunque no tienen fila en PRICING</span> (tienen su receta en las hojas de producción):{" "}
               {resumen.sinPricing.join(", ")}.
+            </div>
+          )}
+          {pisados.length > 0 && (
+            <div className="rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-[11px] text-amber-900 space-y-1">
+              <div className="font-medium flex items-center gap-1"><AlertTriangle className="w-3 h-3" />
+                Este Excel reemplaza {pisados.length} precio{pisados.length === 1 ? "" : "s"} de insumo que cambiaste en el sistema:
+              </div>
+              {pisados.slice(0, 6).map((p) => (
+                <div key={p.nombre}>· {p.nombre}: sistema {soles(p.sistema)} → Excel {soles(p.excel)}</div>
+              ))}
+              {pisados.length > 6 && <div>· y {pisados.length - 6} más.</div>}
+              <div>Si los precios del sistema son los correctos, cancela y descarga el Excel actualizado desde Recetas y costos.</div>
             </div>
           )}
           {duplicadas.length > 0 && (
