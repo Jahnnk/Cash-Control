@@ -12,7 +12,7 @@ import { MessageSquare } from "lucide-react";
 import { avanzarAcuerdo, revisarCumplido, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
 import { estadoVisible, puede, type EstadoGuardado } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
-import { Avatar, AreaTag, FechaChip } from "@/components/acuerdos/ui";
+import { Avatar, AreaTag, FechaChip, PrioridadIcono } from "@/components/acuerdos/ui";
 
 const COLUMNAS: { estado: EstadoGuardado; titulo: string; color: string }[] = [
   { estado: "pendiente", titulo: "Pendiente", color: "bg-gray-400" },
@@ -87,6 +87,7 @@ export function Kanban({ acuerdos, yo, hoy, onAbrir, onCambio }: {
                     <AreaTag area={a.area} />
                     <p className={`mt-1.5 text-sm leading-snug ${a.estado === "cumplido" ? "text-gray-500" : "text-gray-900"}`}>{a.que}</p>
                     <div className="mt-2 flex items-center gap-2">
+                      <PrioridadIcono p={a.prioridad} />
                       <FechaChip fecha={a.fechaLimite} hoy={hoy} estado={a.estado} />
                       {a.comentarios > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-400"><MessageSquare className="w-3 h-3" />{a.comentarios}</span>}
                       <span className="ml-auto"><Avatar nombre={a.responsableNombre} clave={a.responsableClave} /></span>

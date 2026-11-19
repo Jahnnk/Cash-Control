@@ -10,7 +10,7 @@ import { useState } from "react";
 import { avanzarAcuerdo, revisarCumplido, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
 import { ESTADO_LABEL, estadoVisible, puede, type EstadoVisible } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
-import { Avatar, AreaTag, Circulo, FechaChip } from "@/components/acuerdos/ui";
+import { Avatar, AreaTag, Circulo, FechaChip, PrioridadIcono } from "@/components/acuerdos/ui";
 
 const ETIQUETA: Record<EstadoVisible, string> = {
   pendiente: "bg-gray-100 text-gray-700",
@@ -25,13 +25,13 @@ export function EtiquetaEstado({ estado }: { estado: EstadoVisible }) {
   return <span className={`inline-flex rounded px-1.5 py-0.5 text-[10px] font-bold uppercase tracking-wide whitespace-nowrap ${ETIQUETA[estado]}`}>{ESTADO_LABEL[estado]}</span>;
 }
 
-const COLS = "grid grid-cols-[96px_minmax(0,1fr)_auto_64px] sm:grid-cols-[110px_minmax(0,1fr)_150px_80px_110px] items-center gap-x-3";
+const COLS = "grid grid-cols-[96px_minmax(0,1fr)_auto_64px] sm:grid-cols-[110px_minmax(0,1fr)_80px_150px_80px_110px] items-center gap-x-3";
 
 export function TablaAcuerdos({ items, yo, hoy, onAbrir, onCambio }: { items: Acuerdo[]; yo: YoSesion; hoy: string; onAbrir: (id: number) => void; onCambio: () => void }) {
   return (
     <div>
       <div className={`${COLS} px-2 py-1.5 text-[10px] uppercase tracking-wide text-gray-400 border-b border-gray-200`}>
-        <span>Estado</span><span>Tarea</span><span>Responsable</span><span className="text-right sm:text-left">Fecha</span><span className="hidden sm:block">Área</span>
+        <span>Estado</span><span>Tarea</span><span className="hidden sm:block">Prioridad</span><span>Responsable</span><span className="text-right sm:text-left">Fecha</span><span className="hidden sm:block">Área</span>
       </div>
       <ul className="divide-y divide-gray-100">
         {items.map((a) => <Fila key={a.id} a={a} yo={yo} hoy={hoy} onAbrir={() => onAbrir(a.id)} onCambio={onCambio} />)}
@@ -60,8 +60,10 @@ function Fila({ a, yo, hoy, onAbrir, onCambio }: { a: Acuerdo; yo: YoSesion; hoy
       <span><EtiquetaEstado estado={estadoVisible(a, hoy)} /></span>
       <span className="flex items-center gap-2 min-w-0">
         <Circulo estado={a.estado} puede={puedeCumplir || puedeConfirmar} ocupado={ocupado} onClick={() => void circulo()} />
+        <span className="sm:hidden"><PrioridadIcono p={a.prioridad} /></span>
         <span className={`text-sm truncate ${a.estado === "cumplido" || a.estado === "anulado" ? "text-gray-400 line-through" : "text-gray-900"}`}>{a.que}</span>
       </span>
+      <span className="hidden sm:block"><PrioridadIcono p={a.prioridad} conTexto /></span>
       <span className="flex items-center gap-2 min-w-0">
         <Avatar nombre={a.responsableNombre} clave={a.responsableClave} />
         <span className="hidden sm:block text-sm text-gray-700 truncate">{a.responsableNombre}</span>

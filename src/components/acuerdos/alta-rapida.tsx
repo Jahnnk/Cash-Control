@@ -9,7 +9,7 @@
 import { useState } from "react";
 import { Plus } from "lucide-react";
 import { crearAcuerdo } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, type Area, type Persona } from "@/lib/acuerdos";
+import { AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, type Area, type Persona, type Prioridad } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
 
 const SEL = "border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white";
@@ -65,6 +65,7 @@ export function AltaRapida({ personas, hoy, reunion, onCreado }: {
   const [area, setArea] = useState<string>(() => reunion?.area ?? (typeof window === "undefined" ? "" : leer().area));
   const [cuando, setCuando] = useState("viernes");
   const [fecha, setFecha] = useState("");
+  const [prioridad, setPrioridad] = useState<Prioridad>("media");
   const [ocupado, setOcupado] = useState(false);
   const opciones = atajos(hoy);
   const fechaLimite = cuando === "otra" ? fecha : opciones.find((o) => o.k === cuando)?.fecha ?? "";
@@ -72,11 +73,12 @@ export function AltaRapida({ personas, hoy, reunion, onCreado }: {
   async function crear() {
     if (!que.trim()) return;
     setOcupado(true);
-    const r = await crearAcuerdo({ que, area, responsable, fechaLimite, reunionId: reunion?.id ?? null });
+    const r = await crearAcuerdo({ que, area, responsable, fechaLimite, prioridad, reunionId: reunion?.id ?? null });
     setOcupado(false);
     if (!r.ok) { showToast(r.error, "error"); return; }
     try { localStorage.setItem(GUARDA, JSON.stringify({ responsable, area: reunion ? leer().area : area })); } catch { /* solo comodidad */ }
     setQue("");
+    setPrioridad("media");
     showToast("Tarea creada", "success");
     onCreado();
   }
@@ -99,6 +101,9 @@ export function AltaRapida({ personas, hoy, reunion, onCreado }: {
           {AREAS.map((x) => <option key={x} value={x}>{AREA_LABEL[x]}</option>)}
         </select>
       )}
+      <select value={prioridad} onChange={(e) => setPrioridad(e.target.value as Prioridad)} className={SEL} aria-label="Prioridad">
+        {PRIORIDADES.map((p) => <option key={p} value={p}>Prioridad {PRIORIDAD_LABEL[p].toLowerCase()}</option>)}
+      </select>
       <button type="button" onClick={() => void crear()} disabled={ocupado || !que.trim()}
         className="px-3 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-40">
         {ocupado ? "Creando…" : "Crear"}

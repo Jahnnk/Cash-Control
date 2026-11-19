@@ -17,6 +17,8 @@ import {
   erroresAcuerdo,
   estadoAlCumplir,
   esArea,
+  esPrioridad,
+  PRIORIDAD_LABEL,
   estaAbierto,
   puede,
   quedaTarde,
@@ -30,6 +32,7 @@ import {
   type Area,
   type EstadoGuardado,
   type Persona,
+  type Prioridad,
   type TipoPersona,
   type Yo,
 } from "@/lib/acuerdos";
@@ -47,6 +50,7 @@ export type Acuerdo = {
   que: string;
   detalle: string | null;
   area: Area;
+  prioridad: Prioridad;
   responsableClave: string;
   responsableNombre: string;
   fechaLimite: string;
@@ -142,7 +146,7 @@ async function personas(todas = false): Promise<Persona[]> {
 }
 
 const COLUMNAS = sql`
-  a.id, a.reunion_id AS "reunionId", r.titulo AS "reunionTitulo", a.que, a.detalle, a.area,
+  a.id, a.reunion_id AS "reunionId", r.titulo AS "reunionTitulo", a.que, a.detalle, a.area, a.prioridad,
   a.responsable_clave AS "responsableClave", a.responsable_nombre AS "responsableNombre",
   a.fecha_limite::text AS "fechaLimite", a.fecha_limite_original::text AS "fechaLimiteOriginal",
   a.estado, a.tarde, a.marcado_cumplido_el::text AS "marcadoCumplidoEl", a.confirmado_el::text AS "confirmadoEl",
@@ -246,7 +250,7 @@ async function evento(id: number, quien: string, tipo: string, detalle: string |
 }
 
 export async function crearAcuerdo(input: {
-  que: string; detalle?: string; area: string; responsable: string; fechaLimite: string; reunionId?: number | null;
+  que: string; detalle?: string; area: string; responsable: string; fechaLimite: string; reunionId?: number | null; prioridad?: string;
 }): Promise<R<{ id: number }>> {
   const s = await sesion();
   if (!s || !veTodo(s.yo)) return SIN_ACCESO;
@@ -257,8 +261,9 @@ export async function crearAcuerdo(input: {
     if (errores.length) return { ok: false, error: errores.join(" ") };
     const resp = gente.find((p) => p.clave === input.responsable)!;
     const rows = (await sql`
-      INSERT INTO acuerdos (reunion_id, que, detalle, area, responsable_clave, responsable_nombre, fecha_limite, fecha_limite_original, creado_por, creado_por_clave)
+      INSERT INTO acuerdos (reunion_id, que, detalle, area, prioridad, responsable_clave, responsable_nombre, fecha_limite, fecha_limite_original, creado_por, creado_por_clave)
       VALUES (${input.reunionId ?? null}, ${input.que.trim().slice(0, MAX_QUE)}, ${limpio(input.detalle, MAX_DETALLE)}, ${input.area},
+              ${esPrioridad(input.prioridad) ? input.prioridad : "media"},
               ${resp.clave}, ${resp.nombre}, ${input.fechaLimite}, ${input.fechaLimite}, ${s.yo.nombre}, ${s.yo.clave})
       RETURNING id
     `) as { id: number }[];
@@ -367,7 +372,7 @@ export async function revisarCumplido(id: number, decision: "confirmar" | "devol
 }
 
 export async function editarAcuerdo(id: number, input: {
-  que: string; detalle?: string; area: string; responsable: string; fechaLimite: string; motivoFecha?: string;
+  que: string; detalle?: string; area: string; responsable: string; fechaLimite: string; motivoFecha?: string; prioridad?: string;
 }): Promise<R<object>> {
   try {
     const p = await conPermiso(id, "editar");
@@ -383,16 +388,18 @@ export async function editarAcuerdo(id: number, input: {
     const motivo = limpio(input.motivoFecha, MAX_MOTIVO);
     if (cambiaFecha && !motivo) return { ok: false, error: "Escribe por qué cambia la fecha límite." };
     const resp = gente.find((g) => g.clave === input.responsable) ?? { clave: p.a.responsableClave, nombre: p.a.responsableNombre };
+    const prioridad: Prioridad = esPrioridad(input.prioridad) ? input.prioridad : p.a.prioridad;
     // Mover una fecha que ya venció no lava el atraso.
     const tarde = p.a.tarde || (cambiaFecha && estaAbierto(p.a.estado) && p.a.fechaLimite < hoy);
     await sql`
       UPDATE acuerdos SET que = ${input.que.trim().slice(0, MAX_QUE)}, detalle = ${limpio(input.detalle, MAX_DETALLE)}, area = ${input.area},
              responsable_clave = ${resp.clave}, responsable_nombre = ${resp.nombre}, fecha_limite = ${input.fechaLimite},
-             tarde = ${tarde}, actualizado_el = now()
+             prioridad = ${prioridad}, tarde = ${tarde}, actualizado_el = now()
       WHERE id = ${id}`;
     const quien = p.s.yo.nombre;
     if (cambiaFecha) await evento(id, quien, "fecha", `${p.a.fechaLimite} → ${input.fechaLimite}: ${motivo}`);
     if (resp.clave !== p.a.responsableClave) await evento(id, quien, "responsable", `${p.a.responsableNombre} → ${resp.nombre}`);
+    if (prioridad !== p.a.prioridad) await evento(id, quien, "prioridad", `${PRIORIDAD_LABEL[p.a.prioridad]} → ${PRIORIDAD_LABEL[prioridad]}`);
     if (input.que.trim() !== p.a.que || input.area !== p.a.area || limpio(input.detalle, MAX_DETALLE) !== p.a.detalle) {
       await evento(id, quien, "editado", input.area !== p.a.area ? `Área: ${AREA_LABEL[p.a.area]} → ${AREA_LABEL[input.area as Area]}` : "Texto corregido");
     }

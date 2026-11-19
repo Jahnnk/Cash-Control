@@ -12,9 +12,9 @@ import {
   anularAcuerdo, avanzarAcuerdo, comentarAcuerdo, editarAcuerdo, getHistorialAcuerdo, revisarCumplido,
   type Acuerdo, type Evento, type YoSesion,
 } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
+import { AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { Pastilla } from "@/components/productos/ui";
-import { Avatar, diaCorto } from "./ui";
+import { Avatar, PrioridadIcono, diaCorto } from "./ui";
 import { yoPara } from "./fila-acuerdo";
 
 const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> = {
@@ -23,7 +23,7 @@ const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> 
 const cuando = (ts: string) => new Date(ts).toLocaleString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const VERBO: Record<string, string> = {
   estado: "", devuelto: "lo devolvió", fecha: "cambió la fecha", responsable: "cambió el responsable",
-  confirmado: "confirmó el cumplido", anulado: "lo anuló", editado: "lo editó",
+  confirmado: "confirmó el cumplido", prioridad: "cambió la prioridad", anulado: "lo anuló", editado: "lo editó",
 };
 
 const CAMPO = "w-full rounded-lg border border-transparent hover:border-gray-200 focus:border-gray-300 px-2 py-1.5 text-sm bg-transparent disabled:hover:border-transparent";
@@ -82,8 +82,8 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
     return true;
   }
 
-  const editar = (cambio: Partial<{ que: string; detalle: string; area: string; responsable: string; fechaLimite: string; motivoFecha: string }>) =>
-    correr(() => editarAcuerdo(a.id, { que: a.que, detalle: a.detalle ?? "", area: a.area, responsable: a.responsableClave, fechaLimite: a.fechaLimite, ...cambio }));
+  const editar = (cambio: Partial<{ que: string; detalle: string; area: string; responsable: string; fechaLimite: string; motivoFecha: string; prioridad: string }>) =>
+    correr(() => editarAcuerdo(a.id, { que: a.que, detalle: a.detalle ?? "", area: a.area, responsable: a.responsableClave, fechaLimite: a.fechaLimite, prioridad: a.prioridad, ...cambio }));
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-label="Detalle del acuerdo">
@@ -152,6 +152,16 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
                 <button type="button" className="text-xs text-gray-500" onClick={() => { setFechaNueva(null); setMotivo(""); }}>Cancelar</button>
               </dd>
             )}
+
+            <dt className="text-gray-500">Prioridad</dt>
+            <dd className="flex items-center gap-1 min-w-0">
+              <PrioridadIcono p={a.prioridad} />
+              {puedeEditar ? (
+                <select value={a.prioridad} onChange={(e) => void editar({ prioridad: e.target.value })} className={CAMPO}>
+                  {PRIORIDADES.map((x) => <option key={x} value={x}>{PRIORIDAD_LABEL[x]}</option>)}
+                </select>
+              ) : <span className="px-2 py-1.5 text-gray-900">{PRIORIDAD_LABEL[a.prioridad]}</span>}
+            </dd>
 
             <dt className="text-gray-500">Área</dt>
             <dd>

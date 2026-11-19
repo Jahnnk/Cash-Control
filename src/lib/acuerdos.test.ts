@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
+import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -187,5 +187,17 @@ describe("carga del equipo y avance por estado", () => {
     expect(r.conteo).toEqual({ cumplido: 1, por_confirmar: 1, en_proceso: 1, vencido: 1, pendiente: 1 });
     expect(r.pctCumplido).toBe(20);
     expect(avancePorEstado([], HOY).pctCumplido).toBeNull();
+  });
+});
+
+describe("prioridad", () => {
+  it("dentro del mismo grupo, Alta primero; sin prioridad cuenta como Media", () => {
+    const l = [
+      { id: 1, estado: "pendiente" as const, fechaLimite: "2026-11-21" },
+      { id: 2, estado: "pendiente" as const, fechaLimite: "2026-11-28", prioridad: "alta" as const },
+      { id: 3, estado: "pendiente" as const, fechaLimite: "2026-11-20", prioridad: "baja" as const },
+      { id: 4, estado: "pendiente" as const, fechaLimite: "2026-11-10", prioridad: "baja" as const },
+    ];
+    expect(orden2(l, HOY).map((a) => a.id)).toEqual([4, 2, 1, 3]);
   });
 });

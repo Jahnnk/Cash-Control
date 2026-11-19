@@ -6,8 +6,8 @@
  * para marcar cumplido y la «batería» de estados.
  */
 
-import { Check } from "lucide-react";
-import { AREA_LABEL, diasRestantes, estaAbierto, type Area, type EstadoGuardado, type Resumen } from "@/lib/acuerdos";
+import { Check, ChevronDown, ChevronsUp, Equal } from "lucide-react";
+import { AREA_LABEL, PRIORIDAD_LABEL, type Prioridad, diasRestantes, estaAbierto, type Area, type EstadoGuardado, type Resumen } from "@/lib/acuerdos";
 
 /** Un color fijo por persona (el mismo en el avatar, la carga del equipo y el cronograma). */
 const PALETA = ["#059669", "#0284C7", "#7C3AED", "#D97706", "#E11D48", "#0F766E", "#4F46E5", "#EA580C"];
@@ -93,5 +93,22 @@ export function LeyendaBateria() {
     <div className="flex flex-wrap gap-3 text-[11px] text-gray-500">
       {TRAMOS.map((t) => <span key={t.k} className="inline-flex items-center gap-1"><span className={`w-2.5 h-2.5 rounded-sm ${t.color}`} />{t.label}</span>)}
     </div>
+  );
+}
+
+const PRIO = {
+  alta: { Icono: ChevronsUp, color: "text-red-600" },
+  media: { Icono: Equal, color: "text-amber-500" },
+  baja: { Icono: ChevronDown, color: "text-sky-600" },
+} as const;
+
+/** La prioridad como en Jira: ⌃⌃ Alta (rojo), = Media (ámbar), ⌄ Baja (azul). */
+export function PrioridadIcono({ p, conTexto = false }: { p: Prioridad; conTexto?: boolean }) {
+  const { Icono, color } = PRIO[p];
+  return (
+    <span className={`inline-flex items-center gap-1 text-xs ${color}`} title={`Prioridad ${PRIORIDAD_LABEL[p].toLowerCase()}`}>
+      <Icono className="w-3.5 h-3.5" strokeWidth={2.5} />
+      {conTexto && <span className="text-gray-700">{PRIORIDAD_LABEL[p]}</span>}
+    </span>
   );
 }
