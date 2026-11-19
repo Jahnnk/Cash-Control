@@ -21,7 +21,7 @@ export function InformesEquipo({ acuerdos, hoy }: { acuerdos: Acuerdo[]; hoy: st
   const av = avancePorEstado(acuerdos, hoy, DIAS);
 
   return (
-    <div className="grid gap-4 lg:grid-cols-2">
+    <div className="grid gap-4 xl:grid-cols-2">
       <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-4 sm:px-6">
         <h2 className="text-[15px] font-semibold text-gray-900">Carga del equipo</h2>
         <p className="text-xs text-gray-500">Cuánto del trabajo abierto tiene cada persona.</p>
