@@ -28,6 +28,13 @@ export const AREA_LABEL: Record<Area, string> = {
 };
 export const esArea = (v: string): v is Area => (AREAS as readonly string[]).includes(v);
 
+/** Prioridad (19-nov-2026, referencia Jira): tres niveles bastan para un equipo chico. Media por defecto. */
+export const PRIORIDADES = ["alta", "media", "baja"] as const;
+export type Prioridad = (typeof PRIORIDADES)[number];
+export const PRIORIDAD_LABEL: Record<Prioridad, string> = { alta: "Alta", media: "Media", baja: "Baja" };
+export const esPrioridad = (v: unknown): v is Prioridad => (PRIORIDADES as readonly unknown[]).includes(v);
+const rangoPrioridad = (p: unknown) => (p === "alta" ? 0 : p === "baja" ? 2 : 1);
+
 /** Lo que se guarda. «Vencido» no se guarda: se calcula con la fecha. */
 export const ESTADOS = ["pendiente", "en_proceso", "por_confirmar", "cumplido", "anulado"] as const;
 export type EstadoGuardado = (typeof ESTADOS)[number];
@@ -131,13 +138,15 @@ export function estadoAlCumplir(tipoResponsable: TipoPersona): EstadoGuardado {
   return tipoResponsable === "direccion" ? "cumplido" : "por_confirmar";
 }
 
-/** Orden de la lista: vencidos primero, luego por confirmar, luego por fecha límite; cerrados al final. */
-export function ordenAcuerdos<T extends AcuerdoBase & { id: number }>(lista: T[], hoy: string): T[] {
+/** Orden de la lista: vencidos, por confirmar y abiertos (dentro de cada uno, Alta primero y luego por fecha); cerrados al final. */
+export function ordenAcuerdos<T extends AcuerdoBase & { id: number; prioridad?: Prioridad }>(lista: T[], hoy: string): T[] {
   const peso = (a: T) => {
     const v = estadoVisible(a, hoy);
     return v === "vencido" ? 0 : v === "por_confirmar" ? 1 : v === "en_proceso" || v === "pendiente" ? 2 : v === "cumplido" ? 3 : 4;
   };
-  return [...lista].sort((a, b) => peso(a) - peso(b) || (peso(a) >= 3 ? b.fechaLimite.localeCompare(a.fechaLimite) : a.fechaLimite.localeCompare(b.fechaLimite)) || a.id - b.id);
+  return [...lista].sort((a, b) => peso(a) - peso(b)
+    || (peso(a) >= 3 ? b.fechaLimite.localeCompare(a.fechaLimite) : rangoPrioridad(a.prioridad) - rangoPrioridad(b.prioridad) || a.fechaLimite.localeCompare(b.fechaLimite))
+    || a.id - b.id);
 }
 
 /** Conteos para el resumen de una sección cerrada. */

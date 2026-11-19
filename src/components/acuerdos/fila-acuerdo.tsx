@@ -10,7 +10,7 @@ import { MessageSquare } from "lucide-react";
 import { avanzarAcuerdo, revisarCumplido, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
 import { alertaDe, puede, type Yo } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
-import { Avatar, AreaTag, Circulo, FechaChip } from "./ui";
+import { Avatar, AreaTag, Circulo, FechaChip, PrioridadIcono } from "./ui";
 
 /** El admin con la contraseña de su sede actúa como el responsable de lo que le llega (lista «mía»). */
 export const yoPara = (yo: YoSesion, a: Acuerdo, comoResponsable: boolean): Yo => (comoResponsable ? { ...yo, clave: a.responsableClave } : yo);
@@ -56,6 +56,7 @@ export function FilaAcuerdo({ a, yo, hoy, comoResponsable = false, mostrarRespon
             </div>
           )}
         </div>
+        {a.prioridad !== "media" && <PrioridadIcono p={a.prioridad} />}
         <span className="hidden sm:inline-flex"><AreaTag area={a.area} /></span>
         {a.comentarios > 0 && <span className="hidden sm:inline-flex items-center gap-0.5 text-[11px] text-gray-400"><MessageSquare className="w-3 h-3" />{a.comentarios}</span>}
         <span className="shrink-0 text-right sm:w-20"><FechaChip fecha={a.fechaLimite} hoy={hoy} estado={a.estado} /></span>
