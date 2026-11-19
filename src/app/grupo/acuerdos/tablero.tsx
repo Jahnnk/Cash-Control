@@ -12,8 +12,11 @@ import { crearAcuerdo, crearReunion, getTableroAcuerdos, type Acuerdo, type Reun
 import { AREA_LABEL, AREAS, conteos, estadoVisible, ordenAcuerdos, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { AcuerdoItem, fechaLarga } from "@/components/acuerdos/acuerdo-item";
 import { Kpi, Pastilla, Segmentado } from "@/components/productos/ui";
+import { IndicadoresAcuerdos } from "./indicadores";
 
-type Vista = "mios" | "todos" | "reuniones";
+type Vista = "mios" | "todos" | "reuniones" | "indicadores";
+const VISTAS: Vista[] = ["mios", "todos", "reuniones", "indicadores"];
+const vistaDeUrl = () => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("vista"));
 type Datos = { hoy: string; yo: YoSesion; personas: Persona[]; acuerdos: Acuerdo[]; reuniones: Reunion[] };
 
 const INPUT = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-white";
@@ -22,9 +25,13 @@ const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLo
 export function TableroAcuerdos() {
   const [d, setD] = useState<Datos | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [vista, setVista] = useState<Vista>("mios");
+  // ?vista=indicadores (el aviso del Dashboard lleva directo). Al servidor no le importa: la primera pintura es el cargando.
+  const [vista, setVista] = useState<Vista>(() => {
+    const v = vistaDeUrl();
+    return v === "vencidos" ? "todos" : VISTAS.includes(v as Vista) ? (v as Vista) : "mios";
+  });
   const [form, setForm] = useState<null | "tarea" | "reunion">(null);
-  const [filtroEstado, setFiltroEstado] = useState<"abiertos" | "vencido" | "por_confirmar" | "cerrados" | "todos">("abiertos");
+  const [filtroEstado, setFiltroEstado] = useState<"abiertos" | "vencido" | "por_confirmar" | "cerrados" | "todos">(() => (vistaDeUrl() === "vencidos" ? "vencido" : "abiertos"));
   const [filtroArea, setFiltroArea] = useState("");
   const [filtroResp, setFiltroResp] = useState("");
   const [q, setQ] = useState("");
@@ -101,7 +108,10 @@ export function TableroAcuerdos() {
         { valor: "mios", etiqueta: `Lo mío (${mios.length})` },
         { valor: "todos", etiqueta: "Todos" },
         { valor: "reuniones", etiqueta: `Reuniones (${d.reuniones.length})` },
+        { valor: "indicadores", etiqueta: "Indicadores" },
       ]} />
+
+      {vista === "indicadores" && <IndicadoresAcuerdos />}
 
       {vista === "mios" && (
         <div className="space-y-4">

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { conteos, erroresAcuerdo, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
+import { cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -77,5 +77,40 @@ describe("orden y conteos", () => {
   });
   it("cuenta abiertos, vencidos, por confirmar y los que vencen hoy", () => {
     expect(conteos(lista, HOY)).toEqual({ abiertos: 3, vencidos: 1, porConfirmar: 1, venceHoy: 1 });
+  });
+});
+
+describe("indicadores de cumplimiento", () => {
+  const mk = (id: number, o: Partial<AcuerdoIndicador>): AcuerdoIndicador & { id: number } => ({
+    id, estado: "pendiente", fechaLimite: "2026-11-10", tarde: false, area: "marketing", responsableClave: "u:1", responsableNombre: "Ana", ...o,
+  });
+  it("cada acuerdo cae en su caja", () => {
+    expect(cajaDe(mk(1, { estado: "cumplido" }), HOY)).toBe("a_tiempo");
+    expect(cajaDe(mk(1, { estado: "por_confirmar", tarde: true }), HOY)).toBe("tarde");
+    expect(cajaDe(mk(1, {}), HOY)).toBe("vencido");
+    expect(cajaDe(mk(1, { fechaLimite: "2026-11-25" }), HOY)).toBe("en_plazo");
+    expect(cajaDe(mk(1, { estado: "anulado" }), HOY)).toBe("fuera");
+  });
+  it("sin nada que juzgar es null, no 0%", () => {
+    expect(resumir([mk(1, { fechaLimite: "2026-11-30" })], HOY).pctATiempo).toBeNull();
+    expect(resumir([], HOY).pctCumplido).toBeNull();
+  });
+  it("por responsable y por área, peor primero, solo lo que vence en el periodo", () => {
+    const lista = [
+      mk(1, { estado: "cumplido" }),
+      mk(2, { estado: "cumplido", tarde: true }),
+      mk(3, { responsableClave: "u:2", responsableNombre: "Luis", area: "operaciones" }),
+      mk(4, { responsableClave: "u:2", responsableNombre: "Luis", area: "operaciones", estado: "cumplido" }),
+      mk(5, { fechaLimite: "2026-10-05" }), // otro mes
+      mk(6, { estado: "anulado" }),
+    ];
+    const r = indicadores(lista, HOY, periodoMes("2026-11"));
+    expect(r.total).toMatchObject({ aTiempo: 2, tarde: 1, vencidos: 1, juzgados: 4, pctATiempo: 50, pctCumplido: 75 });
+    expect(r.porResponsable.map((x) => [x.nombre, x.pctATiempo])).toEqual([["Luis", 50], ["Ana", 50]]); // empate: primero quien tiene vencidos
+    expect(r.porArea.map((x) => x.nombre)).toEqual(["Operaciones", "Marketing"]);
+  });
+  it("meses y periodos", () => {
+    expect(periodoMes("2026-02")).toEqual({ desde: "2026-02-01", hasta: "2026-02-28" });
+    expect(mesesHasta("2026-02", 3)).toEqual(["2025-12", "2026-01", "2026-02"]);
   });
 });
