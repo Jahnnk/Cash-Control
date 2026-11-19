@@ -19,7 +19,7 @@ import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { editarAcuerdo, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
 import { AREA_LABEL, AREAS, ESTADO_LABEL, MAX_MOTIVO, PRIORIDAD_LABEL, PRIORIDADES, estadoVisible, puede, type Persona } from "@/lib/acuerdos";
-import { useCambiarEstado } from "@/components/acuerdos/fila-acuerdo";
+import { useCambiarEstado, yoPara } from "@/components/acuerdos/fila-acuerdo";
 import { SelectorPersona } from "@/components/acuerdos/alta-rapida";
 import { useToast } from "@/components/toast-provider";
 import { Avatar, AreaTag, COLOR_ESTADO, EstadoCelda, PrioridadIcono, diaCorto } from "@/components/acuerdos/ui";
@@ -109,7 +109,7 @@ function CambiarFechas({ a, hoy, desdeInicial, hastaInicial, conDesde, onGuardar
   );
 }
 
-export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, onAbrir, onCambio }: {
+export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, comoResponsable = false, onAbrir, onCambio }: {
   titulo: string;
   color: string;
   avatar?: { nombre: string; clave: string };
@@ -118,6 +118,8 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, o
   hoy: string;
   /** Con la lista del equipo, las celdas se editan ahí mismo (si la sesión puede editar). */
   personas?: Persona[];
+  /** Panel de Sede con la contraseña de la sede: cuenta como el responsable de cada tarea (ver yoPara). */
+  comoResponsable?: boolean;
   onAbrir: (id: number) => void;
   onCambio: () => void;
 }) {
@@ -172,7 +174,7 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, o
               {items.map((a) => {
                 const v = estadoVisible(a, hoy);
                 const cerrado = a.estado === "cumplido" || a.estado === "anulado";
-                const ed = !!personas && puede(yo, a, "editar");
+                const ed = !!personas && puede(yoPara(yo, a, comoResponsable), a, "editar");
                 return (
                   <li key={a.id} role="button" tabIndex={0} onClick={() => onAbrir(a.id)} onKeyDown={(e) => { if (e.key === "Enter") onAbrir(a.id); }}
                     className={`${COLS} border-b border-gray-200 bg-white cursor-pointer hover:bg-gray-50 ${a.estado === "anulado" ? "opacity-50" : ""}`}>
@@ -180,7 +182,7 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, o
                       <span className={`text-sm truncate ${cerrado ? "text-gray-400 line-through" : "text-gray-900"}`} title={a.que}>{a.que}</span>
                     </span>
                     <span className="h-10 border-r border-white">
-                      <EstadoCelda estado={a.estado} puede={puede(yo, a, "avanzar")} ocupado={ocupado === a.id} onCambiar={(n) => void cambiar(a, n)} />
+                      <EstadoCelda estado={a.estado} puede={puede(yoPara(yo, a, comoResponsable), a, "avanzar")} ocupado={ocupado === a.id} onCambiar={(n) => void cambiar(a, n)} />
                     </span>
                     <span className={`${CELDA} gap-2 ${ed ? EDITABLE : ""}`}>
                       <Avatar nombre={a.responsableNombre} clave={a.responsableClave} />

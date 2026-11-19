@@ -12,12 +12,13 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, Home, Loader2, Search, Users } from "lucide-react";
 import { getTableroAcuerdos, type Acuerdo, type Reunion, type YoSesion } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, conAlerta, diasRestantes, estadoVisible, ordenAcuerdos, type Area, type EstadoVisible, type Persona } from "@/lib/acuerdos";
+import { AREA_LABEL, AREAS, conAlerta, estadoVisible, ordenAcuerdos, type Area, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { Pastilla, Segmentado } from "@/components/productos/ui";
 import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
 import { FilaAcuerdo } from "@/components/acuerdos/fila-acuerdo";
 import { DetalleAcuerdo } from "@/components/acuerdos/detalle-acuerdo";
 import { AltaRapida } from "@/components/acuerdos/alta-rapida";
+import { MisTareasPorUrgencia } from "@/components/acuerdos/mis-tareas";
 import { AreaTag, COLOR_ESTADO, colorPersona, diaCorto } from "@/components/acuerdos/ui";
 import { Kanban } from "./kanban";
 import { PanelEjecutivo } from "./panel-ejecutivo";
@@ -109,18 +110,9 @@ export function TableroAcuerdos() {
   const enDetalle = abierto !== null ? d.acuerdos.find((a) => a.id === abierto) ?? null : null;
   const recargar = () => void cargar();
   const responsables = Array.from(new Map(d.acuerdos.map((a) => [a.responsableClave, a.responsableNombre])).entries()).sort((a, b) => a[1].localeCompare(b[1], "es"));
-  const filas = (items: Acuerdo[], mostrarResponsable = true) => (
-    <ul>{items.map((a) => <FilaAcuerdo key={a.id} a={a} yo={d.yo} hoy={d.hoy} mostrarResponsable={mostrarResponsable} onAbrir={() => setAbierto(a.id)} onCambio={recargar} />)}</ul>
+  const filas = (items: Acuerdo[]) => (
+    <ul>{items.map((a) => <FilaAcuerdo key={a.id} a={a} yo={d.yo} hoy={d.hoy} onAbrir={() => setAbierto(a.id)} onCambio={recargar} />)}</ul>
   );
-
-  // Mis tareas por urgencia, como «My tasks» de Asana.
-  const dias = (a: Acuerdo) => diasRestantes(a.fechaLimite, d.hoy);
-  const grupos: { titulo: string; items: Acuerdo[]; tono?: string }[] = [
-    { titulo: "Vencidas", items: mios.filter((a) => dias(a) < 0), tono: "text-red-700" },
-    { titulo: "Hoy y mañana", items: mios.filter((a) => dias(a) >= 0 && dias(a) <= 1), tono: "text-amber-700" },
-    { titulo: "Próximos 7 días", items: mios.filter((a) => dias(a) > 1 && dias(a) <= 7) },
-    { titulo: "Más adelante", items: mios.filter((a) => dias(a) > 7) },
-  ];
 
   const filtros = (
     <div className="flex flex-wrap gap-2 items-center">
@@ -175,14 +167,7 @@ export function TableroAcuerdos() {
 
       {vista === "mios" && (
         <div className="space-y-4">
-          <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5">
-            {mios.length === 0 ? <p className="text-sm text-gray-500 py-2">No tienes tareas abiertas.</p> : grupos.filter((g) => g.items.length).map((g) => (
-              <div key={g.titulo} className="mt-2 first:mt-0">
-                <h2 className={`text-xs font-semibold uppercase tracking-wide ${g.tono ?? "text-gray-500"}`}>{g.titulo} <span className="text-gray-400 font-normal">{g.items.length}</span></h2>
-                {filas(g.items, false)}
-              </div>
-            ))}
-          </section>
+          <MisTareasPorUrgencia items={mios} yo={d.yo} hoy={d.hoy} onAbrir={setAbierto} onCambio={recargar} />
           {asignadosPorMi.length > 0 && (
             <details className="group bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5">
               <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-gray-900 [&::-webkit-details-marker]:hidden">
@@ -281,9 +266,12 @@ const COLOR_AREA: Record<Area, string> = {
   marketing: "#DB2777", administracion: "#0284C7", operaciones: "#059669", finanzas: "#7C3AED", calidad: "#D97706",
 };
 
-/** La lista agrupada, como los grupos de Monday: por persona, por área o por estado, cada uno con su color. */
-function Agrupado({ items, por, hoy, yo, personas, onAbrir, onCambio }: {
-  items: Acuerdo[]; por: "responsable" | "area" | "estado"; hoy: string; yo: YoSesion; personas: Persona[]; onAbrir: (id: number) => void; onCambio: () => void;
+/**
+ * La lista agrupada, como los grupos de Monday: por persona, por área o por estado, cada uno con su color.
+ * También la usa el Panel de Sede (por estado, sin `personas`: el administrador no edita, solo cambia el estado).
+ */
+export function Agrupado({ items, por, hoy, yo, personas, comoResponsable = false, onAbrir, onCambio }: {
+  items: Acuerdo[]; por: "responsable" | "area" | "estado"; hoy: string; yo: YoSesion; personas?: Persona[]; comoResponsable?: boolean; onAbrir: (id: number) => void; onCambio: () => void;
 }) {
   const grupos = new Map<string, Acuerdo[]>();
   for (const a of items) {
@@ -302,7 +290,7 @@ function Agrupado({ items, por, hoy, yo, personas, onAbrir, onCambio }: {
         const color = por === "responsable" ? colorPersona(k) : por === "area" ? COLOR_AREA[k as Area] : COLOR_GRUPO_ESTADO[k as EstadoVisible];
         return (
           <GrupoMonday key={k} titulo={titulo} color={color} avatar={por === "responsable" ? { nombre: titulo, clave: k } : undefined}
-            items={l} yo={yo} hoy={hoy} personas={personas} onAbrir={onAbrir} onCambio={onCambio} />
+            items={l} yo={yo} hoy={hoy} personas={personas} comoResponsable={comoResponsable} onAbrir={onAbrir} onCambio={onCambio} />
         );
       })}
     </div>
