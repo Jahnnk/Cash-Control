@@ -1,5 +1,6 @@
 "use client";
 
+import { AvisoAcuerdos } from "./aviso-acuerdos";
 import { useState } from "react";
 import type { BusinessSummary } from "@/app/actions/grupo";
 import type { GroupBreakeven } from "@/app/actions/breakeven";
@@ -239,6 +240,9 @@ export function GrupoDashboardClient({
       </header>
 
       <DatosCargados version={versionCargas} onVerExcel={() => setPestana("datos")} />
+
+      {/* Acuerdos vencidos o esperando tu confirmación (Acuerdos y tareas, fase 2). Sin nada pendiente no aparece. */}
+      <AvisoAcuerdos />
 
       <div className="border-b border-gray-200">
         <nav className="flex gap-6 overflow-x-auto -mb-px [scrollbar-width:none] [&::-webkit-scrollbar]:hidden">

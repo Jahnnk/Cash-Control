@@ -26,6 +26,7 @@ import {
   MAX_MOTIVO,
   MAX_QUE,
   type AccionAcuerdo,
+  type AcuerdoIndicador,
   type Area,
   type EstadoGuardado,
   type Persona,
@@ -420,5 +421,58 @@ export async function comentarAcuerdo(id: number, texto: string): Promise<R<obje
     return { ok: true };
   } catch (e) {
     return errorBD("comentar", e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Fase 2: indicadores y alerta al CEO
+
+/** Todo lo que vence desde hace 12 meses (sin anulados): el cálculo de los indicadores lo hace la pantalla. */
+export async function getIndicadoresAcuerdos(): Promise<R<{ hoy: string; acuerdos: AcuerdoIndicador[] }>> {
+  const s = await sesion();
+  if (!s || !veTodo(s.yo)) return SIN_ACCESO;
+  try {
+    const acuerdos = (await sql`
+      SELECT a.estado, a.fecha_limite::text AS "fechaLimite", a.tarde, a.area,
+             a.responsable_clave AS "responsableClave", a.responsable_nombre AS "responsableNombre"
+      FROM acuerdos a
+      WHERE a.estado <> 'anulado' AND a.fecha_limite >= date_trunc('month', now() - interval '11 months')::date
+    `) as AcuerdoIndicador[];
+    return { ok: true, hoy: getToday(), acuerdos };
+  } catch (e) {
+    return errorBD("indicadores", e);
+  }
+}
+
+export type AlertaAcuerdos = {
+  vencidos: number;
+  /** Quiénes tienen vencidos, el que más primero. */
+  porPersona: { nombre: string; n: number }[];
+  porConfirmar: number;
+};
+
+/**
+ * Para el Dashboard de Grupo: ¿hay incumplimientos? Solo para quien supervisa (dirección). null = nada que
+ * avisar o no aplica. Nunca lanza: el Dashboard se arma igual.
+ */
+export async function getAlertaAcuerdos(): Promise<AlertaAcuerdos | null> {
+  const s = await sesion();
+  if (!s || s.yo.tipo !== "direccion") return null;
+  try {
+    const hoy = getToday();
+    const rows = (await sql`
+      SELECT responsable_nombre AS nombre,
+             count(*) FILTER (WHERE estado IN ('pendiente','en_proceso') AND fecha_limite < ${hoy})::int AS vencidos,
+             count(*) FILTER (WHERE estado = 'por_confirmar')::int AS por_confirmar
+      FROM acuerdos WHERE estado IN ('pendiente','en_proceso','por_confirmar')
+      GROUP BY responsable_nombre
+    `) as { nombre: string; vencidos: number; por_confirmar: number }[];
+    const porPersona = rows.filter((r) => r.vencidos > 0).map((r) => ({ nombre: r.nombre, n: r.vencidos })).sort((a, b) => b.n - a.n);
+    const vencidos = porPersona.reduce((t, r) => t + r.n, 0);
+    const porConfirmar = rows.reduce((t, r) => t + r.por_confirmar, 0);
+    return vencidos || porConfirmar ? { vencidos, porPersona, porConfirmar } : null;
+  } catch (e) {
+    console.error("[acuerdos:alerta]", e);
+    return null;
   }
 }

@@ -154,3 +154,79 @@ export function conteos(lista: AcuerdoBase[], hoy: string) {
   }
   return c;
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Indicadores de cumplimiento (fase 2, 19-nov-2026)
+//
+// El periodo se mide por FECHA LÍMITE: «¿cumplimos lo que vencía en noviembre?». Cada acuerdo cae en una de
+// cuatro cajas (los anulados no cuentan):
+//   a tiempo   lo entregó (cumplido o por confirmar) sin atraso
+//   tarde      lo entregó, pero tarde (o se le movió la fecha ya vencida)
+//   vencido    sigue abierto y la fecha ya pasó
+//   en plazo   sigue abierto y todavía tiene tiempo → aún no se juzga
+// % a tiempo = a tiempo ÷ (a tiempo + tarde + vencido). Sin nada que juzgar es null, NO 0%: 0% acusaría
+// a alguien que todavía no tuvo ninguna fecha (misma regla del Highlight).
+
+export type AcuerdoIndicador = AcuerdoBase & { tarde: boolean; area: Area; responsableClave: string; responsableNombre: string };
+export type Caja = "a_tiempo" | "tarde" | "vencido" | "en_plazo" | "fuera";
+
+export function cajaDe(a: AcuerdoIndicador, hoy: string): Caja {
+  if (a.estado === "anulado") return "fuera";
+  if (a.estado === "cumplido" || a.estado === "por_confirmar") return a.tarde ? "tarde" : "a_tiempo";
+  return a.fechaLimite < hoy ? "vencido" : "en_plazo";
+}
+
+export type Resumen = { aTiempo: number; tarde: number; vencidos: number; enPlazo: number; juzgados: number; pctATiempo: number | null; pctCumplido: number | null };
+
+export function resumir(lista: AcuerdoIndicador[], hoy: string): Resumen {
+  const r = { aTiempo: 0, tarde: 0, vencidos: 0, enPlazo: 0 };
+  for (const a of lista) {
+    const c = cajaDe(a, hoy);
+    if (c === "a_tiempo") r.aTiempo++;
+    else if (c === "tarde") r.tarde++;
+    else if (c === "vencido") r.vencidos++;
+    else if (c === "en_plazo") r.enPlazo++;
+  }
+  const juzgados = r.aTiempo + r.tarde + r.vencidos;
+  const pct = (n: number) => (juzgados ? Math.round((n / juzgados) * 100) : null);
+  return { ...r, juzgados, pctATiempo: pct(r.aTiempo), pctCumplido: pct(r.aTiempo + r.tarde) };
+}
+
+export type Periodo = { desde: string; hasta: string };
+export const enPeriodo = (a: { fechaLimite: string }, p: Periodo) => a.fechaLimite >= p.desde && a.fechaLimite <= p.hasta;
+
+/** Peor primero: menor % a tiempo; los que aún no se pueden juzgar, al final. */
+const peorPrimero = (a: Resumen, b: Resumen) =>
+  (a.pctATiempo ?? 101) - (b.pctATiempo ?? 101) || b.vencidos - a.vencidos || b.juzgados - a.juzgados;
+
+export function indicadores(lista: AcuerdoIndicador[], hoy: string, p: Periodo) {
+  const del = lista.filter((a) => a.estado !== "anulado" && enPeriodo(a, p));
+  const agrupar = <K extends string>(clave: (a: AcuerdoIndicador) => K, nombre: (a: AcuerdoIndicador) => string) => {
+    const m = new Map<K, { nombre: string; items: AcuerdoIndicador[] }>();
+    for (const a of del) {
+      const k = clave(a);
+      const g = m.get(k) ?? { nombre: nombre(a), items: [] };
+      g.items.push(a);
+      m.set(k, g);
+    }
+    return [...m.entries()].map(([k, g]) => ({ clave: k, nombre: g.nombre, ...resumir(g.items, hoy) })).sort(peorPrimero);
+  };
+  return {
+    total: resumir(del, hoy),
+    porResponsable: agrupar((a) => a.responsableClave, (a) => a.responsableNombre),
+    porArea: agrupar((a) => a.area, (a) => AREA_LABEL[a.area]),
+  };
+}
+
+/** Primer y último día de un mes «YYYY-MM». */
+export function periodoMes(mes: string): Periodo {
+  const [y, m] = mes.split("-").map(Number);
+  const ultimo = new Date(Date.UTC(y, m, 0)).getUTCDate();
+  return { desde: `${mes}-01`, hasta: `${mes}-${String(ultimo).padStart(2, "0")}` };
+}
+
+/** Los últimos `n` meses terminando en `mes`, del más viejo al más nuevo. */
+export function mesesHasta(mes: string, n: number): string[] {
+  const [y, m] = mes.split("-").map(Number);
+  return Array.from({ length: n }, (_, i) => new Date(Date.UTC(y, m - 1 - (n - 1 - i), 1)).toISOString().slice(0, 7));
+}
