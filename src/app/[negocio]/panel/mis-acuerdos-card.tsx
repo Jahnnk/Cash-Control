@@ -3,7 +3,7 @@
 /**
  * Panel de Sede → «Mis acuerdos y tareas» (19-nov-2026). Va debajo del Highlight: el Highlight es lo MÁS
  * importante de la semana; aquí está todo lo demás que le asignaron al administrador. Plegada por defecto,
- * con el resumen visible. Lo urgente (vencido, devuelto, vence hoy o mañana, nuevo) va en una franja siempre
+ * con el resumen visible. Lo urgente (vencido, vence hoy o mañana, nuevo) va en una franja siempre
  * visible encima. Sin acuerdos asignados, no se muestra.
  */
 
@@ -47,11 +47,10 @@ export function MisAcuerdosCard() {
           <Pastilla>{c.abiertos} {c.abiertos === 1 ? "abierto" : "abiertos"}</Pastilla>
           {c.vencidos > 0 && <Pastilla tono="rojo">{c.vencidos} {c.vencidos === 1 ? "vencido" : "vencidos"}</Pastilla>}
           {c.venceHoy > 0 && <Pastilla tono="ambar">{c.venceHoy} vence{c.venceHoy === 1 ? "" : "n"} hoy</Pastilla>}
-          {c.porConfirmar > 0 && <Pastilla tono="azul">{c.porConfirmar} esperando confirmación</Pastilla>}
         </div>
       }
     >
-      <p className="text-xs text-gray-500 mb-1">Toca el círculo cuando termines. Toca la tarea para ver el detalle o comentar.</p>
+      <p className="text-xs text-gray-500 mb-1">Cambia el estado con el botón de color: No iniciado, En progreso o Hecho. Toca la tarea para ver el detalle o comentar.</p>
       <ul>
         {lista.map((a) => (
           <FilaAcuerdo key={a.id} a={a} yo={d.yo} hoy={d.hoy} comoResponsable mostrarResponsable={false} onAbrir={() => setAbierto(a.id)} onCambio={() => void cargar()} />

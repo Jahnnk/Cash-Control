@@ -81,10 +81,6 @@ export function ResumenSemanalVista({ acuerdos, reuniones, hoy }: { acuerdos: Ac
           filas={r.arrastrados.map((a) => ({ id: a.id, que: a.que, quien: a.responsableNombre, extra: <Pastilla tono="rojo">hace {a.diasAtraso} {a.diasAtraso === 1 ? "día" : "días"}</Pastilla> }))} />
         <Lista titulo="Vencen esta semana" vacio="Nada vence esta semana."
           filas={r.proximos.map((a) => ({ id: a.id, que: a.que, quien: a.responsableNombre, extra: <span className="text-gray-500">{diaCorto(a.fechaLimite)}</span> }))} />
-        {r.porConfirmar.length > 0 && (
-          <Lista titulo="Esperan confirmación" vacio=""
-            filas={r.porConfirmar.map((a) => ({ id: a.id, que: a.que, quien: a.responsableNombre, extra: <Pastilla tono="ambar">por confirmar</Pastilla> }))} />
-        )}
         <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-6">
           <h2 className="text-[15px] font-semibold text-gray-900">Por responsable</h2>
           <p className="text-xs text-gray-500">Lo que vencía en la semana.</p>

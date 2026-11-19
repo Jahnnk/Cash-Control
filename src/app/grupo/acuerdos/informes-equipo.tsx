@@ -12,7 +12,7 @@ import { avancePorEstado, cargaEquipo, ESTADO_LABEL, ESTADOS_AVANCE } from "@/li
 import { Avatar, colorPersona } from "@/components/acuerdos/ui";
 
 const COLOR_ESTADO: Record<(typeof ESTADOS_AVANCE)[number], string> = {
-  cumplido: "#059669", por_confirmar: "#F59E0B", en_proceso: "#3B82F6", vencido: "#DC2626", pendiente: "#D1D5DB",
+  cumplido: "#10B981", en_proceso: "#F59E0B", vencido: "#DC2626", pendiente: "#D1D5DB",
 };
 const DIAS = 30;
 
@@ -88,7 +88,7 @@ function Dona({ av }: { av: ReturnType<typeof avancePorEstado> }) {
     return [...l, { e, largo: (av.conteo[e] / av.total) * c, desde }];
   }, []);
   return (
-    <svg viewBox="0 0 140 140" className="w-36 h-36 shrink-0" role="img" aria-label={`${av.pctCumplido}% cumplido`}>
+    <svg viewBox="0 0 140 140" className="w-36 h-36 shrink-0" role="img" aria-label={`${av.pctCumplido}% hecho`}>
       <g transform="rotate(-90 70 70)">
         {arcos.map(({ e, largo, desde }) => (
           <circle key={e} cx="70" cy="70" r={r} fill="none" stroke={COLOR_ESTADO[e]} strokeWidth="22"
@@ -96,7 +96,7 @@ function Dona({ av }: { av: ReturnType<typeof avancePorEstado> }) {
         ))}
       </g>
       <text x="70" y="70" textAnchor="middle" className="fill-primary" style={{ fontSize: 24, fontWeight: 600 }}>{av.pctCumplido}%</text>
-      <text x="70" y="88" textAnchor="middle" className="fill-gray-500" style={{ fontSize: 11 }}>cumplido</text>
+      <text x="70" y="88" textAnchor="middle" className="fill-gray-500" style={{ fontSize: 11 }}>hecho</text>
     </svg>
   );
 }

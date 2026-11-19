@@ -10,10 +10,10 @@
  *
  * Reglas (copiadas de lo que ya funciona en Highlight y Supervisiones):
  *   · «Vencido» lo pone el sistema: fecha límite pasada y el acuerdo sin cumplir. Nadie lo marca a mano.
- *   · El responsable marca «cumplido» y la dirección lo confirma o lo devuelve. Si el responsable es de la
- *     dirección, su «cumplido» vale directo (no tiene a quién pedirle confirmación).
- *   · «A tiempo» lo decide cuándo lo marcó el responsable, no cuándo lo confirmó la dirección.
- *   · Lo tarde queda tarde (`tarde`): devolver o mover la fecha no lava un atraso.
+ *   · Tres estados, como Monday (pedido de Jahnn, 19-nov-2026): No iniciado → En progreso → Hecho. El
+ *     responsable lo cambia solo; no hay paso de «confirmar». Si algo no quedó bien, se vuelve a En progreso.
+ *     (Los acuerdos viejos guardados como «por confirmar» se leen como Hecho: ver actions/acuerdos.ts.)
+ *   · Lo tarde queda tarde (`tarde`): reabrir o mover la fecha no lava un atraso.
  *   · Cambiar la fecha límite pide motivo y guarda la fecha original.
  */
 
@@ -36,15 +36,14 @@ export const esPrioridad = (v: unknown): v is Prioridad => (PRIORIDADES as reado
 const rangoPrioridad = (p: unknown) => (p === "alta" ? 0 : p === "baja" ? 2 : 1);
 
 /** Lo que se guarda. «Vencido» no se guarda: se calcula con la fecha. */
-export const ESTADOS = ["pendiente", "en_proceso", "por_confirmar", "cumplido", "anulado"] as const;
+export const ESTADOS = ["pendiente", "en_proceso", "cumplido", "anulado"] as const;
 export type EstadoGuardado = (typeof ESTADOS)[number];
 export type EstadoVisible = EstadoGuardado | "vencido";
 
 export const ESTADO_LABEL: Record<EstadoVisible, string> = {
-  pendiente: "Pendiente",
-  en_proceso: "En proceso",
-  por_confirmar: "Por confirmar",
-  cumplido: "Cumplido",
+  pendiente: "No iniciado",
+  en_proceso: "En progreso",
+  cumplido: "Hecho",
   vencido: "Vencido",
   anulado: "Anulado",
 };
@@ -62,7 +61,7 @@ export type AcuerdoBase = {
   fechaLimite: string; // YYYY-MM-DD
 };
 
-/** ¿Sigue abierto? (pendiente o en proceso). Lo «por confirmar» ya lo entregó el responsable. */
+/** ¿Sigue abierto? (no iniciado o en progreso). */
 export const estaAbierto = (e: EstadoGuardado) => e === "pendiente" || e === "en_proceso";
 
 export function estadoVisible(a: AcuerdoBase, hoy: string): EstadoVisible {
@@ -109,8 +108,7 @@ export function erroresAcuerdo(a: NuevoAcuerdo, hoy: string, claves: Set<string>
 /** Lo que la sesión puede hacer con un acuerdo. */
 export type Yo = { clave: string; tipo: TipoPersona };
 export type AccionAcuerdo =
-  | "avanzar" // pendiente ↔ en proceso, marcar cumplido
-  | "confirmar" // confirmar o devolver un «por confirmar»
+  | "avanzar" // cambiar el estado: no iniciado, en progreso o hecho (también reabrir)
   | "editar" // qué, área, responsable, fecha
   | "anular"
   | "comentar";
@@ -122,9 +120,7 @@ export function puede(yo: Yo, a: { responsableClave: string; creadoPorClave: str
   if (a.estado === "anulado") return false;
   switch (accion) {
     case "avanzar":
-      return estaAbierto(a.estado) && (esResp || dir);
-    case "confirmar":
-      return a.estado === "por_confirmar" && dir;
+      return esResp || dir;
     case "editar":
     case "anular":
       return a.estado !== "cumplido" && (dir || esCreador);
@@ -133,16 +129,11 @@ export function puede(yo: Yo, a: { responsableClave: string; creadoPorClave: str
   }
 }
 
-/** Al marcar cumplido: si quien responde es de la dirección, vale directo. */
-export function estadoAlCumplir(tipoResponsable: TipoPersona): EstadoGuardado {
-  return tipoResponsable === "direccion" ? "cumplido" : "por_confirmar";
-}
-
-/** Orden de la lista: vencidos, por confirmar y abiertos (dentro de cada uno, Alta primero y luego por fecha); cerrados al final. */
+/** Orden de la lista: vencidos y abiertos (dentro de cada uno, Alta primero y luego por fecha); cerrados al final. */
 export function ordenAcuerdos<T extends AcuerdoBase & { id: number; prioridad?: Prioridad }>(lista: T[], hoy: string): T[] {
   const peso = (a: T) => {
     const v = estadoVisible(a, hoy);
-    return v === "vencido" ? 0 : v === "por_confirmar" ? 1 : v === "en_proceso" || v === "pendiente" ? 2 : v === "cumplido" ? 3 : 4;
+    return v === "vencido" ? 0 : v === "en_proceso" || v === "pendiente" ? 2 : v === "cumplido" ? 3 : 4;
   };
   return [...lista].sort((a, b) => peso(a) - peso(b)
     || (peso(a) >= 3 ? b.fechaLimite.localeCompare(a.fechaLimite) : rangoPrioridad(a.prioridad) - rangoPrioridad(b.prioridad) || a.fechaLimite.localeCompare(b.fechaLimite))
@@ -151,11 +142,10 @@ export function ordenAcuerdos<T extends AcuerdoBase & { id: number; prioridad?: 
 
 /** Conteos para el resumen de una sección cerrada. */
 export function conteos(lista: AcuerdoBase[], hoy: string) {
-  const c = { abiertos: 0, vencidos: 0, porConfirmar: 0, venceHoy: 0 };
+  const c = { abiertos: 0, vencidos: 0, venceHoy: 0 };
   for (const a of lista) {
     const v = estadoVisible(a, hoy);
     if (v === "vencido") c.vencidos++;
-    if (v === "por_confirmar") c.porConfirmar++;
     if (estaAbierto(a.estado)) {
       c.abiertos++;
       if (a.fechaLimite === hoy) c.venceHoy++;
@@ -169,7 +159,7 @@ export function conteos(lista: AcuerdoBase[], hoy: string) {
 //
 // El periodo se mide por FECHA LÍMITE: «¿cumplimos lo que vencía en noviembre?». Cada acuerdo cae en una de
 // cuatro cajas (los anulados no cuentan):
-//   a tiempo   lo entregó (cumplido o por confirmar) sin atraso
+//   a tiempo   lo entregó (hecho) sin atraso
 //   tarde      lo entregó, pero tarde (o se le movió la fecha ya vencida)
 //   vencido    sigue abierto y la fecha ya pasó
 //   en plazo   sigue abierto y todavía tiene tiempo → aún no se juzga
@@ -181,7 +171,7 @@ export type Caja = "a_tiempo" | "tarde" | "vencido" | "en_plazo" | "fuera";
 
 export function cajaDe(a: AcuerdoIndicador, hoy: string): Caja {
   if (a.estado === "anulado") return "fuera";
-  if (a.estado === "cumplido" || a.estado === "por_confirmar") return a.tarde ? "tarde" : "a_tiempo";
+  if (a.estado === "cumplido") return a.tarde ? "tarde" : "a_tiempo";
   return a.fechaLimite < hoy ? "vencido" : "en_plazo";
 }
 
@@ -244,13 +234,12 @@ export function mesesHasta(mes: string, n: number): string[] {
 // Alertas en pantalla (19-nov-2026). Jahnn dejó los correos para después: los avisos se ven en el panel de
 // cada persona. Una alerta es algo que pide moverse YA; lo que tiene tiempo no grita.
 
-export type Alerta = "vencido" | "hoy" | "manana" | "devuelto" | "nuevo";
+export type Alerta = "vencido" | "hoy" | "manana" | "nuevo";
 
 export const ALERTA_LABEL: Record<Alerta, string> = {
   vencido: "Vencido",
   hoy: "Vence hoy",
   manana: "Vence mañana",
-  devuelto: "Te lo devolvieron",
   nuevo: "Nuevo",
 };
 
@@ -258,21 +247,20 @@ export const ALERTA_LABEL: Record<Alerta, string> = {
 export const DIAS_NUEVO = 2;
 
 /** La alerta más urgente de un acuerdo abierto, o null. `creadoDia` es el día (YYYY-MM-DD, Lima) en que se creó. */
-export function alertaDe(a: AcuerdoBase & { devuelto?: boolean; creadoDia?: string }, hoy: string): Alerta | null {
+export function alertaDe(a: AcuerdoBase & { creadoDia?: string }, hoy: string): Alerta | null {
   if (!estaAbierto(a.estado)) return null;
   const d = diasRestantes(a.fechaLimite, hoy);
   if (d < 0) return "vencido";
-  if (a.devuelto) return "devuelto";
   if (d === 0) return "hoy";
   if (d === 1) return "manana";
   if (a.estado === "pendiente" && a.creadoDia && diasRestantes(hoy, a.creadoDia) < DIAS_NUEVO) return "nuevo";
   return null;
 }
 
-const PESO_ALERTA: Record<Alerta, number> = { vencido: 0, devuelto: 1, hoy: 2, manana: 3, nuevo: 4 };
+const PESO_ALERTA: Record<Alerta, number> = { vencido: 0, hoy: 2, manana: 3, nuevo: 4 };
 
 /** Los acuerdos con alerta, el más urgente primero. */
-export function conAlerta<T extends AcuerdoBase & { devuelto?: boolean; creadoDia?: string }>(lista: T[], hoy: string): { a: T; alerta: Alerta }[] {
+export function conAlerta<T extends AcuerdoBase & { creadoDia?: string }>(lista: T[], hoy: string): { a: T; alerta: Alerta }[] {
   return lista
     .map((a) => ({ a, alerta: alertaDe(a, hoy) }))
     .filter((x): x is { a: T; alerta: Alerta } => x.alerta !== null)
@@ -299,7 +287,6 @@ export type ResumenSemanal = {
   arrastrados: (AcuerdoResumen & { diasAtraso: number })[];
   /** Abiertos que vencen en los 7 días siguientes a la semana. */
   proximos: AcuerdoResumen[];
-  porConfirmar: AcuerdoResumen[];
   reuniones: ReunionResumen[];
   /** Acuerdos y tareas creados en la semana. */
   nuevos: number;
@@ -324,7 +311,6 @@ export function resumenSemanal(lista: AcuerdoResumen[], reuniones: ReunionResume
     .sort((a, b) => b.diasAtraso - a.diasAtraso || a.id - b.id);
   const proximos = vivos.filter((a) => estaAbierto(a.estado) && enPeriodo(a, sig) && a.fechaLimite >= hoy)
     .sort((a, b) => a.fechaLimite.localeCompare(b.fechaLimite) || a.id - b.id);
-  const porConfirmar = vivos.filter((a) => a.estado === "por_confirmar");
 
   const rec: string[] = [];
   const porPersona = new Map<string, { nombre: string; n: number; max: number }>();
@@ -344,9 +330,6 @@ export function resumenSemanal(lista: AcuerdoResumen[], reuniones: ReunionResume
   if (c.pctATiempo !== null && c.juzgados >= 3 && c.pctATiempo < 60) {
     rec.push(`Solo el ${c.pctATiempo}% de lo que vencía se cumplió a tiempo. Al asignar, pregunta «¿llegas para esa fecha?» antes de anotarla.`);
   }
-  if (porConfirmar.length) {
-    rec.push(`Confirma o devuelve ${porConfirmar.length === 1 ? "el cumplido pendiente" : `los ${porConfirmar.length} cumplidos pendientes`}: sin tu revisión, los indicadores no muestran la realidad.`);
-  }
   const carga = new Map<string, { nombre: string; n: number }>();
   for (const a of proximos) carga.set(a.responsableClave, { nombre: a.responsableNombre, n: (carga.get(a.responsableClave)?.n ?? 0) + 1 });
   const cargado = [...carga.values()].sort((a, b) => b.n - a.n)[0];
@@ -359,7 +342,6 @@ export function resumenSemanal(lista: AcuerdoResumen[], reuniones: ReunionResume
     pctAnterior: anterior.pctATiempo,
     arrastrados,
     proximos,
-    porConfirmar,
     reuniones: reuniones.filter((r) => r.fecha >= semana.desde && r.fecha <= semana.hasta).sort((a, b) => a.fecha.localeCompare(b.fecha)),
     nuevos: vivos.filter((a) => a.creadoDia && a.creadoDia >= semana.desde && a.creadoDia <= semana.hasta).length,
     porResponsable: ind.porResponsable,
@@ -387,19 +369,19 @@ export function cargaEquipo(lista: (AcuerdoBase & { responsableClave: string; re
     .sort((a, b) => b.abiertos - a.abiertos || b.vencidos - a.vencidos || a.nombre.localeCompare(b.nombre, "es"));
 }
 
-export const ESTADOS_AVANCE = ["cumplido", "por_confirmar", "en_proceso", "vencido", "pendiente"] as const;
+export const ESTADOS_AVANCE = ["cumplido", "en_proceso", "vencido", "pendiente"] as const;
 export type Avance = { conteo: Record<(typeof ESTADOS_AVANCE)[number], number>; total: number; pctCumplido: number | null };
 
 /**
  * Avance por estado: todo lo abierto más lo que vencía en los últimos `dias` días. El centro de la dona es el
- * % cumplido (confirmado). Sin nada, null (no 0%).
+ * % hecho. Sin nada, null (no 0%).
  */
 export function avancePorEstado(lista: AcuerdoBase[], hoy: string, dias = 30): Avance {
   const desde = new Date(Date.parse(`${hoy}T12:00:00Z`) - dias * 86_400_000).toISOString().slice(0, 10);
-  const conteo = { cumplido: 0, por_confirmar: 0, en_proceso: 0, vencido: 0, pendiente: 0 };
+  const conteo = { cumplido: 0, en_proceso: 0, vencido: 0, pendiente: 0 };
   for (const a of lista) {
     if (a.estado === "anulado") continue;
-    if (!estaAbierto(a.estado) && a.estado !== "por_confirmar" && a.fechaLimite < desde) continue;
+    if (!estaAbierto(a.estado) && a.fechaLimite < desde) continue;
     conteo[estadoVisible(a, hoy) as keyof typeof conteo]++;
   }
   const total = Object.values(conteo).reduce((t, n) => t + n, 0);

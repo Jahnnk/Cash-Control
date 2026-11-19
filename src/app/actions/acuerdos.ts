@@ -15,7 +15,6 @@ import { getSessionRole } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
 import {
   erroresAcuerdo,
-  estadoAlCumplir,
   esArea,
   esPrioridad,
   PRIORIDAD_LABEL,
@@ -66,8 +65,6 @@ export type Acuerdo = {
   /** Día de creación en Lima (para marcar lo «Nuevo»). */
   creadoDia: string;
   comentarios: number;
-  /** Lo último que pasó con su estado fue que la dirección lo devolvió. */
-  devuelto: boolean;
 };
 
 export type Reunion = {
@@ -149,12 +146,11 @@ const COLUMNAS = sql`
   a.id, a.reunion_id AS "reunionId", r.titulo AS "reunionTitulo", a.que, a.detalle, a.area, a.prioridad,
   a.responsable_clave AS "responsableClave", a.responsable_nombre AS "responsableNombre",
   a.fecha_limite::text AS "fechaLimite", a.fecha_limite_original::text AS "fechaLimiteOriginal",
-  a.estado, a.tarde, a.marcado_cumplido_el::text AS "marcadoCumplidoEl", a.confirmado_el::text AS "confirmadoEl",
+  -- «Por confirmar» ya no existe (19-nov-2026): lo que quedó guardado así se lee como Hecho.
+  CASE WHEN a.estado = 'por_confirmar' THEN 'cumplido' ELSE a.estado END AS estado, a.tarde, a.marcado_cumplido_el::text AS "marcadoCumplidoEl", a.confirmado_el::text AS "confirmadoEl",
   a.confirmado_por AS "confirmadoPor", a.creado_por AS "creadoPor", a.creado_por_clave AS "creadoPorClave",
   a.creado_el::text AS "creadoEl", (a.creado_el AT TIME ZONE 'America/Lima')::date::text AS "creadoDia",
-  (SELECT count(*)::int FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo = 'comentario') AS comentarios,
-  COALESCE((SELECT e.tipo = 'devuelto' FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo IN ('estado','devuelto','confirmado')
-            ORDER BY e.cuando DESC, e.id DESC LIMIT 1), false) AS devuelto
+  (SELECT count(*)::int FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo = 'comentario') AS comentarios
 `;
 
 // ─────────────────────────────────────────────────────────────────
@@ -168,13 +164,13 @@ export async function getTableroAcuerdos(): Promise<R<{ hoy: string; yo: YoSesio
     // Todo lo abierto, y lo cerrado o anulado de los últimos 90 días.
     const acuerdos = (await sql`
       SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id
-      WHERE a.estado IN ('pendiente','en_proceso','por_confirmar') OR a.actualizado_el > now() - interval '90 days'
+      WHERE a.estado IN ('pendiente','en_proceso') OR a.actualizado_el > now() - interval '90 days'
       ORDER BY a.fecha_limite, a.id
     `) as Acuerdo[];
     const reuniones = (await sql`
       SELECT r.id, r.fecha::text AS fecha, r.area, r.titulo, r.asistentes, r.notas, r.creado_por AS "creadoPor",
              count(a.id) FILTER (WHERE a.estado <> 'anulado')::int AS acuerdos,
-             count(a.id) FILTER (WHERE a.estado IN ('pendiente','en_proceso','por_confirmar'))::int AS abiertos
+             count(a.id) FILTER (WHERE a.estado IN ('pendiente','en_proceso'))::int AS abiertos
       FROM reuniones r LEFT JOIN acuerdos a ON a.reunion_id = r.id
       WHERE r.fecha > (now() - interval '180 days')::date
       GROUP BY r.id ORDER BY r.fecha DESC, r.id DESC
@@ -193,8 +189,8 @@ export async function getMisAcuerdos(): Promise<R<{ hoy: string; yo: YoSesion; a
     const acuerdos = s.mias.length === 0 ? [] : ((await sql`
       SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id
       WHERE a.responsable_clave = ANY(${s.mias})
-        AND (a.estado IN ('pendiente','en_proceso','por_confirmar')
-             OR (a.estado = 'cumplido' AND a.actualizado_el > now() - interval '30 days'))
+        AND (a.estado IN ('pendiente','en_proceso')
+             OR (a.estado IN ('cumplido','por_confirmar') AND a.actualizado_el > now() - interval '30 days'))
       ORDER BY a.fecha_limite, a.id
     `) as Acuerdo[]);
     return { ok: true, hoy: getToday(), yo: s.yo, acuerdos };
@@ -316,58 +312,34 @@ export async function crearReunion(input: {
   }
 }
 
-/** Pendiente ↔ en proceso, o marcar cumplido. */
+/**
+ * Cambia el estado: No iniciado, En progreso o Hecho (como Monday). Lo hace el responsable o la dirección, sin
+ * paso de confirmar. Desde Hecho se puede volver atrás (reabrir); «tarde» se queda como estaba.
+ */
 export async function avanzarAcuerdo(id: number, a: "pendiente" | "en_proceso" | "cumplido", nota?: string): Promise<R<{ estado: EstadoGuardado }>> {
   try {
     const p = await conPermiso(id, "avanzar");
     if ("error" in p) return { ok: false, error: p.error };
+    if (p.a.estado === a) return { ok: true, estado: a };
     const hoy = getToday();
     if (a === "cumplido") {
-      const gente = await personas(true);
-      const tipoResp = gente.find((g) => g.clave === p.a.responsableClave)?.tipo ?? "admin";
-      const nuevo = estadoAlCumplir(tipoResp);
       const tarde = quedaTarde(p.a.tarde, p.a.fechaLimite, hoy);
       const rows = await sql`
-        UPDATE acuerdos SET estado = ${nuevo}, tarde = ${tarde}, marcado_cumplido_el = now(),
-               confirmado_el = ${nuevo === "cumplido" ? new Date().toISOString() : null},
-               confirmado_por = ${nuevo === "cumplido" ? p.s.yo.nombre : null}, actualizado_el = now()
+        UPDATE acuerdos SET estado = 'cumplido', tarde = ${tarde}, marcado_cumplido_el = now(),
+               confirmado_el = now(), confirmado_por = ${p.s.yo.nombre}, actualizado_el = now()
         WHERE id = ${id} AND estado IN ('pendiente','en_proceso') RETURNING id`;
       if (rows.length === 0) return { ok: false, error: "Alguien cambió este acuerdo. Recarga la página." };
-      await evento(id, p.s.yo.nombre, "estado", `Marcado ${ESTADO_LABEL[nuevo].toLowerCase()}${tarde ? " (tarde)" : ""}${limpio(nota, MAX_MOTIVO) ? `: ${limpio(nota, MAX_MOTIVO)}` : ""}`);
-      return { ok: true, estado: nuevo };
+      await evento(id, p.s.yo.nombre, "estado", `Pasó a hecho${tarde ? " (tarde)" : ""}${limpio(nota, MAX_MOTIVO) ? `: ${limpio(nota, MAX_MOTIVO)}` : ""}`);
+      return { ok: true, estado: a };
     }
-    if (p.a.estado === a) return { ok: true, estado: a };
-    await sql`UPDATE acuerdos SET estado = ${a}, actualizado_el = now() WHERE id = ${id} AND estado IN ('pendiente','en_proceso')`;
+    const rows = await sql`
+      UPDATE acuerdos SET estado = ${a}, marcado_cumplido_el = NULL, confirmado_el = NULL, confirmado_por = NULL, actualizado_el = now()
+      WHERE id = ${id} AND estado IN ('pendiente','en_proceso','cumplido','por_confirmar') RETURNING id`;
+    if (rows.length === 0) return { ok: false, error: "Alguien cambió este acuerdo. Recarga la página." };
     await evento(id, p.s.yo.nombre, "estado", `Pasó a ${ESTADO_LABEL[a].toLowerCase()}`);
     return { ok: true, estado: a };
   } catch (e) {
     return errorBD("avanzar", e);
-  }
-}
-
-/** La dirección confirma el cumplido, o lo devuelve con motivo (vuelve a «en proceso»). */
-export async function revisarCumplido(id: number, decision: "confirmar" | "devolver", motivo?: string): Promise<R<object>> {
-  try {
-    const p = await conPermiso(id, "confirmar");
-    if ("error" in p) return { ok: false, error: p.error };
-    if (decision === "confirmar") {
-      const rows = await sql`
-        UPDATE acuerdos SET estado = 'cumplido', confirmado_el = now(), confirmado_por = ${p.s.yo.nombre}, actualizado_el = now()
-        WHERE id = ${id} AND estado = 'por_confirmar' RETURNING id`;
-      if (rows.length === 0) return { ok: false, error: "Alguien cambió este acuerdo. Recarga la página." };
-      await evento(id, p.s.yo.nombre, "confirmado", "Cumplido confirmado");
-      return { ok: true };
-    }
-    const m = limpio(motivo, MAX_MOTIVO);
-    if (!m) return { ok: false, error: "Escribe por qué lo devuelves." };
-    const rows = await sql`
-      UPDATE acuerdos SET estado = 'en_proceso', marcado_cumplido_el = NULL, actualizado_el = now()
-      WHERE id = ${id} AND estado = 'por_confirmar' RETURNING id`;
-    if (rows.length === 0) return { ok: false, error: "Alguien cambió este acuerdo. Recarga la página." };
-    await evento(id, p.s.yo.nombre, "devuelto", m);
-    return { ok: true };
-  } catch (e) {
-    return errorBD("revisar", e);
   }
 }
 
@@ -461,7 +433,6 @@ export type AlertaAcuerdos = {
   vencidos: number;
   /** Quiénes tienen vencidos, el que más primero. */
   porPersona: { nombre: string; n: number }[];
-  porConfirmar: number;
 };
 
 /**
@@ -475,15 +446,13 @@ export async function getAlertaAcuerdos(): Promise<AlertaAcuerdos | null> {
     const hoy = getToday();
     const rows = (await sql`
       SELECT responsable_nombre AS nombre,
-             count(*) FILTER (WHERE estado IN ('pendiente','en_proceso') AND fecha_limite < ${hoy})::int AS vencidos,
-             count(*) FILTER (WHERE estado = 'por_confirmar')::int AS por_confirmar
-      FROM acuerdos WHERE estado IN ('pendiente','en_proceso','por_confirmar')
+             count(*) FILTER (WHERE fecha_limite < ${hoy})::int AS vencidos
+      FROM acuerdos WHERE estado IN ('pendiente','en_proceso')
       GROUP BY responsable_nombre
-    `) as { nombre: string; vencidos: number; por_confirmar: number }[];
+    `) as { nombre: string; vencidos: number }[];
     const porPersona = rows.filter((r) => r.vencidos > 0).map((r) => ({ nombre: r.nombre, n: r.vencidos })).sort((a, b) => b.n - a.n);
     const vencidos = porPersona.reduce((t, r) => t + r.n, 0);
-    const porConfirmar = rows.reduce((t, r) => t + r.por_confirmar, 0);
-    return vencidos || porConfirmar ? { vencidos, porPersona, porConfirmar } : null;
+    return vencidos ? { vencidos, porPersona } : null;
   } catch (e) {
     console.error("[acuerdos:alerta]", e);
     return null;
