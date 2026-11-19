@@ -15,6 +15,8 @@ import { requireFullSession } from "@/lib/session-access";
 import { leerCambiosCarta, leerCartaConCostos } from "@/lib/carta-sql";
 import { marcaDe, precioValido, type MarcaSistema } from "@/lib/productos/carta-sistema";
 import { claveByte, enlazarCosto } from "@/lib/productos/costos-carta";
+import { ORIGEN_DE, erroresDeAlta, refNueva, type LineaTienda, type RecetaCarta } from "@/lib/productos/receta-carta";
+import { leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -34,6 +36,8 @@ export type ProductoCarta = {
   excel: { precio: number | null; costo: number; seccion: string | null } | null;
   marca: MarcaSistema;
   actualizadoEl: string | null;
+  /** Solo productos nuevos (fase 2b): su receta, para editarlo. */
+  receta: RecetaCarta | null;
   /** Nombres con que Byte lo vendió en los últimos 3 meses, y si están archivados en Productos. */
   byte: { nombre: string; clave: string; archivado: boolean }[];
 };
@@ -80,7 +84,7 @@ export async function getCarta(): Promise<{ ok: true; productos: ProductoCarta[]
           ref: c.ref, nombre: c.nombreCarta ?? c.nombre, seccion: c.seccion ?? null, origen: c.origen ?? null, enCarta: c.enCarta ?? null,
           precio: c.precio, costo: c.costo, costoInsumos: c.costoInsumos ?? null,
           excel: ex ? { precio: ex.precio, costo: ex.costo, seccion: ex.seccion } : null,
-          marca: marcaDe(cambio), actualizadoEl: cambio?.actualizadoEl ?? null,
+          marca: marcaDe(cambio), actualizadoEl: cambio?.actualizadoEl ?? null, receta: cambio?.nuevo ? cambio.receta ?? null : null,
           byte: (byte.get(c.ref) ?? []).sort((a, b) => a.nombre.localeCompare(b.nombre, "es")),
         };
       })
@@ -129,4 +133,112 @@ export async function guardarCambioCarta(input: { ref: string; precio: number | 
   revalidatePath("/grupo/direccion");
   revalidatePath("/grupo/productos");
   return { ok: true };
+}
+
+export type OpcionesAlta = {
+  /** Lo que compra la cafetería, con su precio vigente. */
+  insumos: { sku: string; nombre: string; unidad: string; precio: number }[];
+  /** Lo que la cafetería le compra a Atelier, a su precio interno. */
+  deAtelier: { ref: string; nombre: string; costo: number }[];
+  /** Las recetas de Atelier (Excel + sistema), para enlazar un postre nuevo y conocer su costo en insumos. */
+  recetasAtelier: { ref: string; nombre: string; costo: number }[];
+};
+
+/** Lo que hace falta para armar un producto nuevo (fase 2b). Solo dirección. */
+export async function getOpcionesAlta(): Promise<{ ok: true; data: OpcionesAlta } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  try {
+    const [{ vigentes }, { costos }, catalogo] = await Promise.all([leerPreciosVigentes(sql), leerCartaConCostos(sql), leerCatalogo(sql, 1)]);
+    const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.localeCompare(b.nombre, "es");
+    return {
+      ok: true,
+      data: {
+        insumos: vigentes.filter((v) => v.origen === "Cafetería").map((v) => ({ sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio })).sort(porNombre),
+        deAtelier: costos.filter((c) => c.ref.startsWith("AT-") && c.costo > 0).map((c) => ({ ref: c.ref, nombre: c.nombreCarta ?? c.nombre, costo: c.costo })).sort(porNombre),
+        recetasAtelier: catalogo.efectivo.filter((i) => i.tipo === "producto").map((i) => ({ ref: i.ref, nombre: i.nombre, costo: i.costo })).sort(porNombre),
+      },
+    };
+  } catch (e) {
+    console.error("[getOpcionesAlta] failed:", e);
+    return { ok: false, error: "No se pudo leer la lista de insumos." };
+  }
+}
+
+const UNIDADES_LINEA = new Set(["g", "kg", "ml", "l", "und"]);
+
+function limpiarReceta(r: RecetaCarta | null | undefined): RecetaCarta | null {
+  if (!r || typeof r !== "object") return null;
+  if (r.tipo === "reventa") return { tipo: "reventa" };
+  if (r.tipo === "atelier") return { tipo: "atelier", recetaRef: typeof r.recetaRef === "string" && r.recetaRef.trim() ? r.recetaRef.trim().slice(0, 40) : null };
+  if (r.tipo !== "tienda" || !Array.isArray(r.lineas)) return null;
+  const lineas: LineaTienda[] = r.lineas.slice(0, 60)
+    .filter((l) => l && (l.tipo === "insumo" || l.tipo === "atelier") && typeof l.ref === "string" && l.ref.trim())
+    .map((l) => ({
+      tipo: l.tipo, ref: l.ref.trim().slice(0, 40), nombre: String(l.nombre ?? "").slice(0, 120),
+      cantidad: Number(l.cantidad), unidad: l.tipo === "atelier" ? "und" : UNIDADES_LINEA.has(l.unidad) ? l.unidad : "g",
+    }));
+  const merma = Number(r.merma);
+  return { tipo: "tienda", porciones: Number(r.porciones), merma: Number.isFinite(merma) ? Math.min(Math.max(merma, 0), 0.95) : 0, lineas };
+}
+
+/**
+ * Crea (sin ref) o corrige (con ref) un producto nuevo de la carta. Vale desde ya en Productos, Precios y el
+ * simulador; Byte lo enlaza solo por el nombre cuando empiece a venderse. Solo dirección.
+ */
+export async function guardarProductoNuevo(input: {
+  ref: string | null; nombre: string; seccion: string | null; precio: number | null; costo: number | null; receta: RecetaCarta;
+}): Promise<{ ok: true; ref: string } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  const receta = limpiarReceta(input?.receta);
+  if (!receta) return { ok: false, error: "Elige cómo se hace el producto." };
+  const nombre = typeof input.nombre === "string" ? input.nombre.trim().slice(0, 120) : "";
+  const precio = input.precio == null ? null : Math.round(Number(input.precio) * 100) / 100;
+  const costo = receta.tipo === "tienda" || input.costo == null ? null : Math.round(Number(input.costo) * 10000) / 10000;
+  const errores = erroresDeAlta({ nombre, precio, costo, receta });
+  if (errores.length > 0) return { ok: false, error: errores[0] };
+  if (precio !== null && !precioValido(precio)) return { ok: false, error: "El precio de carta no es válido." };
+  if (costo !== null && !precioValido(costo)) return { ok: false, error: "El costo no es válido." };
+  const seccion = typeof input.seccion === "string" && input.seccion.trim() ? input.seccion.trim().slice(0, 60) : null;
+  try {
+    const cambios = await leerCambiosCarta(sql);
+    let ref = typeof input.ref === "string" ? input.ref.trim() : "";
+    if (ref) {
+      if (!cambios.some((c) => c.ref === ref && c.nuevo)) return { ok: false, error: "Solo se corrigen aquí los productos creados en el sistema." };
+      // Si cambia de clase (tienda ↔ Atelier), la ref ya no calza: se le da una nueva.
+      if ((receta.tipo === "atelier") !== ref.startsWith("AT-")) {
+        await sql`DELETE FROM carta_sistema WHERE ref = ${ref} AND nuevo = true`;
+        ref = "";
+      }
+    }
+    if (!ref) {
+      const { costos } = await leerCartaConCostos(sql);
+      ref = refNueva(receta.tipo, [...costos.map((c) => c.ref), ...cambios.map((c) => c.ref)]);
+    }
+    await sql`
+      INSERT INTO carta_sistema (ref, nombre, nombre_carta, seccion, origen, categoria, precio, costo, receta, nuevo)
+      VALUES (${ref}, ${nombre}, ${nombre}, ${seccion}, ${ORIGEN_DE[receta.tipo]}, ${seccion?.toUpperCase() ?? null}, ${precio}, ${costo}, ${JSON.stringify(receta)}::jsonb, true)
+      ON CONFLICT (ref) DO UPDATE SET nombre = EXCLUDED.nombre, nombre_carta = EXCLUDED.nombre_carta, seccion = EXCLUDED.seccion,
+        origen = EXCLUDED.origen, categoria = EXCLUDED.categoria, precio = EXCLUDED.precio, costo = EXCLUDED.costo,
+        receta = EXCLUDED.receta, nuevo = true, actualizado_el = NOW()`;
+    revalidatePath("/grupo/recetas");
+    revalidatePath("/grupo/direccion");
+    revalidatePath("/grupo/productos");
+    return { ok: true, ref };
+  } catch (e) {
+    console.error("[guardarProductoNuevo] failed:", e);
+    return { ok: false, error: "No se pudo guardar el producto." };
+  }
+}
+
+/** Quita un producto creado en el sistema (por ejemplo, uno que se creó por error). Los del Excel no. */
+export async function quitarProductoNuevo(ref: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  try {
+    await sql`DELETE FROM carta_sistema WHERE ref = ${String(ref ?? "")} AND nuevo = true`;
+    revalidatePath("/grupo/recetas");
+    return { ok: true };
+  } catch (e) {
+    console.error("[quitarProductoNuevo] failed:", e);
+    return { ok: false, error: "No se pudo quitar." };
+  }
 }
