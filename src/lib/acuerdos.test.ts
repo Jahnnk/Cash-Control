@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
+import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -8,8 +8,6 @@ describe("estado visible", () => {
     expect(estadoVisible({ estado: "pendiente", fechaLimite: "2026-11-18" }, HOY)).toBe("vencido");
     expect(estadoVisible({ estado: "en_proceso", fechaLimite: "2026-11-18" }, HOY)).toBe("vencido");
     expect(estadoVisible({ estado: "pendiente", fechaLimite: HOY }, HOY)).toBe("pendiente");
-    // Ya lo entregó el responsable: no se le acusa de vencido mientras la dirección confirma.
-    expect(estadoVisible({ estado: "por_confirmar", fechaLimite: "2026-11-01" }, HOY)).toBe("por_confirmar");
     expect(estadoVisible({ estado: "cumplido", fechaLimite: "2026-11-01" }, HOY)).toBe("cumplido");
   });
 
@@ -40,27 +38,23 @@ describe("validar un acuerdo nuevo", () => {
 
 describe("permisos", () => {
   const a = { responsableClave: "u:4", creadoPorClave: "jahnn", estado: "pendiente" as const };
-  it("el responsable avanza lo suyo; no confirma", () => {
+  it("el responsable cambia el estado de lo suyo, también para reabrir un Hecho", () => {
     expect(puede({ clave: "u:4", tipo: "admin" }, a, "avanzar")).toBe(true);
-    expect(puede({ clave: "u:4", tipo: "admin" }, { ...a, estado: "por_confirmar" }, "confirmar")).toBe(false);
+    expect(puede({ clave: "u:4", tipo: "admin" }, { ...a, estado: "cumplido" }, "avanzar")).toBe(true);
     expect(puede({ clave: "u:4", tipo: "admin" }, a, "editar")).toBe(false);
   });
   it("otro admin no toca lo ajeno", () => {
     expect(puede({ clave: "u:5", tipo: "admin" }, a, "avanzar")).toBe(false);
     expect(puede({ clave: "u:5", tipo: "admin" }, a, "comentar")).toBe(false);
   });
-  it("la dirección confirma y edita; quien lo creó también edita", () => {
-    expect(puede({ clave: "u:2", tipo: "direccion" }, { ...a, estado: "por_confirmar" }, "confirmar")).toBe(true);
+  it("la dirección cambia el estado y edita; quien lo creó también edita", () => {
+    expect(puede({ clave: "u:2", tipo: "direccion" }, a, "avanzar")).toBe(true);
     expect(puede({ clave: "u:7", tipo: "equipo" }, { ...a, creadoPorClave: "u:7" }, "editar")).toBe(true);
     expect(puede({ clave: "u:7", tipo: "equipo" }, a, "editar")).toBe(false);
   });
   it("lo anulado no se toca y lo cumplido no se edita", () => {
     expect(puede({ clave: "jahnn", tipo: "direccion" }, { ...a, estado: "anulado" }, "comentar")).toBe(false);
     expect(puede({ clave: "jahnn", tipo: "direccion" }, { ...a, estado: "cumplido" }, "editar")).toBe(false);
-  });
-  it("si el responsable es de la dirección, su cumplido vale directo", () => {
-    expect(estadoAlCumplir("direccion")).toBe("cumplido");
-    expect(estadoAlCumplir("admin")).toBe("por_confirmar");
   });
 });
 
@@ -69,14 +63,14 @@ describe("orden y conteos", () => {
     { id: 1, estado: "cumplido" as const, fechaLimite: "2026-11-10" },
     { id: 2, estado: "pendiente" as const, fechaLimite: "2026-11-25" },
     { id: 3, estado: "pendiente" as const, fechaLimite: "2026-11-17" },
-    { id: 4, estado: "por_confirmar" as const, fechaLimite: "2026-11-20" },
+    { id: 4, estado: "en_proceso" as const, fechaLimite: "2026-11-20" },
     { id: 5, estado: "en_proceso" as const, fechaLimite: HOY },
   ];
-  it("vencidos primero, luego por confirmar, luego por fecha; cerrados al final", () => {
-    expect(ordenAcuerdos(lista, HOY).map((a) => a.id)).toEqual([3, 4, 5, 2, 1]);
+  it("vencidos primero, luego por fecha; cerrados al final", () => {
+    expect(ordenAcuerdos(lista, HOY).map((a) => a.id)).toEqual([3, 5, 4, 2, 1]);
   });
-  it("cuenta abiertos, vencidos, por confirmar y los que vencen hoy", () => {
-    expect(conteos(lista, HOY)).toEqual({ abiertos: 3, vencidos: 1, porConfirmar: 1, venceHoy: 1 });
+  it("cuenta abiertos, vencidos y los que vencen hoy", () => {
+    expect(conteos(lista, HOY)).toEqual({ abiertos: 4, vencidos: 1, venceHoy: 1 });
   });
 });
 
@@ -86,7 +80,7 @@ describe("indicadores de cumplimiento", () => {
   });
   it("cada acuerdo cae en su caja", () => {
     expect(cajaDe(mk(1, { estado: "cumplido" }), HOY)).toBe("a_tiempo");
-    expect(cajaDe(mk(1, { estado: "por_confirmar", tarde: true }), HOY)).toBe("tarde");
+    expect(cajaDe(mk(1, { estado: "cumplido", tarde: true }), HOY)).toBe("tarde");
     expect(cajaDe(mk(1, {}), HOY)).toBe("vencido");
     expect(cajaDe(mk(1, { fechaLimite: "2026-11-25" }), HOY)).toBe("en_plazo");
     expect(cajaDe(mk(1, { estado: "anulado" }), HOY)).toBe("fuera");
@@ -118,14 +112,13 @@ describe("indicadores de cumplimiento", () => {
 describe("alertas en pantalla", () => {
   const base = { estado: "pendiente" as const, fechaLimite: "2026-11-25", creadoDia: "2026-11-01" };
   it("la más urgente gana", () => {
-    expect(alertaDe({ ...base, fechaLimite: "2026-11-18", devuelto: true }, HOY)).toBe("vencido");
-    expect(alertaDe({ ...base, devuelto: true }, HOY)).toBe("devuelto");
+    expect(alertaDe({ ...base, fechaLimite: "2026-11-18" }, HOY)).toBe("vencido");
     expect(alertaDe({ ...base, fechaLimite: HOY }, HOY)).toBe("hoy");
     expect(alertaDe({ ...base, fechaLimite: "2026-11-20" }, HOY)).toBe("manana");
     expect(alertaDe({ ...base, creadoDia: "2026-11-18" }, HOY)).toBe("nuevo");
     expect(alertaDe({ ...base, estado: "en_proceso", creadoDia: "2026-11-18" }, HOY)).toBeNull();
     expect(alertaDe(base, HOY)).toBeNull();
-    expect(alertaDe({ ...base, estado: "por_confirmar", fechaLimite: "2026-11-01" }, HOY)).toBeNull();
+    expect(alertaDe({ ...base, estado: "cumplido", fechaLimite: "2026-11-01" }, HOY)).toBeNull();
   });
   it("ordena por urgencia", () => {
     const l = [{ ...base, id: 1, fechaLimite: "2026-11-20" }, { ...base, id: 2, fechaLimite: "2026-11-10" }, { ...base, id: 3, fechaLimite: HOY }];
@@ -145,7 +138,7 @@ describe("resumen semanal", () => {
     a(1, {}), // vencido (5 días)
     a(2, { fechaLimite: "2026-11-05", creadoDia: "2026-11-01" }), // vencido de antes (18 días)
     a(3, { estado: "cumplido", responsableClave: "u:2", responsableNombre: "Ana" }),
-    a(4, { estado: "por_confirmar", responsableClave: "u:2", responsableNombre: "Ana", fechaLimite: "2026-11-20" }),
+    a(4, { estado: "cumplido", responsableClave: "u:2", responsableNombre: "Ana", fechaLimite: "2026-11-20" }),
     a(5, { fechaLimite: "2026-11-24" }), // vence esta semana
     a(6, { fechaLimite: "2026-11-12", estado: "cumplido", creadoDia: "2026-11-02" }), // semana anterior, a tiempo
     a(7, { estado: "anulado" }),
@@ -155,16 +148,15 @@ describe("resumen semanal", () => {
     expect(r.cumplimiento).toMatchObject({ aTiempo: 2, vencidos: 1, juzgados: 3, pctATiempo: 67 });
     expect(r.pctAnterior).toBe(100);
   });
-  it("vencidos arrastrados, próximos, por confirmar, reuniones y nuevos", () => {
+  it("vencidos arrastrados, próximos, reuniones y nuevos", () => {
     expect(r.arrastrados.map((x) => [x.id, x.diasAtraso])).toEqual([[2, 18], [1, 5]]);
     expect(r.proximos.map((x) => x.id)).toEqual([5]);
-    expect(r.porConfirmar.map((x) => x.id)).toEqual([4]);
     expect(r.reuniones.map((x) => x.titulo)).toEqual(["Marketing"]);
     expect(r.nuevos).toBe(4);
   });
   it("recomienda con nombre y en orden", () => {
     expect(r.recomendaciones[0]).toMatch(/^Habla con Luis: tiene 2 acuerdos vencidos, el más antiguo hace 18 días/);
-    expect(r.recomendaciones[1]).toMatch(/Confirma o devuelve el cumplido pendiente/);
+    expect(r.recomendaciones).toHaveLength(1);
   });
   it("sin nada pendiente, lo dice", () => {
     expect(resumenSemanal([], [], hoyL, sem).recomendaciones[0]).toMatch(/^Sin acuerdos que vencieran/);
@@ -172,10 +164,10 @@ describe("resumen semanal", () => {
 });
 
 describe("carga del equipo y avance por estado", () => {
-  const x = (estado: "pendiente" | "en_proceso" | "por_confirmar" | "cumplido" | "anulado", fechaLimite: string, clave = "u:1", nombre = "Luis") =>
+  const x = (estado: "pendiente" | "en_proceso" | "cumplido" | "anulado", fechaLimite: string, clave = "u:1", nombre = "Luis") =>
     ({ estado, fechaLimite, responsableClave: clave, responsableNombre: nombre });
   const l = [x("pendiente", "2026-11-10"), x("en_proceso", "2026-11-25"), x("pendiente", "2026-11-30", "u:2", "Ana"),
-    x("cumplido", "2026-11-12", "u:2", "Ana"), x("cumplido", "2026-09-01"), x("por_confirmar", "2026-11-18"), x("anulado", "2026-11-18")];
+    x("cumplido", "2026-11-12", "u:2", "Ana"), x("cumplido", "2026-09-01"), x("cumplido", "2026-11-18"), x("anulado", "2026-11-18")];
   it("reparte lo abierto por persona", () => {
     expect(cargaEquipo(l, HOY)).toEqual([
       { clave: "u:1", nombre: "Luis", abiertos: 2, vencidos: 1, pct: 67 },
@@ -184,8 +176,8 @@ describe("carga del equipo y avance por estado", () => {
   });
   it("cuenta por estado y deja fuera lo cerrado viejo y lo anulado", () => {
     const r = avancePorEstado(l, HOY);
-    expect(r.conteo).toEqual({ cumplido: 1, por_confirmar: 1, en_proceso: 1, vencido: 1, pendiente: 1 });
-    expect(r.pctCumplido).toBe(20);
+    expect(r.conteo).toEqual({ cumplido: 2, en_proceso: 1, vencido: 1, pendiente: 1 });
+    expect(r.pctCumplido).toBe(40);
     expect(avancePorEstado([], HOY).pctCumplido).toBeNull();
   });
 });

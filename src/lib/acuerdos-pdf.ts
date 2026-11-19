@@ -53,7 +53,7 @@ export function pdfResumenSemanal(r: ResumenSemanal): { blob: Blob; filename: st
   texto(c.juzgados
     ? `Se cumplió a tiempo el ${c.pctATiempo}% de lo que vencía${comp}: ${c.aTiempo} a tiempo, ${c.tarde} tarde y ${c.vencidos} sin cumplir.`
     : "La semana no tenía acuerdos con fecha límite.", { tam: 11, negrita: true });
-  texto(`Hoy siguen vencidos: ${r.arrastrados.length}. Vencen esta semana: ${r.proximos.length}. Esperan confirmación: ${r.porConfirmar.length}. Reuniones registradas: ${r.reuniones.length}. Tareas nuevas: ${r.nuevos}.`, { color: GRIS });
+  texto(`Hoy siguen vencidos: ${r.arrastrados.length}. Vencen esta semana: ${r.proximos.length}. Reuniones registradas: ${r.reuniones.length}. Tareas nuevas: ${r.nuevos}.`, { color: GRIS });
 
   titulo("Qué recomendamos");
   r.recomendaciones.forEach((t, i) => texto(`${i + 1}.  ${t}`, { x: X + 2, ancho: ANCHO - 4 }));
@@ -65,11 +65,6 @@ export function pdfResumenSemanal(r: ResumenSemanal): { blob: Blob; filename: st
   titulo(`Vencen esta semana (${r.proximos.length})`);
   if (!r.proximos.length) texto("Ninguno.", { color: GRIS });
   r.proximos.forEach((a) => vineta(`${dia(a.fechaLimite)} · ${a.que} · ${a.responsableNombre}`));
-
-  if (r.porConfirmar.length) {
-    titulo(`Esperan confirmación (${r.porConfirmar.length})`);
-    r.porConfirmar.forEach((a) => vineta(`${a.que} · ${a.responsableNombre}`));
-  }
 
   if (r.porResponsable.length) {
     titulo("Por responsable (lo que vencía en la semana)");

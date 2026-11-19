@@ -38,7 +38,7 @@ export function acuerdosDeLaSemana(ctx: Ctx, r: ResumenSemanal) {
     { et: "A tiempo", v: c.pctATiempo === null ? "—" : `${c.pctATiempo}%`, tono: tonoPct(c.pctATiempo), det: c.juzgados ? `${c.aTiempo} de ${c.juzgados}` : "nada vencía" },
     { et: "Siguen vencidos", v: String(r.arrastrados.length), tono: r.arrastrados.length ? "rojo" : "verde", det: "hoy, de cualquier semana" },
     { et: "Vencen esta semana", v: String(r.proximos.length), tono: "gris", det: `hasta el ${dia(r.proximos.length ? r.proximos[r.proximos.length - 1].fechaLimite : r.semana.hasta)}` },
-    { et: "Por confirmar", v: String(r.porConfirmar.length), tono: r.porConfirmar.length ? "ambar" : "gris", det: "esperan tu revisión" },
+    { et: "Tareas nuevas", v: String(r.nuevos), tono: "gris", det: "creadas en la semana" },
   ];
   const gap = 0.16, wc = (ANCHO - gap * 3) / 4, hc = 0.72;
   cifras.forEach((k, i) => {

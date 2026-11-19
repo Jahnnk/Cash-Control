@@ -7,7 +7,7 @@
  */
 
 import type { Acuerdo } from "@/app/actions/acuerdos";
-import { estadoVisible, type EstadoVisible } from "@/lib/acuerdos";
+import { ESTADO_LABEL, estadoVisible, type EstadoVisible } from "@/lib/acuerdos";
 import { Avatar, diaCorto } from "@/components/acuerdos/ui";
 
 const DIA = 86_400_000;
@@ -15,13 +15,13 @@ const ms = (f: string) => Date.parse(`${f}T12:00:00Z`);
 const fecha = (t: number) => new Date(t).toISOString().slice(0, 10);
 const lunes = (f: string) => { const d = new Date(ms(f)); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() + 6) % 7)); return fecha(d.getTime()); };
 
-const COLOR: Partial<Record<EstadoVisible, string>> = { pendiente: "#94A3B8", en_proceso: "#3B82F6", por_confirmar: "#F59E0B", vencido: "#DC2626" };
+const COLOR: Partial<Record<EstadoVisible, string>> = { pendiente: "#9CA3AF", en_proceso: "#F59E0B", vencido: "#DC2626" };
 const SEMANAS_ATRAS = 8;
 const SEMANAS_ADELANTE = 12;
 
 export function Cronograma({ acuerdos, hoy, onAbrir }: { acuerdos: Acuerdo[]; hoy: string; onAbrir: (id: number) => void }) {
   const filas = acuerdos
-    .filter((a) => a.estado === "pendiente" || a.estado === "en_proceso" || a.estado === "por_confirmar")
+    .filter((a) => a.estado === "pendiente" || a.estado === "en_proceso")
     .sort((a, b) => a.fechaLimite.localeCompare(b.fechaLimite) || a.id - b.id);
   if (filas.length === 0) return <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-4 sm:px-6"><p className="text-sm text-gray-500">No hay tareas abiertas para mostrar.</p></section>;
 
@@ -77,8 +77,8 @@ export function Cronograma({ acuerdos, hoy, onAbrir }: { acuerdos: Acuerdo[]; ho
         </ul>
 
         <div className="flex flex-wrap gap-3 pt-3 text-[11px] text-gray-500">
-          {(["pendiente", "en_proceso", "por_confirmar", "vencido"] as const).map((e) => (
-            <span key={e} className="inline-flex items-center gap-1"><span className="w-3 h-2 rounded-full" style={{ backgroundColor: COLOR[e] }} />{e === "pendiente" ? "Pendiente" : e === "en_proceso" ? "En proceso" : e === "por_confirmar" ? "Por confirmar" : "Vencido (la línea punteada es el atraso)"}</span>
+          {(["pendiente", "en_proceso", "vencido"] as const).map((e) => (
+            <span key={e} className="inline-flex items-center gap-1"><span className="w-3 h-2 rounded-full" style={{ backgroundColor: COLOR[e] }} />{e === "vencido" ? "Vencido (la línea punteada es el atraso)" : ESTADO_LABEL[e]}</span>
           ))}
           <span className="inline-flex items-center gap-1"><span className="w-px h-3 bg-primary/60" />Hoy</span>
         </div>

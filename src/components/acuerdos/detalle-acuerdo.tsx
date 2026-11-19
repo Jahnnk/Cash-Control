@@ -9,16 +9,16 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import {
-  anularAcuerdo, avanzarAcuerdo, comentarAcuerdo, editarAcuerdo, getHistorialAcuerdo, revisarCumplido,
+  anularAcuerdo, avanzarAcuerdo, comentarAcuerdo, editarAcuerdo, getHistorialAcuerdo,
   type Acuerdo, type Evento, type YoSesion,
 } from "@/app/actions/acuerdos";
 import { AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { Pastilla } from "@/components/productos/ui";
-import { Avatar, PrioridadIcono, diaCorto } from "./ui";
+import { Avatar, EstadoCelda, PrioridadIcono, diaCorto } from "./ui";
 import { yoPara } from "./fila-acuerdo";
 
 const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> = {
-  pendiente: "gris", en_proceso: "azul", por_confirmar: "ambar", cumplido: "verde", vencido: "rojo", anulado: "gris",
+  pendiente: "gris", en_proceso: "ambar", cumplido: "verde", vencido: "rojo", anulado: "gris",
 };
 const cuando = (ts: string) => new Date(ts).toLocaleString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const VERBO: Record<string, string> = {
@@ -27,7 +27,6 @@ const VERBO: Record<string, string> = {
 };
 
 const CAMPO = "w-full rounded-lg border border-transparent hover:border-gray-200 focus:border-gray-300 px-2 py-1.5 text-sm bg-transparent disabled:hover:border-transparent";
-const BTN = "px-3 py-1.5 text-xs font-medium rounded-lg border border-gray-200 text-gray-700 hover:bg-gray-50 disabled:opacity-50";
 const BTN_PRIM = "px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-primary hover:bg-primary-light disabled:opacity-50";
 
 export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, onCambio, onCerrar }: {
@@ -50,7 +49,7 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
   const [detalle, setDetalle] = useState(a.detalle ?? "");
   const [fechaNueva, setFechaNueva] = useState<string | null>(null);
   const [motivo, setMotivo] = useState("");
-  const [pide, setPide] = useState<null | "devolver" | "anular">(null);
+  const [pide, setPide] = useState<null | "anular">(null);
   const [texto, setTexto] = useState("");
   const [comentario, setComentario] = useState("");
 
@@ -91,15 +90,11 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
       <aside className="relative w-full sm:w-[480px] h-full bg-white shadow-2xl flex flex-col">
         {/* Barra superior: estado y lo que se puede hacer ahora */}
         <div className="flex flex-wrap items-center gap-2 px-5 py-3 border-b border-gray-100">
-          <Pastilla tono={TONO[v]}>{ESTADO_LABEL[v]}</Pastilla>
-          {puede(y, a, "avanzar") && a.estado === "pendiente" && <button type="button" className={BTN} disabled={ocupado} onClick={() => void correr(() => avanzarAcuerdo(a.id, "en_proceso"))}>Empecé</button>}
-          {puede(y, a, "avanzar") && <button type="button" className={BTN_PRIM} disabled={ocupado} onClick={() => void correr(() => avanzarAcuerdo(a.id, "cumplido"))}>Marcar cumplido</button>}
-          {puede(y, a, "confirmar") && (
-            <>
-              <button type="button" className={BTN_PRIM} disabled={ocupado} onClick={() => void correr(() => revisarCumplido(a.id, "confirmar"))}>Confirmar cumplido</button>
-              <button type="button" className={BTN} disabled={ocupado} onClick={() => setPide("devolver")}>Devolver</button>
-            </>
-          )}
+          {/* El estado se cambia aquí mismo, como en Monday: No iniciado, En progreso o Hecho. */}
+          <span className="w-[120px] h-8 rounded-md overflow-hidden">
+            <EstadoCelda estado={a.estado} puede={puede(y, a, "avanzar")} ocupado={ocupado} onCambiar={(n) => void correr(() => avanzarAcuerdo(a.id, n))} />
+          </span>
+          {v === "vencido" && <Pastilla tono={TONO[v]}>{ESTADO_LABEL[v]}</Pastilla>}
           {ocupado && <Loader2 className="w-4 h-4 animate-spin text-gray-400" />}
           <button type="button" onClick={onCerrar} className="ml-auto p-1 text-gray-400 hover:text-gray-700" aria-label="Cerrar"><X className="w-5 h-5" /></button>
         </div>
@@ -108,10 +103,8 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
           {pide && (
             <div className="flex gap-2">
               <input autoFocus value={texto} onChange={(e) => setTexto(e.target.value)} className="flex-1 border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm"
-                placeholder={pide === "devolver" ? "¿Por qué lo devuelves?" : "¿Por qué se anula?"} />
-              <button type="button" className={BTN_PRIM} disabled={ocupado} onClick={() => void correr(() => (pide === "devolver" ? revisarCumplido(a.id, "devolver", texto) : anularAcuerdo(a.id, texto)))}>
-                {pide === "devolver" ? "Devolver" : "Anular"}
-              </button>
+                placeholder="¿Por qué se anula?" />
+              <button type="button" className={BTN_PRIM} disabled={ocupado} onClick={() => void correr(() => anularAcuerdo(a.id, texto))}>Anular</button>
               <button type="button" className="text-xs text-gray-500" onClick={() => setPide(null)}>Cancelar</button>
             </div>
           )}

@@ -2,9 +2,10 @@
 
 /**
  * Grupo → Acuerdos y tareas. Rediseño del 19-nov-2026 con lo mejor de tres referencias, en el estilo del panel:
- *   · Asana: alta rápida en una línea, «Mis tareas» por urgencia, filas con círculo para cumplir y detalle lateral.
- *   · Trello: tablero de cuatro columnas que se arrastran.
- *   · Monday: panel ejecutivo con barras de estado por persona y área.
+ *   · Asana: alta rápida en una línea, «Mis tareas» por urgencia y detalle lateral.
+ *   · Trello: tablero de tres columnas que se arrastran.
+ *   · Monday: la Lista (grupos de color, estado de un toque, plazo) y el panel ejecutivo.
+ * Tres estados, sin paso de confirmar: No iniciado, En progreso, Hecho (Jahnn, 19-nov-2026).
  * Pestañas: Mis tareas · Tablero · Lista · Reuniones · Panel ejecutivo.
  */
 
@@ -17,16 +18,16 @@ import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
 import { FilaAcuerdo } from "@/components/acuerdos/fila-acuerdo";
 import { DetalleAcuerdo } from "@/components/acuerdos/detalle-acuerdo";
 import { AltaRapida } from "@/components/acuerdos/alta-rapida";
-import { Avatar, AreaTag, diaCorto } from "@/components/acuerdos/ui";
+import { AreaTag, COLOR_ESTADO, colorPersona, diaCorto } from "@/components/acuerdos/ui";
 import { Kanban } from "./kanban";
 import { PanelEjecutivo } from "./panel-ejecutivo";
 import { FormReunion } from "./form-reunion";
 import { Cronograma } from "./cronograma";
-import { TablaAcuerdos } from "./tabla-acuerdos";
+import { GrupoMonday } from "./tabla-acuerdos";
 
 type Vista = "mios" | "tablero" | "cronograma" | "lista" | "reuniones" | "panel";
 type Datos = { hoy: string; yo: YoSesion; personas: Persona[]; acuerdos: Acuerdo[]; reuniones: Reunion[] };
-type FiltroEstado = "abiertos" | "vencido" | "por_confirmar" | "cerrados" | "todos";
+type FiltroEstado = "abiertos" | "vencido" | "cerrados" | "todos";
 
 /** Enlaces viejos y del Dashboard: ?vista=vencidos|todos|indicadores|resumen siguen funcionando. */
 function deUrl(): { vista: Vista; estado: FiltroEstado; panel: "semana" | "mes" } {
@@ -69,7 +70,6 @@ export function TableroAcuerdos() {
 
   const activos = useMemo(() => d?.acuerdos.filter((a) => a.estado !== "anulado") ?? [], [d]);
   const mios = useMemo(() => (d ? ordenAcuerdos(activos.filter((a) => a.responsableClave === d.yo.clave && a.estado !== "cumplido"), d.hoy) : []), [d, activos]);
-  const porConfirmar = useMemo(() => (d?.yo.tipo === "direccion" ? activos.filter((a) => a.estado === "por_confirmar" && a.responsableClave !== d.yo.clave) : []), [d, activos]);
   const asignadosPorMi = useMemo(() => (d ? ordenAcuerdos(activos.filter((a) => a.creadoPorClave === d.yo.clave && a.responsableClave !== d.yo.clave && a.estado !== "cumplido"), d.hoy) : []), [d, activos]);
 
   /** El tablero y la lista comparten los filtros de persona y área. */
@@ -84,7 +84,7 @@ export function TableroAcuerdos() {
     return ordenAcuerdos(filtrar(d.acuerdos).filter((a) => {
       const v: EstadoVisible = estadoVisible(a, d.hoy);
       return filtroEstado === "todos" ? true
-        : filtroEstado === "abiertos" ? v === "pendiente" || v === "en_proceso" || v === "vencido" || v === "por_confirmar"
+        : filtroEstado === "abiertos" ? v === "pendiente" || v === "en_proceso" || v === "vencido"
           : filtroEstado === "cerrados" ? v === "cumplido" || v === "anulado" : v === filtroEstado;
     }), d.hoy);
   }, [d, filtrar, filtroEstado]);
@@ -115,13 +115,11 @@ export function TableroAcuerdos() {
 
   // Mis tareas por urgencia, como «My tasks» de Asana.
   const dias = (a: Acuerdo) => diasRestantes(a.fechaLimite, d.hoy);
-  const abiertosMios = mios.filter((a) => a.estado !== "por_confirmar");
   const grupos: { titulo: string; items: Acuerdo[]; tono?: string }[] = [
-    { titulo: "Vencidas", items: abiertosMios.filter((a) => dias(a) < 0), tono: "text-red-700" },
-    { titulo: "Hoy y mañana", items: abiertosMios.filter((a) => dias(a) >= 0 && dias(a) <= 1), tono: "text-amber-700" },
-    { titulo: "Próximos 7 días", items: abiertosMios.filter((a) => dias(a) > 1 && dias(a) <= 7) },
-    { titulo: "Más adelante", items: abiertosMios.filter((a) => dias(a) > 7) },
-    { titulo: "Esperando confirmación", items: mios.filter((a) => a.estado === "por_confirmar") },
+    { titulo: "Vencidas", items: mios.filter((a) => dias(a) < 0), tono: "text-red-700" },
+    { titulo: "Hoy y mañana", items: mios.filter((a) => dias(a) >= 0 && dias(a) <= 1), tono: "text-amber-700" },
+    { titulo: "Próximos 7 días", items: mios.filter((a) => dias(a) > 1 && dias(a) <= 7) },
+    { titulo: "Más adelante", items: mios.filter((a) => dias(a) > 7) },
   ];
 
   const filtros = (
@@ -164,7 +162,7 @@ export function TableroAcuerdos() {
 
       <AltaRapida personas={d.personas} hoy={d.hoy} onCreado={recargar} />
 
-      <FranjaAlertas items={conAlerta(mios, d.hoy)} porConfirmar={porConfirmar.length} onVer={vista === "mios" ? undefined : () => setVista("mios")} />
+      <FranjaAlertas items={conAlerta(mios, d.hoy)} onVer={vista === "mios" ? undefined : () => setVista("mios")} />
 
       <Segmentado valor={vista} onChange={setVista} opciones={[
         { valor: "mios", etiqueta: `Mis tareas${mios.length ? ` (${mios.length})` : ""}` },
@@ -177,13 +175,6 @@ export function TableroAcuerdos() {
 
       {vista === "mios" && (
         <div className="space-y-4">
-          {porConfirmar.length > 0 && (
-            <section className="bg-amber-50/60 rounded-2xl border border-amber-200 px-4 py-3 sm:px-5">
-              <h2 className="text-sm font-semibold text-gray-900">Esperan tu confirmación <span className="text-gray-400 font-normal">{porConfirmar.length}</span></h2>
-              <p className="text-xs text-gray-600">Toca el círculo para confirmar, o abre la tarea para devolverla con el motivo.</p>
-              {filas(porConfirmar)}
-            </section>
-          )}
           <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5">
             {mios.length === 0 ? <p className="text-sm text-gray-500 py-2">No tienes tareas abiertas.</p> : grupos.filter((g) => g.items.length).map((g) => (
               <div key={g.titulo} className="mt-2 first:mt-0">
@@ -225,8 +216,7 @@ export function TableroAcuerdos() {
             <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value as FiltroEstado)} className={SEL} aria-label="Estado">
               <option value="abiertos">Abiertos</option>
               <option value="vencido">Vencidos</option>
-              <option value="por_confirmar">Por confirmar</option>
-              <option value="cerrados">Cumplidos y anulados</option>
+              <option value="cerrados">Hechos y anulados</option>
               <option value="todos">Todos</option>
             </select>
             <span className="text-xs text-gray-500 ml-auto">Agrupar por</span>
@@ -235,7 +225,7 @@ export function TableroAcuerdos() {
             ]} />
           </div>
           {filtrados.length === 0 ? <p className="text-sm text-gray-500 py-2">No hay acuerdos con ese filtro.</p> : (
-            <Agrupado items={filtrados} por={agrupar} hoy={d.hoy} render={(l) => <TablaAcuerdos items={l} yo={d.yo} hoy={d.hoy} onAbrir={setAbierto} onCambio={recargar} />} />
+            <Agrupado items={filtrados} por={agrupar} hoy={d.hoy} yo={d.yo} onAbrir={setAbierto} onCambio={recargar} />
           )}
         </section>
       )}
@@ -281,13 +271,20 @@ export function TableroAcuerdos() {
   );
 }
 
-const ORDEN_ESTADO: EstadoVisible[] = ["vencido", "por_confirmar", "en_proceso", "pendiente", "cumplido", "anulado"];
+const ORDEN_ESTADO: EstadoVisible[] = ["vencido", "en_proceso", "pendiente", "cumplido", "anulado"];
 const ESTADO_TITULO: Record<EstadoVisible, string> = {
-  vencido: "Vencidos", por_confirmar: "Por confirmar", en_proceso: "En proceso", pendiente: "Pendientes", cumplido: "Cumplidos", anulado: "Anulados",
+  vencido: "Vencidas", en_proceso: "En progreso", pendiente: "No iniciadas", cumplido: "Hechas", anulado: "Anuladas",
+};
+const COLOR_GRUPO_ESTADO: Record<EstadoVisible, string> = { ...COLOR_ESTADO, vencido: "#DC2626" };
+/** Color de cada área para el título y el borde del grupo (los mismos tonos de su etiqueta). */
+const COLOR_AREA: Record<Area, string> = {
+  marketing: "#DB2777", administracion: "#0284C7", operaciones: "#059669", finanzas: "#7C3AED", calidad: "#D97706",
 };
 
-/** La lista agrupada (el «group by» de Asana): por persona, por área o por estado. */
-function Agrupado({ items, por, hoy, render }: { items: Acuerdo[]; por: "responsable" | "area" | "estado"; hoy: string; render: (l: Acuerdo[]) => React.ReactNode }) {
+/** La lista agrupada, como los grupos de Monday: por persona, por área o por estado, cada uno con su color. */
+function Agrupado({ items, por, hoy, yo, onAbrir, onCambio }: {
+  items: Acuerdo[]; por: "responsable" | "area" | "estado"; hoy: string; yo: YoSesion; onAbrir: (id: number) => void; onCambio: () => void;
+}) {
   const grupos = new Map<string, Acuerdo[]>();
   for (const a of items) {
     const k = por === "responsable" ? a.responsableClave : por === "area" ? a.area : estadoVisible(a, hoy);
@@ -298,20 +295,14 @@ function Agrupado({ items, por, hoy, render }: { items: Acuerdo[]; por: "respons
     : por === "area" ? AREAS.indexOf(x as Area) - AREAS.indexOf(y as Area)
       : grupos.get(x)![0].responsableNombre.localeCompare(grupos.get(y)![0].responsableNombre, "es"));
   return (
-    <div className="space-y-3">
+    <div className="space-y-5">
       {claves.map((k) => {
         const l = grupos.get(k)!;
-        const vencidos = l.filter((a) => estadoVisible(a, hoy) === "vencido").length;
+        const titulo = por === "responsable" ? l[0].responsableNombre : por === "area" ? AREA_LABEL[k as Area] : ESTADO_TITULO[k as EstadoVisible];
+        const color = por === "responsable" ? colorPersona(k) : por === "area" ? COLOR_AREA[k as Area] : COLOR_GRUPO_ESTADO[k as EstadoVisible];
         return (
-          <div key={k}>
-            <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 border-b border-gray-100 pb-1">
-              {por === "responsable" && <Avatar nombre={l[0].responsableNombre} clave={k} />}
-              {por === "responsable" ? l[0].responsableNombre : por === "area" ? AREA_LABEL[k as Area] : ESTADO_TITULO[k as EstadoVisible]}
-              <span className="text-gray-400 font-normal">{l.length}</span>
-              {por !== "estado" && vencidos > 0 && <Pastilla tono="rojo">{vencidos} {vencidos === 1 ? "vencido" : "vencidos"}</Pastilla>}
-            </h3>
-            {render(l)}
-          </div>
+          <GrupoMonday key={k} titulo={titulo} color={color} avatar={por === "responsable" ? { nombre: titulo, clave: k } : undefined}
+            items={l} yo={yo} hoy={hoy} onAbrir={onAbrir} onCambio={onCambio} />
         );
       })}
     </div>

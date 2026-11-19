@@ -7,7 +7,7 @@
  */
 
 import { Check, ChevronDown, ChevronsUp, Equal } from "lucide-react";
-import { AREA_LABEL, PRIORIDAD_LABEL, type Prioridad, diasRestantes, estaAbierto, type Area, type EstadoGuardado, type Resumen } from "@/lib/acuerdos";
+import { AREA_LABEL, ESTADO_LABEL, PRIORIDAD_LABEL, type Prioridad, diasRestantes, estaAbierto, type Area, type EstadoGuardado, type Resumen } from "@/lib/acuerdos";
 
 /** Un color fijo por persona (el mismo en el avatar, la carga del equipo y el cronograma). */
 const PALETA = ["#059669", "#0284C7", "#7C3AED", "#D97706", "#E11D48", "#0F766E", "#4F46E5", "#EA580C"];
@@ -52,21 +52,47 @@ export function FechaChip({ fecha, hoy, estado }: { fecha: string; hoy: string; 
   return <span className={`text-[11px] whitespace-nowrap ${color}`}>{texto}</span>;
 }
 
-/** El círculo de Asana: un toque y queda cumplido (o «por confirmar», si lo confirma la dirección). */
+/** El círculo de Asana: un toque y queda Hecho. */
 export function Circulo({ estado, puede, onClick, ocupado }: { estado: EstadoGuardado; puede: boolean; onClick: () => void; ocupado?: boolean }) {
   const hecho = estado === "cumplido";
-  const espera = estado === "por_confirmar";
   return (
-    <button type="button" disabled={!puede || ocupado} onClick={(e) => { e.stopPropagation(); onClick(); }}
-      aria-label={hecho ? "Cumplido" : espera ? "Esperando confirmación" : "Marcar cumplido"}
-      title={hecho ? "Cumplido" : espera ? "Esperando confirmación" : puede ? "Marcar cumplido" : ""}
+    <button type="button" disabled={!puede || ocupado || hecho} onClick={(e) => { e.stopPropagation(); onClick(); }}
+      aria-label={hecho ? "Hecho" : "Marcar hecho"} title={hecho ? "Hecho" : puede ? "Marcar hecho" : ""}
       className={`group/c w-5 h-5 shrink-0 rounded-full border-[1.5px] inline-flex items-center justify-center transition-colors ${
         hecho ? "bg-emerald-600 border-emerald-600 text-white"
-          : espera ? "bg-amber-100 border-amber-500 text-amber-600"
-            : puede ? "border-gray-300 text-transparent hover:border-emerald-600 hover:text-emerald-600" : "border-gray-200 text-transparent"
+          : puede ? "border-gray-300 text-transparent hover:border-emerald-600 hover:text-emerald-600" : "border-gray-200 text-transparent"
       } ${ocupado ? "opacity-50" : ""}`}>
       <Check className="w-3 h-3" strokeWidth={3} />
     </button>
+  );
+}
+
+/** Colores de estado al estilo Monday: gris sin empezar, naranja en progreso, verde hecho. */
+export const COLOR_ESTADO: Record<"pendiente" | "en_proceso" | "cumplido" | "anulado", string> = {
+  pendiente: "#9CA3AF", en_proceso: "#F59E0B", cumplido: "#10B981", anulado: "#D1D5DB",
+};
+const CAMBIABLES = ["pendiente", "en_proceso", "cumplido"] as const;
+export type EstadoCambiable = (typeof CAMBIABLES)[number];
+
+/**
+ * La celda de estado de Monday: un bloque de color con el estado. Si puedes cambiarlo, es un selector: un toque
+ * y eliges No iniciado, En progreso o Hecho. No abre el detalle de la tarea.
+ */
+export function EstadoCelda({ estado, puede, ocupado, onCambiar, className = "" }: {
+  estado: EstadoGuardado; puede: boolean; ocupado?: boolean; onCambiar: (e: EstadoCambiable) => void; className?: string;
+}) {
+  const base = `h-full w-full min-h-8 px-2 text-center text-xs font-semibold text-white ${ocupado ? "opacity-60" : ""} ${className}`;
+  const style = { backgroundColor: COLOR_ESTADO[estado] };
+  if (!puede || estado === "anulado") {
+    return <span className={`${base} inline-flex items-center justify-center`} style={style}>{ESTADO_LABEL[estado]}</span>;
+  }
+  return (
+    <select value={estado} disabled={ocupado} aria-label="Estado" style={style}
+      onClick={(e) => e.stopPropagation()} onKeyDown={(e) => e.stopPropagation()}
+      onChange={(e) => onCambiar(e.target.value as EstadoCambiable)}
+      className={`${base} cursor-pointer appearance-none outline-none hover:brightness-95 focus-visible:ring-2 focus-visible:ring-primary/50`}>
+      {CAMBIABLES.map((x) => <option key={x} value={x} className="bg-white text-gray-900">{ESTADO_LABEL[x]}</option>)}
+    </select>
   );
 }
 
