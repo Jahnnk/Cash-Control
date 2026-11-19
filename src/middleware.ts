@@ -151,9 +151,16 @@ export async function middleware(request: NextRequest) {
       if (scopedScope === "highlight") {
         const permitido = "/grupo/highlight";
         const ok =
-          [permitido, "/grupo/supervisiones"].some((p) => pathname === p || pathname.startsWith(p + "/")) ||
+          [permitido, "/grupo/supervisiones", "/grupo/acuerdos"].some((p) => pathname === p || pathname.startsWith(p + "/")) ||
           esApiConAlcance(pathname); // subir/ver las fotos de indicación y de supervisión
         if (!ok) return NextResponse.redirect(new URL(permitido, request.url));
+        return NextResponse.next();
+      }
+
+      // Acuerdos y tareas (19-nov-2026): coordinadora de marketing, socias. SOLO /grupo/acuerdos.
+      if (scopedScope === "equipo") {
+        const ok = pathname === "/grupo/acuerdos" || pathname.startsWith("/grupo/acuerdos/");
+        if (!ok) return NextResponse.redirect(new URL("/grupo/acuerdos", request.url));
         return NextResponse.next();
       }
 

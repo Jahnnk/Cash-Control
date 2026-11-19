@@ -141,6 +141,7 @@ export async function loginWithPassword(
         } catch { /* el login no depende de esta marca */ }
         // Solo lectura: directo al Dashboard de Grupo (lo único que puede ver, con Reportes).
         if (u.scope === "lector") redirect("/grupo/dashboard");
+        if (u.scope === "equipo") redirect("/grupo/acuerdos");
         const [kind, sede] = u.scope.split("-");
         redirect(`/${sede}/${kind === "admin" ? "panel" : "verificacion"}`);
       }

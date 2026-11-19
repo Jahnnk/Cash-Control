@@ -26,6 +26,7 @@ import {
   Target,
   ClipboardCheck,
   ListChecks,
+  ClipboardList,
   ChefHat,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
@@ -52,6 +53,7 @@ const I = {
   direccion: { segment: "direccion", label: "Sistema de Dirección", icon: Compass },
   productos: { segment: "productos", label: "Productos", icon: Package },
   presupuesto: { segment: "presupuesto", label: "Presupuesto", icon: PieChart },
+  acuerdos: { segment: "acuerdos", label: "Acuerdos y tareas", icon: ClipboardList },
   highlight: { segment: "highlight", label: "Highlight", icon: Target },
   supervisiones: { segment: "supervisiones", label: "Supervisiones", icon: ClipboardCheck },
   incentivos: { segment: "incentivos", label: "Bonos e Incentivos", icon: Medal },
@@ -87,7 +89,7 @@ export const MENU: Record<ScopeKey, NavSeccion[]> = {
   grupo: [
     { titulo: null, items: [I.dashboard, I.reportes] },
     { titulo: "Dirección", items: [I.direccion, I.productos, I.presupuesto] },
-    { titulo: "Equipo", items: [I.highlight, I.supervisiones, I.incentivos] },
+    { titulo: "Equipo", items: [I.acuerdos, I.highlight, I.supervisiones, I.incentivos] },
     { titulo: "Datos", items: [I.recetas, I.porDefinir] },
   ],
   atelier: SEDE(true),
@@ -174,16 +176,18 @@ export function Sidebar() {
   const isScopedHighlight = scopeHint === "highlight";
   // Solo lectura (Muse): Dashboard y Reportes de Grupo, nada más.
   const isLector = scopeHint === "lector";
+  // Coordinadora de marketing, socias: solo Acuerdos y tareas.
+  const isEquipo = scopeHint === "equipo";
   // useMemo SIEMPRE se llama en el mismo orden — no condicional.
   const secciones = useMemo((): NavSeccion[] => {
     if (!scope) return [];
     // Admin de sede: solo su Panel — el resto del menú lo rebotaría. Juani: Highlight y Supervisiones.
-    const permitido = isScopedAdmin ? ["panel"] : isScopedHighlight ? ["highlight", "supervisiones"] : isLector ? ["dashboard", "reportes"] : null;
+    const permitido = isScopedAdmin ? ["panel"] : isScopedHighlight ? ["acuerdos", "highlight", "supervisiones"] : isLector ? ["dashboard", "reportes"] : isEquipo ? ["acuerdos"] : null;
     if (!permitido) return MENU[scope];
     const items = MENU[scope].flatMap((s) => s.items).filter((i) => permitido.includes(i.segment));
     return [{ titulo: null, items }];
-  }, [scope, isScopedAdmin, isScopedHighlight, isLector]);
-  const conConfiguracion = !isScopedAdmin && !isScopedHighlight && !isLector;
+  }, [scope, isScopedAdmin, isScopedHighlight, isLector, isEquipo]);
+  const conConfiguracion = !isScopedAdmin && !isScopedHighlight && !isLector && !isEquipo;
 
   // Verificador: su única pantalla (/[sede]/verificacion) no está en el
   // menú — un sidebar vacío solo estorba en el celular.
@@ -223,7 +227,7 @@ export function Sidebar() {
         {/* Header — switcher con dot del color del negocio */}
         <div className="relative border-b border-white/10">
           <button
-            onClick={() => !isScopedAdmin && !isLector && setSwitcherOpen((v) => !v)}
+            onClick={() => !isScopedAdmin && !isLector && !isEquipo && setSwitcherOpen((v) => !v)}
             className="w-full flex items-center justify-between gap-3 p-4 hover:bg-white/5 transition-colors text-left"
           >
             <div className="flex items-center gap-3 min-w-0">
@@ -235,7 +239,7 @@ export function Sidebar() {
                 <div className="text-[11px] text-white/70 truncate">{theme.description}</div>
               </div>
             </div>
-            {!isScopedAdmin && !isLector && (
+            {!isScopedAdmin && !isLector && !isEquipo && (
               <ChevronDown className={`w-4 h-4 text-white/60 transition-transform shrink-0 ${switcherOpen ? "rotate-180" : ""}`} />
             )}
           </button>

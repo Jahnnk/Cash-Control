@@ -26,6 +26,7 @@ import { MejorVendedorSection } from "./mejor-vendedor-section";
 import { BaseModal } from "./base-modal";
 import { AtelierPanel } from "./atelier-panel";
 import { HighlightSlot } from "./highlight-card";
+import { MisAcuerdosCard } from "./mis-acuerdos-card";
 import { DiasNoOperativosCard } from "./dias-no-operativos-card";
 import { ProponerHighlight } from "./proponer-highlight";
 import { TuSemana } from "./tu-semana";
@@ -277,6 +278,7 @@ function IncentivosPage() {
       {/* Lo más importante de la semana — va primero a propósito: si
           compitiera con los KPIs, dejaría de ser lo más importante. */}
       <HighlightSlot />
+      <MisAcuerdosCard />
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso vas y qué sigue, estilo pedido de
           delivery. El registro del día y la rutina del sábado quedan como su detalle. */}

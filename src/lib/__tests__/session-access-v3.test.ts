@@ -73,13 +73,13 @@ describe("getSessionRole — tokens v3 (app_users)", () => {
   it("usuario activo con firma válida → rol admin de SU sede", async () => {
     fake.state.cookieToken = await createUserToken(HASH, 7, NOW + 3600);
     fake.state.row = { scope: "admin-atelier", password_hash: HASH };
-    expect(await getSessionRole()).toEqual({ kind: "admin", sede: 1 });
+    expect(await getSessionRole()).toEqual({ kind: "admin", sede: 1, userId: 7 });
   });
 
   it("scope de verificador → kind verif", async () => {
     fake.state.cookieToken = await createUserToken(HASH, 7, NOW + 3600);
     fake.state.row = { scope: "verif-centro", password_hash: HASH };
-    expect(await getSessionRole()).toEqual({ kind: "verif", sede: 3 });
+    expect(await getSessionRole()).toEqual({ kind: "verif", sede: 3, userId: 7 });
   });
 
   it("usuario INHABILITADO (sin fila activa) → null al instante", async () => {

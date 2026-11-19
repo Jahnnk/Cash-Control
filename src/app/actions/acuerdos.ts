@@ -1,0 +1,424 @@
+"use server";
+
+/**
+ * Acuerdos y tareas (fase 1, 19-nov-2026). Reglas puras en src/lib/acuerdos.ts.
+ *
+ * Quién hace qué:
+ *   · Dirección (Jahnn, Kelly y el rol «highlight», ej. Juani): ve todo, crea, asigna, confirma o devuelve.
+ *   · Equipo (coordinadora de marketing, socias): ve todo, crea y asigna. No confirma cumplidos.
+ *   · Administradores de sede: ven y avanzan SOLO lo suyo, desde su Panel de Sede.
+ * Ninguno de estos roles ve finanzas: el módulo no lee nada de dinero.
+ */
+
+import { neon } from "@neondatabase/serverless";
+import { getSessionRole } from "@/lib/session-access";
+import { getToday } from "@/lib/utils";
+import {
+  erroresAcuerdo,
+  estadoAlCumplir,
+  esArea,
+  estaAbierto,
+  puede,
+  quedaTarde,
+  AREA_LABEL,
+  ESTADO_LABEL,
+  MAX_DETALLE,
+  MAX_MOTIVO,
+  MAX_QUE,
+  type AccionAcuerdo,
+  type Area,
+  type EstadoGuardado,
+  type Persona,
+  type TipoPersona,
+  type Yo,
+} from "@/lib/acuerdos";
+
+const sql = neon(process.env.DATABASE_URL!);
+
+type R<T> = ({ ok: true } & T) | { ok: false; error: string };
+
+export type YoSesion = Yo & { nombre: string };
+
+export type Acuerdo = {
+  id: number;
+  reunionId: number | null;
+  reunionTitulo: string | null;
+  que: string;
+  detalle: string | null;
+  area: Area;
+  responsableClave: string;
+  responsableNombre: string;
+  fechaLimite: string;
+  fechaLimiteOriginal: string;
+  estado: EstadoGuardado;
+  tarde: boolean;
+  marcadoCumplidoEl: string | null;
+  confirmadoEl: string | null;
+  confirmadoPor: string | null;
+  creadoPor: string;
+  creadoPorClave: string;
+  creadoEl: string;
+  comentarios: number;
+};
+
+export type Reunion = {
+  id: number;
+  fecha: string;
+  area: Area;
+  titulo: string;
+  asistentes: string | null;
+  notas: string | null;
+  creadoPor: string;
+  acuerdos: number;
+  abiertos: number;
+};
+
+export type Evento = { id: number; cuando: string; quien: string; tipo: string; detalle: string | null };
+
+const SEDE_SCOPE: Record<number, string> = { 1: "admin-atelier", 2: "admin-fonavi", 3: "admin-centro" };
+const SEDE_NOMBRE: Record<string, string> = { "admin-atelier": "Atelier", "admin-fonavi": "Fonavi", "admin-centro": "Centro" };
+
+const SIN_ACCESO = { ok: false as const, error: "No tienes acceso a los acuerdos." };
+
+function faltaMigracion(e: unknown): boolean {
+  return /relation .*(acuerdos|reuniones|acuerdo_eventos).* does not exist/i.test(e instanceof Error ? e.message : String(e));
+}
+function errorBD(donde: string, e: unknown): { ok: false; error: string } {
+  console.error(`[acuerdos:${donde}]`, e);
+  return { ok: false, error: faltaMigracion(e) ? "Falta crear las tablas de acuerdos en la base." : "No pude conectar con la base. Intenta de nuevo." };
+}
+
+/**
+ * Quién está usando el módulo. `mias` = las claves que cuentan como «mis acuerdos»: con un usuario propio
+ * es solo la suya; con la contraseña heredada de la sede (sin nombre) son las de los admins de esa sede.
+ */
+async function sesion(): Promise<{ yo: YoSesion; mias: string[] } | null> {
+  const role = await getSessionRole();
+  if (!role) return null;
+  if (role.kind === "full") {
+    const clave = role.quien;
+    return { yo: { clave, nombre: role.quien === "kelly" ? "Kelly" : "Jahnn", tipo: "direccion" }, mias: [clave] };
+  }
+  if (role.kind === "highlight") return { yo: { clave: `u:${role.userId}`, nombre: role.nombre, tipo: "direccion" }, mias: [`u:${role.userId}`] };
+  if (role.kind === "equipo") return { yo: { clave: `u:${role.userId}`, nombre: role.nombre, tipo: "equipo" }, mias: [`u:${role.userId}`] };
+  if (role.kind === "admin") {
+    if (role.userId) return { yo: { clave: `u:${role.userId}`, nombre: role.nombre ?? "Administración", tipo: "admin" }, mias: [`u:${role.userId}`] };
+    try {
+      const rows = (await sql`SELECT id FROM app_users WHERE active AND scope = ${SEDE_SCOPE[role.sede] ?? ""}`) as { id: number }[];
+      const mias = rows.map((r) => `u:${r.id}`);
+      return { yo: { clave: mias[0] ?? `sede:${role.sede}`, nombre: "Administración", tipo: "admin" }, mias };
+    } catch {
+      return null;
+    }
+  }
+  return null;
+}
+
+const veTodo = (yo: Yo) => yo.tipo === "direccion" || yo.tipo === "equipo";
+
+/** Las personas a las que se puede asignar un acuerdo. `todas` incluye a las desactivadas (para nombres viejos). */
+async function personas(todas = false): Promise<Persona[]> {
+  const rows = (await sql`
+    SELECT id, nombre, scope, active FROM app_users
+    WHERE scope IN ('admin-atelier','admin-fonavi','admin-centro','highlight','equipo')
+    ORDER BY nombre
+  `) as { id: number; nombre: string; scope: string; active: boolean }[];
+  const lista: Persona[] = [
+    { clave: "jahnn", nombre: "Jahnn", tipo: "direccion", detalle: "Dirección" },
+    { clave: "kelly", nombre: "Kelly", tipo: "direccion", detalle: "Finanzas" },
+  ];
+  for (const r of rows) {
+    if (!todas && !r.active) continue;
+    const tipo: TipoPersona = r.scope === "highlight" ? "direccion" : r.scope === "equipo" ? "equipo" : "admin";
+    const detalle = tipo === "admin" ? `Administración · ${SEDE_NOMBRE[r.scope]}` : tipo === "direccion" ? "Dirección" : "Equipo";
+    lista.push({ clave: `u:${r.id}`, nombre: r.nombre, tipo, detalle });
+  }
+  return lista;
+}
+
+const COLUMNAS = sql`
+  a.id, a.reunion_id AS "reunionId", r.titulo AS "reunionTitulo", a.que, a.detalle, a.area,
+  a.responsable_clave AS "responsableClave", a.responsable_nombre AS "responsableNombre",
+  a.fecha_limite::text AS "fechaLimite", a.fecha_limite_original::text AS "fechaLimiteOriginal",
+  a.estado, a.tarde, a.marcado_cumplido_el::text AS "marcadoCumplidoEl", a.confirmado_el::text AS "confirmadoEl",
+  a.confirmado_por AS "confirmadoPor", a.creado_por AS "creadoPor", a.creado_por_clave AS "creadoPorClave",
+  a.creado_el::text AS "creadoEl",
+  (SELECT count(*)::int FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo = 'comentario') AS comentarios
+`;
+
+// ─────────────────────────────────────────────────────────────────
+// Lecturas
+
+export async function getTableroAcuerdos(): Promise<R<{ hoy: string; yo: YoSesion; personas: Persona[]; acuerdos: Acuerdo[]; reuniones: Reunion[] }>> {
+  const s = await sesion();
+  if (!s || !veTodo(s.yo)) return SIN_ACCESO;
+  try {
+    const hoy = getToday();
+    // Todo lo abierto, y lo cerrado o anulado de los últimos 90 días.
+    const acuerdos = (await sql`
+      SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id
+      WHERE a.estado IN ('pendiente','en_proceso','por_confirmar') OR a.actualizado_el > now() - interval '90 days'
+      ORDER BY a.fecha_limite, a.id
+    `) as Acuerdo[];
+    const reuniones = (await sql`
+      SELECT r.id, r.fecha::text AS fecha, r.area, r.titulo, r.asistentes, r.notas, r.creado_por AS "creadoPor",
+             count(a.id) FILTER (WHERE a.estado <> 'anulado')::int AS acuerdos,
+             count(a.id) FILTER (WHERE a.estado IN ('pendiente','en_proceso','por_confirmar'))::int AS abiertos
+      FROM reuniones r LEFT JOIN acuerdos a ON a.reunion_id = r.id
+      WHERE r.fecha > (now() - interval '180 days')::date
+      GROUP BY r.id ORDER BY r.fecha DESC, r.id DESC
+    `) as Reunion[];
+    return { ok: true, hoy, yo: s.yo, personas: await personas(), acuerdos, reuniones };
+  } catch (e) {
+    return errorBD("tablero", e);
+  }
+}
+
+/** Para el Panel de Sede (y cualquiera): lo que tengo asignado. */
+export async function getMisAcuerdos(): Promise<R<{ hoy: string; yo: YoSesion; acuerdos: Acuerdo[] }>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  try {
+    const acuerdos = s.mias.length === 0 ? [] : ((await sql`
+      SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id
+      WHERE a.responsable_clave = ANY(${s.mias})
+        AND (a.estado IN ('pendiente','en_proceso','por_confirmar')
+             OR (a.estado = 'cumplido' AND a.actualizado_el > now() - interval '30 days'))
+      ORDER BY a.fecha_limite, a.id
+    `) as Acuerdo[]);
+    return { ok: true, hoy: getToday(), yo: s.yo, acuerdos };
+  } catch (e) {
+    return errorBD("mis", e);
+  }
+}
+
+export async function getHistorialAcuerdo(id: number): Promise<R<{ eventos: Evento[] }>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  try {
+    const a = await leer(id);
+    if (!a) return { ok: false, error: "No encontré ese acuerdo." };
+    if (!veTodo(s.yo) && !s.mias.includes(a.responsableClave)) return SIN_ACCESO;
+    const eventos = (await sql`
+      SELECT id, cuando::text AS cuando, quien, tipo, detalle FROM acuerdo_eventos
+      WHERE acuerdo_id = ${id} ORDER BY cuando, id
+    `) as Evento[];
+    return { ok: true, eventos };
+  } catch (e) {
+    return errorBD("historial", e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Escrituras
+
+const limpio = (t: string | null | undefined, max: number) => {
+  const v = (t ?? "").trim();
+  return v ? v.slice(0, max) : null;
+};
+
+async function leer(id: number): Promise<Acuerdo | null> {
+  if (!Number.isInteger(id) || id <= 0) return null;
+  const rows = (await sql`SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id WHERE a.id = ${id}`) as Acuerdo[];
+  return rows[0] ?? null;
+}
+
+/** Lee el acuerdo y revisa el permiso. Si es un admin con la contraseña de sede, actúa como el responsable. */
+async function conPermiso(id: number, accion: AccionAcuerdo): Promise<{ s: { yo: YoSesion; mias: string[] }; a: Acuerdo } | { error: string }> {
+  const s = await sesion();
+  if (!s) return { error: SIN_ACCESO.error };
+  const a = await leer(id);
+  if (!a) return { error: "No encontré ese acuerdo." };
+  const yo = s.mias.includes(a.responsableClave) ? { ...s.yo, clave: a.responsableClave } : s.yo;
+  if (!puede(yo, a, accion)) return { error: "No puedes hacer ese cambio en este acuerdo." };
+  return { s: { ...s, yo }, a };
+}
+
+async function evento(id: number, quien: string, tipo: string, detalle: string | null) {
+  await sql`INSERT INTO acuerdo_eventos (acuerdo_id, quien, tipo, detalle) VALUES (${id}, ${quien}, ${tipo}, ${detalle})`;
+}
+
+export async function crearAcuerdo(input: {
+  que: string; detalle?: string; area: string; responsable: string; fechaLimite: string; reunionId?: number | null;
+}): Promise<R<{ id: number }>> {
+  const s = await sesion();
+  if (!s || !veTodo(s.yo)) return SIN_ACCESO;
+  try {
+    const hoy = getToday();
+    const gente = await personas();
+    const errores = erroresAcuerdo(input, hoy, new Set(gente.map((p) => p.clave)));
+    if (errores.length) return { ok: false, error: errores.join(" ") };
+    const resp = gente.find((p) => p.clave === input.responsable)!;
+    const rows = (await sql`
+      INSERT INTO acuerdos (reunion_id, que, detalle, area, responsable_clave, responsable_nombre, fecha_limite, fecha_limite_original, creado_por, creado_por_clave)
+      VALUES (${input.reunionId ?? null}, ${input.que.trim().slice(0, MAX_QUE)}, ${limpio(input.detalle, MAX_DETALLE)}, ${input.area},
+              ${resp.clave}, ${resp.nombre}, ${input.fechaLimite}, ${input.fechaLimite}, ${s.yo.nombre}, ${s.yo.clave})
+      RETURNING id
+    `) as { id: number }[];
+    return { ok: true, id: rows[0].id };
+  } catch (e) {
+    return errorBD("crear", e);
+  }
+}
+
+export async function crearReunion(input: {
+  fecha: string; area: string; titulo: string; asistentes?: string; notas?: string;
+  acuerdos: { que: string; responsable: string; fechaLimite: string }[];
+}): Promise<R<{ id: number; acuerdos: number }>> {
+  const s = await sesion();
+  if (!s || !veTodo(s.yo)) return SIN_ACCESO;
+  const titulo = (input.titulo ?? "").trim();
+  if (titulo.length < 3) return { ok: false, error: "Escribe el nombre de la reunión." };
+  if (!esArea(input.area)) return { ok: false, error: "Elige el área de la reunión." };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(input.fecha)) return { ok: false, error: "Elige la fecha de la reunión." };
+  try {
+    const hoy = getToday();
+    if (input.fecha > hoy) return { ok: false, error: "La reunión no puede tener fecha futura." };
+    const gente = await personas();
+    const claves = new Set(gente.map((p) => p.clave));
+    const filas = input.acuerdos.filter((a) => a.que.trim() || a.responsable || a.fechaLimite);
+    for (const [i, a] of filas.entries()) {
+      const e = erroresAcuerdo({ ...a, area: input.area }, hoy, claves);
+      if (e.length) return { ok: false, error: `Acuerdo ${i + 1}: ${e.join(" ")}` };
+    }
+    const nom = (c: string) => gente.find((p) => p.clave === c)!.nombre;
+    // Un solo viaje a la base: la reunión y sus acuerdos entran juntos o no entra nada.
+    const rows = (await sql`
+      WITH r AS (
+        INSERT INTO reuniones (fecha, area, titulo, asistentes, notas, creado_por, creado_por_clave)
+        VALUES (${input.fecha}, ${input.area}, ${titulo.slice(0, MAX_QUE)}, ${limpio(input.asistentes, MAX_MOTIVO)},
+                ${limpio(input.notas, MAX_DETALLE)}, ${s.yo.nombre}, ${s.yo.clave})
+        RETURNING id
+      ), ins AS (
+        INSERT INTO acuerdos (reunion_id, que, area, responsable_clave, responsable_nombre, fecha_limite, fecha_limite_original, creado_por, creado_por_clave)
+        SELECT r.id, x.que, ${input.area}, x.clave, x.nombre, x.fecha, x.fecha, ${s.yo.nombre}, ${s.yo.clave}
+        FROM r, unnest(${filas.map((a) => a.que.trim().slice(0, MAX_QUE))}::text[], ${filas.map((a) => a.responsable)}::text[],
+                       ${filas.map((a) => nom(a.responsable))}::text[], ${filas.map((a) => a.fechaLimite)}::date[]) AS x(que, clave, nombre, fecha)
+        RETURNING id
+      )
+      SELECT (SELECT id FROM r) AS id, (SELECT count(*)::int FROM ins) AS n
+    `) as { id: number; n: number }[];
+    return { ok: true, id: rows[0].id, acuerdos: rows[0].n };
+  } catch (e) {
+    return errorBD("reunion", e);
+  }
+}
+
+/** Pendiente ↔ en proceso, o marcar cumplido. */
+export async function avanzarAcuerdo(id: number, a: "pendiente" | "en_proceso" | "cumplido", nota?: string): Promise<R<{ estado: EstadoGuardado }>> {
+  try {
+    const p = await conPermiso(id, "avanzar");
+    if ("error" in p) return { ok: false, error: p.error };
+    const hoy = getToday();
+    if (a === "cumplido") {
+      const gente = await personas(true);
+      const tipoResp = gente.find((g) => g.clave === p.a.responsableClave)?.tipo ?? "admin";
+      const nuevo = estadoAlCumplir(tipoResp);
+      const tarde = quedaTarde(p.a.tarde, p.a.fechaLimite, hoy);
+      const rows = await sql`
+        UPDATE acuerdos SET estado = ${nuevo}, tarde = ${tarde}, marcado_cumplido_el = now(),
+               confirmado_el = ${nuevo === "cumplido" ? new Date().toISOString() : null},
+               confirmado_por = ${nuevo === "cumplido" ? p.s.yo.nombre : null}, actualizado_el = now()
+        WHERE id = ${id} AND estado IN ('pendiente','en_proceso') RETURNING id`;
+      if (rows.length === 0) return { ok: false, error: "Alguien cambió este acuerdo. Recarga la página." };
+      await evento(id, p.s.yo.nombre, "estado", `Marcado ${ESTADO_LABEL[nuevo].toLowerCase()}${tarde ? " (tarde)" : ""}${limpio(nota, MAX_MOTIVO) ? `: ${limpio(nota, MAX_MOTIVO)}` : ""}`);
+      return { ok: true, estado: nuevo };
+    }
+    if (p.a.estado === a) return { ok: true, estado: a };
+    await sql`UPDATE acuerdos SET estado = ${a}, actualizado_el = now() WHERE id = ${id} AND estado IN ('pendiente','en_proceso')`;
+    await evento(id, p.s.yo.nombre, "estado", `Pasó a ${ESTADO_LABEL[a].toLowerCase()}`);
+    return { ok: true, estado: a };
+  } catch (e) {
+    return errorBD("avanzar", e);
+  }
+}
+
+/** La dirección confirma el cumplido, o lo devuelve con motivo (vuelve a «en proceso»). */
+export async function revisarCumplido(id: number, decision: "confirmar" | "devolver", motivo?: string): Promise<R<object>> {
+  try {
+    const p = await conPermiso(id, "confirmar");
+    if ("error" in p) return { ok: false, error: p.error };
+    if (decision === "confirmar") {
+      const rows = await sql`
+        UPDATE acuerdos SET estado = 'cumplido', confirmado_el = now(), confirmado_por = ${p.s.yo.nombre}, actualizado_el = now()
+        WHERE id = ${id} AND estado = 'por_confirmar' RETURNING id`;
+      if (rows.length === 0) return { ok: false, error: "Alguien cambió este acuerdo. Recarga la página." };
+      await evento(id, p.s.yo.nombre, "confirmado", "Cumplido confirmado");
+      return { ok: true };
+    }
+    const m = limpio(motivo, MAX_MOTIVO);
+    if (!m) return { ok: false, error: "Escribe por qué lo devuelves." };
+    const rows = await sql`
+      UPDATE acuerdos SET estado = 'en_proceso', marcado_cumplido_el = NULL, actualizado_el = now()
+      WHERE id = ${id} AND estado = 'por_confirmar' RETURNING id`;
+    if (rows.length === 0) return { ok: false, error: "Alguien cambió este acuerdo. Recarga la página." };
+    await evento(id, p.s.yo.nombre, "devuelto", m);
+    return { ok: true };
+  } catch (e) {
+    return errorBD("revisar", e);
+  }
+}
+
+export async function editarAcuerdo(id: number, input: {
+  que: string; detalle?: string; area: string; responsable: string; fechaLimite: string; motivoFecha?: string;
+}): Promise<R<object>> {
+  try {
+    const p = await conPermiso(id, "editar");
+    if ("error" in p) return { ok: false, error: p.error };
+    const hoy = getToday();
+    const gente = await personas();
+    const claves = new Set(gente.map((g) => g.clave));
+    claves.add(p.a.responsableClave); // si el responsable fue desactivado, igual se puede editar lo demás
+    const cambiaFecha = input.fechaLimite !== p.a.fechaLimite;
+    // Validar la fecha solo si cambia: un acuerdo vencido se puede corregir sin mover su fecha.
+    const errores = erroresAcuerdo({ ...input, fechaLimite: cambiaFecha ? input.fechaLimite : hoy }, hoy, claves);
+    if (errores.length) return { ok: false, error: errores.join(" ") };
+    const motivo = limpio(input.motivoFecha, MAX_MOTIVO);
+    if (cambiaFecha && !motivo) return { ok: false, error: "Escribe por qué cambia la fecha límite." };
+    const resp = gente.find((g) => g.clave === input.responsable) ?? { clave: p.a.responsableClave, nombre: p.a.responsableNombre };
+    // Mover una fecha que ya venció no lava el atraso.
+    const tarde = p.a.tarde || (cambiaFecha && estaAbierto(p.a.estado) && p.a.fechaLimite < hoy);
+    await sql`
+      UPDATE acuerdos SET que = ${input.que.trim().slice(0, MAX_QUE)}, detalle = ${limpio(input.detalle, MAX_DETALLE)}, area = ${input.area},
+             responsable_clave = ${resp.clave}, responsable_nombre = ${resp.nombre}, fecha_limite = ${input.fechaLimite},
+             tarde = ${tarde}, actualizado_el = now()
+      WHERE id = ${id}`;
+    const quien = p.s.yo.nombre;
+    if (cambiaFecha) await evento(id, quien, "fecha", `${p.a.fechaLimite} → ${input.fechaLimite}: ${motivo}`);
+    if (resp.clave !== p.a.responsableClave) await evento(id, quien, "responsable", `${p.a.responsableNombre} → ${resp.nombre}`);
+    if (input.que.trim() !== p.a.que || input.area !== p.a.area || limpio(input.detalle, MAX_DETALLE) !== p.a.detalle) {
+      await evento(id, quien, "editado", input.area !== p.a.area ? `Área: ${AREA_LABEL[p.a.area]} → ${AREA_LABEL[input.area as Area]}` : "Texto corregido");
+    }
+    return { ok: true };
+  } catch (e) {
+    return errorBD("editar", e);
+  }
+}
+
+export async function anularAcuerdo(id: number, motivo: string): Promise<R<object>> {
+  try {
+    const p = await conPermiso(id, "anular");
+    if ("error" in p) return { ok: false, error: p.error };
+    const m = limpio(motivo, MAX_MOTIVO);
+    if (!m) return { ok: false, error: "Escribe por qué se anula." };
+    await sql`UPDATE acuerdos SET estado = 'anulado', actualizado_el = now() WHERE id = ${id}`;
+    await evento(id, p.s.yo.nombre, "anulado", m);
+    return { ok: true };
+  } catch (e) {
+    return errorBD("anular", e);
+  }
+}
+
+export async function comentarAcuerdo(id: number, texto: string): Promise<R<object>> {
+  try {
+    const p = await conPermiso(id, "comentar");
+    if ("error" in p) return { ok: false, error: p.error };
+    const t = limpio(texto, MAX_DETALLE);
+    if (!t) return { ok: false, error: "Escribe el comentario." };
+    await evento(id, p.s.yo.nombre, "comentario", t);
+    await sql`UPDATE acuerdos SET actualizado_el = now() WHERE id = ${id}`;
+    return { ok: true };
+  } catch (e) {
+    return errorBD("comentar", e);
+  }
+}
