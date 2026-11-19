@@ -1,42 +1,57 @@
 "use client";
 
 /**
- * Grupo → Acuerdos y tareas (fase 1, 19-nov-2026).
- * Un solo lugar para los acuerdos de las reuniones y las tareas del día a día. Responde tres preguntas:
- * ¿qué tengo que hacer yo?, ¿qué está vencido o espera confirmación?, ¿qué salió de cada reunión?
+ * Grupo → Acuerdos y tareas. Rediseño del 19-nov-2026 con lo mejor de tres referencias, en el estilo del panel:
+ *   · Asana: alta rápida en una línea, «Mis tareas» por urgencia, filas con círculo para cumplir y detalle lateral.
+ *   · Trello: tablero de cuatro columnas que se arrastran.
+ *   · Monday: panel ejecutivo con barras de estado por persona y área.
+ * Pestañas: Mis tareas · Tablero · Lista · Reuniones · Panel ejecutivo.
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Loader2, Plus, Search, Users } from "lucide-react";
-import { crearAcuerdo, crearReunion, getTableroAcuerdos, type Acuerdo, type Reunion, type YoSesion } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, conAlerta, conteos, estadoVisible, ordenAcuerdos, type EstadoVisible, type Persona } from "@/lib/acuerdos";
-import { AcuerdoItem, fechaLarga } from "@/components/acuerdos/acuerdo-item";
-import { Kpi, Pastilla, Segmentado } from "@/components/productos/ui";
-import { IndicadoresAcuerdos } from "./indicadores";
-import { ResumenSemanalVista } from "./resumen-semanal";
+import { ChevronDown, Loader2, Search, Users } from "lucide-react";
+import { getTableroAcuerdos, type Acuerdo, type Reunion, type YoSesion } from "@/app/actions/acuerdos";
+import { AREA_LABEL, AREAS, conAlerta, diasRestantes, estadoVisible, ordenAcuerdos, type Area, type EstadoVisible, type Persona } from "@/lib/acuerdos";
+import { Pastilla, Segmentado } from "@/components/productos/ui";
 import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
+import { FilaAcuerdo } from "@/components/acuerdos/fila-acuerdo";
+import { DetalleAcuerdo } from "@/components/acuerdos/detalle-acuerdo";
+import { AltaRapida } from "@/components/acuerdos/alta-rapida";
+import { Avatar, AreaTag, diaCorto } from "@/components/acuerdos/ui";
+import { Kanban } from "./kanban";
+import { PanelEjecutivo } from "./panel-ejecutivo";
+import { FormReunion } from "./form-reunion";
 
-type Vista = "mios" | "todos" | "reuniones" | "indicadores" | "resumen";
-const VISTAS: Vista[] = ["mios", "todos", "reuniones", "indicadores", "resumen"];
-const vistaDeUrl = () => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("vista"));
+type Vista = "mios" | "tablero" | "lista" | "reuniones" | "panel";
 type Datos = { hoy: string; yo: YoSesion; personas: Persona[]; acuerdos: Acuerdo[]; reuniones: Reunion[] };
+type FiltroEstado = "abiertos" | "vencido" | "por_confirmar" | "cerrados" | "todos";
 
-const INPUT = "w-full border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-white";
+/** Enlaces viejos y del Dashboard: ?vista=vencidos|todos|indicadores|resumen siguen funcionando. */
+function deUrl(): { vista: Vista; estado: FiltroEstado; panel: "semana" | "mes" } {
+  const v = typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("vista");
+  if (v === "vencidos") return { vista: "lista", estado: "vencido", panel: "semana" };
+  if (v === "todos" || v === "lista") return { vista: "lista", estado: "abiertos", panel: "semana" };
+  if (v === "indicadores") return { vista: "panel", estado: "abiertos", panel: "mes" };
+  if (v === "resumen" || v === "panel") return { vista: "panel", estado: "abiertos", panel: "semana" };
+  if (v === "tablero" || v === "reuniones") return { vista: v, estado: "abiertos", panel: "semana" };
+  return { vista: "mios", estado: "abiertos", panel: "semana" };
+}
+
+const SEL = "border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm bg-white";
 const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 
 export function TableroAcuerdos() {
+  const [inicio] = useState(deUrl);
   const [d, setD] = useState<Datos | null>(null);
   const [error, setError] = useState<string | null>(null);
-  // ?vista=indicadores (el aviso del Dashboard lleva directo). Al servidor no le importa: la primera pintura es el cargando.
-  const [vista, setVista] = useState<Vista>(() => {
-    const v = vistaDeUrl();
-    return v === "vencidos" ? "todos" : VISTAS.includes(v as Vista) ? (v as Vista) : "mios";
-  });
-  const [form, setForm] = useState<null | "tarea" | "reunion">(null);
-  const [filtroEstado, setFiltroEstado] = useState<"abiertos" | "vencido" | "por_confirmar" | "cerrados" | "todos">(() => (vistaDeUrl() === "vencidos" ? "vencido" : "abiertos"));
+  const [vista, setVista] = useState<Vista>(inicio.vista);
+  const [reunionForm, setReunionForm] = useState(false);
+  const [abierto, setAbierto] = useState<number | null>(null);
+  const [filtroEstado, setFiltroEstado] = useState<FiltroEstado>(inicio.estado);
   const [filtroArea, setFiltroArea] = useState("");
   const [filtroResp, setFiltroResp] = useState("");
   const [q, setQ] = useState("");
+  const [agrupar, setAgrupar] = useState<"responsable" | "area" | "estado">("responsable");
   const [reunionAbierta, setReunionAbierta] = useState<number | null>(null);
 
   const cargar = useCallback(async () => {
@@ -52,143 +67,170 @@ export function TableroAcuerdos() {
 
   const activos = useMemo(() => d?.acuerdos.filter((a) => a.estado !== "anulado") ?? [], [d]);
   const mios = useMemo(() => (d ? ordenAcuerdos(activos.filter((a) => a.responsableClave === d.yo.clave && a.estado !== "cumplido"), d.hoy) : []), [d, activos]);
-  const porConfirmarDeOtros = useMemo(() => (d && d.yo.tipo === "direccion" ? activos.filter((a) => a.estado === "por_confirmar" && a.responsableClave !== d.yo.clave) : []), [d, activos]);
+  const porConfirmar = useMemo(() => (d?.yo.tipo === "direccion" ? activos.filter((a) => a.estado === "por_confirmar" && a.responsableClave !== d.yo.clave) : []), [d, activos]);
   const asignadosPorMi = useMemo(() => (d ? ordenAcuerdos(activos.filter((a) => a.creadoPorClave === d.yo.clave && a.responsableClave !== d.yo.clave && a.estado !== "cumplido"), d.hoy) : []), [d, activos]);
+
+  /** El tablero y la lista comparten los filtros de persona y área. */
+  const filtrar = useCallback((lista: Acuerdo[]) => {
+    const t = sinTildes(q.trim());
+    return lista.filter((a) => (!filtroArea || a.area === filtroArea) && (!filtroResp || a.responsableClave === filtroResp)
+      && (!t || sinTildes(`${a.que} ${a.detalle ?? ""} ${a.responsableNombre} ${a.reunionTitulo ?? ""}`).includes(t)));
+  }, [q, filtroArea, filtroResp]);
 
   const filtrados = useMemo(() => {
     if (!d) return [];
-    const t = sinTildes(q.trim());
-    return ordenAcuerdos(d.acuerdos.filter((a) => {
+    return ordenAcuerdos(filtrar(d.acuerdos).filter((a) => {
       const v: EstadoVisible = estadoVisible(a, d.hoy);
-      const okEstado = filtroEstado === "todos" ? true
+      return filtroEstado === "todos" ? true
         : filtroEstado === "abiertos" ? v === "pendiente" || v === "en_proceso" || v === "vencido" || v === "por_confirmar"
           : filtroEstado === "cerrados" ? v === "cumplido" || v === "anulado" : v === filtroEstado;
-      return okEstado && (!filtroArea || a.area === filtroArea) && (!filtroResp || a.responsableClave === filtroResp)
-        && (!t || sinTildes(`${a.que} ${a.detalle ?? ""} ${a.responsableNombre} ${a.reunionTitulo ?? ""}`).includes(t));
     }), d.hoy);
-  }, [d, q, filtroEstado, filtroArea, filtroResp]);
+  }, [d, filtrar, filtroEstado]);
 
   if (error) return <p className="text-sm text-gray-600">{error}</p>;
   if (!d) return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-6 h-6 animate-spin" /></div>;
 
-  const c = conteos(activos, d.hoy);
+  const enDetalle = abierto !== null ? d.acuerdos.find((a) => a.id === abierto) ?? null : null;
+  const recargar = () => void cargar();
   const responsables = Array.from(new Map(d.acuerdos.map((a) => [a.responsableClave, a.responsableNombre])).entries()).sort((a, b) => a[1].localeCompare(b[1], "es"));
-  const lista = (items: Acuerdo[], vacio: string, mostrarResponsable = true) => items.length === 0
-    ? <p className="text-sm text-gray-500 py-3">{vacio}</p>
-    : <ul className="divide-y divide-gray-100">{items.map((a) => <AcuerdoItem key={`${a.id}-${a.estado}-${a.fechaLimite}-${a.comentarios}`} a={a} yo={d.yo} hoy={d.hoy} personas={d.personas} mostrarResponsable={mostrarResponsable} onCambio={() => void cargar()} />)}</ul>;
+  const filas = (items: Acuerdo[], mostrarResponsable = true) => (
+    <ul>{items.map((a) => <FilaAcuerdo key={a.id} a={a} yo={d.yo} hoy={d.hoy} mostrarResponsable={mostrarResponsable} onAbrir={() => setAbierto(a.id)} onCambio={recargar} />)}</ul>
+  );
+
+  // Mis tareas por urgencia, como «My tasks» de Asana.
+  const dias = (a: Acuerdo) => diasRestantes(a.fechaLimite, d.hoy);
+  const abiertosMios = mios.filter((a) => a.estado !== "por_confirmar");
+  const grupos: { titulo: string; items: Acuerdo[]; tono?: string }[] = [
+    { titulo: "Vencidas", items: abiertosMios.filter((a) => dias(a) < 0), tono: "text-red-700" },
+    { titulo: "Hoy y mañana", items: abiertosMios.filter((a) => dias(a) >= 0 && dias(a) <= 1), tono: "text-amber-700" },
+    { titulo: "Próximos 7 días", items: abiertosMios.filter((a) => dias(a) > 1 && dias(a) <= 7) },
+    { titulo: "Más adelante", items: abiertosMios.filter((a) => dias(a) > 7) },
+    { titulo: "Esperando confirmación", items: mios.filter((a) => a.estado === "por_confirmar") },
+  ];
+
+  const filtros = (
+    <div className="flex flex-wrap gap-2 items-center">
+      <select value={filtroResp} onChange={(e) => setFiltroResp(e.target.value)} className={SEL} aria-label="Responsable">
+        <option value="">Todas las personas</option>
+        {responsables.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
+      </select>
+      <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className={SEL} aria-label="Área">
+        <option value="">Todas las áreas</option>
+        {AREAS.map((x) => <option key={x} value={x}>{AREA_LABEL[x]}</option>)}
+      </select>
+      <label className="relative flex-1 min-w-[160px]">
+        <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
+        <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" className={`${SEL} w-full pl-8`} />
+      </label>
+    </div>
+  );
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
           <h1 className="text-2xl font-semibold text-gray-900">Acuerdos y tareas</h1>
-          <p className="text-sm text-gray-500 mt-1 max-w-2xl">
-            Todo lo que se acordó en las reuniones y lo que surge en el día a día. Cada tarea tiene un responsable y una fecha límite. Si pasa la fecha y no está cumplida, queda vencida sola.
-          </p>
+          <p className="text-sm text-gray-500 mt-1">Cada tarea con un responsable y una fecha. Si pasa la fecha sin cumplirse, queda vencida sola.</p>
         </div>
-        <div className="flex gap-2">
-          <button type="button" onClick={() => setForm(form === "tarea" ? null : "tarea")} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl">
-            <Plus className="w-4 h-4" />Nueva tarea
-          </button>
-          <button type="button" onClick={() => setForm(form === "reunion" ? null : "reunion")} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary border border-primary/30 hover:bg-primary/5 rounded-xl">
-            <Users className="w-4 h-4" />Registrar reunión
-          </button>
-        </div>
+        <button type="button" onClick={() => setReunionForm(!reunionForm)} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary border border-primary/30 hover:bg-primary/5 rounded-xl">
+          <Users className="w-4 h-4" />Registrar reunión
+        </button>
       </header>
 
-      {form === "tarea" && <FormTarea d={d} onListo={() => { setForm(null); void cargar(); }} onCancelar={() => setForm(null)} />}
-      {form === "reunion" && <FormReunion d={d} onListo={() => { setForm(null); setVista("reuniones"); void cargar(); }} onCancelar={() => setForm(null)} />}
+      {reunionForm && <FormReunion d={d} onListo={() => { setReunionForm(false); setVista("reuniones"); recargar(); }} onCancelar={() => setReunionForm(false)} />}
 
-      {/* Lo mío que pide moverse ya, y lo que espera mi confirmación: siempre a la vista (avisos en pantalla, 19-nov-2026). */}
-      <FranjaAlertas items={conAlerta(mios, d.hoy)} porConfirmar={porConfirmarDeOtros.length} onVer={vista === "mios" ? undefined : () => setVista("mios")} />
+      <AltaRapida personas={d.personas} hoy={d.hoy} onCreado={recargar} />
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-        <Kpi etiqueta="Abiertos" valor={c.abiertos} detalle="pendientes o en proceso" />
-        <Kpi etiqueta="Vencidos" valor={<span className={c.vencidos ? "text-red-700" : ""}>{c.vencidos}</span>} detalle="pasó la fecha sin cumplir" />
-        <Kpi etiqueta="Por confirmar" valor={<span className={c.porConfirmar ? "text-amber-700" : ""}>{c.porConfirmar}</span>} detalle="el responsable dice que cumplió" />
-        <Kpi etiqueta="Vencen hoy" valor={c.venceHoy} />
-      </div>
+      <FranjaAlertas items={conAlerta(mios, d.hoy)} porConfirmar={porConfirmar.length} onVer={vista === "mios" ? undefined : () => setVista("mios")} />
 
       <Segmentado valor={vista} onChange={setVista} opciones={[
-        { valor: "mios", etiqueta: `Lo mío (${mios.length})` },
-        { valor: "todos", etiqueta: "Todos" },
-        { valor: "reuniones", etiqueta: `Reuniones (${d.reuniones.length})` },
-        { valor: "indicadores", etiqueta: "Indicadores" },
-        { valor: "resumen", etiqueta: "Resumen semanal" },
+        { valor: "mios", etiqueta: `Mis tareas${mios.length ? ` (${mios.length})` : ""}` },
+        { valor: "tablero", etiqueta: "Tablero" },
+        { valor: "lista", etiqueta: "Lista" },
+        { valor: "reuniones", etiqueta: "Reuniones" },
+        { valor: "panel", etiqueta: "Panel ejecutivo" },
       ]} />
-
-      {vista === "indicadores" && <IndicadoresAcuerdos />}
-      {vista === "resumen" && <ResumenSemanalVista acuerdos={d.acuerdos} reuniones={d.reuniones} hoy={d.hoy} />}
 
       {vista === "mios" && (
         <div className="space-y-4">
-          {porConfirmarDeOtros.length > 0 && (
-            <section className="bg-amber-50/60 rounded-2xl border border-amber-200 px-4 py-3 sm:px-6">
-              <h2 className="text-[15px] font-semibold text-gray-900">Esperan tu confirmación</h2>
-              <p className="text-xs text-gray-600 mt-0.5">El responsable dice que cumplió. Confírmalo o devuélvelo con el motivo.</p>
-              {lista(porConfirmarDeOtros, "")}
+          {porConfirmar.length > 0 && (
+            <section className="bg-amber-50/60 rounded-2xl border border-amber-200 px-4 py-3 sm:px-5">
+              <h2 className="text-sm font-semibold text-gray-900">Esperan tu confirmación <span className="text-gray-400 font-normal">{porConfirmar.length}</span></h2>
+              <p className="text-xs text-gray-600">Toca el círculo para confirmar, o abre la tarea para devolverla con el motivo.</p>
+              {filas(porConfirmar)}
             </section>
           )}
-          <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-6">
-            <h2 className="text-[15px] font-semibold text-gray-900">Lo que tengo que hacer</h2>
-            {lista(mios, "No tienes tareas abiertas.", false)}
+          <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5">
+            {mios.length === 0 ? <p className="text-sm text-gray-500 py-2">No tienes tareas abiertas.</p> : grupos.filter((g) => g.items.length).map((g) => (
+              <div key={g.titulo} className="mt-2 first:mt-0">
+                <h2 className={`text-xs font-semibold uppercase tracking-wide ${g.tono ?? "text-gray-500"}`}>{g.titulo} <span className="text-gray-400 font-normal">{g.items.length}</span></h2>
+                {filas(g.items, false)}
+              </div>
+            ))}
           </section>
-          <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-6">
-            <h2 className="text-[15px] font-semibold text-gray-900">Lo que asigné a otros</h2>
-            {lista(asignadosPorMi, "No tienes tareas asignadas a otros abiertas.")}
-          </section>
+          {asignadosPorMi.length > 0 && (
+            <details className="group bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5">
+              <summary className="flex cursor-pointer list-none items-center gap-2 text-sm font-semibold text-gray-900 [&::-webkit-details-marker]:hidden">
+                Lo que asigné a otros <span className="text-gray-400 font-normal">{asignadosPorMi.length}</span>
+                <ChevronDown className="ml-auto w-4 h-4 text-gray-400 transition-transform group-open:rotate-180" />
+              </summary>
+              <div className="mt-2">{filas(asignadosPorMi)}</div>
+            </details>
+          )}
         </div>
       )}
 
-      {vista === "todos" && (
-        <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-6 space-y-3">
-          <div className="flex flex-wrap gap-2 items-center">
-            <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value as typeof filtroEstado)} className={`${INPUT} w-auto`} aria-label="Estado">
+      {vista === "tablero" && (
+        <div className="space-y-3">
+          {filtros}
+          <Kanban acuerdos={filtrar(d.acuerdos)} yo={d.yo} hoy={d.hoy} onAbrir={setAbierto} onCambio={recargar} />
+        </div>
+      )}
+
+      {vista === "lista" && (
+        <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5 space-y-3">
+          {filtros}
+          <div className="flex flex-wrap items-center gap-2">
+            <select value={filtroEstado} onChange={(e) => setFiltroEstado(e.target.value as FiltroEstado)} className={SEL} aria-label="Estado">
               <option value="abiertos">Abiertos</option>
               <option value="vencido">Vencidos</option>
               <option value="por_confirmar">Por confirmar</option>
               <option value="cerrados">Cumplidos y anulados</option>
               <option value="todos">Todos</option>
             </select>
-            <select value={filtroArea} onChange={(e) => setFiltroArea(e.target.value)} className={`${INPUT} w-auto`} aria-label="Área">
-              <option value="">Todas las áreas</option>
-              {AREAS.map((x) => <option key={x} value={x}>{AREA_LABEL[x]}</option>)}
-            </select>
-            <select value={filtroResp} onChange={(e) => setFiltroResp(e.target.value)} className={`${INPUT} w-auto`} aria-label="Responsable">
-              <option value="">Todos los responsables</option>
-              {responsables.map(([k, n]) => <option key={k} value={k}>{n}</option>)}
-            </select>
-            <label className="relative flex-1 min-w-[180px]">
-              <Search className="w-4 h-4 text-gray-400 absolute left-2.5 top-1/2 -translate-y-1/2" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar" className={`${INPUT} pl-8`} />
-            </label>
+            <span className="text-xs text-gray-500 ml-auto">Agrupar por</span>
+            <Segmentado tamano="sm" valor={agrupar} onChange={setAgrupar} opciones={[
+              { valor: "responsable", etiqueta: "Persona" }, { valor: "area", etiqueta: "Área" }, { valor: "estado", etiqueta: "Estado" },
+            ]} />
           </div>
-          <p className="text-xs text-gray-500">{filtrados.length} {filtrados.length === 1 ? "acuerdo" : "acuerdos"}. Los cerrados se muestran hasta 90 días.</p>
-          {lista(filtrados, "No hay acuerdos con ese filtro.")}
+          {filtrados.length === 0 ? <p className="text-sm text-gray-500 py-2">No hay acuerdos con ese filtro.</p> : (
+            <Agrupado items={filtrados} por={agrupar} hoy={d.hoy} render={(l) => filas(l, agrupar !== "responsable")} />
+          )}
         </section>
       )}
 
       {vista === "reuniones" && (
-        <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-6">
-          {d.reuniones.length === 0 ? <p className="text-sm text-gray-500 py-3">Todavía no hay reuniones registradas. Usa «Registrar reunión».</p> : (
+        <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-5">
+          {d.reuniones.length === 0 ? <p className="text-sm text-gray-500 py-3">Todavía no hay reuniones. Usa «Registrar reunión».</p> : (
             <ul className="divide-y divide-gray-100">
               {d.reuniones.map((r) => {
-                const abierta = reunionAbierta === r.id;
+                const abiertaR = reunionAbierta === r.id;
                 const suyos = ordenAcuerdos(d.acuerdos.filter((a) => a.reunionId === r.id), d.hoy);
                 return (
                   <li key={r.id} className="py-3">
-                    <button type="button" onClick={() => setReunionAbierta(abierta ? null : r.id)} className="w-full text-left flex flex-wrap items-baseline gap-x-3 gap-y-1">
+                    <button type="button" onClick={() => setReunionAbierta(abiertaR ? null : r.id)} className="w-full text-left flex flex-wrap items-center gap-x-3 gap-y-1">
                       <span className="text-sm font-medium text-gray-900">{r.titulo}</span>
-                      <Pastilla>{AREA_LABEL[r.area]}</Pastilla>
-                      <span className="text-xs text-gray-500">{fechaLarga(r.fecha)} · {r.acuerdos} {r.acuerdos === 1 ? "acuerdo" : "acuerdos"}{r.abiertos ? ` · ${r.abiertos} abiertos` : r.acuerdos ? " · todo cerrado" : ""}</span>
-                      <span className="ml-auto text-xs font-medium text-primary">{abierta ? "Cerrar" : "Ver"}</span>
+                      <AreaTag area={r.area} />
+                      <span className="text-xs text-gray-500">{diaCorto(r.fecha)} · {r.acuerdos} {r.acuerdos === 1 ? "acuerdo" : "acuerdos"}</span>
+                      {r.abiertos > 0 ? <Pastilla tono="ambar">{r.abiertos} abiertos</Pastilla> : r.acuerdos > 0 ? <Pastilla tono="verde">todo cerrado</Pastilla> : null}
+                      <ChevronDown className={`ml-auto w-4 h-4 text-gray-400 transition-transform ${abiertaR ? "rotate-180" : ""}`} />
                     </button>
-                    {abierta && (
-                      <div className="mt-2 pl-3 border-l-2 border-gray-100">
+                    {abiertaR && (
+                      <div className="mt-2 space-y-2">
                         <p className="text-xs text-gray-500">Registró {r.creadoPor}{r.asistentes ? ` · Asistentes: ${r.asistentes}` : ""}</p>
-                        {r.notas && <p className="text-xs text-gray-700 mt-1 whitespace-pre-line">{r.notas}</p>}
-                        {lista(suyos, "Esta reunión no tiene acuerdos.")}
-                        <FormTarea d={d} reunion={r} compacto onListo={() => void cargar()} />
+                        {r.notas && <p className="text-xs text-gray-700 whitespace-pre-line">{r.notas}</p>}
+                        {suyos.length > 0 && filas(suyos)}
+                        <AltaRapida personas={d.personas} hoy={d.hoy} reunion={{ id: r.id, area: r.area }} onCreado={recargar} />
                       </div>
                     )}
                   </li>
@@ -198,154 +240,49 @@ export function TableroAcuerdos() {
           )}
         </section>
       )}
+
+      {vista === "panel" && <PanelEjecutivo acuerdos={d.acuerdos} reuniones={d.reuniones} hoy={d.hoy} inicial={inicio.panel} />}
+
+      {enDetalle && (
+        <DetalleAcuerdo key={enDetalle.id} a={enDetalle} yo={d.yo} hoy={d.hoy} personas={d.personas} onCambio={recargar} onCerrar={() => setAbierto(null)} />
+      )}
     </div>
   );
 }
 
-function SelectorPersona({ personas, valor, onChange }: { personas: Persona[]; valor: string; onChange: (v: string) => void }) {
-  const grupos: [string, Persona[]][] = [
-    ["Dirección", personas.filter((p) => p.tipo === "direccion")],
-    ["Administradores", personas.filter((p) => p.tipo === "admin")],
-    ["Equipo", personas.filter((p) => p.tipo === "equipo")],
-  ];
-  return (
-    <select value={valor} onChange={(e) => onChange(e.target.value)} className={INPUT}>
-      <option value="">Elige…</option>
-      {grupos.filter(([, l]) => l.length).map(([t, l]) => (
-        <optgroup key={t} label={t}>{l.map((p) => <option key={p.clave} value={p.clave}>{p.nombre}{p.tipo === "admin" ? ` · ${p.detalle.replace("Administración · ", "")}` : ""}</option>)}</optgroup>
-      ))}
-    </select>
-  );
-}
+const ORDEN_ESTADO: EstadoVisible[] = ["vencido", "por_confirmar", "en_proceso", "pendiente", "cumplido", "anulado"];
+const ESTADO_TITULO: Record<EstadoVisible, string> = {
+  vencido: "Vencidos", por_confirmar: "Por confirmar", en_proceso: "En proceso", pendiente: "Pendientes", cumplido: "Cumplidos", anulado: "Anulados",
+};
 
-/** Una tarea suelta («del día a día») o un acuerdo más de una reunión ya registrada. */
-function FormTarea({ d, reunion, compacto = false, onListo, onCancelar }: { d: Datos; reunion?: Reunion; compacto?: boolean; onListo: () => void; onCancelar?: () => void }) {
-  const [f, setF] = useState({ que: "", detalle: "", area: reunion?.area ?? "", responsable: "", fechaLimite: "" });
-  const [abierto, setAbierto] = useState(!compacto);
-  const [ocupado, setOcupado] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  if (!abierto) return <button type="button" onClick={() => setAbierto(true)} className="mt-2 text-xs font-medium text-primary inline-flex items-center gap-1"><Plus className="w-3 h-3" />Agregar acuerdo a esta reunión</button>;
-
-  async function guardar() {
-    setOcupado(true);
-    setError(null);
-    const r = await crearAcuerdo({ ...f, reunionId: reunion?.id ?? null });
-    setOcupado(false);
-    if (!r.ok) { setError(r.error); return; }
-    setF({ que: "", detalle: "", area: reunion?.area ?? "", responsable: "", fechaLimite: "" });
-    if (compacto) setAbierto(false);
-    onListo();
+/** La lista agrupada (el «group by» de Asana): por persona, por área o por estado. */
+function Agrupado({ items, por, hoy, render }: { items: Acuerdo[]; por: "responsable" | "area" | "estado"; hoy: string; render: (l: Acuerdo[]) => React.ReactNode }) {
+  const grupos = new Map<string, Acuerdo[]>();
+  for (const a of items) {
+    const k = por === "responsable" ? a.responsableClave : por === "area" ? a.area : estadoVisible(a, hoy);
+    grupos.set(k, [...(grupos.get(k) ?? []), a]);
   }
-
+  const claves = [...grupos.keys()].sort((x, y) => por === "estado"
+    ? ORDEN_ESTADO.indexOf(x as EstadoVisible) - ORDEN_ESTADO.indexOf(y as EstadoVisible)
+    : por === "area" ? AREAS.indexOf(x as Area) - AREAS.indexOf(y as Area)
+      : grupos.get(x)![0].responsableNombre.localeCompare(grupos.get(y)![0].responsableNombre, "es"));
   return (
-    <div className={`${compacto ? "mt-2 bg-gray-50" : "bg-white border border-gray-200/80"} rounded-2xl p-4 grid gap-3 sm:grid-cols-2`}>
-      {!compacto && <h2 className="sm:col-span-2 text-[15px] font-semibold text-gray-900">Nueva tarea del día a día</h2>}
-      <label className="sm:col-span-2 text-xs text-gray-600">Qué se hará
-        <input autoFocus value={f.que} onChange={(e) => setF({ ...f, que: e.target.value })} className={INPUT} placeholder="Ej. Cambiar el letrero de precios de la vitrina" />
-      </label>
-      {!compacto && (
-        <label className="sm:col-span-2 text-xs text-gray-600">Detalle (opcional)
-          <textarea value={f.detalle} onChange={(e) => setF({ ...f, detalle: e.target.value })} rows={2} className={INPUT} />
-        </label>
-      )}
-      <label className="text-xs text-gray-600">Responsable
-        <SelectorPersona personas={d.personas} valor={f.responsable} onChange={(v) => setF({ ...f, responsable: v })} />
-      </label>
-      <label className="text-xs text-gray-600">Fecha límite
-        <input type="date" value={f.fechaLimite} min={d.hoy} onChange={(e) => setF({ ...f, fechaLimite: e.target.value })} className={INPUT} />
-      </label>
-      {!reunion && (
-        <label className="text-xs text-gray-600">Área
-          <select value={f.area} onChange={(e) => setF({ ...f, area: e.target.value })} className={INPUT}>
-            <option value="">Elige…</option>
-            {AREAS.map((x) => <option key={x} value={x}>{AREA_LABEL[x]}</option>)}
-          </select>
-        </label>
-      )}
-      <div className="sm:col-span-2 flex flex-wrap items-center gap-2">
-        <button type="button" disabled={ocupado} onClick={() => void guardar()} className="px-3 py-1.5 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50">
-          {ocupado ? "Guardando…" : "Crear tarea"}
-        </button>
-        <button type="button" onClick={() => (compacto ? setAbierto(false) : onCancelar?.())} className="px-2 py-1 text-sm text-gray-500">Cancelar</button>
-        {error && <span className="text-xs text-red-700">{error}</span>}
-      </div>
-    </div>
-  );
-}
-
-type FilaAcuerdo = { que: string; responsable: string; fechaLimite: string };
-const filaVacia = (): FilaAcuerdo => ({ que: "", responsable: "", fechaLimite: "" });
-
-/** Una reunión con todos sus acuerdos, de una vez. */
-function FormReunion({ d, onListo, onCancelar }: { d: Datos; onListo: () => void; onCancelar: () => void }) {
-  const [f, setF] = useState({ fecha: d.hoy, area: "", titulo: "", asistentes: "", notas: "" });
-  const [filas, setFilas] = useState<FilaAcuerdo[]>([filaVacia(), filaVacia()]);
-  const [ocupado, setOcupado] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const cambiar = (i: number, cambio: Partial<FilaAcuerdo>) => setFilas(filas.map((x, j) => (j === i ? { ...x, ...cambio } : x)));
-
-  async function guardar() {
-    setOcupado(true);
-    setError(null);
-    const r = await crearReunion({ ...f, acuerdos: filas });
-    setOcupado(false);
-    if (!r.ok) { setError(r.error); return; }
-    onListo();
-  }
-
-  return (
-    <div className="bg-white border border-gray-200/80 rounded-2xl p-4 space-y-3">
-      <h2 className="text-[15px] font-semibold text-gray-900">Registrar reunión</h2>
-      <div className="grid gap-3 sm:grid-cols-3">
-        <label className="sm:col-span-2 text-xs text-gray-600">Nombre de la reunión
-          <input autoFocus value={f.titulo} onChange={(e) => setF({ ...f, titulo: e.target.value })} className={INPUT} placeholder="Ej. Reunión de marketing de noviembre" />
-        </label>
-        <label className="text-xs text-gray-600">Fecha
-          <input type="date" value={f.fecha} max={d.hoy} onChange={(e) => setF({ ...f, fecha: e.target.value })} className={INPUT} />
-        </label>
-        <label className="text-xs text-gray-600">Área
-          <select value={f.area} onChange={(e) => setF({ ...f, area: e.target.value })} className={INPUT}>
-            <option value="">Elige…</option>
-            {AREAS.map((x) => <option key={x} value={x}>{AREA_LABEL[x]}</option>)}
-          </select>
-        </label>
-        <label className="sm:col-span-2 text-xs text-gray-600">Asistentes (opcional)
-          <input value={f.asistentes} onChange={(e) => setF({ ...f, asistentes: e.target.value })} className={INPUT} placeholder="Ej. Jahnn, Juani, coordinadora de marketing" />
-        </label>
-        <label className="sm:col-span-3 text-xs text-gray-600">Notas (opcional)
-          <textarea value={f.notas} onChange={(e) => setF({ ...f, notas: e.target.value })} rows={2} className={INPUT} />
-        </label>
-      </div>
-
-      <div>
-        <h3 className="text-sm font-semibold text-gray-800">Acuerdos</h3>
-        <p className="text-xs text-gray-500">Qué se hará, quién y para cuándo. Las filas vacías no se guardan.</p>
-        <div className="mt-2 space-y-2">
-          {filas.map((x, i) => (
-            <div key={i} className="grid gap-2 sm:grid-cols-[1fr_200px_150px] items-end bg-gray-50 rounded-xl p-2">
-              <label className="text-xs text-gray-600">{i + 1}. Qué se hará
-                <input value={x.que} onChange={(e) => cambiar(i, { que: e.target.value })} className={INPUT} />
-              </label>
-              <label className="text-xs text-gray-600">Responsable
-                <SelectorPersona personas={d.personas} valor={x.responsable} onChange={(v) => cambiar(i, { responsable: v })} />
-              </label>
-              <label className="text-xs text-gray-600">Fecha límite
-                <input type="date" value={x.fechaLimite} min={d.hoy} onChange={(e) => cambiar(i, { fechaLimite: e.target.value })} className={INPUT} />
-              </label>
-            </div>
-          ))}
-        </div>
-        <button type="button" onClick={() => setFilas([...filas, filaVacia()])} className="mt-2 text-xs font-medium text-primary inline-flex items-center gap-1"><Plus className="w-3 h-3" />Otro acuerdo</button>
-      </div>
-
-      <div className="flex flex-wrap items-center gap-2">
-        <button type="button" disabled={ocupado} onClick={() => void guardar()} className="px-3 py-1.5 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50">
-          {ocupado ? "Guardando…" : "Guardar reunión"}
-        </button>
-        <button type="button" onClick={onCancelar} className="px-2 py-1 text-sm text-gray-500">Cancelar</button>
-        {error && <span className="text-xs text-red-700">{error}</span>}
-      </div>
+    <div className="space-y-3">
+      {claves.map((k) => {
+        const l = grupos.get(k)!;
+        const vencidos = l.filter((a) => estadoVisible(a, hoy) === "vencido").length;
+        return (
+          <div key={k}>
+            <h3 className="flex items-center gap-2 text-sm font-semibold text-gray-900 border-b border-gray-100 pb-1">
+              {por === "responsable" && <Avatar nombre={l[0].responsableNombre} clave={k} />}
+              {por === "responsable" ? l[0].responsableNombre : por === "area" ? AREA_LABEL[k as Area] : ESTADO_TITULO[k as EstadoVisible]}
+              <span className="text-gray-400 font-normal">{l.length}</span>
+              {por !== "estado" && vencidos > 0 && <Pastilla tono="rojo">{vencidos} {vencidos === 1 ? "vencido" : "vencidos"}</Pastilla>}
+            </h3>
+            {render(l)}
+          </div>
+        );
+      })}
     </div>
   );
 }

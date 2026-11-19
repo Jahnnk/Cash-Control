@@ -10,7 +10,8 @@ import { useEffect, useMemo, useState } from "react";
 import { Loader2 } from "lucide-react";
 import { getIndicadoresAcuerdos } from "@/app/actions/acuerdos";
 import { indicadores, mesesHasta, periodoMes, resumir, enPeriodo, type AcuerdoIndicador, type Periodo, type Resumen } from "@/lib/acuerdos";
-import { Barra, Kpi, nombreMes } from "@/components/productos/ui";
+import { Kpi, nombreMes } from "@/components/productos/ui";
+import { Avatar, Bateria, LeyendaBateria } from "@/components/acuerdos/ui";
 
 const color = (pct: number | null) => (pct === null ? "#B6BCB8" : pct >= 80 ? "#098B5F" : pct >= 60 ? "#D97706" : "#B91C1C");
 const textoPct = (pct: number | null) => (pct === null ? "—" : `${pct}%`);
@@ -56,20 +57,31 @@ export function IndicadoresAcuerdos() {
         <Kpi etiqueta="Aún en plazo" valor={t.enPlazo} detalle="no cuentan todavía" />
       </div>
 
-      <Tabla titulo="Por responsable" filas={r.porResponsable} vacio="Nadie tiene acuerdos con fecha en este periodo." />
-      <Tabla titulo="Por área" filas={r.porArea} vacio="No hay acuerdos con fecha en este periodo." />
+      {/* Estado del periodo en una barra (la «batería» de Monday) */}
+      <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-4 sm:px-6 space-y-2">
+        <div className="flex flex-wrap items-baseline justify-between gap-2">
+          <h2 className="text-[15px] font-semibold text-gray-900">Estado del periodo</h2>
+          <LeyendaBateria />
+        </div>
+        <Bateria r={t} alto="h-4" />
+      </section>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <Tabla titulo="Por responsable" filas={r.porResponsable} vacio="Nadie tiene acuerdos con fecha en este periodo." conAvatar />
+        <Tabla titulo="Por área" filas={r.porArea} vacio="No hay acuerdos con fecha en este periodo." />
+      </div>
 
       <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-6">
         <h2 className="text-[15px] font-semibold text-gray-900">Mes a mes</h2>
-        <p className="text-xs text-gray-500">% cumplido a tiempo de lo que vencía cada mes.</p>
+        <p className="text-xs text-gray-500">Lo que vencía cada mes y el % cumplido a tiempo.</p>
         <ul className="mt-3 space-y-2">
           {meses.map((m) => {
             const x = resumir(d.acuerdos.filter((a) => enPeriodo(a, periodoMes(m))), d.hoy);
             return (
-              <li key={m} className="grid grid-cols-[90px_1fr_110px] items-center gap-3 text-xs">
+              <li key={m} className="grid grid-cols-[48px_1fr_90px] items-center gap-3 text-xs">
                 <span className="text-gray-700">{nombreMes(m, true)}</span>
-                <Barra pct={x.pctATiempo ?? 0} color={color(x.pctATiempo)} alto="h-2" />
-                <span className="text-right tabular-nums text-gray-700">{textoPct(x.pctATiempo)} <span className="text-gray-400">({x.juzgados})</span></span>
+                <Bateria r={x} />
+                <span className="text-right tabular-nums font-medium" style={{ color: color(x.pctATiempo) }}>{textoPct(x.pctATiempo)} <span className="text-gray-400 font-normal">({x.juzgados})</span></span>
               </li>
             );
           })}
@@ -79,42 +91,24 @@ export function IndicadoresAcuerdos() {
   );
 }
 
-function Tabla({ titulo, filas, vacio }: { titulo: string; filas: (Resumen & { clave: string; nombre: string })[]; vacio: string }) {
+function Tabla({ titulo, filas, vacio, conAvatar = false }: { titulo: string; filas: (Resumen & { clave: string; nombre: string })[]; vacio: string; conAvatar?: boolean }) {
   return (
     <section className="bg-white rounded-2xl border border-gray-200/80 px-4 py-3 sm:px-6">
       <h2 className="text-[15px] font-semibold text-gray-900">{titulo}</h2>
       {filas.length === 0 ? <p className="text-sm text-gray-500 py-2">{vacio}</p> : (
-        <div className="overflow-x-auto mt-2">
-          <table className="w-full text-xs">
-            <thead>
-              <tr className="text-left text-[10px] uppercase tracking-wide text-gray-400">
-                <th className="py-1 pr-3 font-medium">Nombre</th>
-                <th className="py-1 pr-3 font-medium w-40">A tiempo</th>
-                <th className="py-1 pr-3 text-right font-medium">A tiempo</th>
-                <th className="py-1 pr-3 text-right font-medium">Tarde</th>
-                <th className="py-1 pr-3 text-right font-medium">Vencidos</th>
-                <th className="py-1 text-right font-medium">En plazo</th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-gray-100">
-              {filas.map((f) => (
-                <tr key={f.clave}>
-                  <td className="py-2 pr-3 font-medium text-gray-900">{f.nombre}</td>
-                  <td className="py-2 pr-3">
-                    <div className="flex items-center gap-2">
-                      <div className="flex-1"><Barra pct={f.pctATiempo ?? 0} color={color(f.pctATiempo)} /></div>
-                      <span className="tabular-nums w-9 text-right" style={{ color: color(f.pctATiempo) }}>{textoPct(f.pctATiempo)}</span>
-                    </div>
-                  </td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{f.aTiempo}</td>
-                  <td className="py-2 pr-3 text-right tabular-nums">{f.tarde || "—"}</td>
-                  <td className={`py-2 pr-3 text-right tabular-nums ${f.vencidos ? "text-red-700 font-medium" : ""}`}>{f.vencidos || "—"}</td>
-                  <td className="py-2 text-right tabular-nums text-gray-500">{f.enPlazo || "—"}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
+        <ul className="mt-2 divide-y divide-gray-100">
+          {filas.map((f) => (
+            <li key={f.clave} className="grid grid-cols-[minmax(0,1.2fr)_minmax(0,1fr)_44px_64px] items-center gap-3 py-2 text-xs">
+              <span className="flex items-center gap-2 min-w-0">
+                {conAvatar && <Avatar nombre={f.nombre} clave={f.clave} />}
+                <span className="font-medium text-gray-900 truncate">{f.nombre}</span>
+              </span>
+              <Bateria r={f} />
+              <span className="text-right tabular-nums font-semibold" style={{ color: color(f.pctATiempo) }}>{textoPct(f.pctATiempo)}</span>
+              <span className={`text-right tabular-nums ${f.vencidos ? "text-red-700 font-medium" : "text-gray-400"}`}>{f.vencidos ? `${f.vencidos} venc.` : "al día"}</span>
+            </li>
+          ))}
+        </ul>
       )}
     </section>
   );
