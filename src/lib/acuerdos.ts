@@ -269,3 +269,91 @@ export function conAlerta<T extends AcuerdoBase & { devuelto?: boolean; creadoDi
     .filter((x): x is { a: T; alerta: Alerta } => x.alerta !== null)
     .sort((x, y) => PESO_ALERTA[x.alerta] - PESO_ALERTA[y.alerta] || x.a.fechaLimite.localeCompare(y.a.fechaLimite));
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Resumen ejecutivo semanal (fase 4, 19-nov-2026)
+//
+// Para la reunión de los lunes: mira la última semana CERRADA (domingo → sábado, la misma del deck,
+// lib/kpis/semana-reunion.ts) y la que empieza. Voz de asesor (ver EIRS): termina con recomendaciones
+// concretas, no solo con cifras.
+
+export type AcuerdoResumen = AcuerdoIndicador & { id: number; que: string; creadoDia?: string };
+export type ReunionResumen = { fecha: string; titulo: string; area: Area };
+
+export type ResumenSemanal = {
+  semana: Periodo;
+  /** Lo que vencía en la semana: a tiempo, tarde, vencido, en plazo. */
+  cumplimiento: Resumen;
+  /** % a tiempo de la semana anterior, para comparar. */
+  pctAnterior: number | null;
+  /** Hoy siguen vencidos (de cualquier semana), el más atrasado primero. */
+  arrastrados: (AcuerdoResumen & { diasAtraso: number })[];
+  /** Abiertos que vencen en los 7 días siguientes a la semana. */
+  proximos: AcuerdoResumen[];
+  porConfirmar: AcuerdoResumen[];
+  reuniones: ReunionResumen[];
+  /** Acuerdos y tareas creados en la semana. */
+  nuevos: number;
+  porResponsable: ReturnType<typeof indicadores>["porResponsable"];
+  recomendaciones: string[];
+};
+
+const moverDias = (f: string, n: number) => {
+  const d = new Date(`${f}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + n);
+  return d.toISOString().slice(0, 10);
+};
+
+export function resumenSemanal(lista: AcuerdoResumen[], reuniones: ReunionResumen[], hoy: string, semana: Periodo): ResumenSemanal {
+  const vivos = lista.filter((a) => a.estado !== "anulado");
+  const ind = indicadores(vivos, hoy, semana);
+  const anterior = resumir(vivos.filter((a) => enPeriodo(a, { desde: moverDias(semana.desde, -7), hasta: moverDias(semana.hasta, -7) })), hoy);
+  const sig = { desde: moverDias(semana.hasta, 1), hasta: moverDias(semana.hasta, 7) };
+  const arrastrados = vivos
+    .filter((a) => estadoVisible(a, hoy) === "vencido")
+    .map((a) => ({ ...a, diasAtraso: -diasRestantes(a.fechaLimite, hoy) }))
+    .sort((a, b) => b.diasAtraso - a.diasAtraso || a.id - b.id);
+  const proximos = vivos.filter((a) => estaAbierto(a.estado) && enPeriodo(a, sig) && a.fechaLimite >= hoy)
+    .sort((a, b) => a.fechaLimite.localeCompare(b.fechaLimite) || a.id - b.id);
+  const porConfirmar = vivos.filter((a) => a.estado === "por_confirmar");
+
+  const rec: string[] = [];
+  const porPersona = new Map<string, { nombre: string; n: number; max: number }>();
+  for (const a of arrastrados) {
+    const p = porPersona.get(a.responsableClave) ?? { nombre: a.responsableNombre, n: 0, max: 0 };
+    p.n++;
+    p.max = Math.max(p.max, a.diasAtraso);
+    porPersona.set(a.responsableClave, p);
+  }
+  const peor = [...porPersona.values()].sort((a, b) => b.n - a.n || b.max - a.max)[0];
+  if (peor && (peor.n >= 2 || peor.max >= 7)) {
+    rec.push(`Habla con ${peor.nombre}: tiene ${peor.n} ${peor.n === 1 ? "acuerdo vencido" : "acuerdos vencidos"}, el más antiguo hace ${peor.max} ${peor.max === 1 ? "día" : "días"}. Acuerden una fecha nueva realista o reasígnalo.`);
+  } else if (arrastrados.length) {
+    rec.push(`Cierra los ${arrastrados.length} ${arrastrados.length === 1 ? "vencido" : "vencidos"} en la reunión: cada uno sale con fecha nueva o se anula con su motivo.`);
+  }
+  const c = ind.total;
+  if (c.pctATiempo !== null && c.juzgados >= 3 && c.pctATiempo < 60) {
+    rec.push(`Solo el ${c.pctATiempo}% de lo que vencía se cumplió a tiempo. Al asignar, pregunta «¿llegas para esa fecha?» antes de anotarla.`);
+  }
+  if (porConfirmar.length) {
+    rec.push(`Confirma o devuelve ${porConfirmar.length === 1 ? "el cumplido pendiente" : `los ${porConfirmar.length} cumplidos pendientes`}: sin tu revisión, los indicadores no muestran la realidad.`);
+  }
+  const carga = new Map<string, { nombre: string; n: number }>();
+  for (const a of proximos) carga.set(a.responsableClave, { nombre: a.responsableNombre, n: (carga.get(a.responsableClave)?.n ?? 0) + 1 });
+  const cargado = [...carga.values()].sort((a, b) => b.n - a.n)[0];
+  if (cargado && cargado.n >= 3) rec.push(`${cargado.nombre} tiene ${cargado.n} entregas esta semana: confirma que puede con todas o reparte alguna.`);
+  if (rec.length === 0) rec.push(c.juzgados ? "Todo al día: lo que vencía se cumplió. Mantén el ritmo y reconoce al equipo en la reunión." : "Sin acuerdos que vencieran la semana pasada. Usa la reunión para fijar los de esta semana, cada uno con responsable y fecha.");
+
+  return {
+    semana,
+    cumplimiento: c,
+    pctAnterior: anterior.pctATiempo,
+    arrastrados,
+    proximos,
+    porConfirmar,
+    reuniones: reuniones.filter((r) => r.fecha >= semana.desde && r.fecha <= semana.hasta).sort((a, b) => a.fecha.localeCompare(b.fecha)),
+    nuevos: vivos.filter((a) => a.creadoDia && a.creadoDia >= semana.desde && a.creadoDia <= semana.hasta).length,
+    porResponsable: ind.porResponsable,
+    recomendaciones: rec.slice(0, 3),
+  };
+}

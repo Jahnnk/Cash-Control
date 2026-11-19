@@ -13,10 +13,11 @@ import { AREA_LABEL, AREAS, conAlerta, conteos, estadoVisible, ordenAcuerdos, ty
 import { AcuerdoItem, fechaLarga } from "@/components/acuerdos/acuerdo-item";
 import { Kpi, Pastilla, Segmentado } from "@/components/productos/ui";
 import { IndicadoresAcuerdos } from "./indicadores";
+import { ResumenSemanalVista } from "./resumen-semanal";
 import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
 
-type Vista = "mios" | "todos" | "reuniones" | "indicadores";
-const VISTAS: Vista[] = ["mios", "todos", "reuniones", "indicadores"];
+type Vista = "mios" | "todos" | "reuniones" | "indicadores" | "resumen";
+const VISTAS: Vista[] = ["mios", "todos", "reuniones", "indicadores", "resumen"];
 const vistaDeUrl = () => (typeof window === "undefined" ? null : new URLSearchParams(window.location.search).get("vista"));
 type Datos = { hoy: string; yo: YoSesion; personas: Persona[]; acuerdos: Acuerdo[]; reuniones: Reunion[] };
 
@@ -113,9 +114,11 @@ export function TableroAcuerdos() {
         { valor: "todos", etiqueta: "Todos" },
         { valor: "reuniones", etiqueta: `Reuniones (${d.reuniones.length})` },
         { valor: "indicadores", etiqueta: "Indicadores" },
+        { valor: "resumen", etiqueta: "Resumen semanal" },
       ]} />
 
       {vista === "indicadores" && <IndicadoresAcuerdos />}
+      {vista === "resumen" && <ResumenSemanalVista acuerdos={d.acuerdos} reuniones={d.reuniones} hoy={d.hoy} />}
 
       {vista === "mios" && (
         <div className="space-y-4">
