@@ -9,7 +9,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Loader2, Search, Users } from "lucide-react";
+import { ChevronDown, Home, Loader2, Search, Users } from "lucide-react";
 import { getTableroAcuerdos, type Acuerdo, type Reunion, type YoSesion } from "@/app/actions/acuerdos";
 import { AREA_LABEL, AREAS, conAlerta, diasRestantes, estadoVisible, ordenAcuerdos, type Area, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { Pastilla, Segmentado } from "@/components/productos/ui";
@@ -90,6 +90,20 @@ export function TableroAcuerdos() {
   if (error) return <p className="text-sm text-gray-600">{error}</p>;
   if (!d) return <div className="flex justify-center py-16 text-gray-400"><Loader2 className="w-6 h-6 animate-spin" /></div>;
 
+  function irAlInicio() {
+    setReunionForm(false);
+    setAbierto(null);
+    setVista("mios");
+    setFiltroEstado("abiertos");
+    setFiltroArea("");
+    setFiltroResp("");
+    setQ("");
+    setReunionAbierta(null);
+    // Quita ?vista=… de la dirección para que recargar no vuelva a la pestaña vieja.
+    if (window.location.search) window.history.replaceState(null, "", window.location.pathname);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
   const enDetalle = abierto !== null ? d.acuerdos.find((a) => a.id === abierto) ?? null : null;
   const recargar = () => void cargar();
   const responsables = Array.from(new Map(d.acuerdos.map((a) => [a.responsableClave, a.responsableNombre])).entries()).sort((a, b) => a[1].localeCompare(b[1], "es"));
@@ -129,7 +143,14 @@ export function TableroAcuerdos() {
     <div className="space-y-4">
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <h1 className="text-2xl font-semibold text-gray-900">Acuerdos y tareas</h1>
+          {/* El título es el «inicio» del apartado (pedido de Jahnn, 19-nov-2026): cierra formularios y detalle,
+              limpia filtros y vuelve a Mis tareas, sin usar la flecha de atrás del navegador. */}
+          <h1 className="text-2xl font-semibold text-gray-900">
+            <button type="button" onClick={irAlInicio} title="Volver al inicio de Acuerdos y tareas"
+              className="inline-flex items-center gap-2 rounded-lg -mx-1 px-1 hover:text-primary focus-visible:outline-2 focus-visible:outline-primary">
+              <Home className="w-5 h-5 text-gray-400" aria-hidden />Acuerdos y tareas
+            </button>
+          </h1>
           <p className="text-sm text-gray-500 mt-1">Cada tarea con un responsable y una fecha. Si pasa la fecha sin cumplirse, queda vencida sola.</p>
         </div>
         <button type="button" onClick={() => setReunionForm(!reunionForm)} className="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-primary border border-primary/30 hover:bg-primary/5 rounded-xl">
