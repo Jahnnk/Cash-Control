@@ -32,8 +32,8 @@ import type { MesCostos } from "@/lib/productos/cuando-subir";
 import { historialDePrecios, type FotoPrecio, type HistorialPrecios } from "@/lib/productos/insumos-precios";
 import { cifrasDeSedeEnMes, hoyLima } from "@/lib/seis-cifras-sql";
 import { rentabilidadDeSede, type RentabilidadSede } from "@/lib/productos/rentabilidad";
-import { leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
-import { ajustarDesglose } from "@/lib/productos/precios-vigentes";
+import { leerCatalogo } from "@/lib/catalogo-costos-sql";
+import { leerCarta, leerCartaConCostos } from "@/lib/carta-sql";
 import { coberturaDeRangos, PRIMER_MES_PRODUCTOS, type Cobertura } from "@/lib/productos/cobertura-datos";
 import { CAFETERIAS, IDS_CAFETERIAS, NOMBRE_CAFETERIAS, juntarFilas, juntarRango } from "@/lib/productos/cafeterias";
 import { confiabilidadDelMes } from "@/lib/productos/confiabilidad-sql";
@@ -606,12 +606,7 @@ async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandi
   const lista = mesesAntes(hastaMes, Math.min(12, Math.max(6, (yh - y0) * 12 + (mh - m0) + 1)));
   const cafeterias = SEDES.filter((s) => s.id === 2 || s.id === 3);
   const [costos, vinculos, acompanamientos, archivos, decisiones, planes, lanzamientos] = await Promise.all([
-    (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>)
-      // Antes de la migración de sección y en-carta (7-nov-2026): sin esas dos columnas.
-      .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>))
-      // Antes de la migración de origen e insumos (8-oct-2026): sin esas dos columnas.
-      .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>))
-      .catch(() => [] as CostoCarta[]),
+    leerCarta(sql),
     (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
     (sql`SELECT DISTINCT regexp_replace(name, '\\s*\\((Fonavi|Centro)\\)\\s*$', '') AS name FROM products WHERE es_acompanamiento = true` as unknown as Promise<{ name: string }[]>).catch(() => []),
     (sql`
@@ -702,9 +697,7 @@ export async function getAtelierQueSacar(hastaMes: string): Promise<Res<{ data: 
     const [yh, mh] = hastaMes.split("-").map(Number), [y0, m0] = PRIMER_MES_PRODUCTOS.split("-").map(Number);
     const lista = mesesAntes(hastaMes, Math.min(12, Math.max(6, (yh - y0) * 12 + (mh - m0) + 1)));
     const [costos, vinculos, catalogoAtelier] = await Promise.all([
-      (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>)
-        .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>))
-        .catch(() => [] as CostoCarta[]),
+      leerCarta(sql),
       (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
       leerCatalogo(sql, 1).then((c) => c.efectivo).catch(() => []),
     ]);
@@ -767,33 +760,7 @@ export async function getDatosCargadosProductos(): Promise<Res<{ hoy: string; se
  * Food cost real: lo de Atelier (AT-) al costo de Atelier; lo que se prepara en la cafetería (CF-, MN-), a su costo.
  */
 async function costosDeCarta(): Promise<{ costos: CostoCarta[]; vinculos: Map<string, string> }> {
-  const [costos, vinculos, catalogoAtelier] = await Promise.all([
-    (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta", desglose FROM costos_carta` as unknown as Promise<CostoCarta[]>)
-    // Antes de la migración del desglose por insumo (18-nov-2026): sin esa columna.
-    .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos, seccion, en_carta AS "enCarta" FROM costos_carta` as unknown as Promise<CostoCarta[]>))
-    // Antes de la migración de sección y en-carta (7-nov-2026): sin esas dos columnas.
-    .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio, origen, insumos FROM costos_carta` as unknown as Promise<CostoCarta[]>))
-    // Antes de la migración de origen e insumos (8-oct-2026): sin esas dos columnas.
-    .catch(() => (sql`SELECT ref, nombre, nombre_carta AS "nombreCarta", categoria, costo::float AS costo, precio::float AS precio FROM costos_carta` as unknown as Promise<CostoCarta[]>))
-    .catch(() => [] as CostoCarta[]),
-    (sql`SELECT clave, ref FROM carta_vinculos` as unknown as Promise<{ clave: string; ref: string }[]>).catch(() => []),
-    // El costo de insumos de lo que hace Atelier (recetas del sistema encima del Excel).
-    leerCatalogo(sql, 1).then((c) => c.efectivo).catch(() => []),
-  ]);
-  // Precios de insumos cambiados en el sistema (fase 1 de «la carta vive en el sistema», 18-nov-2026): lo que
-  // prepara la cafetería sube con sus precios; lo de Atelier ya sube por la lista de Atelier (leerCatalogo) y
-  // aquí solo se ajusta su desglose, para que el simulador parta de hoy.
-  const { factores } = await leerPreciosVigentes(sql);
-  for (const c of costos) {
-    if (!c.desglose || c.desglose.length === 0) continue;
-    const deAtelier = c.ref.startsWith("AT-");
-    const { desglose, delta } = ajustarDesglose(c.desglose, deAtelier ? "Atelier" : "Cafetería", factores);
-    c.desglose = desglose;
-    if (!deAtelier && delta !== 0) c.costo = Math.max(0, c.costo + delta);
-  }
-  const insumosAtelier = new Map(catalogoAtelier.map((i) => [i.reemplaza ?? i.ref, i.costo]));
-  for (const c of costos) c.costoInsumos = c.ref.startsWith("AT-") ? (insumosAtelier.get(c.ref) ?? null) : c.costo;
-  return { costos, vinculos: new Map(vinculos.map((v) => [v.clave, v.ref])) };
+  return leerCartaConCostos(sql);
 }
 
 /**
@@ -908,8 +875,8 @@ export async function vincularCostoCarta(nombreByte: string, ref: string | null)
     if (ref === null) {
       await sql`DELETE FROM carta_vinculos WHERE clave = ${clave}`;
     } else {
-      const existe = (await sql`SELECT 1 FROM costos_carta WHERE ref = ${ref}`) as unknown[];
-      if (existe.length === 0) return { ok: false, error: "Ese producto ya no está en la lista de costos." };
+      const existe = (await leerCarta(sql)).some((c) => c.ref === ref);
+      if (!existe) return { ok: false, error: "Ese producto ya no está en la lista de costos." };
       await sql`
         INSERT INTO carta_vinculos (clave, nombre_byte, ref, actualizado_por)
         VALUES (${clave}, ${nombreByte}, ${ref}, ${role.quien})
