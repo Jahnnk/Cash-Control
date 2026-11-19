@@ -230,3 +230,42 @@ export function mesesHasta(mes: string, n: number): string[] {
   const [y, m] = mes.split("-").map(Number);
   return Array.from({ length: n }, (_, i) => new Date(Date.UTC(y, m - 1 - (n - 1 - i), 1)).toISOString().slice(0, 7));
 }
+
+// ─────────────────────────────────────────────────────────────────
+// Alertas en pantalla (19-nov-2026). Jahnn dejó los correos para después: los avisos se ven en el panel de
+// cada persona. Una alerta es algo que pide moverse YA; lo que tiene tiempo no grita.
+
+export type Alerta = "vencido" | "hoy" | "manana" | "devuelto" | "nuevo";
+
+export const ALERTA_LABEL: Record<Alerta, string> = {
+  vencido: "Vencido",
+  hoy: "Vence hoy",
+  manana: "Vence mañana",
+  devuelto: "Te lo devolvieron",
+  nuevo: "Nuevo",
+};
+
+/** Días que una tarea recién asignada se marca como «Nuevo» si nadie la empezó. */
+export const DIAS_NUEVO = 2;
+
+/** La alerta más urgente de un acuerdo abierto, o null. `creadoDia` es el día (YYYY-MM-DD, Lima) en que se creó. */
+export function alertaDe(a: AcuerdoBase & { devuelto?: boolean; creadoDia?: string }, hoy: string): Alerta | null {
+  if (!estaAbierto(a.estado)) return null;
+  const d = diasRestantes(a.fechaLimite, hoy);
+  if (d < 0) return "vencido";
+  if (a.devuelto) return "devuelto";
+  if (d === 0) return "hoy";
+  if (d === 1) return "manana";
+  if (a.estado === "pendiente" && a.creadoDia && diasRestantes(hoy, a.creadoDia) < DIAS_NUEVO) return "nuevo";
+  return null;
+}
+
+const PESO_ALERTA: Record<Alerta, number> = { vencido: 0, devuelto: 1, hoy: 2, manana: 3, nuevo: 4 };
+
+/** Los acuerdos con alerta, el más urgente primero. */
+export function conAlerta<T extends AcuerdoBase & { devuelto?: boolean; creadoDia?: string }>(lista: T[], hoy: string): { a: T; alerta: Alerta }[] {
+  return lista
+    .map((a) => ({ a, alerta: alertaDe(a, hoy) }))
+    .filter((x): x is { a: T; alerta: Alerta } => x.alerta !== null)
+    .sort((x, y) => PESO_ALERTA[x.alerta] - PESO_ALERTA[y.alerta] || x.a.fechaLimite.localeCompare(y.a.fechaLimite));
+}

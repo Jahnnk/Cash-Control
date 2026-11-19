@@ -11,7 +11,7 @@ import {
   avanzarAcuerdo, anularAcuerdo, comentarAcuerdo, editarAcuerdo, getHistorialAcuerdo, revisarCumplido,
   type Acuerdo, type Evento, type YoSesion,
 } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
+import { ALERTA_LABEL, alertaDe, AREA_LABEL, AREAS, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { Pastilla } from "@/components/productos/ui";
 
 const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> = {
@@ -49,6 +49,7 @@ export function AcuerdoItem({ a, yo, hoy, personas, mostrarResponsable = true, o
   const [form, setForm] = useState({ que: a.que, detalle: a.detalle ?? "", area: a.area as string, responsable: a.responsableClave, fechaLimite: a.fechaLimite, motivoFecha: "" });
 
   const v = estadoVisible(a, hoy);
+  const alerta = alertaDe(a, hoy);
   // El admin con contraseña de sede actúa como el responsable de lo que le llega.
   const yoAqui = personas ? yo : { ...yo, clave: a.responsableClave };
   const p = (acc: Parameters<typeof puede>[2]) => puede(yoAqui, a, acc);
@@ -92,7 +93,10 @@ export function AcuerdoItem({ a, yo, hoy, personas, mostrarResponsable = true, o
           </div>
         </div>
         <div className="text-right shrink-0">
-          <PastillaEstado estado={v} />
+          <div className="flex flex-wrap justify-end gap-1">
+            {(alerta === "devuelto" || alerta === "nuevo") && <Pastilla tono={alerta === "devuelto" ? "rojo" : "azul"}>{ALERTA_LABEL[alerta]}</Pastilla>}
+            <PastillaEstado estado={v} />
+          </div>
           <div className={`text-[11px] mt-1 ${v === "vencido" ? "text-red-700 font-medium" : "text-gray-500"}`}>
             {fechaLarga(a.fechaLimite)}
             {(v === "pendiente" || v === "en_proceso" || v === "vencido") && ` · ${textoPlazo(a.fechaLimite, hoy)}`}

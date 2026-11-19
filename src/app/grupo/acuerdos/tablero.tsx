@@ -9,10 +9,11 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Loader2, Plus, Search, Users } from "lucide-react";
 import { crearAcuerdo, crearReunion, getTableroAcuerdos, type Acuerdo, type Reunion, type YoSesion } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, conteos, estadoVisible, ordenAcuerdos, type EstadoVisible, type Persona } from "@/lib/acuerdos";
+import { AREA_LABEL, AREAS, conAlerta, conteos, estadoVisible, ordenAcuerdos, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { AcuerdoItem, fechaLarga } from "@/components/acuerdos/acuerdo-item";
 import { Kpi, Pastilla, Segmentado } from "@/components/productos/ui";
 import { IndicadoresAcuerdos } from "./indicadores";
+import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
 
 type Vista = "mios" | "todos" | "reuniones" | "indicadores";
 const VISTAS: Vista[] = ["mios", "todos", "reuniones", "indicadores"];
@@ -96,6 +97,9 @@ export function TableroAcuerdos() {
 
       {form === "tarea" && <FormTarea d={d} onListo={() => { setForm(null); void cargar(); }} onCancelar={() => setForm(null)} />}
       {form === "reunion" && <FormReunion d={d} onListo={() => { setForm(null); setVista("reuniones"); void cargar(); }} onCancelar={() => setForm(null)} />}
+
+      {/* Lo mío que pide moverse ya, y lo que espera mi confirmación: siempre a la vista (avisos en pantalla, 19-nov-2026). */}
+      <FranjaAlertas items={conAlerta(mios, d.hoy)} porConfirmar={porConfirmarDeOtros.length} onVer={vista === "mios" ? undefined : () => setVista("mios")} />
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <Kpi etiqueta="Abiertos" valor={c.abiertos} detalle="pendientes o en proceso" />

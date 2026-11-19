@@ -59,7 +59,11 @@ export type Acuerdo = {
   creadoPor: string;
   creadoPorClave: string;
   creadoEl: string;
+  /** Día de creación en Lima (para marcar lo «Nuevo»). */
+  creadoDia: string;
   comentarios: number;
+  /** Lo último que pasó con su estado fue que la dirección lo devolvió. */
+  devuelto: boolean;
 };
 
 export type Reunion = {
@@ -143,8 +147,10 @@ const COLUMNAS = sql`
   a.fecha_limite::text AS "fechaLimite", a.fecha_limite_original::text AS "fechaLimiteOriginal",
   a.estado, a.tarde, a.marcado_cumplido_el::text AS "marcadoCumplidoEl", a.confirmado_el::text AS "confirmadoEl",
   a.confirmado_por AS "confirmadoPor", a.creado_por AS "creadoPor", a.creado_por_clave AS "creadoPorClave",
-  a.creado_el::text AS "creadoEl",
-  (SELECT count(*)::int FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo = 'comentario') AS comentarios
+  a.creado_el::text AS "creadoEl", (a.creado_el AT TIME ZONE 'America/Lima')::date::text AS "creadoDia",
+  (SELECT count(*)::int FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo = 'comentario') AS comentarios,
+  COALESCE((SELECT e.tipo = 'devuelto' FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo IN ('estado','devuelto','confirmado')
+            ORDER BY e.cuando DESC, e.id DESC LIMIT 1), false) AS devuelto
 `;
 
 // ─────────────────────────────────────────────────────────────────
