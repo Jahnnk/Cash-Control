@@ -13,18 +13,25 @@ import { alertaDe, ESTADO_LABEL, puede, type Yo } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
 import { Avatar, AreaTag, EstadoCelda, FechaChip, PrioridadIcono, type EstadoCambiable } from "./ui";
 
-/** Cambiar el estado desde cualquier fila o tarjeta, con su aviso. */
+/**
+ * Cambiar el estado desde cualquier fila, tarjeta o el detalle, con su aviso. El aviso trae «Deshacer» (Jahnn,
+ * 19-nov-2026: si se marca Hecho sin querer, se vuelve al estado de antes con un toque).
+ */
 export function useCambiarEstado(onCambio: () => void) {
   const { showToast } = useToast();
   const [ocupado, setOcupado] = useState<number | null>(null);
-  async function cambiar(a: Acuerdo, nuevo: EstadoCambiable) {
-    if (a.estado === nuevo) return;
+  async function cambiar(a: { id: number; estado: string }, nuevo: EstadoCambiable, deshaciendo = false): Promise<boolean> {
+    if (a.estado === nuevo) return true;
+    const antes = a.estado;
     setOcupado(a.id);
     const r = await avanzarAcuerdo(a.id, nuevo);
     setOcupado(null);
-    if (!r.ok) { showToast(r.error, "error"); return; }
-    showToast(`Estado: ${ESTADO_LABEL[nuevo]}`, "success");
+    if (!r.ok) { showToast(r.error, "error"); return false; }
+    const volver = antes === "pendiente" || antes === "en_proceso" || antes === "cumplido" ? antes : null;
+    showToast(deshaciendo ? `Listo: volvió a ${ESTADO_LABEL[nuevo]}` : `Estado: ${ESTADO_LABEL[nuevo]}`, "success",
+      !deshaciendo && volver ? { label: "Deshacer", onClick: () => void cambiar({ id: a.id, estado: nuevo }, volver, true) } : undefined);
     onCambio();
+    return true;
   }
   return { cambiar, ocupado };
 }
