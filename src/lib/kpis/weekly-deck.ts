@@ -12,6 +12,7 @@
  *   8 · Punto de equilibrio           18 · Regla 80/20
  *   9 · De la venta a la ganancia     19 · La carta en una matriz
  *  10 · ¿A dónde se fue la plata?     20 · Candidatos a reemplazo
+ *                                    21 · Acuerdos: ¿cumplimos lo prometido? (19-nov-2026; solo si hay acuerdos)
  *
  * Salieron (pedido de Jahnn): "¿el bono por ticket se paga solo?", las
  * láminas de portafolio, "qué mejoró / qué empeoró" y Kaizen. Los productos
@@ -31,6 +32,8 @@ import type { InformeGastos } from "@/app/actions/informe-gastos";
 import type { SeisCifras } from "@/app/actions/seis-cifras";
 import type { CorteExcelSede } from "@/app/actions/cobertura-kelly";
 import { FONT } from "./deck-diseno";
+import { acuerdosDeLaSemana } from "./deck-acuerdos";
+import type { ResumenSemanal } from "@/lib/acuerdos";
 
 export async function renderWeeklyKpiDeck(
   data: BoardDeckData,
@@ -51,6 +54,8 @@ export async function renderWeeklyKpiDeck(
   corteExcel?: CorteExcelSede[] | null,
   /** De la venta a la ganancia: último mes cerrado por sede. */
   cifras?: SeisCifras | null,
+  /** Acuerdos y tareas de la semana (cierra el deck). null = sin acuerdos registrados: no sale la lámina. */
+  acuerdos?: ResumenSemanal | null,
 ): Promise<{ blob: Blob; filename: string }> {
   const pptx = new PptxGenJS();
   pptx.defineLayout({ name: "WIDE", width: 10, height: 5.625 });
@@ -86,6 +91,8 @@ export async function renderWeeklyKpiDeck(
     matrizDeLaCarta(ctx, candidatos);
     candidatosReemplazo(ctx, candidatos);
   }
+  // La reunión cierra revisando los compromisos y fijando los nuevos.
+  if (acuerdos) acuerdosDeLaSemana(ctx, acuerdos);
 
   const blob = (await pptx.write({ outputType: "blob" })) as Blob;
   const filename = `KPIs_Yayis_${data.weekStart}_${data.weekEnd}.pptx`;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
+import { resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoAlCumplir, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -130,5 +130,43 @@ describe("alertas en pantalla", () => {
   it("ordena por urgencia", () => {
     const l = [{ ...base, id: 1, fechaLimite: "2026-11-20" }, { ...base, id: 2, fechaLimite: "2026-11-10" }, { ...base, id: 3, fechaLimite: HOY }];
     expect(conAlerta(l, HOY).map((x) => x.a.id)).toEqual([2, 3, 1]);
+  });
+});
+
+describe("resumen semanal", () => {
+  // Reunión del lunes 23-nov: semana cerrada dom 15 → sáb 21.
+  const hoyL = "2026-11-23";
+  const sem = { desde: "2026-11-15", hasta: "2026-11-21" };
+  const a = (id: number, o: Partial<import("./acuerdos").AcuerdoResumen>) => ({
+    id, que: `Tarea ${id}`, estado: "pendiente" as const, fechaLimite: "2026-11-18", tarde: false, area: "operaciones" as const,
+    responsableClave: "u:1", responsableNombre: "Luis", creadoDia: "2026-11-16", ...o,
+  });
+  const lista = [
+    a(1, {}), // vencido (5 días)
+    a(2, { fechaLimite: "2026-11-05", creadoDia: "2026-11-01" }), // vencido de antes (18 días)
+    a(3, { estado: "cumplido", responsableClave: "u:2", responsableNombre: "Ana" }),
+    a(4, { estado: "por_confirmar", responsableClave: "u:2", responsableNombre: "Ana", fechaLimite: "2026-11-20" }),
+    a(5, { fechaLimite: "2026-11-24" }), // vence esta semana
+    a(6, { fechaLimite: "2026-11-12", estado: "cumplido", creadoDia: "2026-11-02" }), // semana anterior, a tiempo
+    a(7, { estado: "anulado" }),
+  ];
+  const r = resumenSemanal(lista, [{ fecha: "2026-11-16", titulo: "Marketing", area: "marketing" }, { fecha: "2026-11-09", titulo: "Vieja", area: "finanzas" }], hoyL, sem);
+  it("cifras de la semana y comparación", () => {
+    expect(r.cumplimiento).toMatchObject({ aTiempo: 2, vencidos: 1, juzgados: 3, pctATiempo: 67 });
+    expect(r.pctAnterior).toBe(100);
+  });
+  it("vencidos arrastrados, próximos, por confirmar, reuniones y nuevos", () => {
+    expect(r.arrastrados.map((x) => [x.id, x.diasAtraso])).toEqual([[2, 18], [1, 5]]);
+    expect(r.proximos.map((x) => x.id)).toEqual([5]);
+    expect(r.porConfirmar.map((x) => x.id)).toEqual([4]);
+    expect(r.reuniones.map((x) => x.titulo)).toEqual(["Marketing"]);
+    expect(r.nuevos).toBe(4);
+  });
+  it("recomienda con nombre y en orden", () => {
+    expect(r.recomendaciones[0]).toMatch(/^Habla con Luis: tiene 2 acuerdos vencidos, el más antiguo hace 18 días/);
+    expect(r.recomendaciones[1]).toMatch(/Confirma o devuelve el cumplido pendiente/);
+  });
+  it("sin nada pendiente, lo dice", () => {
+    expect(resumenSemanal([], [], hoyL, sem).recomendaciones[0]).toMatch(/^Sin acuerdos que vencieran/);
   });
 });

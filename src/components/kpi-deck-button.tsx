@@ -8,6 +8,8 @@ import { getPanoramaProductosGrupo, getCandidatosReemplazo, getReglaOchentaVeint
 import { getInformeGastos } from "@/app/actions/informe-gastos";
 import { getSeisCifras } from "@/app/actions/seis-cifras";
 import { getCorteExcel } from "@/app/actions/cobertura-kelly";
+import { getTableroAcuerdos } from "@/app/actions/acuerdos";
+import { resumenSemanal } from "@/lib/acuerdos";
 import { getToday } from "@/lib/utils";
 import { EstadoDatosReunion } from "@/components/estado-datos-reunion";
 import { useToast } from "@/components/toast-provider";
@@ -37,7 +39,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
       // Gastos: el último mes CERRADO antes de la semana del deck (decisión de Jahnn, 25-sep-2026).
       const [yy, mm] = mes.split("-").map(Number);
       const mesCerrado = mm === 1 ? `${yy - 1}-12` : `${yy}-${String(mm - 1).padStart(2, "0")}`;
-      const [r, be, prod, cand, ov, gas, corte, cif] = await Promise.all([
+      const [r, be, prod, cand, ov, gas, corte, cif, acu] = await Promise.all([
         getBoardDeckData(start, end),
         getGroupBreakeven(mes),
         getPanoramaProductosGrupo(mes),
@@ -46,6 +48,7 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
         getInformeGastos(mesCerrado),
         getCorteExcel(),
         getSeisCifras(mesCerrado),
+        getTableroAcuerdos(),
       ]);
       if (!r.ok) { showToast(r.error, "error"); return; }
       const { renderWeeklyKpiDeck } = await import("@/lib/kpis/weekly-deck");
@@ -58,6 +61,8 @@ export function KpiDeckButton({ defaultStart, defaultEnd }: { defaultStart: stri
         gas.ok ? gas.data : null,
         corte.ok ? corte.sedes : null,
         cif.ok ? cif.data : null,
+        // Lámina de acuerdos: solo si ya se registra alguno (mismo cálculo que Acuerdos y tareas → Resumen semanal).
+        acu.ok && acu.acuerdos.length ? resumenSemanal(acu.acuerdos, acu.reuniones, acu.hoy, { desde: start, hasta: end }) : null,
       );
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
