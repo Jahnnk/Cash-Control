@@ -23,6 +23,13 @@ import { ReceivablesImportModal } from "./receivables-import-modal";
 import { MermaDetailModal } from "./merma-detail-modal";
 import { ReceivablesSection } from "./receivables-section";
 import { getReceivables, type ReceivablesData } from "@/app/actions/receivables";
+import { getCobranzaEnvios, type CobranzaEnvios } from "@/app/actions/cobranza-envios";
+
+/**
+ * «Cuentas por cobrar» (de los reportes de Byte) se ocultó del panel el 20-nov-2026: el administrador lleva los créditos
+ * en Finanzas de Yayi's Envíos y esa es la cifra real. No se borró nada: poner en true para volver a mostrarla.
+ */
+const MOSTRAR_CUENTAS_POR_COBRAR_BYTE = false;
 import { SeccionDesplegable } from "@/components/productos/ui";
 
 /** 2026-08-08 → «08/08». */
@@ -78,6 +85,11 @@ export function AtelierPanel() {
   // (ventas + consolidado de facturas), con su propia rutina semanal.
   const [showCobranzaImport, setShowCobranzaImport] = useState(false);
   const [cobranza, setCobranza] = useState<ReceivablesData | null>(null);
+  // Lo que deben a Atelier lo lleva el administrador en Finanzas de Yayi's Envíos (20-nov-2026): de ahí sale el recuadro.
+  const [cobranzaEnvios, setCobranzaEnvios] = useState<CobranzaEnvios | null | undefined>(undefined);
+  useEffect(() => {
+    void getCobranzaEnvios().then((r) => setCobranzaEnvios(r.ok ? r.datos : null));
+  }, []);
 
   // Registro diario
   const [fecha, setFecha] = useState(todayLima());
@@ -218,7 +230,7 @@ export function AtelierPanel() {
       {highlightActivo && <HighlightSlot comoAdmin={comoAdmin.activo} />}
 
       {/* Inicio (20-nov-2026), igual que en las cafeterías: KPIs del día → ventas, acuerdos y tareas → el mes. */}
-      {data ? <KpisDelDiaAtelier dailies={data.dailies} porCobrar={cobranza?.porCobrar ?? null} />
+      {data ? <KpisDelDiaAtelier dailies={data.dailies} cobranza={cobranzaEnvios} />
         : loading ? <div className="rounded-2xl border border-gray-200/80 bg-white h-40 animate-pulse" aria-hidden /> : null}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4">
         {data ? <EvolucionVentas className="md:col-span-2 xl:col-span-5" dias={data.dailies.map((d) => ({ date: d.date, revenue: d.venta }))} metaDiaria={null} />
@@ -381,7 +393,7 @@ export function AtelierPanel() {
         {clientes ? <ClientSalesSection data={clientes} /> : <p className="text-sm text-gray-400">Cargando clientes…</p>}
       </SeccionDesplegable>
 
-      <div id="cuentas-por-cobrar" className="scroll-mt-4">
+      {MOSTRAR_CUENTAS_POR_COBRAR_BYTE && <div id="cuentas-por-cobrar" className="scroll-mt-4">
       <SeccionDesplegable
         titulo="Cuentas por cobrar"
         subtitulo="Cuánto te deben, desde cuándo y quién."
@@ -397,7 +409,7 @@ export function AtelierPanel() {
           <ReceivablesSection data={cobranza} onSubir={() => setShowCobranzaImport(true)} onRecargar={loadCobranza} />
         ) : <p className="text-sm text-gray-400">Cargando cuentas por cobrar…</p>}
       </SeccionDesplegable>
-      </div>
+      </div>}
 
       {showRotacion && (
         <ImportControlModal
