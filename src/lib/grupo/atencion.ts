@@ -57,7 +57,8 @@ export type EntradaAtencion = {
    */
   utilidadPorSeparar?: { mes: string; pct: number; sedes: { sede: string; monto: number }[] } | null;
   /** Cobros de Atelier: días desde la última carga del reporte de Byte. */
-  cobrosAtelier: { diasDesdeCarga: number | null; porCobrar: number } | null;
+  /** Lo que le deben a Atelier según Finanzas de Envíos (20-nov-2026). null = no se pudo leer. */
+  cobrosAtelier: { porCobrar: number; masDe30: number } | null;
   /**
    * Lo que anotó cada administrador contra el reporte de Byte que sube Jahnn (19-oct-2026): los días que no coinciden y
    * no se explican (no cuentan los que Byte juntó por caja sin abrir). Byte es lo que cuenta para los KPIs y el bono.
@@ -170,14 +171,14 @@ export function construirAtencion(e: EntradaAtencion): Atencion[] {
     });
   }
 
-  if (e.cobrosAtelier && (e.cobrosAtelier.diasDesdeCarga === null || e.cobrosAtelier.diasDesdeCarga > DIAS_COBROS)) {
+  // Desde el 20-nov-2026 los créditos de Atelier se llevan en Finanzas de Envíos: ya no se pide el reporte de cobros de
+  // Byte. Se avisa lo que de verdad pide una acción: lo que lleva más de 30 días sin cobrarse.
+  if (e.cobrosAtelier && e.cobrosAtelier.masDe30 > 0) {
     out.push({
       id: "cobros-atelier", nivel: "medio",
-      titulo: "Pide a Luis el reporte de cobros de Atelier",
-      detalle: e.cobrosAtelier.diasDesdeCarga === null
-        ? "Nunca se subió: no se sabe quién le debe a Atelier."
-        : `El último es de hace ${e.cobrosAtelier.diasDesdeCarga} días (decía ${soles(e.cobrosAtelier.porCobrar)} por cobrar).`,
-      href: "/atelier/panel", accion: "Ver cobros",
+      titulo: `Atelier: ${soles(e.cobrosAtelier.masDe30)} por cobrar con más de 30 días`,
+      detalle: `Te deben ${soles(e.cobrosAtelier.porCobrar)} en total, según Finanzas de Envíos.`,
+      href: "/atelier/clientes", accion: "Ver cobros",
     });
   }
 

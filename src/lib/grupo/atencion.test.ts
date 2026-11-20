@@ -12,7 +12,7 @@ const base: EntradaAtencion = {
   excelPendiente: null,
   highlightsSinAsignar: ["Fonavi", "Centro", "Atelier"],
   presupuesto: { mesActualSinAprobar: 0, siguienteSinAprobar: 3, totalSedes: 3, diasRestantes: 16, mesSiguiente: "2026-11" },
-  cobrosAtelier: { diasDesdeCarga: 59, porCobrar: 6203 },
+  cobrosAtelier: { porCobrar: 6203, masDe30: 120 },
 };
 
 describe("necesita tu atención", () => {
@@ -32,7 +32,7 @@ describe("necesita tu atención", () => {
     const a = construirAtencion({ ...base, sedes: base.sedes.map((s) => (s.code === "fonavi" ? { ...s, equilibrioEnRiesgo: true } : s)) });
     expect(a[0].id).toBe("equilibrio-fonavi");
     expect(a.map((x) => x.id)).toEqual(["equilibrio-fonavi", "highlight", "registro", "cobros-atelier", "cuadre"]);
-    expect(construirAtencion({ ...base, cuadres: [], highlightsSinAsignar: [], presupuesto: null, cobrosAtelier: { diasDesdeCarga: 2, porCobrar: 0 }, sedes: [] })).toEqual([]);
+    expect(construirAtencion({ ...base, cuadres: [], highlightsSinAsignar: [], presupuesto: null, cobrosAtelier: { porCobrar: 500, masDe30: 0 }, sedes: [] })).toEqual([]);
   });
   it("no alarma el equilibrio con menos de una semana de ventas cargada", () => {
     const a = construirAtencion({ ...base, sedes: base.sedes.map((s) => ({ ...s, equilibrioEnRiesgo: true })) });

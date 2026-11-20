@@ -6,7 +6,7 @@
  * (reportes de Byte) y la cifra no cuadraba con la real. Un solo cerebro: Envíos calcula, aquí se muestra.
  */
 
-import { getSessionRole } from "@/lib/session-access";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 
 export type Tramos = { "0-15": number; "16-30": number; "+30": number };
 export type CobranzaEnvios = {
@@ -28,7 +28,8 @@ const tramos = (t: Record<string, string>): Tramos => ({ "0-15": num(t["0-15"]),
 
 export async function getCobranzaEnvios(): Promise<{ ok: true; datos: CobranzaEnvios } | { ok: false; error: string }> {
   const role = await getSessionRole();
-  if (!(role?.kind === "full" || (role?.kind === "admin" && role.sede === 1))) return { ok: false, error: "Sin acceso." };
+  // La dirección (y la llave de solo lectura) y el administrador de Atelier.
+  if (!(puedeLeerDireccion(role) || (role?.kind === "admin" && role.sede === 1))) return { ok: false, error: "Sin acceso." };
   const url = process.env.ENVIOS_URL;
   const token = process.env.ENVIOS_FINANZAS_TOKEN;
   if (!url || !token) return { ok: false, error: "Falta conectar con Yayi's Envíos." };
