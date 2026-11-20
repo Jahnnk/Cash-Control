@@ -287,7 +287,7 @@ function IncentivosPage() {
       {/* Lo primero del panel: las tareas del administrador. El Highlight está archivado desde el
           20-nov-2026 (nadie lo usaba); si la dirección lo reactiva, vuelve a ir arriba de todo. */}
       {highlightActivo && <HighlightSlot comoAdmin={comoAdmin.activo} />}
-      <MisAcuerdosCard comoAdmin={comoAdmin.activo} />
+      <MisAcuerdosCard key={comoAdmin.activo ? "admin" : "yo"} comoAdmin={comoAdmin.activo} />
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso vas y qué sigue, estilo pedido de
           delivery. El registro del día y la rutina del sábado quedan como su detalle. */}
