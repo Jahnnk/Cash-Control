@@ -30,6 +30,7 @@ import { MisAcuerdosCard } from "./mis-acuerdos-card";
 import { BarraComoAdmin, useComoAdmin } from "./ver-como-admin";
 import { DiasNoOperativosCard } from "./dias-no-operativos-card";
 import { ProponerHighlight } from "./proponer-highlight";
+import { useHighlightActivo } from "./use-highlight-activo";
 import { TuSemana } from "./tu-semana";
 import { Proposito } from "@/components/proposito";
 import { ShareSummary } from "./share-summary";
@@ -99,6 +100,7 @@ function IncentivosPage() {
   const [editingDate, setEditingDate] = useState<string | null>(null);
   // «Ver como administrador» (19-nov-2026): la dirección ve el panel tal cual lo ve el admin de la sede.
   const comoAdmin = useComoAdmin();
+  const highlightActivo = useHighlightActivo();
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -282,9 +284,9 @@ function IncentivosPage() {
         <Proposito />
       </div>
 
-      {/* Lo más importante de la semana — va primero a propósito: si
-          compitiera con los KPIs, dejaría de ser lo más importante. */}
-      <HighlightSlot comoAdmin={comoAdmin.activo} />
+      {/* Lo primero del panel: las tareas del administrador. El Highlight está archivado desde el
+          20-nov-2026 (nadie lo usaba); si la dirección lo reactiva, vuelve a ir arriba de todo. */}
+      {highlightActivo && <HighlightSlot comoAdmin={comoAdmin.activo} />}
       <MisAcuerdosCard comoAdmin={comoAdmin.activo} />
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso vas y qué sigue, estilo pedido de
@@ -298,7 +300,7 @@ function IncentivosPage() {
 
       {/* Proponer va después del Highlight y del aviso de KPIs: primero
           lo que hay que hacer hoy, después lo que uno sugiere. */}
-      <ProponerHighlight />
+      {highlightActivo && <ProponerHighlight />}
 
       {/* Tu bono de este mes: los 3 activadores (ticket, ventas, supervisiones), después de lo
           que hay que hacer hoy. */}

@@ -99,6 +99,8 @@ export type EntradaSemanaSede = {
   reportes: { nombre: string; ultimaCarga: string | null }[];
   /** "importado" = el día llega con el reporte de Byte (Atelier). */
   modo: "manual" | "importado";
+  /** El Highlight está archivado (20-nov-2026): la semana se arma sin ese paso ni el Reflect. */
+  highlightArchivado?: boolean;
 };
 
 export function seguimientoAdministrador(e: EntradaSemanaSede): Seguimiento {
@@ -110,15 +112,16 @@ export function seguimientoAdministrador(e: EntradaSemanaSede): Seguimiento {
   const subidos = total - faltanReportes.length;
   const reportesListos = faltanReportes.length === 0;
   const registroAlDia = e.faltan.length === 0;
-  const hl = e.highlight;
+  const archivado = !!e.highlightArchivado;
+  const hl = archivado ? null : e.highlight;
   const hlAbierto = hl?.estado === "pendiente";
   const nombresFaltan = enumerar(faltanReportes.map((r) => r.nombre));
 
   const pasos: PasoEntrada[] = [
-    {
+    ...(archivado ? [] : [{
       clave: "highlight", titulo: "Highlight recibido", cuando: "Lunes", hecho: true, alerta: false,
       detalle: hl ? "tu prioridad" : "sin Highlight", accion: null,
-    },
+    } satisfies PasoEntrada]),
     {
       clave: "registro", titulo: "Registro diario", cuando: "Cada día", hecho: registroAlDia, alerta: !registroAlDia,
       detalle: !registroAlDia
@@ -153,7 +156,9 @@ export function seguimientoAdministrador(e: EntradaSemanaSede): Seguimiento {
   } else if (hlAbierto && e.hoy >= sabado) {
     mensaje = "Solo falta cerrar tu Highlight con el Reflect: es lo último de la semana.";
   } else if (registroAlDia && reportesListos && !hlAbierto) {
-    mensaje = `Semana entregada. El lunes ${Number(sumarDias(domingo, 1).slice(8, 10))} llega tu próximo Highlight.`;
+    mensaje = archivado
+      ? "Semana entregada. Buen trabajo."
+      : `Semana entregada. El lunes ${Number(sumarDias(domingo, 1).slice(8, 10))} llega tu próximo Highlight.`;
   } else {
     mensaje = `Vas al día.${hl && hlAbierto ? ` Tu prioridad de la semana: «${hl.texto}».` : ""} El sábado ${Number(sabado.slice(8, 10))} subes los ${total} reportes de Byte.`;
   }

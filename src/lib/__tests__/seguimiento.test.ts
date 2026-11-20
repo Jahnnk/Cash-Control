@@ -94,6 +94,16 @@ describe("administrador", () => {
     expect(s.tono).toBe("listo");
   });
 
+  it("con el Highlight archivado: sin ese paso, sin pedir el Reflect y sin mencionarlo", () => {
+    const todos = sede().reportes.map((r) => ({ ...r, ultimaCarga: SAB }));
+    const s = seguimientoAdministrador(sede({ hoy: DOM, reportes: todos, highlightArchivado: true }));
+    expect(s.pasos.map((p) => p.clave)).toEqual(["registro", "reportes", "cierre"]);
+    expect(s.tono).toBe("listo");
+    expect(s.mensaje).not.toContain("Highlight");
+    const media = seguimientoAdministrador(sede({ highlightArchivado: true }));
+    expect(media.mensaje).not.toContain("«");
+  });
+
   it("solo el paso actual ofrece botón", () => {
     const s = seguimientoAdministrador(sede({ faltan: ["2026-10-13"] }));
     expect(s.pasos.filter((p) => p.accion).map((p) => p.clave)).toEqual(["registro"]);
