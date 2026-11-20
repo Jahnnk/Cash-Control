@@ -155,7 +155,6 @@ function Hojas() {
     <svg viewBox="0 0 200 120" className="pointer-events-none absolute -right-6 -bottom-6 h-36 w-60 text-amber-200/60" aria-hidden>
       <path d="M150 120C150 70 175 40 200 25c0 45-20 80-50 95z" fill="currentColor" />
       <path d="M110 120c5-35 30-60 60-70-5 40-30 62-60 70z" fill="currentColor" opacity="0.7" />
-      <circle cx="40" cy="22" r="5" fill="#F5B638" opacity="0.5" />
     </svg>
   );
 }
@@ -347,9 +346,9 @@ export function TicketIncentivos({ data, month }: { data: IncentiveDashboard; mo
         <EnlaceVer onClick={() => ir("bono-del-mes")}>Ver plan completo</EnlaceVer>
       </header>
 
-      <div className="grid grid-cols-1 gap-4 lg:grid-cols-12">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-12">
         {/* Ticket actual */}
-        <div className="rounded-xl border border-gray-100 bg-gradient-to-b from-primary-50/60 to-white p-4 lg:col-span-3">
+        <div className="rounded-xl border border-gray-100 bg-gradient-to-b from-primary-50/60 to-white p-4 xl:col-span-3">
           <div className="flex items-center gap-2 text-sm font-medium text-gray-700">
             <ShoppingCart className="h-4 w-4 text-primary-light" aria-hidden />Ticket promedio actual
           </div>
@@ -360,7 +359,7 @@ export function TicketIncentivos({ data, month }: { data: IncentiveDashboard; mo
         </div>
 
         {/* Niveles */}
-        <div className="overflow-hidden rounded-xl border border-gray-100 lg:col-span-5">
+        <div className="overflow-hidden rounded-xl border border-gray-100 md:order-3 md:col-span-2 xl:order-none xl:col-span-5">
           {/* En celular, una fila por nivel (la tabla no entra sin cortar los montos). */}
           <ul className="divide-y divide-gray-100 sm:hidden">
             {p.porNivel.map((n) => {
@@ -415,7 +414,7 @@ export function TicketIncentivos({ data, month }: { data: IncentiveDashboard; mo
         </div>
 
         {/* Plan */}
-        <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 lg:col-span-4">
+        <div className="rounded-xl border border-gray-100 bg-gray-50/60 p-4 xl:col-span-4">
           <div className="mb-3 flex items-center justify-between gap-2">
             <p className="flex items-center gap-2 text-sm font-bold text-gray-900"><Trophy className="h-4 w-4 text-amber-500" aria-hidden />Plan de incentivos</p>
             <span className="rounded-full border border-gray-200 bg-white px-2.5 py-0.5 text-[11px] font-medium text-gray-600">{mes}</span>
