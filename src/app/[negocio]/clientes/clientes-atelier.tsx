@@ -14,6 +14,10 @@ import { ClientSalesSection } from "../panel/client-sales-section";
 import { ReceivablesSection } from "../panel/receivables-section";
 import { ReceivablesImportModal } from "../panel/receivables-import-modal";
 import { SeccionDesplegable } from "@/components/productos/ui";
+import { CobranzaEnviosCard } from "@/components/cobranza-envios";
+
+/** Desde el 20-nov-2026 lo que deben sale de Finanzas de Envíos; las cuentas por cobrar de Byte quedan ocultas, no borradas. */
+const MOSTRAR_CUENTAS_POR_COBRAR_BYTE = false;
 
 const Cargando = ({ que }: { que: string }) => (
   <div className="bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-400">Cargando {que}…</div>
@@ -29,7 +33,7 @@ export function ClientesAtelier({ listaManual }: { listaManual: ReactNode }) {
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
     void cargarClientes();
-    void cargarCobranza();
+    if (MOSTRAR_CUENTAS_POR_COBRAR_BYTE) void cargarCobranza();
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [cargarClientes, cargarCobranza]);
 
@@ -37,9 +41,10 @@ export function ClientesAtelier({ listaManual }: { listaManual: ReactNode }) {
     <div className="space-y-6">
       <div>
         <h1 className="text-2xl font-bold text-gray-900">Clientes</h1>
-        <p className="text-sm text-gray-500 mt-1">Quién le compra a Atelier y cuánto te deben, con los reportes de Byte que sube la sede.</p>
+        <p className="text-sm text-gray-500 mt-1">Quién le compra a Atelier (reportes de Byte) y cuánto te deben (Finanzas de Yayi&apos;s Envíos).</p>
       </div>
-      {cobranza ? <ReceivablesSection data={cobranza} onSubir={() => setSubirCobranza(true)} onRecargar={cargarCobranza} /> : <Cargando que="las cuentas por cobrar" />}
+      <CobranzaEnviosCard />
+      {MOSTRAR_CUENTAS_POR_COBRAR_BYTE && (cobranza ? <ReceivablesSection data={cobranza} onSubir={() => setSubirCobranza(true)} onRecargar={cargarCobranza} /> : <Cargando que="las cuentas por cobrar" />)}
       {/* El ranking sale del «Reporte de Ventas» (10-oct-2026): ya no se sube «Ventas por Cliente». */}
       {clientes ? <ClientSalesSection data={clientes} /> : <Cargando que="los clientes" />}
       <SeccionDesplegable titulo="Lista del registro manual" subtitulo="Centro, Fonavi y Otros: los clientes que se usaban al anotar ingresos a mano. Ya no se usa a diario.">

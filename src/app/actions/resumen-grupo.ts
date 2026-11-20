@@ -5,10 +5,11 @@
  *   · La meta de ventas del mes de cada sede: la venta esperada del presupuesto APROBADO.
  *   · Lo que el sistema comprueba solo: sedes sin Highlight esta semana y presupuesto sin aprobar
  *     (15-oct-2026: reemplazan a la revisión del lunes y al checklist, que uno mismo marcaba).
- *   · Hace cuánto se subió el reporte de cobros de Atelier y cuánto decía por cobrar.
+ *   · Lo que le deben a Atelier según Finanzas de Envíos (desde el 20-nov-2026; antes, el reporte de cobros de Byte).
  * Solo lectura, solo dirección. Nunca lanza: el Resumen se arma igual sin estas señales.
  */
 
+import { getCobranzaEnvios } from "./cobranza-envios";
 import { neon } from "@neondatabase/serverless";
 import { requireLectura } from "@/lib/session-access";
 import { planDe } from "@/lib/presupuesto-datos";
@@ -35,7 +36,7 @@ export type ResumenExtra = {
   presupuesto: { mesActualSinAprobar: number; siguienteSinAprobar: number; totalSedes: number; diasRestantes: number; mesSiguiente: string } | null;
   /** Primera semana del mes: lo que toca separar de la venta del mes que cerró (Profit First); null = no aplica. */
   utilidadPorSeparar: { mes: string; pct: number; sedes: { sede: string; monto: number }[] } | null;
-  cobrosAtelier: { diasDesdeCarga: number | null; porCobrar: number } | null;
+  cobrosAtelier: { porCobrar: number; masDe30: number } | null;
 };
 
 export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
@@ -52,9 +53,7 @@ export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
       Promise.all([1, 2, 3].map(async (id) => [id, await planDe(id, mes)] as const)),
       (enCurso ? sql`SELECT DISTINCT business_id FROM highlights WHERE fecha >= ${lunes} AND fecha <= ${sumarDias(lunes, 6)}` : Promise.resolve([])).catch(() => null) as Promise<{ business_id: number }[] | null>,
       (enCurso ? sql`SELECT mes, COUNT(*)::int AS n FROM presupuesto_mes WHERE mes IN (${mes}, ${siguiente}) AND aprobado_el IS NOT NULL GROUP BY mes` : Promise.resolve([])).catch(() => null) as Promise<{ mes: string; n: number }[] | null>,
-      sql`SELECT max(actualizado_en)::date::text AS ultima,
-                 COALESCE(SUM(CASE WHEN estado_cuota = 'PENDIENTE' AND NOT COALESCE(cobrado_manual, false) THEN credito ELSE 0 END), 0)::float AS por_cobrar
-          FROM invoice_documents`.catch(() => null) as Promise<{ ultima: string | null; por_cobrar: number }[] | null>,
+      getCobranzaEnvios().catch(() => null),
       primeraSemana
         ? Promise.all([getSeisCifras(mesMas(mes, -1)), getSeisCifras(mes)]).catch(() => null)
         : Promise.resolve(null),
@@ -64,7 +63,6 @@ export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
     const actual = utilidad?.[1];
     const porSeparar = cerrado?.ok && actual?.ok ? utilidadPorSeparar(cerrado.data, actual.data) : [];
     const metas = Object.fromEntries(planes.map(([id, p]) => [id, p.cab?.aprobadoEl ? p.cab.ventaEsperada : null]));
-    const ultima = cobros?.[0]?.ultima ?? null;
     return {
       metas,
       // Highlight archivado (20-nov-2026): no se pide asignarlo.
@@ -77,10 +75,7 @@ export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
         mesSiguiente: siguiente,
       } : null,
       utilidadPorSeparar: cerrado?.ok && porSeparar.length ? { mes: mesMas(mes, -1), pct: cerrado.data.config.utilidadPct, sedes: porSeparar } : null,
-      cobrosAtelier: cobros ? {
-        diasDesdeCarga: ultima ? Math.round((Date.parse(`${hoy}T12:00:00Z`) - Date.parse(`${ultima}T12:00:00Z`)) / 86_400_000) : null,
-        porCobrar: cobros[0]?.por_cobrar ?? 0,
-      } : null,
+      cobrosAtelier: cobros?.ok ? { porCobrar: cobros.datos.total, masDe30: cobros.datos.masDe30 } : null,
     };
   } catch (e) {
     console.error("[getResumenExtra] failed:", e);

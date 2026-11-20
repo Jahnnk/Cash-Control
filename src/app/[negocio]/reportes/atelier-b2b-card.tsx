@@ -17,6 +17,11 @@ import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/
 import { getReceivables, type ReceivablesData } from "@/app/actions/receivables";
 import { ClientSalesSection } from "@/app/[negocio]/panel/client-sales-section";
 import { ReceivablesSection } from "@/app/[negocio]/panel/receivables-section";
+import { CobranzaEnviosCard } from "@/components/cobranza-envios";
+import { getCobranzaEnvios, type CobranzaEnvios } from "@/app/actions/cobranza-envios";
+
+/** Desde el 20-nov-2026 «Te deben» y «Atrasado» salen de Finanzas de Envíos; el detalle de Byte queda oculto, no borrado. */
+const MOSTRAR_CUENTAS_POR_COBRAR_BYTE = false;
 
 function fechaCorta(iso: string) {
   const [, m, d] = iso.split("-");
@@ -29,8 +34,12 @@ export function AtelierB2BCard({ resumen }: { resumen: AtelierB2BResumen }) {
   const [clientes, setClientes] = useState<ClientSalesAnalisis | null>(null);
   const [cobranza, setCobranza] = useState<ReceivablesData | null>(null);
   const [cargando, startTransition] = useTransition();
-
-  if (!resumen.hayDatos) return null;
+  const [envios, setEnvios] = useState<CobranzaEnvios | null | undefined>(undefined);
+  useEffect(() => {
+    let vivo = true;
+    void getCobranzaEnvios().then((r) => { if (vivo) setEnvios(r.ok ? r.datos : null); });
+    return () => { vivo = false; };
+  }, []);
 
   function alternar() {
     if (abierto) {
@@ -39,9 +48,9 @@ export function AtelierB2BCard({ resumen }: { resumen: AtelierB2BResumen }) {
     }
     setAbierto(true);
     // Se trae una sola vez; al volver a abrir ya está en memoria.
-    if (clientes && cobranza) return;
+    if (clientes) return;
     startTransition(async () => {
-      const [c, r] = await Promise.all([getClientSalesAnalisis(), getReceivables()]);
+      const [c, r] = await Promise.all([getClientSalesAnalisis(), MOSTRAR_CUENTAS_POR_COBRAR_BYTE ? getReceivables() : Promise.resolve(null)]);
       setClientes(c);
       setCobranza(r);
     });
@@ -101,44 +110,44 @@ export function AtelierB2BCard({ resumen }: { resumen: AtelierB2BResumen }) {
             </div>
           )}
 
-          {resumen.hayCobranza && (
+          {envios && (
             <>
               <div className="px-4 py-3">
                 <div className="text-[10px] uppercase tracking-wide text-gray-500 font-semibold">
                   Te deben
                 </div>
                 <div className="text-lg font-bold text-gray-900 mt-0.5 tabular-nums">
-                  {formatCurrency(resumen.porCobrar)}
+                  {formatCurrency(envios.total)}
                 </div>
                 <div className="text-[11px] text-gray-500 mt-0.5">
-                  {resumen.porCobrarDocs} documento{resumen.porCobrarDocs === 1 ? "" : "s"}
+                  Fonavi, Centro y {envios.b2b.clientes} cliente{envios.b2b.clientes === 1 ? "" : "s"} · Finanzas de Envíos
                 </div>
               </div>
 
-              <div className={`px-4 py-3 ${resumen.atrasado > 0 ? "bg-red-50" : ""}`}>
+              <div className={`px-4 py-3 ${envios.masDe30 > 0 ? "bg-red-50" : ""}`}>
                 <div
                   className={`text-[10px] uppercase tracking-wide font-semibold ${
-                    resumen.atrasado > 0 ? "text-red-700" : "text-gray-500"
+                    envios.masDe30 > 0 ? "text-red-700" : "text-gray-500"
                   }`}
                 >
                   Atrasado
                 </div>
                 <div
                   className={`text-lg font-bold mt-0.5 tabular-nums flex items-center gap-1.5 ${
-                    resumen.atrasado > 0 ? "text-red-700" : "text-gray-900"
+                    envios.masDe30 > 0 ? "text-red-700" : "text-gray-900"
                   }`}
                 >
-                  {resumen.atrasado > 0 && <AlertTriangle className="w-4 h-4" />}
-                  {formatCurrency(resumen.atrasado)}
+                  {envios.masDe30 > 0 && <AlertTriangle className="w-4 h-4" />}
+                  {formatCurrency(envios.masDe30)}
                 </div>
                 <div
                   className={`text-[11px] mt-0.5 ${
-                    resumen.atrasado > 0 ? "text-red-700/80" : "text-gray-500"
+                    envios.masDe30 > 0 ? "text-red-700/80" : "text-gray-500"
                   }`}
                 >
-                  {resumen.atrasado > 0
-                    ? `${resumen.atrasadoDocs} documento${resumen.atrasadoDocs === 1 ? "" : "s"} por cobrar`
-                    : "nada vencido"}
+                  {envios.masDe30 > 0
+                    ? "con más de 30 días"
+                    : "nada con más de 30 días"}
                 </div>
               </div>
             </>
@@ -147,14 +156,15 @@ export function AtelierB2BCard({ resumen }: { resumen: AtelierB2BResumen }) {
 
         {abierto && (
           <div className="border-t border-gray-100 bg-gray-50/60 px-4 py-4 space-y-6">
-            {cargando && !clientes && !cobranza ? (
+            {cargando && !clientes ? (
               <div className="flex items-center justify-center gap-2 py-8 text-sm text-gray-400">
                 <Loader2 className="w-4 h-4 animate-spin" /> Cargando el detalle…
               </div>
             ) : (
               <>
                 {clientes?.hayDatos && <ClientSalesSection data={clientes} />}
-                {cobranza?.hayDatos && <ReceivablesSection data={cobranza} />}
+                <CobranzaEnviosCard datos={envios ?? null} />
+                {MOSTRAR_CUENTAS_POR_COBRAR_BYTE && cobranza?.hayDatos && <ReceivablesSection data={cobranza} />}
               </>
             )}
           </div>
@@ -173,7 +183,7 @@ export function ClientesAtelier() {
     return () => { vivo = false; };
   }, []);
   if (resumen === undefined) return <p className="py-8 text-center text-sm text-gray-400">Cargando clientes…</p>;
-  if (!resumen?.hayDatos) {
+  if (!resumen) {
     return <p className="rounded-xl border border-gray-200 bg-white p-6 text-center text-sm text-gray-500">Todavía no hay clientes ni cuentas por cobrar: aparecen cuando el administrador sube los reportes de Byte del sábado.</p>;
   }
   return <AtelierB2BCard resumen={resumen} />;
