@@ -11,7 +11,8 @@ import { BarraComoAdmin, useComoAdmin } from "./ver-como-admin";
 import { ProponerHighlight } from "./proponer-highlight";
 import { useHighlightActivo } from "./use-highlight-activo";
 import { TuSemana } from "./tu-semana";
-import { Proposito } from "@/components/proposito";
+import { BannerSaludo, CabeceraSede } from "./inicio-ui";
+import { getNombreSaludo } from "@/app/actions/panel-vista";
 import { ImportControlModal } from "./import-control-modal";
 import { ClientSalesSection } from "./client-sales-section";
 import { getClientSalesAnalisis, type ClientSalesAnalisis } from "@/app/actions/client-sales";
@@ -52,6 +53,13 @@ export function AtelierPanel() {
   const [loading, setLoading] = useState(true);
   // «Ver como administrador» (19-nov-2026): la dirección ve el panel tal cual lo ve el admin de Atelier.
   const comoAdmin = useComoAdmin();
+  // Saludo según la hora con el nombre del administrador (20-nov-2026).
+  const [nombre, setNombre] = useState<string | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    void getNombreSaludo(comoAdmin.activo ? "atelier" : undefined).then((n) => { if (vivo) setNombre(n); });
+    return () => { vivo = false; };
+  }, [comoAdmin.activo]);
   const highlightActivo = useHighlightActivo();
   // Detalle de mermas: Atelier solo podía anotar el importe total, y
   // en producción es donde MÁS interesa saber QUÉ se mermó (Jahnn,
@@ -176,34 +184,24 @@ export function AtelierPanel() {
   return (
     <div className="space-y-6">
       {comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo negocio="atelier" onChange={comoAdmin.cambiar} />}
-      {/* Cabecera arriba (UX, 8-oct-2026: antes quedaba en medio de la página). */}
-      <div className="space-y-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <ClipboardList className="w-5 h-5 text-primary" />
-              Panel de Sede · Atelier
-            </h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            {!comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo={false} negocio="atelier" onChange={comoAdmin.cambiar} />}
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
-            />
-            <button
-              onClick={() => setShowRotacion(true)}
-              className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-dark"
-            >
-              <Upload className="w-3.5 h-3.5" /> Subir reportes de Byte
-            </button>
-          </div>
-        </div>
-        {/* Nuestro propósito: para recordar por qué hacemos lo que hacemos (13-oct-2026). */}
-        <Proposito />
-      </div>
+      {/* Cabecera y saludo según la hora (20-nov-2026), igual que en las cafeterías. */}
+      <CabeceraSede sede="Atelier" ultimoRegistro={null}>
+        {!comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo={false} negocio="atelier" onChange={comoAdmin.cambiar} />}
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          aria-label="Mes"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
+        />
+        <button
+          onClick={() => setShowRotacion(true)}
+          className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-dark"
+        >
+          <Upload className="w-3.5 h-3.5" /> Subir reportes de Byte
+        </button>
+      </CabeceraSede>
+      <BannerSaludo nombre={nombre} bajada="Registra el día, revisa tus acuerdos y tareas, y lo que sale hacia las cafeterías." />
 
       {/* Lo primero del panel: las tareas del administrador. El Highlight está archivado desde el
           20-nov-2026 (nadie lo usaba); si la dirección lo reactiva, vuelve a ir arriba de todo. */}
