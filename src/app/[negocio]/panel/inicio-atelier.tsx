@@ -9,6 +9,7 @@
 import { useMemo } from "react";
 import { BarChart3, CalendarRange, Coins, HandCoins, Package, Receipt, Trash2, TrendingUp } from "lucide-react";
 import type { AtelierDaily, AtelierPanelData } from "@/app/actions/byte-ventas";
+import type { CobranzaEnvios } from "@/app/actions/cobranza-envios";
 import { monthLabel } from "@/lib/utils";
 import { EnlaceVer, Kpi, Pastilla, TarjetaInicio, Variacion, diaLargo, ir, soles, solesCorto } from "./inicio-ui";
 
@@ -16,7 +17,8 @@ const ticketDe = (d: AtelierDaily) => (d.venta !== null && (d.pedidos ?? 0) > 0 
 const promedio = (xs: number[]) => (xs.length ? xs.reduce((t, x) => t + x, 0) / xs.length : null);
 
 /** Las cifras del último día registrado contra el promedio del mes. */
-export function KpisDelDiaAtelier({ dailies, porCobrar }: { dailies: AtelierDaily[]; porCobrar: number | null }) {
+/** `cobranza`: lo que le deben a Atelier según Finanzas de Yayi's Envíos (undefined = cargando, null = no se pudo leer). */
+export function KpisDelDiaAtelier({ dailies, cobranza }: { dailies: AtelierDaily[]; cobranza: CobranzaEnvios | null | undefined }) {
   const conVenta = useMemo(() => [...dailies].filter((d) => d.venta !== null).sort((a, b) => a.date.localeCompare(b.date)), [dailies]);
   const ultimo = conVenta.at(-1) ?? null;
 
@@ -60,8 +62,20 @@ export function KpisDelDiaAtelier({ dailies, porCobrar }: { dailies: AtelierDail
           {mermasPct === null ? <Pastilla tono="neutro">Sin dato</Pastilla>
             : <Pastilla tono="neutro">{mermasPct.toLocaleString("es-PE", { maximumFractionDigits: 1 })}% de la venta</Pastilla>}
         </Kpi>
-        <Kpi icono={HandCoins} ancho="ultimo" fondo="bg-sky-50 text-sky-600" titulo="Te deben los clientes" valor={porCobrar !== null ? solesCorto(porCobrar) : "—"}>
-          <button type="button" onClick={() => ir("cuentas-por-cobrar")} className="text-xs font-medium text-primary-light hover:text-primary">Ver cuentas por cobrar</button>
+        <Kpi icono={HandCoins} ancho="ultimo" fondo="bg-sky-50 text-sky-600" titulo="Te deben"
+          valor={cobranza ? solesCorto(cobranza.total) : cobranza === undefined ? <span className="inline-block h-6 w-24 animate-pulse rounded bg-gray-200" aria-label="Cargando" /> : "—"}>
+          {cobranza ? (
+            <>
+              <ul className="w-full space-y-0.5 text-xs text-gray-600 xl:text-[11px] 2xl:text-xs">
+                {cobranza.sedes.map((s) => (
+                  <li key={s.sede} className="flex justify-between gap-2"><span>{s.nombre}</span><span className="whitespace-nowrap tabular-nums text-gray-900">{soles(s.saldo)}</span></li>
+                ))}
+                <li className="flex justify-between gap-2" title={`${cobranza.b2b.clientes} clientes B2B`}><span>B2B ({cobranza.b2b.clientes})</span><span className="whitespace-nowrap tabular-nums text-gray-900">{soles(cobranza.b2b.saldo)}</span></li>
+              </ul>
+              {cobranza.masDe30 > 0 && <p className="text-xs font-medium text-red-600"><span className="whitespace-nowrap">{soles(cobranza.masDe30)}</span> a más de 30 días</p>}
+              <a href={cobranza.urlFinanzas} target="_blank" rel="noopener noreferrer" className="inline-block text-xs font-medium text-primary-light hover:text-primary">Según Finanzas de Envíos ↗</a>
+            </>
+          ) : cobranza === null ? <p className="text-xs text-gray-500">No pude leer Finanzas de Envíos.</p> : null}
         </Kpi>
       </div>
     </TarjetaInicio>
