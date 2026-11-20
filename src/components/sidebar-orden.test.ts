@@ -35,7 +35,9 @@ describe("menú lateral", () => {
     for (const sede of ["fonavi", "centro"] as const) expect(segmentos(sede).slice(-2)).toEqual(["registro", "configuracion"]);
     expect(segmentos("atelier").slice(-4)).toEqual(["registro", "fonavi", "prestamos-socio", "configuracion"]);
     expect(MENU.atelier.map((s) => s.titulo)).not.toContain("Clientes");
-    expect(segmentos("centro")).toHaveLength(8);
-    expect(segmentos("atelier")).toHaveLength(11);
+    expect(segmentos("centro")).toHaveLength(9);
+    expect(segmentos("atelier")).toHaveLength(12);
+    // Proveedores, junto al Panel de Sede (20-nov-2026).
+    for (const sede of ["fonavi", "centro", "atelier"] as const) expect(segmentos(sede)[2]).toBe("panel/proveedores");
   });
 });
