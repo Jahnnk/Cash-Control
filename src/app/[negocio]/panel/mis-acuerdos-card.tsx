@@ -36,12 +36,11 @@ export type Datos = { hoy: string; yo: YoSesion; acuerdos: Acuerdo[] };
 /** Cuántas tareas se muestran siempre, sin abrir nada. */
 const PROXIMAS = 3;
 
-/** `comoAdmin`: «Ver como administrador» — la dirección ve las tareas del administrador de esta sede. */
-export function MisAcuerdosCard({ comoAdmin = false }: { comoAdmin?: boolean }) {
+/** Carga «mis acuerdos» (o los del administrador de la sede con `comoAdmin`). Lo usan esta tarjeta y el tablero de inicio. */
+export function useMisAcuerdos(comoAdmin: boolean) {
   const { negocio } = useParams<{ negocio: string }>();
   const [d, setD] = useState<Datos | null>(null);
   const [cargado, setCargado] = useState(false);
-
   const cargar = useCallback(async () => {
     const r = await getMisAcuerdos(comoAdmin ? negocio : undefined);
     setD(r.ok ? { hoy: r.hoy, yo: r.yo, acuerdos: r.acuerdos } : null);
@@ -52,11 +51,16 @@ export function MisAcuerdosCard({ comoAdmin = false }: { comoAdmin?: boolean }) 
     void cargar();
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [cargar]);
+  return { datos: d, cargado, recargar: cargar };
+}
 
+/** `comoAdmin`: «Ver como administrador» — la dirección ve las tareas del administrador de esta sede. */
+export function MisAcuerdosCard({ comoAdmin = false }: { comoAdmin?: boolean }) {
+  const { datos, cargado, recargar } = useMisAcuerdos(comoAdmin);
   // Mientras carga se reserva el alto: el resto del panel no salta cuando aparece la tarjeta.
   if (!cargado) return <div className="rounded-2xl border border-gray-200/80 bg-white h-56 animate-pulse" aria-hidden />;
-  if (!d) return null;
-  return <MisAcuerdosVista datos={d} onCambio={() => void cargar()} />;
+  if (!datos) return null;
+  return <MisAcuerdosVista datos={datos} onCambio={() => void recargar()} />;
 }
 
 /** La tarjeta ya con sus datos (separada de la carga para poder verla con datos de prueba). */
@@ -206,7 +210,7 @@ const BORDE_ALERTA: Record<Alerta | "normal", string> = {
 const PASTILLA_ALERTA = { nuevo: "bg-sky-50 text-sky-700" } as const;
 
 /** Una tarea de «Lo próximo»: grande, con su aviso, el plazo en palabras y el estado a un toque. */
-function TareaProxima({ a, yo, hoy, onAbrir, onCambio }: { a: Acuerdo; yo: YoSesion; hoy: string; onAbrir: () => void; onCambio: () => void }) {
+export function TareaProxima({ a, yo, hoy, onAbrir, onCambio, compacta = false }: { a: Acuerdo; yo: YoSesion; hoy: string; onAbrir: () => void; onCambio: () => void; compacta?: boolean }) {
   const { cambiar, ocupado } = useCambiarEstado(onCambio);
   const alerta = alertaDe(a, hoy);
   const d = diasRestantes(a.fechaLimite, hoy);
@@ -215,11 +219,11 @@ function TareaProxima({ a, yo, hoy, onAbrir, onCambio }: { a: Acuerdo; yo: YoSes
   return (
     <li>
       <div role="button" tabIndex={0} onClick={onAbrir} onKeyDown={(e) => { if (e.key === "Enter") onAbrir(); }}
-        className={`group flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 rounded-xl border border-gray-200/80 border-l-4 ${BORDE_ALERTA[alerta ?? "normal"]} bg-white px-3 py-3 sm:px-4 cursor-pointer transition hover:shadow-md hover:border-gray-300 focus-visible:outline-2 focus-visible:outline-primary`}>
+        className={`group flex ${compacta ? "items-center gap-3 px-3 py-2.5" : "flex-col sm:flex-row sm:items-center gap-2 sm:gap-4 px-3 py-3 sm:px-4"} rounded-xl border border-gray-200/80 border-l-4 ${BORDE_ALERTA[alerta ?? "normal"]} bg-white cursor-pointer transition hover:shadow-md hover:border-gray-300 focus-visible:outline-2 focus-visible:outline-primary`}>
         <div className="min-w-0 flex-1">
           <div className="flex items-start gap-2">
             {a.prioridad === "alta" && <span className="mt-0.5"><PrioridadIcono p="alta" /></span>}
-            <p className="text-[15px] font-medium text-gray-900 leading-snug line-clamp-2 break-words">{a.que}</p>
+            <p className={`${compacta ? "text-sm" : "text-[15px]"} font-medium text-gray-900 leading-snug line-clamp-2 break-words`}>{a.que}</p>
           </div>
           <div className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs">
             {/* Vencida, hoy y mañana ya los dice el plazo en palabras; la pastilla solo marca lo nuevo. */}
@@ -227,10 +231,10 @@ function TareaProxima({ a, yo, hoy, onAbrir, onCambio }: { a: Acuerdo; yo: YoSes
             <span className={`inline-flex items-center gap-1 ${colorPlazo}`}><CalendarClock className="w-3.5 h-3.5" aria-hidden />{plazo.replace(/^./, (c) => c.toUpperCase())}</span>
             <AreaTag area={a.area} />
             {a.comentarios > 0 && <span className="inline-flex items-center gap-0.5 text-gray-400"><MessageSquare className="w-3 h-3" aria-hidden />{a.comentarios}</span>}
-            {a.reunionTitulo && <span className="text-gray-400 truncate max-w-[14rem]">· {a.reunionTitulo}</span>}
+            {a.reunionTitulo && !compacta && <span className="text-gray-400 truncate max-w-[14rem]">· {a.reunionTitulo}</span>}
           </div>
         </div>
-        <span className="block w-full sm:w-[120px] h-9 sm:shrink-0 rounded-lg overflow-hidden">
+        <span className={`block rounded-lg overflow-hidden ${compacta ? "w-[104px] h-8 shrink-0" : "w-full sm:w-[120px] h-9 sm:shrink-0"}`}>
           <EstadoCelda estado={a.estado} puede={puede(yoPara(yo, a, true), a, "avanzar")} ocupado={ocupado === a.id} onCambiar={(n) => void cambiar(a, n)} />
         </span>
       </div>

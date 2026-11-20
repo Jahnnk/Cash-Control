@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  Trophy, Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag, Pencil, ClipboardList, Settings2,
+  Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag, Pencil, ClipboardList, Settings2,
 } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import {
@@ -16,7 +16,11 @@ import {
   type UpsellCandidate,
   type DashboardDaily,
 } from "@/app/actions/incentives";
-import { saveDailyKpis } from "@/app/actions/kpis";
+import { saveDailyKpis, getWeeklyKpis } from "@/app/actions/kpis";
+import { getNombreSaludo } from "@/app/actions/panel-vista";
+import { weekStartOf, type KpiTargets } from "@/lib/kpis/engine";
+import { BannerSaludo, CabeceraSede, EvolucionVentas, KpisDelDia, TicketIncentivos } from "./inicio-ui";
+import { AcuerdosEnInicio } from "./acuerdos-tablero";
 import { useToast } from "@/components/toast-provider";
 import { ImportControlModal } from "./import-control-modal";
 import { KpisWeekSection } from "./kpis-week";
@@ -26,13 +30,11 @@ import { MejorVendedorSection } from "./mejor-vendedor-section";
 import { BaseModal } from "./base-modal";
 import { AtelierPanel } from "./atelier-panel";
 import { HighlightSlot } from "./highlight-card";
-import { MisAcuerdosCard } from "./mis-acuerdos-card";
 import { BarraComoAdmin, useComoAdmin } from "./ver-como-admin";
 import { DiasNoOperativosCard } from "./dias-no-operativos-card";
 import { ProponerHighlight } from "./proponer-highlight";
 import { useHighlightActivo } from "./use-highlight-activo";
 import { TuSemana } from "./tu-semana";
-import { Proposito } from "@/components/proposito";
 import { ShareSummary } from "./share-summary";
 import { VentasImportModal } from "./ventas-import-modal";
 import { BonoDelMesCard } from "./bono-del-mes-card";
@@ -101,6 +103,17 @@ function IncentivosPage() {
   // «Ver como administrador» (19-nov-2026): la dirección ve el panel tal cual lo ve el admin de la sede.
   const comoAdmin = useComoAdmin();
   const highlightActivo = useHighlightActivo();
+  // Inicio (20-nov-2026): a quién saluda y las metas de los KPIs del día.
+  const [nombre, setNombre] = useState<string | null>(null);
+  const [metas, setMetas] = useState<KpiTargets | null>(null);
+  useEffect(() => {
+    let vivo = true;
+    void getNombreSaludo(comoAdmin.activo ? params.negocio : undefined).then((n) => { if (vivo) setNombre(n); });
+    return () => { vivo = false; };
+  }, [comoAdmin.activo, params.negocio]);
+  useEffect(() => {
+    void getWeeklyKpis(weekStartOf(todayLima())).then((r) => { if (r.ok) setMetas(r.targets); });
+  }, [weekRefresh]);
 
   const load = useCallback(async (m: string) => {
     setLoading(true);
@@ -237,57 +250,57 @@ function IncentivosPage() {
   return (
     <div className="space-y-6">
       {comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo negocio={params.negocio} onChange={comoAdmin.cambiar} />}
-      {/* Cabecera: el título y lo que se sube (UX, 8-oct-2026: antes quedaba en medio de la página). */}
-      <div className="space-y-1.5">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="text-xl font-bold text-gray-900 flex items-center gap-2">
-              <Trophy className="w-5 h-5 text-primary" />
-              Panel de Sede
-            </h1>
-          </div>
-          <div className="flex flex-wrap items-center gap-2">
-            <input
-              type="month"
-              value={month}
-              onChange={(e) => setMonth(e.target.value)}
-              className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
-            />
-            {!comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo={false} negocio={params.negocio} onChange={comoAdmin.cambiar} />}
-            {data && !vistaAdmin && (
-              <button
-                onClick={() => setShowLiquidation(true)}
-                className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
-                title="Liquidación del mes: congela el resultado y genera el acta de pago (solo dirección)"
-              >
-                🔒 Liquidación
-              </button>
-            )}
-            <button
-              onClick={() => setShowVentas(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
-              title="Reporte semanal de Ventas de Byte — alimenta el acumulado del mes y los comparativos del deck"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Ventas Byte
-            </button>
-            <button
-              onClick={() => setShowImport(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
-            >
-              <Upload className="w-3.5 h-3.5" />
-              Subir reportes de Byte
-            </button>
-          </div>
-        </div>
-        {/* Nuestro propósito: para recordar por qué hacemos lo que hacemos (13-oct-2026). */}
-        <Proposito />
-      </div>
+      {/* Cabecera: la sede, la fecha y lo que se sube; debajo, el saludo según la hora (20-nov-2026). */}
+      <CabeceraSede sede={sedeLabel} ultimoRegistro={data ? [...data.dailies].filter((d) => d.revenue !== null).map((d) => d.date).sort().at(-1) ?? null : null}>
+        <input
+          type="month"
+          value={month}
+          onChange={(e) => setMonth(e.target.value)}
+          aria-label="Mes"
+          className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
+        />
+        {!comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo={false} negocio={params.negocio} onChange={comoAdmin.cambiar} />}
+        {data && !vistaAdmin && (
+          <button
+            onClick={() => setShowLiquidation(true)}
+            className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
+            title="Liquidación del mes: congela el resultado y genera el acta de pago (solo dirección)"
+          >
+            🔒 Liquidación
+          </button>
+        )}
+        <button
+          onClick={() => setShowVentas(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
+          title="Reporte semanal de Ventas de Byte — alimenta el acumulado del mes y los comparativos del deck"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          Ventas Byte
+        </button>
+        <button
+          onClick={() => setShowImport(true)}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg"
+        >
+          <Upload className="w-3.5 h-3.5" />
+          Subir reportes de Byte
+        </button>
+      </CabeceraSede>
+      <BannerSaludo nombre={nombre} bajada="Registra tus KPIs, revisa tus acuerdos, tu ticket promedio y el plan de incentivos." />
 
       {/* Lo primero del panel: las tareas del administrador. El Highlight está archivado desde el
           20-nov-2026 (nadie lo usaba); si la dirección lo reactiva, vuelve a ir arriba de todo. */}
       {highlightActivo && <HighlightSlot comoAdmin={comoAdmin.activo} />}
-      <MisAcuerdosCard key={comoAdmin.activo ? "admin" : "yo"} comoAdmin={comoAdmin.activo} />
+
+      {/* Inicio (20-nov-2026): KPIs del día → ventas, acuerdos y tareas → ticket e incentivos. Solo ordena lo que
+          ya existía: el detalle de cada cosa sigue más abajo. */}
+      {data ? <KpisDelDia dailies={data.dailies} targets={metas} ticketBase={data.config.ticketBase} />
+        : loading ? <div className="rounded-2xl border border-gray-200/80 bg-white h-40 animate-pulse" aria-hidden /> : null}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4">
+        {data ? <EvolucionVentas className="md:col-span-2 xl:col-span-5" dailies={data.dailies} metaDiaria={metas?.ventaDiaria ?? null} />
+          : <div className="md:col-span-2 xl:col-span-5 rounded-2xl border border-gray-200/80 bg-white h-72 animate-pulse" aria-hidden />}
+        <AcuerdosEnInicio key={comoAdmin.activo ? "admin" : "yo"} comoAdmin={comoAdmin.activo} />
+      </div>
+      {data && <TicketIncentivos data={data} month={month} />}
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso vas y qué sigue, estilo pedido de
           delivery. El registro del día y la rutina del sábado quedan como su detalle. */}
@@ -304,7 +317,7 @@ function IncentivosPage() {
 
       {/* Tu bono de este mes: los 3 activadores (ticket, ventas, supervisiones), después de lo
           que hay que hacer hoy. */}
-      {data && <BonoDelMesCard data={data} month={month} />}
+      {data && <div id="bono-del-mes" className="scroll-mt-4"><BonoDelMesCard data={data} month={month} /></div>}
 
       {/* «Cargando…» solo la primera vez: al volver a leer tras guardar o detallar mermas, la pantalla no se vacía (se perdía el toque en «Guardar» y salía hasta el 2.º intento). */}
       {loading && !data ? (
@@ -491,7 +504,7 @@ function IncentivosPage() {
           </div>
 
           {/* 4b · KPIs de la semana (reemplaza el cuadro de Notion) */}
-          <KpisWeekSection key={weekRefresh} fullSession={!vistaAdmin} />
+          <div id="kpis-semana" className="scroll-mt-4"><KpisWeekSection key={weekRefresh} fullSession={!vistaAdmin} /></div>
 
           {/* ── Lo de consulta, plegado (UX, 8-oct-2026): se abre cuando se necesita. ── */}
           <SeccionDesplegable
