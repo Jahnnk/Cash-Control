@@ -14,20 +14,25 @@ import { requireFullSession } from "@/lib/session-access";
 import { leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
 import { ARCHIVO_SISTEMA, type PrecioVigente } from "@/lib/productos/precios-vigentes";
 import type { AporteInsumo } from "@/lib/productos/desglose-insumos";
+import { mejoresPorInsumo } from "@/lib/proveedores-sql";
+import type { MejorProveedor } from "@/lib/proveedores";
 
 const sql = neon(process.env.DATABASE_URL!);
 
 export type InsumoConUso = PrecioVigente & {
   /** Productos de la carta de las cafeterías que lo llevan (por su desglose). */
   usos: string[];
+  /** El mejor precio de Proveedores para este insumo, ya en su unidad (null = no está conectado o sin precio). */
+  proveedor: MejorProveedor | null;
 };
 
 export async function getPreciosInsumos(): Promise<{ ok: true; insumos: InsumoConUso[] } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
   try {
-    const [{ vigentes }, carta] = await Promise.all([
+    const [{ vigentes }, carta, mejores] = await Promise.all([
       leerPreciosVigentes(sql),
       (sql`SELECT ref, COALESCE(nombre_carta, nombre) AS nombre, desglose FROM costos_carta WHERE desglose IS NOT NULL` as unknown as Promise<{ ref: string; nombre: string; desglose: AporteInsumo[] }[]>).catch(() => []),
+      mejoresPorInsumo(sql).catch(() => new Map()),
     ]);
     const usos = new Map<string, Set<string>>();
     for (const c of carta) {
@@ -38,7 +43,11 @@ export async function getPreciosInsumos(): Promise<{ ok: true; insumos: InsumoCo
         usos.set(k, (usos.get(k) ?? new Set()).add(c.nombre));
       }
     }
-    return { ok: true, insumos: vigentes.map((v) => ({ ...v, usos: [...(usos.get(`${v.origen}|${v.sku.toUpperCase()}`) ?? [])].sort((a, b) => a.localeCompare(b, "es")) })) };
+    return { ok: true, insumos: vigentes.map((v) => ({
+      ...v,
+      usos: [...(usos.get(`${v.origen}|${v.sku.toUpperCase()}`) ?? [])].sort((a, b) => a.localeCompare(b, "es")),
+      proveedor: mejores.get(`${v.origen}|${v.sku.toUpperCase()}`) ?? null,
+    })) };
   } catch (e) {
     console.error("[getPreciosInsumos] failed:", e);
     return { ok: false, error: "No se pudieron leer los precios." };

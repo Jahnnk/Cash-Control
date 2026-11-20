@@ -11,6 +11,10 @@ import { neon } from "@neondatabase/serverless";
 import { getSessionRole } from "@/lib/session-access";
 import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
+import { leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
+import { factorInsumo, mejorParaInsumo, unidadDesdeInsumo, type OrigenInsumo, type UnidadInsumo } from "@/lib/proveedores";
+import { leerEnlaces, leerOfertas, type EnlaceInsumo } from "@/lib/proveedores-sql";
+import { guardarPrecioInsumo } from "./precios-insumos";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -49,10 +53,17 @@ export type PrecioRegistrado = {
   registradoPor: string;
 };
 
+/** Un insumo de Recetas y costos con su precio vigente (por kg, litro o unidad). */
+export type InsumoReceta = { origen: OrigenInsumo; sku: string; nombre: string; unidad: UnidadInsumo; precio: number };
+
 export type DatosProveedores = {
   hoy: string;
   sedeId: number;
   puedeEditar: boolean;
+  /** Solo la dirección pasa un precio de proveedor al costo de Recetas. */
+  puedeCambiarRecetas: boolean;
+  insumos: InsumoReceta[];
+  enlaces: EnlaceInsumo[];
   proveedores: Proveedor[];
   productos: ProductoComparable[];
   /** Todo el historial; el vigente de cada (proveedor, producto) es el último. */
@@ -73,11 +84,11 @@ function errorBD(donde: string, e: unknown): { ok: false; error: string } {
 }
 
 /** Quién usa el módulo: la dirección o el administrador de una sede. */
-async function sesion(): Promise<{ nombre: string; sedeFija: number | null } | null> {
+async function sesion(): Promise<{ nombre: string; sedeFija: number | null; direccion: boolean } | null> {
   const role = await getSessionRole();
   if (!role) return null;
-  if (role.kind === "full") return { nombre: role.quien === "kelly" ? "Kelly" : "Jahnn", sedeFija: null };
-  if (role.kind === "admin") return { nombre: role.nombre ?? "Administración", sedeFija: role.sede };
+  if (role.kind === "full") return { nombre: role.quien === "kelly" ? "Kelly" : "Jahnn", sedeFija: null, direccion: true };
+  if (role.kind === "admin") return { nombre: role.nombre ?? "Administración", sedeFija: role.sede, direccion: false };
   return null;
 }
 
@@ -86,7 +97,7 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
   if (!s) return SIN_ACCESO;
   try {
     const sedeId = s.sedeFija ?? (await activeBusinessId());
-    const [provs, prods, precios] = await Promise.all([
+    const [provs, prods, precios, { vigentes: insumosVig }, enlaces] = await Promise.all([
       sql`SELECT id, nombre, tipo, rubro, contacto, telefono, telefono2, email, direccion, ciudad, notas, sedes,
                  costo_envio::float AS "costoEnvio", pedido_minimo::float AS "pedidoMinimo",
                  COALESCE(actualizado_por, creado_por) AS "actualizadoPor",
@@ -99,11 +110,15 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
           JOIN proveedores p ON p.id = pp.proveedor_id AND p.activo
           JOIN proveedor_productos x ON x.id = pp.producto_id AND x.activo
           ORDER BY fecha, pp.id`,
+      leerPreciosVigentes(sql),
+      leerEnlaces(sql),
     ]);
     return {
       ok: true,
       datos: {
-        hoy: getToday(), sedeId, puedeEditar: true,
+        hoy: getToday(), sedeId, puedeEditar: true, puedeCambiarRecetas: s.direccion,
+        insumos: insumosVig.map((v) => ({ origen: v.origen, sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio })),
+        enlaces,
         proveedores: provs as Proveedor[], productos: prods as ProductoComparable[], precios: precios as PrecioRegistrado[],
       },
     };
@@ -186,6 +201,8 @@ export type EntradaPrecio = {
   productoId?: number | null;
   /** …o uno nuevo para comparar. */
   productoNuevo?: { nombre: string; unidad: string } | null;
+  /** …o un insumo de Recetas: se crea el producto con su nombre y unidad, ya conectado. */
+  desdeInsumo?: { origen: OrigenInsumo; sku: string } | null;
   presentacion: string;
   cantidad: number;
   precio: number;
@@ -203,6 +220,11 @@ export async function registrarPrecio(e: EntradaPrecio): Promise<R<{ productoId:
   if (!/^\d{4}-\d{2}-\d{2}$/.test(e.fecha) || e.fecha > getToday()) return { ok: false, error: "La fecha no puede ser futura." };
   try {
     let productoId = e.productoId ?? null;
+    if (!productoId && e.desdeInsumo) {
+      const r = await productoDesdeInsumo(e.desdeInsumo.origen, e.desdeInsumo.sku, s.nombre);
+      if (!r.ok) return r;
+      productoId = r.productoId;
+    }
     if (!productoId) {
       const nombre = limpio(e.productoNuevo?.nombre, 100);
       const unidad = limpio(e.productoNuevo?.unidad, 30)?.toLowerCase() ?? null;
@@ -221,5 +243,82 @@ export async function registrarPrecio(e: EntradaPrecio): Promise<R<{ productoId:
     return { ok: true, productoId };
   } catch (err) {
     return errorBD("precio", err);
+  }
+}
+
+async function insumoVigente(origen: OrigenInsumo, sku: string) {
+  const { vigentes } = await leerPreciosVigentes(sql);
+  return vigentes.find((v) => v.origen === origen && v.sku === sku) ?? null;
+}
+
+/** El producto conectado a ese insumo; si no existe, lo crea con el nombre y la unidad del insumo. */
+async function productoDesdeInsumo(origen: OrigenInsumo, sku: string, quien: string): Promise<R<{ productoId: number }>> {
+  const ins = await insumoVigente(origen, sku);
+  if (!ins) return { ok: false, error: "No encontré ese insumo en Recetas y costos." };
+  const ya = (await sql`SELECT e.producto_id AS id FROM proveedor_producto_insumos e JOIN proveedor_productos p ON p.id = e.producto_id AND p.activo
+                        WHERE e.origen = ${origen} AND e.sku = ${sku} LIMIT 1`) as { id: number }[];
+  if (ya[0]) return { ok: true, productoId: ya[0].id };
+  const unidad = unidadDesdeInsumo(ins.unidad);
+  const existe = (await sql`SELECT id FROM proveedor_productos WHERE activo AND lower(nombre) = lower(${ins.nombre}) AND lower(unidad) = ${unidad}`) as { id: number }[];
+  const productoId = existe[0]?.id ?? ((await sql`
+    INSERT INTO proveedor_productos (nombre, unidad, creado_por) VALUES (${ins.nombre}, ${unidad}, ${quien}) RETURNING id`) as { id: number }[])[0].id;
+  await sql`INSERT INTO proveedor_producto_insumos (producto_id, origen, sku, factor, creado_por)
+            VALUES (${productoId}, ${origen}, ${sku}, 1, ${quien})
+            ON CONFLICT (producto_id, origen) DO UPDATE SET sku = EXCLUDED.sku, factor = EXCLUDED.factor, creado_por = EXCLUDED.creado_por, creado_el = now()`;
+  return { ok: true, productoId };
+}
+
+/** Conectar un producto de Proveedores con un insumo de Recetas (uno por lista: Atelier y cafeterías). */
+export async function conectarInsumo(input: { productoId: number; origen: OrigenInsumo; sku: string }): Promise<R<object>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  if (input.origen !== "Atelier" && input.origen !== "Cafetería") return { ok: false, error: "Lista de insumos inválida." };
+  try {
+    const prod = (await sql`SELECT unidad FROM proveedor_productos WHERE id = ${input.productoId} AND activo`) as { unidad: string }[];
+    if (!prod[0]) return { ok: false, error: "No encontré ese producto." };
+    const ins = await insumoVigente(input.origen, input.sku);
+    if (!ins) return { ok: false, error: "No encontré ese insumo en Recetas y costos." };
+    const factor = factorInsumo(prod[0].unidad, ins.unidad);
+    if (factor === null) return { ok: false, error: `No se pueden comparar: el producto se mide por ${prod[0].unidad} y el insumo por ${ins.unidad}.` };
+    await sql`INSERT INTO proveedor_producto_insumos (producto_id, origen, sku, factor, creado_por)
+              VALUES (${input.productoId}, ${input.origen}, ${input.sku}, ${factor}, ${s.nombre})
+              ON CONFLICT (producto_id, origen) DO UPDATE SET sku = EXCLUDED.sku, factor = EXCLUDED.factor, creado_por = EXCLUDED.creado_por, creado_el = now()`;
+    return { ok: true };
+  } catch (err) {
+    return errorBD("conectar", err);
+  }
+}
+
+export async function desconectarInsumo(input: { productoId: number; origen: OrigenInsumo }): Promise<R<object>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  try {
+    await sql`DELETE FROM proveedor_producto_insumos WHERE producto_id = ${input.productoId} AND origen = ${input.origen}`;
+    return { ok: true };
+  } catch (err) {
+    return errorBD("desconectar", err);
+  }
+}
+
+/**
+ * «Usar en Recetas»: el costo del insumo pasa a ser el mejor precio de proveedor (de las sedes que compran ese
+ * insumo), en su unidad. Solo la dirección: mueve el costo de todos los productos que lo llevan.
+ */
+export async function usarPrecioEnRecetas(input: { productoId: number; origen: OrigenInsumo }): Promise<R<{ precio: number; insumo: string }>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  if (!s.direccion) return { ok: false, error: "Solo la dirección cambia el costo de Recetas." };
+  try {
+    const e = (await leerEnlaces(sql)).find((x) => x.productoId === input.productoId && x.origen === input.origen);
+    if (!e) return { ok: false, error: "Ese producto no está conectado con un insumo." };
+    const { proveedores, ofertas } = await leerOfertas(sql);
+    const mejor = mejorParaInsumo(ofertas, proveedores, e.productoId, e.origen, e.factor);
+    if (!mejor) return { ok: false, error: "Ningún proveedor de esas sedes tiene precio para este producto." };
+    const r = await guardarPrecioInsumo({ origen: e.origen, sku: e.sku, precio: mejor.precioInsumo });
+    if (!r.ok) return r;
+    const ins = await insumoVigente(e.origen, e.sku);
+    return { ok: true, precio: mejor.precioInsumo, insumo: ins?.nombre ?? e.sku };
+  } catch (err) {
+    return errorBD("usar", err);
   }
 }

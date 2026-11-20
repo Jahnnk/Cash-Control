@@ -10,15 +10,16 @@
 
 import { useMemo, useState, type ReactNode } from "react";
 import {
-  AlertTriangle, ArrowLeftRight, BadgeCheck, Building2, ChevronDown, History, Mail, MapPin, MessageCircle, Pencil, Phone, Plus,
+  AlertTriangle, ArrowLeftRight, BadgeCheck, BookOpen, Link2, Loader2, Unlink, Building2, ChevronDown, History, Mail, MapPin, MessageCircle, Pencil, Phone, Plus,
   Search, ShoppingBasket, Sparkles, Store, Tag, Truck, Wrench, X,
 } from "lucide-react";
-import type { DatosProveedores, Proveedor, ProductoComparable, PrecioRegistrado } from "@/app/actions/proveedores";
+import { desconectarInsumo, usarPrecioEnRecetas, type DatosProveedores, type Proveedor, type ProductoComparable, type PrecioRegistrado } from "@/app/actions/proveedores";
+import { useToast } from "@/components/toast-provider";
 import {
-  SEDES, plural, armarPedido, compararProducto, dondeComprar, enlaceTelefono, enlaceWhatsApp, vigentes, type ItemPedido, type ProveedorCompra,
+  SEDES, plural, armarPedido, compararProducto, mejorParaInsumo, dondeComprar, enlaceTelefono, enlaceWhatsApp, vigentes, type ItemPedido, type ProveedorCompra,
 } from "@/lib/proveedores";
 import { Segmentado } from "@/components/productos/ui";
-import { ProveedorModal, PrecioModal, type PrecioInicial } from "./formularios";
+import { ConectarModal, ProveedorModal, PrecioModal, type PrecioInicial } from "./formularios";
 
 const soles = (n: number, dec = 2) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
 /** Por unidad: hasta 4 decimales (una hoja cuesta centavos), sin ceros de más. */
@@ -41,6 +42,7 @@ export function ProveedoresVista({ datos, sedeLabel, onCambio }: { datos: DatosP
   const [editando, setEditando] = useState<Proveedor | "nuevo" | null>(null);
   const [precio, setPrecio] = useState<PrecioInicial | null>(null);
   const [todasLasSedes, setTodasLasSedes] = useState(false);
+  const [conectando, setConectando] = useState<ProductoComparable | null>(null);
 
   const visibles = useMemo(
     () => datos.proveedores.filter((p) => todasLasSedes || p.sedes.includes(datos.sedeId)),
@@ -97,7 +99,7 @@ export function ProveedoresVista({ datos, sedeLabel, onCambio }: { datos: DatosP
       )}
       {pestana === "comparar" && (
         <Comparar datos={datos} compra={compra} ofertas={ofertas} donde={donde} productoPorId={productoPorId}
-          onPrecio={datos.puedeEditar ? setPrecio : undefined} />
+          onPrecio={datos.puedeEditar ? setPrecio : undefined} onConectar={setConectando} onCambio={onCambio} />
       )}
       {pestana === "pedido" && <ArmarPedido productos={datos.productos} ofertas={ofertas} compra={compra} />}
 
@@ -108,7 +110,12 @@ export function ProveedoresVista({ datos, sedeLabel, onCambio }: { datos: DatosP
       )}
       {precio && (
         <PrecioModal inicial={precio} proveedores={visibles.filter((p) => p.tipo === "proveedor")} productos={datos.productos} hoy={datos.hoy}
+          insumos={datos.insumos} enlaces={datos.enlaces} sedeId={datos.sedeId}
           onCerrar={() => setPrecio(null)} onGuardado={() => { setPrecio(null); onCambio(); }} />
+      )}
+      {conectando && (
+        <ConectarModal producto={conectando} insumos={datos.insumos} enlaces={datos.enlaces} sedeId={datos.sedeId}
+          onCerrar={() => setConectando(null)} onGuardado={() => { setConectando(null); onCambio(); }} />
       )}
     </div>
   );
@@ -234,9 +241,9 @@ function TarjetaContacto({ p, sedeId, mejores = [], onEditar }: { p: Proveedor; 
 
 /* ─────────── Comparar precios ─────────── */
 
-function Comparar({ datos, compra, ofertas, donde, productoPorId, onPrecio }: {
+function Comparar({ datos, compra, ofertas, donde, productoPorId, onPrecio, onConectar, onCambio }: {
   datos: DatosProveedores; compra: ProveedorCompra[]; ofertas: PrecioRegistrado[]; donde: Map<number, number[]>;
-  productoPorId: Map<number, ProductoComparable>; onPrecio?: (p: PrecioInicial) => void;
+  productoPorId: Map<number, ProductoComparable>; onPrecio?: (p: PrecioInicial) => void; onConectar: (p: ProductoComparable) => void; onCambio: () => void;
 }) {
   const [q, setQ] = useState("");
   const [historial, setHistorial] = useState<number | null>(null);
@@ -339,6 +346,7 @@ function Comparar({ datos, compra, ofertas, donde, productoPorId, onPrecio }: {
                 ))}
               </ul>
               {solo && <p className="mt-2 text-xs text-gray-500">Registra este producto en otro proveedor para poder comparar.</p>}
+              <EnRecetas producto={prod} datos={datos} onConectar={() => onConectar(prod)} onCambio={onCambio} />
               {hist.length > filas.length && (
                 <div className="mt-2">
                   <button type="button" onClick={() => setHistorial(abiertoHist ? null : prod.id)} aria-expanded={abiertoHist}
@@ -495,6 +503,86 @@ function Vacio({ icono: Icono, titulo, texto, children }: { icono: typeof Store;
       <p className="text-sm font-semibold text-gray-900">{titulo}</p>
       <p className="max-w-sm text-xs text-gray-500">{texto}</p>
       {children}
+    </div>
+  );
+}
+
+/* ─────────── El producto en Recetas y costos ─────────── */
+
+const pct = (n: number) => `${n > 0 ? "+" : ""}${n.toLocaleString("es-PE", { maximumFractionDigits: 0 })}%`;
+
+/**
+ * Si el producto es un insumo de Recetas: su costo allá contra el mejor precio de proveedor (de las sedes que
+ * compran ese insumo). La dirección lo pasa con «Usar en Recetas»; nunca se cambia solo.
+ */
+function EnRecetas({ producto, datos, onConectar, onCambio }: { producto: ProductoComparable; datos: DatosProveedores; onConectar: () => void; onCambio: () => void }) {
+  const { showToast } = useToast();
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const enlaces = datos.enlaces.filter((e) => e.productoId === producto.id);
+  const provs = datos.proveedores.filter((p) => p.tipo === "proveedor");
+  const ofertasTodas = useMemo(() => vigentes(datos.precios), [datos.precios]);
+
+  async function usar(origen: "Atelier" | "Cafetería", nombre: string, precio: number, ahora: number) {
+    if (!window.confirm(`El costo de «${nombre}» en Recetas pasa de S/ ${ahora} a S/ ${precio}. Cambia el costo de todos los productos que lo llevan. ¿Seguro?`)) return;
+    setOcupado(origen);
+    const r = await usarPrecioEnRecetas({ productoId: producto.id, origen });
+    setOcupado(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(`Recetas: «${r.insumo}» ahora cuesta S/ ${r.precio}. Los costos ya usan el precio nuevo.`, "success");
+    onCambio();
+  }
+  async function quitar(origen: "Atelier" | "Cafetería") {
+    setOcupado(origen);
+    const r = await desconectarInsumo({ productoId: producto.id, origen });
+    setOcupado(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    onCambio();
+  }
+
+  return (
+    <div className="mt-3 space-y-2 border-t border-gray-100 pt-3">
+      {enlaces.map((e) => {
+        const ins = datos.insumos.find((i) => i.origen === e.origen && i.sku === e.sku);
+        if (!ins) return null;
+        const mejor = mejorParaInsumo(ofertasTodas, provs, producto.id, e.origen, e.factor);
+        const dif = mejor && ins.precio > 0 ? ((mejor.precioInsumo - ins.precio) / ins.precio) * 100 : null;
+        const distinto = dif !== null && Math.abs(dif) >= 0.5;
+        return (
+          <div key={e.origen} className="rounded-xl bg-sky-50/70 px-3 py-2.5 text-xs text-sky-950">
+            <div className="flex items-start justify-between gap-2">
+              <p className="flex min-w-0 items-start gap-1.5">
+                <BookOpen className="mt-px h-3.5 w-3.5 shrink-0 text-sky-700" aria-hidden />
+                <span>
+                  <span className="font-semibold">Recetas · {e.origen === "Atelier" ? "Atelier" : "cafeterías"}:</span> {ins.nombre} cuesta{" "}
+                  <b className="whitespace-nowrap">{solesUnidad(ins.precio)}</b> por {ins.unidad}.
+                  {mejor ? (
+                    <> Mejor proveedor: <b className="whitespace-nowrap">{solesUnidad(mejor.precioInsumo)}</b> ({mejor.proveedor})
+                      {distinto && <span className={dif! < 0 ? " font-semibold text-emerald-700" : " font-semibold text-red-700"}> {pct(dif!)}</span>}.</>
+                  ) : <> Aún sin precio de un proveedor de {e.origen === "Atelier" ? "Atelier" : "las cafeterías"}.</>}
+                </span>
+              </p>
+              {datos.puedeEditar && (
+                <button type="button" onClick={() => void quitar(e.origen)} disabled={ocupado !== null} aria-label={`Quitar conexión con ${ins.nombre}`} title="Quitar conexión"
+                  className="shrink-0 rounded p-1 text-sky-700/60 hover:bg-sky-100 hover:text-sky-900"><Unlink className="h-3.5 w-3.5" /></button>
+              )}
+            </div>
+            {mejor && distinto && datos.puedeCambiarRecetas && (
+              <button type="button" disabled={ocupado !== null} onClick={() => void usar(e.origen, ins.nombre, mejor.precioInsumo, ins.precio)}
+                className="mt-2 inline-flex items-center gap-1.5 rounded-lg bg-sky-700 px-2.5 py-1.5 text-[11px] font-semibold text-white hover:bg-sky-800 disabled:opacity-60">
+                {ocupado === e.origen && <Loader2 className="h-3 w-3 animate-spin" aria-hidden />}Usar {solesUnidad(mejor.precioInsumo)} en Recetas
+              </button>
+            )}
+            {mejor && distinto && !datos.puedeCambiarRecetas && (
+              <p className="mt-1 text-[11px] text-sky-800/80">La dirección decide si pasa este precio a Recetas.</p>
+            )}
+          </div>
+        );
+      })}
+      {datos.puedeEditar && enlaces.length < 2 && (
+        <button type="button" onClick={onConectar} className="inline-flex items-center gap-1 text-xs font-medium text-sky-700 hover:text-sky-900">
+          <Link2 className="h-3.5 w-3.5" aria-hidden />{enlaces.length === 0 ? "Conectar con un insumo de Recetas" : "Conectar también con la otra lista de insumos"}
+        </button>
+      )}
     </div>
   );
 }

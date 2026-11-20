@@ -3,12 +3,13 @@
 /** Formularios de Proveedores: nuevo/editar contacto y registrar un precio. */
 
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { Loader2, Trash2, X } from "lucide-react";
+import { Check, Link2, Loader2, Search, Trash2, X } from "lucide-react";
 import {
-  archivarProveedor, guardarProveedor, registrarPrecio, type Proveedor, type ProductoComparable,
+  archivarProveedor, conectarInsumo, guardarProveedor, registrarPrecio, type InsumoReceta, type Proveedor, type ProductoComparable,
 } from "@/app/actions/proveedores";
+import type { EnlaceInsumo } from "@/lib/proveedores-sql";
 import { useToast } from "@/components/toast-provider";
-import { SEDES, plural, precioUnitario } from "@/lib/proveedores";
+import { SEDES, factorInsumo, plural, precioUnitario, unidadDesdeInsumo, type OrigenInsumo } from "@/lib/proveedores";
 
 const RUBROS_SUGERIDOS = [
   "Packaging", "Descartables", "Harinas e insumos", "Lácteos", "Café", "Frutas y verduras", "Bebidas", "Limpieza", "Gas",
@@ -18,7 +19,7 @@ const UNIDADES = ["unidad", "hoja", "kg", "g", "litro", "ml", "paquete", "rollo"
 
 const campo = "w-full rounded-lg border border-gray-300 bg-white px-3 py-2 text-sm focus:border-primary-light focus:outline-none focus:ring-2 focus:ring-primary-light/20";
 
-function Modal({ titulo, onCerrar, children, pie }: { titulo: string; onCerrar: () => void; children: ReactNode; pie: ReactNode }) {
+export function Modal({ titulo, onCerrar, children, pie }: { titulo: string; onCerrar: () => void; children: ReactNode; pie: ReactNode }) {
   const id = useId();
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onCerrar(); };
@@ -163,12 +164,13 @@ export function ProveedorModal({ inicial, sedeId, rubros, onCerrar, onGuardado }
 
 export type PrecioInicial = { proveedorId?: number; productoId?: number };
 
-export function PrecioModal({ inicial, proveedores, productos, hoy, onCerrar, onGuardado }: {
-  inicial: PrecioInicial; proveedores: Proveedor[]; productos: ProductoComparable[]; hoy: string; onCerrar: () => void; onGuardado: () => void;
+export function PrecioModal({ inicial, proveedores, productos, insumos, enlaces, sedeId, hoy, onCerrar, onGuardado }: {
+  inicial: PrecioInicial; proveedores: Proveedor[]; productos: ProductoComparable[]; insumos: InsumoReceta[]; enlaces: EnlaceInsumo[]; sedeId: number;
+  hoy: string; onCerrar: () => void; onGuardado: () => void;
 }) {
   const { showToast } = useToast();
   const [proveedorId, setProveedorId] = useState(inicial.proveedorId ? String(inicial.proveedorId) : "");
-  const [productoId, setProductoId] = useState(inicial.productoId ? String(inicial.productoId) : productos.length ? "" : "nuevo");
+  const [productoId, setProductoId] = useState(inicial.productoId ? String(inicial.productoId) : "");
   const [nuevoNombre, setNuevoNombre] = useState("");
   const [nuevaUnidad, setNuevaUnidad] = useState("unidad");
   const [presentacion, setPresentacion] = useState("");
@@ -180,7 +182,8 @@ export function PrecioModal({ inicial, proveedores, productos, hoy, onCerrar, on
   const unidadesId = useId();
 
   const prod = productos.find((p) => String(p.id) === productoId);
-  const unidad = productoId === "nuevo" ? nuevaUnidad || "unidad" : prod?.unidad ?? "unidad";
+  const insumoElegido = productoId.startsWith("i:") ? insumos.find((i) => `i:${i.origen}|${i.sku}` === productoId) ?? null : null;
+  const unidad = productoId === "nuevo" ? nuevaUnidad || "unidad" : insumoElegido ? unidadDesdeInsumo(insumoElegido.unidad) : prod?.unidad ?? "unidad";
   const c = numero(cantidad), pr = numero(precio);
   const unit = c && pr !== null ? precioUnitario({ cantidad: c, precio: pr }) : null;
 
@@ -189,8 +192,9 @@ export function PrecioModal({ inicial, proveedores, productos, hoy, onCerrar, on
     setOcupado(true);
     const r = await registrarPrecio({
       proveedorId: Number(proveedorId),
-      productoId: productoId && productoId !== "nuevo" ? Number(productoId) : null,
+      productoId: prod ? prod.id : null,
       productoNuevo: productoId === "nuevo" ? { nombre: nuevoNombre, unidad: nuevaUnidad } : null,
+      desdeInsumo: insumoElegido ? { origen: insumoElegido.origen, sku: insumoElegido.sku } : null,
       presentacion, cantidad: c ?? 0, precio: pr ?? -1, fecha, nota,
     });
     setOcupado(false);
@@ -216,13 +220,12 @@ export function PrecioModal({ inicial, proveedores, productos, hoy, onCerrar, on
               {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre} · {p.rubro}</option>)}
             </select>
           </Campo>
-          <Campo etiqueta="Producto *" ayuda="El mismo producto en todos los proveedores, para poder comparar.">
-            <select className={campo} value={productoId} onChange={(e) => setProductoId(e.target.value)}>
-              <option value="">Elige…</option>
-              {productos.map((p) => <option key={p.id} value={p.id}>{p.nombre} (por {p.unidad})</option>)}
-              <option value="nuevo">+ Otro producto (nuevo)</option>
-            </select>
-          </Campo>
+          <div>
+            <span className="mb-1 block text-xs font-medium text-gray-700">Producto *</span>
+            <SelectorProducto valor={productoId} onChange={setProductoId} productos={productos} insumos={insumos} enlaces={enlaces}
+              origenPrimero={sedeId === 1 ? "Atelier" : "Cafetería"} />
+            <span className="mt-1 block text-[11px] text-gray-500">El mismo producto en todos los proveedores. Si es un insumo de Recetas, elígelo de esa lista para que quede conectado.</span>
+          </div>
           {productoId === "nuevo" && (
             <div className="grid grid-cols-3 gap-3 rounded-xl bg-gray-50 p-3">
               <div className="col-span-2"><Campo etiqueta="Nombre del producto"><input className={campo} value={nuevoNombre} onChange={(e) => setNuevoNombre(e.target.value)} placeholder="ej. Papel manteca" /></Campo></div>
@@ -254,6 +257,138 @@ export function PrecioModal({ inicial, proveedores, productos, hoy, onCerrar, on
           </div>
         </>
       )}
+    </Modal>
+  );
+}
+
+/* ─────────── Elegir producto (productos de Proveedores + insumos de Recetas) ─────────── */
+
+const sinTildes = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
+const MAX_OPCIONES = 8;
+
+function SelectorProducto({ valor, onChange, productos, insumos, enlaces, origenPrimero }: {
+  valor: string; onChange: (v: string) => void; productos: ProductoComparable[]; insumos: InsumoReceta[]; enlaces: EnlaceInsumo[]; origenPrimero: OrigenInsumo;
+}) {
+  const [q, setQ] = useState("");
+  const [abierto, setAbierto] = useState(false);
+  const conectados = new Set(enlaces.map((e) => `${e.origen}|${e.sku}`));
+  const t = sinTildes(q.trim());
+  const prods = productos.filter((p) => !t || sinTildes(p.nombre).includes(t)).slice(0, MAX_OPCIONES);
+  const ins = t.length < 2 ? [] : insumos
+    .filter((i) => !conectados.has(`${i.origen}|${i.sku}`) && sinTildes(`${i.nombre} ${i.sku}`).includes(t))
+    .sort((a, b) => (a.origen === origenPrimero ? 0 : 1) - (b.origen === origenPrimero ? 0 : 1) || a.nombre.localeCompare(b.nombre, "es"))
+    .slice(0, MAX_OPCIONES);
+  const elegido = valor === "nuevo" ? "Otro producto (nuevo)"
+    : valor.startsWith("i:") ? (() => { const i = insumos.find((x) => `i:${x.origen}|${x.sku}` === valor); return i ? `${i.nombre} · insumo ${i.origen === "Atelier" ? "de Atelier" : "de cafeterías"}` : ""; })()
+      : productos.find((p) => String(p.id) === valor)?.nombre ?? "";
+
+  if (elegido && !abierto) {
+    return (
+      <div className="flex items-center justify-between gap-2 rounded-lg border border-primary-light/40 bg-primary-50/50 px-3 py-2">
+        <span className="flex min-w-0 items-center gap-1.5 text-sm text-gray-900">
+          {valor.startsWith("i:") ? <Link2 className="h-4 w-4 shrink-0 text-primary-light" aria-hidden /> : <Check className="h-4 w-4 shrink-0 text-primary-light" aria-hidden />}
+          <span className="truncate">{elegido}</span>
+        </span>
+        <button type="button" onClick={() => { setAbierto(true); setQ(""); }} className="shrink-0 text-xs font-medium text-primary-light hover:text-primary">Cambiar</button>
+      </div>
+    );
+  }
+  return (
+    <div className="relative">
+      <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" aria-hidden />
+      <input autoFocus={abierto} className={`${campo} pl-9`} value={q} onChange={(e) => { setQ(e.target.value); setAbierto(true); }} onFocus={() => setAbierto(true)}
+        placeholder="Busca: papel manteca, harina, leche…" aria-label="Buscar producto" />
+      {abierto && (
+        <div className="mt-1 max-h-72 overflow-y-auto rounded-xl border border-gray-200 bg-white p-1 shadow-lg">
+          {prods.length > 0 && <p className="px-2 pb-0.5 pt-1.5 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Productos de proveedores</p>}
+          {prods.map((p) => (
+            <Opcion key={p.id} onClick={() => { onChange(String(p.id)); setAbierto(false); }} titulo={p.nombre} detalle={`por ${p.unidad}`} />
+          ))}
+          {ins.length > 0 && <p className="px-2 pb-0.5 pt-2 text-[10px] font-semibold uppercase tracking-wide text-gray-400">Insumos de Recetas y costos</p>}
+          {ins.map((i) => (
+            <Opcion key={`${i.origen}|${i.sku}`} onClick={() => { onChange(`i:${i.origen}|${i.sku}`); setAbierto(false); }} titulo={i.nombre}
+              detalle={`${i.origen === "Atelier" ? "Atelier" : "Cafeterías"} · S/ ${i.precio.toLocaleString("es-PE", { maximumFractionDigits: 4 })} por ${i.unidad}`} conectar />
+          ))}
+          {t.length === 1 && <p className="px-2 py-1.5 text-[11px] text-gray-400">Escribe una letra más para buscar también en los insumos de Recetas.</p>}
+          <Opcion onClick={() => { onChange("nuevo"); setAbierto(false); }} titulo="+ Otro producto (nuevo)" detalle="No está en ninguna lista" />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function Opcion({ titulo, detalle, conectar = false, onClick }: { titulo: string; detalle: string; conectar?: boolean; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} className="flex w-full items-center justify-between gap-2 rounded-lg px-2 py-1.5 text-left hover:bg-gray-50">
+      <span className="min-w-0">
+        <span className="block truncate text-sm text-gray-900">{titulo}</span>
+        <span className="block truncate text-[11px] text-gray-500">{detalle}</span>
+      </span>
+      {conectar && <Link2 className="h-3.5 w-3.5 shrink-0 text-primary-light" aria-label="Se conecta con Recetas" />}
+    </button>
+  );
+}
+
+/* ─────────── Conectar un producto con un insumo ─────────── */
+
+export function ConectarModal({ producto, insumos, enlaces, sedeId, onCerrar, onGuardado }: {
+  producto: ProductoComparable; insumos: InsumoReceta[]; enlaces: EnlaceInsumo[]; sedeId: number; onCerrar: () => void; onGuardado: () => void;
+}) {
+  const { showToast } = useToast();
+  const [origen, setOrigen] = useState<OrigenInsumo>(sedeId === 1 ? "Atelier" : "Cafetería");
+  const [q, setQ] = useState(producto.nombre.split(/\s+/)[0] ?? "");
+  const [ocupado, setOcupado] = useState<string | null>(null);
+  const yaConectado = enlaces.find((e) => e.productoId === producto.id && e.origen === origen);
+  const t = sinTildes(q.trim());
+  const lista = insumos
+    .filter((i) => i.origen === origen && factorInsumo(producto.unidad, i.unidad) !== null && (!t || sinTildes(`${i.nombre} ${i.sku}`).includes(t)))
+    .slice(0, 40);
+
+  async function conectar(i: InsumoReceta) {
+    setOcupado(i.sku);
+    const r = await conectarInsumo({ productoId: producto.id, origen: i.origen, sku: i.sku });
+    setOcupado(null);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(`${producto.nombre} quedó conectado con «${i.nombre}»`, "success");
+    onGuardado();
+  }
+
+  return (
+    <Modal titulo={`Conectar «${producto.nombre}» con Recetas`} onCerrar={onCerrar}
+      pie={<button type="button" onClick={onCerrar} className="rounded-lg border border-gray-300 px-3 py-2 text-sm text-gray-700 hover:bg-gray-50">Cerrar</button>}>
+      <p className="text-xs text-gray-500">Elige el insumo que es este producto. Solo salen los que se miden igual (por {producto.unidad}). Puede estar en las dos listas.</p>
+      <div className="grid grid-cols-2 gap-2" role="radiogroup" aria-label="Lista de insumos">
+        {(["Cafetería", "Atelier"] as const).map((o) => (
+          <button key={o} type="button" role="radio" aria-checked={origen === o} onClick={() => setOrigen(o)}
+            className={`rounded-lg border px-3 py-2 text-sm font-medium ${origen === o ? "border-primary bg-primary text-white" : "border-gray-200 text-gray-700 hover:bg-gray-50"}`}>
+            {o === "Atelier" ? "Insumos de Atelier" : "Insumos de cafeterías"}
+          </button>
+        ))}
+      </div>
+      {yaConectado && (
+        <p className="rounded-lg bg-primary-50 px-3 py-2 text-xs text-primary">
+          Ya está conectado con «{insumos.find((i) => i.origen === yaConectado.origen && i.sku === yaConectado.sku)?.nombre ?? yaConectado.sku}». Elegir otro lo reemplaza.
+        </p>
+      )}
+      <div className="relative">
+        <Search className="pointer-events-none absolute left-3 top-2.5 h-4 w-4 text-gray-400" aria-hidden />
+        <input className={`${campo} pl-9`} value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar insumo" aria-label="Buscar insumo" />
+      </div>
+      <ul className="divide-y divide-gray-100 rounded-xl border border-gray-100">
+        {lista.length === 0 && <li className="px-3 py-4 text-center text-xs text-gray-500">No hay insumos con ese nombre que se midan por {producto.unidad}.</li>}
+        {lista.map((i) => (
+          <li key={i.sku} className="flex items-center justify-between gap-3 px-3 py-2">
+            <span className="min-w-0">
+              <span className="block truncate text-sm text-gray-900">{i.nombre}</span>
+              <span className="block text-[11px] text-gray-500">{i.sku} · S/ {i.precio.toLocaleString("es-PE", { maximumFractionDigits: 4 })} por {i.unidad}</span>
+            </span>
+            <button type="button" disabled={ocupado !== null} onClick={() => void conectar(i)}
+              className="inline-flex shrink-0 items-center gap-1 rounded-lg bg-primary px-2.5 py-1.5 text-xs font-semibold text-white hover:bg-primary-light disabled:opacity-60">
+              {ocupado === i.sku ? <Loader2 className="h-3.5 w-3.5 animate-spin" aria-hidden /> : <Link2 className="h-3.5 w-3.5" aria-hidden />}Conectar
+            </button>
+          </li>
+        ))}
+      </ul>
     </Modal>
   );
 }
