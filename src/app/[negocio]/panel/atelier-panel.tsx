@@ -1,17 +1,18 @@
 "use client";
 
 import { useCallback, useEffect, useState } from "react";
-import { ClipboardList, Upload, Loader2, Save, Pencil, TrendingUp, Receipt, Trash2 } from "lucide-react";
+import { ClipboardList, Upload, Loader2, Save, Pencil } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getAtelierPanel, saveAtelierDay, type AtelierPanelData, type AtelierDaily } from "@/app/actions/byte-ventas";
 import { useToast } from "@/components/toast-provider";
 import { HighlightSlot } from "./highlight-card";
-import { MisAcuerdosCard } from "./mis-acuerdos-card";
+import { AcuerdosEnInicio } from "./acuerdos-tablero";
+import { KpisDelDiaAtelier, MesAtelier } from "./inicio-atelier";
 import { BarraComoAdmin, useComoAdmin } from "./ver-como-admin";
 import { ProponerHighlight } from "./proponer-highlight";
 import { useHighlightActivo } from "./use-highlight-activo";
 import { TuSemana } from "./tu-semana";
-import { BannerSaludo, CabeceraSede } from "./inicio-ui";
+import { BannerSaludo, CabeceraSede, EvolucionVentas } from "./inicio-ui";
 import { getNombreSaludo } from "@/app/actions/panel-vista";
 import { ImportControlModal } from "./import-control-modal";
 import { ClientSalesSection } from "./client-sales-section";
@@ -185,7 +186,7 @@ export function AtelierPanel() {
     <div className="space-y-6">
       {comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo negocio="atelier" onChange={comoAdmin.cambiar} />}
       {/* Cabecera y saludo según la hora (20-nov-2026), igual que en las cafeterías. */}
-      <CabeceraSede sede="Atelier" ultimoRegistro={null}>
+      <CabeceraSede sede="Atelier" ultimoRegistro={data ? data.dailies.filter((d) => d.venta !== null).map((d) => d.date).sort().at(-1) ?? null : null}>
         {!comoAdmin.activo && <BarraComoAdmin puede={comoAdmin.puede} activo={false} negocio="atelier" onChange={comoAdmin.cambiar} />}
         <input
           type="month"
@@ -206,7 +207,16 @@ export function AtelierPanel() {
       {/* Lo primero del panel: las tareas del administrador. El Highlight está archivado desde el
           20-nov-2026 (nadie lo usaba); si la dirección lo reactiva, vuelve a ir arriba de todo. */}
       {highlightActivo && <HighlightSlot comoAdmin={comoAdmin.activo} />}
-      <MisAcuerdosCard key={comoAdmin.activo ? "admin" : "yo"} comoAdmin={comoAdmin.activo} />
+
+      {/* Inicio (20-nov-2026), igual que en las cafeterías: KPIs del día → ventas, acuerdos y tareas → el mes. */}
+      {data ? <KpisDelDiaAtelier dailies={data.dailies} porCobrar={cobranza?.porCobrar ?? null} />
+        : loading ? <div className="rounded-2xl border border-gray-200/80 bg-white h-40 animate-pulse" aria-hidden /> : null}
+      <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4">
+        {data ? <EvolucionVentas className="md:col-span-2 xl:col-span-5" dias={data.dailies.map((d) => ({ date: d.date, revenue: d.venta }))} metaDiaria={null} />
+          : <div className="md:col-span-2 xl:col-span-5 rounded-2xl border border-gray-200/80 bg-white h-72 animate-pulse" aria-hidden />}
+        <AcuerdosEnInicio key={comoAdmin.activo ? "admin" : "yo"} comoAdmin={comoAdmin.activo} />
+      </div>
+      {data && <MesAtelier summary={data.summary} month={month} />}
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso va y qué sigue, estilo pedido de
           delivery. El registro del día y la rutina del sábado quedan como su detalle. */}
@@ -222,37 +232,7 @@ export function AtelierPanel() {
         <div className="bg-white rounded-xl border border-gray-200 p-8 text-center text-sm text-gray-500">{error}</div>
       ) : (
         <>
-          {/* 1 · Los 3 KPIs del mes */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500 flex items-center gap-1">
-                <TrendingUp className="w-3 h-3" /> Venta acumulada ({s.diasConVenta} día{s.diasConVenta === 1 ? "" : "s"})
-              </div>
-              <div className="text-2xl font-black text-gray-900">{formatCurrency(s.ventaTotal)}</div>
-              <div className="text-[11px] text-gray-500">
-                {s.diasConVenta > 0 ? `Promedio ${formatCurrency(Math.round((s.ventaTotal / s.diasConVenta) * 100) / 100)}/día` : "Sin días registrados"}
-              </div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500 flex items-center gap-1">
-                <Receipt className="w-3 h-3" /> Ticket promedio del mes
-              </div>
-              <div className="text-2xl font-black text-gray-900">
-                {s.ticketProm !== null ? formatCurrency(s.ticketProm) : "—"}
-              </div>
-              <div className="text-[11px] text-gray-500">Venta ÷ pedidos (mismo cálculo que Byte)</div>
-            </div>
-            <div className="bg-white rounded-xl border border-gray-200 p-4">
-              <div className="text-[11px] uppercase text-gray-500 flex items-center gap-1">
-                <Trash2 className="w-3 h-3" /> Mermas del mes
-              </div>
-              <div className="text-2xl font-black text-gray-900">{formatCurrency(s.mermasTotal)}</div>
-              <div className="text-[11px] text-gray-500">
-                {s.mermasPct !== null ? `${s.mermasPct}% de la venta` : "Sin venta registrada aún"}
-              </div>
-            </div>
-          </div>
-
+          {/* Los 3 KPIs del mes ahora van arriba, en «El mes en Atelier» (20-nov-2026). */}
           {/* 2 · Registro diario */}
           <div id="registro-diario" className="bg-white rounded-xl border border-gray-200 p-4 scroll-mt-4">
             <div className="text-sm font-semibold text-gray-900 mb-1">
@@ -392,6 +372,7 @@ export function AtelierPanel() {
         {clientes ? <ClientSalesSection data={clientes} /> : <p className="text-sm text-gray-400">Cargando clientes…</p>}
       </SeccionDesplegable>
 
+      <div id="cuentas-por-cobrar" className="scroll-mt-4">
       <SeccionDesplegable
         titulo="Cuentas por cobrar"
         subtitulo="Cuánto te deben, desde cuándo y quién."
@@ -407,6 +388,7 @@ export function AtelierPanel() {
           <ReceivablesSection data={cobranza} onSubir={() => setShowCobranzaImport(true)} onRecargar={loadCobranza} />
         ) : <p className="text-sm text-gray-400">Cargando cuentas por cobrar…</p>}
       </SeccionDesplegable>
+      </div>
 
       {showRotacion && (
         <ImportControlModal

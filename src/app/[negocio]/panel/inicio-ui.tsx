@@ -26,17 +26,17 @@ import { monthLabel } from "@/lib/utils";
 
 /* ─────────── Formatos ─────────── */
 
-const soles = (n: number, dec = 2) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
-const solesCorto = (n: number) => soles(n, n >= 1000 ? 0 : 2);
+export const soles = (n: number, dec = 2) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
+export const solesCorto = (n: number) => soles(n, n >= 1000 ? 0 : 2);
 const dia = (iso: string) => {
   const d = new Date(`${iso}T12:00:00Z`);
   const s = d.toLocaleDateString("es-PE", { weekday: "short", day: "numeric", timeZone: "UTC" }).replace(".", "");
   return s.charAt(0).toUpperCase() + s.slice(1);
 };
 const diaMes = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-PE", { day: "numeric", month: "short", timeZone: "UTC" }).replace(".", "");
-const diaLargo = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
+export const diaLargo = (iso: string) => new Date(`${iso}T12:00:00Z`).toLocaleDateString("es-PE", { weekday: "long", day: "numeric", month: "long", timeZone: "UTC" });
 
-function ir(id: string) {
+export function ir(id: string) {
   document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
 }
 
@@ -71,7 +71,7 @@ export function TarjetaInicio({ icono: Icono, titulo, nota, accion, className = 
   );
 }
 
-function EnlaceVer({ children, onClick }: { children: ReactNode; onClick: () => void }) {
+export function EnlaceVer({ children, onClick }: { children: ReactNode; onClick: () => void }) {
   return (
     <button type="button" onClick={onClick}
       className="inline-flex items-center gap-0.5 rounded-md text-xs font-semibold text-primary-light hover:text-primary focus-visible:outline-2 focus-visible:outline-primary">
@@ -168,7 +168,7 @@ const PASTILLA: Record<Tono, string> = {
   neutro: "bg-gray-50 text-gray-600 ring-gray-200",
 };
 
-function Variacion({ pct, texto }: { pct: number; texto: string }) {
+export function Variacion({ pct, texto }: { pct: number; texto: string }) {
   const sube = pct >= 0;
   return (
     <p className={`text-xs font-medium ${sube ? "text-emerald-700" : "text-red-600"}`}>
@@ -177,15 +177,15 @@ function Variacion({ pct, texto }: { pct: number; texto: string }) {
   );
 }
 
-function Pastilla({ tono, children }: { tono: Tono; children: ReactNode }) {
+export function Pastilla({ tono, children }: { tono: Tono; children: ReactNode }) {
   return <span className={`inline-flex rounded-full px-2 py-0.5 text-[11px] font-semibold ring-1 ring-inset ${PASTILLA[tono]}`}>{children}</span>;
 }
 
-function Kpi({ icono: Icono, fondo, titulo, valor, ancho = "corto", children }: {
-  icono: ComponentType<{ className?: string }>; fondo: string; titulo: string; valor: ReactNode; ancho?: "corto" | "largo" | "ultimo"; children?: ReactNode;
+export function Kpi({ icono: Icono, fondo, titulo, valor, ancho = "corto", children }: {
+  icono: ComponentType<{ className?: string }>; fondo: string; titulo: string; valor: ReactNode; ancho?: "corto" | "largo" | "ultimo" | "libre"; children?: ReactNode;
 }) {
   // 5 tarjetas sin huecos: en tablet van 3 arriba y 2 abajo (más anchas); en computadora, las 5 en una fila.
-  const span = ancho === "corto" ? "md:col-span-2" : ancho === "largo" ? "md:col-span-3" : "col-span-2 md:col-span-3";
+  const span = ancho === "libre" ? "" : ancho === "corto" ? "md:col-span-2" : ancho === "largo" ? "md:col-span-3" : "col-span-2 md:col-span-3";
   return (
     <div className={`${span} xl:col-span-1 flex flex-col items-start gap-2 rounded-xl border border-gray-100 bg-gradient-to-b from-white to-gray-50/60 p-3 sm:flex-row sm:gap-3 sm:p-4 xl:flex-col xl:gap-2 2xl:flex-row 2xl:gap-3`}>
       <span className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${fondo}`}><Icono className="h-5 w-5" /></span>
@@ -265,9 +265,10 @@ function lunesDe(iso: string): string {
   return d.toISOString().slice(0, 10);
 }
 
-export function EvolucionVentas({ dailies, metaDiaria, className = "" }: { dailies: DashboardDaily[]; metaDiaria: number | null; className?: string }) {
+/** `dias`: la venta de cada día (sirve para las cafeterías y para Atelier). */
+export function EvolucionVentas({ dias, metaDiaria, className = "" }: { dias: { date: string; revenue: number | null }[]; metaDiaria: number | null; className?: string }) {
   const [modo, setModo] = useState<Modo>("dia");
-  const conVenta = useMemo(() => [...dailies].filter((d) => d.revenue !== null).sort((a, b) => a.date.localeCompare(b.date)), [dailies]);
+  const conVenta = useMemo(() => [...dias].filter((d) => d.revenue !== null).sort((a, b) => a.date.localeCompare(b.date)), [dias]);
   const puntos = useMemo(() => {
     if (modo === "semana") {
       const porSemana = new Map<string, number>();

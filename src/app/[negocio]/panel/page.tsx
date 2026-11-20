@@ -296,7 +296,7 @@ function IncentivosPage() {
       {data ? <KpisDelDia dailies={data.dailies} targets={metas} ticketBase={data.config.ticketBase} />
         : loading ? <div className="rounded-2xl border border-gray-200/80 bg-white h-40 animate-pulse" aria-hidden /> : null}
       <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-12 gap-4">
-        {data ? <EvolucionVentas className="md:col-span-2 xl:col-span-5" dailies={data.dailies} metaDiaria={metas?.ventaDiaria ?? null} />
+        {data ? <EvolucionVentas className="md:col-span-2 xl:col-span-5" dias={data.dailies} metaDiaria={metas?.ventaDiaria ?? null} />
           : <div className="md:col-span-2 xl:col-span-5 rounded-2xl border border-gray-200/80 bg-white h-72 animate-pulse" aria-hidden />}
         <AcuerdosEnInicio key={comoAdmin.activo ? "admin" : "yo"} comoAdmin={comoAdmin.activo} />
       </div>
