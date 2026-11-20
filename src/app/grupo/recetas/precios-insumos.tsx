@@ -47,9 +47,9 @@ export function PreciosInsumos() {
       && (!t || sinTildes(`${i.nombre} ${i.sku}`).includes(t)));
   }, [insumos, origen, q, soloCambiados]);
 
-  const abrir = (i: InsumoConUso) => {
+  const abrir = (i: InsumoConUso, precio = i.precio) => {
     setEditando(`${i.origen}|${i.sku}`);
-    setValor(String(i.precio));
+    setValor(String(precio));
     setAviso(null);
   };
 
@@ -79,7 +79,7 @@ export function PreciosInsumos() {
 
       <div className="mt-3 space-y-3">
         <p className="text-xs text-gray-500 leading-relaxed max-w-2xl">
-          Cambia aquí el precio de compra cuando sube o baja un insumo. No hace falta tocar el Excel. El costo de las recetas de Atelier y de la carta se recalcula solo, y el cambio queda en el historial de precios.
+          Cambia aquí el precio de compra cuando sube o baja un insumo. No hace falta tocar el Excel. El costo de las recetas de Atelier y de la carta se recalcula solo, y el cambio queda en el historial de precios. Si el insumo está conectado en Proveedores, debajo sale el mejor precio de proveedor: «Usar» lo pone en el campo para que lo confirmes.
         </p>
 
         {error ? (
@@ -143,6 +143,19 @@ export function PreciosInsumos() {
                                 {i.delSistema && i.base != null && i.cambioPct !== 0 && (
                                   <div className="text-[11px] text-gray-500">Excel: {soles(i.base)} · <span className={i.cambioPct > 0 ? "text-red-700" : "text-emerald-700"}>{i.cambioPct > 0 ? "+" : ""}{i.cambioPct}%</span></div>
                                 )}
+                                {/* Proveedores (20-nov-2026): el mejor precio de las sedes que compran este insumo. */}
+                                {i.proveedor && (() => {
+                                  const dif = i.precio > 0 ? Math.round(((i.proveedor.precioInsumo - i.precio) / i.precio) * 100) : 0;
+                                  return (
+                                    <div className="mt-0.5 text-[11px] text-sky-800" title={`Precio del ${fechaCorta(i.proveedor.fecha)}`}>
+                                      Proveedor: {soles(i.proveedor.precioInsumo)} · {i.proveedor.proveedor}
+                                      {dif !== 0 && <span className={dif < 0 ? " font-semibold text-emerald-700" : " font-semibold text-red-700"}> {dif > 0 ? "+" : ""}{dif}%</span>}
+                                      {dif !== 0 && (
+                                        <button type="button" onClick={() => abrir(i, i.proveedor!.precioInsumo)} className="ml-1 font-medium text-primary underline">Usar</button>
+                                      )}
+                                    </div>
+                                  );
+                                })()}
                               </>
                             )}
                           </td>

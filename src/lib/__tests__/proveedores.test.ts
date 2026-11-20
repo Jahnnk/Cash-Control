@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { plural, armarPedido, compararProducto, dondeComprar, enlaceWhatsApp, precioUnitario, vigentes, type Oferta, type ProveedorCompra } from "../proveedores";
+import { factorInsumo, mejorParaInsumo, unidadDesdeInsumo, plural, armarPedido, compararProducto, dondeComprar, enlaceWhatsApp, precioUnitario, vigentes, type Oferta, type ProveedorCompra } from "../proveedores";
 
 const hoy = "2026-11-20";
 const caj: ProveedorCompra = { id: 1, nombre: "Packaging Cajamarca", costoEnvio: null, pedidoMinimo: null };
@@ -91,5 +91,28 @@ describe("plural", () => {
     expect(plural("hoja")).toBe("hojas");
     expect(plural("unidad")).toBe("unidades");
     expect(plural("kg")).toBe("kg");
+  });
+});
+
+describe("conexión con insumos de Recetas", () => {
+  it("convierte unidades compatibles y rechaza las que no", () => {
+    expect(factorInsumo("kg", "kg")).toBe(1);
+    expect(factorInsumo("g", "kg")).toBe(1000);
+    expect(factorInsumo("ml", "l")).toBe(1000);
+    expect(factorInsumo("Litro", "l")).toBe(1);
+    expect(factorInsumo("hoja", "und")).toBe(1);
+    expect(factorInsumo("kg", "und")).toBeNull();
+    expect(factorInsumo("unidad", "kg")).toBeNull();
+    expect(unidadDesdeInsumo("l")).toBe("litro");
+  });
+
+  it("el mejor precio solo entre proveedores de las sedes de ese insumo, en la unidad del insumo", () => {
+    const provs = [{ ...caj, sedes: [1] }, { ...lima, sedes: [2, 3] }];
+    // Para las cafeterías solo cuenta Lima (S/ 0.06 la hoja); para Atelier solo Cajamarca (S/ 0.10).
+    expect(mejorParaInsumo(ofertas, provs, MANTECA, "Cafetería", 1)?.proveedorId).toBe(2);
+    expect(mejorParaInsumo(ofertas, provs, MANTECA, "Atelier", 1)?.precioInsumo).toBe(0.1);
+    // Por gramo → por kg
+    const harina = [of(1, 30, 1000, 4.5)]; // S/ 4.50 por 1000 g
+    expect(mejorParaInsumo(harina, provs, 30, "Atelier", 1000)?.precioInsumo).toBe(4.5);
   });
 });

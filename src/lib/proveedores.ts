@@ -231,3 +231,60 @@ export function plural(unidad: string): string {
   if (/^(kg|g|ml|l|lt|oz|lb)$/i.test(u)) return u;
   return /[aeiouáéíóú]$/i.test(u) ? `${u}s` : `${u}es`;
 }
+
+/* ─────────── Conexión con los insumos de Recetas y costos ─────────── */
+
+export type OrigenInsumo = "Atelier" | "Cafetería";
+export type UnidadInsumo = "kg" | "l" | "und";
+
+/** Qué sedes compran para cada lista de insumos: Atelier para la suya; Fonavi y Centro para la de cafeterías. */
+export const SEDES_DE_ORIGEN: Record<OrigenInsumo, number[]> = { Atelier: [1], "Cafetería": [2, 3] };
+
+/** Cuánto es UNA unidad del producto, medida en kg, litros o unidades. null = unidad que no se reconoce como peso/volumen. */
+function medida(unidad: string): { tipo: UnidadInsumo; cuanto: number } {
+  const u = normalUnidad(unidad);
+  if (["kg", "kilo", "kilos", "kilogramo", "kilogramos"].includes(u)) return { tipo: "kg", cuanto: 1 };
+  if (["g", "gr", "gramo", "gramos"].includes(u)) return { tipo: "kg", cuanto: 0.001 };
+  if (["l", "lt", "litro", "litros"].includes(u)) return { tipo: "l", cuanto: 1 };
+  if (["ml", "mililitro", "mililitros"].includes(u)) return { tipo: "l", cuanto: 0.001 };
+  return { tipo: "und", cuanto: 1 };
+}
+const normalUnidad = (u: string) => u.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+
+/**
+ * Factor para pasar el precio por unidad del producto al precio por unidad del insumo.
+ * Ej.: producto por g, insumo por kg → 1000 (S/ 0.02 el gramo = S/ 20 el kilo). null = no se pueden comparar
+ * (un producto por kg no puede ser un insumo por unidad).
+ */
+export function factorInsumo(unidadProducto: string, unidadInsumo: UnidadInsumo): number | null {
+  const m = medida(unidadProducto);
+  if (m.tipo !== unidadInsumo) return null;
+  return r4(1 / m.cuanto);
+}
+
+/** La unidad con la que se crea un producto nuevo a partir de un insumo. */
+export function unidadDesdeInsumo(u: UnidadInsumo): string {
+  return u === "und" ? "unidad" : u === "l" ? "litro" : "kg";
+}
+
+export type MejorProveedor = { proveedorId: number; proveedor: string; unitario: number; precioInsumo: number; fecha: string };
+
+/**
+ * El precio más barato por unidad de un producto entre los proveedores de las sedes que compran ese insumo,
+ * ya pasado a la unidad del insumo. null = ningún proveedor de esas sedes tiene precio.
+ */
+export function mejorParaInsumo(
+  ofertasVigentes: Oferta[], proveedores: (ProveedorCompra & { sedes: number[] })[], productoId: number, origen: OrigenInsumo, factor: number,
+): MejorProveedor | null {
+  const sedes = SEDES_DE_ORIGEN[origen];
+  const porId = new Map(proveedores.filter((p) => p.sedes.some((s) => sedes.includes(s))).map((p) => [p.id, p]));
+  let mejor: MejorProveedor | null = null;
+  for (const o of ofertasVigentes) {
+    if (o.productoId !== productoId) continue;
+    const p = porId.get(o.proveedorId);
+    const u = precioUnitario(o);
+    if (!p || u === null) continue;
+    if (!mejor || u < mejor.unitario) mejor = { proveedorId: p.id, proveedor: p.nombre, unitario: u, precioInsumo: r4(u * factor), fecha: o.fecha };
+  }
+  return mejor;
+}
