@@ -15,6 +15,7 @@ import { planDe } from "@/lib/presupuesto-datos";
 import { lunesDe, sumarDias } from "@/lib/highlight";
 import { utilidadPorSeparar } from "@/lib/regla-33";
 import { getSeisCifras } from "./seis-cifras";
+import { getHighlightActivo } from "./ajustes";
 
 const sql = neon(process.env.DATABASE_URL!);
 const hoyLima = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
@@ -47,7 +48,7 @@ export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
     const siguiente = mesMas(mes, 1);
     // Profit First: del 1 al 7 del mes, cuánto toca separar de la venta del mes que cerró (solo lo que el sistema comprueba).
     const primeraSemana = enCurso && Number(hoy.slice(8, 10)) <= DIAS_PRIMERA_SEMANA;
-    const [planes, hls, aprobados, cobros, utilidad] = await Promise.all([
+    const [planes, hls, aprobados, cobros, utilidad, hlActivo] = await Promise.all([
       Promise.all([1, 2, 3].map(async (id) => [id, await planDe(id, mes)] as const)),
       (enCurso ? sql`SELECT DISTINCT business_id FROM highlights WHERE fecha >= ${lunes} AND fecha <= ${sumarDias(lunes, 6)}` : Promise.resolve([])).catch(() => null) as Promise<{ business_id: number }[] | null>,
       (enCurso ? sql`SELECT mes, COUNT(*)::int AS n FROM presupuesto_mes WHERE mes IN (${mes}, ${siguiente}) AND aprobado_el IS NOT NULL GROUP BY mes` : Promise.resolve([])).catch(() => null) as Promise<{ mes: string; n: number }[] | null>,
@@ -57,6 +58,7 @@ export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
       primeraSemana
         ? Promise.all([getSeisCifras(mesMas(mes, -1)), getSeisCifras(mes)]).catch(() => null)
         : Promise.resolve(null),
+      getHighlightActivo(),
     ]);
     const cerrado = utilidad?.[0];
     const actual = utilidad?.[1];
@@ -65,7 +67,8 @@ export async function getResumenExtra(mes: string): Promise<ResumenExtra> {
     const ultima = cobros?.[0]?.ultima ?? null;
     return {
       metas,
-      highlightsSinAsignar: enCurso && hls ? SEDES.filter((x) => !hls.some((h) => h.business_id === x.id)).map((x) => x.nombre) : null,
+      // Highlight archivado (20-nov-2026): no se pide asignarlo.
+      highlightsSinAsignar: enCurso && hls && hlActivo ? SEDES.filter((x) => !hls.some((h) => h.business_id === x.id)).map((x) => x.nombre) : null,
       presupuesto: enCurso && aprobados ? {
         mesActualSinAprobar: SEDES.length - (aprobados.find((a) => a.mes === mes)?.n ?? 0),
         siguienteSinAprobar: SEDES.length - (aprobados.find((a) => a.mes === siguiente)?.n ?? 0),

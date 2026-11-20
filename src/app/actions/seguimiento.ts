@@ -16,6 +16,7 @@ import { seguimientoAdministrador, type Seguimiento } from "@/lib/seguimiento";
 import { getEstadoKpisSede } from "./llenado-reportes";
 import { getCargaProductosSede } from "./product-sales-import";
 import { getHighlightSede } from "./highlight";
+import { getHighlightActivo } from "./ajustes";
 
 export type SeguimientoSede = { ok: true; seguimiento: Seguimiento; semana: string; actualizado: string } | { ok: false };
 
@@ -32,7 +33,7 @@ export async function getSeguimientoSede(): Promise<SeguimientoSede> {
   if (!(role.kind === "full" || (role.kind === "admin" && role.sede === bId))) return { ok: false };
 
   try {
-    const [kpis, carga, hl] = await Promise.all([getEstadoKpisSede(), getCargaProductosSede(), getHighlightSede()]);
+    const [kpis, carga, hl, hlActivo] = await Promise.all([getEstadoKpisSede(), getCargaProductosSede(), getHighlightSede(), getHighlightActivo()]);
     if (!kpis.visible) return { ok: false };
     const seguimiento = seguimientoAdministrador({
       hoy: kpis.hoy,
@@ -41,6 +42,7 @@ export async function getSeguimientoSede(): Promise<SeguimientoSede> {
       incompletos: kpis.dias.filter((d) => d.estado === "incompleto").map((d) => d.fecha),
       reportes: (carga.semanal?.reportes ?? []).map((r) => ({ nombre: r.nombre, ultimaCarga: r.ultimaCarga })),
       modo: kpis.modo,
+      highlightArchivado: !hlActivo,
     });
     return { ok: true, seguimiento, semana: etiquetaSemana(kpis.hoy), actualizado: new Date().toISOString() };
   } catch (e) {

@@ -9,6 +9,7 @@ import { HighlightSlot } from "./highlight-card";
 import { MisAcuerdosCard } from "./mis-acuerdos-card";
 import { BarraComoAdmin, useComoAdmin } from "./ver-como-admin";
 import { ProponerHighlight } from "./proponer-highlight";
+import { useHighlightActivo } from "./use-highlight-activo";
 import { TuSemana } from "./tu-semana";
 import { Proposito } from "@/components/proposito";
 import { ImportControlModal } from "./import-control-modal";
@@ -51,6 +52,7 @@ export function AtelierPanel() {
   const [loading, setLoading] = useState(true);
   // «Ver como administrador» (19-nov-2026): la dirección ve el panel tal cual lo ve el admin de Atelier.
   const comoAdmin = useComoAdmin();
+  const highlightActivo = useHighlightActivo();
   // Detalle de mermas: Atelier solo podía anotar el importe total, y
   // en producción es donde MÁS interesa saber QUÉ se mermó (Jahnn,
   // 31-ago-2026). Mismo modal y misma tabla que Fonavi y Centro.
@@ -203,9 +205,9 @@ export function AtelierPanel() {
         <Proposito />
       </div>
 
-      {/* Lo más importante de la semana — va primero a propósito: si
-          compitiera con los KPIs, dejaría de ser lo más importante. */}
-      <HighlightSlot comoAdmin={comoAdmin.activo} />
+      {/* Lo primero del panel: las tareas del administrador. El Highlight está archivado desde el
+          20-nov-2026 (nadie lo usaba); si la dirección lo reactiva, vuelve a ir arriba de todo. */}
+      {highlightActivo && <HighlightSlot comoAdmin={comoAdmin.activo} />}
       <MisAcuerdosCard comoAdmin={comoAdmin.activo} />
 
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso va y qué sigue, estilo pedido de
@@ -213,7 +215,7 @@ export function AtelierPanel() {
       <TuSemana esProduccion refrescar={refrescarAviso} onRegistrar={irAlRegistro} onSubirReporte={() => setShowRotacion(true)} />
 
       {/* Luis también propone: la operación de Atelier la ve él. Después de lo que toca hoy. */}
-      <ProponerHighlight />
+      {highlightActivo && <ProponerHighlight />}
 
       {/* «Cargando…» solo la primera vez: al volver a leer tras guardar o detallar mermas, la pantalla no se vacía (se perdía el toque en «Guardar» y salía hasta el 2.º intento). */}
       {loading && !data ? (
