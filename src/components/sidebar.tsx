@@ -21,6 +21,7 @@ import {
   Banknote,
   Package,
   Trophy,
+  Truck,
   Medal,
   Compass,
   Target,
@@ -60,6 +61,8 @@ const I = {
   recetas: { segment: "recetas", label: "Recetas y costos", icon: ChefHat },
   porDefinir: { segment: "por-definir", label: "Por definir", icon: ListChecks },
   panel: { segment: "panel", label: "Panel de Sede", icon: Trophy },
+  // Vive bajo /panel para que el administrador de la sede pueda entrar (20-nov-2026).
+  proveedores: { segment: "panel/proveedores", label: "Proveedores", icon: Truck },
   registro: { segment: "registro", label: "Registro manual", icon: PenLine },
   propinas: { segment: "propinas", label: "Propinas", icon: HandCoins },
   clientes: { segment: "clientes", label: "Clientes", icon: Users },
@@ -76,7 +79,7 @@ export const CONFIGURACION: NavItem = { segment: "configuracion", label: "Config
  * en Grupo, Reportes justo debajo de Dashboard y Productos justo debajo de Sistema de Dirección.
  */
 const SEDE = (atelier: boolean): NavSeccion[] => [
-  { titulo: null, items: [I.dashboard, I.panel] },
+  { titulo: null, items: [I.dashboard, I.panel, I.proveedores] },
   { titulo: "Día a día", items: [I.propinas] },
   // Atelier: Clientes es lo de Byte (quién compra y cuánto te deben), junto a los análisis (8-oct-2026).
   { titulo: "Análisis", items: atelier ? [I.reportes, I.productos, I.clientes, I.presupuesto] : [I.reportes, I.productos, I.presupuesto] },
@@ -182,7 +185,7 @@ export function Sidebar() {
   const secciones = useMemo((): NavSeccion[] => {
     if (!scope) return [];
     // Admin de sede: solo su Panel — el resto del menú lo rebotaría. Juani: Highlight y Supervisiones.
-    const permitido = isScopedAdmin ? ["panel"] : isScopedHighlight ? ["acuerdos", "highlight", "supervisiones"] : isLector ? ["dashboard", "reportes"] : isEquipo ? ["acuerdos"] : null;
+    const permitido = isScopedAdmin ? ["panel", "panel/proveedores"] : isScopedHighlight ? ["acuerdos", "highlight", "supervisiones"] : isLector ? ["dashboard", "reportes"] : isEquipo ? ["acuerdos"] : null;
     if (!permitido) return MENU[scope];
     const items = MENU[scope].flatMap((s) => s.items).filter((i) => permitido.includes(i.segment));
     return [{ titulo: null, items }];
@@ -200,8 +203,13 @@ export function Sidebar() {
   function hrefFor(segment: string) {
     return `/${scope}/${segment}`;
   }
-  function isActive(segment: string) {
+  function coincide(segment: string) {
     return pathname === hrefFor(segment) || pathname.startsWith(hrefFor(segment) + "/");
+  }
+  /** Se marca solo la entrada más específica: en /panel/proveedores, «Proveedores» y no también «Panel de Sede». */
+  function isActive(segment: string) {
+    if (!coincide(segment)) return false;
+    return !secciones.some((sec) => sec.items.some((i) => i.segment !== segment && i.segment.startsWith(segment + "/") && coincide(i.segment)));
   }
 
   return (

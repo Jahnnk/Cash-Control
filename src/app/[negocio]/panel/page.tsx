@@ -1,9 +1,11 @@
 "use client";
 
+import Link from "next/link";
+
 import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 import {
-  Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag, Pencil, ClipboardList, Settings2,
+  Truck, Upload, AlertTriangle, CheckCircle2, XCircle, Loader2, Save, Users, Flag, Pencil, ClipboardList, Settings2,
 } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import {
@@ -269,6 +271,13 @@ function IncentivosPage() {
             🔒 Liquidación
           </button>
         )}
+        <Link
+          href={`/${params.negocio}/panel/proveedores`}
+          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
+        >
+          <Truck className="w-3.5 h-3.5" />
+          Proveedores
+        </Link>
         <button
           onClick={() => setShowVentas(true)}
           className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
