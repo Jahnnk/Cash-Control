@@ -288,3 +288,34 @@ export function mejorParaInsumo(
   }
   return mejor;
 }
+
+/* ─────────── Lo que viene de Control de Caja (21-nov-2026) ─────────── */
+
+const MINUSCULAS = new Set(["de", "del", "la", "las", "el", "los", "y", "x", "con", "en", "para", "sin", "a"]);
+
+/** «HARINA SANTA ROSA X 50KG» → «Harina Santa Rosa x 50kg» (Control de Caja guarda los nombres en mayúsculas). */
+export function nombreBonito(nombre: string): string {
+  const palabras = nombre.trim().replace(/\s+/g, " ").toLowerCase().split(" ");
+  return palabras
+    .map((w, i) => (/\d/.test(w) || (i > 0 && MINUSCULAS.has(w)) ? w : w.charAt(0).toUpperCase() + w.slice(1)))
+    .join(" ");
+}
+
+const SEDE_POR_NOMBRE: Record<string, number> = { atelier: 1, fonavi: 2, centro: 3 };
+
+/** Nombres de sede de Control de Caja → business_id. Sin compras registradas: las 3 sedes. */
+export function sedesDesdeNombres(nombres: string[]): number[] {
+  const ids = [...new Set(nombres.map((n) => SEDE_POR_NOMBRE[n.trim().toLowerCase()]).filter((x): x is number => !!x))].sort();
+  return ids.length ? ids : [1, 2, 3];
+}
+
+/**
+ * Una línea de compra → precio por unidad. Se guarda como «1 unidad a S/ X» (no como el paquete comprado): así
+ * «Armar pedido» puede pedir la cantidad exacta y no paquetes del tamaño de esa compra.
+ */
+export function precioDesdeCompra(c: { cantidad: number; precioTotal: number; unidad: string }): { cantidad: number; precio: number; presentacion: string } | null {
+  if (!(c.cantidad > 0) || !(c.precioTotal > 0)) return null;
+  const u = c.unidad.trim().toLowerCase() || "unidad";
+  const cant = Number(c.cantidad.toFixed(3)).toLocaleString("es-PE", { maximumFractionDigits: 3 });
+  return { cantidad: 1, precio: r4(c.precioTotal / c.cantidad), presentacion: `Por ${u} · compra de ${cant} ${c.cantidad === 1 ? u : plural(u)} a S/ ${c.precioTotal.toFixed(2)}` };
+}
