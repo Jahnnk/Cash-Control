@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claveNombre, unidadCanonica, nombreBonito, precioDesdeCompra, sedesDesdeNombres, factorInsumo, mejorParaInsumo, unidadDesdeInsumo, plural, armarPedido, compararProducto, dondeComprar, enlaceWhatsApp, precioUnitario, vigentes, type Oferta, type ProveedorCompra } from "../proveedores";
+import { ahorroPorSedeMes, compararSedes, diferenciasContraHabitual, preciosQueSuben, type CompraReal, claveNombre, unidadCanonica, nombreBonito, precioDesdeCompra, sedesDesdeNombres, factorInsumo, mejorParaInsumo, unidadDesdeInsumo, plural, compararProducto, dondeComprar, enlaceWhatsApp, precioUnitario, vigentes, type Oferta, type ProveedorCompra } from "../proveedores";
 
 const hoy = "2026-11-20";
 const caj: ProveedorCompra = { id: 1, nombre: "Packaging Cajamarca", costoEnvio: null, pedidoMinimo: null };
@@ -44,37 +44,6 @@ describe("comparar por producto (el caso de Jahnn)", () => {
     const v = vigentes([{ ...of(1, MANTECA, 500, 50, "2026-10-01"), id: 1 }, { ...of(1, MANTECA, 500, 55, "2026-11-01"), id: 2 }]);
     expect(v).toHaveLength(1);
     expect(v[0].precio).toBe(55);
-  });
-});
-
-describe("armar un pedido", () => {
-  it("pedido grande: manteca a Lima (supera el mínimo) y stickers a Cajamarca", () => {
-    const plan = armarPedido([{ productoId: MANTECA, cantidad: 5000 }, { productoId: STICKER, cantidad: 2000 }], ofertas, [caj, lima]);
-    const porProv = new Map(plan.pedidos.map((p) => [p.proveedor.id, p.lineas.map((l) => l.productoId)]));
-    expect(porProv.get(2)).toEqual([MANTECA]); // 5 paquetes × 60 = 300 + 25 envío
-    expect(porProv.get(1)).toEqual([STICKER]); // 2 × 20 = 40
-    expect(plan.total).toBe(365);
-  });
-
-  it("pedido chico: no llega al mínimo de Lima, todo a Cajamarca y lo explica", () => {
-    const plan = armarPedido([{ productoId: MANTECA, cantidad: 1000 }, { productoId: STICKER, cantidad: 1000 }], ofertas, [caj, lima]);
-    expect(plan.pedidos.map((p) => p.proveedor.id)).toEqual([1]);
-    expect(plan.total).toBe(120); // 2 × 50 + 20
-    expect(plan.minimosQueMandaron).toEqual([2]);
-  });
-
-  it("el envío se cobra una vez por proveedor y puede volver más caro al barato", () => {
-    const sinMin = { ...lima, pedidoMinimo: null, costoEnvio: 50 };
-    const plan = armarPedido([{ productoId: MANTECA, cantidad: 1000 }], ofertas, [caj, sinMin]);
-    // Lima 60 + 50 = 110 contra Cajamarca 2 × 50 = 100
-    expect(plan.pedidos[0].proveedor.id).toBe(1);
-    expect(plan.unSoloProveedor?.total).toBe(100);
-  });
-
-  it("productos sin precio quedan aparte", () => {
-    const plan = armarPedido([{ productoId: 99, cantidad: 3 }], ofertas, [caj, lima]);
-    expect(plan.sinPrecio).toEqual([99]);
-    expect(plan.pedidos).toEqual([]);
   });
 });
 
@@ -128,8 +97,8 @@ describe("datos de Control de Caja", () => {
     expect(sedesDesdeNombres([])).toEqual([1, 2, 3]);
   });
   it("una compra se guarda como precio por unidad", () => {
-    expect(precioDesdeCompra({ cantidad: 3, precioTotal: 30, unidad: "KG" })).toEqual({ unidad: "kg", cantidad: 1, precio: 10, presentacion: "Por kg · compra de 3 kg a S/ 30.00" });
-    expect(precioDesdeCompra({ cantidad: 500, precioTotal: 52, unidad: "hoja" })?.precio).toBe(0.104);
+    expect(precioDesdeCompra({ cantidad: 3, precioTotal: 30, unidad: "KG" })).toEqual({ unidad: "kg", cantidad: 3, precio: 30, presentacion: "Compra de 3 kg" });
+    expect(precioUnitario(precioDesdeCompra({ cantidad: 500, precioTotal: 52, unidad: "hoja" })!)).toBe(0.104);
     expect(precioDesdeCompra({ cantidad: 0, precioTotal: 5, unidad: "kg" })).toBeNull();
   });
 });
@@ -149,7 +118,37 @@ describe("un solo criterio para nombres y unidades", () => {
     expect(unidadCanonica("bandeja")).toEqual({ unidad: "bandeja", factor: 1 });
   });
   it("500 g a S/ 4 = S/ 8 el kilo; compra en soles no se usa", () => {
-    expect(precioDesdeCompra({ cantidad: 500, precioTotal: 4, unidad: "g" })).toMatchObject({ unidad: "kg", precio: 8 });
+    expect(precioUnitario(precioDesdeCompra({ cantidad: 500, precioTotal: 4, unidad: "g" })!)).toBe(8);
     expect(precioDesdeCompra({ cantidad: 2, precioTotal: 2, unidad: "soles" })).toBeNull();
+  });
+});
+
+describe("análisis de compras para la dirección", () => {
+  const c = (productoId: number, sedeId: number, fecha: string, cantidad: number, precio: number, proveedorId = 1): CompraReal => ({ productoId, proveedorId, sedeId, fecha, cantidad, precio });
+  // Limón: S/ 5 el kg tres veces; luego Fonavi paga S/ 6 (10 kg) y Centro S/ 4.50 (4 kg).
+  const compras = [c(1, 2, "2026-10-01", 1, 5), c(1, 3, "2026-10-05", 1, 5), c(1, 2, "2026-10-08", 1, 5), c(1, 2, "2026-11-02", 10, 60), c(1, 3, "2026-11-03", 4, 18)];
+  it("cada compra contra el habitual (mediana de las 3 anteriores)", () => {
+    const d = diferenciasContraHabitual(compras);
+    const nov = d.filter((x) => x.compra.fecha >= "2026-11-01");
+    expect(nov[0]).toMatchObject({ habitual: 5, unitario: 6, soles: 10, pct: 20 });
+    expect(nov[1]).toMatchObject({ habitual: 5, unitario: 4.5, soles: -2 });
+  });
+  it("ahorro y sobrecosto por sede y mes", () => {
+    const a = ahorroPorSedeMes(compras).filter((x) => x.mes === "2026-11");
+    expect(a.find((x) => x.sedeId === 2)).toMatchObject({ deMas: 10, ahorro: 0 });
+    expect(a.find((x) => x.sedeId === 3)).toMatchObject({ deMas: 0, ahorro: 2 });
+  });
+  it("la misma compra en las sedes: quién paga más y cuánto se pudo ahorrar", () => {
+    const s = compararSedes(compras, "2026-11-20");
+    expect(s[0].porSede.map((x) => x.sedeId)).toEqual([3, 2]);
+    expect(s[0].brecha).toBeCloseTo(33.33, 1);
+    // Contra S/ 4.50: Fonavi (6 − 4.5) × 10 + 2 × 0.5, Centro 0.5 de octubre = 16.50
+    expect(s[0].ahorroPosible).toBe(16.5);
+  });
+  it("precios que suben", () => {
+    const p = preciosQueSuben([...compras, c(2, 2, "2026-10-01", 1, 10), c(2, 2, "2026-11-01", 1, 12)], "2026-11-20");
+    // El limón bajó (5 → 4.50): no sale. La harina subió 20%.
+    expect(p.map((x) => x.productoId)).toEqual([2]);
+    expect(p[0].pct).toBe(20);
   });
 });

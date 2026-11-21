@@ -1,9 +1,8 @@
 "use client";
 
-import Link from "next/link";
 
 import { useCallback, useEffect, useState } from "react";
-import { ClipboardList, Upload, Loader2, Save, Pencil, Truck } from "lucide-react";
+import { ClipboardList, Upload, Loader2, Save, Pencil } from "lucide-react";
 import { formatCurrency, monthLabel } from "@/lib/utils";
 import { getAtelierPanel, saveAtelierDay, type AtelierPanelData, type AtelierDaily } from "@/app/actions/byte-ventas";
 import { useToast } from "@/components/toast-provider";
@@ -209,13 +208,6 @@ export function AtelierPanel() {
           aria-label="Mes"
           className="border border-gray-300 rounded-lg px-3 py-2 text-xs bg-white"
         />
-        <Link
-          href={`/${"atelier"}/panel/proveedores`}
-          className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
-        >
-          <Truck className="w-3.5 h-3.5" />
-          Proveedores
-        </Link>
         <button
           onClick={() => setShowRotacion(true)}
           className="flex items-center gap-1.5 px-3 py-2 bg-primary text-white rounded-lg text-xs font-medium hover:bg-primary-dark"

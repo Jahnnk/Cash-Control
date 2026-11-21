@@ -1,25 +1,21 @@
 "use client";
 
 /**
- * Proveedores y precios (Jahnn, 20-nov-2026). Tres pestañas:
- *   · Directorio: proveedores y técnicos de la sede, con botón para llamar o escribir por WhatsApp.
- *   · Comparar precios: cada producto con sus proveedores, por la MISMA unidad, y «dónde comprar cada cosa».
- *   · Armar pedido: eliges qué y cuánto comprar; el sistema reparte entre proveedores contando envío y mínimos.
- * Separado de la carga para poder verlo con datos de prueba.
+ * Piezas de Grupo → Precios de compra (21-nov-2026): el directorio de proveedores (solo mirar), la comparación entre
+ * proveedores con la conexión a Recetas, y la franja de Control de Caja. Los datos los registran los administradores
+ * en Control de Caja; aquí no se escribe nada salvo conectar un producto con un insumo y «Usar en Recetas».
  */
 
-import { useEffect, useMemo, useState, type ReactNode } from "react";
+import { useMemo, useState, type ReactNode } from "react";
 import {
-  AlertTriangle, ArrowLeftRight, BadgeCheck, BookOpen, Link2, Loader2, Unlink, Building2, ChevronDown, History, Mail, MapPin, MessageCircle, Pencil, Phone, Plus,
-  Search, ShoppingBasket, Sparkles, Store, Tag, Truck, Wrench, X,
+  AlertTriangle, BadgeCheck, BookOpen, Link2, Loader2, Unlink, Building2, ChevronDown, History, Mail, MapPin, MessageCircle, Phone, 
+  Search, Sparkles, Store, Tag, Truck, Wrench, X,
 } from "lucide-react";
-import { desconectarInsumo, sincronizarConControlCaja, usarPrecioEnRecetas, type DatosProveedores, type Proveedor, type ProductoComparable, type PrecioRegistrado } from "@/app/actions/proveedores";
+import { desconectarInsumo, usarPrecioEnRecetas, type DatosProveedores, type Proveedor, type ProductoComparable, type PrecioRegistrado } from "@/app/actions/proveedores";
 import { useToast } from "@/components/toast-provider";
 import {
-  SEDES, plural, armarPedido, compararProducto, mejorParaInsumo, dondeComprar, enlaceTelefono, enlaceWhatsApp, vigentes, type ItemPedido, type ProveedorCompra,
+  SEDES, plural, compararProducto, mejorParaInsumo, enlaceTelefono, enlaceWhatsApp, vigentes, type ProveedorCompra,
 } from "@/lib/proveedores";
-import { Segmentado } from "@/components/productos/ui";
-import { ConectarModal, ProveedorModal, PrecioModal, type PrecioInicial } from "./formularios";
 
 const soles = (n: number, dec = 2) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
 /** Por unidad: hasta 4 decimales (una hoja cuesta centavos), sin ceros de más. */
@@ -35,121 +31,11 @@ function colorDe(texto: string) {
   return PALETA[h % PALETA.length];
 }
 
-type Pestana = "directorio" | "comparar" | "pedido";
-
-export function ProveedoresVista({ datos, sedeLabel, onCambio }: { datos: DatosProveedores; sedeLabel: string; onCambio: () => void }) {
-  const [pestana, setPestana] = useState<Pestana>("directorio");
-  const [editando, setEditando] = useState<Proveedor | "nuevo" | null>(null);
-  const [precio, setPrecio] = useState<PrecioInicial | null>(null);
-  const [todasLasSedes, setTodasLasSedes] = useState(false);
-  const [sync, setSync] = useState<{ estado: "trayendo" | "ok" | "error"; mensaje?: string }>({ estado: "ok" });
-  const { showToast } = useToast();
-
-  /** Trae de Control de Caja los proveedores y los precios de las compras reales. */
-  async function traer(siHaceFalta: boolean) {
-    setSync({ estado: "trayendo" });
-    const r = await sincronizarConControlCaja({ siHaceFalta });
-    if (!r.ok) { setSync({ estado: "error", mensaje: r.error }); return; }
-    setSync({ estado: "ok" });
-    if (r.nuevosProveedores || r.nuevosPrecios) {
-      showToast(`De Control de Caja: ${r.nuevosProveedores} proveedor${r.nuevosProveedores === 1 ? "" : "es"} y ${r.nuevosPrecios} precio${r.nuevosPrecios === 1 ? "" : "s"} nuevos`, "success");
-      onCambio();
-    } else if (!siHaceFalta) {
-      showToast("Ya estaba al día con Control de Caja", "success");
-      onCambio();
-    }
-  }
-  useEffect(() => {
-    /* eslint-disable react-hooks/set-state-in-effect -- traer de Control de Caja solo al abrir */
-    void traer(true);
-    /* eslint-enable react-hooks/set-state-in-effect */
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
-  const [conectando, setConectando] = useState<ProductoComparable | null>(null);
-
-  const visibles = useMemo(
-    () => datos.proveedores.filter((p) => todasLasSedes || p.sedes.includes(datos.sedeId)),
-    [datos.proveedores, datos.sedeId, todasLasSedes],
-  );
-  const compra: ProveedorCompra[] = useMemo(
-    () => visibles.filter((p) => p.tipo === "proveedor").map((p) => ({ id: p.id, nombre: p.nombre, costoEnvio: p.costoEnvio, pedidoMinimo: p.pedidoMinimo })),
-    [visibles],
-  );
-  const ofertas = useMemo(() => {
-    const ids = new Set(compra.map((p) => p.id));
-    return vigentes(datos.precios).filter((o) => ids.has(o.proveedorId));
-  }, [datos.precios, compra]);
-  const donde = useMemo(() => dondeComprar(ofertas, compra, datos.hoy), [ofertas, compra, datos.hoy]);
-  const productoPorId = useMemo(() => new Map(datos.productos.map((p) => [p.id, p])), [datos.productos]);
-
-  return (
-    <div className="space-y-5">
-      {/* Cabecera */}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="text-xl sm:text-2xl font-bold tracking-tight text-gray-900">Proveedores · {sedeLabel}</h1>
-          <p className="mt-0.5 text-sm text-gray-500">Contactos para pedir o pedir ayuda, y dónde conviene comprar cada cosa.</p>
-        </div>
-        {datos.puedeEditar && (
-          <div className="flex flex-wrap gap-2">
-            <button type="button" onClick={() => setPrecio({})}
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-300 bg-white px-3 py-2 text-xs font-medium text-gray-700 hover:bg-gray-50">
-              <Tag className="h-3.5 w-3.5" aria-hidden />Registrar precio
-            </button>
-            <button type="button" onClick={() => setEditando("nuevo")}
-              className="inline-flex items-center gap-1.5 rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary-light">
-              <Plus className="h-3.5 w-3.5" aria-hidden />Nuevo contacto
-            </button>
-          </div>
-        )}
-      </div>
-
-      <FranjaCaja sync={sync} ultima={datos.sincronizado} onActualizar={() => void traer(false)} />
-
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <Segmentado valor={pestana} onChange={setPestana} opciones={[
-          { valor: "directorio", etiqueta: "Directorio" },
-          { valor: "comparar", etiqueta: "Comparar" },
-          { valor: "pedido", etiqueta: "Armar pedido" },
-        ]} />
-        <label className="inline-flex cursor-pointer items-center gap-2 text-xs text-gray-600">
-          <input type="checkbox" checked={todasLasSedes} onChange={(e) => setTodasLasSedes(e.target.checked)} className="h-4 w-4 accent-primary" />
-          Ver también los de otras sedes
-        </label>
-      </div>
-
-      {pestana === "directorio" && (
-        <Directorio proveedores={visibles} donde={donde} productoPorId={productoPorId} sedeId={datos.sedeId}
-          onEditar={datos.puedeEditar ? setEditando : undefined} onNuevo={() => setEditando("nuevo")} />
-      )}
-      {pestana === "comparar" && (
-        <Comparar datos={datos} compra={compra} ofertas={ofertas} donde={donde} productoPorId={productoPorId}
-          onPrecio={datos.puedeEditar ? setPrecio : undefined} onConectar={setConectando} onCambio={onCambio} />
-      )}
-      {pestana === "pedido" && <ArmarPedido productos={datos.productos} ofertas={ofertas} compra={compra} />}
-
-      {editando && (
-        <ProveedorModal inicial={editando === "nuevo" ? null : editando} sedeId={datos.sedeId}
-          rubros={[...new Set(datos.proveedores.map((p) => p.rubro))]}
-          onCerrar={() => setEditando(null)} onGuardado={() => { setEditando(null); onCambio(); }} />
-      )}
-      {precio && (
-        <PrecioModal inicial={precio} proveedores={visibles.filter((p) => p.tipo === "proveedor")} productos={datos.productos} hoy={datos.hoy}
-          insumos={datos.insumos} enlaces={datos.enlaces} sedeId={datos.sedeId}
-          onCerrar={() => setPrecio(null)} onGuardado={() => { setPrecio(null); onCambio(); }} />
-      )}
-      {conectando && (
-        <ConectarModal producto={conectando} insumos={datos.insumos} enlaces={datos.enlaces} sedeId={datos.sedeId}
-          onCerrar={() => setConectando(null)} onGuardado={() => { setConectando(null); onCambio(); }} />
-      )}
-    </div>
-  );
-}
-
 /* ─────────── Directorio ─────────── */
 
-function Directorio({ proveedores, donde, productoPorId, sedeId, onEditar, onNuevo }: {
+export function Directorio({ proveedores, donde, productoPorId, sedeId }: {
   proveedores: Proveedor[]; donde: Map<number, number[]>; productoPorId: Map<number, ProductoComparable>; sedeId: number;
-  onEditar?: (p: Proveedor) => void; onNuevo: () => void;
+
 }) {
   const [q, setQ] = useState("");
   const [rubro, setRubro] = useState<string | null>(null);
@@ -161,8 +47,7 @@ function Directorio({ proveedores, donde, productoPorId, sedeId, onEditar, onNue
 
   if (proveedores.length === 0) {
     return (
-      <Vacio icono={Store} titulo="Aún no hay contactos" texto="Agrega a tus proveedores y a los técnicos de confianza (electricista, gasfitero) para tenerlos a la mano.">
-        <button type="button" onClick={onNuevo} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary-light">Agregar el primero</button>
+      <Vacio icono={Store} titulo="Aún no hay contactos" texto="Los proveedores llegan de Control de Caja: los registran los administradores allá.">
       </Vacio>
     );
   }
@@ -184,7 +69,7 @@ function Directorio({ proveedores, donde, productoPorId, sedeId, onEditar, onNue
             Técnicos para emergencias <span className="font-normal text-gray-500">· {tecnicos.length}</span>
           </h2>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {tecnicos.map((p) => <TarjetaContacto key={p.id} p={p} sedeId={sedeId} onEditar={onEditar} />)}
+            {tecnicos.map((p) => <TarjetaContacto key={p.id} p={p} sedeId={sedeId} />)}
           </div>
         </section>
       )}
@@ -197,7 +82,7 @@ function Directorio({ proveedores, donde, productoPorId, sedeId, onEditar, onNue
           </h2>
           <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
             {provs.map((p) => (
-              <TarjetaContacto key={p.id} p={p} sedeId={sedeId} onEditar={onEditar}
+              <TarjetaContacto key={p.id} p={p} sedeId={sedeId}
                 mejores={(donde.get(p.id) ?? []).map((id) => productoPorId.get(id)?.nombre).filter((x): x is string => !!x)} />
             ))}
           </div>
@@ -209,7 +94,7 @@ function Directorio({ proveedores, donde, productoPorId, sedeId, onEditar, onNue
   );
 }
 
-function TarjetaContacto({ p, sedeId, mejores = [], onEditar }: { p: Proveedor; sedeId: number; mejores?: string[]; onEditar?: (p: Proveedor) => void }) {
+function TarjetaContacto({ p, sedeId, mejores = [] }: { p: Proveedor; sedeId: number; mejores?: string[] }) {
   const wa = enlaceWhatsApp(p.telefono);
   const tel = enlaceTelefono(p.telefono);
   const tel2 = enlaceTelefono(p.telefono2);
@@ -226,10 +111,6 @@ function TarjetaContacto({ p, sedeId, mejores = [], onEditar }: { p: Proveedor; 
             {p.deCaja && <span className="rounded bg-gray-100 px-1.5 py-px text-[10px] font-medium text-gray-500">Control de Caja</span>}
           </p>
         </div>
-        {onEditar && (
-          <button type="button" onClick={() => onEditar(p)} aria-label={`Editar ${p.nombre}`}
-            className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-primary"><Pencil className="h-4 w-4" /></button>
-        )}
       </div>
 
       <dl className="mt-3 space-y-1 text-sm text-gray-700">
@@ -266,9 +147,9 @@ function TarjetaContacto({ p, sedeId, mejores = [], onEditar }: { p: Proveedor; 
 
 /* ─────────── Comparar precios ─────────── */
 
-function Comparar({ datos, compra, ofertas, donde, productoPorId, onPrecio, onConectar, onCambio }: {
+export function Comparar({ datos, compra, ofertas, donde, productoPorId, onConectar, onCambio }: {
   datos: DatosProveedores; compra: ProveedorCompra[]; ofertas: PrecioRegistrado[]; donde: Map<number, number[]>;
-  productoPorId: Map<number, ProductoComparable>; onPrecio?: (p: PrecioInicial) => void; onConectar: (p: ProductoComparable) => void; onCambio: () => void;
+  productoPorId: Map<number, ProductoComparable>; onConectar: (p: ProductoComparable) => void; onCambio: () => void;
 }) {
   const [q, setQ] = useState("");
   const [historial, setHistorial] = useState<number | null>(null);
@@ -278,8 +159,7 @@ function Comparar({ datos, compra, ofertas, donde, productoPorId, onPrecio, onCo
 
   if (conPrecio.length === 0) {
     return (
-      <Vacio icono={Tag} titulo="Aún no hay precios" texto="Registra el precio de un producto en dos o más proveedores y el sistema te dirá dónde conviene comprarlo.">
-        {onPrecio && <button type="button" onClick={() => onPrecio({})} className="rounded-lg bg-primary px-3 py-2 text-xs font-semibold text-white hover:bg-primary-light">Registrar un precio</button>}
+      <Vacio icono={Tag} titulo="Aún no hay precios" texto="Los precios llegan de las compras registradas en Control de Caja.">
       </Vacio>
     );
   }
@@ -328,12 +208,6 @@ function Comparar({ datos, compra, ofertas, donde, productoPorId, onPrecio, onCo
                   <h3 className="font-semibold text-gray-900">{prod.nombre}</h3>
                   <p className="text-xs text-gray-500">Precio por {prod.unidad} · {filas.length} proveedor{filas.length === 1 ? "" : "es"}</p>
                 </div>
-                {onPrecio && (
-                  <button type="button" onClick={() => onPrecio({ productoId: prod.id })}
-                    className="inline-flex shrink-0 items-center gap-1 rounded-lg border border-gray-200 px-2 py-1 text-[11px] font-medium text-gray-600 hover:bg-gray-50">
-                    <Plus className="h-3 w-3" aria-hidden />Precio
-                  </button>
-                )}
               </header>
               <ul className="mt-3 space-y-2">
                 {filas.map((f) => (
@@ -399,105 +273,9 @@ function Comparar({ datos, compra, ofertas, donde, productoPorId, onPrecio, onCo
   );
 }
 
-/* ─────────── Armar pedido ─────────── */
-
-function ArmarPedido({ productos, ofertas, compra }: { productos: ProductoComparable[]; ofertas: PrecioRegistrado[]; compra: ProveedorCompra[] }) {
-  const [cantidades, setCantidades] = useState<Record<number, string>>({});
-  const [q, setQ] = useState("");
-  const conPrecio = productos.filter((p) => ofertas.some((o) => o.productoId === p.id));
-  const items: ItemPedido[] = Object.entries(cantidades)
-    .map(([id, c]) => ({ productoId: Number(id), cantidad: Number(c) }))
-    .filter((i) => Number.isFinite(i.cantidad) && i.cantidad > 0);
-  const plan = armarPedido(items, ofertas, compra);
-  const nombre = (id: number) => productos.find((p) => p.id === id);
-  const lista = conPrecio.filter((p) => !q || normal(p.nombre).includes(normal(q)));
-  const ahorro = plan.unSoloProveedor && plan.pedidos.length > 0 ? plan.unSoloProveedor.total - plan.total : 0;
-
-  if (conPrecio.length === 0) {
-    return <Vacio icono={ShoppingBasket} titulo="Primero registra precios" texto="Con los precios de cada proveedor, aquí eliges qué y cuánto comprar y el sistema arma el pedido más barato." />;
-  }
-
-  return (
-    <div className="grid grid-cols-1 gap-4 lg:grid-cols-5">
-      <section className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm lg:col-span-2">
-        <h2 className="text-base font-bold text-gray-900">¿Qué vas a comprar?</h2>
-        <p className="mb-3 text-xs text-gray-500">Escribe la cantidad en la unidad de cada producto. Se compran presentaciones enteras.</p>
-        <Buscador valor={q} onChange={setQ} placeholder="Buscar un producto" />
-        <ul className="mt-3 max-h-[28rem] space-y-1.5 overflow-y-auto pr-1">
-          {lista.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-3 rounded-lg px-2 py-1.5 hover:bg-gray-50">
-              <label htmlFor={`cant-${p.id}`} className="min-w-0 flex-1 text-sm text-gray-800">{p.nombre}</label>
-              <div className="flex items-center gap-1.5">
-                <input id={`cant-${p.id}`} type="number" min="0" inputMode="decimal" value={cantidades[p.id] ?? ""}
-                  onChange={(e) => setCantidades({ ...cantidades, [p.id]: e.target.value })} placeholder="0"
-                  className="w-24 rounded-lg border border-gray-300 px-2 py-1.5 text-right text-sm tabular-nums focus:border-primary-light focus:outline-none focus:ring-2 focus:ring-primary-light/20" />
-                <span className="w-14 truncate text-xs text-gray-500">{p.unidad}</span>
-              </div>
-            </li>
-          ))}
-        </ul>
-        {items.length > 0 && (
-          <button type="button" onClick={() => setCantidades({})} className="mt-3 text-xs font-medium text-gray-500 underline hover:text-gray-700">Vaciar la lista</button>
-        )}
-      </section>
-
-      <section className="space-y-3 lg:col-span-3" aria-live="polite">
-        {items.length === 0 ? (
-          <Vacio icono={ArrowLeftRight} titulo="El pedido aparece aquí" texto="El sistema reparte cada producto al proveedor que lo deja más barato, contando el envío y el pedido mínimo." />
-        ) : (
-          <>
-            <div className="rounded-2xl bg-primary p-4 text-white shadow-sm sm:p-5">
-              <p className="text-xs font-semibold uppercase tracking-wider text-white/70">Total del pedido sugerido</p>
-              <p className="mt-1 text-3xl font-extrabold tabular-nums">{soles(plan.total)}</p>
-              <p className="mt-1 text-sm text-white/85">
-                {plan.pedidos.length === 1 ? "Todo con un proveedor." : `Repartido en ${plan.pedidos.length} proveedores.`}
-                {ahorro > 0.009 && plan.unSoloProveedor && <> Ahorras <b>{soles(ahorro)}</b> frente a comprar todo a {plan.unSoloProveedor.proveedor.nombre}.</>}
-              </p>
-            </div>
-            {plan.minimosQueMandaron.length > 0 && (
-              <p className="flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-900">
-                <AlertTriangle className="mt-px h-4 w-4 shrink-0" aria-hidden />
-                {plan.minimosQueMandaron.map((id) => compra.find((p) => p.id === id)?.nombre).join(" y ")}: el pedido no llega a su mínimo, así que esos productos se sugieren con otro proveedor. Si juntas más productos, puede convenir.
-              </p>
-            )}
-            {plan.pedidos.map((pp) => (
-              <article key={pp.proveedor.id} className="rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm">
-                <header className="flex items-start justify-between gap-2">
-                  <h3 className="font-semibold text-gray-900">{pp.proveedor.nombre}</h3>
-                  <p className="text-lg font-bold tabular-nums text-gray-900">{soles(pp.total)}</p>
-                </header>
-                <ul className="mt-2 divide-y divide-gray-100 text-sm">
-                  {pp.lineas.map((l) => (
-                    <li key={l.productoId} className="flex items-center justify-between gap-3 py-1.5">
-                      <span className="min-w-0 text-gray-800">
-                        {nombre(l.productoId)?.nombre}
-                        <span className="block text-xs text-gray-500">{l.paquetes} × {l.oferta.presentacion} ({soles(l.oferta.precio)} c/u)</span>
-                      </span>
-                      <span className="shrink-0 tabular-nums text-gray-900">{soles(l.subtotal)}</span>
-                    </li>
-                  ))}
-                  {pp.envio > 0 && (
-                    <li className="flex items-center justify-between gap-3 py-1.5 text-gray-600">
-                      <span className="inline-flex items-center gap-1"><Truck className="h-3.5 w-3.5" aria-hidden />Envío</span>
-                      <span className="tabular-nums">{soles(pp.envio)}</span>
-                    </li>
-                  )}
-                </ul>
-              </article>
-            ))}
-            {plan.sinPrecio.length > 0 && (
-              <p className="text-xs text-gray-500">Sin precio registrado: {plan.sinPrecio.map((id) => nombre(id)?.nombre).join(", ")}.</p>
-            )}
-          </>
-        )}
-      </section>
-    </div>
-  );
-}
-
 /* ─────────── Piezas ─────────── */
 
-function Buscador({ valor, onChange, placeholder }: { valor: string; onChange: (v: string) => void; placeholder: string }) {
+export function Buscador({ valor, onChange, placeholder }: { valor: string; onChange: (v: string) => void; placeholder: string }) {
   return (
     <div className="relative">
       <Search className="pointer-events-none absolute left-3 top-1/2 h-4 w-4 -translate-y-1/2 text-gray-400" aria-hidden />
@@ -521,7 +299,7 @@ function Chip({ activo, onClick, children }: { activo: boolean; onClick: () => v
   );
 }
 
-function Vacio({ icono: Icono, titulo, texto, children }: { icono: typeof Store; titulo: string; texto: string; children?: ReactNode }) {
+export function Vacio({ icono: Icono, titulo, texto, children }: { icono: typeof Store; titulo: string; texto: string; children?: ReactNode }) {
   return (
     <div className="flex flex-col items-center gap-2 rounded-2xl border border-dashed border-gray-300 bg-white px-6 py-10 text-center">
       <span className="grid h-12 w-12 place-items-center rounded-full bg-primary-50 text-primary-light"><Icono className="h-6 w-6" aria-hidden /></span>
@@ -624,7 +402,7 @@ function haceCuanto(iso: string): string {
   return `hace ${d} día${d === 1 ? "" : "s"}`;
 }
 
-function FranjaCaja({ sync, ultima, onActualizar }: {
+export function FranjaCaja({ sync, ultima, onActualizar }: {
   sync: { estado: "trayendo" | "ok" | "error"; mensaje?: string }; ultima: DatosProveedores["sincronizado"]; onActualizar: () => void;
 }) {
   const error = sync.estado === "error";

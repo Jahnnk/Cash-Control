@@ -1,18 +1,18 @@
 "use server";
 
 /**
- * Proveedores y precios (Jahnn, 20-nov-2026). Una sola lista para las 3 sedes: cada proveedor marca qué sedes le
- * compran. La usan los administradores (su sede) y la dirección. Ambos agregan contactos y registran precios;
- * cada cambio guarda quién y cuándo, y un precio nuevo nunca borra el anterior (queda en el historial).
- * La lógica de comparar y armar pedidos vive en lib/proveedores.ts.
+ * Grupo → Precios de compra (Jahnn, 20/21-nov-2026). Desde el 21-nov los administradores registran proveedores,
+ * compras y precios SOLO en Control de Caja (un solo lugar); aquí se traen de allá y la dirección los analiza:
+ * entre proveedores, entre sedes, ahorro frente al precio habitual y la conexión con Recetas y costos.
+ * Solo la dirección escribe (conectar un insumo, «Usar en Recetas», traer de Control de Caja); la llave de solo
+ * lectura puede mirar. La lógica vive en lib/proveedores.ts.
  */
 
 import { neon } from "@neondatabase/serverless";
-import { getSessionRole } from "@/lib/session-access";
-import { activeBusinessId } from "@/lib/active-business";
+import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
 import { leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
-import { claveNombre, factorInsumo, mejorParaInsumo, nombreBonito, precioDesdeCompra, sedesDesdeNombres, unidadDesdeInsumo, type OrigenInsumo, type UnidadInsumo } from "@/lib/proveedores";
+import { claveNombre, factorInsumo, mejorParaInsumo, nombreBonito, precioDesdeCompra, sedesDesdeNombres, type OrigenInsumo, type UnidadInsumo } from "@/lib/proveedores";
 import { comprasCaja, controlCajaConfigurado, proveedoresCaja } from "@/lib/control-caja";
 import { leerEnlaces, leerOfertas, type EnlaceInsumo } from "@/lib/proveedores-sql";
 import { guardarPrecioInsumo } from "./precios-insumos";
@@ -54,6 +54,8 @@ export type PrecioRegistrado = {
   fecha: string;
   nota: string | null;
   registradoPor: string;
+  /** Sede que hizo la compra (business_id). null = no se sabe. */
+  sedeId: number | null;
 };
 
 /** Un insumo de Recetas y costos con su precio vigente (por kg, litro o unidad). */
@@ -88,20 +90,20 @@ function errorBD(donde: string, e: unknown): { ok: false; error: string } {
   return { ok: false, error: falta ? "Falta crear las tablas de proveedores en la base." : "No pude conectar con la base. Intenta de nuevo." };
 }
 
-/** Quién usa el módulo: la dirección o el administrador de una sede. */
-async function sesion(): Promise<{ nombre: string; sedeFija: number | null; direccion: boolean } | null> {
+/** Quién usa el módulo: la dirección (escribe) o la llave de solo lectura (mira). Los administradores van a Control de Caja. */
+async function sesion(): Promise<{ nombre: string; direccion: boolean } | null> {
   const role = await getSessionRole();
   if (!role) return null;
-  if (role.kind === "full") return { nombre: role.quien === "kelly" ? "Kelly" : "Jahnn", sedeFija: null, direccion: true };
-  if (role.kind === "admin") return { nombre: role.nombre ?? "Administración", sedeFija: role.sede, direccion: false };
+  if (role.kind === "full") return { nombre: role.quien === "kelly" ? "Kelly" : "Jahnn", direccion: true };
+  if (puedeLeerDireccion(role)) return { nombre: "lector", direccion: false };
   return null;
 }
+const SOLO_DIRECCION = { ok: false as const, error: "Solo la dirección puede hacer esto." };
 
 export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> {
   const s = await sesion();
   if (!s) return SIN_ACCESO;
   try {
-    const sedeId = s.sedeFija ?? (await activeBusinessId());
     const [provs, prods, precios, { vigentes: insumosVig }, enlaces, sync] = await Promise.all([
       sql`SELECT id, nombre, tipo, rubro, contacto, telefono, telefono2, email, direccion, ciudad, notas, sedes,
                  costo_envio::float AS "costoEnvio", pedido_minimo::float AS "pedidoMinimo",
@@ -110,7 +112,7 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
           FROM proveedores WHERE activo ORDER BY tipo, rubro, nombre`,
       sql`SELECT id, nombre, unidad, rubro FROM proveedor_productos WHERE activo ORDER BY nombre`,
       sql`SELECT pp.id, proveedor_id AS "proveedorId", producto_id AS "productoId", presentacion, cantidad::float AS cantidad,
-                 precio::float AS precio, to_char(fecha, 'YYYY-MM-DD') AS fecha, nota, registrado_por AS "registradoPor"
+                 precio::float AS precio, to_char(fecha, 'YYYY-MM-DD') AS fecha, nota, registrado_por AS "registradoPor", pp.sede_id AS "sedeId"
           FROM proveedor_precios pp
           JOIN proveedores p ON p.id = pp.proveedor_id AND p.activo
           JOIN proveedor_productos x ON x.id = pp.producto_id AND x.activo
@@ -122,7 +124,8 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
     return {
       ok: true,
       datos: {
-        hoy: getToday(), sedeId, puedeEditar: true, puedeCambiarRecetas: s.direccion,
+        // sedeId 0: Grupo mira las 3 sedes (el directorio muestra a qué sedes les vende cada uno).
+        hoy: getToday(), sedeId: 0, puedeEditar: s.direccion, puedeCambiarRecetas: s.direccion,
         insumos: insumosVig.map((v) => ({ origen: v.origen, sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio })),
         enlaces,
         sincronizado: sync,
@@ -134,151 +137,16 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
   }
 }
 
-export type EntradaProveedor = {
-  id?: number;
-  nombre: string;
-  tipo: "proveedor" | "tecnico";
-  rubro: string;
-  contacto?: string | null;
-  telefono?: string | null;
-  telefono2?: string | null;
-  email?: string | null;
-  direccion?: string | null;
-  ciudad?: string | null;
-  notas?: string | null;
-  sedes: number[];
-  costoEnvio?: number | null;
-  pedidoMinimo?: number | null;
-};
-
-const monto = (n: number | null | undefined) => (n === null || n === undefined || !Number.isFinite(n) || n <= 0 ? null : Math.round(n * 100) / 100);
-
-export async function guardarProveedor(e: EntradaProveedor): Promise<R<{ id: number }>> {
-  const s = await sesion();
-  if (!s) return SIN_ACCESO;
-  const nombre = limpio(e.nombre, 120);
-  const rubro = limpio(e.rubro, 60);
-  if (!nombre) return { ok: false, error: "Escribe el nombre del proveedor." };
-  if (!rubro) return { ok: false, error: "Elige o escribe el rubro (ej. Packaging, Electricista)." };
-  if (e.tipo !== "proveedor" && e.tipo !== "tecnico") return { ok: false, error: "Tipo inválido." };
-  if (!limpio(e.telefono) && !limpio(e.email)) return { ok: false, error: "Escribe al menos un teléfono o un correo." };
-  let sedes = [...new Set(e.sedes.filter((x) => [1, 2, 3].includes(x)))].sort();
-  // El administrador siempre ve lo que registra: su sede va incluida.
-  if (s.sedeFija && !sedes.includes(s.sedeFija)) sedes = [...sedes, s.sedeFija].sort();
-  if (sedes.length === 0) return { ok: false, error: "Marca al menos una sede." };
-  try {
-    if (e.id) {
-      const r = (await sql`
-        UPDATE proveedores SET nombre = ${nombre}, tipo = ${e.tipo}, rubro = ${rubro}, contacto = ${limpio(e.contacto, 120)},
-          telefono = ${limpio(e.telefono, 40)}, telefono2 = ${limpio(e.telefono2, 40)}, email = ${limpio(e.email, 120)},
-          direccion = ${limpio(e.direccion, 200)}, ciudad = ${limpio(e.ciudad, 60)}, notas = ${limpio(e.notas, 600)}, sedes = ${sedes},
-          costo_envio = ${monto(e.costoEnvio)}, pedido_minimo = ${monto(e.pedidoMinimo)},
-          actualizado_por = ${s.nombre}, actualizado_el = now()
-        WHERE id = ${e.id} AND activo RETURNING id`) as { id: number }[];
-      if (!r[0]) return { ok: false, error: "No encontré ese proveedor." };
-      return { ok: true, id: r[0].id };
-    }
-    const r = (await sql`
-      INSERT INTO proveedores (nombre, tipo, rubro, contacto, telefono, telefono2, email, direccion, ciudad, notas, sedes, costo_envio, pedido_minimo, creado_por)
-      VALUES (${nombre}, ${e.tipo}, ${rubro}, ${limpio(e.contacto, 120)}, ${limpio(e.telefono, 40)}, ${limpio(e.telefono2, 40)},
-              ${limpio(e.email, 120)}, ${limpio(e.direccion, 200)}, ${limpio(e.ciudad, 60)}, ${limpio(e.notas, 600)}, ${sedes},
-              ${monto(e.costoEnvio)}, ${monto(e.pedidoMinimo)}, ${s.nombre})
-      RETURNING id`) as { id: number }[];
-    return { ok: true, id: r[0].id };
-  } catch (err) {
-    return errorBD("guardar", err);
-  }
-}
-
-/** Quitar de la lista: se archiva (activo = false), nunca se borra. Sus precios quedan guardados. */
-export async function archivarProveedor(id: number): Promise<R<object>> {
-  const s = await sesion();
-  if (!s) return SIN_ACCESO;
-  try {
-    await sql`UPDATE proveedores SET activo = false, actualizado_por = ${s.nombre}, actualizado_el = now() WHERE id = ${id}`;
-    return { ok: true };
-  } catch (err) {
-    return errorBD("archivar", err);
-  }
-}
-
-export type EntradaPrecio = {
-  proveedorId: number;
-  /** Producto existente… */
-  productoId?: number | null;
-  /** …o uno nuevo para comparar. */
-  productoNuevo?: { nombre: string; unidad: string } | null;
-  /** …o un insumo de Recetas: se crea el producto con su nombre y unidad, ya conectado. */
-  desdeInsumo?: { origen: OrigenInsumo; sku: string } | null;
-  presentacion: string;
-  cantidad: number;
-  precio: number;
-  fecha: string;
-  nota?: string | null;
-};
-
-export async function registrarPrecio(e: EntradaPrecio): Promise<R<{ productoId: number }>> {
-  const s = await sesion();
-  if (!s) return SIN_ACCESO;
-  const presentacion = limpio(e.presentacion, 80);
-  if (!presentacion) return { ok: false, error: "Escribe la presentación (ej. «Paquete de 500 hojas»)." };
-  if (!Number.isFinite(e.cantidad) || e.cantidad <= 0) return { ok: false, error: "¿Cuántas unidades trae esa presentación? Debe ser mayor a 0." };
-  if (!Number.isFinite(e.precio) || e.precio < 0) return { ok: false, error: "Escribe el precio en soles." };
-  if (!/^\d{4}-\d{2}-\d{2}$/.test(e.fecha) || e.fecha > getToday()) return { ok: false, error: "La fecha no puede ser futura." };
-  try {
-    let productoId = e.productoId ?? null;
-    if (!productoId && e.desdeInsumo) {
-      const r = await productoDesdeInsumo(e.desdeInsumo.origen, e.desdeInsumo.sku, s.nombre);
-      if (!r.ok) return r;
-      productoId = r.productoId;
-    }
-    if (!productoId) {
-      const nombre = limpio(e.productoNuevo?.nombre, 100);
-      const unidad = limpio(e.productoNuevo?.unidad, 30)?.toLowerCase() ?? null;
-      if (!nombre || !unidad) return { ok: false, error: "Escribe el producto y su unidad (ej. «Papel manteca», «hoja»)." };
-      const existe = (await sql`SELECT id FROM proveedor_productos WHERE activo AND lower(nombre) = lower(${nombre}) AND lower(unidad) = ${unidad}`) as { id: number }[];
-      productoId = existe[0]?.id ?? ((await sql`
-        INSERT INTO proveedor_productos (nombre, unidad, creado_por) VALUES (${nombre}, ${unidad}, ${s.nombre}) RETURNING id`) as { id: number }[])[0].id;
-    }
-    const prov = (await sql`SELECT id FROM proveedores WHERE id = ${e.proveedorId} AND activo`) as { id: number }[];
-    if (!prov[0]) return { ok: false, error: "Elige un proveedor de la lista." };
-    const sedeId = s.sedeFija ?? (await activeBusinessId().catch(() => null));
-    await sql`
-      INSERT INTO proveedor_precios (proveedor_id, producto_id, presentacion, cantidad, precio, fecha, nota, sede_id, registrado_por)
-      VALUES (${e.proveedorId}, ${productoId}, ${presentacion}, ${e.cantidad}, ${Math.round(e.precio * 100) / 100}, ${e.fecha},
-              ${limpio(e.nota, 300)}, ${sedeId}, ${s.nombre})`;
-    return { ok: true, productoId };
-  } catch (err) {
-    return errorBD("precio", err);
-  }
-}
-
 async function insumoVigente(origen: OrigenInsumo, sku: string) {
   const { vigentes } = await leerPreciosVigentes(sql);
   return vigentes.find((v) => v.origen === origen && v.sku === sku) ?? null;
-}
-
-/** El producto conectado a ese insumo; si no existe, lo crea con el nombre y la unidad del insumo. */
-async function productoDesdeInsumo(origen: OrigenInsumo, sku: string, quien: string): Promise<R<{ productoId: number }>> {
-  const ins = await insumoVigente(origen, sku);
-  if (!ins) return { ok: false, error: "No encontré ese insumo en Recetas y costos." };
-  const ya = (await sql`SELECT e.producto_id AS id FROM proveedor_producto_insumos e JOIN proveedor_productos p ON p.id = e.producto_id AND p.activo
-                        WHERE e.origen = ${origen} AND e.sku = ${sku} LIMIT 1`) as { id: number }[];
-  if (ya[0]) return { ok: true, productoId: ya[0].id };
-  const unidad = unidadDesdeInsumo(ins.unidad);
-  const existe = (await sql`SELECT id FROM proveedor_productos WHERE activo AND lower(nombre) = lower(${ins.nombre}) AND lower(unidad) = ${unidad}`) as { id: number }[];
-  const productoId = existe[0]?.id ?? ((await sql`
-    INSERT INTO proveedor_productos (nombre, unidad, creado_por) VALUES (${ins.nombre}, ${unidad}, ${quien}) RETURNING id`) as { id: number }[])[0].id;
-  await sql`INSERT INTO proveedor_producto_insumos (producto_id, origen, sku, factor, creado_por)
-            VALUES (${productoId}, ${origen}, ${sku}, 1, ${quien})
-            ON CONFLICT (producto_id, origen) DO UPDATE SET sku = EXCLUDED.sku, factor = EXCLUDED.factor, creado_por = EXCLUDED.creado_por, creado_el = now()`;
-  return { ok: true, productoId };
 }
 
 /** Conectar un producto de Proveedores con un insumo de Recetas (uno por lista: Atelier y cafeterías). */
 export async function conectarInsumo(input: { productoId: number; origen: OrigenInsumo; sku: string }): Promise<R<object>> {
   const s = await sesion();
   if (!s) return SIN_ACCESO;
+  if (!s.direccion) return SOLO_DIRECCION;
   if (input.origen !== "Atelier" && input.origen !== "Cafetería") return { ok: false, error: "Lista de insumos inválida." };
   try {
     const prod = (await sql`SELECT unidad FROM proveedor_productos WHERE id = ${input.productoId} AND activo`) as { unidad: string }[];
@@ -299,6 +167,7 @@ export async function conectarInsumo(input: { productoId: number; origen: Origen
 export async function desconectarInsumo(input: { productoId: number; origen: OrigenInsumo }): Promise<R<object>> {
   const s = await sesion();
   if (!s) return SIN_ACCESO;
+  if (!s.direccion) return SOLO_DIRECCION;
   try {
     await sql`DELETE FROM proveedor_producto_insumos WHERE producto_id = ${input.productoId} AND origen = ${input.origen}`;
     return { ok: true };
@@ -355,6 +224,7 @@ async function leerSync(): Promise<DatosProveedores["sincronizado"]> {
 export async function sincronizarConControlCaja(opciones?: { siHaceFalta?: boolean }): Promise<R<{ nuevosProveedores: number; nuevosPrecios: number; omitido?: boolean }>> {
   const s = await sesion();
   if (!s) return SIN_ACCESO;
+  if (!s.direccion) return SOLO_DIRECCION;
   if (!controlCajaConfigurado()) return { ok: false, error: "La conexión con Control de Caja no está configurada." };
   if (opciones?.siHaceFalta) {
     const ult = await leerSync();

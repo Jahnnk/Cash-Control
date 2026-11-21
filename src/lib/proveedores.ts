@@ -5,9 +5,7 @@
  * Cajamarca vende más baratos los stickers redondos. Por eso se compara PRODUCTO por producto, siempre por la
  * misma unidad (por hoja, por sticker, por kg), aunque cada uno venda en presentaciones distintas.
  *
- * Y se compara el precio PUESTO EN CAJAMARCA: un proveedor de fuera cobra envío por pedido y pide un mínimo.
- * Comprar poco donde hay envío puede salir más caro. `armarPedido` reparte una lista de compra entre los
- * proveedores para que el total (productos + envíos) sea el menor posible, respetando los mínimos.
+ * Los pedidos se arman en Control de Caja (un solo lugar, 21-nov-2026): aquí solo se compara y se analiza.
  */
 
 /** Las sedes por su business_id. */
@@ -113,105 +111,6 @@ export function dondeComprar(ofertas: Oferta[], proveedores: ProveedorCompra[], 
   return res;
 }
 
-/* ─────────── Armar un pedido ─────────── */
-
-export type ItemPedido = { productoId: number; cantidad: number };
-
-export type LineaPlan = {
-  productoId: number;
-  cantidad: number;
-  oferta: Oferta;
-  /** Presentaciones a comprar (se compran enteras). */
-  paquetes: number;
-  subtotal: number;
-};
-
-export type PedidoProveedor = {
-  proveedor: ProveedorCompra;
-  lineas: LineaPlan[];
-  productos: number;
-  envio: number;
-  total: number;
-};
-
-export type PlanPedido = {
-  pedidos: PedidoProveedor[];
-  total: number;
-  /** Productos sin ningún precio registrado. */
-  sinPrecio: number[];
-  /** Lo que costaría comprando todo a un solo proveedor (el más barato que tenga todo). null = ninguno tiene todo. */
-  unSoloProveedor: { proveedor: ProveedorCompra; total: number } | null;
-  /** Mínimos que obligaron a cambiar de proveedor algún producto (para explicarlo). */
-  minimosQueMandaron: number[];
-};
-
-function linea(item: ItemPedido, o: Oferta): LineaPlan {
-  const paquetes = Math.max(1, Math.ceil(item.cantidad / o.cantidad));
-  return { productoId: item.productoId, cantidad: item.cantidad, oferta: o, paquetes, subtotal: r2(paquetes * o.precio) };
-}
-
-/** Más proveedores que esto y se prueba de a uno (2^12 = 4.096 combinaciones ya es mucho para el navegador). */
-const MAX_PROVEEDORES_EXACTO = 12;
-
-/**
- * Reparte la lista entre proveedores para pagar lo menos posible en total (productos + un envío por proveedor
- * usado), cumpliendo el pedido mínimo de cada uno. Prueba cada combinación de proveedores: con pocos proveedores
- * es exacto.
- */
-export function armarPedido(items: ItemPedido[], ofertas: Oferta[], proveedores: ProveedorCompra[]): PlanPedido {
-  const pedidosValidos = items.filter((i) => i.cantidad > 0);
-  const ofertasDe = (pid: number) => ofertas.filter((o) => o.productoId === pid && o.cantidad > 0);
-  const sinPrecio = pedidosValidos.filter((i) => ofertasDe(i.productoId).length === 0).map((i) => i.productoId);
-  const conPrecio = pedidosValidos.filter((i) => !sinPrecio.includes(i.productoId));
-  const porId = new Map(proveedores.map((p) => [p.id, p]));
-  const candidatos = [...new Set(conPrecio.flatMap((i) => ofertasDe(i.productoId).map((o) => o.proveedorId)))].filter((id) => porId.has(id));
-
-  const evaluar = (usables: Set<number>, respetarMinimos: boolean): { pedidos: PedidoProveedor[]; total: number } | null => {
-    const grupos = new Map<number, LineaPlan[]>();
-    for (const it of conPrecio) {
-      const opciones = ofertasDe(it.productoId).filter((o) => usables.has(o.proveedorId)).map((o) => linea(it, o));
-      if (opciones.length === 0) return null;
-      const mejor = opciones.reduce((a, b) => (b.subtotal < a.subtotal ? b : a));
-      grupos.set(mejor.oferta.proveedorId, [...(grupos.get(mejor.oferta.proveedorId) ?? []), mejor]);
-    }
-    const pedidos: PedidoProveedor[] = [];
-    for (const [pid, lineas] of grupos) {
-      const p = porId.get(pid)!;
-      const productos = r2(lineas.reduce((t, l) => t + l.subtotal, 0));
-      if (respetarMinimos && p.pedidoMinimo && productos < p.pedidoMinimo) return null;
-      const envio = r2(p.costoEnvio ?? 0);
-      pedidos.push({ proveedor: p, lineas, productos, envio, total: r2(productos + envio) });
-    }
-    return { pedidos, total: r2(pedidos.reduce((t, p) => t + p.total, 0)) };
-  };
-
-  let mejor: { pedidos: PedidoProveedor[]; total: number } | null = null;
-  if (candidatos.length <= MAX_PROVEEDORES_EXACTO) {
-    for (let mask = 1; mask < 1 << candidatos.length; mask++) {
-      const usables = new Set(candidatos.filter((_, i) => mask & (1 << i)));
-      const r = evaluar(usables, true);
-      if (r && (!mejor || r.total < mejor.total || (r.total === mejor.total && r.pedidos.length < mejor.pedidos.length))) mejor = r;
-    }
-  }
-  // Sin combinación que cumpla todos los mínimos (o demasiados proveedores): el más barato ignorando mínimos.
-  const libre = evaluar(new Set(candidatos), false);
-  if (!mejor) mejor = libre ?? { pedidos: [], total: 0 };
-
-  // ¿Qué mínimos obligaron a cambiar de proveedor? Los que en el plan «libre» no se cumplían.
-  const minimosQueMandaron = (libre?.pedidos ?? [])
-    .filter((p) => p.proveedor.pedidoMinimo && p.productos < p.proveedor.pedidoMinimo)
-    .map((p) => p.proveedor.id);
-
-  let unSolo: PlanPedido["unSoloProveedor"] = null;
-  for (const id of candidatos) {
-    const r = evaluar(new Set([id]), false);
-    if (r && (!unSolo || r.total < unSolo.total)) unSolo = { proveedor: porId.get(id)!, total: r.total };
-  }
-
-  const pedidos = [...mejor.pedidos].sort((a, b) => b.total - a.total);
-  return { pedidos, total: mejor.total, sinPrecio, unSoloProveedor: unSolo, minimosQueMandaron };
-}
-
 /** «987 654 321» → enlace de WhatsApp con el código de Perú si falta. null si no parece un número. */
 export function enlaceWhatsApp(telefono: string | null | undefined): string | null {
   const d = (telefono ?? "").replace(/\D/g, "");
@@ -309,10 +208,6 @@ export function sedesDesdeNombres(nombres: string[]): number[] {
   return ids.length ? ids : [1, 2, 3];
 }
 
-/**
- * Una línea de compra → precio por unidad. Se guarda como «1 unidad a S/ X» (no como el paquete comprado): así
- * «Armar pedido» puede pedir la cantidad exacta y no paquetes del tamaño de esa compra.
- */
 /** Clave para reconocer el mismo producto aunque se escriba distinto: sin tildes, sin mayúsculas, sin espacios dobles. */
 export function claveNombre(nombre: string): string {
   return nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
@@ -349,10 +244,7 @@ export function unidadCanonica(unidad: string): { unidad: string; factor: number
   return { unidad: u, factor: 1 };
 }
 
-/**
- * Una línea de compra → precio por unidad (ya en la unidad única). Se guarda como «1 unidad a S/ X» (no como el
- * paquete comprado): así «Armar pedido» puede pedir la cantidad exacta. null = no sirve para comparar.
- */
+/** Una línea de compra en la unidad única (g → kg, «und» → unidad). null = no sirve para comparar («en soles»). */
 export function precioDesdeCompra(c: { cantidad: number; precioTotal: number; unidad: string }): { unidad: string; cantidad: number; precio: number; presentacion: string } | null {
   if (!(c.cantidad > 0) || !(c.precioTotal > 0)) return null;
   const canon = unidadCanonica(c.unidad);
@@ -361,5 +253,105 @@ export function precioDesdeCompra(c: { cantidad: number; precioTotal: number; un
   const u = canon.unidad;
   const original = (c.unidad || "unidad").trim().toLowerCase();
   const cant = Number(c.cantidad.toFixed(3)).toLocaleString("es-PE", { maximumFractionDigits: 3 });
-  return { unidad: u, cantidad: 1, precio: r4(c.precioTotal / cantidad), presentacion: `Por ${u} · compra de ${cant} ${original} a S/ ${c.precioTotal.toFixed(2)}` };
+  // Se guarda la compra tal cual (cantidad en la unidad única y lo pagado): el precio por unidad sale de dividir, y
+  // con la cantidad se sabe cuántos soles se ahorraron o se pagaron de más.
+  return { unidad: u, cantidad: r4(cantidad), precio: r2(c.precioTotal), presentacion: `Compra de ${cant} ${original}` };
+}
+
+/* ─────────── Análisis de compras para la dirección (21-nov-2026) ─────────── */
+
+/** Una compra real (de Control de Caja): `precio` = lo pagado por `cantidad` unidades. */
+export type CompraReal = { productoId: number; proveedorId: number; sedeId: number | null; fecha: string; cantidad: number; precio: number };
+
+const unit = (c: CompraReal) => c.precio / c.cantidad;
+const mediana = (xs: number[]) => {
+  const o = [...xs].sort((a, b) => a - b);
+  const m = Math.floor(o.length / 2);
+  return o.length % 2 ? o[m] : (o[m - 1] + o[m]) / 2;
+};
+/** Igual que Control de Caja: el habitual es la mediana de las 3 compras anteriores del producto (cualquier sede o proveedor). */
+export const COMPRAS_PARA_HABITUAL = 3;
+
+export type DiferenciaCompra = { compra: CompraReal; habitual: number; unitario: number; soles: number; pct: number };
+
+/** Cada compra contra su precio habitual. Positivo = se pagó de más; negativo = ahorro. Solo compras con historial. */
+export function diferenciasContraHabitual(compras: CompraReal[]): DiferenciaCompra[] {
+  const porProd = new Map<number, CompraReal[]>();
+  for (const c of [...compras].filter((c) => c.cantidad > 0 && c.precio > 0).sort((a, b) => a.fecha.localeCompare(b.fecha))) {
+    porProd.set(c.productoId, [...(porProd.get(c.productoId) ?? []), c]);
+  }
+  const out: DiferenciaCompra[] = [];
+  for (const lista of porProd.values()) {
+    lista.forEach((c, i) => {
+      const previas = lista.slice(Math.max(0, i - COMPRAS_PARA_HABITUAL), i);
+      if (!previas.length) return;
+      const habitual = mediana(previas.map(unit));
+      const u = unit(c);
+      out.push({ compra: c, habitual: r4(habitual), unitario: r4(u), soles: r2((u - habitual) * c.cantidad), pct: r2(((u - habitual) / habitual) * 100) });
+    });
+  }
+  return out;
+}
+
+export type AhorroSedeMes = { sedeId: number | null; mes: string; deMas: number; ahorro: number; compras: number };
+
+/** Por sede y mes: soles pagados de más y ahorrados frente al habitual. */
+export function ahorroPorSedeMes(compras: CompraReal[]): AhorroSedeMes[] {
+  const m = new Map<string, AhorroSedeMes>();
+  for (const d of diferenciasContraHabitual(compras)) {
+    const mes = d.compra.fecha.slice(0, 7);
+    const k = `${d.compra.sedeId}|${mes}`;
+    const a = m.get(k) ?? { sedeId: d.compra.sedeId, mes, deMas: 0, ahorro: 0, compras: 0 };
+    if (d.soles > 0) a.deMas = r2(a.deMas + d.soles); else a.ahorro = r2(a.ahorro - d.soles);
+    a.compras++;
+    m.set(k, a);
+  }
+  return [...m.values()].sort((a, b) => b.mes.localeCompare(a.mes) || (a.sedeId ?? 0) - (b.sedeId ?? 0));
+}
+
+export type ComparacionSedes = {
+  productoId: number;
+  /** Último precio por unidad que pagó cada sede (en la ventana). */
+  porSede: { sedeId: number; unitario: number; fecha: string; cantidad: number }[];
+  /** % que paga la más cara sobre la más barata. */
+  brecha: number;
+  /** Soles que se habrían ahorrado si cada sede hubiera pagado como la más barata (compras de la ventana). */
+  ahorroPosible: number;
+};
+
+/** El mismo producto comprado por 2 o más sedes en los últimos `dias`: quién paga más. */
+export function compararSedes(compras: CompraReal[], hoy: string, dias = 90): ComparacionSedes[] {
+  const desde = new Date(Date.parse(`${hoy}T12:00:00Z`) - dias * 86_400_000).toISOString().slice(0, 10);
+  const enVentana = compras.filter((c) => c.sedeId !== null && c.fecha >= desde && c.cantidad > 0 && c.precio > 0);
+  const porProd = new Map<number, CompraReal[]>();
+  for (const c of enVentana) porProd.set(c.productoId, [...(porProd.get(c.productoId) ?? []), c]);
+  const out: ComparacionSedes[] = [];
+  for (const [productoId, lista] of porProd) {
+    const ultima = new Map<number, CompraReal>();
+    for (const c of lista) { const u = ultima.get(c.sedeId!); if (!u || c.fecha >= u.fecha) ultima.set(c.sedeId!, c); }
+    if (ultima.size < 2) continue;
+    const porSede = [...ultima.values()].map((c) => ({ sedeId: c.sedeId!, unitario: r4(unit(c)), fecha: c.fecha, cantidad: c.cantidad })).sort((a, b) => a.unitario - b.unitario);
+    const min = porSede[0].unitario, max = porSede.at(-1)!.unitario;
+    const ahorroPosible = r2(lista.reduce((t, c) => t + Math.max(0, unit(c) - min) * c.cantidad, 0));
+    out.push({ productoId, porSede, brecha: min > 0 ? r2(((max - min) / min) * 100) : 0, ahorroPosible });
+  }
+  return out.sort((a, b) => b.ahorroPosible - a.ahorroPosible || b.brecha - a.brecha);
+}
+
+export type PrecioQueSube = { productoId: number; desde: { unitario: number; fecha: string }; hasta: { unitario: number; fecha: string }; pct: number; compras: number };
+
+/** Productos cuyo precio por unidad subió (primera vs última compra de los últimos `dias`), de más a menos. */
+export function preciosQueSuben(compras: CompraReal[], hoy: string, dias = 90, minimoPct = 5): PrecioQueSube[] {
+  const desde = new Date(Date.parse(`${hoy}T12:00:00Z`) - dias * 86_400_000).toISOString().slice(0, 10);
+  const porProd = new Map<number, CompraReal[]>();
+  for (const c of compras.filter((c) => c.fecha >= desde && c.cantidad > 0 && c.precio > 0)) porProd.set(c.productoId, [...(porProd.get(c.productoId) ?? []), c]);
+  const out: PrecioQueSube[] = [];
+  for (const [productoId, lista] of porProd) {
+    if (lista.length < 2) continue;
+    const o = [...lista].sort((a, b) => a.fecha.localeCompare(b.fecha));
+    const a = o[0], b = o.at(-1)!;
+    const pct = r2(((unit(b) - unit(a)) / unit(a)) * 100);
+    if (pct >= minimoPct) out.push({ productoId, desde: { unitario: r4(unit(a)), fecha: a.fecha }, hasta: { unitario: r4(unit(b)), fecha: b.fecha }, pct, compras: o.length });
+  }
+  return out.sort((a, b) => b.pct - a.pct);
 }
