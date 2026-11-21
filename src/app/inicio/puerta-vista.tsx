@@ -56,15 +56,17 @@ export function PuertaVista({ nombre, botones, esDireccion }: { nombre: string |
             </>
           );
           const clase = "group flex items-start gap-4 rounded-2xl border border-gray-200/80 bg-white p-4 shadow-sm transition hover:-translate-y-0.5 hover:border-primary-light/40 hover:shadow-md focus-visible:outline-2 focus-visible:outline-primary sm:p-5";
+          // Envíos, Planilla y Producción entran con el pase de un clic; Control de Caja sigue con su clave.
+          const href = b.externa && b.app !== "caja" ? `/api/pase?app=${b.app}` : b.href;
           return b.externa
-            ? <a key={b.clave} href={b.href} className={clase}>{contenido}</a>
+            ? <a key={b.clave} href={href} className={clase}>{contenido}</a>
             : <Link key={b.clave} href={b.href} className={clase}>{contenido}</Link>;
         })}
       </nav>
 
       {otras && (
         <p className="mt-5 text-center text-xs text-gray-500">
-          Las apps con <ArrowUpRight className="inline h-3 w-3" aria-hidden /> todavía te piden su propia clave. Muy pronto entrarás a todas con un clic desde aquí.
+          Envíos, Planilla y Producción se abren ya con tu sesión. Compras y rendición (Control de Caja) todavía te pide su propia clave.
         </p>
       )}
     </div>
