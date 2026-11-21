@@ -313,9 +313,53 @@ export function sedesDesdeNombres(nombres: string[]): number[] {
  * Una línea de compra → precio por unidad. Se guarda como «1 unidad a S/ X» (no como el paquete comprado): así
  * «Armar pedido» puede pedir la cantidad exacta y no paquetes del tamaño de esa compra.
  */
-export function precioDesdeCompra(c: { cantidad: number; precioTotal: number; unidad: string }): { cantidad: number; precio: number; presentacion: string } | null {
+/** Clave para reconocer el mismo producto aunque se escriba distinto: sin tildes, sin mayúsculas, sin espacios dobles. */
+export function claveNombre(nombre: string): string {
+  return nombre.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+}
+
+/**
+ * Cada administrador escribió la unidad a su manera («und», «unidades», «pqte», «gr», «litros»…). Se lleva todo a una
+ * sola forma y los gramos/mililitros a kilos/litros, para comparar igual. `factor` pasa la cantidad a esa unidad.
+ * null = compra anotada «en soles» («S/ 1 de perejil»): no dice cuánto se compró, no sirve para comparar.
+ */
+const UNIDADES: [RegExp, string, number][] = [
+  [/^(sol|soles|s\/\.?)$/, "", 0],
+  [/^(u|und|unds|unid|unids|unidad|unidades)$/, "unidad", 1],
+  [/^(kg|kgs|kilo|kilos|kilogramo|kilogramos)$/, "kg", 1],
+  [/^(g|gr|grs|gramo|gramos)$/, "kg", 0.001],
+  [/^(l|lt|lts|litro|litros)$/, "litro", 1],
+  [/^(ml|mililitro|mililitros)$/, "litro", 0.001],
+  [/^(paquete|paquetes|pqte|pqtes|paq|paqs)$/, "paquete", 1],
+  [/^(galon|galones)$/, "galón", 1],
+  [/^(caja|cajas)$/, "caja", 1],
+  [/^(frasco|frascos)$/, "frasco", 1],
+  [/^(bolsa|bolsas)$/, "bolsa", 1],
+  [/^(atado|atados)$/, "atado", 1],
+  [/^(juego|juegos)$/, "juego", 1],
+  [/^(balde|baldes)$/, "balde", 1],
+  [/^(ciento|cientos)$/, "ciento", 1],
+  [/^(arroba|arrobas)$/, "arroba", 1],
+  [/^(docena|docenas)$/, "docena", 1],
+  [/^(rollo|rollos)$/, "rollo", 1],
+];
+export function unidadCanonica(unidad: string): { unidad: string; factor: number } | null {
+  const u = claveNombre(unidad || "unidad");
+  for (const [re, canon, factor] of UNIDADES) if (re.test(u)) return canon ? { unidad: canon, factor } : null;
+  return { unidad: u, factor: 1 };
+}
+
+/**
+ * Una línea de compra → precio por unidad (ya en la unidad única). Se guarda como «1 unidad a S/ X» (no como el
+ * paquete comprado): así «Armar pedido» puede pedir la cantidad exacta. null = no sirve para comparar.
+ */
+export function precioDesdeCompra(c: { cantidad: number; precioTotal: number; unidad: string }): { unidad: string; cantidad: number; precio: number; presentacion: string } | null {
   if (!(c.cantidad > 0) || !(c.precioTotal > 0)) return null;
-  const u = c.unidad.trim().toLowerCase() || "unidad";
+  const canon = unidadCanonica(c.unidad);
+  if (!canon) return null;
+  const cantidad = c.cantidad * canon.factor;
+  const u = canon.unidad;
+  const original = (c.unidad || "unidad").trim().toLowerCase();
   const cant = Number(c.cantidad.toFixed(3)).toLocaleString("es-PE", { maximumFractionDigits: 3 });
-  return { cantidad: 1, precio: r4(c.precioTotal / c.cantidad), presentacion: `Por ${u} · compra de ${cant} ${c.cantidad === 1 ? u : plural(u)} a S/ ${c.precioTotal.toFixed(2)}` };
+  return { unidad: u, cantidad: 1, precio: r4(c.precioTotal / cantidad), presentacion: `Por ${u} · compra de ${cant} ${original} a S/ ${c.precioTotal.toFixed(2)}` };
 }

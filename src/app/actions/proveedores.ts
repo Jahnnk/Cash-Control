@@ -12,7 +12,7 @@ import { getSessionRole } from "@/lib/session-access";
 import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
 import { leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
-import { factorInsumo, mejorParaInsumo, nombreBonito, precioDesdeCompra, sedesDesdeNombres, unidadDesdeInsumo, type OrigenInsumo, type UnidadInsumo } from "@/lib/proveedores";
+import { claveNombre, factorInsumo, mejorParaInsumo, nombreBonito, precioDesdeCompra, sedesDesdeNombres, unidadDesdeInsumo, type OrigenInsumo, type UnidadInsumo } from "@/lib/proveedores";
 import { comprasCaja, controlCajaConfigurado, proveedoresCaja } from "@/lib/control-caja";
 import { leerEnlaces, leerOfertas, type EnlaceInsumo } from "@/lib/proveedores-sql";
 import { guardarPrecioInsumo } from "./precios-insumos";
@@ -383,6 +383,9 @@ export async function sincronizarConControlCaja(opciones?: { siHaceFalta?: boole
       const ya = existentes.find((x) => x.cajaId === p.id) ?? existentes.find((x) => !x.cajaId && x.nombre === nombre.toLowerCase());
       if (ya) {
         const unidas = [...new Set([...ya.sedes, ...sedes])].sort();
+        const alDia = ya.cajaId === p.id && unidas.length === ya.sedes.length && (ya.telefono || !p.telefono) && (ya.direccion || !p.direccion);
+        idPorCaja.set(p.id, ya.id);
+        if (alDia) continue;
         await sql`UPDATE proveedores SET caja_id = ${p.id}, telefono = COALESCE(telefono, ${limpio(p.telefono, 40)}),
                     direccion = COALESCE(direccion, ${limpio(p.direccion, 200)}), sedes = ${unidas}
                   WHERE id = ${ya.id}`;
@@ -404,21 +407,34 @@ export async function sincronizarConControlCaja(opciones?: { siHaceFalta?: boole
     // 2. Precios: solo las líneas de compra que aún no se trajeron.
     const ya = new Set(((await sql`SELECT caja_item_id::text AS id FROM proveedor_precios WHERE caja_item_id IS NOT NULL`) as { id: string }[]).map((x) => x.id));
     const nuevas = compras.filter((c) => !ya.has(c.item_id) && idPorCaja.has(c.proveedor_id));
-    const productos = (await sql`SELECT id, lower(nombre) AS nombre, lower(unidad) AS unidad FROM proveedor_productos WHERE activo`) as { id: number; nombre: string; unidad: string }[];
-    const prodPorClave = new Map(productos.map((p) => [`${p.nombre}|${p.unidad}`, p.id]));
+    // Un solo criterio (21-nov-2026): el mismo producto con o sin tilde y en una sola unidad (g → kg, «und» → unidad).
+    const productos = (await sql`SELECT id, nombre, lower(unidad) AS unidad FROM proveedor_productos WHERE activo`) as { id: number; nombre: string; unidad: string }[];
+    const prodPorClave = new Map(productos.map((p) => [`${claveNombre(p.nombre)}|${p.unidad}`, p.id]));
+    const listas = nuevas
+      .map((c) => ({ c, precio: precioDesdeCompra({ cantidad: c.cantidad, precioTotal: c.precio_total, unidad: c.unidad }), nombre: nombreBonito(c.producto) }))
+      .filter((x): x is { c: typeof nuevas[number]; precio: NonNullable<ReturnType<typeof precioDesdeCompra>>; nombre: string } => !!x.precio);
+    // Productos que faltan, de una sola vez. Entre las formas de escribirlo se queda la que lleva tilde (la correcta).
+    const faltan = new Map<string, { nombre: string; unidad: string }>();
+    for (const x of listas) {
+      const clave = `${claveNombre(x.nombre)}|${x.precio.unidad}`;
+      if (prodPorClave.has(clave)) continue;
+      const prev = faltan.get(clave);
+      if (!prev || (/[^\x00-\x7F]/.test(x.nombre) && !/[^\x00-\x7F]/.test(prev.nombre))) faltan.set(clave, { nombre: x.nombre, unidad: x.precio.unidad });
+    }
+    if (faltan.size) {
+      const lista = [...faltan.values()];
+      const creados = (await sql`
+        INSERT INTO proveedor_productos (nombre, unidad, creado_por)
+        SELECT n, u, 'Control de Caja' FROM unnest(${lista.map((x) => x.nombre)}::text[], ${lista.map((x) => x.unidad)}::text[]) AS t(n, u)
+        RETURNING id, nombre, unidad`) as { id: number; nombre: string; unidad: string }[];
+      for (const p of creados) prodPorClave.set(`${claveNombre(p.nombre)}|${p.unidad.toLowerCase()}`, p.id);
+    }
     const filas: { prov: number; prod: number; pres: string; cant: number; precio: number; fecha: string; sede: number | null; item: string }[] = [];
-    for (const c of nuevas) {
-      const precio = precioDesdeCompra({ cantidad: c.cantidad, precioTotal: c.precio_total, unidad: c.unidad });
-      if (!precio) continue;
-      const nombre = nombreBonito(c.producto);
-      const unidad = (c.unidad || "unidad").trim().toLowerCase();
-      const clave = `${nombre.toLowerCase()}|${unidad}`;
-      let prod = prodPorClave.get(clave);
-      if (!prod) {
-        prod = ((await sql`INSERT INTO proveedor_productos (nombre, unidad, creado_por) VALUES (${nombre}, ${unidad}, 'Control de Caja') RETURNING id`) as { id: number }[])[0].id;
-        prodPorClave.set(clave, prod);
-      }
-      filas.push({ prov: idPorCaja.get(c.proveedor_id)!, prod, pres: precio.presentacion, cant: precio.cantidad, precio: precio.precio, fecha: c.fecha, sede: sedesDesdeNombres([c.sede]).length === 1 ? sedesDesdeNombres([c.sede])[0] : null, item: c.item_id });
+    for (const { c, precio, nombre } of listas) {
+      const prod = prodPorClave.get(`${claveNombre(nombre)}|${precio.unidad}`);
+      if (!prod) continue;
+      const sedes = sedesDesdeNombres([c.sede]);
+      filas.push({ prov: idPorCaja.get(c.proveedor_id)!, prod, pres: precio.presentacion, cant: precio.cantidad, precio: precio.precio, fecha: c.fecha, sede: sedes.length === 1 ? sedes[0] : null, item: c.item_id });
     }
     for (let i = 0; i < filas.length; i += 500) {
       const lote = filas.slice(i, i + 500);
