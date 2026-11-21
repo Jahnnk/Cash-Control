@@ -17,7 +17,8 @@ export const dynamic = "force-dynamic";
  */
 export default async function HomeRoleSelector() {
   const existing = await getActiveRole();
-  if (existing) redirect(existing === "admin" ? "/grupo/dashboard" : "/select-business");
+  // Puerta única (21-nov-2026): con rol elegido, al inicio con los botones.
+  if (existing) redirect("/inicio");
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center bg-gray-50 px-4 py-12">

@@ -102,7 +102,8 @@ export async function loginWithPassword(
     // selector «¿Quién está usando?» (decisión de Jahnn, 8-oct-2026). El selector sigue a un toque
     // con «Cambiar» en la barra lateral. Misma cookie y mismas opciones que selectRole.
     c.set("yayis_role", "admin", { path: "/", maxAge: SESSION_DAYS * 24 * 60 * 60, sameSite: "lax" });
-    redirect("/grupo/dashboard");
+    // Puerta única (21-nov-2026): todos llegan primero a su inicio, con sus botones.
+    redirect("/inicio");
   }
 
   // 1b) Contraseña PROPIA de Kelly (jul-2026: asume las finanzas de las
@@ -116,7 +117,7 @@ export async function loginWithPassword(
     c.set(AUTH_COOKIE, token, cookieOpts);
     c.delete(SCOPE_HINT_COOKIE);
     c.set("yayis_role", "kelly", { ...cookieOpts, httpOnly: false });
-    redirect("/select-business");
+    redirect("/inicio");
   }
 
   // 2) Contraseñas CON ALCANCE: administrador de sede (Panel de Sede) y
@@ -138,7 +139,8 @@ export async function loginWithPassword(
       // lo que esta sesión puede usar. NO es seguridad (eso vive en el
       // middleware y las actions): es UX. Por eso no es httpOnly.
       c.set(SCOPE_HINT_COOKIE, a.scope, { ...cookieOpts, httpOnly: false });
-      redirect(a.landing);
+      // El verificador tiene una sola pantalla: va directo. El administrador, a su inicio.
+      redirect(a.scope.startsWith("verif-") ? a.landing : "/inicio");
     }
   }
 
@@ -180,15 +182,12 @@ async function entrarComoUsuario(u: { id: number; scope: string; password_hash: 
   if (quien) {
     c.delete(SCOPE_HINT_COOKIE);
     c.set("yayis_role", quien === "kelly" ? "kelly" : "admin", { path: "/", maxAge: SESSION_DAYS * 24 * 60 * 60, sameSite: "lax" });
-    redirect(quien === "kelly" ? "/select-business" : "/grupo/dashboard");
+    redirect("/inicio");
   }
   c.set(SCOPE_HINT_COOKIE, u.scope, { ...cookieOpts, httpOnly: false });
-  // Solo lectura: directo al Dashboard de Grupo (lo único que puede ver, con Reportes).
-  if (u.scope === "lector") redirect("/grupo/dashboard");
-  if (u.scope === "equipo") redirect("/grupo/acuerdos");
-  if (u.scope === "highlight") redirect("/grupo/highlight");
-  const [kind, sede] = u.scope.split("-");
-  redirect(`/${sede}/${kind === "admin" ? "panel" : "verificacion"}`);
+  // Puerta única (21-nov-2026): todos a su inicio, salvo el verificador (una sola pantalla: va directo).
+  if (u.scope.startsWith("verif-")) redirect(`/${u.scope.split("-")[1]}/verificacion`);
+  redirect("/inicio");
 }
 
 /**
