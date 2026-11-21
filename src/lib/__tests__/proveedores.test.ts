@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { nombreBonito, precioDesdeCompra, sedesDesdeNombres, factorInsumo, mejorParaInsumo, unidadDesdeInsumo, plural, armarPedido, compararProducto, dondeComprar, enlaceWhatsApp, precioUnitario, vigentes, type Oferta, type ProveedorCompra } from "../proveedores";
+import { claveNombre, unidadCanonica, nombreBonito, precioDesdeCompra, sedesDesdeNombres, factorInsumo, mejorParaInsumo, unidadDesdeInsumo, plural, armarPedido, compararProducto, dondeComprar, enlaceWhatsApp, precioUnitario, vigentes, type Oferta, type ProveedorCompra } from "../proveedores";
 
 const hoy = "2026-11-20";
 const caj: ProveedorCompra = { id: 1, nombre: "Packaging Cajamarca", costoEnvio: null, pedidoMinimo: null };
@@ -128,8 +128,28 @@ describe("datos de Control de Caja", () => {
     expect(sedesDesdeNombres([])).toEqual([1, 2, 3]);
   });
   it("una compra se guarda como precio por unidad", () => {
-    expect(precioDesdeCompra({ cantidad: 3, precioTotal: 30, unidad: "KG" })).toEqual({ cantidad: 1, precio: 10, presentacion: "Por kg · compra de 3 kg a S/ 30.00" });
+    expect(precioDesdeCompra({ cantidad: 3, precioTotal: 30, unidad: "KG" })).toEqual({ unidad: "kg", cantidad: 1, precio: 10, presentacion: "Por kg · compra de 3 kg a S/ 30.00" });
     expect(precioDesdeCompra({ cantidad: 500, precioTotal: 52, unidad: "hoja" })?.precio).toBe(0.104);
     expect(precioDesdeCompra({ cantidad: 0, precioTotal: 5, unidad: "kg" })).toBeNull();
+  });
+});
+
+describe("un solo criterio para nombres y unidades", () => {
+  it("el mismo producto aunque cambie la tilde o las mayúsculas", () => {
+    expect(claveNombre("Limón")).toBe(claveNombre("LIMON"));
+    expect(claveNombre("  Ají  Limo ")).toBe("aji limo");
+  });
+  it("unidades a una sola forma; gramos a kilos; «en soles» fuera", () => {
+    expect(unidadCanonica("und")).toEqual({ unidad: "unidad", factor: 1 });
+    expect(unidadCanonica("PQTE")).toEqual({ unidad: "paquete", factor: 1 });
+    expect(unidadCanonica("gr")).toEqual({ unidad: "kg", factor: 0.001 });
+    expect(unidadCanonica("Litros")).toEqual({ unidad: "litro", factor: 1 });
+    expect(unidadCanonica("galones")).toEqual({ unidad: "galón", factor: 1 });
+    expect(unidadCanonica("soles")).toBeNull();
+    expect(unidadCanonica("bandeja")).toEqual({ unidad: "bandeja", factor: 1 });
+  });
+  it("500 g a S/ 4 = S/ 8 el kilo; compra en soles no se usa", () => {
+    expect(precioDesdeCompra({ cantidad: 500, precioTotal: 4, unidad: "g" })).toMatchObject({ unidad: "kg", precio: 8 });
+    expect(precioDesdeCompra({ cantidad: 2, precioTotal: 2, unidad: "soles" })).toBeNull();
   });
 });
