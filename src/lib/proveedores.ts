@@ -255,7 +255,7 @@ export function precioDesdeCompra(c: { cantidad: number; precioTotal: number; un
   const cant = Number(c.cantidad.toFixed(3)).toLocaleString("es-PE", { maximumFractionDigits: 3 });
   // Se guarda la compra tal cual (cantidad en la unidad única y lo pagado): el precio por unidad sale de dividir, y
   // con la cantidad se sabe cuántos soles se ahorraron o se pagaron de más.
-  return { unidad: u, cantidad: r4(cantidad), precio: r2(c.precioTotal), presentacion: `Compra de ${cant} ${original}` };
+  return { unidad: u, cantidad: r4(cantidad), precio: r2(c.precioTotal), presentacion: `Compra de ${cant} ${c.cantidad === 1 ? original : plural(original)}` };
 }
 
 /* ─────────── Análisis de compras para la dirección (21-nov-2026) ─────────── */

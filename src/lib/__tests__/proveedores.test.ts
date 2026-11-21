@@ -117,6 +117,9 @@ describe("un solo criterio para nombres y unidades", () => {
     expect(unidadCanonica("soles")).toBeNull();
     expect(unidadCanonica("bandeja")).toEqual({ unidad: "bandeja", factor: 1 });
   });
+  it("la presentación dice la compra en plural", () => {
+    expect(precioDesdeCompra({ cantidad: 3, precioTotal: 9, unidad: "unidad" })?.presentacion).toBe("Compra de 3 unidades");
+  });
   it("500 g a S/ 4 = S/ 8 el kilo; compra en soles no se usa", () => {
     expect(precioUnitario(precioDesdeCompra({ cantidad: 500, precioTotal: 4, unidad: "g" })!)).toBe(8);
     expect(precioDesdeCompra({ cantidad: 2, precioTotal: 2, unidad: "soles" })).toBeNull();
