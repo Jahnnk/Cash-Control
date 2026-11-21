@@ -326,11 +326,19 @@ export function AtelierPanel() {
             )}
           </div>
 
-          {/* 3 · Días del mes */}
-          <div className="bg-white rounded-xl border border-gray-200 overflow-hidden">
-            <div className="px-4 py-3 border-b border-gray-100 text-sm font-semibold text-gray-900">
-              Días registrados · {monthLabel(month)}
-            </div>
+          {/* 3 · Días del mes: plegado (20-nov-2026, pedido de Jahnn) para que no ocupe tanto espacio. */}
+          <SeccionDesplegable
+            titulo={`Días registrados · ${monthLabel(month)}`}
+            subtitulo="Venta, pedidos, ticket y mermas de cada día. Toca el lápiz para corregir un día."
+            resumen={
+              <p className="text-xs text-gray-600">
+                {data.dailies.length === 0 ? "Sin días registrados este mes." : (
+                  <><b className="text-gray-900">{data.dailies.length} día{data.dailies.length === 1 ? "" : "s"}</b> · venta {formatCurrency(data.summary.ventaTotal)}
+                    {" "}· último el {fechaDM([...data.dailies].map((d) => d.date).sort().at(-1)!)}</>
+                )}
+              </p>
+            }
+          >
             {data.dailies.length === 0 ? (
               <div className="p-6 text-center text-sm text-gray-400">
                 Sin días registrados este mes. Registra el cierre de ayer o sube el «Reporte de Ventas» de Byte.
@@ -374,7 +382,7 @@ export function AtelierPanel() {
                 </table>
               </div>
             )}
-          </div>
+          </SeccionDesplegable>
         </>
       )}
 
