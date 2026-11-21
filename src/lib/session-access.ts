@@ -24,6 +24,7 @@
  * valida (lo garantiza verifyScopedToken).
  */
 
+import { quienDireccion } from "@/lib/user-scopes";
 import { cookies } from "next/headers";
 import { neon } from "@neondatabase/serverless";
 import { verifyAuthToken, verifyScopedToken, parseUserTokenId, verifyUserToken } from "./auth-token";
@@ -85,6 +86,9 @@ async function resolveUserToken(token: string, now: number): Promise<SessionRole
     if (rows.length === 0) return null;
     if (!(await verifyUserToken(token, rows[0].password_hash, now))) return null;
 
+    // Cuenta personal de la dirección (21-nov-2026): mismo acceso que la llave maestra.
+    const quien = quienDireccion(rows[0].scope);
+    if (quien) return { kind: "full", quien };
     // El scope de Highlight no está atado a una sede: cubre las tres.
     if (rows[0].scope === "highlight") {
       return { kind: "highlight", userId, nombre: rows[0].nombre };

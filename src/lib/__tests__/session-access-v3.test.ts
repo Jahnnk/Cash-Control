@@ -69,6 +69,28 @@ describe("getSessionRole — dos llaves de dirección (jul-2026)", () => {
   });
 });
 
+describe("getSessionRole — cuenta personal de la dirección (puerta única, 21-nov-2026)", () => {
+  it("direccion-jahnn y direccion-kelly dan acceso total con su nombre", async () => {
+    fake.state.cookieToken = await createUserToken(HASH, 3, NOW + 3600);
+    fake.state.row = { scope: "direccion-jahnn", password_hash: HASH };
+    expect(await getSessionRole()).toEqual({ kind: "full", quien: "jahnn" });
+    fake.state.row = { scope: "direccion-kelly", password_hash: HASH };
+    expect(await getSessionRole()).toEqual({ kind: "full", quien: "kelly" });
+  });
+  it("una cuenta de administrador NO recibe acceso total", async () => {
+    fake.state.cookieToken = await createUserToken(HASH, 7, NOW + 3600);
+    fake.state.row = { scope: "admin-fonavi", password_hash: HASH };
+    expect((await getSessionRole())?.kind).toBe("admin");
+  });
+  it("cuenta de dirección inactiva o con otra contraseña → sin sesión", async () => {
+    fake.state.cookieToken = await createUserToken(HASH, 3, NOW + 3600);
+    fake.state.row = null; // inactiva: la consulta no la devuelve
+    expect(await getSessionRole()).toBeNull();
+    fake.state.row = { scope: "direccion-jahnn", password_hash: "s1.otro." + "cd".repeat(32) };
+    expect(await getSessionRole()).toBeNull();
+  });
+});
+
 describe("getSessionRole — tokens v3 (app_users)", () => {
   it("usuario activo con firma válida → rol admin de SU sede", async () => {
     fake.state.cookieToken = await createUserToken(HASH, 7, NOW + 3600);

@@ -95,9 +95,31 @@ export async function middleware(request: NextRequest) {
     const now = Math.floor(Date.now() / 1000);
     // Dos llaves de dirección: la maestra y la propia de Kelly (jul-2026,
     // revocable por separado). Cualquiera de las dos = sesión completa.
-    const valid =
+    const llaveMaestra =
       (await verifyAuthToken(authToken, process.env.APP_PASSWORD, now)) ||
       (await verifyAuthToken(authToken, process.env.APP_PASSWORD_KELLY, now));
+    // Usuario del personal (token v3, tabla app_users): se lee UNA vez. La firma usa el password_hash guardado:
+    // desactivar al usuario o cambiar su contraseña mata la sesión aquí mismo. Fail-closed: BD caída → /login.
+    let scopeUsuario: string | null = null;
+    if (!llaveMaestra) {
+      const userId = parseUserTokenId(authToken, now);
+      if (userId !== null) {
+        try {
+          const sql = neon(process.env.DATABASE_URL!);
+          const rows = (await sql`
+            SELECT scope, password_hash FROM app_users
+            WHERE id = ${userId} AND active = true
+          `) as { scope: string; password_hash: string }[];
+          if (rows.length > 0 && authToken && (await verifyUserToken(authToken, rows[0].password_hash, now))) {
+            scopeUsuario = rows[0].scope;
+          }
+        } catch {
+          // fail-closed
+        }
+      }
+    }
+    // Cuenta personal de la dirección (puerta única, 21-nov-2026) = mismo acceso que la llave maestra.
+    const valid = llaveMaestra || scopeUsuario === "direccion-jahnn" || scopeUsuario === "direccion-kelly";
     if (!valid) {
       // 0c. Sesión de ADMINISTRADOR DE SEDE (token v2 con alcance).
       // Solo puede ver /[su-sede]/panel — todo lo demás (saldos,
@@ -110,28 +132,8 @@ export async function middleware(request: NextRequest) {
         "verif-fonavi": process.env.VERIF_PASSWORD_FONAVI,
         "verif-centro": process.env.VERIF_PASSWORD_CENTRO,
       };
-      let scopedScope = await verifyScopedToken(authToken, (s) => scopedSecrets[s], now);
-      if (!scopedScope) {
-        // 0d. Usuario del personal (token v3, tabla app_users). La firma
-        // usa el password_hash guardado: desactivar al usuario o cambiar
-        // su contraseña mata la sesión aquí mismo. Fail-closed: BD caída
-        // o tabla sin migrar → /login.
-        const userId = parseUserTokenId(authToken, now);
-        if (userId !== null) {
-          try {
-            const sql = neon(process.env.DATABASE_URL!);
-            const rows = (await sql`
-              SELECT scope, password_hash FROM app_users
-              WHERE id = ${userId} AND active = true
-            `) as { scope: string; password_hash: string }[];
-            if (rows.length > 0 && authToken && (await verifyUserToken(authToken, rows[0].password_hash, now))) {
-              scopedScope = rows[0].scope;
-            }
-          } catch {
-            // fail-closed
-          }
-        }
-      }
+      // 0d. Si no, el usuario del personal leído arriba (token v3).
+      const scopedScope = (await verifyScopedToken(authToken, (s) => scopedSecrets[s], now)) ?? scopeUsuario;
       if (!scopedScope) {
         return NextResponse.redirect(new URL("/login", request.url));
       }

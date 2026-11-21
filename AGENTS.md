@@ -145,9 +145,14 @@ Desde jul-2026 la dirección gestiona los accesos del personal en
   guardado → cambiar la contraseña o desactivar (`active=false`)
   invalida las sesiones AL INSTANTE (middleware y actions releen la
   fila en cada request).
-- Roles posibles: los 5 scopes del personal (tabla arriba). El rol
-  `full` NO existe en `app_users` a propósito: la llave maestra
-  (`APP_PASSWORD`) se gestiona solo en Vercel — nunca desde la app.
+- Roles posibles: los scopes del personal (tabla arriba) y, desde el
+  21-nov-2026 (puerta única, decisión de Jahnn), `direccion-jahnn` y
+  `direccion-kelly`: cuentas personales con el mismo acceso que la llave
+  maestra (getSessionRole → `{kind:"full"}`; el middleware las deja pasar).
+  La llave maestra (`APP_PASSWORD`) sigue en Vercel solo para emergencias.
+- Cada cuenta puede tener `email` (único). Con correo, el login prueba SOLO
+  esa cuenta; sin correo, sigue el flujo de siempre (la contraseña sola).
+  El correo es el que reconoce a la persona en Envíos, Planilla y Producción.
 - Las env vars por sede (tabla arriba) siguen valiendo como legado;
   la pantalla de usuarios avisa cuáles siguen configuradas para
   borrarlas al terminar la migración de personas.

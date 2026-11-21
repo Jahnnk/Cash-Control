@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { neon } from "@neondatabase/serverless";
 import { createAuthToken, createScopedToken, createUserToken } from "@/lib/auth-token";
 import { verifyPassword } from "@/lib/password-hash";
+import { normalizarEmail, quienDireccion } from "@/lib/user-scopes";
 
 const AUTH_COOKIE = "yayis_auth";
 const SESSION_DAYS = 30;
@@ -54,6 +55,7 @@ export async function loginWithPassword(
   }
 
   const input = String(formData.get("password") ?? "");
+  const emailEscrito = String(formData.get("email") ?? "").trim();
   if (!input) {
     await failedLoginDelay();
     return { error: "Contraseña incorrecta. Intenta de nuevo." };
@@ -67,6 +69,26 @@ export async function loginWithPassword(
     sameSite: "lax" as const,
     maxAge: SESSION_DAYS * 24 * 60 * 60,
   };
+
+  // 0) Puerta única (21-nov-2026): correo + contraseña de la cuenta personal. Solo se prueba ESA cuenta.
+  //    Sin correo, todo sigue como antes (la contraseña sola).
+  if (emailEscrito) {
+    const email = normalizarEmail(emailEscrito);
+    try {
+      const sql = neon(process.env.DATABASE_URL!);
+      const rows = email
+        ? ((await sql`SELECT id, scope, password_hash FROM app_users WHERE active = true AND lower(email) = ${email}`) as { id: number; scope: string; password_hash: string }[])
+        : [];
+      if (rows[0] && verifyPassword(input, rows[0].password_hash)) {
+        await entrarComoUsuario(rows[0], exp, cookieOpts);
+      }
+    } catch (err) {
+      if (err && typeof err === "object" && "digest" in err) throw err;
+      console.error("[loginWithPassword] login por correo falló:", err);
+    }
+    await failedLoginDelay();
+    return { error: "Correo o contraseña incorrectos. Intenta de nuevo." };
+  }
 
   // 1) Contraseña completa (Jahnn/Kelly): acceso total, flujo actual.
   if (passwordMatches(input, expected)) {
@@ -131,20 +153,7 @@ export async function loginWithPassword(
       SELECT id, scope, password_hash FROM app_users WHERE active = true
     `) as { id: number; scope: string; password_hash: string }[];
     for (const u of users) {
-      if (verifyPassword(input, u.password_hash)) {
-        const token = await createUserToken(u.password_hash, u.id, exp);
-        const c = await cookies();
-        c.set(AUTH_COOKIE, token, cookieOpts);
-        c.set(SCOPE_HINT_COOKIE, u.scope, { ...cookieOpts, httpOnly: false });
-        try {
-          await sql`UPDATE app_users SET last_login = NOW() WHERE id = ${u.id}`;
-        } catch { /* el login no depende de esta marca */ }
-        // Solo lectura: directo al Dashboard de Grupo (lo único que puede ver, con Reportes).
-        if (u.scope === "lector") redirect("/grupo/dashboard");
-        if (u.scope === "equipo") redirect("/grupo/acuerdos");
-        const [kind, sede] = u.scope.split("-");
-        redirect(`/${sede}/${kind === "admin" ? "panel" : "verificacion"}`);
-      }
+      if (verifyPassword(input, u.password_hash)) await entrarComoUsuario(u, exp, cookieOpts);
     }
   } catch (err) {
     // redirect() lanza NEXT_REDIRECT a propósito — debe propagarse.
@@ -154,6 +163,32 @@ export async function loginWithPassword(
 
   await failedLoginDelay();
   return { error: "Contraseña incorrecta. Intenta de nuevo." };
+}
+
+type CookieOpts = { path: string; httpOnly: boolean; secure: boolean; sameSite: "lax"; maxAge: number };
+
+/** Abre la sesión de un usuario de app_users (token v3) y lo lleva a su pantalla. Siempre termina en redirect. */
+async function entrarComoUsuario(u: { id: number; scope: string; password_hash: string }, exp: number, cookieOpts: CookieOpts): Promise<never> {
+  const token = await createUserToken(u.password_hash, u.id, exp);
+  const c = await cookies();
+  c.set(AUTH_COOKIE, token, cookieOpts);
+  try {
+    await neon(process.env.DATABASE_URL!)`UPDATE app_users SET last_login = NOW() WHERE id = ${u.id}`;
+  } catch { /* el login no depende de esta marca */ }
+  // Cuenta personal de la dirección: igual que la llave maestra (sin pista de alcance, con su rol).
+  const quien = quienDireccion(u.scope);
+  if (quien) {
+    c.delete(SCOPE_HINT_COOKIE);
+    c.set("yayis_role", quien === "kelly" ? "kelly" : "admin", { path: "/", maxAge: SESSION_DAYS * 24 * 60 * 60, sameSite: "lax" });
+    redirect(quien === "kelly" ? "/select-business" : "/grupo/dashboard");
+  }
+  c.set(SCOPE_HINT_COOKIE, u.scope, { ...cookieOpts, httpOnly: false });
+  // Solo lectura: directo al Dashboard de Grupo (lo único que puede ver, con Reportes).
+  if (u.scope === "lector") redirect("/grupo/dashboard");
+  if (u.scope === "equipo") redirect("/grupo/acuerdos");
+  if (u.scope === "highlight") redirect("/grupo/highlight");
+  const [kind, sede] = u.scope.split("-");
+  redirect(`/${sede}/${kind === "admin" ? "panel" : "verificacion"}`);
 }
 
 /**
