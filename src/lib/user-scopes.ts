@@ -1,8 +1,11 @@
 /** Roles asignables a usuarios del personal (tabla app_users).
- * La dirección (APP_PASSWORD) no está aquí a propósito: la llave
- * maestra se gestiona solo en Vercel, nunca desde la app. */
+ * Desde el 21-nov-2026 (puerta única, decisión de Jahnn) la dirección también tiene cuenta personal: «direccion-jahnn»
+ * y «direccion-kelly» dan el mismo acceso total que la llave maestra. La llave maestra (APP_PASSWORD) sigue en Vercel
+ * solo para emergencias. */
 
 export const USER_SCOPES = [
+  "direccion-jahnn",
+  "direccion-kelly",
   "admin-atelier",
   "admin-fonavi",
   "admin-centro",
@@ -29,6 +32,8 @@ export function isUserScope(v: string): v is UserScope {
 
 /** Etiquetas en español para la pantalla de usuarios. */
 export const SCOPE_LABELS: Record<UserScope, string> = {
+  "direccion-jahnn": "Dirección · Jahnn (acceso total)",
+  "direccion-kelly": "Dirección · Kelly (acceso total)",
   "admin-atelier": "Administración · Panel de Atelier",
   "admin-fonavi": "Administración · Panel de Fonavi",
   "admin-centro": "Administración · Panel de Centro",
@@ -38,3 +43,14 @@ export const SCOPE_LABELS: Record<UserScope, string> = {
   equipo: "Acuerdos y tareas · ve, crea y asigna (sin acceso financiero)",
   lector: "Solo lectura · Dashboard de Grupo y Reportes (no puede cambiar nada)",
 };
+
+/** Cuenta personal de la dirección → quién es (mismo acceso que la llave maestra). null = no es de dirección. */
+export function quienDireccion(scope: string): "jahnn" | "kelly" | null {
+  return scope === "direccion-jahnn" ? "jahnn" : scope === "direccion-kelly" ? "kelly" : null;
+}
+
+/** Correo válido y normalizado (minúsculas, sin espacios). null = vacío o mal escrito. */
+export function normalizarEmail(v: string | null | undefined): string | null {
+  const e = (v ?? "").trim().toLowerCase();
+  return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) && e.length <= 120 ? e : null;
+}

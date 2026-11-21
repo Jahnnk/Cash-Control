@@ -13,6 +13,21 @@ export function LoginForm() {
       className="bg-white rounded-xl border border-gray-200 shadow-sm p-6 space-y-4"
     >
       <div>
+        <label htmlFor="email" className="block text-xs font-medium text-gray-700 mb-1">
+          Correo <span className="font-normal text-gray-400">(si ya tienes cuenta personal)</span>
+        </label>
+        <input
+          id="email"
+          name="email"
+          type="email"
+          autoComplete="username"
+          inputMode="email"
+          className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-light/30"
+          placeholder="tu@correo.com"
+        />
+      </div>
+
+      <div>
         <label
           htmlFor="password"
           className="block text-xs font-medium text-gray-700 mb-1"
@@ -23,7 +38,6 @@ export function LoginForm() {
           id="password"
           name="password"
           type="password"
-          autoFocus
           autoComplete="current-password"
           required
           className="w-full border border-gray-300 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-primary-light/30"

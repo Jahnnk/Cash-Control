@@ -10,8 +10,8 @@
  *    hash (scrypt). No existe "ver contraseña", solo "renovar".
  *  - Inhabilitar (active=false) corta el acceso al instante: los
  *    tokens v3 se validan contra la fila en cada request.
- *  - La dirección (APP_PASSWORD) NO se gestiona aquí a propósito: la
- *    llave maestra vive solo en Vercel.
+ *  - Desde el 21-nov-2026 (puerta única) cada persona puede tener su correo, y la dirección su cuenta personal
+ *    («direccion-jahnn», «direccion-kelly»). La llave maestra (APP_PASSWORD) sigue en Vercel solo para emergencias.
  */
 
 import { neon } from "@neondatabase/serverless";
@@ -19,13 +19,15 @@ import { revalidatePath } from "next/cache";
 import { requireFullSession } from "@/lib/session-access";
 import { hashPassword, verifyPassword } from "@/lib/password-hash";
 import { generateStaffPassword } from "@/lib/password-generator";
-import { isUserScope, type UserScope } from "@/lib/user-scopes";
+import { isUserScope, normalizarEmail, type UserScope } from "@/lib/user-scopes";
 
 const sql = neon(process.env.DATABASE_URL!);
 
 export type AppUser = {
   id: number;
   nombre: string;
+  /** Correo de la cuenta personal (entra con correo + contraseña y con él se la reconoce en las otras apps). */
+  email: string | null;
   scope: UserScope;
   active: boolean;
   createdAt: string;
@@ -46,7 +48,7 @@ export async function listUsers(): Promise<{ ok: true; data: UsersOverview } | {
   if (!(await requireFullSession())) return NO_ACCESS;
   try {
     const users = (await sql`
-      SELECT id, nombre, scope, active,
+      SELECT id, nombre, email, scope, active,
              created_at::text AS "createdAt", last_login::text AS "lastLogin"
       FROM app_users ORDER BY active DESC, scope, nombre
     `) as AppUser[];
@@ -88,6 +90,7 @@ export async function listUsers(): Promise<{ ok: true; data: UsersOverview } | {
 async function passwordCollides(pw: string): Promise<boolean> {
   const envSecrets = [
     process.env.APP_PASSWORD,
+    process.env.APP_PASSWORD_KELLY,
     process.env.ADMIN_PASSWORD_ATELIER,
     process.env.ADMIN_PASSWORD_FONAVI,
     process.env.ADMIN_PASSWORD_CENTRO,
@@ -110,16 +113,20 @@ async function freshPassword(): Promise<string> {
 export async function createUser(input: {
   nombre: string;
   scope: string;
+  email?: string | null;
 }): Promise<{ ok: true; id: number; password: string } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return NO_ACCESS;
   const nombre = input.nombre.trim();
   if (nombre.length < 2 || nombre.length > 60) return { ok: false, error: "Escribe el nombre de la persona (2-60 letras)." };
   if (!isUserScope(input.scope)) return { ok: false, error: "Rol inválido." };
+  const email = input.email?.trim() ? normalizarEmail(input.email) : null;
+  if (input.email?.trim() && !email) return { ok: false, error: "Ese correo no parece válido." };
   try {
+    if (email && (await correoEnUso(email))) return { ok: false, error: "Ese correo ya lo tiene otra cuenta." };
     const password = await freshPassword();
     const rows = (await sql`
-      INSERT INTO app_users (nombre, scope, password_hash)
-      VALUES (${nombre}, ${input.scope}, ${hashPassword(password)})
+      INSERT INTO app_users (nombre, scope, password_hash, email)
+      VALUES (${nombre}, ${input.scope}, ${hashPassword(password)}, ${email})
       RETURNING id
     `) as { id: number }[];
     revalidatePath("/grupo/configuracion");
@@ -266,5 +273,28 @@ export async function renameUser(input: {
   } catch (err) {
     console.error("[renameUser] failed:", err);
     return { ok: false, error: "No pude renombrar." };
+  }
+}
+
+async function correoEnUso(email: string, salvoId?: number): Promise<boolean> {
+  const r = (await sql`SELECT id FROM app_users WHERE lower(email) = ${email} AND id <> ${salvoId ?? 0}`) as { id: number }[];
+  return r.length > 0;
+}
+
+/** Pone o cambia el correo de una cuenta (vacío = la quita). La contraseña no cambia. */
+export async function setUserEmail(input: { id: number; email: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!Number.isInteger(input.id) || input.id <= 0) return { ok: false, error: "Usuario inválido." };
+  const email = input.email.trim() ? normalizarEmail(input.email) : null;
+  if (input.email.trim() && !email) return { ok: false, error: "Ese correo no parece válido." };
+  try {
+    if (email && (await correoEnUso(email, input.id))) return { ok: false, error: "Ese correo ya lo tiene otra cuenta." };
+    const rows = (await sql`UPDATE app_users SET email = ${email}, updated_at = NOW() WHERE id = ${input.id} RETURNING id`) as { id: number }[];
+    if (rows.length === 0) return { ok: false, error: "Ese usuario no existe." };
+    revalidatePath("/grupo/configuracion");
+    return { ok: true };
+  } catch (err) {
+    console.error("[setUserEmail] failed:", err);
+    return { ok: false, error: "No pude guardar el correo. ¿Ya corriste la migración del correo?" };
   }
 }

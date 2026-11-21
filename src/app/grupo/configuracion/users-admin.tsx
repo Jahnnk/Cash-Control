@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import {
-  listUsers, createUser, resetUserPassword, setUserActive, renameUser, importLegacyUser, changeUserScope,
+  listUsers, createUser, resetUserPassword, setUserActive, renameUser, importLegacyUser, changeUserScope, setUserEmail,
   type AppUser, type UsersOverview,
 } from "@/app/actions/users";
 import { USER_SCOPES, SCOPE_LABELS, type UserScope } from "@/lib/user-scopes";
@@ -38,6 +38,7 @@ export function UsersAdmin() {
   const [renaming, setRenaming] = useState<AppUser | null>(null);
   const [busyId, setBusyId] = useState<number | null>(null);
   // Contraseña recién generada: se enseña UNA vez en un modal.
+  const [editandoCorreo, setEditandoCorreo] = useState<AppUser | null>(null);
   const [issued, setIssued] = useState<{ nombre: string; password: string; esNueva: boolean } | null>(null);
 
   const load = useCallback(async () => {
@@ -183,6 +184,9 @@ export function UsersAdmin() {
                           <button onClick={() => setRenaming(u)} className="ml-1.5 text-gray-300 hover:text-primary" title="Renombrar">
                             <Pencil className="w-3 h-3 inline" />
                           </button>
+                          <button onClick={() => setEditandoCorreo(u)} className="block text-left text-xs font-normal text-gray-500 hover:text-primary" title="Poner o cambiar el correo">
+                            {u.email ?? <span className="text-amber-700">+ Agregar correo</span>}
+                          </button>
                         </td>
                         <td className="px-4 py-2.5 text-gray-600">
                           <select
@@ -278,6 +282,9 @@ export function UsersAdmin() {
         />
       )}
 
+      {editandoCorreo && (
+        <EmailModal user={editandoCorreo} onClose={() => setEditandoCorreo(null)} onSaved={() => { setEditandoCorreo(null); void load(); }} />
+      )}
       {renaming && (
         <RenameModal
           user={renaming}
@@ -304,11 +311,12 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
   const { showToast } = useToast();
   const [nombre, setNombre] = useState("");
   const [scope, setScope] = useState<UserScope>("admin-fonavi");
+  const [email, setEmail] = useState("");
   const [saving, setSaving] = useState(false);
 
   async function handleCreate() {
     setSaving(true);
-    const r = await createUser({ nombre, scope });
+    const r = await createUser({ nombre, scope, email });
     setSaving(false);
     if (!r.ok) { showToast(r.error, "error"); return; }
     onCreated(nombre.trim(), r.password);
@@ -333,6 +341,17 @@ function CreateModal({ onClose, onCreated }: { onClose: () => void; onCreated: (
               autoFocus
               className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
             />
+          </div>
+          <div>
+            <label className="text-[11px] uppercase text-gray-500">Correo</label>
+            <input
+              type="email"
+              value={email}
+              onChange={(e) => setEmail(e.target.value)}
+              placeholder="nombre@correo.com"
+              className="w-full mt-1 px-3 py-2 border border-gray-200 rounded-lg text-sm"
+            />
+            <p className="mt-1 text-[11px] text-gray-400">El mismo correo que usa en Envíos, Planilla y Producción: así entra a todas con un clic.</p>
           </div>
           <div>
             <label className="text-[11px] uppercase text-gray-500">Rol (qué pantalla puede usar)</label>
@@ -488,7 +507,7 @@ function PasswordOnceModal({ issued, onClose }: { issued: { nombre: string; pass
         </button>
         <div className="mt-3 text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           🤝 Entrégala <strong>en persona</strong> (o dictada por llamada). Nunca por escrito en manuales ni papeles.
-          No hay usuario: con el link y esta contraseña la persona ya entra a su pantalla.
+          Entra con su correo y esta contraseña (o solo con la contraseña) y llega directo a su pantalla.
         </div>
         <button
           onClick={onClose}
@@ -496,6 +515,46 @@ function PasswordOnceModal({ issued, onClose }: { issued: { nombre: string; pass
         >
           Ya la entregué / la guardé
         </button>
+      </div>
+    </div>
+  );
+}
+
+/** Poner o cambiar el correo de una cuenta (puerta única, 21-nov-2026). La contraseña no cambia. */
+function EmailModal({ user, onClose, onSaved }: { user: AppUser; onClose: () => void; onSaved: () => void }) {
+  const { showToast } = useToast();
+  const [email, setEmail] = useState(user.email ?? "");
+  const [saving, setSaving] = useState(false);
+
+  async function handleSave() {
+    setSaving(true);
+    const r = await setUserEmail({ id: user.id, email });
+    setSaving(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    showToast(email.trim() ? `Correo de ${user.nombre} guardado` : `Correo de ${user.nombre} quitado`, "success");
+    onSaved();
+  }
+
+  return (
+    <div className="fixed inset-0 z-50 bg-black/40 flex items-center justify-center p-4" onClick={onClose}>
+      <div className="bg-white rounded-2xl shadow-xl w-full max-w-sm p-6" onClick={(e) => e.stopPropagation()}>
+        <h3 className="text-base font-semibold text-gray-900 mb-1">Correo de {user.nombre}</h3>
+        <p className="mb-3 text-xs text-gray-500">El mismo que usa en Envíos, Planilla y Producción. Su contraseña no cambia.</p>
+        <input
+          type="email"
+          value={email}
+          onChange={(e) => setEmail(e.target.value)}
+          autoFocus
+          placeholder="nombre@correo.com"
+          onKeyDown={(e) => { if (e.key === "Enter" && !saving) handleSave(); }}
+          className="w-full px-3 py-2 border border-gray-200 rounded-lg text-sm"
+        />
+        <div className="flex gap-2 mt-4">
+          <button onClick={onClose} className="flex-1 px-4 py-2 border border-gray-200 rounded-lg text-sm text-gray-600 hover:bg-gray-50">Cancelar</button>
+          <button onClick={handleSave} disabled={saving} className="flex-1 px-4 py-2 bg-primary text-white rounded-lg text-sm font-medium hover:bg-primary-dark disabled:opacity-50">
+            Guardar
+          </button>
+        </div>
       </div>
     </div>
   );
