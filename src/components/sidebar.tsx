@@ -21,6 +21,7 @@ import {
   Banknote,
   Package,
   Trophy,
+  House,
   Truck,
   Medal,
   Compass,
@@ -314,6 +315,10 @@ export function Sidebar() {
         </div>
 
         <nav className="flex-1 px-3 py-3 overflow-y-auto" aria-label="Menú">
+          {/* Puerta única (21-nov-2026): volver al inicio, donde están todas las apps de cada persona. */}
+          <div className="mb-3 border-b border-white/10 pb-3">
+            <ItemMenu item={{ segment: "inicio", label: "Inicio · todas mis apps", icon: House }} href="/inicio" activo={false} onClick={() => setOpen(false)} />
+          </div>
           {secciones.map((sec, k) => (
             <div key={sec.titulo ?? k} className={k > 0 ? "mt-4" : ""}>
               {sec.titulo && (
