@@ -138,7 +138,7 @@ export async function middleware(request: NextRequest) {
         return NextResponse.redirect(new URL("/login", request.url));
       }
       // La puerta única (/inicio) es de todos: cada uno ve ahí solo sus botones.
-      if (pathname === "/inicio") return NextResponse.next();
+      if (pathname === "/inicio" || pathname === "/api/pase") return NextResponse.next();
       // Dirección del Highlight y las supervisiones (Juani): no tiene
       // sede propia, cubre las tres. Se le abre SOLO /grupo/highlight y
       // /grupo/supervisiones — nada de finanzas, saldos, reportes ni
