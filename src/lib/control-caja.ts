@@ -63,3 +63,22 @@ export async function sobreTopeCaja(desde: string): Promise<SobreTopeCaja[]> {
   const filas = await rpc<(Omit<SobreTopeCaja, "monto"> & { monto: number | string | null })[]>("sobre_tope_caja", { p_desde: desde });
   return filas.map((f) => ({ ...f, monto: f.monto === null ? null : Number(f.monto) }));
 }
+
+/* ─────────── Proveedores y compras reales (21-nov-2026) ─────────── */
+
+export type ProveedorCaja = {
+  id: string; nombre: string; telefono: string | null; direccion: string | null; condicion_pago: string; dias_credito: number;
+  notas: string | null; activo: boolean; rubro: string | null; sedes: string[];
+};
+export type CompraCaja = { item_id: string; fecha: string; sede: string; proveedor_id: string; producto: string; unidad: string; cantidad: number; precio_total: number };
+
+/** Los proveedores de Control de Caja, con su rubro más comprado y las sedes que les compran. */
+export async function proveedoresCaja(): Promise<ProveedorCaja[]> {
+  return rpc<ProveedorCaja[]>("proveedores_para_cash_control", {});
+}
+
+/** Cada producto comprado desde una fecha (YYYY-MM-DD), con lo que se pagó de verdad. */
+export async function comprasCaja(desde: string): Promise<CompraCaja[]> {
+  const filas = await rpc<(Omit<CompraCaja, "cantidad" | "precio_total"> & { cantidad: number | string; precio_total: number | string })[]>("compras_para_cash_control", { p_desde: desde });
+  return filas.map((f) => ({ ...f, cantidad: Number(f.cantidad), precio_total: Number(f.precio_total) }));
+}

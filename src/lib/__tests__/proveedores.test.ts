@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { factorInsumo, mejorParaInsumo, unidadDesdeInsumo, plural, armarPedido, compararProducto, dondeComprar, enlaceWhatsApp, precioUnitario, vigentes, type Oferta, type ProveedorCompra } from "../proveedores";
+import { nombreBonito, precioDesdeCompra, sedesDesdeNombres, factorInsumo, mejorParaInsumo, unidadDesdeInsumo, plural, armarPedido, compararProducto, dondeComprar, enlaceWhatsApp, precioUnitario, vigentes, type Oferta, type ProveedorCompra } from "../proveedores";
 
 const hoy = "2026-11-20";
 const caj: ProveedorCompra = { id: 1, nombre: "Packaging Cajamarca", costoEnvio: null, pedidoMinimo: null };
@@ -114,5 +114,22 @@ describe("conexión con insumos de Recetas", () => {
     // Por gramo → por kg
     const harina = [of(1, 30, 1000, 4.5)]; // S/ 4.50 por 1000 g
     expect(mejorParaInsumo(harina, provs, 30, "Atelier", 1000)?.precioInsumo).toBe(4.5);
+  });
+});
+
+describe("datos de Control de Caja", () => {
+  it("nombres en mayúsculas → legibles", () => {
+    expect(nombreBonito("HARINA SANTA ROSA X 50KG")).toBe("Harina Santa Rosa x 50kg");
+    expect(nombreBonito("  leche  DE vaca ")).toBe("Leche de Vaca");
+  });
+  it("sedes por nombre; sin compras, las 3", () => {
+    expect(sedesDesdeNombres(["Fonavi", "Centro"])).toEqual([2, 3]);
+    expect(sedesDesdeNombres(["Atelier"])).toEqual([1]);
+    expect(sedesDesdeNombres([])).toEqual([1, 2, 3]);
+  });
+  it("una compra se guarda como precio por unidad", () => {
+    expect(precioDesdeCompra({ cantidad: 3, precioTotal: 30, unidad: "KG" })).toEqual({ cantidad: 1, precio: 10, presentacion: "Por kg · compra de 3 kg a S/ 30.00" });
+    expect(precioDesdeCompra({ cantidad: 500, precioTotal: 52, unidad: "hoja" })?.precio).toBe(0.104);
+    expect(precioDesdeCompra({ cantidad: 0, precioTotal: 5, unidad: "kg" })).toBeNull();
   });
 });

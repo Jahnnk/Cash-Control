@@ -12,7 +12,8 @@ import { getSessionRole } from "@/lib/session-access";
 import { activeBusinessId } from "@/lib/active-business";
 import { getToday } from "@/lib/utils";
 import { leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
-import { factorInsumo, mejorParaInsumo, unidadDesdeInsumo, type OrigenInsumo, type UnidadInsumo } from "@/lib/proveedores";
+import { factorInsumo, mejorParaInsumo, nombreBonito, precioDesdeCompra, sedesDesdeNombres, unidadDesdeInsumo, type OrigenInsumo, type UnidadInsumo } from "@/lib/proveedores";
+import { comprasCaja, controlCajaConfigurado, proveedoresCaja } from "@/lib/control-caja";
 import { leerEnlaces, leerOfertas, type EnlaceInsumo } from "@/lib/proveedores-sql";
 import { guardarPrecioInsumo } from "./precios-insumos";
 
@@ -37,6 +38,8 @@ export type Proveedor = {
   pedidoMinimo: number | null;
   actualizadoPor: string;
   actualizadoEl: string;
+  /** Vino de Control de Caja (y se actualiza de allá). */
+  deCaja?: boolean;
 };
 
 export type ProductoComparable = { id: number; nombre: string; unidad: string; rubro: string | null };
@@ -64,6 +67,8 @@ export type DatosProveedores = {
   puedeCambiarRecetas: boolean;
   insumos: InsumoReceta[];
   enlaces: EnlaceInsumo[];
+  /** Última vez que se trajeron proveedores y compras de Control de Caja. null = nunca. */
+  sincronizado: { el: string; nuevosProveedores: number; nuevosPrecios: number } | null;
   proveedores: Proveedor[];
   productos: ProductoComparable[];
   /** Todo el historial; el vigente de cada (proveedor, producto) es el último. */
@@ -97,10 +102,10 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
   if (!s) return SIN_ACCESO;
   try {
     const sedeId = s.sedeFija ?? (await activeBusinessId());
-    const [provs, prods, precios, { vigentes: insumosVig }, enlaces] = await Promise.all([
+    const [provs, prods, precios, { vigentes: insumosVig }, enlaces, sync] = await Promise.all([
       sql`SELECT id, nombre, tipo, rubro, contacto, telefono, telefono2, email, direccion, ciudad, notas, sedes,
                  costo_envio::float AS "costoEnvio", pedido_minimo::float AS "pedidoMinimo",
-                 COALESCE(actualizado_por, creado_por) AS "actualizadoPor",
+                 COALESCE(actualizado_por, creado_por) AS "actualizadoPor", caja_id IS NOT NULL AS "deCaja",
                  to_char(COALESCE(actualizado_el, creado_el) AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS "actualizadoEl"
           FROM proveedores WHERE activo ORDER BY tipo, rubro, nombre`,
       sql`SELECT id, nombre, unidad, rubro FROM proveedor_productos WHERE activo ORDER BY nombre`,
@@ -112,6 +117,7 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
           ORDER BY fecha, pp.id`,
       leerPreciosVigentes(sql),
       leerEnlaces(sql),
+      leerSync(),
     ]);
     return {
       ok: true,
@@ -119,6 +125,7 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
         hoy: getToday(), sedeId, puedeEditar: true, puedeCambiarRecetas: s.direccion,
         insumos: insumosVig.map((v) => ({ origen: v.origen, sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio })),
         enlaces,
+        sincronizado: sync,
         proveedores: provs as Proveedor[], productos: prods as ProductoComparable[], precios: precios as PrecioRegistrado[],
       },
     };
@@ -320,5 +327,114 @@ export async function usarPrecioEnRecetas(input: { productoId: number; origen: O
     return { ok: true, precio: mejor.precioInsumo, insumo: ins?.nombre ?? e.sku };
   } catch (err) {
     return errorBD("usar", err);
+  }
+}
+
+/* ─────────── Traer de Control de Caja (21-nov-2026) ─────────── */
+
+const CLAVE_SYNC = "proveedores_caja_sync";
+/** Se traen las compras del último año: lo más viejo ya no sirve para comparar precios. */
+const DIAS_HISTORIAL = 365;
+/** Al abrir la pantalla se actualiza solo si pasó más de esto desde la última vez. */
+const MINUTOS_ENTRE_SYNC = 60;
+
+async function leerSync(): Promise<DatosProveedores["sincronizado"]> {
+  try {
+    const r = (await sql`SELECT value FROM app_settings WHERE key = ${CLAVE_SYNC}`) as { value: DatosProveedores["sincronizado"] }[];
+    return r[0]?.value ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Trae de Control de Caja los proveedores y el precio real de cada compra. No duplica: cada proveedor y cada línea
+ * de compra recuerdan su id de allá. A un proveedor que ya existe solo le completa lo que falta (no pisa lo editado
+ * aquí). `siHaceFalta`: solo si pasó más de una hora desde la última vez (lo usa la pantalla al abrir).
+ */
+export async function sincronizarConControlCaja(opciones?: { siHaceFalta?: boolean }): Promise<R<{ nuevosProveedores: number; nuevosPrecios: number; omitido?: boolean }>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  if (!controlCajaConfigurado()) return { ok: false, error: "La conexión con Control de Caja no está configurada." };
+  if (opciones?.siHaceFalta) {
+    const ult = await leerSync();
+    if (ult && Date.now() - Date.parse(ult.el) < MINUTOS_ENTRE_SYNC * 60_000) return { ok: true, nuevosProveedores: 0, nuevosPrecios: 0, omitido: true };
+  }
+  let provsCaja, compras;
+  try {
+    const desde = new Date(Date.now() - DIAS_HISTORIAL * 86_400_000).toISOString().slice(0, 10);
+    [provsCaja, compras] = await Promise.all([proveedoresCaja(), comprasCaja(desde)]);
+  } catch (e) {
+    console.error("[proveedores:caja]", e);
+    const msg = e instanceof Error ? e.message : "";
+    return { ok: false, error: /function|does not exist|schema cache/i.test(msg)
+      ? "Falta correr el archivo de proveedores en Supabase (Control de Caja)."
+      : "No pude conectar con Control de Caja. Intenta de nuevo." };
+  }
+  try {
+    // 1. Proveedores
+    const existentes = (await sql`SELECT id, lower(nombre) AS nombre, caja_id::text AS "cajaId", telefono, direccion, sedes FROM proveedores WHERE activo`) as
+      { id: number; nombre: string; cajaId: string | null; telefono: string | null; direccion: string | null; sedes: number[] }[];
+    const idPorCaja = new Map<string, number>();
+    let nuevosProveedores = 0;
+    for (const p of provsCaja) {
+      const nombre = nombreBonito(p.nombre);
+      const sedes = sedesDesdeNombres(p.sedes ?? []);
+      const ya = existentes.find((x) => x.cajaId === p.id) ?? existentes.find((x) => !x.cajaId && x.nombre === nombre.toLowerCase());
+      if (ya) {
+        const unidas = [...new Set([...ya.sedes, ...sedes])].sort();
+        await sql`UPDATE proveedores SET caja_id = ${p.id}, telefono = COALESCE(telefono, ${limpio(p.telefono, 40)}),
+                    direccion = COALESCE(direccion, ${limpio(p.direccion, 200)}), sedes = ${unidas}
+                  WHERE id = ${ya.id}`;
+        idPorCaja.set(p.id, ya.id);
+        continue;
+      }
+      if (!p.activo) continue;
+      const credito = p.condicion_pago === "credito" ? `Da crédito${p.dias_credito ? ` a ${p.dias_credito} días` : ""}.` : null;
+      const notas = [credito, limpio(p.notas, 400)].filter(Boolean).join(" ") || null;
+      const r = (await sql`
+        INSERT INTO proveedores (nombre, tipo, rubro, telefono, direccion, notas, sedes, creado_por, caja_id)
+        VALUES (${nombre}, 'proveedor', ${limpio(p.rubro ? nombreBonito(p.rubro) : null, 60) ?? "Compras"}, ${limpio(p.telefono, 40)},
+                ${limpio(p.direccion, 200)}, ${notas}, ${sedes}, 'Control de Caja', ${p.id})
+        RETURNING id`) as { id: number }[];
+      idPorCaja.set(p.id, r[0].id);
+      nuevosProveedores++;
+    }
+
+    // 2. Precios: solo las líneas de compra que aún no se trajeron.
+    const ya = new Set(((await sql`SELECT caja_item_id::text AS id FROM proveedor_precios WHERE caja_item_id IS NOT NULL`) as { id: string }[]).map((x) => x.id));
+    const nuevas = compras.filter((c) => !ya.has(c.item_id) && idPorCaja.has(c.proveedor_id));
+    const productos = (await sql`SELECT id, lower(nombre) AS nombre, lower(unidad) AS unidad FROM proveedor_productos WHERE activo`) as { id: number; nombre: string; unidad: string }[];
+    const prodPorClave = new Map(productos.map((p) => [`${p.nombre}|${p.unidad}`, p.id]));
+    const filas: { prov: number; prod: number; pres: string; cant: number; precio: number; fecha: string; sede: number | null; item: string }[] = [];
+    for (const c of nuevas) {
+      const precio = precioDesdeCompra({ cantidad: c.cantidad, precioTotal: c.precio_total, unidad: c.unidad });
+      if (!precio) continue;
+      const nombre = nombreBonito(c.producto);
+      const unidad = (c.unidad || "unidad").trim().toLowerCase();
+      const clave = `${nombre.toLowerCase()}|${unidad}`;
+      let prod = prodPorClave.get(clave);
+      if (!prod) {
+        prod = ((await sql`INSERT INTO proveedor_productos (nombre, unidad, creado_por) VALUES (${nombre}, ${unidad}, 'Control de Caja') RETURNING id`) as { id: number }[])[0].id;
+        prodPorClave.set(clave, prod);
+      }
+      filas.push({ prov: idPorCaja.get(c.proveedor_id)!, prod, pres: precio.presentacion, cant: precio.cantidad, precio: precio.precio, fecha: c.fecha, sede: sedesDesdeNombres([c.sede]).length === 1 ? sedesDesdeNombres([c.sede])[0] : null, item: c.item_id });
+    }
+    for (let i = 0; i < filas.length; i += 500) {
+      const lote = filas.slice(i, i + 500);
+      await sql`
+        INSERT INTO proveedor_precios (proveedor_id, producto_id, presentacion, cantidad, precio, fecha, nota, sede_id, registrado_por, caja_item_id)
+        SELECT * FROM unnest(${lote.map((f) => f.prov)}::int[], ${lote.map((f) => f.prod)}::int[], ${lote.map((f) => f.pres)}::text[],
+                             ${lote.map((f) => f.cant)}::numeric[], ${lote.map((f) => f.precio)}::numeric[], ${lote.map((f) => f.fecha)}::date[],
+                             ${lote.map(() => "Compra real registrada en Control de Caja")}::text[], ${lote.map((f) => f.sede)}::int[],
+                             ${lote.map(() => "Control de Caja")}::text[], ${lote.map((f) => f.item)}::uuid[])
+        ON CONFLICT DO NOTHING`;
+    }
+    const resumen = { el: new Date().toISOString(), nuevosProveedores, nuevosPrecios: filas.length };
+    await sql`INSERT INTO app_settings (key, value, updated_at, updated_by) VALUES (${CLAVE_SYNC}, ${JSON.stringify(resumen)}::jsonb, now(), ${s.nombre})
+              ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = now(), updated_by = EXCLUDED.updated_by`;
+    return { ok: true, nuevosProveedores, nuevosPrecios: filas.length };
+  } catch (err) {
+    return errorBD("caja", err);
   }
 }

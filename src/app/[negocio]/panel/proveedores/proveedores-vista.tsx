@@ -8,12 +8,12 @@
  * Separado de la carga para poder verlo con datos de prueba.
  */
 
-import { useMemo, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   AlertTriangle, ArrowLeftRight, BadgeCheck, BookOpen, Link2, Loader2, Unlink, Building2, ChevronDown, History, Mail, MapPin, MessageCircle, Pencil, Phone, Plus,
   Search, ShoppingBasket, Sparkles, Store, Tag, Truck, Wrench, X,
 } from "lucide-react";
-import { desconectarInsumo, usarPrecioEnRecetas, type DatosProveedores, type Proveedor, type ProductoComparable, type PrecioRegistrado } from "@/app/actions/proveedores";
+import { desconectarInsumo, sincronizarConControlCaja, usarPrecioEnRecetas, type DatosProveedores, type Proveedor, type ProductoComparable, type PrecioRegistrado } from "@/app/actions/proveedores";
 import { useToast } from "@/components/toast-provider";
 import {
   SEDES, plural, armarPedido, compararProducto, mejorParaInsumo, dondeComprar, enlaceTelefono, enlaceWhatsApp, vigentes, type ItemPedido, type ProveedorCompra,
@@ -42,6 +42,28 @@ export function ProveedoresVista({ datos, sedeLabel, onCambio }: { datos: DatosP
   const [editando, setEditando] = useState<Proveedor | "nuevo" | null>(null);
   const [precio, setPrecio] = useState<PrecioInicial | null>(null);
   const [todasLasSedes, setTodasLasSedes] = useState(false);
+  const [sync, setSync] = useState<{ estado: "trayendo" | "ok" | "error"; mensaje?: string }>({ estado: "ok" });
+  const { showToast } = useToast();
+
+  /** Trae de Control de Caja los proveedores y los precios de las compras reales. */
+  async function traer(siHaceFalta: boolean) {
+    setSync({ estado: "trayendo" });
+    const r = await sincronizarConControlCaja({ siHaceFalta });
+    if (!r.ok) { setSync({ estado: "error", mensaje: r.error }); return; }
+    setSync({ estado: "ok" });
+    if (r.nuevosProveedores || r.nuevosPrecios) {
+      showToast(`De Control de Caja: ${r.nuevosProveedores} proveedor${r.nuevosProveedores === 1 ? "" : "es"} y ${r.nuevosPrecios} precio${r.nuevosPrecios === 1 ? "" : "s"} nuevos`, "success");
+      onCambio();
+    } else if (!siHaceFalta) {
+      showToast("Ya estaba al día con Control de Caja", "success");
+      onCambio();
+    }
+  }
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- traer de Control de Caja solo al abrir */
+    void traer(true);
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
   const [conectando, setConectando] = useState<ProductoComparable | null>(null);
 
   const visibles = useMemo(
@@ -80,6 +102,8 @@ export function ProveedoresVista({ datos, sedeLabel, onCambio }: { datos: DatosP
           </div>
         )}
       </div>
+
+      <FranjaCaja sync={sync} ultima={datos.sincronizado} onActualizar={() => void traer(false)} />
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <Segmentado valor={pestana} onChange={setPestana} opciones={[
@@ -199,6 +223,7 @@ function TarjetaContacto({ p, sedeId, mejores = [], onEditar }: { p: Proveedor; 
           <p className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-gray-500">
             <span className="font-medium text-gray-700">{p.rubro}</span>
             {p.ciudad && <span className="inline-flex items-center gap-0.5"><MapPin className="h-3 w-3" aria-hidden />{p.ciudad}</span>}
+            {p.deCaja && <span className="rounded bg-gray-100 px-1.5 py-px text-[10px] font-medium text-gray-500">Control de Caja</span>}
           </p>
         </div>
         {onEditar && (
@@ -583,6 +608,42 @@ function EnRecetas({ producto, datos, onConectar, onCambio }: { producto: Produc
           <Link2 className="h-3.5 w-3.5" aria-hidden />{enlaces.length === 0 ? "Conectar con un insumo de Recetas" : "Conectar también con la otra lista de insumos"}
         </button>
       )}
+    </div>
+  );
+}
+
+/* ─────────── Conexión con Control de Caja ─────────── */
+
+function haceCuanto(iso: string): string {
+  const min = Math.round((Date.now() - Date.parse(iso)) / 60_000);
+  if (min < 1) return "hace un momento";
+  if (min < 60) return `hace ${min} min`;
+  const h = Math.round(min / 60);
+  if (h < 24) return `hace ${h} h`;
+  const d = Math.round(h / 24);
+  return `hace ${d} día${d === 1 ? "" : "s"}`;
+}
+
+function FranjaCaja({ sync, ultima, onActualizar }: {
+  sync: { estado: "trayendo" | "ok" | "error"; mensaje?: string }; ultima: DatosProveedores["sincronizado"]; onActualizar: () => void;
+}) {
+  const error = sync.estado === "error";
+  return (
+    <div className={`flex flex-wrap items-center justify-between gap-2 rounded-xl border px-3 py-2 text-xs ${error ? "border-amber-200 bg-amber-50 text-amber-900" : "border-gray-200 bg-white text-gray-600"}`}>
+      <p className="flex min-w-0 items-center gap-2">
+        {sync.estado === "trayendo" ? <Loader2 className="h-3.5 w-3.5 shrink-0 animate-spin text-primary-light" aria-hidden />
+          : error ? <AlertTriangle className="h-3.5 w-3.5 shrink-0" aria-hidden />
+            : <Link2 className="h-3.5 w-3.5 shrink-0 text-primary-light" aria-hidden />}
+        <span>
+          {sync.estado === "trayendo" ? "Trayendo proveedores y compras de Control de Caja…"
+            : error ? sync.mensaje
+              : <>Conectado a <b className="text-gray-800">Control de Caja</b>: los proveedores y el precio de cada compra real llegan solos.{ultima && <> Actualizado {haceCuanto(ultima.el)}.</>}</>}
+        </span>
+      </p>
+      <button type="button" onClick={onActualizar} disabled={sync.estado === "trayendo"}
+        className="shrink-0 rounded-lg border border-gray-200 bg-white px-2.5 py-1 font-medium text-primary-light hover:bg-gray-50 disabled:opacity-50">
+        Actualizar ahora
+      </button>
     </div>
   );
 }
