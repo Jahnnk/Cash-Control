@@ -166,14 +166,89 @@ export function resumenItems(items: Pick<ItemVale, "cantidad" | "nombre">[]): st
 }
 
 /** El mensaje que Jahnn pega en WhatsApp al entregar el vale. */
-export function mensajeWhatsApp(args: { link: string; sede: string; items: ItemVale[]; venceEl: string }): string {
+export function mensajeWhatsApp(args: { link: string; sede: string; items: ItemVale[]; venceEl: string; para?: string | null }): string {
   const [a, m, d] = args.venceEl.split("-");
   return [
     "¡Tienes un vale de consumo en Yayi's! 🎁",
+    ...(args.para ? [`Para: ${args.para}`] : []),
     `Sede: ${args.sede}`,
     `Cubre: ${resumenItems(args.items)}`,
     `Válido hasta el ${d}/${m}/${a}. Se usa una sola vez.`,
     "Muéstralo al llegar:",
     args.link,
   ].join("\n");
+}
+
+/** Todos los links de una tanda, listos para pegar en un solo mensaje. */
+export function textoTodosLosVales(
+  vales: { codigo: string; sede: string; items: ItemVale[]; venceEl: string; para: string | null }[],
+): string {
+  const bloques = vales.map((v, i) => {
+    const [a, m, d] = v.venceEl.split("-");
+    const quien = v.para ? `${v.para} · ` : "";
+    return `${i + 1}) ${quien}${v.sede}: ${resumenItems(v.items)} (hasta el ${d}/${m}/${a})\n${linkVale(v.codigo)}`;
+  });
+  return ["Vales de consumo Yayi's", "", ...bloques].join("\n\n");
+}
+
+// ───────────────────────── Sorteo entre socios y administradores ─────────────────────────
+
+/** Quiénes participan por defecto en el sorteo de los martes. Se pueden quitar o agregar nombres en la pantalla. */
+export const PARTICIPANTES_SORTEO = ["Luis", "Chari", "Sol", "Kelly", "Juani", "Jahnn"] as const;
+
+export const MAX_PREMIOS_SORTEO = 12;
+
+function uint32AlAzar(): number {
+  return globalThis.crypto.getRandomValues(new Uint32Array(1))[0];
+}
+
+/**
+ * Un entero al azar en [0, maxExclusivo) SIN sesgo: se descartan los valores de 32 bits que harían que unos
+ * números salgan más seguido que otros (el «sesgo del módulo»). `azar` se inyecta solo para probar.
+ */
+export function enteroAlAzar(maxExclusivo: number, azar: () => number = uint32AlAzar): number {
+  if (!Number.isInteger(maxExclusivo) || maxExclusivo < 1 || maxExclusivo > 2 ** 32) {
+    throw new Error("enteroAlAzar: el máximo debe ser un entero entre 1 y 2^32");
+  }
+  const limite = 2 ** 32 - (2 ** 32 % maxExclusivo);
+  let n = azar();
+  while (n >= limite) n = azar();
+  return n % maxExclusivo;
+}
+
+/** Baraja una lista (Fisher-Yates): todas las ordenaciones posibles tienen la misma probabilidad. No toca la original. */
+export function barajar<T>(lista: readonly T[], azar: () => number = uint32AlAzar): T[] {
+  const a = [...lista];
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = enteroAlAzar(i + 1, azar);
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+export type ResultadoSorteo<P> =
+  | { ok: true; ganadores: { persona: string; premio: P }[]; sinPremio: string[] }
+  | { ok: false; error: string };
+
+/**
+ * Reparte los premios entre las personas al azar, uno por persona. Si hay menos premios que personas, ganan
+ * solo algunas (también al azar). Los premios salen en el mismo orden en que se armaron; lo que se sortea es
+ * QUIÉN se lleva cada uno. Nunca hay más premios que personas.
+ */
+export function sortear<P>(personas: readonly string[], premios: readonly P[], azar: () => number = uint32AlAzar): ResultadoSorteo<P> {
+  const nombres = personas.map((n) => n.trim()).filter((n) => n !== "");
+  const unicos = new Set(nombres.map((n) => n.toLowerCase()));
+  if (unicos.size !== nombres.length) return { ok: false, error: "Hay un nombre repetido entre los participantes." };
+  if (nombres.length === 0) return { ok: false, error: "Elige al menos un participante." };
+  if (premios.length === 0) return { ok: false, error: "Arma al menos un premio." };
+  if (premios.length > MAX_PREMIOS_SORTEO) return { ok: false, error: `Máximo ${MAX_PREMIOS_SORTEO} premios por sorteo.` };
+  if (premios.length > nombres.length) {
+    return { ok: false, error: `Hay ${premios.length} premios y solo ${nombres.length} participantes. Quita premios o agrega participantes.` };
+  }
+  const mezclados = barajar(nombres, azar);
+  return {
+    ok: true,
+    ganadores: premios.map((premio, i) => ({ persona: mezclados[i], premio })),
+    sinPremio: mezclados.slice(premios.length),
+  };
 }
