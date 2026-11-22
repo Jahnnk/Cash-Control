@@ -12,7 +12,7 @@ const SEDE_POR_ID: Record<number, Sede> = { 1: "atelier", 2: "fonavi", 3: "centr
 function perfilDe(role: SessionRole): PerfilPuerta | null {
   if (!role) return null;
   switch (role.kind) {
-    case "full": return { tipo: "direccion" };
+    case "full": return role.finanzas ? { tipo: "finanzas" } : { tipo: "direccion" };
     case "admin": return SEDE_POR_ID[role.sede] ? { tipo: "admin", sede: SEDE_POR_ID[role.sede] } : null;
     case "verif": return SEDE_POR_ID[role.sede] ? { tipo: "verif", sede: SEDE_POR_ID[role.sede] } : null;
     case "highlight": return { tipo: "highlight" };
@@ -29,5 +29,5 @@ export default async function InicioPage() {
   const perfil = perfilDe(await getSessionRole());
   if (!perfil) redirect("/login");
   const nombre = await getNombreSaludo();
-  return <PuertaVista nombre={nombre} botones={botonesPara(perfil)} esDireccion={perfil.tipo === "direccion"} />;
+  return <PuertaVista nombre={nombre} botones={botonesPara(perfil)} esDireccion={perfil.tipo === "direccion" || perfil.tipo === "finanzas"} />;
 }

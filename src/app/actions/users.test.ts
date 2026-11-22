@@ -37,6 +37,7 @@ const fake = vi.hoisted(() => {
 vi.mock("@neondatabase/serverless", () => ({ neon: () => fake.makeTag() }));
 vi.mock("@/lib/session-access", () => ({
   requireFullSession: vi.fn(async () => fake.state.full),
+  requireDireccionTotal: vi.fn(async () => fake.state.full),
 }));
 vi.mock("next/cache", () => ({ revalidatePath: vi.fn() }));
 
