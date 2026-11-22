@@ -45,6 +45,7 @@ import { TrimestreCard } from "./trimestre-card";
 import { RevisarSedeCard } from "./revisar-sede-card";
 import { SupervisionesCard } from "./supervisiones-card";
 import { SeccionDesplegable } from "@/components/productos/ui";
+import { CanjearValeCard } from "@/components/vales/canjear-vale-card";
 
 /**
  * Incentivos por Upselling · Tablero del administrador (política jun-2026).
@@ -306,6 +307,10 @@ function IncentivosPage() {
       {/* «Tu semana» (11-oct-2026): qué toca, en qué paso vas y qué sigue, estilo pedido de
           delivery. El registro del día y la rutina del sábado quedan como su detalle. */}
       <TuSemana refrescar={weekRefresh} onRegistrar={irAlRegistro} onSubirReporte={() => setShowImport(true)} />
+
+      {/* Vales de «Primer cliente» (22-nov-2026): el administrador canjea el código del invitado y le
+          dice a caja qué cobrar como cortesía. Caja no usa Cash Control. */}
+      <CanjearValeCard />
 
       {/* Días que no cuentan (corte de luz, feriado). Va pegado al
           estado de KPIs porque es la respuesta a "¿por qué ese día está

@@ -30,6 +30,16 @@ const PUBLIC_PATHS = ["/", "/select-business", "/acceso-denegado", "/inicio"];
 const PUBLIC_API_PREFIXES = ["/api/keep-alive"];
 
 /**
+ * Páginas públicas sin sesión: el vale de consumo que ve el invitado de
+ * «Primer cliente» (/vale/7K3Q-M2PA) y el canje suelto en caja (/vale). Los
+ * cajeros y los invitados no tienen cuenta. La página solo muestra sede,
+ * productos, vigencia y estado; lo único que escribe es el canje en caja,
+ * que exige el PIN de 6 dígitos de la sede con bloqueo por intentos
+ * (actions/vales-caja.ts). El canje del encargado sigue exigiendo su login.
+ */
+const PUBLIC_PAGE_PREFIXES = ["/vale/"];
+
+/**
  * Rutas de API que un usuario CON ALCANCE (admin de sede, verificador,
  * dirección del Highlight) sí puede tocar, aunque estén fuera de su
  * prefijo de pantalla.
@@ -85,6 +95,10 @@ export async function middleware(request: NextRequest) {
 
   // 0b. APIs públicas (autenticación propia en cada handler, ej. keep-alive)
   if (PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return NextResponse.next();
+  }
+  // 0b'. Vale de consumo del invitado y canje en caja (ver PUBLIC_PAGE_PREFIXES)
+  if (pathname === "/vale" || PUBLIC_PAGE_PREFIXES.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 
