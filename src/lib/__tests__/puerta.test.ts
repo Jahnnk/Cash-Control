@@ -16,6 +16,9 @@ describe("puerta única: cada uno ve solo lo que usa", () => {
     expect(botonesPara({ tipo: "equipo" }).map((b) => b.href)).toEqual(["/grupo/acuerdos"]);
     expect(apps({ tipo: "lector" })).toEqual(["cash", "cash"]);
   });
+  it("el enlace a Control de Caja lleva la marca de la puerta (para su botón «Inicio»)", () => {
+    expect(botonesPara({ tipo: "direccion" }).find((b) => b.app === "caja")?.href).toMatch(/\/\?desde=puerta$/);
+  });
   it("la gerencia de finanzas: sin Producción", () => {
     expect(apps({ tipo: "finanzas" })).toEqual(["cash", "cash", "cash", "caja", "envios", "planilla"]);
     expect(perfilDesdeScope("finanzas")).toEqual({ tipo: "finanzas" });

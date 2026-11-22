@@ -49,7 +49,8 @@ const externo = (app: Exclude<ClaveApp, "cash">, titulo: string, detalle: string
 const interno = (clave: string, titulo: string, detalle: string, href: string): BotonPuerta =>
   ({ clave, app: "cash", titulo, detalle, href, externa: false });
 
-const CAJA = externo("caja", "Compras y rendición", "Listas, compras, boletas y reposición semanal");
+// `?desde=puerta`: Control de Caja lo recuerda y muestra su botón «Inicio» para volver aquí (22-nov-2026).
+const CAJA = { ...externo("caja", "Compras y rendición", "Listas, compras, boletas y reposición semanal"), href: `${URL_APPS.caja}/?desde=puerta` };
 const ENVIOS = externo("envios", "Envíos", "Pedidos y despachos de Atelier, clientes B2B y cuentas entre sedes");
 const PLANILLA = externo("planilla", "Planilla", "Horarios, horas, descuentos y pagos del personal");
 const PRODUCCION = externo("produccion", "Producción", "Hoja de producción, recetas e insumos de Atelier");
