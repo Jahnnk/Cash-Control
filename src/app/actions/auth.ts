@@ -185,6 +185,11 @@ async function entrarComoUsuario(u: { id: number; scope: string; password_hash: 
     redirect("/inicio");
   }
   c.set(SCOPE_HINT_COOKIE, u.scope, { ...cookieOpts, httpOnly: false });
+  // Gerencia de finanzas: se sienta en el rol de finanzas (el de Kelly). La pista de alcance solo esconde menús.
+  if (u.scope === "finanzas") {
+    c.set("yayis_role", "kelly", { path: "/", maxAge: SESSION_DAYS * 24 * 60 * 60, sameSite: "lax" });
+    redirect("/inicio");
+  }
   // Puerta única (21-nov-2026): todos a su inicio, salvo el verificador (una sola pantalla: va directo).
   if (u.scope.startsWith("verif-")) redirect(`/${u.scope.split("-")[1]}/verificacion`);
   redirect("/inicio");

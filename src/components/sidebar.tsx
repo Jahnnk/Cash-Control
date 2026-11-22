@@ -182,16 +182,21 @@ export function Sidebar() {
   const isLector = scopeHint === "lector";
   // Coordinadora de marketing, socias: solo Acuerdos y tareas.
   const isEquipo = scopeHint === "equipo";
+  // Gerencia de finanzas: todo el menú menos Sistema de Dirección y Configuración (el middleware igual los bloquea).
+  const isFinanzas = scopeHint === "finanzas";
   // useMemo SIEMPRE se llama en el mismo orden — no condicional.
   const secciones = useMemo((): NavSeccion[] => {
     if (!scope) return [];
     // Admin de sede: solo su Panel — el resto del menú lo rebotaría. Juani: Highlight y Supervisiones.
     const permitido = isScopedAdmin ? ["panel"] : isScopedHighlight ? ["acuerdos", "highlight", "supervisiones"] : isLector ? ["dashboard", "reportes"] : isEquipo ? ["acuerdos"] : null;
-    if (!permitido) return MENU[scope];
+    if (!permitido) {
+      if (!isFinanzas) return MENU[scope];
+      return MENU[scope].map((sec) => ({ ...sec, items: sec.items.filter((i) => i.segment !== "direccion") })).filter((sec) => sec.items.length > 0);
+    }
     const items = MENU[scope].flatMap((s) => s.items).filter((i) => permitido.includes(i.segment));
     return [{ titulo: null, items }];
-  }, [scope, isScopedAdmin, isScopedHighlight, isLector, isEquipo]);
-  const conConfiguracion = !isScopedAdmin && !isScopedHighlight && !isLector && !isEquipo;
+  }, [scope, isScopedAdmin, isScopedHighlight, isLector, isEquipo, isFinanzas]);
+  const conConfiguracion = !isScopedAdmin && !isScopedHighlight && !isLector && !isEquipo && !isFinanzas;
 
   // Verificador: su única pantalla (/[sede]/verificacion) no está en el
   // menú — un sidebar vacío solo estorba en el celular.

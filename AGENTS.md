@@ -150,6 +150,10 @@ Desde jul-2026 la dirección gestiona los accesos del personal en
   `direccion-kelly`: cuentas personales con el mismo acceso que la llave
   maestra (getSessionRole → `{kind:"full"}`; el middleware las deja pasar).
   La llave maestra (`APP_PASSWORD`) sigue en Vercel solo para emergencias.
+- Rol `finanzas` (22-nov-2026): la gerencia de finanzas. Sesión `{kind:"full", quien:"kelly", finanzas:true}`:
+  ve todo menos Configuración (de cualquier sede) y el Sistema de Dirección (`rutaBloqueadaParaFinanzas` en el
+  middleware; `requireDireccionTotal()` en las actions de usuarios, matriz, reserva y corte de datos).
+  `direccion-kelly` ya no se ofrece.
 - Cada cuenta puede tener `email` (único). Con correo, el login prueba SOLO
   esa cuenta; sin correo, sigue el flujo de siempre (la contraseña sola).
   El correo es el que reconoce a la persona en Envíos, Planilla y Producción.

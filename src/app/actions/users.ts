@@ -16,7 +16,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
-import { requireFullSession } from "@/lib/session-access";
+import { requireDireccionTotal } from "@/lib/session-access";
 import { hashPassword, verifyPassword } from "@/lib/password-hash";
 import { generateStaffPassword } from "@/lib/password-generator";
 import { isUserScope, normalizarEmail, type UserScope } from "@/lib/user-scopes";
@@ -45,7 +45,7 @@ export type UsersOverview = {
 const NO_ACCESS = { ok: false as const, error: "La gestión de usuarios es solo para la dirección." };
 
 export async function listUsers(): Promise<{ ok: true; data: UsersOverview } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   try {
     const users = (await sql`
       SELECT id, nombre, email, scope, active,
@@ -115,7 +115,7 @@ export async function createUser(input: {
   scope: string;
   email?: string | null;
 }): Promise<{ ok: true; id: number; password: string } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   const nombre = input.nombre.trim();
   if (nombre.length < 2 || nombre.length > 60) return { ok: false, error: "Escribe el nombre de la persona (2-60 letras)." };
   if (!isUserScope(input.scope)) return { ok: false, error: "Rol inválido." };
@@ -148,7 +148,7 @@ export async function importLegacyUser(input: {
   scope: string;
   nombre: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   const nombre = input.nombre.trim();
   if (nombre.length < 2 || nombre.length > 60) return { ok: false, error: "Escribe el nombre de la persona (2-60 letras)." };
   if (!isUserScope(input.scope)) return { ok: false, error: "Rol inválido." };
@@ -186,7 +186,7 @@ export async function importLegacyUser(input: {
 export async function resetUserPassword(
   id: number,
 ): Promise<{ ok: true; password: string } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   if (!Number.isInteger(id) || id <= 0) return { ok: false, error: "Usuario inválido." };
   try {
     const password = await freshPassword();
@@ -209,7 +209,7 @@ export async function setUserActive(input: {
   id: number;
   active: boolean;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   if (!Number.isInteger(input.id) || input.id <= 0) return { ok: false, error: "Usuario inválido." };
   try {
     const rows = (await sql`
@@ -237,7 +237,7 @@ export async function changeUserScope(input: {
   id: number;
   scope: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   if (!Number.isInteger(input.id) || input.id <= 0) return { ok: false, error: "Usuario inválido." };
   if (!isUserScope(input.scope)) return { ok: false, error: "Rol inválido." };
   try {
@@ -258,7 +258,7 @@ export async function renameUser(input: {
   id: number;
   nombre: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   const nombre = input.nombre.trim();
   if (!Number.isInteger(input.id) || input.id <= 0) return { ok: false, error: "Usuario inválido." };
   if (nombre.length < 2 || nombre.length > 60) return { ok: false, error: "Nombre inválido (2-60 letras)." };
@@ -283,7 +283,7 @@ async function correoEnUso(email: string, salvoId?: number): Promise<boolean> {
 
 /** Pone o cambia el correo de una cuenta (vacío = la quita). La contraseña no cambia. */
 export async function setUserEmail(input: { id: number; email: string }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   if (!Number.isInteger(input.id) || input.id <= 0) return { ok: false, error: "Usuario inválido." };
   const email = input.email.trim() ? normalizarEmail(input.email) : null;
   if (input.email.trim() && !email) return { ok: false, error: "Ese correo no parece válido." };

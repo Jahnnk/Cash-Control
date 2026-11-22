@@ -16,7 +16,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
-import { getSessionRole, requireFullSession } from "@/lib/session-access";
+import { getSessionRole, requireDireccionTotal } from "@/lib/session-access";
 import { getEquilibrioSede, getResumenEquilibrio } from "./breakeven";
 import { getLiquidezGrupo } from "./liquidez";
 import type { LiquidezGrupo } from "@/lib/liquidez";
@@ -106,7 +106,7 @@ async function datosDeSede(bId: number, nombre: string, mes: string, liq: Liquid
 
 /** Los números de las tres sedes para la matriz de decisión. Solo dirección. */
 export async function getMatrizDecision(): Promise<{ ok: true; mes: string; sedes: SedeDecision[] } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  if (!(await requireDireccionTotal())) return { ok: false, error: "Solo dirección." };
   try {
     const mes = hoyLima().slice(0, 7);
     const liq = await getLiquidezGrupo();
@@ -146,7 +146,7 @@ export async function guardarFondosMutuos(input: { businessId: number; fecha: st
  */
 export async function guardarReservaMinima(input: { businessId: number; semanas: number | null; monto: number | null }): Promise<{ ok: true } | { ok: false; error: string }> {
   const role = await getSessionRole();
-  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  if (role?.kind !== "full" || role.finanzas) return { ok: false, error: "Solo dirección." };
   if (![1, 2, 3].includes(input?.businessId)) return { ok: false, error: "Sede inválida." };
   const semanas = input.semanas === null || input.semanas === undefined ? null : Number(input.semanas);
   const monto = input.monto === null || input.monto === undefined ? null : Number(input.monto);

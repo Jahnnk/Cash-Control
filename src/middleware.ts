@@ -1,6 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { neon } from "@neondatabase/serverless";
 import { verifyAuthToken, verifyScopedToken, parseUserTokenId, verifyUserToken } from "@/lib/auth-token";
+import { rutaBloqueadaParaFinanzas } from "@/lib/user-scopes";
 
 const VALID_SCOPES = ["atelier", "fonavi", "centro", "grupo"] as const;
 type Scope = typeof VALID_SCOPES[number];
@@ -119,7 +120,12 @@ export async function middleware(request: NextRequest) {
       }
     }
     // Cuenta personal de la dirección (puerta única, 21-nov-2026) = mismo acceso que la llave maestra.
-    const valid = llaveMaestra || scopeUsuario === "direccion-jahnn" || scopeUsuario === "direccion-kelly";
+    // Gerencia de finanzas (22-nov-2026): lo mismo, salvo Configuración y el Sistema de Dirección.
+    const esFinanzas = scopeUsuario === "finanzas";
+    const valid = llaveMaestra || esFinanzas || scopeUsuario === "direccion-jahnn" || scopeUsuario === "direccion-kelly";
+    if (esFinanzas && rutaBloqueadaParaFinanzas(pathname)) {
+      return NextResponse.redirect(new URL("/grupo/dashboard", request.url));
+    }
     if (!valid) {
       // 0c. Sesión de ADMINISTRADOR DE SEDE (token v2 con alcance).
       // Solo puede ver /[su-sede]/panel — todo lo demás (saldos,

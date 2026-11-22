@@ -1,11 +1,12 @@
 /** Roles asignables a usuarios del personal (tabla app_users).
  * Desde el 21-nov-2026 (puerta única, decisión de Jahnn) la dirección también tiene cuenta personal: «direccion-jahnn»
- * y «direccion-kelly» dan el mismo acceso total que la llave maestra. La llave maestra (APP_PASSWORD) sigue en Vercel
- * solo para emergencias. */
+ * da el mismo acceso total que la llave maestra. La llave maestra (APP_PASSWORD) sigue en Vercel solo para emergencias.
+ * «finanzas» (22-nov-2026): la gerencia de finanzas (hoy Kelly, mañana otra persona) ve todo MENOS Configuración y el
+ * Sistema de Dirección. «direccion-kelly» ya no se ofrece (Jahnn no quiere que la gerencia tenga su mismo poder). */
 
 export const USER_SCOPES = [
   "direccion-jahnn",
-  "direccion-kelly",
+  "finanzas",
   "admin-atelier",
   "admin-fonavi",
   "admin-centro",
@@ -33,7 +34,7 @@ export function isUserScope(v: string): v is UserScope {
 /** Etiquetas en español para la pantalla de usuarios. */
 export const SCOPE_LABELS: Record<UserScope, string> = {
   "direccion-jahnn": "Dirección · Jahnn (acceso total)",
-  "direccion-kelly": "Dirección · Kelly (acceso total)",
+  finanzas: "Gerencia de finanzas · todo menos Configuración y Sistema de Dirección",
   "admin-atelier": "Administración · Panel de Atelier",
   "admin-fonavi": "Administración · Panel de Fonavi",
   "admin-centro": "Administración · Panel de Centro",
@@ -44,7 +45,8 @@ export const SCOPE_LABELS: Record<UserScope, string> = {
   lector: "Solo lectura · Dashboard de Grupo y Reportes (no puede cambiar nada)",
 };
 
-/** Cuenta personal de la dirección → quién es (mismo acceso que la llave maestra). null = no es de dirección. */
+/** Cuenta personal de la dirección → quién es (mismo acceso que la llave maestra). null = no es de dirección.
+ * «direccion-kelly» queda solo por compatibilidad: ya no se puede asignar. */
 export function quienDireccion(scope: string): "jahnn" | "kelly" | null {
   return scope === "direccion-jahnn" ? "jahnn" : scope === "direccion-kelly" ? "kelly" : null;
 }
@@ -53,4 +55,11 @@ export function quienDireccion(scope: string): "jahnn" | "kelly" | null {
 export function normalizarEmail(v: string | null | undefined): string | null {
   const e = (v ?? "").trim().toLowerCase();
   return /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(e) && e.length <= 120 ? e : null;
+}
+
+/** Rutas que la gerencia de finanzas NO puede abrir: Configuración (cuentas y contraseñas, de cualquier sede) y el
+ * Sistema de Dirección. Decisión de Jahnn, 22-nov-2026. */
+export function rutaBloqueadaParaFinanzas(pathname: string): boolean {
+  if (pathname === "/grupo/direccion" || pathname.startsWith("/grupo/direccion/")) return true;
+  return /^\/[^/]+\/configuracion(\/|$)/.test(pathname);
 }

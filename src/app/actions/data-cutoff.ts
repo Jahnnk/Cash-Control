@@ -14,7 +14,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
-import { requireFullSession } from "@/lib/session-access";
+import { requireDireccionTotal, requireFullSession } from "@/lib/session-access";
 import { buildCutoff, type DataCutoff } from "@/lib/data-cutoff";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -80,7 +80,7 @@ export async function setDataCutoff(input: {
   date: string;
   time: string;
 }): Promise<{ ok: true } | { ok: false; error: string }> {
-  if (!(await requireFullSession())) return NO_ACCESS;
+  if (!(await requireDireccionTotal())) return NO_ACCESS;
   if (![1, 2, 3].includes(input.sede)) return { ok: false, error: "Sede inválida." };
   if (!/^\d{4}-\d{2}-\d{2}$/.test(input.date)) return { ok: false, error: "Fecha inválida." };
   const time = input.time.trim() === "" ? "23:59" : input.time.trim();

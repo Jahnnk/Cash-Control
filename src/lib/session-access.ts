@@ -53,7 +53,9 @@ function secretForScope(scope: string): string | undefined {
 }
 
 export type SessionRole =
-  | { kind: "full"; quien: "jahnn" | "kelly" }
+  // `finanzas`: la gerencia de finanzas (22-nov-2026). Firma como «kelly» (el asiento de finanzas), pero NO pasa
+  // requireDireccionTotal: no gestiona cuentas ni usa el Sistema de Dirección.
+  | { kind: "full"; quien: "jahnn" | "kelly"; finanzas?: true; nombre?: string }
   // `nombre` solo viene con los usuarios de la tabla app_users. Las
   // contraseñas por sede heredadas (ADMIN_PASSWORD_FONAVI) no saben
   // quién entró, así que queda undefined y quien lo use debe tener un
@@ -89,6 +91,7 @@ async function resolveUserToken(token: string, now: number): Promise<SessionRole
     // Cuenta personal de la dirección (21-nov-2026): mismo acceso que la llave maestra.
     const quien = quienDireccion(rows[0].scope);
     if (quien) return { kind: "full", quien };
+    if (rows[0].scope === "finanzas") return { kind: "full", quien: "kelly", finanzas: true, nombre: rows[0].nombre };
     // El scope de Highlight no está atado a una sede: cubre las tres.
     if (rows[0].scope === "highlight") {
       return { kind: "highlight", userId, nombre: rows[0].nombre };
@@ -144,6 +147,13 @@ export async function getSessionRole(): Promise<SessionRole> {
 export async function requireFullSession(): Promise<boolean> {
   const role = await getSessionRole();
   return role?.kind === "full";
+}
+
+/** Solo la dirección con acceso total: la llave maestra, la de Kelly o la cuenta «direccion-jahnn». La gerencia de
+ * finanzas NO pasa (cuentas y contraseñas, Sistema de Dirección). */
+export async function requireDireccionTotal(): Promise<boolean> {
+  const role = await getSessionRole();
+  return role?.kind === "full" && !role.finanzas;
 }
 
 /** ¿Puede VER las cifras de dirección? La dirección o una llave de solo lectura. */

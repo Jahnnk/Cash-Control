@@ -12,6 +12,8 @@ export type Sede = "atelier" | "fonavi" | "centro";
 
 export type PerfilPuerta =
   | { tipo: "direccion" }
+  // Gerencia de finanzas (22-nov-2026): lo de dirección menos Producción (no la usa).
+  | { tipo: "finanzas" }
   | { tipo: "admin"; sede: Sede }
   | { tipo: "verif"; sede: Sede }
   | { tipo: "highlight" }
@@ -62,6 +64,13 @@ export function botonesPara(p: PerfilPuerta): BotonPuerta[] {
         interno("precios", "Precios de compra", "Dónde se paga de más y qué precios suben", "/grupo/precios-compra"),
         CAJA, ENVIOS, PLANILLA, PRODUCCION,
       ];
+    case "finanzas":
+      return [
+        interno("dashboard", "Dashboard de Grupo", "Ventas, dinero, egresos y EBITDA de las 3 sedes", "/grupo/dashboard"),
+        interno("acuerdos", "Acuerdos y tareas", "Lo acordado en las reuniones, con responsable y fecha", "/grupo/acuerdos"),
+        interno("precios", "Precios de compra", "Dónde se paga de más y qué precios suben", "/grupo/precios-compra"),
+        CAJA, ENVIOS, PLANILLA,
+      ];
     case "admin": {
       const panel = interno("panel", `Mi panel · ${NOMBRE_SEDE[p.sede]}`, "KPIs del día, ventas, tareas y bono del mes", `/${p.sede}/panel`);
       return p.sede === "atelier" ? [panel, CAJA, ENVIOS, PLANILLA, PRODUCCION] : [panel, CAJA, ENVIOS, PLANILLA];
@@ -88,6 +97,7 @@ export function botonesPara(p: PerfilPuerta): BotonPuerta[] {
 export function perfilDesdeScope(scope: string): PerfilPuerta | null {
   if (scope === "highlight" || scope === "equipo" || scope === "lector") return { tipo: scope };
   if (scope.startsWith("direccion-")) return { tipo: "direccion" };
+  if (scope === "finanzas") return { tipo: "finanzas" };
   const [kind, sede] = scope.split("-");
   if ((kind === "admin" || kind === "verif") && (sede === "atelier" || sede === "fonavi" || sede === "centro")) return { tipo: kind, sede };
   return null;

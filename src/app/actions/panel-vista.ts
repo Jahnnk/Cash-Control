@@ -38,6 +38,7 @@ export async function getNombreSaludo(comoAdminDe?: string): Promise<string | nu
   if (role.kind === "full") {
     const scope = comoAdminDe ? NEGOCIO_SCOPE[comoAdminDe] : undefined;
     if (scope) return adminDeSede(scope);
+    if (role.finanzas && role.nombre) return role.nombre;
     return role.quien === "kelly" ? "Kelly" : "Jahnn";
   }
   if (role.kind === "admin") return role.nombre ?? adminDeSede(SEDE_SCOPE[role.sede] ?? "");
