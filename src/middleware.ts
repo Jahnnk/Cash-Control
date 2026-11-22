@@ -30,6 +30,14 @@ const PUBLIC_PATHS = ["/", "/select-business", "/acceso-denegado", "/inicio"];
 const PUBLIC_API_PREFIXES = ["/api/keep-alive"];
 
 /**
+ * Páginas públicas de SOLO LECTURA, sin sesión: el vale de consumo que ve
+ * el invitado de «Primer cliente» (/vale/7K3Q-M2PA). No tiene cuenta ni
+ * puede canjear nada desde ahí; el canje lo hace el encargado de la sede
+ * con su login. La página muestra solo sede, productos, vigencia y estado.
+ */
+const PUBLIC_PAGE_PREFIXES = ["/vale/"];
+
+/**
  * Rutas de API que un usuario CON ALCANCE (admin de sede, verificador,
  * dirección del Highlight) sí puede tocar, aunque estén fuera de su
  * prefijo de pantalla.
@@ -85,6 +93,10 @@ export async function middleware(request: NextRequest) {
 
   // 0b. APIs públicas (autenticación propia en cada handler, ej. keep-alive)
   if (PUBLIC_API_PREFIXES.some((p) => pathname === p || pathname.startsWith(p + "/"))) {
+    return NextResponse.next();
+  }
+  // 0b'. Vale de consumo del invitado (solo lectura, ver PUBLIC_PAGE_PREFIXES)
+  if (PUBLIC_PAGE_PREFIXES.some((p) => pathname.startsWith(p))) {
     return NextResponse.next();
   }
 

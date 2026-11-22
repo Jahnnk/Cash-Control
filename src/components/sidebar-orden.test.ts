@@ -35,8 +35,11 @@ describe("menú lateral", () => {
     for (const sede of ["fonavi", "centro"] as const) expect(segmentos(sede).slice(-2)).toEqual(["registro", "configuracion"]);
     expect(segmentos("atelier").slice(-4)).toEqual(["registro", "fonavi", "prestamos-socio", "configuracion"]);
     expect(MENU.atelier.map((s) => s.titulo)).not.toContain("Clientes");
-    expect(segmentos("centro")).toHaveLength(8);
+    expect(segmentos("centro")).toHaveLength(9);
     expect(segmentos("atelier")).toHaveLength(11);
+    // Vales de consumo (Primer cliente, 22-nov-2026): solo las cafeterías, que son las que atienden al invitado.
+    for (const sede of ["fonavi", "centro"] as const) expect(segmentos(sede)).toContain("vales");
+    expect(segmentos("atelier")).not.toContain("vales");
     // Proveedores salió de las sedes (21-nov-2026): los administradores usan Control de Caja.
     for (const sede of ["fonavi", "centro", "atelier"] as const) expect(segmentos(sede)).not.toContain("panel/proveedores");
   });

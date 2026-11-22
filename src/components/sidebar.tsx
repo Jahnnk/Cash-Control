@@ -30,6 +30,7 @@ import {
   ListChecks,
   ClipboardList,
   ChefHat,
+  Ticket,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -66,6 +67,8 @@ const I = {
   preciosCompra: { segment: "precios-compra", label: "Precios de compra", icon: Truck },
   registro: { segment: "registro", label: "Registro manual", icon: PenLine },
   propinas: { segment: "propinas", label: "Propinas", icon: HandCoins },
+  // Primer cliente (22-nov-2026): vales de consumo digitales, solo cafeterías.
+  vales: { segment: "vales", label: "Vales de consumo", icon: Ticket },
   clientes: { segment: "clientes", label: "Clientes", icon: Users },
   porCobrar: { segment: "fonavi", label: "Cobros entre sedes", icon: Handshake },
   prestamos: { segment: "prestamos-socio", label: "Préstamos socio", icon: Banknote },
@@ -81,7 +84,7 @@ export const CONFIGURACION: NavItem = { segment: "configuracion", label: "Config
  */
 const SEDE = (atelier: boolean): NavSeccion[] => [
   { titulo: null, items: [I.dashboard, I.panel] },
-  { titulo: "Día a día", items: [I.propinas] },
+  { titulo: "Día a día", items: atelier ? [I.propinas] : [I.propinas, I.vales] },
   // Atelier: Clientes es lo de Byte (quién compra y cuánto te deben), junto a los análisis (8-oct-2026).
   { titulo: "Análisis", items: atelier ? [I.reportes, I.productos, I.clientes, I.presupuesto] : [I.reportes, I.productos, I.presupuesto] },
   // Desde agosto todo entra con el Excel: lo de la época del registro manual queda abajo, para

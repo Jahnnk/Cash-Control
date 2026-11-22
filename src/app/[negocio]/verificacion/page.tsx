@@ -10,6 +10,7 @@ import {
 } from "@/app/actions/verifications";
 import { useToast } from "@/components/toast-provider";
 import { SalonTimer } from "./salon-timer";
+import { CanjearValeCard } from "@/components/vales/canjear-vale-card";
 
 /**
  * Verificación del conteo diario — la SEGUNDA FIRMA (mando medio).
@@ -78,6 +79,10 @@ export default function VerificacionPage() {
 
       {/* Herramienta de turno: cronómetro de tiempos de atención */}
       <SalonTimer />
+
+      {/* Vales de «Primer cliente»: caja no usa Cash Control, así que el
+          encargado canjea y le dice a caja qué cobrar como cortesía. */}
+      <CanjearValeCard />
 
       {/* Cierre del día: la segunda firma del conteo */}
       <div>
