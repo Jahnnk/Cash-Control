@@ -2,10 +2,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { useParams } from "next/navigation";
-import { Ticket, Loader2, Copy, MessageCircle, Plus, Minus, X, Search } from "lucide-react";
+import { Ticket, Loader2, Copy, MessageCircle, Plus, Minus, X, Search, KeyRound } from "lucide-react";
 import {
-  listarProductosVale, emitirVale, listarVales, anularVale,
-  type ProductoVale, type ValeVista,
+  listarProductosVale, emitirVale, listarVales, anularVale, estadoPinCaja, generarPinCaja,
+  type ProductoVale, type ValeVista, type EstadoPinCaja,
 } from "@/app/actions/vales";
 import {
   DIAS_VIGENCIA_DEFECTO, MAX_ITEMS, MAX_CANTIDAD, ETIQUETA_ESTADO,
@@ -52,13 +52,19 @@ export default function ValesPage() {
   const [emitiendo, setEmitiendo] = useState(false);
   const [recien, setRecien] = useState<ValeVista | null>(null);
 
+  // PIN de caja (canje sin cuenta)
+  const [pinEstado, setPinEstado] = useState<EstadoPinCaja | null>(null);
+  const [pinNuevo, setPinNuevo] = useState<string | null>(null);
+  const [generandoPin, setGenerandoPin] = useState(false);
+
   const cargar = useCallback(async () => {
     const r = await listarVales(negocio);
     if (!r.ok) { setError(r.error); setLoading(false); return; }
     setVales(r.vales); setPuedeEmitir(r.puedeEmitir); setError(null);
     if (r.puedeEmitir) {
-      const p = await listarProductosVale();
+      const [p, pin] = await Promise.all([listarProductosVale(), estadoPinCaja(negocio)]);
       if (p.ok) setProductos(p.productos);
+      if (pin.ok) setPinEstado(pin.estado);
     }
     setLoading(false);
   }, [negocio]);
@@ -115,6 +121,17 @@ export default function ValesPage() {
     window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank", "noopener");
   }
 
+  async function generarPin() {
+    if (pinEstado?.configurado && !window.confirm("¿Cambiar el PIN de caja? El anterior deja de servir ahora mismo y tendrás que dárselo de nuevo a los cajeros.")) return;
+    setGenerandoPin(true);
+    const r = await generarPinCaja(negocio);
+    setGenerandoPin(false);
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    setPinNuevo(r.pin);
+    const e = await estadoPinCaja(negocio);
+    if (e.ok) setPinEstado(e.estado);
+  }
+
   async function anular(v: ValeVista) {
     if (!window.confirm(`¿Anular el vale ${v.codigo}? Ya no se podrá canjear.`)) return;
     const r = await anularVale({ id: v.id, motivo: "Anulado por dirección" });
@@ -131,6 +148,11 @@ export default function ValesPage() {
 
   const sedeNombre = negocio === "fonavi" ? "Fonavi" : "Centro";
   const vigentes = vales.filter((v) => v.estado === "emitido").length;
+  // Canjes de hoy: para cruzar con el reporte de Cortesías de Byte (si Byte tiene una cortesía sin vale, se nota).
+  const [hoyA, hoyM, hoyD] = hoyLima().split("-");
+  const prefijoHoy = `${hoyD}/${hoyM}/${hoyA}`;
+  const canjesHoy = vales.filter((v) => v.estado === "canjeado" && v.canjeadoEn?.startsWith(prefijoHoy));
+  const valorHoy = valorCarta(canjesHoy.map((v) => ({ cantidad: 1, precio: v.valorCarta })));
 
   return (
     <div className="max-w-2xl mx-auto space-y-6">
@@ -229,10 +251,47 @@ export default function ValesPage() {
         <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">Solo Jahnn emite y anula vales. Aquí puedes ver el registro y canjear.</div>
       )}
 
+      {puedeEmitir && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              PIN de caja · {sedeNombre}
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Con este PIN de 6 números el cajero canjea el vale del invitado en su celular, sin cuenta en Cash Control.
+              Dáselo en persona. Tras 5 intentos fallidos la caja se bloquea 10 minutos.
+            </p>
+          </div>
+          <div className="text-xs text-gray-700">
+            {pinEstado?.configurado
+              ? <>PIN activo · actualizado {pinEstado.actualizadoEn}{pinEstado.actualizadoPor ? ` por ${pinEstado.actualizadoPor}` : ""}{pinEstado.bloqueadaHasta ? <strong className="text-red-700"> · caja bloqueada hasta las {pinEstado.bloqueadaHasta}</strong> : null}</>
+              : <strong className="text-amber-700">Todavía no hay PIN: sin él, caja no puede canjear.</strong>}
+          </div>
+          <button
+            onClick={generarPin} disabled={generandoPin}
+            className="px-4 py-2 text-sm font-semibold text-white bg-primary hover:opacity-90 rounded-lg disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            {generandoPin && <Loader2 className="w-4 h-4 animate-spin" />}
+            {pinEstado?.configurado ? "Generar un PIN nuevo" : "Generar PIN de caja"}
+          </button>
+          {pinNuevo && (
+            <div className="border border-amber-300 bg-amber-50 rounded-lg p-3 space-y-1">
+              <div className="text-xs font-semibold text-amber-900">Anótalo ahora: no se vuelve a mostrar</div>
+              <div className="font-mono text-3xl font-extrabold tracking-[0.3em] text-gray-900">{pinNuevo}</div>
+              <button onClick={() => setPinNuevo(null)} className="text-xs font-medium text-amber-900 underline">Ya lo anoté, ocultar</button>
+            </div>
+          )}
+        </div>
+      )}
+
       <CanjearValeCard />
 
       <div>
         <h2 className="text-sm font-bold text-gray-900">Registro · {vigentes} vigente{vigentes === 1 ? "" : "s"}</h2>
+        <p className="text-xs text-gray-500 mt-0.5">
+          Canjes de hoy: <strong>{canjesHoy.length}</strong>{canjesHoy.length > 0 ? ` · ${formatCurrency(valorHoy)} en carta` : ""}. Deben coincidir con las cortesías de Byte de hoy.
+        </p>
         {vales.length === 0 ? (
           <div className="mt-2 bg-white rounded-xl border border-gray-200 p-6 text-center text-sm text-gray-500">Todavía no hay vales en {sedeNombre}.</div>
         ) : (

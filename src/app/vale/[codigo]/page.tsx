@@ -1,15 +1,17 @@
 import type { Metadata } from "next";
 import { normalizarCodigo, estadoEfectivo, ETIQUETA_ESTADO, type EstadoVale } from "@/lib/vales";
 import { buscarVale, hoyLima } from "@/lib/vales-sql";
+import { CanjeEnCaja } from "@/components/vales/canje-caja";
 
 /**
  * El vale de consumo que ve el invitado (iniciativa «Primer cliente»).
  *
  * Página PÚBLICA a propósito (el middleware la deja pasar sin login): el
- * invitado no tiene cuenta. Es solo de LECTURA — no canjea nada; el canje
- * lo hace el encargado de la sede en Cash Control. Muestra únicamente lo
- * que el invitado necesita: sede, productos, vigencia y estado. La
- * seguridad es el código mismo (más de un billón de combinaciones).
+ * invitado no tiene cuenta. La página en sí es de LECTURA: muestra solo
+ * sede, productos, vigencia y estado. Lo único que puede hacerse desde acá
+ * es el canje EN CAJA, que exige el PIN de la sede (CanjeEnCaja →
+ * actions/vales-caja.ts) — el invitado no lo conoce. Ver un vale ajeno
+ * tampoco sirve de nada: el código tiene más de un billón de combinaciones.
  */
 
 export const dynamic = "force-dynamic";
@@ -110,6 +112,12 @@ function ValeTarjeta({ vale, hoy }: { vale: Exclude<Awaited<ReturnType<typeof bu
         </div>
         <p className="mt-3 text-xs text-gray-600">{est.ayuda}</p>
       </div>
+
+      {usable && (
+        <div className="px-6 pb-5">
+          <CanjeEnCaja codigo={vale.codigo} />
+        </div>
+      )}
 
       <div className="bg-[#004C40] px-6 py-3 text-center text-xs text-emerald-50">
         Se usa una sola vez · No canjeable por dinero

@@ -7,7 +7,7 @@
  */
 
 import { neon } from "@neondatabase/serverless";
-import type { EstadoGuardado, ItemVale } from "./vales";
+import { estadoEfectivo, type EstadoGuardado, type ItemVale } from "./vales";
 
 export type ValeFila = {
   id: string;
@@ -72,4 +72,43 @@ export async function buscarVale(codigo: string): Promise<ValeFila | null | "sin
     if (faltaTablaVales(e)) return "sin-tabla";
     throw e;
   }
+}
+
+/** Por qué un vale NO se puede canjear ahora (null = sí se puede). Mensajes para el cajero o el encargado. */
+export function motivoNoCanjeable(v: ValeFila, hoy: string): string | null {
+  const e = estadoEfectivo(v, hoy);
+  if (e === "emitido") return null;
+  if (e === "canjeado") {
+    return `Este vale YA FUE CANJEADO${v.canjeadoEn ? ` el ${v.canjeadoEn}` : ""}${v.canjeadoPor ? ` (${v.canjeadoPor})` : ""}. No se puede usar otra vez.`;
+  }
+  if (e === "vencido") return `Este vale VENCIÓ el ${v.venceEl.split("-").reverse().join("/")}.`;
+  return "Este vale fue ANULADO por dirección.";
+}
+
+/**
+ * El candado real del canje: UN solo UPDATE que solo pasa si el vale SIGUE emitido y vigente en este
+ * instante. Si dos personas lo intentan a la vez, Postgres deja pasar a una sola. Lo usan el canje del
+ * encargado (con sesión) y el de caja (con PIN), para que las dos puertas cierren igual.
+ */
+export async function ejecutarCanje(
+  codigo: string,
+  businessId: number,
+  quien: string,
+): Promise<{ ok: true; vale: ValeFila } | { ok: false; error: string }> {
+  const sql = neon(process.env.DATABASE_URL!);
+  const rows = (await sql`
+    UPDATE vales_consumo
+    SET estado = 'canjeado', canjeado_en = now(), canjeado_por = ${quien}
+    WHERE codigo = ${codigo}
+      AND business_id = ${businessId}
+      AND estado = 'emitido'
+      AND vence_el >= (now() AT TIME ZONE 'America/Lima')::date
+    RETURNING id::text
+  `) as { id: string }[];
+
+  const despues = await buscarVale(codigo);
+  if (!despues || despues === "sin-tabla") return { ok: false, error: "No pude confirmar el canje. Revisa el vale." };
+  if (rows.length === 1) return { ok: true, vale: despues };
+  // No pasó: alguien se adelantó, o venció / se anuló en este instante.
+  return { ok: false, error: motivoNoCanjeable(despues, hoyLima()) ?? "No pude canjear el vale. Reintenta." };
 }

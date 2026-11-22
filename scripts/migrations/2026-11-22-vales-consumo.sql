@@ -67,3 +67,28 @@ CREATE TABLE IF NOT EXISTS vales_consumo (
 -- La lista de Jahnn: «lo último primero» por sede.
 CREATE INDEX IF NOT EXISTS vales_consumo_sede_idx
   ON vales_consumo (business_id, emitido_en DESC);
+
+-- ============================================================
+-- PIN de caja por sede — canje sin cuenta en Cash Control
+-- (los cajeros no usan la app; 22-nov-2026)
+-- ============================================================
+--
+-- El cajero canjea el vale del invitado escribiendo el PIN de 6 dígitos de
+-- su sede. Jahnn lo GENERA (nunca lo elige una persona), se muestra una sola
+-- vez y aquí solo queda el hash scrypt (s1.<salt>.<hash>), igual que las
+-- contraseñas del personal. NUNCA se guarda en claro.
+--
+-- Anti fuerza bruta: cada intento incrementa `intentos` ANTES de comparar
+-- (UPDATE atómico, así que ni 100 peticiones en paralelo pasan de 5). Al
+-- quinto fallo seguido, `bloqueado_hasta` = ahora + 10 minutos. Un PIN
+-- correcto reinicia el contador.
+-- ============================================================
+
+CREATE TABLE IF NOT EXISTS vales_caja_pin (
+  business_id     integer PRIMARY KEY REFERENCES businesses(id),
+  pin_hash        text    NOT NULL,
+  intentos        integer NOT NULL DEFAULT 0,
+  bloqueado_hasta timestamptz,
+  actualizado_en  timestamptz NOT NULL DEFAULT now(),
+  actualizado_por text    NOT NULL
+);

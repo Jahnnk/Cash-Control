@@ -24,7 +24,9 @@ import {
   generarCodigo, normalizarCodigo, validarEmision, valorCarta, estadoEfectivo,
   type EstadoVale,
 } from "@/lib/vales";
-import { buscarVale, aValeFila, faltaTablaVales, hoyLima, type ValeFila } from "@/lib/vales-sql";
+import { buscarVale, aValeFila, faltaTablaVales, hoyLima, ejecutarCanje, type ValeFila } from "@/lib/vales-sql";
+import { hashPassword } from "@/lib/password-hash";
+import { generarPin } from "@/lib/vales-pin";
 
 const sql = neon(process.env.DATABASE_URL!);
 
@@ -219,32 +221,61 @@ export async function canjearVale(
       return { ok: false, error: "No encuentro ese vale en esta sede." };
     }
 
-    // El candado real: solo pasa si SIGUE emitido y vigente en este instante.
-    const rows = (await sql`
-      UPDATE vales_consumo
-      SET estado = 'canjeado', canjeado_en = now(), canjeado_por = ${firma(role)}
-      WHERE codigo = ${codigo}
-        AND business_id = ${previo.businessId}
-        AND estado = 'emitido'
-        AND vence_el >= (now() AT TIME ZONE 'America/Lima')::date
-      RETURNING id::text
-    `) as { id: string }[];
-
-    const hoy = hoyLima();
-    const despues = await buscarVale(codigo);
-    if (!despues || despues === "sin-tabla") return { ok: false, error: "No pude confirmar el canje. Revisa el vale." };
-    if (rows.length === 1) return { ok: true, vale: aVista(despues, hoy) };
-
-    // No pasó: explicar por qué, con la hora si ya lo usaron.
-    const e = estadoEfectivo(despues, hoy);
-    if (e === "canjeado") {
-      const cuando = despues.canjeadoEn ?? "";
-      return { ok: false, error: `Este vale YA FUE CANJEADO${cuando ? ` el ${cuando}` : ""}${despues.canjeadoPor ? ` por ${despues.canjeadoPor}` : ""}. No se puede usar otra vez.` };
-    }
-    if (e === "vencido") return { ok: false, error: `Este vale VENCIÓ el ${despues.venceEl.split("-").reverse().join("/")}.` };
-    if (e === "anulado") return { ok: false, error: "Este vale fue ANULADO por dirección." };
-    return { ok: false, error: "No pude canjear el vale. Reintenta." };
+    // Todo el candado (atómico) vive en ejecutarCanje, compartido con el canje de caja por PIN.
+    const r = await ejecutarCanje(codigo, previo.businessId, firma(role));
+    if (!r.ok) return r;
+    return { ok: true, vale: aVista(r.vale, hoyLima()) };
   } catch {
     return { ok: false, error: "No pude canjear el vale. Reintenta." };
+  }
+}
+
+export type EstadoPinCaja = { configurado: boolean; actualizadoEn: string | null; actualizadoPor: string | null; bloqueadaHasta: string | null };
+
+/** ¿La sede ya tiene PIN de caja? (nunca devuelve el PIN: no se puede recuperar). Dirección. */
+export async function estadoPinCaja(sede: string): Promise<{ ok: true; estado: EstadoPinCaja } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Sin acceso." };
+  const negocio = await getBusinessByCode(sede);
+  if (!negocio) return { ok: false, error: "No encuentro esa sede." };
+  try {
+    const rows = (await sql`
+      SELECT to_char(actualizado_en AT TIME ZONE 'America/Lima', 'DD/MM/YYYY HH24:MI') AS actualizado_en,
+             actualizado_por,
+             CASE WHEN bloqueado_hasta > now()
+                  THEN to_char(bloqueado_hasta AT TIME ZONE 'America/Lima', 'HH24:MI') END AS bloqueada_hasta
+      FROM vales_caja_pin WHERE business_id = ${negocio.id}
+    `) as { actualizado_en: string; actualizado_por: string; bloqueada_hasta: string | null }[];
+    if (rows.length === 0) return { ok: true, estado: { configurado: false, actualizadoEn: null, actualizadoPor: null, bloqueadaHasta: null } };
+    return { ok: true, estado: { configurado: true, actualizadoEn: rows[0].actualizado_en, actualizadoPor: rows[0].actualizado_por, bloqueadaHasta: rows[0].bloqueada_hasta } };
+  } catch (e) {
+    if (faltaTablaVales(e) || String(e).includes("vales_caja_pin")) return { ok: false, error: SIN_TABLA };
+    return { ok: false, error: "No pude leer el PIN de caja." };
+  }
+}
+
+/**
+ * Genera (o cambia) el PIN de caja de la sede. Solo Jahnn. El PIN viaja UNA vez en esta respuesta y de ahí en
+ * adelante solo existe su hash: si se pierde, se genera otro (el anterior deja de servir al instante).
+ */
+export async function generarPinCaja(sede: string): Promise<{ ok: true; pin: string } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (!esJahnn(role)) return { ok: false, error: "Solo Jahnn genera el PIN de caja." };
+  if (sede !== "fonavi" && sede !== "centro") return { ok: false, error: "El PIN de caja es de Fonavi o Centro." };
+  const negocio = await getBusinessByCode(sede);
+  if (!negocio) return { ok: false, error: "No encuentro esa sede." };
+  const pin = generarPin();
+  try {
+    await sql`
+      INSERT INTO vales_caja_pin (business_id, pin_hash, actualizado_por)
+      VALUES (${negocio.id}, ${hashPassword(pin)}, ${firma(role!)})
+      ON CONFLICT (business_id) DO UPDATE
+        SET pin_hash = EXCLUDED.pin_hash, intentos = 0, bloqueado_hasta = NULL,
+            actualizado_en = now(), actualizado_por = EXCLUDED.actualizado_por
+    `;
+    return { ok: true, pin };
+  } catch (e) {
+    if (faltaTablaVales(e) || String(e).includes("vales_caja_pin")) return { ok: false, error: SIN_TABLA };
+    return { ok: false, error: "No pude guardar el PIN. Reintenta." };
   }
 }
