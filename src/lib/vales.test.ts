@@ -10,6 +10,7 @@ import { describe, it, expect } from "vitest";
 import {
   ALFABETO_CODIGO, generarCodigo, normalizarCodigo, estadoEfectivo, valorCarta,
   validarEmision, sumarDias, resumenItems, mensajeWhatsApp, MAX_ITEMS,
+  enteroAlAzar, barajar, sortear, textoTodosLosVales, PARTICIPANTES_SORTEO, MAX_PREMIOS_SORTEO,
 } from "./vales";
 
 const HOY = "2026-11-22";
@@ -134,5 +135,104 @@ describe("textos", () => {
     expect(m).toContain("1 Cappuccino + 2 Croissant");
     expect(m).toContain("22/12/2026");
     expect(m).toContain("https://x/vale/7K3Q-M2PA");
+  });
+});
+
+describe("mensajes con nombre", () => {
+  const items = [{ ref: "a", nombre: "Sánguche de pollo", cantidad: 1, precio: 14 }];
+  it("el WhatsApp dice para quién es, si se sabe", () => {
+    const con = mensajeWhatsApp({ link: "https://x/vale/AAAA-BBBB", sede: "Centro", items, venceEl: "2026-12-22", para: "Luis" });
+    expect(con).toContain("Para: Luis");
+    const sin = mensajeWhatsApp({ link: "https://x/vale/AAAA-BBBB", sede: "Centro", items, venceEl: "2026-12-22" });
+    expect(sin).not.toContain("Para:");
+  });
+
+  it("«copiar todos» lista cada vale con su link", () => {
+    const t = textoTodosLosVales([
+      { codigo: "AAAA-BBBB", sede: "Fonavi", items, venceEl: "2026-12-22", para: "Luis" },
+      { codigo: "CCCC-DDDD", sede: "Centro", items, venceEl: "2026-12-22", para: null },
+    ]);
+    expect(t).toContain("1) Luis · Fonavi: 1 Sánguche de pollo (hasta el 22/12/2026)");
+    expect(t).toContain("2) Centro: 1 Sánguche de pollo");
+    expect(t).toContain("/vale/AAAA-BBBB");
+    expect(t).toContain("/vale/CCCC-DDDD");
+  });
+});
+
+describe("enteroAlAzar", () => {
+  it("descarta lo que sesgaría el reparto", () => {
+    // Con máximo 6, el límite es 2^32 - (2^32 % 6) = 4294967292: los 4 valores de arriba se tiran.
+    const valores = [4_294_967_295, 4_294_967_292, 13];
+    let i = 0;
+    expect(enteroAlAzar(6, () => valores[i++])).toBe(13 % 6);
+    expect(i).toBe(3);
+  });
+  it("rechaza máximos inválidos", () => {
+    expect(() => enteroAlAzar(0)).toThrow();
+    expect(() => enteroAlAzar(1.5)).toThrow();
+  });
+});
+
+describe("barajar", () => {
+  it("devuelve las mismas personas, sin perder ni repetir, y no toca la lista original", () => {
+    const original = ["a", "b", "c", "d", "e", "f"];
+    const copia = [...original];
+    const r = barajar(original);
+    expect([...r].sort()).toEqual(copia);
+    expect(original).toEqual(copia);
+  });
+});
+
+describe("sortear", () => {
+  const premios = ["P1", "P2", "P3", "P4", "P5", "P6"];
+
+  it("reparte un premio por persona, sin repetir a nadie", () => {
+    for (let i = 0; i < 200; i++) {
+      const r = sortear([...PARTICIPANTES_SORTEO], premios);
+      expect(r.ok).toBe(true);
+      if (!r.ok) continue;
+      expect(r.ganadores).toHaveLength(6);
+      expect(new Set(r.ganadores.map((g) => g.persona)).size).toBe(6);
+      expect(r.ganadores.map((g) => g.premio)).toEqual(premios); // los premios conservan su orden
+      expect(r.sinPremio).toEqual([]);
+    }
+  });
+
+  it("con menos premios que personas, gana solo una parte y el resto queda en sinPremio", () => {
+    const r = sortear([...PARTICIPANTES_SORTEO], ["P1", "P2"]);
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.ganadores).toHaveLength(2);
+    expect(r.sinPremio).toHaveLength(4);
+    const todos = [...r.ganadores.map((g) => g.persona), ...r.sinPremio].sort();
+    expect(todos).toEqual([...PARTICIPANTES_SORTEO].sort());
+  });
+
+  it("es justo: cada persona gana el primer premio ~1/6 de las veces", () => {
+    const veces: Record<string, number> = {};
+    const N = 6000;
+    for (let i = 0; i < N; i++) {
+      const r = sortear([...PARTICIPANTES_SORTEO], premios);
+      if (r.ok) veces[r.ganadores[0].persona] = (veces[r.ganadores[0].persona] ?? 0) + 1;
+    }
+    // Esperado 1000 por persona; la desviación típica es ~29, así que ±200 son 7σ: no falla por casualidad.
+    for (const n of PARTICIPANTES_SORTEO) expect(veces[n]).toBeGreaterThan(800);
+    for (const n of PARTICIPANTES_SORTEO) expect(veces[n]).toBeLessThan(1200);
+  });
+
+  it("rechaza lo que no se puede sortear, con un mensaje claro", () => {
+    expect(sortear([], premios).ok).toBe(false);
+    expect(sortear(["Luis"], []).ok).toBe(false);
+    const masPremios = sortear(["Luis", "Chari"], ["P1", "P2", "P3"]);
+    expect(masPremios.ok).toBe(false);
+    if (!masPremios.ok) expect(masPremios.error).toContain("3 premios y solo 2 participantes");
+    expect(sortear(["Luis", "luis "], ["P1"]).ok).toBe(false);
+    expect(sortear(["Luis"], Array.from({ length: MAX_PREMIOS_SORTEO + 1 }, (_, i) => i)).ok).toBe(false);
+  });
+
+  it("ignora los nombres vacíos y recorta espacios", () => {
+    const r = sortear(["  Luis ", "", "Chari"], ["P1"]);
+    expect(r.ok).toBe(true);
+    if (r.ok) expect(["Luis", "Chari"]).toContain(r.ganadores[0].persona);
   });
 });

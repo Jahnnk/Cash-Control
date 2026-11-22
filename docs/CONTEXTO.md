@@ -611,6 +611,33 @@ Perú. **NO es programador.** Reglas de comunicación:
   - **El dato real gana sobre lo esperado**: si un domingo Atelier SÍ
     registra, se pinta como cualquier día lleno.
 
+### Vales de consumo digitales — «Primer cliente» (22-nov-2026)
+
+Reemplazan el vale de papel. Un familiar o amigo de un socio o administrador
+prueba la sede con productos de cortesía y evalúa producto, tiempos y servicio.
+Tablas `vales_consumo` y `vales_caja_pin` (migración
+`scripts/migrations/2026-11-22-vales-consumo.sql`, ya corrida en producción).
+
+- **Emite SOLO Jahnn** (`/[fonavi|centro]/vales`): vale suelto o **sorteo** de
+  los martes entre Luis, Chari, Sol, Kelly, Juani y Jahnn (`sortear` en
+  `lib/vales.ts`, azar de crypto sin sesgo, probado; cada ganador recibe un
+  vale con su nombre para dárselo a su cliente). Cada vale es de UNA sede.
+- **Canje**: (1) en caja con el PIN de 6 dígitos de la sede, SIN cuenta —los
+  cajeros no usan Cash Control— sobre el celular del invitado (`/vale/CODIGO`)
+  o escribiendo el código en `/vale`; (2) el encargado o administrador con su
+  cuenta (tarjeta en Verificación y en el Panel de Sede). Los dos pasan por
+  `ejecutarCanje` (`lib/vales-sql.ts`): un solo UPDATE atómico, sin doble uso.
+- **El PIN es de la SEDE, no del vale ni del cliente**: lo genera el sistema,
+  se muestra una vez, solo se guarda su hash scrypt; 5 fallos seguidos bloquean
+  esa caja 10 min. `/vale` y `/vale/[codigo]` son públicas a propósito (el
+  middleware las deja pasar); `actions/vales-caja.ts` es la ÚNICA acción sin
+  sesión y `__tests__/vale-publico.test.ts` vigila que siga así.
+- Los productos salen de la carta (Excel de pricing + Recetas y costos →
+  Carta): un producto nuevo solo aparece en el selector cuando está ahí con
+  precio. «Vencido» se deduce del día, no se guarda.
+- Cruce con Byte: «Canjes de hoy» en la pantalla debe coincidir con las
+  cortesías de Byte del día; una cortesía en Byte sin vale es una alerta.
+
 ## 7. Estado al 2026-08-19
 
 - **`staging` == `main`, sin diferencia.** Desde el 17-ago se sumaron,

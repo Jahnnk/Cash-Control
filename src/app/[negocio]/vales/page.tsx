@@ -1,25 +1,28 @@
 "use client";
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
-import { Ticket, Loader2, Copy, MessageCircle, Plus, Minus, X, Search, KeyRound } from "lucide-react";
+import { Ticket, Loader2, KeyRound, Dices } from "lucide-react";
 import {
   listarProductosVale, emitirVale, listarVales, anularVale, estadoPinCaja, generarPinCaja,
   type ProductoVale, type ValeVista, type EstadoPinCaja,
 } from "@/app/actions/vales";
 import {
-  DIAS_VIGENCIA_DEFECTO, MAX_ITEMS, MAX_CANTIDAD, ETIQUETA_ESTADO,
-  linkVale, mensajeWhatsApp, resumenItems, sumarDias, valorCarta,
+  DIAS_VIGENCIA_DEFECTO, ETIQUETA_ESTADO, linkVale, mensajeWhatsApp, resumenItems, sumarDias, valorCarta,
 } from "@/lib/vales";
 import { formatCurrency } from "@/lib/utils";
 import { useToast } from "@/components/toast-provider";
 import { CanjearValeCard } from "@/components/vales/canjear-vale-card";
+import { SelectorProductos, itemsParaEmitir, type Elegido } from "@/components/vales/selector-productos";
+import { ListaCreados } from "@/components/vales/lista-creados";
+import { SorteoPanel } from "@/components/vales/sorteo-panel";
 
 /**
- * Vales de consumo · «Primer cliente». Jahnn emite el vale (productos de la
- * carta + vencimiento), copia el link y se lo entrega por WhatsApp. Abajo,
- * el registro: qué vales siguen vigentes, cuáles ya se canjearon y quién lo
- * hizo. El canje lo hace el encargado de la sede; también se puede acá.
+ * Vales de consumo · «Primer cliente». Jahnn emite un vale suelto o hace el
+ * sorteo de los martes entre socios y administradores; los vales que crea en
+ * la visita quedan juntos en una lista para mandarlos por WhatsApp. Abajo, el
+ * registro (vigentes, canjeados y quién los canjeó) y, al final, el PIN de
+ * caja. El canje lo hace caja con el PIN o el encargado con su cuenta.
  */
 
 function hoyLima(): string {
@@ -33,6 +36,8 @@ const BADGE: Record<ValeVista["estado"], string> = {
   anulado: "bg-red-50 text-red-800 border-red-200",
 };
 
+type Pestana = "uno" | "sorteo";
+
 export default function ValesPage() {
   const { negocio } = useParams<{ negocio: string }>();
   const { showToast } = useToast();
@@ -44,13 +49,16 @@ export default function ValesPage() {
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Formulario
-  const [busqueda, setBusqueda] = useState("");
-  const [elegidos, setElegidos] = useState<{ p: ProductoVale; cantidad: number }[]>([]);
+  const [pestana, setPestana] = useState<Pestana>("uno");
+
+  // Vale suelto
+  const [elegidos, setElegidos] = useState<Elegido[]>([]);
   const [para, setPara] = useState("");
   const [venceEl, setVenceEl] = useState(() => sumarDias(hoyLima(), DIAS_VIGENCIA_DEFECTO));
   const [emitiendo, setEmitiendo] = useState(false);
-  const [recien, setRecien] = useState<ValeVista | null>(null);
+
+  // Todo lo creado en esta visita (vale suelto + sorteo), el último primero.
+  const [creados, setCreados] = useState<ValeVista[]>([]);
 
   // PIN de caja (canje sin cuenta)
   const [pinEstado, setPinEstado] = useState<EstadoPinCaja | null>(null);
@@ -75,39 +83,31 @@ export default function ValesPage() {
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [cargar, sedeValida]);
 
-  const sugerencias = useMemo(() => {
-    const q = busqueda.trim().toLowerCase();
-    if (!q) return [];
-    const ya = new Set(elegidos.map((e) => e.p.ref));
-    return productos.filter((p) => !ya.has(p.ref) && (p.nombre.toLowerCase().includes(q) || p.seccion.toLowerCase().includes(q))).slice(0, 8);
-  }, [busqueda, productos, elegidos]);
-
-  const total = valorCarta(elegidos.map((e) => ({ cantidad: e.cantidad, precio: e.p.precio })));
-
-  function agregar(p: ProductoVale) {
-    if (elegidos.length >= MAX_ITEMS) { showToast(`Máximo ${MAX_ITEMS} productos por vale.`, "error"); return; }
-    setElegidos((l) => [...l, { p, cantidad: 1 }]);
-    setBusqueda("");
-  }
-  function cambiarCantidad(ref: string, delta: number) {
-    setElegidos((l) => l.map((e) => (e.p.ref === ref ? { ...e, cantidad: Math.min(MAX_CANTIDAD, Math.max(1, e.cantidad + delta)) } : e)));
-  }
-
   async function emitir() {
     setEmitiendo(true);
-    const r = await emitirVale({
-      sede: negocio,
-      items: elegidos.map((e) => ({ ref: e.p.ref, cantidad: e.cantidad })),
-      para, venceEl,
-    });
+    const r = await emitirVale({ sede: negocio, items: itemsParaEmitir(elegidos), para, venceEl });
     setEmitiendo(false);
     if (!r.ok) { showToast(r.error, "error"); return; }
-    setRecien(r.vale);
+    setCreados((c) => [r.vale, ...c]);
     setElegidos([]); setPara(""); setVenceEl(sumarDias(hoyLima(), DIAS_VIGENCIA_DEFECTO));
+    showToast("Vale creado", "success");
     await cargar();
   }
 
-  async function copiar(codigo: string) {
+  /** «Usar los mismos productos»: carga en el formulario los productos de un vale ya creado. */
+  function repetir(v: ValeVista) {
+    setElegidos(v.items.map((i) => ({ p: { ref: i.ref, nombre: i.nombre, seccion: "", precio: i.precio }, cantidad: i.cantidad })));
+    setPara("");
+    setPestana("uno");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function alCrearSorteo(nuevos: ValeVista[]) {
+    setCreados((c) => [...[...nuevos].reverse(), ...c]);
+    void cargar();
+  }
+
+  async function copiarLink(codigo: string) {
     try {
       await navigator.clipboard.writeText(linkVale(codigo));
       showToast("Link copiado", "success");
@@ -117,7 +117,7 @@ export default function ValesPage() {
   }
 
   function whatsapp(v: ValeVista) {
-    const texto = mensajeWhatsApp({ link: linkVale(v.codigo), sede: v.sede, items: v.items, venceEl: v.venceEl });
+    const texto = mensajeWhatsApp({ link: linkVale(v.codigo), sede: v.sede, items: v.items, venceEl: v.venceEl, para: v.para });
     window.open(`https://wa.me/?text=${encodeURIComponent(texto)}`, "_blank", "noopener");
   }
 
@@ -167,122 +167,54 @@ export default function ValesPage() {
       </div>
 
       {puedeEmitir ? (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
-          <h2 className="text-sm font-bold text-gray-900">Nuevo vale</h2>
-
-          <div className="space-y-2">
-            <label className="text-xs font-medium text-gray-700">¿Qué cubre? (de la carta)</label>
-            <div className="relative">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input
-                type="text" value={busqueda} onChange={(e) => setBusqueda(e.target.value)}
-                placeholder={productos.length === 0 ? "Cargando carta…" : "Busca: capuccino, sánguche, torta…"}
-                className="w-full border border-gray-300 rounded-lg pl-9 pr-3 py-2 text-sm"
-              />
-            </div>
-            {sugerencias.length > 0 && (
-              <div className="border border-gray-200 rounded-lg divide-y divide-gray-100 max-h-64 overflow-auto">
-                {sugerencias.map((p) => (
-                  <button key={p.ref} type="button" onClick={() => agregar(p)} className="w-full flex items-center justify-between gap-2 px-3 py-2 text-left hover:bg-gray-50">
-                    <span className="text-sm text-gray-900">{p.nombre} <span className="text-xs text-gray-400">· {p.seccion}</span></span>
-                    <span className="text-xs text-gray-500 shrink-0">{formatCurrency(p.precio)}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-            {busqueda.trim() && sugerencias.length === 0 && productos.length > 0 && (
-              <div className="text-xs text-gray-500">No encuentro ese producto en la carta.</div>
-            )}
+        <>
+          <div className="grid grid-cols-2 gap-1 rounded-xl bg-gray-100 p-1" role="tablist">
+            {([["uno", "Un vale", Ticket], ["sorteo", "Sorteo", Dices]] as const).map(([id, texto, Icono]) => (
+              <button
+                key={id} role="tab" aria-selected={pestana === id} onClick={() => setPestana(id)}
+                className={`inline-flex items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold ${pestana === id ? "bg-white text-[#004C40] shadow-sm" : "text-gray-600 hover:text-gray-900"}`}
+              >
+                <Icono className="w-4 h-4" />{texto}
+              </button>
+            ))}
           </div>
 
-          {elegidos.length > 0 && (
-            <ul className="space-y-2">
-              {elegidos.map(({ p, cantidad }) => (
-                <li key={p.ref} className="flex items-center justify-between gap-2 border border-gray-200 rounded-lg px-3 py-2">
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-gray-900 truncate">{p.nombre}</div>
-                    <div className="text-xs text-gray-500">{formatCurrency(p.precio)} c/u</div>
-                  </div>
-                  <div className="flex items-center gap-1.5 shrink-0">
-                    <button type="button" onClick={() => cambiarCantidad(p.ref, -1)} className="p-1.5 rounded-md border border-gray-300 hover:bg-gray-50" aria-label="Menos"><Minus className="w-3.5 h-3.5" /></button>
-                    <span className="w-6 text-center text-sm font-semibold">{cantidad}</span>
-                    <button type="button" onClick={() => cambiarCantidad(p.ref, 1)} className="p-1.5 rounded-md border border-gray-300 hover:bg-gray-50" aria-label="Más"><Plus className="w-3.5 h-3.5" /></button>
-                    <button type="button" onClick={() => setElegidos((l) => l.filter((e) => e.p.ref !== p.ref))} className="p-1.5 rounded-md text-gray-400 hover:text-red-600" aria-label="Quitar"><X className="w-4 h-4" /></button>
-                  </div>
-                </li>
-              ))}
-              <li className="text-xs text-gray-600 text-right">Valor en carta de la cortesía: <strong>{formatCurrency(total)}</strong></li>
-            </ul>
-          )}
+          {pestana === "uno" ? (
+            <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-4">
+              <h2 className="text-sm font-bold text-gray-900">Nuevo vale</h2>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <div>
-              <label className="text-xs font-medium text-gray-700">Para (opcional)</label>
-              <input type="text" value={para} onChange={(e) => setPara(e.target.value)} maxLength={60} placeholder="Nombre del invitado" className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-            </div>
-            <div>
-              <label className="text-xs font-medium text-gray-700">Vale hasta</label>
-              <input type="date" value={venceEl} min={hoyLima()} max={sumarDias(hoyLima(), 180)} onChange={(e) => setVenceEl(e.target.value)} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
-            </div>
-          </div>
-
-          <button
-            onClick={emitir} disabled={emitiendo || elegidos.length === 0}
-            className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-primary hover:opacity-90 rounded-lg disabled:opacity-50 inline-flex items-center justify-center gap-2"
-          >
-            {emitiendo && <Loader2 className="w-4 h-4 animate-spin" />}
-            Generar vale
-          </button>
-
-          {recien && (
-            <div className="border border-emerald-300 bg-emerald-50 rounded-lg p-3 space-y-2">
-              <div className="text-xs font-semibold text-emerald-800">Vale creado</div>
-              <div className="font-mono text-2xl font-extrabold tracking-widest text-[#004C40]">{recien.codigo}</div>
-              <div className="text-sm text-gray-800">{resumenItems(recien.items)} · hasta el {recien.venceEl.split("-").reverse().join("/")}</div>
-              <div className="flex flex-wrap gap-2">
-                <button onClick={() => whatsapp(recien)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white bg-emerald-600 hover:bg-emerald-700 rounded-lg"><MessageCircle className="w-4 h-4" />Enviar por WhatsApp</button>
-                <button onClick={() => copiar(recien.codigo)} className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-gray-800 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg"><Copy className="w-4 h-4" />Copiar link</button>
+              <div className="space-y-2">
+                <label className="text-xs font-medium text-gray-700">¿Qué cubre? (de la carta)</label>
+                <SelectorProductos productos={productos} elegidos={elegidos} onChange={setElegidos} />
               </div>
-              <div className="text-[11px] text-gray-500 break-all">{linkVale(recien.codigo)}</div>
+
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                <div>
+                  <label className="text-xs font-medium text-gray-700">Para (opcional)</label>
+                  <input type="text" value={para} onChange={(e) => setPara(e.target.value)} maxLength={60} placeholder="Nombre del invitado" className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+                <div>
+                  <label className="text-xs font-medium text-gray-700">Vale hasta</label>
+                  <input type="date" value={venceEl} min={hoyLima()} max={sumarDias(hoyLima(), 180)} onChange={(e) => setVenceEl(e.target.value)} className="mt-1 w-full border border-gray-300 rounded-lg px-3 py-2 text-sm" />
+                </div>
+              </div>
+
+              <button
+                onClick={emitir} disabled={emitiendo || elegidos.length === 0}
+                className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-primary hover:opacity-90 rounded-lg disabled:opacity-50 inline-flex items-center justify-center gap-2"
+              >
+                {emitiendo && <Loader2 className="w-4 h-4 animate-spin" />}
+                Generar vale
+              </button>
             </div>
+          ) : (
+            <SorteoPanel productos={productos} sedeInicial={negocio} onCreados={alCrearSorteo} />
           )}
-        </div>
+
+          <ListaCreados vales={creados} onRepetir={repetir} />
+        </>
       ) : (
         <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">Solo Jahnn emite y anula vales. Aquí puedes ver el registro y canjear.</div>
-      )}
-
-      {puedeEmitir && (
-        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
-          <div>
-            <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
-              <KeyRound className="w-4 h-4 text-primary" />
-              PIN de caja · {sedeNombre}
-            </h2>
-            <p className="text-xs text-gray-500 mt-1">
-              Con este PIN de 6 números el cajero canjea el vale del invitado en su celular, sin cuenta en Cash Control.
-              Dáselo en persona. Tras 5 intentos fallidos la caja se bloquea 10 minutos.
-            </p>
-          </div>
-          <div className="text-xs text-gray-700">
-            {pinEstado?.configurado
-              ? <>PIN activo · actualizado {pinEstado.actualizadoEn}{pinEstado.actualizadoPor ? ` por ${pinEstado.actualizadoPor}` : ""}{pinEstado.bloqueadaHasta ? <strong className="text-red-700"> · caja bloqueada hasta las {pinEstado.bloqueadaHasta}</strong> : null}</>
-              : <strong className="text-amber-700">Todavía no hay PIN: sin él, caja no puede canjear.</strong>}
-          </div>
-          <button
-            onClick={generarPin} disabled={generandoPin}
-            className="px-4 py-2 text-sm font-semibold text-white bg-primary hover:opacity-90 rounded-lg disabled:opacity-50 inline-flex items-center gap-2"
-          >
-            {generandoPin && <Loader2 className="w-4 h-4 animate-spin" />}
-            {pinEstado?.configurado ? "Generar un PIN nuevo" : "Generar PIN de caja"}
-          </button>
-          {pinNuevo && (
-            <div className="border border-amber-300 bg-amber-50 rounded-lg p-3 space-y-1">
-              <div className="text-xs font-semibold text-amber-900">Anótalo ahora: no se vuelve a mostrar</div>
-              <div className="font-mono text-3xl font-extrabold tracking-[0.3em] text-gray-900">{pinNuevo}</div>
-              <button onClick={() => setPinNuevo(null)} className="text-xs font-medium text-amber-900 underline">Ya lo anoté, ocultar</button>
-            </div>
-          )}
-        </div>
       )}
 
       <CanjearValeCard />
@@ -310,7 +242,7 @@ export default function ValesPage() {
                 {v.estado === "emitido" && puedeEmitir && (
                   <div className="flex flex-wrap gap-2 pt-1">
                     <button onClick={() => whatsapp(v)} className="text-xs font-medium text-emerald-700 hover:underline">WhatsApp</button>
-                    <button onClick={() => copiar(v.codigo)} className="text-xs font-medium text-gray-600 hover:underline">Copiar link</button>
+                    <button onClick={() => copiarLink(v.codigo)} className="text-xs font-medium text-gray-600 hover:underline">Copiar link</button>
                     <button onClick={() => anular(v)} className="text-xs font-medium text-red-600 hover:underline">Anular</button>
                   </div>
                 )}
@@ -319,6 +251,41 @@ export default function ValesPage() {
           </ul>
         )}
       </div>
+
+      {/* El PIN va al final, lejos de «Generar vale»: se confundían los dos botones (22-nov-2026). */}
+      {puedeEmitir && (
+        <div className="bg-white rounded-xl border border-gray-200 p-4 space-y-3">
+          <div>
+            <h2 className="text-sm font-bold text-gray-900 flex items-center gap-2">
+              <KeyRound className="w-4 h-4 text-primary" />
+              PIN de caja · {sedeNombre}
+            </h2>
+            <p className="text-xs text-gray-500 mt-1">
+              Con este PIN de 6 números el cajero canjea el vale del invitado en su celular, sin cuenta en Cash Control.
+              Es el mismo para todos los vales de {sedeNombre}. Dáselo en persona. Tras 5 intentos fallidos la caja se bloquea 10 minutos.
+            </p>
+          </div>
+          <div className="text-xs text-gray-700">
+            {pinEstado?.configurado
+              ? <>PIN activo · actualizado {pinEstado.actualizadoEn}{pinEstado.actualizadoPor ? ` por ${pinEstado.actualizadoPor}` : ""}{pinEstado.bloqueadaHasta ? <strong className="text-red-700"> · caja bloqueada hasta las {pinEstado.bloqueadaHasta}</strong> : null}</>
+              : <strong className="text-amber-700">Todavía no hay PIN: sin él, caja no puede canjear.</strong>}
+          </div>
+          <button
+            onClick={generarPin} disabled={generandoPin}
+            className="px-4 py-2 text-sm font-semibold text-white bg-gray-700 hover:bg-gray-800 rounded-lg disabled:opacity-50 inline-flex items-center gap-2"
+          >
+            {generandoPin && <Loader2 className="w-4 h-4 animate-spin" />}
+            {pinEstado?.configurado ? "Cambiar el PIN de caja" : "Generar PIN de caja"}
+          </button>
+          {pinNuevo && (
+            <div className="border border-amber-300 bg-amber-50 rounded-lg p-3 space-y-1">
+              <div className="text-xs font-semibold text-amber-900">Anótalo ahora: no se vuelve a mostrar</div>
+              <div className="font-mono text-3xl font-extrabold tracking-[0.3em] text-gray-900">{pinNuevo}</div>
+              <button onClick={() => setPinNuevo(null)} className="text-xs font-medium text-amber-900 underline">Ya lo anoté, ocultar</button>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
