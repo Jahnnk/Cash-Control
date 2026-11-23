@@ -15,13 +15,16 @@ import { CanjeEnCaja } from "@/components/vales/canje-caja";
  */
 
 export const dynamic = "force-dynamic";
+// Lo que se ve al pegar el link en WhatsApp. La imagen sale de ../opengraph-image.tsx. OJO: aquí NO se define
+// `openGraph` a mano: un `openGraph` propio reemplaza al del nivel superior y se pierde la imagen.
 export const metadata: Metadata = {
   title: "Vale de consumo · Yayi's",
+  description: "Tu vale de consumo. Muéstralo en caja al momento de pagar.",
   robots: { index: false, follow: false },
 };
 
 const ESTILO: Record<EstadoVale, { caja: string; punto: string; ayuda: string }> = {
-  emitido: { caja: "bg-emerald-50 text-emerald-800 border-emerald-200", punto: "bg-emerald-500", ayuda: "Muestra este código al encargado antes de pagar." },
+  emitido: { caja: "bg-emerald-50 text-emerald-800 border-emerald-200", punto: "bg-emerald-500", ayuda: "Muéstralo en caja al momento de pagar." },
   canjeado: { caja: "bg-gray-100 text-gray-700 border-gray-300", punto: "bg-gray-400", ayuda: "Este vale ya se usó y no se puede usar otra vez." },
   vencido: { caja: "bg-amber-50 text-amber-800 border-amber-200", punto: "bg-amber-500", ayuda: "Este vale ya venció." },
   anulado: { caja: "bg-red-50 text-red-800 border-red-200", punto: "bg-red-500", ayuda: "Este vale fue anulado." },

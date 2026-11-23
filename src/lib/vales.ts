@@ -174,7 +174,7 @@ export function mensajeWhatsApp(args: { link: string; sede: string; items: ItemV
     `Sede: ${args.sede}`,
     `Cubre: ${resumenItems(args.items)}`,
     `Válido hasta el ${d}/${m}/${a}. Se usa una sola vez.`,
-    "Muéstralo al llegar:",
+    "Muéstralo en caja al momento de pagar:",
     args.link,
   ].join("\n");
 }
