@@ -8,7 +8,7 @@
 
 import { AlertTriangle, Bell } from "lucide-react";
 import type { Acuerdo } from "@/app/actions/acuerdos";
-import { ALERTA_LABEL, type Alerta } from "@/lib/acuerdos";
+import { ALERTA_LABEL, nombreConApoyos, type Alerta } from "@/lib/acuerdos";
 import { Pastilla } from "@/components/productos/ui";
 import { diaCorto } from "./ui";
 
@@ -45,7 +45,7 @@ export function FranjaAlertas({ items, mostrarResponsable = false, onVer }: {
             <li key={a.id} className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs">
               <Pastilla tono={TONO[alerta]}>{ALERTA_LABEL[alerta]}</Pastilla>
               <span className="font-medium text-gray-900">{a.que}</span>
-              <span className="text-gray-500">{mostrarResponsable ? `${a.responsableNombre} · ` : ""}{diaCorto(a.fechaLimite)}</span>
+              <span className="text-gray-500">{mostrarResponsable ? `${nombreConApoyos(a)} · ` : ""}{diaCorto(a.fechaLimite)}</span>
             </li>
           ))}
           {items.length > MAX && <li className="text-[11px] text-gray-500">y {items.length - MAX} más</li>}

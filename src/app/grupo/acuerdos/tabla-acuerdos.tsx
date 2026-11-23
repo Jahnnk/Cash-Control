@@ -18,11 +18,11 @@
 import { useState } from "react";
 import { ChevronDown } from "lucide-react";
 import { editarAcuerdo, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, ESTADO_LABEL, MAX_MOTIVO, PRIORIDAD_LABEL, PRIORIDADES, estadoVisible, puede, type Persona } from "@/lib/acuerdos";
+import { AREA_LABEL, AREAS, ESTADO_LABEL, MAX_MOTIVO, PRIORIDAD_LABEL, PRIORIDADES, estadoVisible, nombreConApoyos, puede, type Persona } from "@/lib/acuerdos";
 import { useCambiarEstado, yoPara } from "@/components/acuerdos/fila-acuerdo";
 import { SelectorPersona } from "@/components/acuerdos/alta-rapida";
 import { useToast } from "@/components/toast-provider";
-import { Avatar, AreaTag, COLOR_ESTADO, EstadoCelda, PrioridadIcono, diaCorto } from "@/components/acuerdos/ui";
+import { Avatar, AreaTag, COLOR_ESTADO, EstadoCelda, PrioridadIcono, diaCorto, Responsables } from "@/components/acuerdos/ui";
 
 const COLS = "grid grid-cols-[minmax(170px,1fr)_118px_150px_104px_150px_92px_120px] sm:grid-cols-[minmax(240px,1fr)_128px_150px_104px_150px_92px_120px]";
 const CELDA = "flex items-center h-10 px-3 border-r border-gray-200 min-w-0";
@@ -185,8 +185,8 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, c
                       <EstadoCelda estado={a.estado} puede={puede(yoPara(yo, a, comoResponsable), a, "avanzar")} ocupado={ocupado === a.id} onCambiar={(n) => void cambiar(a, n)} />
                     </span>
                     <span className={`${CELDA} gap-2 ${ed ? EDITABLE : ""}`}>
-                      <Avatar nombre={a.responsableNombre} clave={a.responsableClave} />
-                      <span className="text-xs text-gray-700 truncate">{a.responsableNombre}</span>
+                      <Responsables a={a} />
+                      <span className="text-xs text-gray-700 truncate">{nombreConApoyos(a)}</span>
                       {ed && <span {...sinAbrir}><SelectorPersona personas={personas!} valor={a.responsableClave} className={ENCIMA}
                         onChange={(c) => { if (c && c !== a.responsableClave) void editar(a, { responsable: c }); }} /></span>}
                     </span>

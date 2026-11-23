@@ -16,13 +16,14 @@ import { AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, ESTADO_LABEL, estadoVi
 import { Pastilla } from "@/components/productos/ui";
 import { Avatar, EstadoCelda, PrioridadIcono, diaCorto } from "./ui";
 import { useCambiarEstado, yoPara } from "./fila-acuerdo";
+import { SelectorApoyos } from "./alta-rapida";
 
 const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> = {
   pendiente: "gris", en_proceso: "ambar", cumplido: "verde", vencido: "rojo", anulado: "gris",
 };
 const cuando = (ts: string) => new Date(ts).toLocaleString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const VERBO: Record<string, string> = {
-  estado: "", devuelto: "lo devolvió", fecha: "cambió la fecha", responsable: "cambió el responsable",
+  estado: "", devuelto: "lo devolvió", fecha: "cambió la fecha", responsable: "cambió el responsable", apoyos: "cambió el apoyo",
   confirmado: "confirmó el cumplido", prioridad: "cambió la prioridad", plazo: "cambió el plazo", anulado: "lo anuló", editado: "lo editó",
 };
 
@@ -84,7 +85,7 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
     return true;
   }
 
-  const editar = (cambio: Partial<{ que: string; detalle: string; area: string; responsable: string; fechaLimite: string; motivoFecha: string; prioridad: string }>) =>
+  const editar = (cambio: Partial<{ que: string; detalle: string; area: string; responsable: string; fechaLimite: string; motivoFecha: string; prioridad: string; apoyos: string[] }>) =>
     correr(() => editarAcuerdo(a.id, { que: a.que, detalle: a.detalle ?? "", area: a.area, responsable: a.responsableClave, fechaLimite: a.fechaLimite, prioridad: a.prioridad, ...cambio }));
 
   return (
@@ -130,6 +131,16 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
                 </select>
               ) : <span className="px-2 py-1.5 text-gray-900">{a.responsableNombre}</span>}
             </dd>
+
+            {(puedeEditar || a.apoyoClaves.length > 0) && <>
+              <dt className="text-gray-500">Apoyo</dt>
+              <dd className="min-w-0 py-1">
+                {puedeEditar ? (
+                  <SelectorApoyos personas={personas!} responsable={a.responsableClave} valor={a.apoyoClaves} nombres={a.apoyoNombres}
+                    onChange={(v) => void editar({ apoyos: v })} />
+                ) : <span className="px-2 text-gray-900">{a.apoyoNombres.join(", ")}</span>}
+              </dd>
+            </>}
 
             <dt className="text-gray-500">Fecha límite</dt>
             <dd className="min-w-0">

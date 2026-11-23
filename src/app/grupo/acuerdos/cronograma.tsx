@@ -8,7 +8,7 @@
 
 import type { Acuerdo } from "@/app/actions/acuerdos";
 import { ESTADO_LABEL, estadoVisible, type EstadoVisible } from "@/lib/acuerdos";
-import { Avatar, diaCorto } from "@/components/acuerdos/ui";
+import { diaCorto, Responsables } from "@/components/acuerdos/ui";
 
 const DIA = 86_400_000;
 const ms = (f: string) => Date.parse(`${f}T12:00:00Z`);
@@ -55,7 +55,7 @@ export function Cronograma({ acuerdos, hoy, onAbrir }: { acuerdos: Acuerdo[]; ho
             return (
               <li key={a.id} className="grid grid-cols-[220px_1fr] items-center border-b border-gray-50 hover:bg-gray-50/70 cursor-pointer" onClick={() => onAbrir(a.id)}>
                 <div className="flex items-center gap-2 py-2 pr-3 min-w-0">
-                  <Avatar nombre={a.responsableNombre} clave={a.responsableClave} />
+                  <Responsables a={a} />
                   <span className="text-xs text-gray-900 truncate" title={a.que}>{a.que}</span>
                 </div>
                 <div className="relative h-9">
