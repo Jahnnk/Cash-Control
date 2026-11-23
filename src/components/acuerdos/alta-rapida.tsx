@@ -7,9 +7,9 @@
  */
 
 import { useRef, useState } from "react";
-import { Plus } from "lucide-react";
+import { Plus, X } from "lucide-react";
 import { crearAcuerdo } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, type Area, type Persona, type Prioridad } from "@/lib/acuerdos";
+import { AREA_LABEL, AREAS, MAX_APOYOS, PRIORIDAD_LABEL, PRIORIDADES, type Area, type Persona, type Prioridad } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
 
 const SEL = "border border-gray-200 rounded-lg px-2 py-2 text-sm bg-white";
@@ -52,6 +52,36 @@ export function SelectorPersona({ personas, valor, onChange, className = SEL }: 
   );
 }
 
+/**
+ * Personas de apoyo (23-nov-2026): chips con su nombre y un desplegable «+ Apoyo» para sumar otra.
+ * No ofrece al responsable principal ni a quien ya está.
+ */
+export function SelectorApoyos({ personas, responsable, valor, onChange, nombres = [] }: {
+  personas: Persona[]; responsable: string; valor: string[]; onChange: (v: string[]) => void;
+  /** Nombres guardados, para mostrar un apoyo que ya no está activo. */
+  nombres?: string[];
+}) {
+  const nombre = (c: string, i: number) => personas.find((p) => p.clave === c)?.nombre ?? nombres[i] ?? "?";
+  const libres = personas.filter((p) => p.clave !== responsable && !valor.includes(p.clave));
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1">
+      {valor.map((c, i) => (
+        <span key={c} className="inline-flex items-center gap-1 rounded-full bg-violet-50 text-violet-800 pl-2 pr-1 py-1 text-xs">
+          {nombre(c, i)}
+          <button type="button" onClick={() => onChange(valor.filter((x) => x !== c))} aria-label={`Quitar a ${nombre(c, i)} del apoyo`}
+            className="rounded-full p-0.5 hover:bg-violet-100"><X className="w-3 h-3" /></button>
+        </span>
+      ))}
+      {valor.length < MAX_APOYOS && libres.length > 0 && (
+        <select value="" onChange={(e) => { if (e.target.value) onChange([...valor, e.target.value]); }} className={SEL} aria-label="Agregar persona de apoyo">
+          <option value="">+ Apoyo</option>
+          {libres.map((p) => <option key={p.clave} value={p.clave}>{p.nombre}</option>)}
+        </select>
+      )}
+    </span>
+  );
+}
+
 export function AltaRapida({ personas, hoy, reunion, onCreado }: {
   personas: Persona[];
   hoy: string;
@@ -66,6 +96,7 @@ export function AltaRapida({ personas, hoy, reunion, onCreado }: {
   const [cuando, setCuando] = useState("viernes");
   const [fecha, setFecha] = useState("");
   const [prioridad, setPrioridad] = useState<Prioridad>("media");
+  const [apoyos, setApoyos] = useState<string[]>([]);
   const [ocupado, setOcupado] = useState(false);
   const opciones = atajos(hoy);
   const fechaLimite = cuando === "otra" ? fecha : opciones.find((o) => o.k === cuando)?.fecha ?? "";
@@ -87,12 +118,13 @@ export function AltaRapida({ personas, hoy, reunion, onCreado }: {
   async function crear() {
     if (!que.trim()) return;
     setOcupado(true);
-    const r = await crearAcuerdo({ que, area, responsable, fechaLimite, prioridad, reunionId: reunion?.id ?? null });
+    const r = await crearAcuerdo({ que, area, responsable, fechaLimite, prioridad, apoyos, reunionId: reunion?.id ?? null });
     setOcupado(false);
     if (!r.ok) { showToast(r.error, "error"); return; }
     try { localStorage.setItem(GUARDA, JSON.stringify({ responsable, area: reunion ? leer().area : area })); } catch { /* solo comodidad */ }
     setQue("");
     setPrioridad("media");
+    setApoyos([]);
     showToast("Tarea creada", "success");
     onCreado();
   }
@@ -103,7 +135,8 @@ export function AltaRapida({ personas, hoy, reunion, onCreado }: {
       <input value={que} onChange={(e) => setQue(e.target.value)} onKeyDown={(e) => { if (e.key === "Enter") void crear(); }}
         placeholder={reunion ? "Agregar acuerdo de esta reunión y Enter" : "Escribe una tarea y presiona Enter"} aria-label="Qué se hará"
         className="flex-1 min-w-[200px] px-1 py-2 text-sm outline-none bg-transparent" />
-      <SelectorPersona personas={personas} valor={responsable} onChange={setResponsable} />
+      <SelectorPersona personas={personas} valor={responsable} onChange={(c) => { setResponsable(c); setApoyos((v) => v.filter((x) => x !== c)); }} />
+      {responsable && <SelectorApoyos personas={personas} responsable={responsable} valor={apoyos} onChange={setApoyos} />}
       <select value={cuando} onChange={(e) => elegirCuando(e.target.value)} className={SEL} aria-label="Para cuándo">
         {opciones.map((o) => <option key={o.k} value={o.k}>{o.label}</option>)}
         <option value="otra">Otra fecha…</option>

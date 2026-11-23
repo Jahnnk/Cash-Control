@@ -14,7 +14,7 @@ import type { Acuerdo, YoSesion } from "@/app/actions/acuerdos";
 import { useCambiarEstado, yoPara } from "@/components/acuerdos/fila-acuerdo";
 import { ESTADO_LABEL, estadoVisible, puede, type EstadoGuardado } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
-import { Avatar, AreaTag, COLOR_ESTADO, FechaChip, PrioridadIcono } from "@/components/acuerdos/ui";
+import { AreaTag, COLOR_ESTADO, FechaChip, PrioridadIcono, Responsables } from "@/components/acuerdos/ui";
 
 const COLUMNAS: { estado: "pendiente" | "en_proceso" | "cumplido" }[] = [
   { estado: "pendiente" }, { estado: "en_proceso" }, { estado: "cumplido" },
@@ -78,7 +78,7 @@ export function Kanban({ acuerdos, yo, hoy, comoResponsable = false, onAbrir, on
                       <PrioridadIcono p={a.prioridad} />
                       <FechaChip fecha={a.fechaLimite} hoy={hoy} estado={a.estado} />
                       {a.comentarios > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-400"><MessageSquare className="w-3 h-3" />{a.comentarios}</span>}
-                      <span className="ml-auto"><Avatar nombre={a.responsableNombre} clave={a.responsableClave} /></span>
+                      <span className="ml-auto"><Responsables a={a} /></span>
                     </div>
                   </li>
                 );

@@ -105,6 +105,23 @@ export function erroresAcuerdo(a: NuevoAcuerdo, hoy: string, claves: Set<string>
   return e;
 }
 
+/**
+ * Apoyos de una tarea (23-nov-2026): solo personas que existen, sin repetir y sin el responsable principal.
+ * El principal es quien responde; los apoyos ayudan y no cuentan en el cumplimiento.
+ */
+export function limpiarApoyos(apoyos: readonly string[] | undefined, responsable: string, claves: ReadonlySet<string>): string[] {
+  const out: string[] = [];
+  for (const c of apoyos ?? []) if (c !== responsable && claves.has(c) && !out.includes(c)) out.push(c);
+  return out.slice(0, MAX_APOYOS);
+}
+export const MAX_APOYOS = 6;
+
+/** «Luana Vásquez + 2»: el principal y cuántos apoyos tiene. */
+export function nombreConApoyos(a: { responsableNombre: string; apoyoNombres?: string[] }): string {
+  const n = a.apoyoNombres?.length ?? 0;
+  return n ? `${a.responsableNombre} + ${n}` : a.responsableNombre;
+}
+
 /** Lo que la sesión puede hacer con un acuerdo. */
 export type Yo = { clave: string; tipo: TipoPersona };
 export type AccionAcuerdo =
@@ -113,9 +130,10 @@ export type AccionAcuerdo =
   | "anular"
   | "comentar";
 
-export function puede(yo: Yo, a: { responsableClave: string; creadoPorClave: string; estado: EstadoGuardado }, accion: AccionAcuerdo): boolean {
+export function puede(yo: Yo, a: { responsableClave: string; creadoPorClave: string; estado: EstadoGuardado; apoyoClaves?: string[] }, accion: AccionAcuerdo): boolean {
   const dir = yo.tipo === "direccion";
-  const esResp = yo.clave === a.responsableClave;
+  // Un apoyo (23-nov-2026) trabaja la tarea como el responsable: cambia el estado y comenta. No la edita ni la anula.
+  const esResp = yo.clave === a.responsableClave || (a.apoyoClaves ?? []).includes(yo.clave);
   const esCreador = yo.clave === a.creadoPorClave;
   if (a.estado === "anulado") return false;
   switch (accion) {

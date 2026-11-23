@@ -24,6 +24,33 @@ export function Avatar({ nombre, clave, tam = "sm" }: { nombre: string; clave: s
   return <span title={nombre} style={{ backgroundColor: colorPersona(clave) }} className={`${t} inline-flex items-center justify-center rounded-full font-semibold text-white shrink-0`}>{ini}</span>;
 }
 
+/**
+ * El responsable principal y, encimados y más chicos, sus apoyos (23-nov-2026). Con más de 2 apoyos sale «+N».
+ * Al pasar el mouse se leen todos los nombres.
+ */
+export function Responsables({ a }: { a: { responsableNombre: string; responsableClave: string; apoyoNombres?: string[]; apoyoClaves?: string[] } }) {
+  const claves = a.apoyoClaves ?? [];
+  const nombres = a.apoyoNombres ?? [];
+  if (claves.length === 0) return <Avatar nombre={a.responsableNombre} clave={a.responsableClave} />;
+  const titulo = `${a.responsableNombre} · apoyo: ${nombres.join(", ")}`;
+  const visibles = claves.length > 2 ? 1 : claves.length;
+  return (
+    <span title={titulo} className="inline-flex items-center shrink-0">
+      <Avatar nombre={a.responsableNombre} clave={a.responsableClave} />
+      {claves.slice(0, visibles).map((c, i) => (
+        <span key={c} className="-ml-1.5 inline-flex rounded-full ring-2 ring-white">
+          <span style={{ backgroundColor: colorPersona(c) }} className="w-5 h-5 text-[9px] inline-flex items-center justify-center rounded-full font-semibold text-white">
+            {(nombres[i] ?? "?").split(/\s+/).filter(Boolean).slice(0, 2).map((p) => p[0]?.toUpperCase()).join("")}
+          </span>
+        </span>
+      ))}
+      {claves.length > visibles && (
+        <span className="-ml-1.5 w-5 h-5 inline-flex items-center justify-center rounded-full bg-gray-200 text-[9px] font-semibold text-gray-700 ring-2 ring-white">+{claves.length - visibles}</span>
+      )}
+    </span>
+  );
+}
+
 const AREA_COLOR: Record<Area, string> = {
   marketing: "bg-pink-50 text-pink-700",
   administracion: "bg-sky-50 text-sky-700",

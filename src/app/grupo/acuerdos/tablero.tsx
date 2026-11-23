@@ -70,14 +70,14 @@ export function TableroAcuerdos() {
   }, [cargar]);
 
   const activos = useMemo(() => d?.acuerdos.filter((a) => a.estado !== "anulado") ?? [], [d]);
-  const mios = useMemo(() => (d ? ordenAcuerdos(activos.filter((a) => a.responsableClave === d.yo.clave && a.estado !== "cumplido"), d.hoy) : []), [d, activos]);
+  const mios = useMemo(() => (d ? ordenAcuerdos(activos.filter((a) => (a.responsableClave === d.yo.clave || a.apoyoClaves.includes(d.yo.clave)) && a.estado !== "cumplido"), d.hoy) : []), [d, activos]);
   const asignadosPorMi = useMemo(() => (d ? ordenAcuerdos(activos.filter((a) => a.creadoPorClave === d.yo.clave && a.responsableClave !== d.yo.clave && a.estado !== "cumplido"), d.hoy) : []), [d, activos]);
 
   /** El tablero y la lista comparten los filtros de persona y área. */
   const filtrar = useCallback((lista: Acuerdo[]) => {
     const t = sinTildes(q.trim());
-    return lista.filter((a) => (!filtroArea || a.area === filtroArea) && (!filtroResp || a.responsableClave === filtroResp)
-      && (!t || sinTildes(`${a.que} ${a.detalle ?? ""} ${a.responsableNombre} ${a.reunionTitulo ?? ""}`).includes(t)));
+    return lista.filter((a) => (!filtroArea || a.area === filtroArea) && (!filtroResp || a.responsableClave === filtroResp || a.apoyoClaves.includes(filtroResp))
+      && (!t || sinTildes(`${a.que} ${a.detalle ?? ""} ${a.responsableNombre} ${a.apoyoNombres.join(" ")} ${a.reunionTitulo ?? ""}`).includes(t)));
   }, [q, filtroArea, filtroResp]);
 
   const filtrados = useMemo(() => {

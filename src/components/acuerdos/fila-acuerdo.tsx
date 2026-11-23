@@ -11,7 +11,7 @@ import { MessageSquare } from "lucide-react";
 import { avanzarAcuerdo, type Acuerdo, type YoSesion } from "@/app/actions/acuerdos";
 import { alertaDe, ESTADO_LABEL, puede, type Yo } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
-import { Avatar, AreaTag, EstadoCelda, FechaChip, PrioridadIcono, type EstadoCambiable } from "./ui";
+import { AreaTag, EstadoCelda, FechaChip, PrioridadIcono, type EstadoCambiable, Responsables } from "./ui";
 
 /**
  * Cambiar el estado desde cualquier fila, tarjeta o el detalle, con su aviso. El aviso trae «Deshacer» (Jahnn,
@@ -51,6 +51,8 @@ export function FilaAcuerdo({ a, yo, hoy, comoResponsable = false, mostrarRespon
   const { cambiar, ocupado } = useCambiarEstado(onCambio);
   const y = yoPara(yo, a, comoResponsable);
   const alerta = alertaDe(a, hoy);
+  // En mi lista, una tarea donde solo ayudo lleva la etiqueta «Apoyo».
+  const soyApoyo = a.soyApoyo ?? a.apoyoClaves.includes(yo.clave);
 
   return (
     <li>
@@ -64,12 +66,13 @@ export function FilaAcuerdo({ a, yo, hoy, comoResponsable = false, mostrarRespon
               {a.reunionTitulo ?? "Del día a día"}
             </div>
           )}
+          {soyApoyo && <div className="text-[11px] text-gray-500 truncate"><span className="font-medium text-violet-700">Apoyo</span> · responde {a.responsableNombre}</div>}
         </div>
         {a.prioridad !== "media" && <PrioridadIcono p={a.prioridad} />}
         <span className="hidden sm:inline-flex"><AreaTag area={a.area} /></span>
         {a.comentarios > 0 && <span className="hidden sm:inline-flex items-center gap-0.5 text-[11px] text-gray-400"><MessageSquare className="w-3 h-3" />{a.comentarios}</span>}
         <span className="shrink-0 text-right sm:w-20"><FechaChip fecha={a.fechaLimite} hoy={hoy} estado={a.estado} /></span>
-        {mostrarResponsable && <span className="hidden sm:inline-flex"><Avatar nombre={a.responsableNombre} clave={a.responsableClave} /></span>}
+        {mostrarResponsable && <span className="hidden sm:inline-flex"><Responsables a={a} /></span>}
         <span className="shrink-0 w-[88px] sm:w-[104px] h-8 rounded-md overflow-hidden">
           <EstadoCelda estado={a.estado} puede={puede(y, a, "avanzar")} ocupado={ocupado === a.id} onCambiar={(n) => void cambiar(a, n)} />
         </span>

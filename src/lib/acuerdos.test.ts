@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo } from "./acuerdos";
+import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo, limpiarApoyos, nombreConApoyos } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -191,5 +191,26 @@ describe("prioridad", () => {
       { id: 4, estado: "pendiente" as const, fechaLimite: "2026-11-10", prioridad: "baja" as const },
     ];
     expect(orden2(l, HOY).map((a) => a.id)).toEqual([4, 2, 1, 3]);
+  });
+});
+
+describe("apoyos (23-nov-2026)", () => {
+  const claves = new Set(["jahnn", "kelly", "u:3", "u:6"]);
+  it("limpia: sin el principal, sin repetidos y solo personas que existen", () => {
+    expect(limpiarApoyos(["u:3", "jahnn", "u:3", "u:99", "u:6"], "jahnn", claves)).toEqual(["u:3", "u:6"]);
+    expect(limpiarApoyos(undefined, "jahnn", claves)).toEqual([]);
+  });
+  it("«Nombre + N» solo cuando hay apoyos", () => {
+    expect(nombreConApoyos({ responsableNombre: "Luana", apoyoNombres: [] })).toBe("Luana");
+    expect(nombreConApoyos({ responsableNombre: "Luana", apoyoNombres: ["Sol", "Chari"] })).toBe("Luana + 2");
+  });
+  it("un apoyo avanza y comenta, pero no edita ni anula", () => {
+    const a = { responsableClave: "u:3", creadoPorClave: "jahnn", estado: "pendiente" as const, apoyoClaves: ["u:6"] };
+    const yo = { clave: "u:6", tipo: "admin" as const };
+    expect(puede(yo, a, "avanzar")).toBe(true);
+    expect(puede(yo, a, "comentar")).toBe(true);
+    expect(puede(yo, a, "editar")).toBe(false);
+    expect(puede(yo, a, "anular")).toBe(false);
+    expect(puede({ clave: "u:9", tipo: "admin" }, a, "avanzar")).toBe(false);
   });
 });
