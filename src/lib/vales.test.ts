@@ -135,6 +135,7 @@ describe("textos", () => {
     expect(m).toContain("1 Cappuccino + 2 Croissant");
     expect(m).toContain("22/12/2026");
     expect(m).toContain("https://x/vale/7K3Q-M2PA");
+    expect(m).toContain("Muéstralo en caja al momento de pagar:");
   });
 });
 
