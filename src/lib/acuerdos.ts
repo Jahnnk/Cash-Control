@@ -116,6 +116,17 @@ export function limpiarApoyos(apoyos: readonly string[] | undefined, responsable
 }
 export const MAX_APOYOS = 6;
 
+/**
+ * Subtareas (23-nov-2026): un solo nivel, la madre sigue abierta y la subtarea no vence después que la madre.
+ * null = se puede crear.
+ */
+export function erroresSubtarea(madre: { padreId: number | null; estado: EstadoGuardado; fechaLimite: string }, fecha: string): string | null {
+  if (madre.padreId != null) return "Una subtarea no puede tener sus propias subtareas.";
+  if (!estaAbierto(madre.estado)) return "La tarea ya está cerrada: reábrela para agregarle subtareas.";
+  if (/^\d{4}-\d{2}-\d{2}$/.test(fecha) && fecha > madre.fechaLimite) return "La subtarea no puede vencer después que su tarea.";
+  return null;
+}
+
 /** «Luana Vásquez + 2»: el principal y cuántos apoyos tiene. */
 export function nombreConApoyos(a: { responsableNombre: string; apoyoNombres?: string[] }): string {
   const n = a.apoyoNombres?.length ?? 0;

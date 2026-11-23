@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo, limpiarApoyos, nombreConApoyos } from "./acuerdos";
+import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo, limpiarApoyos, nombreConApoyos, erroresSubtarea } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -212,5 +212,18 @@ describe("apoyos (23-nov-2026)", () => {
     expect(puede(yo, a, "editar")).toBe(false);
     expect(puede(yo, a, "anular")).toBe(false);
     expect(puede({ clave: "u:9", tipo: "admin" }, a, "avanzar")).toBe(false);
+  });
+});
+
+describe("subtareas (23-nov-2026)", () => {
+  const madre = { padreId: null, estado: "pendiente" as const, fechaLimite: "2026-11-30" };
+  it("se crea con fecha hasta la de la madre", () => {
+    expect(erroresSubtarea(madre, "2026-11-30")).toBeNull();
+    expect(erroresSubtarea(madre, "2026-11-25")).toBeNull();
+    expect(erroresSubtarea(madre, "2026-12-01")).toMatch(/después que su tarea/);
+  });
+  it("un solo nivel y solo en tareas abiertas", () => {
+    expect(erroresSubtarea({ ...madre, padreId: 7 }, "2026-11-25")).toMatch(/sus propias subtareas/);
+    expect(erroresSubtarea({ ...madre, estado: "cumplido" }, "2026-11-25")).toMatch(/cerrada/);
   });
 });

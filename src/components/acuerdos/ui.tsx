@@ -6,7 +6,7 @@
  * para marcar cumplido y la «batería» de estados.
  */
 
-import { Check, ChevronDown, ChevronsUp, Equal } from "lucide-react";
+import { Check, ChevronDown, ChevronsUp, CornerDownRight, Equal, ListChecks } from "lucide-react";
 import { AREA_LABEL, ESTADO_LABEL, PRIORIDAD_LABEL, type Prioridad, diasRestantes, estaAbierto, type Area, type EstadoGuardado, type Resumen } from "@/lib/acuerdos";
 
 /** Un color fijo por persona (el mismo en el avatar, la carga del equipo y el cronograma). */
@@ -49,6 +49,24 @@ export function Responsables({ a }: { a: { responsableNombre: string; responsabl
       )}
     </span>
   );
+}
+
+/** Avance de las subtareas de una tarea madre: «2/3». Nada si no tiene. */
+export function AvanceSubtareas({ a }: { a: { subTotal?: number; subHechas?: number } }) {
+  if (!a.subTotal) return null;
+  const listo = a.subHechas === a.subTotal;
+  return (
+    <span title={`${a.subHechas} de ${a.subTotal} subtareas hechas`}
+      className={`inline-flex items-center gap-0.5 shrink-0 rounded-md px-1.5 py-0.5 text-[10px] font-medium ${listo ? "bg-emerald-50 text-emerald-700" : "bg-gray-100 text-gray-600"}`}>
+      <ListChecks className="w-3 h-3" />{a.subHechas}/{a.subTotal}
+    </span>
+  );
+}
+
+/** Una subtarea dice de qué tarea es parte. */
+export function ParteDe({ a, className = "" }: { a: { padreQue?: string | null }; className?: string }) {
+  if (!a.padreQue) return null;
+  return <span className={`inline-flex items-center gap-1 min-w-0 text-[11px] text-gray-500 ${className}`} title={`Parte de: ${a.padreQue}`}><CornerDownRight className="w-3 h-3 shrink-0" /><span className="truncate">{a.padreQue}</span></span>;
 }
 
 const AREA_COLOR: Record<Area, string> = {

@@ -18,6 +18,7 @@ import {
   esArea,
   esPrioridad,
   limpiarApoyos,
+  erroresSubtarea,
   PRIORIDAD_LABEL,
   estaAbierto,
   puede,
@@ -71,6 +72,11 @@ export type Acuerdo = {
   /** Día de creación en Lima (para marcar lo «Nuevo»). */
   creadoDia: string;
   comentarios: number;
+  /** Subtareas (23-nov-2026): la tarea madre (un solo nivel) y, en la madre, cuántas tiene y cuántas están hechas. */
+  padreId: number | null;
+  padreQue: string | null;
+  subTotal: number;
+  subHechas: number;
   /** Solo en «mis tareas»: la tarea me llega como apoyo, no como responsable. */
   soyApoyo?: boolean;
 };
@@ -159,7 +165,10 @@ const COLUMNAS = sql`
   CASE WHEN a.estado = 'por_confirmar' THEN 'cumplido' ELSE a.estado END AS estado, a.tarde, a.marcado_cumplido_el::text AS "marcadoCumplidoEl", a.confirmado_el::text AS "confirmadoEl",
   a.confirmado_por AS "confirmadoPor", a.creado_por AS "creadoPor", a.creado_por_clave AS "creadoPorClave",
   a.creado_el::text AS "creadoEl", (a.creado_el AT TIME ZONE 'America/Lima')::date::text AS "creadoDia",
-  (SELECT count(*)::int FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo = 'comentario') AS comentarios
+  (SELECT count(*)::int FROM acuerdo_eventos e WHERE e.acuerdo_id = a.id AND e.tipo = 'comentario') AS comentarios,
+  a.padre_id AS "padreId", (SELECT x.que FROM acuerdos x WHERE x.id = a.padre_id) AS "padreQue",
+  (SELECT count(*)::int FROM acuerdos s WHERE s.padre_id = a.id AND s.estado <> 'anulado') AS "subTotal",
+  (SELECT count(*)::int FROM acuerdos s WHERE s.padre_id = a.id AND s.estado IN ('cumplido','por_confirmar')) AS "subHechas"
 `;
 
 // ─────────────────────────────────────────────────────────────────
@@ -220,6 +229,24 @@ export async function getMisAcuerdos(comoAdminDe?: string): Promise<R<{ hoy: str
   }
 }
 
+/** Las subtareas de una tarea, para su detalle. Las ve quien puede ver la tarea madre. */
+export async function getSubtareas(padreId: number): Promise<R<{ subtareas: Acuerdo[] }>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  try {
+    const a = await leer(padreId);
+    if (!a) return { ok: false, error: "No encontré esa tarea." };
+    if (!veTodo(s.yo) && !s.mias.includes(a.responsableClave) && !a.apoyoClaves.some((c) => s.mias.includes(c))) return SIN_ACCESO;
+    const subtareas = (await sql`
+      SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id
+      WHERE a.padre_id = ${padreId} AND a.estado <> 'anulado' ORDER BY a.fecha_limite, a.id
+    `) as Acuerdo[];
+    return { ok: true, subtareas };
+  } catch (e) {
+    return errorBD("subtareas", e);
+  }
+}
+
 export async function getHistorialAcuerdo(id: number): Promise<R<{ eventos: Evento[] }>> {
   const s = await sesion();
   if (!s) return SIN_ACCESO;
@@ -270,20 +297,32 @@ async function evento(id: number, quien: string, tipo: string, detalle: string |
 export async function crearAcuerdo(input: {
   que: string; detalle?: string; area: string; responsable: string; fechaLimite: string; reunionId?: number | null; prioridad?: string;
   apoyos?: string[];
+  /** Subtarea de esta tarea (un solo nivel). Toma el área y la reunión de la madre. */
+  padreId?: number | null;
 }): Promise<R<{ id: number }>> {
   const s = await sesion();
   if (!s || !veTodo(s.yo)) return SIN_ACCESO;
   try {
     const hoy = getToday();
     const gente = await personas();
+    let padre: Acuerdo | null = null;
+    if (input.padreId != null) {
+      const p = await conPermiso(input.padreId, "editar");
+      if ("error" in p) return { ok: false, error: p.error };
+      padre = p.a;
+      const e = erroresSubtarea(padre, input.fechaLimite);
+      if (e) return { ok: false, error: e };
+      input = { ...input, area: padre.area, reunionId: padre.reunionId };
+    }
     const errores = erroresAcuerdo(input, hoy, new Set(gente.map((p) => p.clave)));
     if (errores.length) return { ok: false, error: errores.join(" ") };
     const resp = gente.find((p) => p.clave === input.responsable)!;
     const apoyos = limpiarApoyos(input.apoyos, resp.clave, new Set(gente.map((p) => p.clave)));
     const apoyoNombres = apoyos.map((c) => gente.find((p) => p.clave === c)!.nombre);
+    if (padre) await evento(padre.id, s.yo.nombre, "subtarea", `${input.que.trim().slice(0, MAX_QUE)} · ${resp.nombre}`);
     const rows = (await sql`
-      INSERT INTO acuerdos (reunion_id, que, detalle, area, prioridad, responsable_clave, responsable_nombre, apoyo_claves, apoyo_nombres, fecha_limite, fecha_limite_original, creado_por, creado_por_clave)
-      VALUES (${input.reunionId ?? null}, ${input.que.trim().slice(0, MAX_QUE)}, ${limpio(input.detalle, MAX_DETALLE)}, ${input.area},
+      INSERT INTO acuerdos (padre_id, reunion_id, que, detalle, area, prioridad, responsable_clave, responsable_nombre, apoyo_claves, apoyo_nombres, fecha_limite, fecha_limite_original, creado_por, creado_por_clave)
+      VALUES (${padre?.id ?? null}, ${input.reunionId ?? null}, ${input.que.trim().slice(0, MAX_QUE)}, ${limpio(input.detalle, MAX_DETALLE)}, ${input.area},
               ${esPrioridad(input.prioridad) ? input.prioridad : "media"},
               ${resp.clave}, ${resp.nombre}, ${apoyos}::text[], ${apoyoNombres}::text[], ${input.fechaLimite}, ${input.fechaLimite}, ${s.yo.nombre}, ${s.yo.clave})
       RETURNING id
@@ -387,6 +426,10 @@ export async function editarAcuerdo(id: number, input: {
     const errores = erroresAcuerdo({ ...input, fechaLimite: cambiaFecha ? input.fechaLimite : hoy }, hoy, claves);
     if (errores.length) return { ok: false, error: errores.join(" ") };
     const motivo = limpio(input.motivoFecha, MAX_MOTIVO);
+    if (cambiaFecha && p.a.padreId != null) {
+      const madre = await leer(p.a.padreId);
+      if (madre && input.fechaLimite > madre.fechaLimite) return { ok: false, error: `Una subtarea no puede vencer después que su tarea (${madre.fechaLimite}).` };
+    }
     if (cambiaFecha && !motivo) return { ok: false, error: "Escribe por qué cambia la fecha límite." };
     // Inicio del plazo: no puede ser después de la fecha límite. Si la fecha límite se adelanta y deja el
     // inicio guardado por detrás, el inicio vuelve al día de creación.

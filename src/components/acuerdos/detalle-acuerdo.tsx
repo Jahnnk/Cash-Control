@@ -9,21 +9,21 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import {
-  anularAcuerdo, comentarAcuerdo, editarAcuerdo, getHistorialAcuerdo,
+  anularAcuerdo, comentarAcuerdo, crearAcuerdo, editarAcuerdo, getHistorialAcuerdo, getSubtareas,
   type Acuerdo, type Evento, type YoSesion,
 } from "@/app/actions/acuerdos";
-import { AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
+import { estaAbierto as estaAbiertoEstado, AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { Pastilla } from "@/components/productos/ui";
-import { Avatar, EstadoCelda, PrioridadIcono, diaCorto } from "./ui";
+import { Avatar, EstadoCelda, FechaChip, PrioridadIcono, Responsables, diaCorto } from "./ui";
 import { useCambiarEstado, yoPara } from "./fila-acuerdo";
-import { SelectorApoyos } from "./alta-rapida";
+import { SelectorApoyos, SelectorPersona } from "./alta-rapida";
 
 const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> = {
   pendiente: "gris", en_proceso: "ambar", cumplido: "verde", vencido: "rojo", anulado: "gris",
 };
 const cuando = (ts: string) => new Date(ts).toLocaleString("es-PE", { timeZone: "America/Lima", day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
 const VERBO: Record<string, string> = {
-  estado: "", devuelto: "lo devolvió", fecha: "cambió la fecha", responsable: "cambió el responsable", apoyos: "cambió el apoyo",
+  estado: "", devuelto: "lo devolvió", fecha: "cambió la fecha", responsable: "cambió el responsable", apoyos: "cambió el apoyo", subtarea: "agregó la subtarea",
   confirmado: "confirmó el cumplido", prioridad: "cambió la prioridad", plazo: "cambió el plazo", anulado: "lo anuló", editado: "lo editó",
 };
 
@@ -53,6 +53,22 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
   const [pide, setPide] = useState<null | "anular">(null);
   const [texto, setTexto] = useState("");
   const [comentario, setComentario] = useState("");
+  // Subtareas (23-nov-2026): un solo nivel; una subtarea no muestra esta sección.
+  const [subtareas, setSubtareas] = useState<Acuerdo[] | null>(null);
+  const [subQue, setSubQue] = useState("");
+  const [subResp, setSubResp] = useState("");
+  const [subFecha, setSubFecha] = useState(a.fechaLimite < hoy ? hoy : a.fechaLimite);
+  const esMadre = a.padreId == null;
+  const cargarSubtareas = useCallback(async () => {
+    if (a.padreId != null) return;
+    const r = await getSubtareas(a.id);
+    setSubtareas(r.ok ? r.subtareas : []);
+  }, [a.id, a.padreId]);
+  useEffect(() => {
+    /* eslint-disable react-hooks/set-state-in-effect -- subtareas al abrir */
+    void cargarSubtareas();
+    /* eslint-enable react-hooks/set-state-in-effect */
+  }, [cargarSubtareas]);
 
   const cargarHistorial = useCallback(async () => {
     const r = await getHistorialAcuerdo(a.id);
@@ -70,7 +86,7 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
   }, [onCerrar]);
 
   // Cambiar el estado avisa con «Deshacer» (mismo aviso que en las filas).
-  const estado = useCambiarEstado(() => { onCambio(); void cargarHistorial(); });
+  const estado = useCambiarEstado(() => { onCambio(); void cargarHistorial(); void cargarSubtareas(); });
 
   async function correr(f: () => Promise<{ ok: boolean; error?: string }>) {
     setOcupado(true);
@@ -82,7 +98,15 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
     setTexto("");
     onCambio();
     void cargarHistorial();
+    void cargarSubtareas();
     return true;
+  }
+
+  async function agregarSubtarea() {
+    if (!subQue.trim()) return;
+    if (!subResp) { setError("Elige quién hará la subtarea."); return; }
+    const ok = await correr(() => crearAcuerdo({ que: subQue, area: a.area, responsable: subResp, fechaLimite: subFecha, prioridad: a.prioridad, padreId: a.id }));
+    if (ok) setSubQue("");
   }
 
   const editar = (cambio: Partial<{ que: string; detalle: string; area: string; responsable: string; fechaLimite: string; motivoFecha: string; prioridad: string; apoyos: string[] }>) =>
@@ -113,6 +137,10 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
             </div>
           )}
           {error && <p className="text-xs text-red-700">{error}</p>}
+
+          {a.padreId != null && (
+            <p className="text-xs text-gray-500">Subtarea · parte de: <span className="font-medium text-gray-700">{a.padreQue}</span></p>
+          )}
 
           {/* Título */}
           <textarea value={que} onChange={(e) => setQue(e.target.value)} disabled={!puedeEditar} rows={2}
@@ -191,6 +219,43 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
               onBlur={() => { if (detalle.trim() !== (a.detalle ?? "")) void editar({ detalle }); }}
               className="w-full rounded-lg border border-gray-200 px-3 py-2 text-sm disabled:bg-gray-50 disabled:text-gray-600" />
           </div>
+
+          {/* Subtareas */}
+          {esMadre && (puedeEditar || (subtareas?.length ?? 0) > 0) && (
+            <div>
+              <div className="flex items-center gap-2 text-xs font-medium text-gray-500 mb-1.5">
+                Subtareas
+                {subtareas && subtareas.length > 0 && <span className="text-gray-400">{subtareas.filter((s) => s.estado === "cumplido").length} de {subtareas.length} hechas</span>}
+              </div>
+              {subtareas && subtareas.length > 0 && (
+                <ul className="divide-y divide-gray-100 rounded-lg border border-gray-100">
+                  {subtareas.map((s) => (
+                    <li key={s.id} className="flex items-center gap-2 px-2 py-1.5">
+                      <span className="shrink-0 w-[96px] h-7 rounded-md overflow-hidden">
+                        <EstadoCelda estado={s.estado} puede={puede(yoPara(yo, s, comoResponsable), s, "avanzar")} ocupado={estado.ocupado === s.id} onCambiar={(n) => void estado.cambiar(s, n)} />
+                      </span>
+                      <span className={`min-w-0 flex-1 text-sm truncate ${s.estado === "cumplido" ? "text-gray-400 line-through" : "text-gray-900"}`} title={s.que}>{s.que}</span>
+                      <FechaChip fecha={s.fechaLimite} hoy={hoy} estado={s.estado} />
+                      <Responsables a={s} />
+                    </li>
+                  ))}
+                </ul>
+              )}
+              {puedeEditar && estaAbiertoEstado(a.estado) && (
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  <input value={subQue} onChange={(e) => setSubQue(e.target.value)} placeholder="+ Agregar subtarea" aria-label="Nueva subtarea"
+                    onKeyDown={(e) => { if (e.key === "Enter") void agregarSubtarea(); }}
+                    className="flex-1 min-w-[160px] border border-gray-200 rounded-lg px-2.5 py-1.5 text-sm" />
+                  {subQue.trim() && <>
+                    <SelectorPersona personas={personas!} valor={subResp} onChange={setSubResp} className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" />
+                    <input type="date" value={subFecha} min={hoy} max={a.fechaLimite} onChange={(e) => setSubFecha(e.target.value)} aria-label="Fecha límite de la subtarea"
+                      className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white min-h-[34px]" />
+                    <button type="button" className={BTN_PRIM} disabled={ocupado || !subResp} onClick={() => void agregarSubtarea()}>Agregar</button>
+                  </>}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Actividad */}
           <div>
