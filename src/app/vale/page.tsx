@@ -10,6 +10,7 @@ import { CanjeEnCaja } from "@/components/vales/canje-caja";
 
 export const metadata: Metadata = {
   title: "Canje en caja · Yayi's",
+  description: "Canje de vales de consumo en caja.",
   robots: { index: false, follow: false },
 };
 
