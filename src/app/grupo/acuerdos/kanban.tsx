@@ -14,7 +14,7 @@ import type { Acuerdo, YoSesion } from "@/app/actions/acuerdos";
 import { useCambiarEstado, yoPara } from "@/components/acuerdos/fila-acuerdo";
 import { ESTADO_LABEL, estadoVisible, puede, type EstadoGuardado } from "@/lib/acuerdos";
 import { useToast } from "@/components/toast-provider";
-import { AreaTag, COLOR_ESTADO, FechaChip, PrioridadIcono, Responsables } from "@/components/acuerdos/ui";
+import { AvanceSubtareas, ParteDe, AreaTag, COLOR_ESTADO, FechaChip, PrioridadIcono, Responsables } from "@/components/acuerdos/ui";
 
 const COLUMNAS: { estado: "pendiente" | "en_proceso" | "cumplido" }[] = [
   { estado: "pendiente" }, { estado: "en_proceso" }, { estado: "cumplido" },
@@ -74,7 +74,9 @@ export function Kanban({ acuerdos, yo, hoy, comoResponsable = false, onAbrir, on
                     className={`cursor-pointer rounded-xl bg-white p-3 shadow-sm border hover:shadow transition-shadow ${vencido ? "border-red-200" : "border-gray-200/80"} ${arrastrando === a.id ? "opacity-50" : ""}`}>
                     <AreaTag area={a.area} />
                     <p className={`mt-1.5 text-sm leading-snug ${a.estado === "cumplido" ? "text-gray-500" : "text-gray-900"}`}>{a.que}</p>
+                    <ParteDe a={a} className="max-w-full" />
                     <div className="mt-2 flex items-center gap-2">
+                      <AvanceSubtareas a={a} />
                       <PrioridadIcono p={a.prioridad} />
                       <FechaChip fecha={a.fechaLimite} hoy={hoy} estado={a.estado} />
                       {a.comentarios > 0 && <span className="inline-flex items-center gap-0.5 text-[11px] text-gray-400"><MessageSquare className="w-3 h-3" />{a.comentarios}</span>}

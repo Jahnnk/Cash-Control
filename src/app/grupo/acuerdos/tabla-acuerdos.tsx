@@ -22,7 +22,7 @@ import { AREA_LABEL, AREAS, ESTADO_LABEL, MAX_MOTIVO, PRIORIDAD_LABEL, PRIORIDAD
 import { useCambiarEstado, yoPara } from "@/components/acuerdos/fila-acuerdo";
 import { SelectorPersona } from "@/components/acuerdos/alta-rapida";
 import { useToast } from "@/components/toast-provider";
-import { Avatar, AreaTag, COLOR_ESTADO, EstadoCelda, PrioridadIcono, diaCorto, Responsables } from "@/components/acuerdos/ui";
+import { AvanceSubtareas, ParteDe, Avatar, AreaTag, COLOR_ESTADO, EstadoCelda, PrioridadIcono, diaCorto, Responsables } from "@/components/acuerdos/ui";
 
 const COLS = "grid grid-cols-[minmax(170px,1fr)_118px_150px_104px_150px_92px_120px] sm:grid-cols-[minmax(240px,1fr)_128px_150px_104px_150px_92px_120px]";
 const CELDA = "flex items-center h-10 px-3 border-r border-gray-200 min-w-0";
@@ -179,7 +179,11 @@ export function GrupoMonday({ titulo, color, avatar, items, yo, hoy, personas, c
                   <li key={a.id} role="button" tabIndex={0} onClick={() => onAbrir(a.id)} onKeyDown={(e) => { if (e.key === "Enter") onAbrir(a.id); }}
                     className={`${COLS} border-b border-gray-200 bg-white cursor-pointer hover:bg-gray-50 ${a.estado === "anulado" ? "opacity-50" : ""}`}>
                     <span className={CELDA}>
-                      <span className={`text-sm truncate ${cerrado ? "text-gray-400 line-through" : "text-gray-900"}`} title={a.que}>{a.que}</span>
+                      <span className="min-w-0 flex-1 flex flex-col leading-tight">
+                        <span className={`text-sm truncate ${cerrado ? "text-gray-400 line-through" : "text-gray-900"}`} title={a.que}>{a.que}</span>
+                        <ParteDe a={a} />
+                      </span>
+                      <AvanceSubtareas a={a} />
                     </span>
                     <span className="h-10 border-r border-white">
                       <EstadoCelda estado={a.estado} puede={puede(yoPara(yo, a, comoResponsable), a, "avanzar")} ocupado={ocupado === a.id} onCambiar={(n) => void cambiar(a, n)} />
