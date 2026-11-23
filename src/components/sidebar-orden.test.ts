@@ -16,10 +16,10 @@ describe("menú lateral", () => {
   it("Grupo agrupa por para qué se entra y no pierde ninguna pantalla", () => {
     expect(MENU.grupo.map((s) => s.titulo)).toEqual([null, "Dirección", "Equipo", "Datos"]);
     const g = segmentos("grupo");
-    for (const s of ["dashboard", "reportes", "direccion", "productos", "presupuesto", "precios-compra", "acuerdos", "highlight", "supervisiones", "incentivos", "recetas", "por-definir", "configuracion"]) {
+    for (const s of ["dashboard", "reportes", "direccion", "productos", "presupuesto", "precios-compra", "vales", "acuerdos", "highlight", "supervisiones", "incentivos", "recetas", "por-definir", "configuracion"]) {
       expect(g.filter((x) => x === s), s).toHaveLength(1);
     }
-    expect(g).toHaveLength(13);
+    expect(g).toHaveLength(14);
   });
 
   it("las sedes: lo principal arriba y Configuración al final; solo Atelier tiene Clientes y lo de antes va en Datos", () => {
@@ -35,11 +35,11 @@ describe("menú lateral", () => {
     for (const sede of ["fonavi", "centro"] as const) expect(segmentos(sede).slice(-2)).toEqual(["registro", "configuracion"]);
     expect(segmentos("atelier").slice(-4)).toEqual(["registro", "fonavi", "prestamos-socio", "configuracion"]);
     expect(MENU.atelier.map((s) => s.titulo)).not.toContain("Clientes");
-    expect(segmentos("centro")).toHaveLength(9);
+    expect(segmentos("centro")).toHaveLength(8);
     expect(segmentos("atelier")).toHaveLength(11);
-    // Vales de consumo (Primer cliente, 22-nov-2026): solo las cafeterías, que son las que atienden al invitado.
-    for (const sede of ["fonavi", "centro"] as const) expect(segmentos(sede)).toContain("vales");
-    expect(segmentos("atelier")).not.toContain("vales");
+    // Vales de consumo (Primer cliente): desde el 23-nov-2026 viven en Grupo (solo Jahnn los emite), no en las sedes.
+    for (const sede of ["fonavi", "centro", "atelier"] as const) expect(segmentos(sede)).not.toContain("vales");
+    expect(segmentos("grupo")).toContain("vales");
     // Proveedores salió de las sedes (21-nov-2026): los administradores usan Control de Caja.
     for (const sede of ["fonavi", "centro", "atelier"] as const) expect(segmentos(sede)).not.toContain("panel/proveedores");
   });
