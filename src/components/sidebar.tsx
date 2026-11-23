@@ -84,7 +84,8 @@ export const CONFIGURACION: NavItem = { segment: "configuracion", label: "Config
  */
 const SEDE = (atelier: boolean): NavSeccion[] => [
   { titulo: null, items: [I.dashboard, I.panel] },
-  { titulo: "Día a día", items: atelier ? [I.propinas] : [I.propinas, I.vales] },
+  // Vales de consumo: desde el 23-nov-2026 en Grupo (solo Jahnn los emite); el canje sigue en el Panel de Sede.
+  { titulo: "Día a día", items: [I.propinas] },
   // Atelier: Clientes es lo de Byte (quién compra y cuánto te deben), junto a los análisis (8-oct-2026).
   { titulo: "Análisis", items: atelier ? [I.reportes, I.productos, I.clientes, I.presupuesto] : [I.reportes, I.productos, I.presupuesto] },
   // Desde agosto todo entra con el Excel: lo de la época del registro manual queda abajo, para
@@ -95,7 +96,7 @@ const SEDE = (atelier: boolean): NavSeccion[] => [
 export const MENU: Record<ScopeKey, NavSeccion[]> = {
   grupo: [
     { titulo: null, items: [I.dashboard, I.reportes] },
-    { titulo: "Dirección", items: [I.direccion, I.productos, I.presupuesto, I.preciosCompra] },
+    { titulo: "Dirección", items: [I.direccion, I.productos, I.presupuesto, I.preciosCompra, I.vales] },
     { titulo: "Equipo", items: [I.acuerdos, I.highlight, I.supervisiones, I.incentivos] },
     { titulo: "Datos", items: [I.recetas, I.porDefinir] },
   ],
