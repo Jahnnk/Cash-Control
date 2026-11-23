@@ -127,6 +127,59 @@ export function erroresSubtarea(madre: { padreId: number | null; estado: EstadoG
   return null;
 }
 
+/**
+ * Menciones en comentarios (23-nov-2026): el texto guarda «@[Nombre]». Al publicar, cada nombre que coincide
+ * con una persona del equipo genera un aviso «Te mencionaron».
+ */
+const MENCION = /@\[([^\]\n]{1,80})\]/g;
+const clave_ = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().toLowerCase();
+
+/** Las personas mencionadas en el texto, sin repetir y en el orden en que aparecen. */
+export function mencionesEn<P extends { clave: string; nombre: string }>(texto: string, gente: readonly P[]): P[] {
+  const out: P[] = [];
+  for (const m of texto.matchAll(MENCION)) {
+    const p = gente.find((g) => clave_(g.nombre) === clave_(m[1]));
+    if (p && !out.some((o) => o.clave === p.clave)) out.push(p);
+  }
+  return out;
+}
+
+/** El comentario partido en texto y menciones, para resaltarlas al mostrarlo. */
+export function partesComentario(texto: string): ({ texto: string } | { mencion: string })[] {
+  const out: ({ texto: string } | { mencion: string })[] = [];
+  let i = 0;
+  for (const m of texto.matchAll(MENCION)) {
+    if (m.index! > i) out.push({ texto: texto.slice(i, m.index) });
+    out.push({ mencion: m[1].trim() });
+    i = m.index! + m[0].length;
+  }
+  if (i < texto.length) out.push({ texto: texto.slice(i) });
+  return out;
+}
+
+/**
+ * Lo que se está escribiendo después de «@» (para la lista de sugerencias). null = no se está mencionando.
+ * `texto` es lo que hay antes del cursor.
+ */
+export function buscandoMencion(texto: string): { desde: number; busca: string } | null {
+  const at = texto.lastIndexOf("@");
+  if (at < 0) return null;
+  if (at > 0 && !/\s/.test(texto[at - 1])) return null; // un correo (a@b) no es mención
+  const busca = texto.slice(at + 1);
+  if (busca.startsWith("[") || /[\n\]]/.test(busca) || busca.length > 30 || /\s\s/.test(busca)) return null;
+  return { desde: at, busca };
+}
+
+/** Las personas que coinciden con lo escrito tras «@»: por el inicio de cualquiera de sus palabras, sin tildes. */
+export function sugerirMencion<P extends { nombre: string }>(gente: readonly P[], busca: string, max = 6): P[] {
+  const b = clave_(busca);
+  if (!b) return gente.slice(0, max);
+  return gente.filter((g) => {
+    const n = clave_(g.nombre);
+    return n.startsWith(b) || n.split(/\s+/).some((w) => w.startsWith(b));
+  }).slice(0, max);
+}
+
 /** «Luana Vásquez + 2»: el principal y cuántos apoyos tiene. */
 export function nombreConApoyos(a: { responsableNombre: string; apoyoNombres?: string[] }): string {
   const n = a.apoyoNombres?.length ?? 0;

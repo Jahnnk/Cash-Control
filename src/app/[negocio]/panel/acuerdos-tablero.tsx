@@ -21,6 +21,7 @@ import { Kanban } from "@/app/grupo/acuerdos/kanban";
 import { Cronograma } from "@/app/grupo/acuerdos/cronograma";
 import { Agrupado } from "@/app/grupo/acuerdos/tablero";
 import { TareaProxima, useMisAcuerdos, type Datos } from "./mis-acuerdos-card";
+import { AvisoMenciones } from "@/components/acuerdos/aviso-menciones";
 import { TarjetaInicio } from "./inicio-ui";
 
 type Vista = "mios" | "tablero" | "cronograma" | "lista";
@@ -29,7 +30,13 @@ const PROXIMAS = 4;
 /** Con su propia carga. Úsalo con `key` según «Ver como administrador» para que al cambiar muestre «cargando». */
 export function AcuerdosEnInicio({ comoAdmin }: { comoAdmin: boolean }) {
   const { datos, cargado, recargar } = useMisAcuerdos(comoAdmin);
-  return <AcuerdosTablero datos={datos} cargado={cargado} onCambio={() => void recargar()} />;
+  return (
+    <>
+      {/* Las menciones son de quien entra: con «Ver como administrador» no se muestran las de la dirección. */}
+      {!comoAdmin && <AvisoMenciones className="col-span-full order-first" onCambio={() => void recargar()} />}
+      <AcuerdosTablero datos={datos} cargado={cargado} onCambio={() => void recargar()} />
+    </>
+  );
 }
 
 export function AcuerdosTablero({ datos, cargado, onCambio }: { datos: Datos | null; cargado: boolean; onCambio: () => void }) {

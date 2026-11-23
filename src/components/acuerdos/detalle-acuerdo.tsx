@@ -9,7 +9,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Loader2, X } from "lucide-react";
 import {
-  anularAcuerdo, comentarAcuerdo, crearAcuerdo, editarAcuerdo, getHistorialAcuerdo, getSubtareas,
+  anularAcuerdo, comentarAcuerdo, crearAcuerdo, editarAcuerdo, getHistorialAcuerdo, getSubtareas, marcarMencionesVistas,
   type Acuerdo, type Evento, type YoSesion,
 } from "@/app/actions/acuerdos";
 import { estaAbierto as estaAbiertoEstado, AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, ESTADO_LABEL, estadoVisible, puede, textoPlazo, type EstadoVisible, type Persona } from "@/lib/acuerdos";
@@ -17,6 +17,7 @@ import { Pastilla } from "@/components/productos/ui";
 import { Avatar, EstadoCelda, FechaChip, PrioridadIcono, Responsables, diaCorto } from "./ui";
 import { useCambiarEstado, yoPara } from "./fila-acuerdo";
 import { SelectorApoyos, SelectorPersona } from "./alta-rapida";
+import { CajaComentario, TextoComentario } from "./caja-comentario";
 
 const TONO: Record<EstadoVisible, "gris" | "azul" | "ambar" | "verde" | "rojo"> = {
   pendiente: "gris", en_proceso: "ambar", cumplido: "verde", vencido: "rojo", anulado: "gris",
@@ -30,13 +31,15 @@ const VERBO: Record<string, string> = {
 const CAMPO = "w-full rounded-lg border border-transparent hover:border-gray-200 focus:border-gray-300 px-2 py-1.5 text-sm bg-transparent disabled:hover:border-transparent";
 const BTN_PRIM = "px-3 py-1.5 text-xs font-medium rounded-lg text-white bg-primary hover:bg-primary-light disabled:opacity-50";
 
-export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, onCambio, onCerrar }: {
+export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, mencionado = false, onCambio, onCerrar }: {
   a: Acuerdo;
   yo: YoSesion;
   hoy: string;
   /** Sin personas no se edita (el panel del admin solo avanza lo suyo). */
   personas?: Persona[];
   comoResponsable?: boolean;
+  /** Llegó por «Te mencionaron»: puede responder aunque la tarea no sea suya. */
+  mencionado?: boolean;
   onCambio: () => void;
   onCerrar: () => void;
 }) {
@@ -52,7 +55,6 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
   const [motivo, setMotivo] = useState("");
   const [pide, setPide] = useState<null | "anular">(null);
   const [texto, setTexto] = useState("");
-  const [comentario, setComentario] = useState("");
   // Subtareas (23-nov-2026): un solo nivel; una subtarea no muestra esta sección.
   const [subtareas, setSubtareas] = useState<Acuerdo[] | null>(null);
   const [subQue, setSubQue] = useState("");
@@ -79,6 +81,8 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
     void cargarHistorial();
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [cargarHistorial]);
+  // Abrir la tarea deja vistas mis menciones en ella.
+  useEffect(() => { void marcarMencionesVistas(a.id); }, [a.id]);
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onCerrar(); };
     window.addEventListener("keydown", esc);
@@ -267,7 +271,7 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
                   <span className="mt-0.5"><Avatar nombre={e.quien} clave={e.quien} /></span>
                   <div className="min-w-0 flex-1 rounded-xl bg-gray-50 px-3 py-2">
                     <div className="text-[11px] text-gray-500"><span className="font-medium text-gray-800">{e.quien}</span> · {cuando(e.cuando)}</div>
-                    <div className="text-sm text-gray-800 whitespace-pre-line">{e.detalle}</div>
+                    <div className="text-sm text-gray-800 whitespace-pre-line break-words"><TextoComentario texto={e.detalle ?? ""} /></div>
                   </div>
                 </li>
               ) : (
@@ -283,14 +287,9 @@ export function DetalleAcuerdo({ a, yo, hoy, personas, comoResponsable = false, 
           )}
         </div>
 
-        {/* Comentar, abajo como en Asana */}
-        {puede(y, a, "comentar") && (
-          <div className="border-t border-gray-100 px-5 py-3 flex gap-2">
-            <input value={comentario} onChange={(e) => setComentario(e.target.value)} placeholder="Escribe un comentario…"
-              onKeyDown={(e) => { if (e.key === "Enter" && comentario.trim()) void correr(() => comentarAcuerdo(a.id, comentario)).then((ok) => ok && setComentario("")); }}
-              className="flex-1 border border-gray-200 rounded-lg px-3 py-2 text-sm" />
-            <button type="button" className={BTN_PRIM} disabled={ocupado || !comentario.trim()} onClick={() => void correr(() => comentarAcuerdo(a.id, comentario)).then((ok) => ok && setComentario(""))}>Comentar</button>
-          </div>
+        {/* Comentar, abajo como en Asana; con @ para mencionar (23-nov-2026) */}
+        {a.estado !== "anulado" && (puede(y, a, "comentar") || mencionado) && (
+          <CajaComentario ocupado={ocupado} onEnviar={(t) => correr(() => comentarAcuerdo(a.id, t))} />
         )}
       </aside>
     </div>
