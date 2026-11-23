@@ -19,6 +19,7 @@ import {
   esPrioridad,
   limpiarApoyos,
   erroresSubtarea,
+  mencionesEn,
   PRIORIDAD_LABEL,
   estaAbierto,
   puede,
@@ -136,6 +137,13 @@ async function sesion(): Promise<{ yo: YoSesion; mias: string[] } | null> {
 
 const veTodo = (yo: Yo) => yo.tipo === "direccion" || yo.tipo === "equipo";
 
+/** ¿Alguna de mis claves fue mencionada en esta tarea? Una mención deja leerla y responderla. */
+async function mencionado(acuerdoId: number, mias: string[]): Promise<boolean> {
+  if (mias.length === 0) return false;
+  const rows = await sql`SELECT 1 FROM acuerdo_menciones WHERE acuerdo_id = ${acuerdoId} AND clave = ANY(${mias}) LIMIT 1`;
+  return rows.length > 0;
+}
+
 /** Las personas a las que se puede asignar un acuerdo. `todas` incluye a las desactivadas (para nombres viejos). */
 async function personas(todas = false): Promise<Persona[]> {
   const rows = (await sql`
@@ -236,7 +244,7 @@ export async function getSubtareas(padreId: number): Promise<R<{ subtareas: Acue
   try {
     const a = await leer(padreId);
     if (!a) return { ok: false, error: "No encontré esa tarea." };
-    if (!veTodo(s.yo) && !s.mias.includes(a.responsableClave) && !a.apoyoClaves.some((c) => s.mias.includes(c))) return SIN_ACCESO;
+    if (!veTodo(s.yo) && !s.mias.includes(a.responsableClave) && !a.apoyoClaves.some((c) => s.mias.includes(c)) && !(await mencionado(padreId, s.mias))) return SIN_ACCESO;
     const subtareas = (await sql`
       SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id
       WHERE a.padre_id = ${padreId} AND a.estado <> 'anulado' ORDER BY a.fecha_limite, a.id
@@ -253,7 +261,7 @@ export async function getHistorialAcuerdo(id: number): Promise<R<{ eventos: Even
   try {
     const a = await leer(id);
     if (!a) return { ok: false, error: "No encontré ese acuerdo." };
-    if (!veTodo(s.yo) && !s.mias.includes(a.responsableClave) && !a.apoyoClaves.some((c) => s.mias.includes(c))) return SIN_ACCESO;
+    if (!veTodo(s.yo) && !s.mias.includes(a.responsableClave) && !a.apoyoClaves.some((c) => s.mias.includes(c)) && !(await mencionado(id, s.mias))) return SIN_ACCESO;
     const eventos = (await sql`
       SELECT id, cuando::text AS cuando, quien, tipo, detalle FROM acuerdo_eventos
       WHERE acuerdo_id = ${id} ORDER BY cuando, id
@@ -286,7 +294,10 @@ async function conPermiso(id: number, accion: AccionAcuerdo): Promise<{ s: { yo:
   if (!a) return { error: "No encontré ese acuerdo." };
   const apoyo = a.apoyoClaves.find((c) => s.mias.includes(c));
   const yo = s.mias.includes(a.responsableClave) ? { ...s.yo, clave: a.responsableClave } : apoyo ? { ...s.yo, clave: apoyo } : s.yo;
-  if (!puede(yo, a, accion)) return { error: "No puedes hacer ese cambio en este acuerdo." };
+  // Quien fue mencionado puede responder (solo comentar).
+  if (!puede(yo, a, accion) && !(accion === "comentar" && a.estado !== "anulado" && (await mencionado(id, s.mias)))) {
+    return { error: "No puedes hacer ese cambio en este acuerdo." };
+  }
   return { s: { ...s, yo }, a };
 }
 
@@ -491,11 +502,74 @@ export async function comentarAcuerdo(id: number, texto: string): Promise<R<obje
     if ("error" in p) return { ok: false, error: p.error };
     const t = limpio(texto, MAX_DETALLE);
     if (!t) return { ok: false, error: "Escribe el comentario." };
-    await evento(id, p.s.yo.nombre, "comentario", t);
+    const ev = (await sql`
+      INSERT INTO acuerdo_eventos (acuerdo_id, quien, tipo, detalle) VALUES (${id}, ${p.s.yo.nombre}, 'comentario', ${t}) RETURNING id
+    `) as { id: number }[];
     await sql`UPDATE acuerdos SET actualizado_el = now() WHERE id = ${id}`;
+    // Menciones: cada «@[Nombre]» del equipo recibe un aviso (no a uno mismo).
+    const quienes = mencionesEn(t, await personas()).filter((g) => !p.s.mias.includes(g.clave) && g.clave !== p.s.yo.clave);
+    if (quienes.length) {
+      await sql`
+        INSERT INTO acuerdo_menciones (acuerdo_id, evento_id, clave, nombre, por)
+        SELECT ${id}, ${ev[0].id}, x.clave, x.nombre, ${p.s.yo.nombre}
+        FROM unnest(${quienes.map((g) => g.clave)}::text[], ${quienes.map((g) => g.nombre)}::text[]) AS x(clave, nombre)`;
+    }
     return { ok: true };
   } catch (e) {
     return errorBD("comentar", e);
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Menciones (23-nov-2026)
+
+/** El equipo para la lista del «@»: solo nombres, para cualquier sesión del módulo. */
+export async function getPersonasMencion(): Promise<R<{ personas: Persona[] }>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  try {
+    return { ok: true, personas: await personas() };
+  } catch (e) {
+    return errorBD("personas", e);
+  }
+}
+
+export type Mencion = { id: number; acuerdoId: number; por: string; cuando: string; comentario: string | null };
+
+/** Mis menciones sin ver, con sus tareas para abrirlas. */
+export async function getMisMenciones(): Promise<R<{ hoy: string; yo: YoSesion; menciones: Mencion[]; acuerdos: Acuerdo[] }>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  try {
+    if (s.mias.length === 0) return { ok: true, hoy: getToday(), yo: s.yo, menciones: [], acuerdos: [] };
+    const menciones = (await sql`
+      SELECT m.id, m.acuerdo_id AS "acuerdoId", m.por, m.creado_el::text AS cuando, e.detalle AS comentario
+      FROM acuerdo_menciones m
+      JOIN acuerdos a ON a.id = m.acuerdo_id AND a.estado <> 'anulado'
+      LEFT JOIN acuerdo_eventos e ON e.id = m.evento_id
+      WHERE m.clave = ANY(${s.mias}) AND m.visto_el IS NULL
+      ORDER BY m.creado_el DESC LIMIT 20
+    `) as Mencion[];
+    const ids = [...new Set(menciones.map((m) => m.acuerdoId))];
+    const acuerdos = ids.length === 0 ? [] : ((await sql`
+      SELECT ${COLUMNAS} FROM acuerdos a LEFT JOIN reuniones r ON r.id = a.reunion_id WHERE a.id = ANY(${ids})
+    `) as Acuerdo[]);
+    return { ok: true, hoy: getToday(), yo: s.yo, menciones, acuerdos };
+  } catch (e) {
+    if (/acuerdo_menciones.* does not exist/i.test(String(e))) return { ok: true, hoy: getToday(), yo: s.yo, menciones: [], acuerdos: [] };
+    return errorBD("menciones", e);
+  }
+}
+
+/** Al abrir la tarea, mis menciones en ella quedan vistas. */
+export async function marcarMencionesVistas(acuerdoId: number): Promise<R<object>> {
+  const s = await sesion();
+  if (!s) return SIN_ACCESO;
+  try {
+    if (s.mias.length) await sql`UPDATE acuerdo_menciones SET visto_el = now() WHERE acuerdo_id = ${acuerdoId} AND clave = ANY(${s.mias}) AND visto_el IS NULL`;
+    return { ok: true };
+  } catch (e) {
+    return errorBD("visto", e);
   }
 }
 

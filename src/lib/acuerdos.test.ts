@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo, limpiarApoyos, nombreConApoyos, erroresSubtarea } from "./acuerdos";
+import { ordenAcuerdos as orden2, avancePorEstado, cargaEquipo, resumenSemanal, alertaDe, conAlerta, cajaDe, conteos, erroresAcuerdo, indicadores, mesesHasta, periodoMes, resumir, type AcuerdoIndicador, estadoVisible, ordenAcuerdos, puede, quedaTarde, textoPlazo, limpiarApoyos, nombreConApoyos, erroresSubtarea, mencionesEn, partesComentario, buscandoMencion, sugerirMencion } from "./acuerdos";
 
 const HOY = "2026-11-19";
 
@@ -225,5 +225,32 @@ describe("subtareas (23-nov-2026)", () => {
   it("un solo nivel y solo en tareas abiertas", () => {
     expect(erroresSubtarea({ ...madre, padreId: 7 }, "2026-11-25")).toMatch(/sus propias subtareas/);
     expect(erroresSubtarea({ ...madre, estado: "cumplido" }, "2026-11-25")).toMatch(/cerrada/);
+  });
+});
+
+describe("menciones (23-nov-2026)", () => {
+  const gente = [
+    { clave: "jahnn", nombre: "Jahnn" },
+    { clave: "u:3", nombre: "Luana Vásquez" },
+    { clave: "u:9", nombre: "Juani Terrones" },
+  ];
+  it("encuentra a cada mencionado una vez, sin importar tildes ni mayúsculas", () => {
+    expect(mencionesEn("Hola @[Luana Vasquez] y @[juani terrones], ojo @[Luana Vásquez]", gente).map((g) => g.clave)).toEqual(["u:3", "u:9"]);
+    expect(mencionesEn("@[Nadie] y correo a@b.com", gente)).toEqual([]);
+  });
+  it("parte el texto para resaltar", () => {
+    expect(partesComentario("Ok @[Jahnn] listo")).toEqual([{ texto: "Ok " }, { mencion: "Jahnn" }, { texto: " listo" }]);
+    expect(partesComentario("sin nada")).toEqual([{ texto: "sin nada" }]);
+  });
+  it("sabe cuándo se está escribiendo una mención", () => {
+    expect(buscandoMencion("Hola @Lu")).toEqual({ desde: 5, busca: "Lu" });
+    expect(buscandoMencion("@")).toEqual({ desde: 0, busca: "" });
+    expect(buscandoMencion("correo a@b")).toBeNull();
+    expect(buscandoMencion("ya @[Jahnn] ")).toBeNull();
+  });
+  it("sugiere por el inicio de cualquier palabra", () => {
+    expect(sugerirMencion(gente, "vas").map((g) => g.clave)).toEqual(["u:3"]);
+    expect(sugerirMencion(gente, "j").map((g) => g.clave)).toEqual(["jahnn", "u:9"]);
+    expect(sugerirMencion(gente, "").length).toBe(3);
   });
 });

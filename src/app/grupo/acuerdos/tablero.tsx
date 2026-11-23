@@ -14,6 +14,7 @@ import { ChevronDown, Home, Loader2, Search, Users } from "lucide-react";
 import { getTableroAcuerdos, type Acuerdo, type Reunion, type YoSesion } from "@/app/actions/acuerdos";
 import { AREA_LABEL, AREAS, conAlerta, estadoVisible, ordenAcuerdos, type Area, type EstadoVisible, type Persona } from "@/lib/acuerdos";
 import { Pastilla, Segmentado } from "@/components/productos/ui";
+import { AvisoMenciones } from "@/components/acuerdos/aviso-menciones";
 import { FranjaAlertas } from "@/components/acuerdos/franja-alertas";
 import { FilaAcuerdo } from "@/components/acuerdos/fila-acuerdo";
 import { DetalleAcuerdo } from "@/components/acuerdos/detalle-acuerdo";
@@ -153,6 +154,8 @@ export function TableroAcuerdos() {
       {reunionForm && <FormReunion d={d} onListo={() => { setReunionForm(false); setVista("reuniones"); recargar(); }} onCancelar={() => setReunionForm(false)} />}
 
       <AltaRapida personas={d.personas} hoy={d.hoy} onCreado={recargar} />
+
+      <AvisoMenciones personas={d.personas} onCambio={recargar} />
 
       <FranjaAlertas items={conAlerta(mios, d.hoy)} onVer={vista === "mios" ? undefined : () => setVista("mios")} />
 
