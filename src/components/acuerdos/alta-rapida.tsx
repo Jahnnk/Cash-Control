@@ -6,7 +6,7 @@
  * reunión. La descripción se agrega después en el detalle.
  */
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Plus } from "lucide-react";
 import { crearAcuerdo } from "@/app/actions/acuerdos";
 import { AREA_LABEL, AREAS, PRIORIDAD_LABEL, PRIORIDADES, type Area, type Persona, type Prioridad } from "@/lib/acuerdos";
@@ -69,6 +69,20 @@ export function AltaRapida({ personas, hoy, reunion, onCreado }: {
   const [ocupado, setOcupado] = useState(false);
   const opciones = atajos(hoy);
   const fechaLimite = cuando === "otra" ? fecha : opciones.find((o) => o.k === cuando)?.fecha ?? "";
+  const campoFecha = useRef<HTMLInputElement>(null);
+
+  function elegirCuando(v: string) {
+    if (v === "otra" && !fecha) setFecha(fechaLimite || mover(hoy, 7));
+    setCuando(v);
+    if (v === "otra") {
+      setTimeout(() => {
+        const el = campoFecha.current;
+        if (!el) return;
+        el.focus();
+        try { el.showPicker?.(); } catch { /* algunos navegadores no dejan abrirlo solo: queda visible para tocarlo */ }
+      }, 0);
+    }
+  }
 
   async function crear() {
     if (!que.trim()) return;
@@ -90,11 +104,19 @@ export function AltaRapida({ personas, hoy, reunion, onCreado }: {
         placeholder={reunion ? "Agregar acuerdo de esta reunión y Enter" : "Escribe una tarea y presiona Enter"} aria-label="Qué se hará"
         className="flex-1 min-w-[200px] px-1 py-2 text-sm outline-none bg-transparent" />
       <SelectorPersona personas={personas} valor={responsable} onChange={setResponsable} />
-      <select value={cuando} onChange={(e) => setCuando(e.target.value)} className={SEL} aria-label="Para cuándo">
+      <select value={cuando} onChange={(e) => elegirCuando(e.target.value)} className={SEL} aria-label="Para cuándo">
         {opciones.map((o) => <option key={o.k} value={o.k}>{o.label}</option>)}
         <option value="otra">Otra fecha…</option>
       </select>
-      {cuando === "otra" && <input type="date" value={fecha} min={hoy} onChange={(e) => setFecha(e.target.value)} className={SEL} aria-label="Fecha límite" />}
+      {cuando === "otra" && (
+        // En el iPhone un cuadro de fecha vacío se ve en blanco y parece que no pasó nada:
+        // por eso lleva etiqueta, arranca con una fecha y se abre solo.
+        <label className={`${SEL} flex items-center gap-1.5 min-h-[38px]`}>
+          <span className="text-gray-500">Fecha:</span>
+          <input ref={campoFecha} type="date" value={fecha} min={hoy} onChange={(e) => setFecha(e.target.value)}
+            className="min-w-[130px] bg-transparent outline-none" aria-label="Fecha límite" />
+        </label>
+      )}
       {!reunion && (
         <select value={area} onChange={(e) => setArea(e.target.value)} className={SEL} aria-label="Área">
           <option value="">Área</option>
