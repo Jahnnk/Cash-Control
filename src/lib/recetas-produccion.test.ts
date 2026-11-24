@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { compararRecetas, parecido, resumenComparacion, sugerirPareja, type DatosProduccion } from "./recetas-produccion";
+import { compararRecetas, factorInsumoPorDefecto, parecido, resumenComparacion, sugerirPareja, type DatosProduccion, type ParejaGuardada } from "./recetas-produccion";
 import type { CostoPreparacion } from "./costos-preparaciones";
 
 const cat = (ref: string, tipo: CostoPreparacion["tipo"], nombre: string, unidad: CostoPreparacion["unidad"], costo: number): CostoPreparacion =>
@@ -80,5 +80,41 @@ describe("Producción vs Excel (Etapa 3c)", () => {
     expect(parecido("Pan Integral Multigrano Normal", "Pan IMG Normal 550 g")).toBeGreaterThan(0.5);
     expect(sugerirPareja(catalogo, "Torta de chocolate")).toBeNull();
     expect(sugerirPareja(catalogo, "Crema Pastelera")?.exacta).toBe(true);
+  });
+});
+
+describe("parejas guardadas (parte 2)", () => {
+  const conPrecio = [...catalogo, cat("VA", "insumo", "Extracto de vainilla", "l", 50), cat("AT-9", "producto", "Galletas x5", "und", 6)];
+  const parejas: ParejaGuardada[] = [
+    { tipo: "insumo", prodClave: "105", refCC: "VA", factor: 0.001 },      // «Vainilla rara» en ml = Extracto de vainilla (l)
+    { tipo: "insumo", prodClave: "101", refCC: null, factor: 1 },          // Sal: sin pareja a propósito
+    { tipo: "receta", prodClave: "2", refCC: "AT-9", factor: 5 },          // 1 paquete del Excel = 5 galletas
+    { tipo: "receta", prodClave: "1-10", refCC: null, factor: 1 },         // pan: sin pareja (no sugerir)
+  ];
+  const filas = compararRecetas(datos, conPrecio, parejas);
+  const fila = (clave: string) => filas.find((f) => f.clave === clave)!;
+
+  it("un insumo con pareja usa su precio y su equivalencia", () => {
+    // 800 ml leche × 0.005 + 200 ml vainilla × 50 × 0.001 = 4 + 10 = 14 por 1 kg de mezcla
+    expect(fila("3").costoProduccion).toBeCloseTo(14, 4);
+    expect(fila("3").sinPrecio).toEqual([]);
+  });
+
+  it("«sin pareja» en un insumo lo deja sin precio aunque el nombre coincida", () => {
+    expect(fila("1-10").sinPrecio).toEqual(["Sal"]);
+  });
+
+  it("la receta compara un paquete del Excel contra 5 de Producción, y «sin pareja» no sugiere", () => {
+    const g = fila("2");
+    expect(g.pareja).toMatchObject({ ref: "AT-9", guardada: true });
+    // la crema usa su precio del Excel (S/ 10/kg) antes que su sub-receta: (0.5 + 0.5 + 0.5) × 1.10 = 1.65 → × 5 = 8.25
+    expect(g.costoProduccion).toBeCloseTo(8.25, 4);
+    expect(g.diferencia).toBeCloseTo((8.25 - 6) / 6, 4);
+    expect(fila("1-10").pareja).toBeNull();
+  });
+
+  it("equivalencia que se propone por unidad", () => {
+    expect(factorInsumoPorDefecto("kg")).toBe(0.001);
+    expect(factorInsumoPorDefecto("und")).toBe(1);
   });
 });
