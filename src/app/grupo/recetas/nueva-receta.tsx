@@ -440,7 +440,7 @@ function PasoIngredientes(p: {
         {nuevo && (
           <div className="mt-3 rounded-xl border border-primary/30 bg-emerald-50/40 p-3 space-y-2">
             <div className="text-sm font-semibold text-gray-900">Insumo nuevo de {origen === "Atelier" ? "Atelier" : "la cafetería"}</div>
-            <p className="text-[11px] text-gray-500">Queda en «Precios de insumos» y sirve para todas las recetas. El precio es por la unidad de compra.</p>
+            <p className="text-[11px] text-gray-500">Queda en Grupo → Insumos y sirve para todas las recetas. El precio es por la unidad de compra.</p>
             <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
               <label className="text-[11px] text-gray-500">Nombre
                 <input value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="ej. Jengibre en polvo" className={campo} />
@@ -641,7 +641,7 @@ function PrecioInsumo({ item, origen, onPrecioCambiado }: { item: CostoPreparaci
         {guardando && <Loader2 className="w-3 h-3 animate-spin" />} Guardar
       </button>
       <button type="button" onClick={() => setEditando(false)} className="text-gray-500">cancelar</button>
-      <span className="basis-full text-gray-500">Cambia el precio desde hoy en todo el sistema: recetas, carta y «Precios de insumos».</span>
+      <span className="basis-full text-gray-500">Cambia el precio desde hoy en todo el sistema: recetas, carta e Insumos.</span>
       {error && <span className="basis-full text-red-700">{error}</span>}
     </span>
   );

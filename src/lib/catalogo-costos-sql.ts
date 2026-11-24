@@ -49,8 +49,23 @@ export async function leerPreciosVigentes(sql: Sql): Promise<{ vigentes: PrecioV
   } catch {
     fotos = [];
   }
-  const vigentes = preciosVigentes(fotos);
+  // El nombre corregido en Grupo → Insumos (tabla insumos_ficha) vale en todas las pantallas.
+  const nombres = await leerNombresCorregidos(sql);
+  const vigentes = preciosVigentes(fotos).map((v) => {
+    const n = nombres.get(claveInsumo(v.origen, v.sku));
+    return n ? { ...v, nombre: n } : v;
+  });
   return { vigentes, factores: factoresDe(vigentes) };
+}
+
+/** Nombres corregidos en Grupo → Insumos («origen|SKU» → nombre). Sin la tabla, ninguno. */
+export async function leerNombresCorregidos(sql: Sql): Promise<Map<string, string>> {
+  try {
+    const rows = (await sql`SELECT origen, sku, nombre FROM insumos_ficha WHERE nombre IS NOT NULL AND nombre <> ''`) as { origen: string; sku: string; nombre: string }[];
+    return new Map(rows.map((r) => [claveInsumo(r.origen, r.sku), r.nombre]));
+  } catch {
+    return new Map();
+  }
 }
 
 /** Insumos archivados (paso 1 de «una sola lista de insumos», 24-nov-2026), como «origen|SKU». Sin la tabla, ninguno. */
@@ -96,6 +111,14 @@ export async function leerCatalogo(sql: Sql, bId: number): Promise<Catalogo> {
   const [{ vigentes, factores }, archivados] = bId === 1
     ? await Promise.all([leerPreciosVigentes(sql), leerArchivados(sql)])
     : [{ vigentes: [], factores: null }, new Set<string>()];
+  // Los insumos del Excel con el nombre corregido en Grupo → Insumos.
+  if (bId === 1) {
+    const corregidos = await leerNombresCorregidos(sql);
+    if (corregidos.size > 0) excel = excel.map((i) => {
+      const n = i.tipo === "insumo" ? corregidos.get(claveInsumo("Atelier", i.ref)) : undefined;
+      return n ? { ...i, nombre: n } : i;
+    });
+  }
   const insumosSistema = insumosDelSistema(vigentes, excel);
   const conPrecios = [...(factores ? ajustarCatalogo(excel, factores) : excel), ...insumosSistema];
   const archivadosAtelier = [...archivados].filter((k) => k.startsWith("Atelier|")).map((k) => k.slice("Atelier|".length));

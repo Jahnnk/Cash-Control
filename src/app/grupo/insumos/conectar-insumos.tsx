@@ -1,7 +1,7 @@
 "use client";
 
 /**
- * Grupo → Recetas y costos → Conectar insumos de Producción (paso 2 de «una sola lista de insumos», 24-nov-2026).
+ * Grupo → Insumos → Conectar insumos de Producción (antes en Recetas y costos) (paso 2 de «una sola lista de insumos», 24-nov-2026).
  *
  * Cada insumo de Producción con su pareja de Cash Control, para que en el paso 3 Producción lea la lista de aquí
  * (nombre, unidad, precio, archivado). Los de mismo nombre se conectan con un botón; el resto se revisa: conectar

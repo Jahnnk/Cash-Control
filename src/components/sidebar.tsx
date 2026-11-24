@@ -31,6 +31,7 @@ import {
   ClipboardList,
   ChefHat,
   Ticket,
+  Wheat,
 } from "lucide-react";
 import { BUSINESS_THEMES, type ScopeCode } from "@/lib/business-theme";
 import { clearRole } from "@/app/actions/role";
@@ -60,6 +61,8 @@ const I = {
   highlight: { segment: "highlight", label: "Highlight", icon: Target },
   supervisiones: { segment: "supervisiones", label: "Supervisiones", icon: ClipboardCheck },
   incentivos: { segment: "incentivos", label: "Bonos e Incentivos", icon: Medal },
+  // La base de las recetas (24-nov-2026): precio, categoría y críticos de cada insumo.
+  insumos: { segment: "insumos", label: "Insumos", icon: Wheat },
   recetas: { segment: "recetas", label: "Recetas y costos", icon: ChefHat },
   porDefinir: { segment: "por-definir", label: "Por definir", icon: ListChecks },
   panel: { segment: "panel", label: "Panel de Sede", icon: Trophy },
@@ -98,7 +101,7 @@ export const MENU: Record<ScopeKey, NavSeccion[]> = {
     { titulo: null, items: [I.dashboard, I.reportes] },
     { titulo: "Dirección", items: [I.direccion, I.productos, I.presupuesto, I.preciosCompra, I.vales] },
     { titulo: "Equipo", items: [I.acuerdos, I.highlight, I.supervisiones, I.incentivos] },
-    { titulo: "Datos", items: [I.recetas, I.porDefinir] },
+    { titulo: "Datos", items: [I.insumos, I.recetas, I.porDefinir] },
   ],
   atelier: SEDE(true),
   fonavi: SEDE(false),
