@@ -83,6 +83,9 @@ describe("lo único que se hace sin sesión es el canje en caja, con PIN", () =>
   it("solo Jahnn genera el PIN y nunca se devuelve el guardado", () => {
     const acciones = leer("src/app/actions/vales.ts");
     expect(acciones).toMatch(/generarPinCaja[\s\S]*?esJahnn\(role\)/);
+    // Mover un vale de sede también es solo de Jahnn, y solo si sigue sin canjear.
+    expect(acciones).toMatch(/cambiarSedeVale[\s\S]*?esJahnn\(role\)/);
+    expect(acciones).toMatch(/UPDATE vales_consumo SET business_id[\s\S]*?estado = 'emitido'/);
     expect(acciones).not.toMatch(/SELECT[^`]*pin_hash/);
   });
 });

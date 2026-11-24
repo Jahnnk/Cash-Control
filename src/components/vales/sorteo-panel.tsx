@@ -29,10 +29,9 @@ function hoyLima(): string {
 }
 
 export function SorteoPanel({
-  productos, sedeInicial, onCreados,
+  productos, onCreados,
 }: {
   productos: ProductoVale[];
-  sedeInicial: Sede;
   onCreados: (v: ValeVista[]) => void;
 }) {
   const { showToast } = useToast();
@@ -49,7 +48,9 @@ export function SorteoPanel({
   const [sinPremio, setSinPremio] = useState<string[]>([]);
   const [reveladas, setReveladas] = useState(0);
   const [girando, setGirando] = useState("");
-  const [sedes, setSedes] = useState<Record<string, Sede>>({});
+  // La sede de cada ganador NO se adivina: hay que elegirla (24-nov-2026: se crearon 6 vales y todos salieron de
+  // Fonavi porque la sede venía puesta y nadie la miró).
+  const [sedes, setSedes] = useState<Record<string, Sede | undefined>>({});
   const [creando, setCreando] = useState(false);
   const [errores, setErrores] = useState<Record<string, string>>({});
   // Quiénes ya tienen su vale creado: si algo falla y se reintenta, esos se saltan (nunca se duplica un vale).
@@ -100,7 +101,7 @@ export function SorteoPanel({
     if (!r.ok) { showToast(r.error, "error"); return; }
     setResultado(r.ganadores);
     setSinPremio(r.sinPremio);
-    setSedes(Object.fromEntries(r.ganadores.map((g) => [g.persona, sedeInicial])));
+    setSedes({});
     setErrores({});
     setHechos([]);
     setReveladas(0);
@@ -118,8 +119,10 @@ export function SorteoPanel({
     const fallos: Record<string, string> = {};
     for (const g of resultado) {
       if (hechos.includes(g.persona)) continue;
+      const sede = sedes[g.persona];
+      if (!sede) { fallos[g.persona] = "Elige en qué sede se canjea este vale."; continue; }
       const r = await emitirVale({
-        sede: sedes[g.persona] ?? sedeInicial,
+        sede,
         items: itemsParaEmitir(g.premio.elegidos),
         para: g.persona,
         venceEl,
@@ -138,6 +141,7 @@ export function SorteoPanel({
     }
   }
 
+  const faltanSedes = resultado !== null && resultado.some((g) => !hechos.includes(g.persona) && !sedes[g.persona]);
   const puedeSortear = nombresActivos.length > 0 && premios.length > 0 && premios.length <= nombresActivos.length;
 
   // ───────── Con resultado: revelación, sede de cada ganador y crear los vales ─────────
@@ -165,11 +169,12 @@ export function SorteoPanel({
                     <div className="text-xl font-extrabold text-[#004C40] flex items-center gap-2"><Gift className="w-5 h-5 text-[#E4472B]" />{g.persona}</div>
                     {terminado && !listo && !hechos.includes(g.persona) && (
                       <select
-                        value={sedes[g.persona]} onChange={(e) => setSedes((s) => ({ ...s, [g.persona]: e.target.value as Sede }))}
+                        value={sedes[g.persona] ?? ""} onChange={(e) => setSedes((x) => ({ ...x, [g.persona]: (e.target.value || undefined) as Sede | undefined }))}
                         disabled={creando}
-                        className="border border-gray-300 rounded-lg px-2 py-1.5 text-xs bg-white"
+                        className={`rounded-lg px-2 py-1.5 text-xs bg-white border ${sedes[g.persona] ? "border-gray-300" : "border-amber-400 ring-1 ring-amber-300"}`}
                         aria-label={`Sede del vale de ${g.persona}`}
                       >
+                        <option value="" disabled>Elige la sede…</option>
                         <option value="fonavi">Se canjea en Fonavi</option>
                         <option value="centro">Se canjea en Centro</option>
                       </select>
@@ -178,7 +183,7 @@ export function SorteoPanel({
                 ) : (
                   <div className="mt-1 text-xl font-extrabold text-gray-400">{enCurso ? `🎲 ${girando || "…"}` : "…"}</div>
                 )}
-                {hechos.includes(g.persona) && <div className="mt-1 text-xs text-emerald-800">✓ Vale creado ({(sedes[g.persona] ?? sedeInicial) === "fonavi" ? "Fonavi" : "Centro"})</div>}
+                {hechos.includes(g.persona) && <div className="mt-1 text-xs text-emerald-800">✓ Vale creado ({sedes[g.persona] === "centro" ? "Centro" : "Fonavi"})</div>}
                 {errores[g.persona] && <div className="mt-1 text-xs text-red-700">{errores[g.persona]}</div>}
               </li>
             );
@@ -192,15 +197,28 @@ export function SorteoPanel({
         {terminado && !listo && (
           <div className="space-y-2">
             <div className="text-xs text-gray-600">
-              Cada vale se crea con el nombre del ganador y vale hasta el {venceEl.split("-").reverse().join("/")}. Elige en qué sede lo usará su cliente.
+              Cada vale se crea con el nombre del ganador y vale hasta el {venceEl.split("-").reverse().join("/")}. <strong>Elige en qué sede lo usará su cliente</strong> (un vale de Fonavi no se canjea en Centro).
+            </div>
+            <div className="flex flex-wrap items-center gap-2 text-xs">
+              <span className="text-gray-500">Atajo:</span>
+              {(["fonavi", "centro"] as const).map((sd) => (
+                <button
+                  key={sd} type="button" disabled={creando}
+                  onClick={() => setSedes((x) => ({ ...x, ...Object.fromEntries(resultado.filter((g) => !hechos.includes(g.persona)).map((g) => [g.persona, sd])) }))}
+                  className="px-2.5 py-1 font-medium border border-gray-300 rounded-lg hover:bg-gray-50"
+                >
+                  Todos en {sd === "fonavi" ? "Fonavi" : "Centro"}
+                </button>
+              ))}
             </div>
             <button
-              onClick={crearVales} disabled={creando}
+              onClick={crearVales} disabled={creando || faltanSedes}
               className="w-full px-4 py-2.5 text-sm font-semibold text-white bg-primary hover:opacity-90 rounded-lg disabled:opacity-50 inline-flex items-center justify-center gap-2"
             >
               {creando && <Loader2 className="w-4 h-4 animate-spin" />}
               {Object.keys(errores).length > 0 ? "Reintentar los que fallaron" : `Crear los ${resultado.length} vales`}
             </button>
+            {faltanSedes && <div className="text-xs text-amber-800">Falta elegir la sede de algún ganador.</div>}
           </div>
         )}
         {listo && <div className="text-sm font-semibold text-emerald-800">✓ Vales creados. Mándaselos a cada ganador desde la lista de abajo.</div>}

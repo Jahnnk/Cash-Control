@@ -279,3 +279,31 @@ export async function generarPinCaja(sede: string): Promise<{ ok: true; pin: str
     return { ok: false, error: "No pude guardar el PIN. Reintenta." };
   }
 }
+
+/**
+ * Pasa un vale que todavía no se canjeó a la OTRA sede (se emitió para Fonavi y el cliente irá a Centro). El
+ * código y el link no cambian, así que no hay que reenviar nada: la página del vale muestra la sede nueva. Solo
+ * Jahnn. Un UPDATE con WHERE estado = 'emitido': si caja lo canjea en ese mismo instante, no se mueve (y el canje
+ * de caja, que exige la sede del vale, tampoco pasa: nunca queda a medias).
+ */
+export async function cambiarSedeVale(input: { id: string; sede: string }): Promise<{ ok: true; vale: ValeVista } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (!esJahnn(role)) return { ok: false, error: "Solo Jahnn cambia la sede de un vale." };
+  if (input.sede !== "fonavi" && input.sede !== "centro") return { ok: false, error: "Los vales se canjean en Fonavi o Centro." };
+  const negocio = await getBusinessByCode(input.sede);
+  if (!negocio) return { ok: false, error: "No encuentro esa sede." };
+  try {
+    const rows = (await sql`
+      UPDATE vales_consumo SET business_id = ${negocio.id}
+      WHERE id = ${input.id}::uuid AND estado = 'emitido'
+      RETURNING codigo
+    `) as { codigo: string }[];
+    if (rows.length === 0) return { ok: false, error: "Ese vale ya no se puede mover (ya se canjeó, se anuló o no existe)." };
+    const vale = await buscarVale(rows[0].codigo);
+    if (!vale || vale === "sin-tabla") return { ok: false, error: "Se movió, pero no pude leerlo. Recarga la pantalla." };
+    return { ok: true, vale: aVista(vale, hoyLima()) };
+  } catch (e) {
+    if (faltaTablaVales(e)) return { ok: false, error: SIN_TABLA };
+    return { ok: false, error: "No pude cambiar la sede del vale. Reintenta." };
+  }
+}
