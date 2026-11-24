@@ -22,7 +22,11 @@ export type RecetaProd = {
 };
 export type FormatoProd = { id: number; recetaId: number; nombre: string; pesoMasa: number; activo: boolean };
 export type IngredienteProd = { recetaId: number; insumoId: number; porcentaje: number; gramosUnidad: number | null; orden: number };
-export type InsumoProd = { id: number; nombre: string; activo: boolean; base: "peso" | "volumen" | "unidad"; subrecetaId: number | null };
+export type InsumoProd = {
+  id: number; nombre: string; activo: boolean; base: "peso" | "volumen" | "unidad"; subrecetaId: number | null;
+  /** Desde el 24-nov-2026 la puerta de Producción también manda la categoría y en cuántas recetas va. */
+  categoria?: string | null; usos?: number;
+};
 export type DatosProduccion = { recetas: RecetaProd[]; formatos: FormatoProd[]; ingredientes: IngredienteProd[]; insumos: InsumoProd[] };
 
 export type Pareja = { ref: string; nombre: string; unidad: string; costo: number; exacta: boolean; guardada?: boolean; factor?: number };
@@ -82,7 +86,7 @@ export function parecido(a: string, b: string): number {
 }
 
 /** El ítem del catálogo con el mismo nombre (sin tildes ni «(kg)»). */
-function porNombre(catalogo: CostoPreparacion[], nombre: string, tipos: string[]): CostoPreparacion | null {
+export function porNombre(catalogo: CostoPreparacion[], nombre: string, tipos: string[]): CostoPreparacion | null {
   const n = normalizar(nombre);
   const sinKg = (t: string) => normalizar(t).replace(/\bkg\b/g, "").replace(/\s+/g, " ").trim();
   return catalogo.find((c) => tipos.includes(c.tipo) && normalizar(c.nombre) === n)

@@ -10,7 +10,8 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
-import { leerCatalogo } from "@/lib/catalogo-costos-sql";
+import { claveInsumo, leerArchivados, leerCatalogo } from "@/lib/catalogo-costos-sql";
+import { clasificarInsumos, resumenInsumos, type Candidato, type FilaInsumo } from "@/lib/insumos-produccion";
 import { compararRecetas, resumenComparacion, type DatosProduccion, type FilaComparacion, type InsumoProd, type ParejaGuardada } from "@/lib/recetas-produccion";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -36,19 +37,25 @@ async function leerParejas(): Promise<ParejaGuardada[]> {
   }
 }
 
-export async function getComparacionProduccion(): Promise<R> {
-  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+/** Lee las recetas e insumos de Producción por su puerta de lectura. */
+async function leerProduccion(): Promise<{ ok: true; datos: DatosProduccion } | { ok: false; error: string }> {
   const token = process.env.RECETAS_SYNC_TOKEN;
   if (!token) return { ok: false, error: "Falta la clave para leer las recetas de Producción." };
-  let datos: DatosProduccion;
   try {
     const r = await fetch(`${URL_PRODUCCION}/api/recetas-cash-control`, { headers: { "x-token": token }, cache: "no-store", signal: AbortSignal.timeout(15000) });
     if (!r.ok) return { ok: false, error: r.status === 401 ? "Producción no aceptó la clave." : "Producción no respondió. Intenta de nuevo." };
-    datos = (await r.json()) as DatosProduccion;
+    return { ok: true, datos: (await r.json()) as DatosProduccion };
   } catch (e) {
     console.error("[recetas-produccion:leer]", e);
     return { ok: false, error: "No pude conectar con Producción. Intenta de nuevo." };
   }
+}
+
+export async function getComparacionProduccion(): Promise<R> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  const leido = await leerProduccion();
+  if (!leido.ok) return leido;
+  const datos = leido.datos;
   try {
     const [{ efectivo }, parejas] = await Promise.all([leerCatalogo(sql, 1), leerParejas()]);
     const filas = compararRecetas(datos, efectivo, parejas);
@@ -89,8 +96,8 @@ export async function guardarParejaProduccion(input: {
     } else {
       if (!(input.factor > 0) || input.factor > 100000) return { ok: false, error: "La equivalencia tiene que ser un número mayor que 0." };
       if (input.refCC) {
-        const ok = await sql`SELECT 1 FROM costos_preparaciones WHERE business_id = 1 AND ref = ${input.refCC} LIMIT 1`;
-        if (ok.length === 0) return { ok: false, error: "Ese ítem ya no está en Cash Control." };
+        const { efectivo } = await leerCatalogo(sql, 1);
+        if (!efectivo.some((c) => c.ref === input.refCC || c.reemplaza === input.refCC)) return { ok: false, error: "Ese ítem ya no está en Cash Control." };
       }
       const role = await getSessionRole();
       const quien = role?.kind === "full" ? (role.nombre ?? (role.quien === "kelly" ? "Kelly" : "Jahnn")) : "Dirección";
@@ -104,6 +111,65 @@ export async function guardarParejaProduccion(input: {
     return { ok: true };
   } catch (e) {
     console.error("[recetas-produccion:pareja]", e);
+    return { ok: false, error: "No pude guardar. Intenta de nuevo." };
+  }
+}
+
+// ─────────────────────────────────────────────────────────────────
+// Paso 2 de «una sola lista de insumos» (24-nov-2026): cada insumo de Producción con su pareja de Cash Control.
+
+export type DatosConectarInsumos = {
+  filas: FilaInsumo[];
+  resumen: ReturnType<typeof resumenInsumos>;
+  /** Insumos y sub-recetas de Atelier para elegir otra pareja (sin los archivados). */
+  opciones: Candidato[];
+};
+
+async function clasificar(): Promise<{ ok: true; data: DatosConectarInsumos } | { ok: false; error: string }> {
+  const leido = await leerProduccion();
+  if (!leido.ok) return leido;
+  const [{ efectivo }, parejas, archivados] = await Promise.all([leerCatalogo(sql, 1), leerParejas(), leerArchivados(sql)]);
+  const filas = clasificarInsumos(leido.datos.insumos, efectivo, parejas);
+  const opciones = efectivo
+    .filter((c) => (c.tipo === "insumo" && !archivados.has(claveInsumo("Atelier", c.ref))) || c.tipo === "preparacion")
+    .map((c) => ({ ref: c.ref, nombre: c.nombre, tipo: c.tipo, unidad: c.unidad, costo: c.costo }))
+    .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
+  return { ok: true, data: { filas, resumen: resumenInsumos(filas), opciones } };
+}
+
+export async function getConectarInsumos(): Promise<{ ok: true; data: DatosConectarInsumos } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  try {
+    return await clasificar();
+  } catch (e) {
+    console.error("[recetas-produccion:insumos]", e);
+    return { ok: false, error: "No pude leer los insumos. Intenta de nuevo." };
+  }
+}
+
+/**
+ * Conecta de una vez todos los insumos con el MISMO nombre en las dos apps y unidades que calzan. Se vuelve a
+ * calcular aquí (no se confía en la lista de la pantalla). Las parejas ya guardadas no se tocan.
+ */
+export async function conectarInsumosExactos(): Promise<{ ok: true; conectados: number } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  try {
+    const r = await clasificar();
+    if (!r.ok) return r;
+    const exactas = r.data.filas.filter((f) => f.estado === "exacta" && f.pareja && f.factor);
+    if (exactas.length === 0) return { ok: true, conectados: 0 };
+    const role = await getSessionRole();
+    const quien = role?.kind === "full" ? (role.nombre ?? (role.quien === "kelly" ? "Kelly" : "Jahnn")) : "Dirección";
+    await sql`
+      INSERT INTO recetas_produccion_parejas (tipo, prod_clave, prod_nombre, cc_ref, factor, actualizado_por)
+      SELECT 'insumo', t.clave, t.nombre, t.ref, t.factor, ${quien}
+      FROM unnest(${exactas.map((f) => String(f.id))}::text[], ${exactas.map((f) => f.nombre.slice(0, 200))}::text[],
+                  ${exactas.map((f) => f.pareja!.ref)}::text[], ${exactas.map((f) => f.factor!)}::numeric[]) AS t(clave, nombre, ref, factor)
+      ON CONFLICT (tipo, prod_clave) DO NOTHING`;
+    revalidatePath("/grupo/recetas");
+    return { ok: true, conectados: exactas.length };
+  } catch (e) {
+    console.error("[recetas-produccion:exactos]", e);
     return { ok: false, error: "No pude guardar. Intenta de nuevo." };
   }
 }
