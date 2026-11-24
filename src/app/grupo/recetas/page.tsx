@@ -3,6 +3,7 @@ import { PreciosInsumos } from "./precios-insumos";
 import { CartaCafeterias } from "./carta-cafeterias";
 import { BotonExcelCarta } from "./boton-excel-carta";
 import { ProduccionVsExcel } from "./produccion-vs-excel";
+import { NuevaReceta } from "./nueva-receta";
 
 /**
  * Grupo → Recetas y costos (solo dirección: el middleware bloquea /grupo a
@@ -20,7 +21,10 @@ export default function RecetasPage() {
           Los precios de insumos, la carta de las cafeterías y las recetas de Atelier. Lo que cambias aquí vale sin volver a subir el Excel.
         </p>
         </div>
-        <BotonExcelCarta />
+        <div className="flex flex-wrap items-center gap-2">
+          <BotonExcelCarta />
+          <NuevaReceta />
+        </div>
       </div>
       <PreciosInsumos />
       <CartaCafeterias />

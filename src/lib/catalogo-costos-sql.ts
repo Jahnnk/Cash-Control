@@ -12,6 +12,7 @@ import type { NeonQueryFunction } from "@neondatabase/serverless";
 import type { CostoPreparacion, DetalleReceta } from "@/lib/costos-preparaciones";
 import { catalogoEfectivo, type RecetaSistema } from "@/lib/recetas";
 import { ajustarCatalogo, factoresDe, preciosVigentes, type Factores, type FotoConArchivo, type PrecioVigente } from "@/lib/productos/precios-vigentes";
+import { esInsumoDelSistema } from "@/lib/precios-sugeridos";
 
 type Sql = NeonQueryFunction<false, false>;
 
@@ -19,9 +20,19 @@ export type Catalogo = {
   /** Lo que trajo el Excel, tal cual (incluye lo que las recetas reemplazan). */
   excel: CostoPreparacion[];
   recetas: RecetaSistema[];
-  /** Lo que se usa: Excel con los precios de insumos vigentes + recetas del sistema encima. */
+  /** Insumos de Atelier creados en el sistema (SIS-A…, fase A de recetas, 24-nov-2026): no están en el Excel. */
+  insumosSistema: CostoPreparacion[];
+  /** Lo que se usa: Excel con los precios de insumos vigentes + insumos del sistema + recetas del sistema encima. */
   efectivo: CostoPreparacion[];
 };
+
+/** Los insumos de Atelier creados en el sistema, como ítems de la lista de costos (ref = su SKU). */
+export function insumosDelSistema(vigentes: PrecioVigente[], excel: CostoPreparacion[]): CostoPreparacion[] {
+  const refs = new Set(excel.map((i) => i.ref.toUpperCase()));
+  return vigentes
+    .filter((v) => v.origen === "Atelier" && esInsumoDelSistema(v.sku) && !refs.has(v.sku.toUpperCase()) && (v.unidad === "kg" || v.unidad === "l" || v.unidad === "und"))
+    .map((v) => ({ ref: v.sku, tipo: "insumo" as const, nombre: v.nombre, categoria: "Insumos nuevos", unidad: v.unidad as CostoPreparacion["unidad"], costo: v.precio }));
+}
 
 /**
  * Los precios de compra vigentes (Excel + cambios hechos en el sistema, lib/productos/precios-vigentes.ts).
@@ -68,7 +79,8 @@ export async function leerCatalogo(sql: Sql, bId: number): Promise<Catalogo> {
   } catch {
     recetas = [];
   }
-  const { factores } = bId === 1 ? await leerPreciosVigentes(sql) : { factores: null };
-  const conPrecios = factores ? ajustarCatalogo(excel, factores) : excel;
-  return { excel, recetas, efectivo: catalogoEfectivo(conPrecios, recetas) };
+  const { vigentes, factores } = bId === 1 ? await leerPreciosVigentes(sql) : { vigentes: [], factores: null };
+  const insumosSistema = insumosDelSistema(vigentes, excel);
+  const conPrecios = [...(factores ? ajustarCatalogo(excel, factores) : excel), ...insumosSistema];
+  return { excel, recetas, insumosSistema, efectivo: catalogoEfectivo(conPrecios, recetas) };
 }
