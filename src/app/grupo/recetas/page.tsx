@@ -2,6 +2,7 @@ import { RecetasClient } from "./recetas-client";
 import { PreciosInsumos } from "./precios-insumos";
 import { CartaCafeterias } from "./carta-cafeterias";
 import { BotonExcelCarta } from "./boton-excel-carta";
+import { ProduccionVsExcel } from "./produccion-vs-excel";
 
 /**
  * Grupo → Recetas y costos (solo dirección: el middleware bloquea /grupo a
@@ -24,6 +25,7 @@ export default function RecetasPage() {
       <PreciosInsumos />
       <CartaCafeterias />
       <RecetasClient />
+      <ProduccionVsExcel />
     </div>
   );
 }
