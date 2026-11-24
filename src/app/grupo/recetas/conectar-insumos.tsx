@@ -43,6 +43,7 @@ export function ConectarInsumos() {
   const [vista, setVista] = useState<Vista>("revisar");
   const [q, setQ] = useState("");
   const [verExactas, setVerExactas] = useState(false);
+  const [recetaId, setRecetaId] = useState<number | null>(null);
   const [ocupado, setOcupado] = useState<number | "todas" | null>(null);
   const [editando, setEditando] = useState<number | null>(null);
   const [aviso, setAviso] = useState<string | null>(null);
@@ -60,11 +61,19 @@ export function ConectarInsumos() {
 
   const filas = useMemo(() => datos?.filas ?? [], [datos]);
   const exactas = filas.filter((f) => f.estado === "exacta");
+  const esListo = (f: FilaInsumo) => f.estado === "conectado" || f.estado === "noAplica" || f.estado === "propia";
+  const receta = recetaId !== null ? datos?.recetas.find((x) => x.id === recetaId) ?? null : null;
+  // Con una receta elegida se ven TODOS sus insumos (listos y por revisar), en vez de la pestaña.
   const lista = useMemo(() => {
     const t = sinTildes(q.trim());
-    return filas.filter((f) => (vista === "listos" ? f.estado === "conectado" || f.estado === "noAplica" || f.estado === "propia" : ["probable", "dudosa", "nada"].includes(f.estado))
+    const deReceta = receta ? new Set(receta.insumos) : null;
+    return filas.filter((f) => (deReceta ? deReceta.has(f.id) : vista === "listos" ? esListo(f) : ["probable", "dudosa", "nada"].includes(f.estado))
       && (!t || sinTildes(`${f.nombre} ${f.pareja?.nombre ?? ""} ${f.categoria ?? ""}`).includes(t)));
-  }, [filas, vista, q]);
+  }, [filas, vista, q, receta]);
+  const pendientesDe = useMemo(() => {
+    const porId = new Map(filas.map((f) => [f.id, f]));
+    return (insumos: number[]) => insumos.filter((id) => { const f = porId.get(id); return f && !esListo(f); }).length;
+  }, [filas]);
   const opciones = useMemo<CostoPreparacion[]>(() => (datos?.opciones ?? []).map((o) => ({ ...o, categoria: null })), [datos]);
 
   async function guardar(f: FilaInsumo, refCC: string | null, factor: number, borrar = false) {
@@ -151,11 +160,22 @@ export function ConectarInsumos() {
             )}
 
             <div className="flex flex-wrap items-center gap-3">
-              <Segmentado tamano="sm" valor={vista} onChange={(v) => { setVista(v); setEditando(null); }}
+              <label className="text-xs text-gray-600 flex items-center gap-2 w-full sm:w-auto">
+                Receta
+                <select value={recetaId ?? ""} onChange={(e) => { setRecetaId(e.target.value ? Number(e.target.value) : null); setEditando(null); }}
+                  className="flex-1 sm:flex-none sm:max-w-[320px] border border-gray-200 rounded-xl px-2 py-2 text-sm bg-white">
+                  <option value="">Todas (por insumo)</option>
+                  {datos.recetas.map((x) => {
+                    const p = pendientesDe(x.insumos);
+                    return <option key={x.id} value={x.id}>{x.nombre}{x.activa ? "" : " (apagada)"} · {p === 0 ? "lista" : `${p} por revisar`}</option>;
+                  })}
+                </select>
+              </label>
+              {!receta && <Segmentado tamano="sm" valor={vista} onChange={(v) => { setVista(v); setEditando(null); }}
                 opciones={[
                   { valor: "revisar", etiqueta: `Por revisar · ${r!.probable + r!.dudosa + r!.nada}` },
                   { valor: "listos", etiqueta: `Listos · ${r!.listos}` },
-                ]} />
+                ]} />}
               <label className="relative flex-1 min-w-[200px]">
                 <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
                 <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar insumo"
@@ -163,10 +183,16 @@ export function ConectarInsumos() {
               </label>
             </div>
 
+            {receta && (
+              <p className="text-xs text-gray-600">
+                <b>{receta.nombre}</b> lleva {receta.insumos.length} insumos · {pendientesDe(receta.insumos) === 0 ? "todos listos" : `${pendientesDe(receta.insumos)} por revisar`}.
+                {" "}<button type="button" onClick={() => setRecetaId(null)} className="text-primary underline decoration-dotted">Ver todas</button>
+              </p>
+            )}
             {aviso && <p className="text-xs text-emerald-800 bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">{aviso}</p>}
 
             {lista.length === 0 ? (
-              <p className="text-sm text-gray-500">{vista === "revisar" ? "No queda nada por revisar con ese filtro." : "Nada conectado con ese filtro."}</p>
+              <p className="text-sm text-gray-500">{receta ? "Nada con ese filtro en esta receta." : vista === "revisar" ? "No queda nada por revisar con ese filtro." : "Nada conectado con ese filtro."}</p>
             ) : (
               <ul className="divide-y divide-gray-100 border border-gray-100 rounded-xl">
                 {lista.slice(0, MAX_FILAS).map((f) => (
