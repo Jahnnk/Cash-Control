@@ -42,7 +42,7 @@ describe("precios sugeridos (fase A)", () => {
 });
 
 describe("insumos creados en el sistema en la lista de Atelier", () => {
-  const v = (origen: "Atelier" | "Cafetería", sku: string, nombre: string, unidad: string, precio: number): PrecioVigente => ({
+  const v = (origen: "Atelier" | "Cafetería", sku: string, nombre: string, unidad: PrecioVigente["unidad"], precio: number): PrecioVigente => ({
     origen, sku, nombre, unidad, precio, base: null, fechaBase: null, fecha: "2026-11-24", delSistema: true, cambioPct: 0,
   });
   const excel: CostoPreparacion[] = [{ ref: "AC005", tipo: "insumo", nombre: "Mantequilla", categoria: null, unidad: "kg", costo: 28 }];
