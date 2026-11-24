@@ -16,7 +16,7 @@ import { leerCambiosCarta, leerCartaConCostos } from "@/lib/carta-sql";
 import { marcaDe, precioValido, type MarcaSistema } from "@/lib/productos/carta-sistema";
 import { claveByte, enlazarCosto } from "@/lib/productos/costos-carta";
 import { ORIGEN_DE, erroresDeAlta, refNueva, type LineaTienda, type RecetaCarta } from "@/lib/productos/receta-carta";
-import { leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
+import { claveInsumo, leerArchivados, leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
 import type { PrecioVigente } from "@/lib/productos/precios-vigentes";
 import type { CostoPreparacion } from "@/lib/costos-preparaciones";
 
@@ -139,7 +139,7 @@ export async function guardarCambioCarta(input: { ref: string; precio: number | 
 
 export type OpcionesAlta = {
   /** Lo que compra la cafetería, con su precio vigente. */
-  insumos: { sku: string; nombre: string; unidad: string; precio: number }[];
+  insumos: { sku: string; nombre: string; unidad: string; precio: number; archivado: boolean }[];
   /** Lo que la cafetería le compra a Atelier, a su precio interno. */
   deAtelier: { ref: string; nombre: string; costo: number }[];
   /** Las recetas de Atelier (Excel + sistema), para enlazar un postre nuevo y conocer su costo en insumos. */
@@ -150,12 +150,12 @@ export type OpcionesAlta = {
 export async function getOpcionesAlta(): Promise<{ ok: true; data: OpcionesAlta } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
   try {
-    const [{ vigentes }, { costos }, catalogo] = await Promise.all([leerPreciosVigentes(sql), leerCartaConCostos(sql), leerCatalogo(sql, 1)]);
+    const [{ vigentes }, { costos }, catalogo, archivados] = await Promise.all([leerPreciosVigentes(sql), leerCartaConCostos(sql), leerCatalogo(sql, 1), leerArchivados(sql)]);
     const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.localeCompare(b.nombre, "es");
     return {
       ok: true,
       data: {
-        insumos: vigentes.filter((v) => v.origen === "Cafetería").map((v) => ({ sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio })).sort(porNombre),
+        insumos: vigentes.filter((v) => v.origen === "Cafetería").map((v) => ({ sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio, archivado: archivados.has(claveInsumo(v.origen, v.sku)) })).sort(porNombre),
         deAtelier: costos.filter((c) => c.ref.startsWith("AT-") && c.costo > 0).map((c) => ({ ref: c.ref, nombre: c.nombreCarta ?? c.nombre, costo: c.costo })).sort(porNombre),
         recetasAtelier: catalogo.efectivo.filter((i) => i.tipo === "producto").map((i) => ({ ref: i.ref, nombre: i.nombre, costo: i.costo })).sort(porNombre),
       },

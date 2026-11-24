@@ -61,7 +61,7 @@ export function AltaProducto({ opciones, secciones, producto, onListo, onCancela
   const resultados = useMemo(() => {
     const t = sinTildes(buscar.trim());
     if (t.length < 2) return [];
-    const a = opciones.insumos.filter((i) => sinTildes(`${i.nombre} ${i.sku}`).includes(t)).slice(0, 6)
+    const a = opciones.insumos.filter((i) => !i.archivado && sinTildes(`${i.nombre} ${i.sku}`).includes(t)).slice(0, 6)
       .map((i) => ({ tipo: "insumo" as const, ref: i.sku, nombre: i.nombre, detalle: `${soles(i.precio)} por ${i.unidad}`, unidad: UNIDAD_RECETA[i.unidad] ?? "g" }));
     const b = opciones.deAtelier.filter((x) => sinTildes(`${x.nombre} ${x.ref}`).includes(t)).slice(0, 4)
       .map((x) => ({ tipo: "atelier" as const, ref: x.ref, nombre: x.nombre, detalle: `de Atelier · ${soles(x.costo)} c/u`, unidad: "und" }));

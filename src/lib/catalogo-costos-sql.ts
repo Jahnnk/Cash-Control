@@ -20,6 +20,8 @@ export type Catalogo = {
   /** Lo que trajo el Excel, tal cual (incluye lo que las recetas reemplazan). */
   excel: CostoPreparacion[];
   recetas: RecetaSistema[];
+  /** SKUs de insumos de Atelier archivados: siguen costeando, pero no se ofrecen en los buscadores. */
+  archivados: string[];
   /** Insumos de Atelier creados en el sistema (SIS-A…, fase A de recetas, 24-nov-2026): no están en el Excel. */
   insumosSistema: CostoPreparacion[];
   /** Lo que se usa: Excel con los precios de insumos vigentes + insumos del sistema + recetas del sistema encima. */
@@ -51,6 +53,18 @@ export async function leerPreciosVigentes(sql: Sql): Promise<{ vigentes: PrecioV
   return { vigentes, factores: factoresDe(vigentes) };
 }
 
+/** Insumos archivados (paso 1 de «una sola lista de insumos», 24-nov-2026), como «origen|SKU». Sin la tabla, ninguno. */
+export async function leerArchivados(sql: Sql): Promise<Set<string>> {
+  try {
+    const rows = (await sql`SELECT origen, sku FROM insumos_archivados`) as { origen: string; sku: string }[];
+    return new Set(rows.map((r) => claveInsumo(r.origen, r.sku)));
+  } catch {
+    return new Set();
+  }
+}
+
+export const claveInsumo = (origen: string, sku: string) => `${origen}|${sku.trim().toUpperCase()}`;
+
 export async function leerCatalogo(sql: Sql, bId: number): Promise<Catalogo> {
   let excel: CostoPreparacion[] = [];
   try {
@@ -79,8 +93,11 @@ export async function leerCatalogo(sql: Sql, bId: number): Promise<Catalogo> {
   } catch {
     recetas = [];
   }
-  const { vigentes, factores } = bId === 1 ? await leerPreciosVigentes(sql) : { vigentes: [], factores: null };
+  const [{ vigentes, factores }, archivados] = bId === 1
+    ? await Promise.all([leerPreciosVigentes(sql), leerArchivados(sql)])
+    : [{ vigentes: [], factores: null }, new Set<string>()];
   const insumosSistema = insumosDelSistema(vigentes, excel);
   const conPrecios = [...(factores ? ajustarCatalogo(excel, factores) : excel), ...insumosSistema];
-  return { excel, recetas, insumosSistema, efectivo: catalogoEfectivo(conPrecios, recetas) };
+  const archivadosAtelier = [...archivados].filter((k) => k.startsWith("Atelier|")).map((k) => k.slice("Atelier|".length));
+  return { excel, recetas, insumosSistema, archivados: archivadosAtelier, efectivo: catalogoEfectivo(conPrecios, recetas) };
 }
