@@ -25,7 +25,19 @@ export type IngredienteProd = { recetaId: number; insumoId: number; porcentaje: 
 export type InsumoProd = { id: number; nombre: string; activo: boolean; base: "peso" | "volumen" | "unidad"; subrecetaId: number | null };
 export type DatosProduccion = { recetas: RecetaProd[]; formatos: FormatoProd[]; ingredientes: IngredienteProd[]; insumos: InsumoProd[] };
 
-export type Pareja = { ref: string; nombre: string; unidad: string; costo: number; exacta: boolean };
+export type Pareja = { ref: string; nombre: string; unidad: string; costo: number; exacta: boolean; guardada?: boolean; factor?: number };
+
+/**
+ * Pareja guardada (parte 2, tabla recetas_produccion_parejas). refCC null = «sin pareja» a propósito.
+ * insumo: factor = unidades de Cash Control por 1 unidad interna de Producción (g → kg = 0.001).
+ * receta: factor = unidades de Producción por 1 unidad del Excel (1 bandeja = 4 cuartos → 0.25).
+ */
+export type ParejaGuardada = { tipo: "insumo" | "receta"; prodClave: string; refCC: string | null; factor: number };
+
+/** El factor que se propone para un insumo según cómo lo mide cada app. */
+export function factorInsumoPorDefecto(unidadCC: string): number {
+  return unidadCC === "und" ? 1 : 0.001;
+}
 
 export type FilaComparacion = {
   clave: string;
@@ -104,7 +116,9 @@ function precioInterno(c: CostoPreparacion, base: InsumoProd["base"]): number | 
 
 type Costeo = { costo: number; faltan: string[] };
 
-export function crearCosteador(d: DatosProduccion, catalogo: CostoPreparacion[]) {
+export function crearCosteador(d: DatosProduccion, catalogo: CostoPreparacion[], parejas: ParejaGuardada[] = []) {
+  const porRef = new Map(catalogo.map((c) => [c.ref, c]));
+  const parejaInsumo = new Map(parejas.filter((p) => p.tipo === "insumo").map((p) => [p.prodClave, p]));
   const insumo = new Map(d.insumos.map((i) => [i.id, i]));
   const receta = new Map(d.recetas.map((r) => [r.id, r]));
   const ingredientesDe = new Map<number, IngredienteProd[]>();
@@ -116,9 +130,11 @@ export function crearCosteador(d: DatosProduccion, catalogo: CostoPreparacion[])
     if (memo.has(insumoId)) return memo.get(insumoId)!;
     const i = insumo.get(insumoId);
     if (!i) return null;
-    const c = porNombre(catalogo, i.nombre, ["insumo", "preparacion"]);
+    const guardada = parejaInsumo.get(String(i.id));
+    const cg = guardada?.refCC ? porRef.get(guardada.refCC) : undefined;
+    const c = guardada ? null : porNombre(catalogo, i.nombre, ["insumo", "preparacion"]);
     let r: Costeo | null = null;
-    const p = c ? precioInterno(c, i.base) : null;
+    const p = cg ? cg.costo * guardada!.factor : c ? precioInterno(c, i.base) : null;
     if (p != null) r = { costo: p, faltan: [] };
     else if (i.subrecetaId != null && !camino.has(i.subrecetaId)) {
       const sub = receta.get(i.subrecetaId);
@@ -154,15 +170,26 @@ export function crearCosteador(d: DatosProduccion, catalogo: CostoPreparacion[])
 const LINEAS_ORDEN: RecetaProd["linea"][] = ["panaderia", "pasteleria", "empanadas", "sub_recetas"];
 
 /** Cada receta (y formato de pan) de Producción con su costo y el del Excel. */
-export function compararRecetas(d: DatosProduccion, catalogo: CostoPreparacion[]): FilaComparacion[] {
-  const { costoDeGramos, ingredientesDe } = crearCosteador(d, catalogo);
+export function compararRecetas(d: DatosProduccion, catalogo: CostoPreparacion[], parejas: ParejaGuardada[] = []): FilaComparacion[] {
+  const { costoDeGramos, ingredientesDe } = crearCosteador(d, catalogo, parejas);
+  const porRef = new Map(catalogo.map((c) => [c.ref, c]));
+  const parejaReceta = new Map(parejas.filter((p) => p.tipo === "receta").map((p) => [p.prodClave, p]));
+  /** La pareja guardada (o «sin pareja»), y si no hay, la sugerida por nombre. */
+  const parejaDe = (clave: string, nombre: string): Pareja | null => {
+    const g = parejaReceta.get(clave);
+    if (!g) return sugerirPareja(catalogo, nombre);
+    const c = g.refCC ? porRef.get(g.refCC) : undefined;
+    return c ? { ref: c.ref, nombre: c.nombre, unidad: c.unidad, costo: c.costo, exacta: true, guardada: true, factor: g.factor } : null;
+  };
   const filas: FilaComparacion[] = [];
 
   const cerrar = (base: Omit<FilaComparacion, "costoExcel" | "diferencia" | "costoProduccion" | "por">, porKg: (costo: number) => number | null, porDefecto: "und" | "kg") => {
     const p = base.pareja;
     const por: "und" | "kg" = p ? (p.unidad === "und" ? "und" : "kg") : porDefecto;
     const completo = base.sinPrecio.length === 0;
-    const enUnidad = (c: number) => (por === porDefecto ? c : por === "kg" ? porKg(c) : null);
+    // Un producto del Excel por unidad puede juntar varias de Producción (paquete de 5) o ser una parte (1/4 de bandeja).
+    const factor = por === "und" ? p?.factor ?? 1 : 1;
+    const enUnidad = (c: number) => (por === porDefecto ? c * factor : por === "kg" ? porKg(c) : null);
     const costoProduccion = completo ? enUnidad(base.costoParcial) : null;
     const costoExcel = p && (por === "und" ? p.unidad === "und" : p.unidad === "kg" || p.unidad === "l") ? p.costo : null;
     const diferencia = costoProduccion != null && costoExcel ? (costoProduccion - costoExcel) / costoExcel : null;
@@ -181,7 +208,7 @@ export function compararRecetas(d: DatosProduccion, catalogo: CostoPreparacion[]
         const nombre = `${r.nombre} ${f.nombre}`;
         cerrar({
           clave: `${r.id}-${f.id}`, recetaId: r.id, receta: r.nombre, formato: f.nombre, linea: r.linea,
-          costoParcial: u.costo * merma, sinPrecio: u.faltan, pareja: sugerirPareja(catalogo, nombre),
+          costoParcial: u.costo * merma, sinPrecio: u.faltan, pareja: parejaDe(`${r.id}-${f.id}`, nombre),
         }, (c) => (f.pesoMasa ? (c / f.pesoMasa) * 1000 : null), "und");
       }
       continue;
@@ -194,13 +221,13 @@ export function compararRecetas(d: DatosProduccion, catalogo: CostoPreparacion[]
       if (peso <= 0) continue;
       cerrar({
         clave: `${r.id}`, recetaId: r.id, receta: r.nombre, formato: null, linea: r.linea,
-        costoParcial: ((u.costo * merma) / peso) * 1000, sinPrecio: u.faltan, pareja: sugerirPareja(catalogo, r.nombre),
+        costoParcial: ((u.costo * merma) / peso) * 1000, sinPrecio: u.faltan, pareja: parejaDe(`${r.id}`, r.nombre),
       }, (c) => c, "kg");
       continue;
     }
     cerrar({
       clave: `${r.id}`, recetaId: r.id, receta: r.nombre, formato: null, linea: r.linea,
-      costoParcial: u.costo * merma, sinPrecio: u.faltan, pareja: sugerirPareja(catalogo, r.nombre),
+      costoParcial: u.costo * merma, sinPrecio: u.faltan, pareja: parejaDe(`${r.id}`, r.nombre),
     }, (c) => (peso ? (c / peso) * 1000 : null), "und");
   }
   return filas.sort((a, b) => LINEAS_ORDEN.indexOf(a.linea) - LINEAS_ORDEN.indexOf(b.linea) || a.receta.localeCompare(b.receta, "es") || (a.formato ?? "").localeCompare(b.formato ?? "", "es"));
