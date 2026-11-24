@@ -85,7 +85,7 @@ export async function crearInsumoNuevo(input: { origen: Origen; nombre: string; 
     if (mismo) {
       const archivado = (await leerArchivados(sql)).has(claveInsumo(mismo.origen, mismo.sku));
       return { ok: false, error: archivado
-        ? `«${mismo.nombre}» ya existe pero está archivado: desarchívalo en «Precios de insumos».`
+        ? `«${mismo.nombre}» ya existe pero está archivado: desarchívalo en Grupo → Insumos.`
         : `«${mismo.nombre}» ya existe: búscalo en la lista.` };
     }
     const usados = (await sql`SELECT DISTINCT sku FROM insumos_precios WHERE origen = ${origen}`) as { sku: string }[];
