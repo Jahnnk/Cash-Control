@@ -46,7 +46,8 @@ export async function getOpcionesNuevaReceta(): Promise<{ ok: true; data: Opcion
     return {
       ok: true,
       data: {
-        atelier: catalogo.efectivo.map((i) => ({ ...i, detalle: undefined })),
+        // Las sub-recetas y productos llevan su receta: en la pantalla se abren para ver (y cambiar) sus insumos.
+        atelier: catalogo.efectivo.map((i) => (i.tipo === "insumo" ? { ...i, detalle: undefined } : i)),
         insumosCafeteria: vigentes.filter((v) => v.origen === "Cafetería").map((v) => ({ sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio })).sort(porNombre),
         deAtelier: costos.filter((c) => c.ref.startsWith("AT-") && c.costo > 0)
           .map((c) => ({ ref: c.ref, nombre: c.nombreCarta ?? c.nombre, interno: c.costo, costoReal: c.costoInsumos ?? null })).sort(porNombre),

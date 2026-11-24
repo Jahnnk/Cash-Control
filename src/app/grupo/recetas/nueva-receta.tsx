@@ -11,11 +11,12 @@
  * Guarda con lo que ya existe: recetas_sistema (Atelier), carta_sistema (lo que va a la carta) y precios_b2b.
  */
 
-import { useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, CakeSlice, Check, Coffee, Layers, Loader2, Plus, Save, Trash2, X } from "lucide-react";
-import { BuscadorCosto, TIPO_COSTO, soles4 } from "@/components/buscador-costo";
+import { Fragment, useEffect, useMemo, useState } from "react";
+import { ArrowLeft, ArrowRight, CakeSlice, Check, ChevronDown, ChevronRight, Coffee, Layers, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { BuscadorCosto, soles4 } from "@/components/buscador-costo";
 import { crearInsumoNuevo, crearRecetaAtelier, getOpcionesNuevaReceta, type OpcionesNuevaReceta } from "@/app/actions/nueva-receta";
 import { guardarProductoNuevo } from "@/app/actions/carta";
+import { guardarPrecioInsumo } from "@/app/actions/precios-insumos";
 import { costoDeReceta, costoIngrediente } from "@/lib/recetas";
 import { METAS, foodCost, margen, sugeridoCafeteria, sugeridosAtelier } from "@/lib/precios-sugeridos";
 import type { CostoPreparacion, DetalleReceta } from "@/lib/costos-preparaciones";
@@ -70,6 +71,13 @@ function Asistente({ onCerrar }: { onCerrar: () => void }) {
   const [error, setError] = useState<string | null>(null);
   const [listo, setListo] = useState<string[] | null>(null);
 
+  /** Vuelve a leer la lista (después de cambiar un precio) y pone los costos nuevos en las filas. */
+  async function recargar() {
+    const r = await getOpcionesNuevaReceta();
+    if (!r.ok) return;
+    setOpciones(r.data);
+  }
+
   useEffect(() => {
     let vivo = true;
     void getOpcionesNuevaReceta().then((r) => {
@@ -83,23 +91,33 @@ function Asistente({ onCerrar }: { onCerrar: () => void }) {
   // Atelier a precio interno (en unidades). Los insumos nuevos de esta sesión se suman al instante.
   const lista = useMemo<CostoPreparacion[]>(() => {
     if (!opciones) return extras;
-    if (clase !== "cafeteria") return [...opciones.atelier, ...extras];
+    const sinRepetir = (base: CostoPreparacion[]) => {
+      const refs = new Set(base.map((i) => i.ref));
+      return [...base, ...extras.filter((e) => !refs.has(e.ref))];
+    };
+    if (clase !== "cafeteria") return sinRepetir(opciones.atelier);
     const caf = opciones.insumosCafeteria.map((i) => ({
       ref: i.sku, tipo: "insumo" as const, nombre: i.nombre, categoria: "Cafetería", unidad: i.unidad as CostoPreparacion["unidad"], costo: i.precio,
     }));
     const at = opciones.deAtelier.map((a) => ({ ref: a.ref, tipo: "producto" as const, nombre: a.nombre, categoria: "De Atelier", unidad: "und" as const, costo: a.interno }));
-    return [...caf, ...at, ...extras];
+    return sinRepetir([...caf, ...at]);
   }, [opciones, clase, extras]);
   const costoReal = useMemo(() => new Map(opciones?.deAtelier.map((a) => [a.ref, a.costoReal ?? a.interno]) ?? []), [opciones]);
+
+  const porRef = useMemo(() => {
+    const m = new Map<string, CostoPreparacion>();
+    for (const i of lista) { m.set(i.ref, i); if (i.reemplaza) m.set(i.reemplaza, i); }
+    return m;
+  }, [lista]);
+  const filasVigentes = useMemo(() => filas.map((f) => (f.item ? { ...f, item: porRef.get(f.item.ref) ?? f.item } : f)), [filas, porRef]);
 
   const tipo = clase === "sub" ? "preparacion" : "producto";
   const detalle: DetalleReceta = {
     rendimiento: num(rendimiento) > 0 ? num(rendimiento) : null,
     merma: Math.min(Math.max(num(merma) || 0, 0), 95) / 100,
-    ingredientes: filas.filter((f) => f.item || f.texto.trim() || f.cantidad)
+    ingredientes: filasVigentes.filter((f) => f.item || f.texto.trim() || f.cantidad)
       .map((f) => ({ ref: f.item?.ref ?? null, nombre: f.item?.nombre ?? f.texto.trim(), unidad: f.unidad, cantidad: num(f.cantidad) })),
   };
-  const porRef = useMemo(() => new Map(lista.map((i) => [i.ref, i])), [lista]);
   const calc = costoDeReceta(tipo, detalle, (ref) => porRef.get(ref) ?? null);
   const costo = calc.faltantes.length === 0 ? calc.costo : null;
   // Cafetería: lo que le cuesta al grupo (lo de Atelier a su costo real, no al precio interno).
@@ -221,9 +239,9 @@ function Asistente({ onCerrar }: { onCerrar: () => void }) {
             </div>
           ) : paso === 2 ? (
             <PasoIngredientes
-              clase={clase} nombre={nombre} setNombre={setNombre} filas={filas} setFila={setFila} setFilas={setFilas}
+              clase={clase} nombre={nombre} setNombre={setNombre} filas={filasVigentes} setFila={setFila} setFilas={setFilas}
               rendimiento={rendimiento} setRendimiento={setRendimiento} merma={merma} setMerma={setMerma}
-              lista={lista} calc={calc} costo={costo}
+              lista={lista} porRef={porRef} calc={calc} costo={costo} onPrecioCambiado={recargar}
               onInsumoNuevo={(item, fila) => {
                 setExtras((p) => [...p, item]);
                 setFila(fila, { texto: item.nombre, item, unidad: UNIDADES[item.unidad][0] });
@@ -281,9 +299,12 @@ function PasoIngredientes(p: {
   clase: Clase; nombre: string; setNombre: (s: string) => void;
   filas: Fila[]; setFila: (i: number, f: Partial<Fila>) => void; setFilas: (f: (prev: Fila[]) => Fila[]) => void;
   rendimiento: string; setRendimiento: (s: string) => void; merma: string; setMerma: (s: string) => void;
-  lista: CostoPreparacion[]; calc: ReturnType<typeof costoDeReceta>; costo: number | null;
+  lista: CostoPreparacion[]; porRef: Map<string, CostoPreparacion>; calc: ReturnType<typeof costoDeReceta>; costo: number | null;
   onInsumoNuevo: (item: CostoPreparacion, fila: number) => void;
+  onPrecioCambiado: () => Promise<void>;
 }) {
+  const [abiertas, setAbiertas] = useState<Set<number>>(new Set());
+  const alternar = (i: number) => setAbiertas((prev) => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; });
   const [nuevo, setNuevo] = useState<{ fila: number; nombre: string; unidad: "kg" | "l" | "und"; precio: string } | null>(null);
   const [creando, setCreando] = useState(false);
   const [errorNuevo, setErrorNuevo] = useState<string | null>(null);
@@ -347,16 +368,15 @@ function PasoIngredientes(p: {
                 const c = f.item && num(f.cantidad) > 0 ? costoIngrediente(f.item, num(f.cantidad), f.unidad) : null;
                 const unidades = f.item ? UNIDADES[f.item.unidad] : ["g", "kg", "ml", "l", "und"];
                 return (
-                  <tr key={i} className="border-t border-gray-100 align-top">
+                  <Fragment key={i}>
+                  <tr className="border-t border-gray-100 align-top">
                     <td className="px-1 py-1">
                       <BuscadorCosto value={f.texto} elegido={!!f.item} catalogo={p.lista}
-                        placeholder={p.clase === "cafeteria" ? "ej. Pan ciabatta, Pavo" : "ej. Harina pastelera, Jengibre"}
+                        placeholder={p.clase === "cafeteria" ? "ej. Pan ciabatta, Pavo" : "ej. Harina pastelera, Jengibre"} resaltarSubrecetas
                         onTexto={(t) => p.setFila(i, { texto: t, item: null })}
                         onElegir={(item) => p.setFila(i, { texto: item.nombre, item, unidad: UNIDADES[item.unidad].includes(f.unidad) ? f.unidad : UNIDADES[item.unidad][0] })} />
                       {f.item ? (
-                        <div className="text-[10px] text-primary mt-0.5 px-0.5">
-                          {f.item.categoria === "De Atelier" ? "de Atelier, a precio interno" : TIPO_COSTO[f.item.tipo]} · {soles4(f.item.costo)} por {f.item.unidad}
-                        </div>
+                        <EtiquetaItem item={f.item} origen={origen} abierta={abiertas.has(i)} onAlternar={() => alternar(i)} onPrecioCambiado={p.onPrecioCambiado} />
                       ) : f.texto.trim() ? (
                         <button type="button" onClick={() => { setErrorNuevo(null); setNuevo({ fila: i, nombre: f.texto.trim(), unidad: "kg", precio: "" }); }}
                           className="text-[11px] text-amber-800 mt-0.5 px-0.5 underline decoration-dotted">
@@ -382,6 +402,14 @@ function PasoIngredientes(p: {
                       </button>
                     </td>
                   </tr>
+                  {f.item?.detalle && abiertas.has(i) && (
+                    <tr>
+                      <td colSpan={5} className="px-1 pb-2">
+                        <DentroDeReceta item={f.item} porRef={p.porRef} origen={origen} onPrecioCambiado={p.onPrecioCambiado} />
+                      </td>
+                    </tr>
+                  )}
+                  </Fragment>
                 );
               })}
             </tbody>
@@ -529,6 +557,132 @@ function PasoPrecios(p: {
         Metas: margen interno {pct(METAS.margenInterno)}, B2B {pct(METAS.margenB2B)}, food cost cafetería {pct(METAS.foodCostCafeteria)},
         lo de Atelier en carta ~{pct(METAS.foodCostAtelierEnCarta)}. Tú escribes el precio final.
       </p>
+    </div>
+  );
+}
+
+const esSubreceta = (i: CostoPreparacion) => i.tipo === "preparacion";
+
+/** Qué es lo elegido: una sub-receta (se abre), un producto, o un insumo (se le cambia el precio). */
+function EtiquetaItem({ item, origen, abierta, onAlternar, onPrecioCambiado }: {
+  item: CostoPreparacion; origen: "Atelier" | "Cafetería"; abierta: boolean; onAlternar: () => void; onPrecioCambiado: () => Promise<void>;
+}) {
+  const Flecha = abierta ? ChevronDown : ChevronRight;
+  if (item.categoria === "De Atelier") {
+    return <div className="text-[10px] text-primary mt-0.5 px-0.5">de Atelier, a precio interno · {soles4(item.costo)} por und</div>;
+  }
+  if (item.tipo === "insumo") {
+    return (
+      <div className="mt-0.5 px-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gray-600">
+        <span className="rounded bg-gray-100 text-gray-700 font-medium px-1.5">Insumo</span>
+        <PrecioInsumo item={item} origen={origen} onPrecioCambiado={onPrecioCambiado} />
+      </div>
+    );
+  }
+  return (
+    <div className="mt-0.5 px-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gray-600">
+      <span className={`inline-flex items-center gap-1 rounded font-medium px-1.5 ${esSubreceta(item) ? "bg-violet-100 text-violet-800" : "bg-sky-100 text-sky-800"}`}>
+        {esSubreceta(item) && <Layers className="w-3 h-3" />}{esSubreceta(item) ? "Sub-receta" : "Producto de Atelier"}
+      </span>
+      <span className="tabular-nums">{soles4(item.costo)} por {item.unidad}</span>
+      {item.detalle && item.detalle.ingredientes.length > 0 ? (
+        <button type="button" onClick={onAlternar} className="inline-flex items-center text-primary underline decoration-dotted">
+          <Flecha className="w-3 h-3" />{abierta ? "ocultar" : "ver"} sus {item.detalle.ingredientes.length} ingredientes
+        </button>
+      ) : <span className="text-gray-400">el Excel no trae su receta</span>}
+    </div>
+  );
+}
+
+/** Precio de un insumo con «cambiar»: vale desde hoy para todo el sistema (igual que en «Precios de insumos»). */
+function PrecioInsumo({ item, origen, onPrecioCambiado }: { item: CostoPreparacion; origen: "Atelier" | "Cafetería"; onPrecioCambiado: () => Promise<void> }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState("");
+  const [guardando, setGuardando] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const unidad = item.unidad === "l" ? "litro" : item.unidad === "und" ? "unidad" : "kg";
+
+  async function guardar() {
+    setGuardando(true);
+    setError(null);
+    const r = await guardarPrecioInsumo({ origen, sku: item.ref, precio: num(valor) });
+    if (r.ok) await onPrecioCambiado();
+    setGuardando(false);
+    if (!r.ok) { setError(r.error); return; }
+    setEditando(false);
+  }
+
+  if (!editando) {
+    return (
+      <>
+        <span className="tabular-nums">{soles4(item.costo)} por {item.unidad}</span>
+        <button type="button" onClick={() => { setValor(item.costo.toFixed(2)); setEditando(true); }}
+          className="inline-flex items-center gap-0.5 text-primary underline decoration-dotted">
+          <Pencil className="w-3 h-3" /> cambiar precio
+        </button>
+      </>
+    );
+  }
+  return (
+    <span className="inline-flex flex-wrap items-center gap-1.5 py-0.5">
+      <span>S/</span>
+      <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} autoFocus aria-label={`Precio de ${item.nombre} por ${unidad}`}
+        onKeyDown={(e) => { if (e.key === "Enter") void guardar(); if (e.key === "Escape") setEditando(false); }}
+        className="w-20 border border-gray-300 rounded px-1.5 py-0.5 text-right text-xs" />
+      <span>por {unidad}</span>
+      <button type="button" onClick={() => void guardar()} disabled={guardando || !(num(valor) > 0)}
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary text-white font-medium disabled:opacity-50">
+        {guardando && <Loader2 className="w-3 h-3 animate-spin" />} Guardar
+      </button>
+      <button type="button" onClick={() => setEditando(false)} className="text-gray-500">cancelar</button>
+      <span className="basis-full text-gray-500">Cambia el precio desde hoy en todo el sistema: recetas, carta y «Precios de insumos».</span>
+      {error && <span className="basis-full text-red-700">{error}</span>}
+    </span>
+  );
+}
+
+/** Lo que lleva una sub-receta (o producto) por dentro, con el precio de cada insumo editable. Se abre por niveles. */
+function DentroDeReceta({ item, porRef, origen, onPrecioCambiado, nivel = 0 }: {
+  item: CostoPreparacion; porRef: Map<string, CostoPreparacion>; origen: "Atelier" | "Cafetería"; onPrecioCambiado: () => Promise<void>; nivel?: number;
+}) {
+  const [abiertas, setAbiertas] = useState<Set<number>>(new Set());
+  const d = item.detalle!;
+  const rinde = item.tipo === "preparacion"
+    ? (d.rendimiento ? `rinde ${d.rendimiento} kg` : "por kg de mezcla")
+    : `rinde ${d.rendimiento ?? "—"} unidades`;
+  return (
+    <div className={`rounded-lg border border-violet-200 bg-violet-50/40 px-3 py-2 ${nivel > 0 ? "mt-1" : ""}`}>
+      <div className="text-[11px] font-medium text-violet-900 mb-1">
+        Dentro de «{item.nombre}» · {rinde}{d.merma ? ` · merma ${Math.round(d.merma * 1000) / 10}%` : ""}
+      </div>
+      <ul className="space-y-1">
+        {d.ingredientes.map((g, k) => {
+          const sub = g.ref ? porRef.get(g.ref) ?? null : null;
+          const c = sub ? costoIngrediente(sub, g.cantidad, g.unidad) : null;
+          const abierta = abiertas.has(k);
+          return (
+            <li key={k} className="text-[11px]">
+              <div className="flex flex-wrap items-start gap-x-2">
+                <span className="min-w-0 flex-1">
+                  <span className="text-gray-900">{g.nombre}</span>
+                  <span className="text-gray-500"> · {g.cantidad.toLocaleString("es-PE", { maximumFractionDigits: 3 })} {g.unidad}</span>
+                  {sub && (
+                    <span className="block">
+                      <EtiquetaItem item={sub} origen={origen} abierta={abierta} onPrecioCambiado={onPrecioCambiado}
+                        onAlternar={() => setAbiertas((prev) => { const n = new Set(prev); if (n.has(k)) n.delete(k); else n.add(k); return n; })} />
+                    </span>
+                  )}
+                  {!sub && <span className="block text-amber-700">sin precio en la lista</span>}
+                </span>
+                <span className="tabular-nums text-gray-700">{c !== null ? soles4(c) : "—"}</span>
+              </div>
+              {sub?.detalle && abierta && nivel < 3 && (
+                <DentroDeReceta item={sub} porRef={porRef} origen={origen} onPrecioCambiado={onPrecioCambiado} nivel={nivel + 1} />
+              )}
+            </li>
+          );
+        })}
+      </ul>
     </div>
   );
 }

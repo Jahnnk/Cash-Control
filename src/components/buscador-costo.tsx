@@ -37,8 +37,10 @@ function buscar(lista: CostoPreparacion[], texto: string): CostoPreparacion[] {
  * Campo de producto con buscador de la lista de costos. La lista se dibuja
  * "fixed" para que no la corte el scroll horizontal de la tabla.
  */
-export function BuscadorCosto({ value, elegido, catalogo, onTexto, onElegir, placeholder = "ej. Cookie XL" }: {
+export function BuscadorCosto({ value, elegido, catalogo, onTexto, onElegir, placeholder = "ej. Cookie XL", resaltarSubrecetas = false }: {
   placeholder?: string;
+  /** Muestra las preparaciones como «Sub-receta» resaltada (Nueva receta, 24-nov-2026). */
+  resaltarSubrecetas?: boolean;
   value: string;
   elegido: boolean;
   catalogo: CostoPreparacion[];
@@ -113,7 +115,12 @@ export function BuscadorCosto({ value, elegido, catalogo, onTexto, onElegir, pla
                   {o.nombre}
                   {o.origen === "sistema" && <span className="ml-1.5 text-[10px] text-primary font-medium">· receta del sistema</span>}
                 </span>
-                <span className="block text-[10px] text-gray-500">{TIPO_COSTO[o.tipo]}{o.categoria ? ` · ${o.categoria.toLowerCase()}` : ""}</span>
+                <span className="block text-[10px] text-gray-500">
+                  {resaltarSubrecetas && o.tipo === "preparacion"
+                    ? <span className="inline-block rounded bg-violet-100 text-violet-800 font-medium px-1.5">Sub-receta</span>
+                    : TIPO_COSTO[o.tipo]}
+                  {o.categoria ? ` · ${o.categoria.toLowerCase()}` : ""}
+                </span>
               </span>
               <span className="text-[11px] tabular-nums text-gray-600 whitespace-nowrap">{soles4(o.costo)} / {o.unidad}</span>
             </li>
