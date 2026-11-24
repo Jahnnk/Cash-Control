@@ -123,6 +123,8 @@ export type DatosConectarInsumos = {
   resumen: ReturnType<typeof resumenInsumos>;
   /** Insumos y sub-recetas de Atelier para elegir otra pareja (sin los archivados). */
   opciones: Candidato[];
+  /** Recetas de Producción con los insumos que llevan, para revisar receta por receta (pedido de Jahnn, 24-nov-2026). */
+  recetas: { id: number; nombre: string; activa: boolean; insumos: number[] }[];
 };
 
 async function clasificar(): Promise<{ ok: true; data: DatosConectarInsumos } | { ok: false; error: string }> {
@@ -134,7 +136,13 @@ async function clasificar(): Promise<{ ok: true; data: DatosConectarInsumos } | 
     .filter((c) => (c.tipo === "insumo" && !archivados.has(claveInsumo("Atelier", c.ref))) || c.tipo === "preparacion")
     .map((c) => ({ ref: c.ref, nombre: c.nombre, tipo: c.tipo, unidad: c.unidad, costo: c.costo }))
     .sort((a, b) => a.nombre.localeCompare(b.nombre, "es"));
-  return { ok: true, data: { filas, resumen: resumenInsumos(filas), opciones } };
+  const porReceta = new Map<number, Set<number>>();
+  for (const g of leido.datos.ingredientes) porReceta.set(g.recetaId, (porReceta.get(g.recetaId) ?? new Set()).add(g.insumoId));
+  const recetas = leido.datos.recetas
+    .filter((r) => porReceta.has(r.id))
+    .map((r) => ({ id: r.id, nombre: r.nombre, activa: r.activa, insumos: [...porReceta.get(r.id)!] }))
+    .sort((a, b) => Number(b.activa) - Number(a.activa) || a.nombre.localeCompare(b.nombre, "es"));
+  return { ok: true, data: { filas, resumen: resumenInsumos(filas), opciones, recetas } };
 }
 
 export async function getConectarInsumos(): Promise<{ ok: true; data: DatosConectarInsumos } | { ok: false; error: string }> {
