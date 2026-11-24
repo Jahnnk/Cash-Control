@@ -3,7 +3,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Ticket, Loader2, KeyRound, Dices } from "lucide-react";
 import {
-  listarProductosVale, emitirVale, listarVales, anularVale, estadoPinCaja, generarPinCaja,
+  listarProductosVale, emitirVale, listarVales, anularVale, cambiarSedeVale, estadoPinCaja, generarPinCaja,
   type ProductoVale, type ValeVista, type EstadoPinCaja,
 } from "@/app/actions/vales";
 import {
@@ -134,6 +134,18 @@ export function ValesVista({ sede: negocio }: { sede: "fonavi" | "centro" }) {
     if (e.ok) setPinEstado(e.estado);
   }
 
+  /** Pasa un vale sin canjear a la otra sede. Conserva el código y el link: no hay que reenviar nada, salvo avisar. */
+  async function cambiarSede(v: ValeVista) {
+    const destino = v.businessId === 2 ? "centro" : "fonavi";
+    const nombre = destino === "centro" ? "Centro" : "Fonavi";
+    if (!window.confirm(`¿Pasar el vale ${v.codigo}${v.para ? ` (${v.para})` : ""} a ${nombre}? Se canjeará en ${nombre} con el PIN de caja de ${nombre}. El código y el link son los mismos.`)) return;
+    const r = await cambiarSedeVale({ id: v.id, sede: destino });
+    if (!r.ok) { showToast(r.error, "error"); return; }
+    setCreados((c) => c.map((x) => (x.id === r.vale.id ? r.vale : x)));
+    showToast(`Vale pasado a ${nombre}. Si ya lo enviaste, avisa que ahora se canjea en ${nombre}: el mensaje decía otra sede.`, "success");
+    await cargar();
+  }
+
   async function anular(v: ValeVista) {
     if (!window.confirm(`¿Anular el vale ${v.codigo}? Ya no se podrá canjear.`)) return;
     const r = await anularVale({ id: v.id, motivo: "Anulado por dirección" });
@@ -210,10 +222,10 @@ export function ValesVista({ sede: negocio }: { sede: "fonavi" | "centro" }) {
               </button>
             </div>
           ) : (
-            <SorteoPanel productos={productos} sedeInicial={negocio} onCreados={alCrearSorteo} />
+            <SorteoPanel productos={productos} onCreados={alCrearSorteo} />
           )}
 
-          <ListaCreados vales={creados} onRepetir={repetir} />
+          <ListaCreados vales={creados} onRepetir={repetir} onCambiarSede={cambiarSede} />
         </>
       ) : (
         <div className="text-xs text-gray-600 bg-gray-50 border border-gray-200 rounded-lg px-3 py-2">Solo Jahnn emite y anula vales. Aquí puedes ver el registro y canjear.</div>
@@ -245,6 +257,7 @@ export function ValesVista({ sede: negocio }: { sede: "fonavi" | "centro" }) {
                   <div className="flex flex-wrap gap-2 pt-1">
                     <button onClick={() => whatsapp(v)} className="text-xs font-medium text-emerald-700 hover:underline">WhatsApp</button>
                     <button onClick={() => copiarLink(v.codigo)} className="text-xs font-medium text-gray-600 hover:underline">Copiar link</button>
+                    <button onClick={() => cambiarSede(v)} className="text-xs font-medium text-gray-600 hover:underline">Pasar a {v.businessId === 2 ? "Centro" : "Fonavi"}</button>
                     <button onClick={() => anular(v)} className="text-xs font-medium text-red-600 hover:underline">Anular</button>
                   </div>
                 )}

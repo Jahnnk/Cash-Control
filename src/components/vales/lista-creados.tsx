@@ -1,6 +1,6 @@
 "use client";
 
-import { Copy, MessageCircle, Repeat2 } from "lucide-react";
+import { ArrowLeftRight, Copy, MessageCircle, Repeat2 } from "lucide-react";
 import type { ValeVista } from "@/app/actions/vales";
 import { linkVale, mensajeWhatsApp, resumenItems, textoTodosLosVales } from "@/lib/vales";
 import { useToast } from "@/components/toast-provider";
@@ -10,7 +10,7 @@ import { useToast } from "@/components/toast-provider";
  * WhatsApp y su link, más «Copiar todos» para pegarlos de una vez. Pensado para
  * los 6 vales del sorteo de los martes: no se pierde ninguno entre medio.
  */
-export function ListaCreados({ vales, onRepetir }: { vales: ValeVista[]; onRepetir?: (v: ValeVista) => void }) {
+export function ListaCreados({ vales, onRepetir, onCambiarSede }: { vales: ValeVista[]; onRepetir?: (v: ValeVista) => void; onCambiarSede?: (v: ValeVista) => void }) {
   const { showToast } = useToast();
   if (vales.length === 0) return null;
 
@@ -63,6 +63,11 @@ export function ListaCreados({ vales, onRepetir }: { vales: ValeVista[]; onRepet
               <button onClick={() => copiar(linkVale(v.codigo), "Link copiado")} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg">
                 <Copy className="w-3.5 h-3.5" />Copiar link
               </button>
+              {onCambiarSede && v.estado === "emitido" && (
+                <button onClick={() => onCambiarSede(v)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg">
+                  <ArrowLeftRight className="w-3.5 h-3.5" />Pasar a {v.businessId === 2 ? "Centro" : "Fonavi"}
+                </button>
+              )}
               {onRepetir && (
                 <button onClick={() => onRepetir(v)} className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold text-gray-800 bg-white border border-gray-300 hover:bg-gray-50 rounded-lg">
                   <Repeat2 className="w-3.5 h-3.5" />Usar los mismos productos
