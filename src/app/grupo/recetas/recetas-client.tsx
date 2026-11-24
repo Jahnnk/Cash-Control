@@ -162,6 +162,7 @@ export function RecetasClient() {
         <EditorReceta
           borrador={borrador}
           catalogo={cat.efectivo}
+          archivados={cat.archivados}
           onCerrar={() => setBorrador(null)}
           onGuardada={() => { setBorrador(null); void cargar(); }}
         />

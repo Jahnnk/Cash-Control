@@ -102,6 +102,12 @@ function Asistente({ onCerrar }: { onCerrar: () => void }) {
     const at = opciones.deAtelier.map((a) => ({ ref: a.ref, tipo: "producto" as const, nombre: a.nombre, categoria: "De Atelier", unidad: "und" as const, costo: a.interno }));
     return sinRepetir([...caf, ...at]);
   }, [opciones, clase, extras]);
+  // Lo que se ofrece en el buscador: sin los insumos archivados (siguen costeando lo que ya los usa).
+  const busqueda = useMemo(() => {
+    const arch = new Set(opciones?.archivados ?? []);
+    const lado = clase === "cafeteria" ? "Cafetería" : "Atelier";
+    return arch.size === 0 ? lista : lista.filter((i) => i.tipo !== "insumo" || !arch.has(`${lado}|${i.ref.trim().toUpperCase()}`));
+  }, [lista, opciones, clase]);
   const costoReal = useMemo(() => new Map(opciones?.deAtelier.map((a) => [a.ref, a.costoReal ?? a.interno]) ?? []), [opciones]);
 
   const porRef = useMemo(() => {
@@ -241,7 +247,7 @@ function Asistente({ onCerrar }: { onCerrar: () => void }) {
             <PasoIngredientes
               clase={clase} nombre={nombre} setNombre={setNombre} filas={filasVigentes} setFila={setFila} setFilas={setFilas}
               rendimiento={rendimiento} setRendimiento={setRendimiento} merma={merma} setMerma={setMerma}
-              lista={lista} porRef={porRef} calc={calc} costo={costo} onPrecioCambiado={recargar}
+              lista={busqueda} porRef={porRef} calc={calc} costo={costo} onPrecioCambiado={recargar}
               onInsumoNuevo={(item, fila) => {
                 setExtras((p) => [...p, item]);
                 setFila(fila, { texto: item.nombre, item, unidad: UNIDADES[item.unidad][0] });

@@ -13,7 +13,7 @@
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
-import { leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
+import { claveInsumo, leerArchivados, leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
 import { leerCartaConCostos } from "@/lib/carta-sql";
 import { ARCHIVO_SISTEMA } from "@/lib/productos/precios-vigentes";
 import { skuInsumoNuevo } from "@/lib/precios-sugeridos";
@@ -35,6 +35,8 @@ export type OpcionesNuevaReceta = {
   /** Lo que la cafetería le compra a Atelier: precio interno y lo que le cuesta a Atelier. */
   deAtelier: { ref: string; nombre: string; interno: number; costoReal: number | null }[];
   secciones: string[];
+  /** Insumos archivados («origen|SKU»): no se ofrecen en el buscador, pero siguen costeando lo que ya los usa. */
+  archivados: string[];
 };
 
 const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.localeCompare(b.nombre, "es");
@@ -42,7 +44,7 @@ const porNombre = (a: { nombre: string }, b: { nombre: string }) => a.nombre.loc
 export async function getOpcionesNuevaReceta(): Promise<{ ok: true; data: OpcionesNuevaReceta } | { ok: false; error: string }> {
   if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
   try {
-    const [catalogo, { vigentes }, { costos }] = await Promise.all([leerCatalogo(sql, 1), leerPreciosVigentes(sql), leerCartaConCostos(sql)]);
+    const [catalogo, { vigentes }, { costos }, archivados] = await Promise.all([leerCatalogo(sql, 1), leerPreciosVigentes(sql), leerCartaConCostos(sql), leerArchivados(sql)]);
     return {
       ok: true,
       data: {
@@ -51,6 +53,7 @@ export async function getOpcionesNuevaReceta(): Promise<{ ok: true; data: Opcion
         insumosCafeteria: vigentes.filter((v) => v.origen === "Cafetería").map((v) => ({ sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio })).sort(porNombre),
         deAtelier: costos.filter((c) => c.ref.startsWith("AT-") && c.costo > 0)
           .map((c) => ({ ref: c.ref, nombre: c.nombreCarta ?? c.nombre, interno: c.costo, costoReal: c.costoInsumos ?? null })).sort(porNombre),
+        archivados: [...archivados],
         secciones: [...new Set(costos.map((c) => c.seccion).filter((s): s is string => !!s))].sort((a, b) => a.localeCompare(b, "es")),
       },
     };
@@ -79,7 +82,12 @@ export async function crearInsumoNuevo(input: { origen: Origen; nombre: string; 
   try {
     const { vigentes } = await leerPreciosVigentes(sql);
     const mismo = vigentes.find((v) => v.origen === origen && sinTildes(v.nombre) === sinTildes(nombre));
-    if (mismo) return { ok: false, error: `«${mismo.nombre}» ya existe: búscalo en la lista.` };
+    if (mismo) {
+      const archivado = (await leerArchivados(sql)).has(claveInsumo(mismo.origen, mismo.sku));
+      return { ok: false, error: archivado
+        ? `«${mismo.nombre}» ya existe pero está archivado: desarchívalo en «Precios de insumos».`
+        : `«${mismo.nombre}» ya existe: búscalo en la lista.` };
+    }
     const usados = (await sql`SELECT DISTINCT sku FROM insumos_precios WHERE origen = ${origen}`) as { sku: string }[];
     const sku = skuInsumoNuevo(origen, usados.map((u) => u.sku));
     const fecha = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });

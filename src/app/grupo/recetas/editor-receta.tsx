@@ -30,7 +30,9 @@ type Fila = { texto: string; item: CostoPreparacion | null; ref: string | null; 
 
 const UNIDADES: Record<CostoPreparacion["unidad"], string[]> = { kg: ["g", "kg"], l: ["ml", "l"], und: ["und"] };
 
-export function EditorReceta({ borrador, catalogo, onCerrar, onGuardada }: {
+export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, onGuardada }: {
+  /** SKUs de insumos archivados: no se ofrecen para agregar (24-nov-2026). */
+  archivados?: string[];
   borrador: Borrador;
   /** Lista vigente (Excel + recetas del sistema). */
   catalogo: CostoPreparacion[];
@@ -49,8 +51,10 @@ export function EditorReceta({ borrador, catalogo, onCerrar, onGuardada }: {
   // La receta no puede usarse a sí misma (ni a la del Excel que reemplaza).
   const elegibles = useMemo(() => {
     const propias = new Set([borrador.id !== null ? refDeReceta(borrador.id) : null, borrador.reemplaza?.ref ?? null].filter(Boolean));
-    return catalogo.filter((i) => !propias.has(i.ref) && !(i.reemplaza && propias.has(i.reemplaza)));
-  }, [catalogo, borrador.id, borrador.reemplaza?.ref]);
+    const arch = new Set(archivados.map((s) => s.toUpperCase()));
+    return catalogo.filter((i) => !propias.has(i.ref) && !(i.reemplaza && propias.has(i.reemplaza))
+      && !(i.tipo === "insumo" && arch.has(i.ref.trim().toUpperCase())));
+  }, [catalogo, archivados, borrador.id, borrador.reemplaza?.ref]);
   const porRef = useMemo(() => {
     const m = new Map<string, CostoPreparacion>();
     for (const i of catalogo) { m.set(i.ref, i); if (i.reemplaza) m.set(i.reemplaza, i); }
