@@ -10,6 +10,10 @@
  *   PROBABLE  parecido alto (≥ 0.66): casi siempre bien, pero hay que mirarla
  *   DUDOSA    parecido medio (≥ 0.4): muchas veces mal
  *   NADA      no hay nada parecido: falta en Cash Control (se crea) o no aplica
+ *   PROPIA    sub-receta de Producción sin su igual en Cash Control: se costea con su propia receta (cada
+ *             ingrediente con su pareja). Nunca se sugiere uno de sus ingredientes (pedido de Jahnn, 24-nov-2026:
+ *             «el Frosting de Queso Crema es una receta; el Queso Crema Cuisine es un insumo con el que se hace»).
+ *             Una sub-receta solo se compara con sub-recetas, y solo por el mismo nombre.
  *
  * Unidades: Producción pesa en g (peso), mide en ml (volumen, 1 ml = 1 g) o cuenta (unidad). Calza con kg o l
  * (factor 0.001) o con und (factor 1). Si no calza (Producción cuenta huevos y Cash Control los compra por kg),
@@ -19,7 +23,7 @@
 import type { CostoPreparacion } from "@/lib/costos-preparaciones";
 import { factorInsumoPorDefecto, parecido, porNombre, type InsumoProd, type ParejaGuardada } from "@/lib/recetas-produccion";
 
-export type EstadoInsumo = "conectado" | "noAplica" | "exacta" | "probable" | "dudosa" | "nada";
+export type EstadoInsumo = "conectado" | "noAplica" | "propia" | "exacta" | "probable" | "dudosa" | "nada";
 
 export type Candidato = { ref: string; nombre: string; tipo: CostoPreparacion["tipo"]; unidad: CostoPreparacion["unidad"]; costo: number };
 
@@ -65,6 +69,12 @@ export function clasificarInsumos(insumos: InsumoProd[], catalogo: CostoPreparac
       if (c) return { ...base, estado: "conectado" as const, pareja: candidato(c), factor: g.factor, unidadOk: true, parecido: 1 };
       // La pareja guardada ya no existe en Cash Control: vuelve a revisarse.
     }
+    if (i.subrecetaId != null) {
+      const misma = porNombre(opciones, i.nombre, ["preparacion"]);
+      if (!misma) return { ...base, estado: "propia" as const, pareja: null, factor: null, unidadOk: true, parecido: 0 };
+      const ok = unidadesCalzan(i.base, misma.unidad);
+      return { ...base, estado: ok ? "exacta" as const : "probable" as const, pareja: candidato(misma), factor: ok ? factorInsumoPorDefecto(misma.unidad) : null, unidadOk: ok, parecido: 1 };
+    }
     const exacta = porNombre(opciones, i.nombre, ["insumo", "preparacion"]);
     if (exacta) {
       const ok = unidadesCalzan(i.base, exacta.unidad);
@@ -85,9 +95,9 @@ export function clasificarInsumos(insumos: InsumoProd[], catalogo: CostoPreparac
 }
 
 export function resumenInsumos(filas: FilaInsumo[]): Record<EstadoInsumo, number> & { total: number; listos: number } {
-  const r = { conectado: 0, noAplica: 0, exacta: 0, probable: 0, dudosa: 0, nada: 0 };
+  const r = { conectado: 0, noAplica: 0, propia: 0, exacta: 0, probable: 0, dudosa: 0, nada: 0 };
   for (const f of filas) r[f.estado]++;
-  return { ...r, total: filas.length, listos: r.conectado + r.noAplica };
+  return { ...r, total: filas.length, listos: r.conectado + r.noAplica + r.propia };
 }
 
 /** Texto de la equivalencia para la pantalla: «1 g = 0.001 kg», «1 unidad = 0.06 kg». */

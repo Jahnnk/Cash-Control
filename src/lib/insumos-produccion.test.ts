@@ -46,6 +46,18 @@ describe("conectar insumos de Producción (paso 2)", () => {
     expect(resumenInsumos(filas)).toMatchObject({ total: 7, exacta: 2, listos: 1 });
   });
 
+  it("una sub-receta solo se conecta con la misma sub-receta; si no está, se costea con su receta", () => {
+    const sub = (id: number, nombre: string): InsumoProd => ({ ...i(id, nombre), subrecetaId: 900 + id });
+    const [frosting, crema, queso] = clasificarInsumos(
+      [sub(10, "Frosting de Queso Crema"), sub(11, "Crema Pastelera"), sub(12, "Mantequilla sin sal")],
+      [...catalogo, c("QC1", "insumo", "Queso Crema Cuisine&Co", "kg", 37.89)], [],
+    ).sort((a, b) => a.id - b.id);
+    expect(frosting).toMatchObject({ estado: "propia", pareja: null });
+    expect(crema).toMatchObject({ estado: "exacta", pareja: { ref: "SUB:crema" } });
+    expect(queso).toMatchObject({ estado: "propia" }); // mismo nombre que un insumo, pero es una receta
+    expect(resumenInsumos([frosting, crema, queso])).toMatchObject({ propia: 2, listos: 2 });
+  });
+
   it("una pareja guardada manda sobre el nombre", () => {
     const [g] = clasificarInsumos([i(3, "Harina Pastelera")], catalogo, [{ tipo: "insumo", prodClave: "3", refCC: "HR009", factor: 0.001 }]);
     expect(g).toMatchObject({ estado: "conectado", factor: 0.001 });
