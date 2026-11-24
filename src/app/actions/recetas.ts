@@ -52,8 +52,8 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
   const errores = erroresDeReceta({ nombre: input.nombre ?? "", tipo: input.tipo, detalle });
   if (errores.length > 0) return { ok: false, error: errores[0] };
 
-  const { excel, recetas } = await leerCatalogo(sql, ATELIER);
-  const refs = new Set([...excel.map((i) => i.ref), ...recetas.map((r) => refDeReceta(r.id))]);
+  const { excel, recetas, insumosSistema } = await leerCatalogo(sql, ATELIER);
+  const refs = new Set([...excel.map((i) => i.ref), ...insumosSistema.map((i) => i.ref), ...recetas.map((r) => refDeReceta(r.id))]);
   const faltan = detalle.ingredientes.filter((i) => !i.ref || !refs.has(i.ref));
   if (faltan.length > 0) return { ok: false, error: `"${faltan[0].nombre}" ya no está en la lista de costos. Vuelve a elegirlo.` };
   if (input.id !== null && detalle.ingredientes.some((i) => i.ref === refDeReceta(input.id!))) {

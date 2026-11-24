@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Plus, Search, Loader2, AlertTriangle } from "lucide-react";
+import { Search, Loader2, AlertTriangle } from "lucide-react";
 import { getRecetas } from "@/app/actions/recetas";
 import { TIPO_COSTO, soles4 } from "@/components/buscador-costo";
 import { Pastilla, Segmentado } from "@/components/productos/ui";
@@ -73,10 +73,6 @@ export function RecetasClient() {
     setBorrador({ id: r.id, nombre: r.nombre, tipo: r.tipo, categoria: r.categoria, detalle: r.detalle, reemplaza: original });
   }
 
-  const nueva = () => setBorrador({
-    id: null, nombre: "", tipo: "preparacion", categoria: null, detalle: { rendimiento: null, merma: 0, ingredientes: [] }, reemplaza: null,
-  });
-
   const conteo = (f: Filtro) => cat?.efectivo.filter((i) => (f === "sistema" ? i.origen === "sistema" : i.tipo === f)).length ?? 0;
 
   return (
@@ -86,13 +82,9 @@ export function RecetasClient() {
         <div className="min-w-0 max-w-2xl">
           <h2 className="text-[15px] font-semibold text-gray-900">Recetas de Atelier</h2>
           <p className="text-xs text-gray-500 mt-1 leading-relaxed">
-            Crea una receta o abre una y cambia ingredientes o pesos: el costo se recalcula solo, sin volver a subir el Excel.
+            Crea una receta con «Nueva receta» (arriba: costo y precios en 3 pasos) o abre una y cambia ingredientes o pesos: el costo se recalcula solo, sin volver a subir el Excel.
           </p>
         </div>
-        <button type="button" onClick={nueva} disabled={!cat}
-          className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl whitespace-nowrap disabled:opacity-50">
-          <Plus className="w-4 h-4" /> Nueva receta
-        </button>
       </header>
 
       {error ? (
