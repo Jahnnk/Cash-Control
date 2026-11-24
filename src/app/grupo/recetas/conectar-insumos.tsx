@@ -29,6 +29,7 @@ const MIDE: Record<FilaInsumo["base"], string> = { peso: "en gramos", volumen: "
 const ESTADO: Record<EstadoInsumo, { texto: string; tono: "verde" | "azul" | "gris" | "rojo" | "marca" }> = {
   conectado: { texto: "Conectado", tono: "verde" },
   noAplica: { texto: "No aplica", tono: "gris" },
+  propia: { texto: "Se costea con su receta", tono: "gris" },
   exacta: { texto: "Mismo nombre", tono: "marca" },
   probable: { texto: "Probable", tono: "azul" },
   dudosa: { texto: "Dudosa", tono: "rojo" },
@@ -61,7 +62,7 @@ export function ConectarInsumos() {
   const exactas = filas.filter((f) => f.estado === "exacta");
   const lista = useMemo(() => {
     const t = sinTildes(q.trim());
-    return filas.filter((f) => (vista === "listos" ? f.estado === "conectado" || f.estado === "noAplica" : ["probable", "dudosa", "nada"].includes(f.estado))
+    return filas.filter((f) => (vista === "listos" ? f.estado === "conectado" || f.estado === "noAplica" || f.estado === "propia" : ["probable", "dudosa", "nada"].includes(f.estado))
       && (!t || sinTildes(`${f.nombre} ${f.pareja?.nombre ?? ""} ${f.categoria ?? ""}`).includes(t)));
   }, [filas, vista, q]);
   const opciones = useMemo<CostoPreparacion[]>(() => (datos?.opciones ?? []).map((o) => ({ ...o, categoria: null })), [datos]);
@@ -189,7 +190,7 @@ function FilaConectar({ f, opciones, ocupado, editando, onEditar, onGuardar, onC
   onGuardar: (f: FilaInsumo, refCC: string | null, factor: number, borrar?: boolean) => Promise<boolean>;
   onCreado: (nombre: string) => void;
 }) {
-  const listo = f.estado === "conectado" || f.estado === "noAplica";
+  const listo = f.estado === "conectado" || f.estado === "noAplica" || f.estado === "propia";
   const e = ESTADO[f.estado];
   return (
     <li className="px-3 py-2.5 space-y-2">
@@ -210,6 +211,11 @@ function FilaConectar({ f, opciones, ocupado, editando, onEditar, onGuardar, onC
               → {f.pareja.nombre} <span className="text-gray-400">· {soles4(f.pareja.costo)}/{f.pareja.unidad}</span>
             </div>
           )}
+          {f.estado === "propia" && (
+            <div className="mt-0.5 text-[11px] text-gray-500 max-w-[260px] ml-auto">
+              No está en Cash Control: su costo sale de sus ingredientes. Si la creas como sub-receta, conéctala aquí.
+            </div>
+          )}
           {f.estado === "conectado" && f.factor != null && f.pareja && (
             <div className="text-[10px] text-gray-400">{textoEquivalencia(f.base, f.pareja.unidad, f.factor)}</div>
           )}
@@ -228,13 +234,13 @@ function FilaConectar({ f, opciones, ocupado, editando, onEditar, onGuardar, onC
             </button>
           )}
           <button type="button" disabled={ocupado} onClick={() => onEditar(true)} className="font-medium text-primary">
-            {listo ? "Cambiar" : f.pareja ? "Elegir otro" : "Elegir o crear"}
+            {f.estado === "propia" ? "Conectar con una sub-receta" : listo ? "Cambiar" : f.pareja ? "Elegir otro" : "Elegir o crear"}
           </button>
           {!listo && (
             <button type="button" disabled={ocupado} onClick={() => void onGuardar(f, null, 1)} className="text-gray-500 hover:text-gray-800"
               title="No es un insumo que se compre (o no hace falta su precio)">No aplica</button>
           )}
-          {listo && (
+          {listo && f.estado !== "propia" && (
             <button type="button" disabled={ocupado} onClick={() => void onGuardar(f, null, 1, true)} className="text-gray-500 hover:text-gray-800">Quitar</button>
           )}
         </div>
@@ -251,7 +257,7 @@ function EditorConexion({ f, opciones, ocupado, onCancelar, onGuardar, onCreado 
   onGuardar: (f: FilaInsumo, refCC: string | null, factor: number) => Promise<boolean>;
   onCreado: (nombre: string) => void;
 }) {
-  const [modo, setModo] = useState<"elegir" | "crear">(f.pareja || f.estado !== "nada" ? "elegir" : "crear");
+  const [modo, setModo] = useState<"elegir" | "crear">(f.pareja || f.estado !== "nada" || f.esSubreceta ? "elegir" : "crear");
   const [texto, setTexto] = useState(f.pareja?.nombre ?? "");
   const [elegido, setElegido] = useState<Candidato | null>(f.pareja);
   const [peso, setPeso] = useState("");
@@ -293,14 +299,20 @@ function EditorConexion({ f, opciones, ocupado, onCancelar, onGuardar, onCreado 
   }
 
   const campo = "mt-0.5 block w-full border border-gray-300 rounded-lg px-2 py-1.5 text-sm";
+  // Una sub-receta solo se conecta con una sub-receta (nunca con uno de sus ingredientes) y no se crea como insumo.
+  const elegibles = f.esSubreceta ? opciones.filter((o) => o.tipo === "preparacion") : opciones;
   return (
     <div className="rounded-xl border border-primary/30 bg-emerald-50/40 p-3 space-y-2">
-      <Segmentado tamano="sm" valor={modo} onChange={(v) => { setModo(v); setError(null); }}
-        opciones={[{ valor: "elegir", etiqueta: "Elegir de Cash Control" }, { valor: "crear", etiqueta: "No está: crearlo" }]} />
+      {f.esSubreceta ? (
+        <p className="text-[11px] text-gray-600">Es una sub-receta: elige la misma sub-receta de Cash Control. Si no existe, créala con «Nueva receta» → Sub-receta.</p>
+      ) : (
+        <Segmentado tamano="sm" valor={modo} onChange={(v) => { setModo(v); setError(null); }}
+          opciones={[{ valor: "elegir", etiqueta: "Elegir de Cash Control" }, { valor: "crear", etiqueta: "No está: crearlo" }]} />
+      )}
       {modo === "elegir" ? (
         <>
-          <div className="text-[11px] text-gray-500">Insumo o sub-receta de Atelier
-            <BuscadorCosto value={texto} elegido={!!elegido} catalogo={opciones} resaltarSubrecetas placeholder="Buscar en Cash Control"
+          <div className="text-[11px] text-gray-500">{f.esSubreceta ? "Sub-receta de Atelier" : "Insumo o sub-receta de Atelier"}
+            <BuscadorCosto value={texto} elegido={!!elegido} catalogo={elegibles} resaltarSubrecetas placeholder="Buscar en Cash Control"
               onTexto={(t) => { setTexto(t); setElegido(null); }}
               onElegir={(i) => { setTexto(i.nombre); setElegido({ ref: i.ref, nombre: i.nombre, tipo: i.tipo, unidad: i.unidad, costo: i.costo }); }} />
           </div>
