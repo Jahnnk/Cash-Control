@@ -72,6 +72,8 @@ export type FichaInsumo = {
   productosProveedor: ProductoConectado[];
   /** El mismo insumo en la otra lista (Atelier ↔ cafeterías): comparten categoría, crítico, nombre y presentación. */
   pareja: { origen: Origen; sku: string; precio: number } | null;
+  /** Quién lo revisó y cuándo (sesiones de revisión con Luis). null = sin revisar. */
+  revisado: { el: string; por: string } | null;
 };
 
 export type DatosInsumos = {
@@ -86,6 +88,7 @@ export type DatosInsumos = {
 type Ficha = {
   origen: string; sku: string; categoria: string | null; critico: boolean | null; nombre: string | null;
   presentacion: string | null; presentacion_cantidad: number | null; presentacion_unidad: string | null;
+  revisado_el: string | null; revisado_por: string | null;
 };
 
 const presentacionDe = (f: Ficha | undefined): Presentacion | null =>
@@ -124,7 +127,8 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
     const hoy = hoyLima();
     const [{ vigentes }, fichas, archivados, catalogo, carta, mejores, parejas, fotos, gastos] = await Promise.all([
       leerPreciosVigentes(sql),
-      (sql`SELECT origen, sku, categoria, critico, nombre, presentacion, presentacion_cantidad::float AS presentacion_cantidad, presentacion_unidad FROM insumos_ficha` as unknown as Promise<Ficha[]>).catch(() => [] as Ficha[]),
+      (sql`SELECT origen, sku, categoria, critico, nombre, presentacion, presentacion_cantidad::float AS presentacion_cantidad, presentacion_unidad,
+                  to_char(revisado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS revisado_el, revisado_por FROM insumos_ficha` as unknown as Promise<Ficha[]>).catch(() => [] as Ficha[]),
       leerArchivados(sql),
       leerCatalogo(sql, 1),
       (sql`SELECT ref, COALESCE(nombre_carta, nombre) AS nombre, desglose FROM costos_carta WHERE desglose IS NOT NULL` as unknown as Promise<{ ref: string; nombre: string; desglose: AporteInsumo[] }[]>).catch(() => []),
@@ -204,6 +208,7 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
           presentacion: presentacionDe(f),
           dondeSeCompra: donde.ofertas.get(k) ?? [],
           productosProveedor: donde.conectados.get(k) ?? [],
+          revisado: f?.revisado_el ? { el: f.revisado_el, por: f.revisado_por ?? '' } : null,
           pareja: (() => {
             const kp = parejas2.get(k);
             const p = kp ? precioDe.get(kp) : undefined;
@@ -291,4 +296,31 @@ export async function guardarFichaInsumo(input: {
     console.error("[guardarFichaInsumo] failed:", e);
     return { ok: false, error: "No se pudo guardar. Intenta de nuevo." };
   }
+}
+
+/**
+ * Marca (o desmarca) un insumo como revisado por quien está en la sesión, con la fecha de hoy. Va por lista: cada
+ * lado tiene su precio. Solo dirección.
+ */
+export async function marcarRevisado(input: { origen: string; sku: string; revisado: boolean }): Promise<{ ok: true; revisado: { el: string; por: string } | null } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const { vigentes } = await leerPreciosVigentes(sql);
+  const v = vigentes.find((x) => x.origen === input?.origen && x.sku === input?.sku);
+  if (!v) return { ok: false, error: "No encontré ese insumo en la lista." };
+  const quien = role.nombre ?? (role.quien === "kelly" ? "Kelly" : "Jahnn");
+  try {
+    if (input.revisado) {
+      await sql`
+        INSERT INTO insumos_ficha (origen, sku, actualizado_por, revisado_el, revisado_por)
+        VALUES (${v.origen}, ${v.sku}, ${quien}, now(), ${quien})
+        ON CONFLICT (origen, sku) DO UPDATE SET revisado_el = now(), revisado_por = EXCLUDED.revisado_por`;
+    } else {
+      await sql`UPDATE insumos_ficha SET revisado_el = NULL, revisado_por = NULL WHERE origen = ${v.origen} AND sku = ${v.sku}`;
+    }
+  } catch (e) {
+    console.error("[marcarRevisado] failed:", e);
+    return { ok: false, error: "No se pudo guardar. Intenta de nuevo." };
+  }
+  return { ok: true, revisado: input.revisado ? { el: hoyLima(), por: quien } : null };
 }

@@ -7,7 +7,7 @@
  */
 
 import { useEffect, useState } from "react";
-import { Archive, ArchiveRestore, Pencil, Star, X } from "lucide-react";
+import { Archive, ArchiveRestore, CheckCircle2, Pencil, Star, X } from "lucide-react";
 import type { FichaInsumo } from "@/app/actions/insumos";
 import { Pastilla } from "@/components/productos/ui";
 import {
@@ -22,16 +22,20 @@ export type AccionesFicha = {
   guardarPrecio: (i: FichaInsumo, precio: number, ambos: boolean) => Promise<string | null>;
   guardarFicha: (i: FichaInsumo, cambio: { categoria?: string | null; critico?: boolean | null; nombre?: string | null; presentacion?: Presentacion | null }) => Promise<string | null>;
   archivar: (i: FichaInsumo, archivar: boolean) => Promise<string | null>;
+  /** Marca (o desmarca) el insumo como revisado en la sesión. */
+  marcarRevisado: (i: FichaInsumo, revisado: boolean) => Promise<string | null>;
   /** Vuelve a leer todo (después de conectar proveedores). */
   recargar: () => Promise<void>;
 };
 
-export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
+export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar, onSiguiente }: {
   insumo: FichaInsumo;
   hoy: string;
   categorias: string[];
   acciones: AccionesFicha;
   onCerrar: () => void;
+  /** Abre el siguiente sin revisar (o cierra si no queda ninguno). */
+  onSiguiente?: () => void;
 }) {
   const [precio, setPrecio] = useState<string | null>(null);
   const [nombre, setNombre] = useState<string | null>(null);
@@ -124,6 +128,31 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
             </span>
           </div>
           {i.archivado && <div className="mt-2"><Pastilla>Archivado: no sale en los buscadores de recetas</Pastilla></div>}
+
+          {/* Revisión (sesiones con Luis): marca quién y cuándo; «y siguiente» abre el próximo sin revisar. */}
+          <div className="mt-3 flex flex-wrap items-center gap-2">
+            {i.revisado ? (
+              <>
+                <Pastilla tono="verde"><CheckCircle2 className="h-3 w-3" /> Revisado por {i.revisado.por} · {fechaCorta(i.revisado.el)}</Pastilla>
+                <button type="button" disabled={guardando} className="text-[11px] text-gray-400 hover:text-gray-700" onClick={() => void correr(() => acciones.marcarRevisado(i, false))}>deshacer</button>
+                {onSiguiente && <button type="button" className="ml-auto text-xs font-medium text-primary" onClick={onSiguiente}>Siguiente sin revisar →</button>}
+              </>
+            ) : (
+              <>
+                <button type="button" disabled={guardando} onClick={() => void correr(() => acciones.marcarRevisado(i, true))}
+                  className="inline-flex items-center gap-1.5 rounded-lg border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-800 hover:bg-emerald-100">
+                  <CheckCircle2 className="h-3.5 w-3.5" /> Revisado
+                </button>
+                {onSiguiente && (
+                  <button type="button" disabled={guardando}
+                    onClick={() => void correr(() => acciones.marcarRevisado(i, true)).then((ok) => { if (ok) onSiguiente(); })}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-emerald-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-emerald-700">
+                    Revisado y siguiente →
+                  </button>
+                )}
+              </>
+            )}
+          </div>
         </div>
 
         <div className="space-y-5 px-5 py-5">
