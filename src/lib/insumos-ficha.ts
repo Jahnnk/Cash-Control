@@ -207,3 +207,78 @@ export function parejasEntreListas(items: { origen: string; sku: string; nombre:
   }
   return out;
 }
+
+// ─── Dónde se compra: emparejar productos de proveedor con insumos (24-nov-2026) ────────────────────────────
+//
+// Los productos de proveedor vienen de lo que anotan los administradores en Control de Caja: con errores de tipeo,
+// marcas y tamaños («Leche Condensanda 1.2 Kg»). Se comparan por palabras, sin números ni unidades, y dos palabras
+// valen como iguales si difieren en una letra o una empieza con la otra (condensanda ≈ condensada).
+
+const RELLENO = new Set(["de", "del", "la", "el", "los", "las", "con", "en", "y", "x", "para", "por", "o", "a",
+  "kg", "kgs", "kilo", "kilos", "g", "gr", "grs", "gramos", "l", "lt", "lts", "litro", "litros", "ml", "und", "unid", "unidad", "unidades",
+  "bolsa", "caja", "lata", "paquete", "pqte", "botella", "frasco", "sobre", "marca", "cuisine", "co"]);
+
+export function palabrasClave(s: string): string[] {
+  return normalizarNombre(s).split(" ").filter((w) => w.length > 1 && !/\d/.test(w) && !RELLENO.has(w));
+}
+
+function distanciaMaxUno(a: string, b: string): boolean {
+  if (Math.abs(a.length - b.length) > 1) return false;
+  let i = 0, j = 0, dif = 0;
+  while (i < a.length && j < b.length) {
+    if (a[i] === b[j]) { i++; j++; continue; }
+    if (++dif > 1) return false;
+    if (a.length > b.length) i++;
+    else if (b.length > a.length) j++;
+    else { i++; j++; }
+  }
+  return dif + (a.length - i) + (b.length - j) <= 1;
+}
+
+const mismaPalabra = (a: string, b: string) =>
+  a === b || (a.length >= 7 && b.length >= 7 && distanciaMaxUno(a, b)) || (Math.min(a.length, b.length) >= 5 && (a.startsWith(b) || b.startsWith(a)));
+
+/** 0 a 1: qué tanto se parecen dos nombres (1 = las mismas palabras). */
+export function parecidoTolerante(a: string, b: string): number {
+  const x = palabrasClave(a);
+  const y = palabrasClave(b);
+  if (x.length === 0 || y.length === 0) return 0;
+  const usadas = new Set<number>();
+  let comun = 0;
+  for (const w of x) {
+    const k = y.findIndex((v, idx) => !usadas.has(idx) && mismaPalabra(w, v));
+    if (k >= 0) { usadas.add(k); comun++; }
+  }
+  return (2 * comun) / (x.length + y.length);
+}
+
+export const PARECIDO_SEGURO = 0.8;
+export const PARECIDO_POSIBLE = 0.5;
+
+/** Los `n` más parecidos (de mayor a menor), solo los que pasan `minimo`. */
+export function masParecidos<T extends { nombre: string }>(nombre: string, lista: T[], n = 3, minimo = PARECIDO_POSIBLE): { item: T; parecido: number }[] {
+  return lista
+    .map((item) => ({ item, parecido: parecidoTolerante(nombre, item.nombre) }))
+    .filter((x) => x.parecido >= minimo)
+    .sort((a, b) => b.parecido - a.parecido || a.item.nombre.localeCompare(b.item.nombre, "es"))
+    .slice(0, n);
+}
+
+/**
+ * Factor para pasar el precio por UNA unidad del producto de proveedor al precio por unidad del insumo, solo cuando
+ * la conversión es segura (g→kg, ml→l, docena, ciento, galón). Bolsa, caja, paquete, frasco… no dicen cuánto
+ * traen: null, y hay que preguntarlo («1 bolsa = 1.2 kg»).
+ */
+export function factorSeguro(unidadProducto: string, unidadInsumo: string): number | null {
+  const u = normalizarNombre(unidadProducto);
+  const tabla: Record<string, [string, number]> = {
+    kg: ["kg", 1], kilo: ["kg", 1], kilos: ["kg", 1], kilogramo: ["kg", 1], kilogramos: ["kg", 1],
+    g: ["kg", 0.001], gr: ["kg", 0.001], gramo: ["kg", 0.001], gramos: ["kg", 0.001],
+    l: ["l", 1], lt: ["l", 1], litro: ["l", 1], litros: ["l", 1], ml: ["l", 0.001], mililitro: ["l", 0.001], mililitros: ["l", 0.001],
+    galon: ["l", 3.785],
+    und: ["und", 1], unidad: ["und", 1], unidades: ["und", 1], docena: ["und", 12], ciento: ["und", 100],
+  };
+  const m = tabla[u];
+  if (!m || m[0] !== unidadInsumo) return null;
+  return Math.round((1 / m[1]) * 1e6) / 1e6;
+}

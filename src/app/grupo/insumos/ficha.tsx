@@ -14,6 +14,7 @@ import {
   diasEntre, equivalencia, factorPresentacion, precioBaseDesdePresentacion, precioPorPresentacion, textoPresentacion, tonoEdad, unidadesPresentacion,
   type Presentacion, type PuntoPrecio, type UnidadPresentacion,
 } from "@/lib/insumos-ficha";
+import { DondeSeCompra } from "./donde-se-compra";
 import { fechaCorta, soles, solesRedondo, TONO_EDAD, textoEdad } from "./piezas";
 
 export type AccionesFicha = {
@@ -21,6 +22,8 @@ export type AccionesFicha = {
   guardarPrecio: (i: FichaInsumo, precio: number, ambos: boolean) => Promise<string | null>;
   guardarFicha: (i: FichaInsumo, cambio: { categoria?: string | null; critico?: boolean | null; nombre?: string | null; presentacion?: Presentacion | null }) => Promise<string | null>;
   archivar: (i: FichaInsumo, archivar: boolean) => Promise<string | null>;
+  /** Vuelve a leer todo (después de conectar proveedores). */
+  recargar: () => Promise<void>;
 };
 
 export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
@@ -68,7 +71,6 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
 
   const dias = diasEntre(i.fecha, hoy);
   const usos = i.recetas.length + i.productos.length;
-  const dif = i.proveedor && i.precio > 0 ? Math.round(((i.proveedor.precioInsumo - i.precio) / i.precio) * 100) : 0;
 
   return (
     <div className="fixed inset-0 z-50 flex justify-end" role="dialog" aria-modal="true" aria-label={`Ficha de ${i.nombre}`}>
@@ -194,16 +196,6 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
                 <span className="block text-[11px] text-gray-400">Cada lado tiene su precio. Categoría, crítico, nombre y presentación se comparten.</span>
               </p>
             )}
-            {i.proveedor && (
-              <div className="mt-3 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900">
-                Mejor proveedor: <b>{soles(i.proveedor.precioInsumo)}</b> · {i.proveedor.proveedor}
-                {dif !== 0 && <span className={`font-semibold ${dif < 0 ? "text-emerald-700" : "text-red-700"}`}> ({dif > 0 ? "+" : ""}{dif}%)</span>}
-                {dif !== 0 && !i.archivado && (
-                  <button type="button" onClick={() => setPrecio(String(i.proveedor!.precioInsumo))} className="ml-1.5 font-medium text-primary underline">Usar</button>
-                )}
-                <div className="text-[11px] text-sky-700/80">Precio del {fechaCorta(i.proveedor.fecha)}</div>
-              </div>
-            )}
             <Historia puntos={i.historial} />
             {i.cambio && (
               <p className="mt-1 text-xs text-gray-600">
@@ -214,6 +206,8 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
           </section>
 
           <ComoSeCompra i={i} guardando={guardando} guardar={(p) => correr(() => acciones.guardarFicha(i, { presentacion: p }))} />
+
+          <DondeSeCompra i={i} hoy={hoy} usarPrecio={(p) => acciones.guardarPrecio(i, p, false)} onCambio={acciones.recargar} />
 
           {/* Peso en el gasto */}
           <section>
