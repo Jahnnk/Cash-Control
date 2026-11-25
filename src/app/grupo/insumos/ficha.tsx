@@ -236,7 +236,8 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar, onSiguie
 
           <ComoSeCompra i={i} guardando={guardando} guardar={(p) => correr(() => acciones.guardarFicha(i, { presentacion: p }))} />
 
-          <DondeSeCompra i={i} hoy={hoy} usarPrecio={(p) => acciones.guardarPrecio(i, p, false)} onCambio={acciones.recargar} />
+          <DondeSeCompra i={i} hoy={hoy} usarPrecio={(p) => acciones.guardarPrecio(i, p, false)}
+            guardarPresentacion={(p) => acciones.guardarFicha(i, { presentacion: p })} onCambio={acciones.recargar} />
 
           {/* Peso en el gasto */}
           <section>
