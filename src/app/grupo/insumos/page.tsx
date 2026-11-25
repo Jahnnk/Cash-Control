@@ -7,7 +7,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { getInsumos, guardarFichaInsumo, type DatosInsumos } from "@/app/actions/insumos";
+import { getInsumos, guardarFichaInsumo, marcarRevisado, type DatosInsumos } from "@/app/actions/insumos";
 import { archivarInsumo, guardarPrecioInsumo } from "@/app/actions/precios-insumos";
 import type { AccionesFicha } from "./ficha";
 import { InsumosVista, aplicarCambio } from "./vista";
@@ -59,6 +59,10 @@ export default function InsumosPage() {
           const p = i.pareja;
           setDatos((d) => d && { ...d, insumos: d.insumos.map((x) => (x.origen === p.origen && x.sku === p.sku && x.pareja ? { ...x, pareja: { ...x.pareja, precio } } : x)) });
         }
+        // Cambiar el precio es revisarlo: queda marcado (sin esperar).
+        for (const x of ambos && i.pareja ? [i, i.pareja] : [i]) {
+          void marcarRevisado({ origen: x.origen, sku: x.sku, revisado: true }).then((m) => { if (m.ok) parchar(x.origen, x.sku, { revisado: m.revisado }); });
+        }
         setAviso(`${i.nombre}: precio guardado${ambos && i.pareja ? ` aquí y en ${otro}` : ""}. Los costos de las recetas y de la carta ya usan el precio nuevo.`);
         return null;
       },
@@ -67,6 +71,12 @@ export default function InsumosPage() {
         if (!r.ok) return r.error;
         parchar(i.origen, i.sku, { archivado: archivar });
         setAviso(`${i.nombre}: ${archivar ? "archivado" : "vuelve a la lista"}.`);
+        return null;
+      },
+      marcarRevisado: async (i, revisado) => {
+        const r = await marcarRevisado({ origen: i.origen, sku: i.sku, revisado });
+        if (!r.ok) return r.error;
+        parchar(i.origen, i.sku, { revisado: r.revisado });
         return null;
       },
       recargar: cargar,

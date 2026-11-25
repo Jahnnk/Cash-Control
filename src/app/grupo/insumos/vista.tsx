@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { ChevronDown, ChevronRight, Plus, Search, Star } from "lucide-react";
+import { CheckCircle2, ChevronDown, ChevronRight, Plus, Search, Star } from "lucide-react";
 import type { DatosInsumos, FichaInsumo } from "@/app/actions/insumos";
 import { Pastilla, Segmentado, nombreMes } from "@/components/productos/ui";
 import { DIAS_PRECIO_VIEJO, categoriaDelSku, diasEntre, esCritico, factorPresentacion, precioPorPresentacion, tonoEdad, ultimoCambio, type Presentacion } from "@/lib/insumos-ficha";
@@ -34,6 +34,8 @@ export function InsumosVista({ datos, acciones, onCreado }: {
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
   const [ficha, setFicha] = useState<string | null>(null);
   const [nuevo, setNuevo] = useState(false);
+  // Sesión de revisión: ver solo lo que falta revisar (se combina con cualquier filtro).
+  const [soloSinRevisar, setSoloSinRevisar] = useState(false);
 
   const delOrigen = useMemo(() => datos.insumos.filter((i) => i.origen === origen), [datos.insumos, origen]);
   const grupos = useMemo(() => {
@@ -55,8 +57,8 @@ export function InsumosVista({ datos, acciones, onCreado }: {
 
   const lista = useMemo(() => {
     const t = sinTildes(q.trim());
-    return grupos[filtro].filter((i) => (!categoria || i.categoria === categoria) && (!t || sinTildes(`${i.nombre} ${i.sku} ${i.nombreExcel ?? ""}`).includes(t)));
-  }, [grupos, filtro, categoria, q]);
+    return grupos[filtro].filter((i) => (!soloSinRevisar || !i.revisado) && (!categoria || i.categoria === categoria) && (!t || sinTildes(`${i.nombre} ${i.sku} ${i.nombreExcel ?? ""}`).includes(t)));
+  }, [grupos, filtro, categoria, q, soloSinRevisar]);
 
   // Por categoría: las que más gastan primero; adentro, críticos y luego por gasto.
   const porCategoria = useMemo(() => {
@@ -73,7 +75,17 @@ export function InsumosVista({ datos, acciones, onCreado }: {
       .sort((a, b) => Number(a.cat === PACKAGING) - Number(b.cat === PACKAGING) || b.gasto - a.gasto || a.cat.localeCompare(b.cat, "es"));
   }, [lista]);
 
-  const buscando = filtro !== "todos" || !!q.trim() || !!categoria;
+  const buscando = filtro !== "todos" || !!q.trim() || !!categoria || soloSinRevisar;
+  const revisados = grupos.todos.filter((i) => i.revisado).length;
+  const criticosRevisados = grupos.criticos.filter((i) => i.revisado).length;
+  // «Revisado y siguiente»: el próximo sin revisar en el orden de la lista que se está viendo.
+  const ordenLista = porCategoria.flatMap((g) => g.items);
+  const siguienteDe = (actual: string): string | null => {
+    const k = ordenLista.findIndex((i) => clave(i) === actual);
+    const resto = [...ordenLista.slice(k + 1), ...ordenLista.slice(0, Math.max(0, k))];
+    const s = resto.find((i) => !i.revisado && clave(i) !== actual);
+    return s ? clave(s) : null;
+  };
   const categoriasOrigen = useMemo(() => [...new Set(delOrigen.map((i) => i.categoria))].sort((a, b) => a.localeCompare(b, "es")), [delOrigen]);
   const abierta = ficha ? datos.insumos.find((i) => clave(i) === ficha) ?? null : null;
   const alternar = (cat: string) => setAbiertas((s) => { const n = new Set(s); if (n.has(cat)) n.delete(cat); else n.add(cat); return n; });
@@ -115,6 +127,20 @@ export function InsumosVista({ datos, acciones, onCreado }: {
           detalle={`críticos con +${DIAS_PRECIO_VIEJO} días`} />
         <Cifra activa={filtro === "sinUso"} onClick={() => setFiltro("sinUso")} etiqueta="Sin uso" valor={grupos.sinUso.length}
           detalle="¿se siguen comprando?" />
+      </div>
+
+      {/* Avance de la revisión (sesiones con Luis) */}
+      <div className="rounded-2xl border border-gray-200/80 bg-white px-4 py-3">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="inline-flex items-center gap-1.5 text-sm font-semibold text-gray-900"><CheckCircle2 className="h-4 w-4 text-emerald-600" /> Revisión</span>
+          <span className="text-xs text-gray-600">{revisados} de {grupos.todos.length} revisados · críticos {criticosRevisados} de {grupos.criticos.length}</span>
+          <label className="ml-auto inline-flex items-center gap-1.5 text-xs font-medium text-gray-700">
+            <input type="checkbox" checked={soloSinRevisar} onChange={(e) => setSoloSinRevisar(e.target.checked)} /> Solo sin revisar
+          </label>
+        </div>
+        <div className="mt-2 h-1.5 w-full overflow-hidden rounded-full bg-gray-100">
+          <div className="h-full rounded-full bg-emerald-600" style={{ width: `${grupos.todos.length ? Math.round((revisados / grupos.todos.length) * 100) : 0}%` }} />
+        </div>
       </div>
 
       {/* Filtros */}
@@ -198,7 +224,8 @@ export function InsumosVista({ datos, acciones, onCreado }: {
         {" "}Lo que Atelier vende a clientes B2B todavía no entra en esa cuenta.
       </p>
 
-      {abierta && <Ficha key={clave(abierta)} insumo={abierta} hoy={datos.hoy} categorias={datos.categorias} acciones={acciones} onCerrar={() => setFicha(null)} />}
+      {abierta && <Ficha key={clave(abierta)} insumo={abierta} hoy={datos.hoy} categorias={datos.categorias} acciones={acciones} onCerrar={() => setFicha(null)}
+        onSiguiente={() => { const s = siguienteDe(clave(abierta)); setFicha(s); }} />}
     </div>
   );
 }
@@ -234,6 +261,7 @@ function Fila({ i, hoy, maxGasto, onAbrir, onEstrella }: { i: FichaInsumo; hoy: 
             {i.sku} · por {i.unidad}
             {usos === 0 ? <span className="text-gray-400">· sin uso</span> : <span>· {i.recetas.length > 0 ? `${i.recetas.length} receta${i.recetas.length === 1 ? "" : "s"}` : ""}{i.recetas.length > 0 && i.productos.length > 0 ? " · " : ""}{i.productos.length > 0 ? `${i.productos.length} producto${i.productos.length === 1 ? "" : "s"}` : ""}</span>}
             {i.creadoAqui && <Pastilla tono="marca">Creado aquí</Pastilla>}
+            {i.revisado && <span className="inline-flex items-center gap-0.5 text-emerald-700" title={`Revisado por ${i.revisado.por}`}><CheckCircle2 className="h-3 w-3" /> revisado</span>}
           </span>
         </span>
         {/* Gasto (en pantallas anchas) */}
@@ -266,8 +294,9 @@ function Fila({ i, hoy, maxGasto, onAbrir, onEstrella }: { i: FichaInsumo; hoy: 
 }
 
 /** Lo que cambia en la lista sin volver a leer todo (estrella, categoría, nombre, archivo, precio). */
-export function aplicarCambio(i: FichaInsumo, c: Partial<{ categoria: string | null; critico: boolean | null; nombre: string | null; presentacion: Presentacion | null; archivado: boolean; precio: number; hoy: string }>): FichaInsumo {
+export function aplicarCambio(i: FichaInsumo, c: Partial<{ categoria: string | null; critico: boolean | null; nombre: string | null; presentacion: Presentacion | null; archivado: boolean; precio: number; hoy: string; revisado: FichaInsumo["revisado"] }>): FichaInsumo {
   const n = { ...i };
+  if (c.revisado !== undefined) n.revisado = c.revisado;
   if (c.presentacion !== undefined) n.presentacion = c.presentacion;
   if (c.critico !== undefined) { n.criticoManual = c.critico; n.critico = esCritico(c.critico, i.criticoSugerido); }
   if (c.categoria !== undefined) { n.categoriaElegida = c.categoria != null; n.categoria = c.categoria ?? categoriaDelSku(i.sku); }
