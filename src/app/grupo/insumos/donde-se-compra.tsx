@@ -87,9 +87,10 @@ export function DondeSeCompra({ i, hoy, usarPrecio, guardarPresentacion, onCambi
                     {dif !== 0 && <div className={`text-[11px] font-medium ${dif < 0 ? "text-emerald-700" : "text-red-700"}`}>{dif > 0 ? "+" : ""}{dif}% vs. recetas</div>}
                   </div>
                 </div>
-                <div className="mt-1 flex gap-3 text-[11px]">
+                <div className="mt-2 flex flex-wrap items-center gap-3 text-[11px]">
                   {dif !== 0 && !i.archivado && (
-                    <button type="button" disabled={ocupado} className="font-medium text-primary"
+                    <button type="button" disabled={ocupado}
+                      className="inline-flex items-center rounded-lg border border-primary/40 bg-white px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-emerald-50 disabled:opacity-50"
                       onClick={async () => {
                         if (!window.confirm(`¿Usar ${soles(o.precioInsumo)} por ${i.unidad} (${o.proveedor}) como precio de «${i.nombre}»? Cambia el costo de todas las recetas que lo usan.`)) return;
                         setOcupado(true);
