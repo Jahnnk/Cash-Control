@@ -16,6 +16,8 @@ import { crearInsumoNuevo } from "@/app/actions/nueva-receta";
 import { costoDeReceta, costoIngrediente, refDeReceta, type RecetaSistema } from "@/lib/recetas";
 import type { CostoPreparacion, DetalleReceta } from "@/lib/costos-preparaciones";
 import { Segmentado } from "@/components/productos/ui";
+import { CamposPrecio, EditarInsumo } from "./insumo-en-receta";
+import { comprasPara, precioPorBase, type PrecioCompra } from "@/lib/precio-compra";
 
 /** Lo que abre el editor. */
 export type Borrador = {
@@ -49,24 +51,30 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
   const [busy, setBusy] = useState<"guardando" | "borrando" | null>(null);
   // Insumos creados aquí mismo (faltaba uno al editar, 25-nov-2026): se suman a la lista sin recargar.
   const [creados, setCreados] = useState<CostoPreparacion[]>([]);
-  const [nuevo, setNuevo] = useState<{ fila: number; nombre: string; unidad: "kg" | "l" | "und"; precio: string } | null>(null);
+  const [nuevo, setNuevo] = useState<{ fila: number; nombre: string; precio: PrecioCompra } | null>(null);
+  // Nombre y precio editados aquí mismo (25-nov-2026): se aplican sobre la lista sin recargar.
+  const [editados, setEditados] = useState<Map<string, { nombre: string; costo: number }>>(new Map());
   const [creando, setCreando] = useState(false);
   const [errorNuevo, setErrorNuevo] = useState<string | null>(null);
 
   // Una receta del sistema que reemplaza a una del Excel se usa por la ref
   // del Excel: si un día se borra, quien la usaba vuelve a la del Excel.
   // La receta no puede usarse a sí misma (ni a la del Excel que reemplaza).
+  const lista = useMemo(() => [...catalogo, ...creados].map((i) => {
+    const e = i.tipo === "insumo" ? editados.get(i.ref) : undefined;
+    return e ? { ...i, ...e } : i;
+  }), [catalogo, creados, editados]);
   const elegibles = useMemo(() => {
     const propias = new Set([borrador.id !== null ? refDeReceta(borrador.id) : null, borrador.reemplaza?.ref ?? null].filter(Boolean));
     const arch = new Set(archivados.map((s) => s.toUpperCase()));
-    return [...catalogo, ...creados].filter((i) => !propias.has(i.ref) && !(i.reemplaza && propias.has(i.reemplaza))
+    return lista.filter((i) => !propias.has(i.ref) && !(i.reemplaza && propias.has(i.reemplaza))
       && !(i.tipo === "insumo" && arch.has(i.ref.trim().toUpperCase())));
-  }, [catalogo, creados, archivados, borrador.id, borrador.reemplaza?.ref]);
+  }, [lista, archivados, borrador.id, borrador.reemplaza?.ref]);
   const porRef = useMemo(() => {
     const m = new Map<string, CostoPreparacion>();
-    for (const i of [...catalogo, ...creados]) { m.set(i.ref, i); if (i.reemplaza) m.set(i.reemplaza, i); }
+    for (const i of lista) { m.set(i.ref, i); if (i.reemplaza) m.set(i.reemplaza, i); }
     return m;
-  }, [catalogo, creados]);
+  }, [lista]);
 
   const [filas, setFilas] = useState<Fila[]>(() => {
     const f = borrador.detalle.ingredientes.map((g) => {
@@ -81,9 +89,11 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
   /** Crea el insumo (Atelier) y lo pone en la fila que lo pedía. */
   async function crearNuevo() {
     if (!nuevo) return;
+    const base = precioPorBase(nuevo.precio);
+    if (!base) { setErrorNuevo(nuevo.precio.compra === "g" ? "Escribe cuántos g trae y su precio." : "Escribe un precio mayor que cero."); return; }
     setCreando(true);
     setErrorNuevo(null);
-    const r = await crearInsumoNuevo({ origen: "Atelier", nombre: nuevo.nombre, unidad: nuevo.unidad, precio: Number(nuevo.precio.replace(",", ".")) });
+    const r = await crearInsumoNuevo({ origen: "Atelier", nombre: nuevo.nombre, unidad: base.unidad, precio: base.precio });
     setCreando(false);
     if (!r.ok) { setErrorNuevo(r.error); return; }
     const item: CostoPreparacion = { ref: r.insumo.sku, tipo: "insumo", nombre: r.insumo.nombre, categoria: "Insumos nuevos", unidad: r.insumo.unidad as CostoPreparacion["unidad"], costo: r.insumo.precio };
@@ -93,6 +103,13 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
     })));
     setNuevo(null);
     showToast(`${item.nombre}: creado y agregado a la receta.`);
+  }
+
+  /** Guardó nombre/precio de un insumo: se ve ya en todas las filas que lo usan. */
+  function alEditar(ref: string, cambio: { nombre: string; costo: number }) {
+    setEditados((prev) => new Map(prev).set(ref, cambio));
+    setFilas((prev) => prev.map((f) => (f.item?.tipo === "insumo" && f.item.ref === ref ? { ...f, texto: cambio.nombre, item: { ...f.item, ...cambio } } : f)));
+    showToast(`${cambio.nombre}: guardado. Ya vale en todo el sistema.`);
   }
 
   const detalle: DetalleReceta = {
@@ -230,9 +247,14 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
                             })}
                           />
                           {f.item ? (
-                            <div className="text-[10px] text-primary mt-0.5 px-0.5">{TIPO_COSTO[f.item.tipo]} · {soles4(f.item.costo)} por {f.item.unidad}</div>
+                            <div className="text-[10px] text-primary mt-0.5 px-0.5">
+                              {TIPO_COSTO[f.item.tipo]} · {soles4(f.item.costo)} por {f.item.unidad}
+                              {f.item.tipo === "insumo" && (
+                                <>{" · "}<EditarInsumo key={`${f.item.ref}-${f.item.nombre}-${f.item.costo}`} item={f.item} origen="Atelier" onGuardado={(c) => alEditar(f.item!.ref, c)} /></>
+                              )}
+                            </div>
                           ) : f.texto.trim() ? (
-                            <button type="button" onClick={() => { setErrorNuevo(null); setNuevo({ fila: i, nombre: f.texto.trim(), unidad: "kg", precio: "" }); }}
+                            <button type="button" onClick={() => { setErrorNuevo(null); setNuevo({ fila: i, nombre: f.texto.trim(), precio: { compra: "kg", gramos: "", precio: "" } }); }}
                               className="text-[11px] text-amber-800 mt-0.5 px-0.5 underline decoration-dotted">
                               ¿No está en la lista? Créalo como insumo nuevo
                             </button>
@@ -275,7 +297,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
                   const vacia = filas.findIndex((f) => !f.item);
                   if (vacia === -1) setFilas((p) => [...p, { id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g" }]);
                   setErrorNuevo(null);
-                  setNuevo({ fila: vacia === -1 ? filas.length : vacia, nombre: vacia === -1 ? "" : filas[vacia].texto.trim(), unidad: "kg", precio: "" });
+                  setNuevo({ fila: vacia === -1 ? filas.length : vacia, nombre: vacia === -1 ? "" : filas[vacia].texto.trim(), precio: { compra: "kg", gramos: "", precio: "" } });
                 }}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary border border-primary/40 bg-white hover:bg-emerald-50 rounded-lg"
               >
@@ -287,22 +309,12 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
               <div className="mt-3 rounded-xl border border-primary/30 bg-emerald-50/40 p-3 space-y-2">
                 <div className="text-sm font-semibold text-gray-900">Insumo o packaging nuevo de Atelier</div>
                 <p className="text-[11px] text-gray-500">Queda en Grupo → Insumos y packaging y sirve para todas las recetas. El precio es por la unidad de compra.</p>
-                <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+                <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
                   <label className="text-[11px] text-gray-500">Nombre
                     <input autoFocus value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="ej. Caja para casita"
                       className="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
                   </label>
-                  <label className="text-[11px] text-gray-500">Se compra por
-                    <select value={nuevo.unidad} onChange={(e) => setNuevo({ ...nuevo, unidad: e.target.value as "kg" | "l" | "und" })}
-                      className="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900 bg-white">
-                      <option value="kg">kg</option><option value="l">litro</option><option value="und">unidad</option>
-                    </select>
-                  </label>
-                  <label className="text-[11px] text-gray-500">Precio por {nuevo.unidad === "l" ? "litro" : nuevo.unidad === "und" ? "unidad" : "kg"} (S/)
-                    <input inputMode="decimal" value={nuevo.precio} onChange={(e) => setNuevo({ ...nuevo, precio: e.target.value })} placeholder="ej. 1.50"
-                      onKeyDown={(e) => { if (e.key === "Enter") void crearNuevo(); }}
-                      className="mt-1 block w-full border border-gray-300 rounded-lg px-3 py-2 text-sm text-gray-900" />
-                  </label>
+                  <CamposPrecio valor={nuevo.precio} onCambio={(v) => setNuevo({ ...nuevo, precio: v })} opciones={comprasPara(null)} onEnter={() => void crearNuevo()} />
                 </div>
                 {errorNuevo && <p className="text-xs text-red-700">{errorNuevo}</p>}
                 <div className="flex gap-2">
