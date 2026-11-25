@@ -57,7 +57,7 @@ export function DondeSeCompra({ i, hoy, usarPrecio, onCambio }: {
       <h3 className="flex items-center gap-1.5 text-[13px] font-semibold text-gray-900"><Store className="h-4 w-4 text-gray-400" /> Dónde se compra</h3>
 
       {i.dondeSeCompra.length === 0 && sinPrecio.length === 0 && !modo && (
-        <p className="mt-1 text-xs text-gray-500">Todavía no está conectado a ningún proveedor. Conecta el producto como lo anotan las compras, o anota dónde se compra y a cuánto.</p>
+        <p className="mt-1 text-xs text-gray-500">Todavía no tiene proveedor. Agrega dónde lo compran y a cuánto.</p>
       )}
 
       {i.dondeSeCompra.length > 0 && (
@@ -126,14 +126,14 @@ export function DondeSeCompra({ i, hoy, usarPrecio, onCambio }: {
         : <p className="mt-2 text-xs text-gray-400">Cargando proveedores…</p>)}
 
       {!modo && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          <button type="button" onClick={() => void abrir("conectar")}
-            className="inline-flex items-center gap-1 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-emerald-50">
-            <Search className="h-3.5 w-3.5" /> Conectar producto de proveedor
-          </button>
+        <div className="mt-2 space-y-1.5">
           <button type="button" onClick={() => void abrir("anotar")}
-            className="inline-flex items-center gap-1 rounded-lg border border-gray-200 px-2.5 py-1.5 text-xs font-medium text-gray-600 hover:bg-gray-50">
-            <Plus className="h-3.5 w-3.5" /> Anotar dónde se compra
+            className="inline-flex items-center gap-1 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-emerald-50">
+            <Plus className="h-3.5 w-3.5" /> Agregar proveedor
+          </button>
+          {/* Las compras de Control de Caja anotan el producto a su manera: aquí se dice cuál es este insumo. */}
+          <button type="button" onClick={() => void abrir("conectar")} className="flex items-center gap-1 text-[11px] text-gray-500 hover:text-primary">
+            <Search className="h-3 w-3" /> ¿Ya se compró? Búscalo en las compras registradas
           </button>
         </div>
       )}
@@ -167,6 +167,7 @@ export function ElegirProducto({ i, productos, ocupado, onElegir, onCancelar }: 
 
   return (
     <div className="mt-2 space-y-2 rounded-xl border border-primary/30 bg-emerald-50/40 p-3">
+      <p className="text-[11px] text-gray-600">Las compras registradas en Control de Caja anotan cada producto a su manera (ej. «Leche Condensanda 1.2 Kg»). Elige cuál es este insumo: sus precios aparecerán aquí solos, también los de compras futuras.</p>
       {elegido ? (
         <>
           <p className="text-xs text-gray-700"><b>{elegido.nombre}</b> se compra por {elegido.unidad}. ¿Cuánto trae 1 {elegido.unidad}?</p>
@@ -192,7 +193,7 @@ export function ElegirProducto({ i, productos, ocupado, onElegir, onCancelar }: 
           </label>
           {!t && lista.length > 0 && <p className="text-[11px] text-gray-500">Los más parecidos:</p>}
           {lista.length === 0 ? (
-            <p className="text-[11px] text-gray-500">{t ? "No hay productos con ese nombre." : "Ninguno se parece. Busca por otra palabra o usa «Anotar dónde se compra»."}</p>
+            <p className="text-[11px] text-gray-500">{t ? "No hay productos con ese nombre." : "Ninguno se parece. Busca por otra palabra o usa «Agregar proveedor»."}</p>
           ) : (
             <ul className="max-h-56 divide-y divide-gray-100 overflow-y-auto rounded-lg bg-white ring-1 ring-gray-200">
               {lista.map((p) => (
@@ -222,27 +223,17 @@ function AnotarDonde({ i, proveedores, ocupado, onGuardar, onCancelar }: {
   onCancelar: () => void;
 }) {
   const f = factorPresentacion(i.unidad, i.presentacion);
-  const [proveedor, setProveedor] = useState<string>("");
-  const [nuevo, setNuevo] = useState("");
+  // Proveedor: uno de la lista (id) o uno nuevo (nombre).
+  const [proveedor, setProveedor] = useState<{ id: number | null; nombre: string } | null>(null);
   const [envase, setEnvase] = useState(i.presentacion ? textoPresentacion(i.presentacion) : `1 ${i.unidad}`);
   const [cuanto, setCuanto] = useState(f != null ? String(f) : "1");
   const [precio, setPrecio] = useState("");
   const n = (s: string) => Number(s.replace(",", "."));
-  const listo = ((proveedor !== "" && proveedor !== "__nuevo") || (proveedor === "__nuevo" && nuevo.trim().length >= 2)) && n(cuanto) > 0 && n(precio) > 0;
+  const listo = !!proveedor && n(cuanto) > 0 && n(precio) > 0;
 
   return (
     <div className="mt-2 space-y-2 rounded-xl border border-primary/30 bg-emerald-50/40 p-3">
-      <label className="block text-[11px] text-gray-500">Proveedor
-        <select value={proveedor} onChange={(e) => setProveedor(e.target.value)} className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm">
-          <option value="">Elige…</option>
-          {proveedores.map((p) => <option key={p.id} value={p.id}>{p.nombre}</option>)}
-          <option value="__nuevo">+ Otro (escribir)</option>
-        </select>
-      </label>
-      {proveedor === "__nuevo" && (
-        <input autoFocus value={nuevo} onChange={(e) => setNuevo(e.target.value)} placeholder="ej. Plaza Vea" aria-label="Nombre del proveedor"
-          className="block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm" />
-      )}
+      <BuscarProveedor proveedores={proveedores} valor={proveedor} onCambio={setProveedor} />
       <div className="grid grid-cols-[1fr_90px_90px] gap-2">
         <label className="text-[11px] text-gray-500">Cómo viene
           <input value={envase} onChange={(e) => setEnvase(e.target.value)} className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm" />
@@ -250,7 +241,7 @@ function AnotarDonde({ i, proveedores, ocupado, onGuardar, onCancelar }: {
         <label className="text-[11px] text-gray-500">Trae ({i.unidad})
           <input inputMode="decimal" value={cuanto} onChange={(e) => setCuanto(e.target.value)} className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm" />
         </label>
-        <label className="text-[11px] text-gray-500">Precio (S/)
+        <label className="text-[11px] text-gray-500">Precio (S/) cada uno
           <input inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="5.90" className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm" />
         </label>
       </div>
@@ -259,12 +250,55 @@ function AnotarDonde({ i, proveedores, ocupado, onGuardar, onCancelar }: {
       <div className="flex gap-2">
         <button type="button" disabled={ocupado || !listo}
           onClick={() => void onGuardar({
-            proveedorId: proveedor && proveedor !== "__nuevo" ? Number(proveedor) : null,
-            proveedorNuevo: proveedor === "__nuevo" ? nuevo : null, envase, cuanto: n(cuanto), precio: n(precio),
+            proveedorId: proveedor?.id ?? null, proveedorNuevo: proveedor && proveedor.id == null ? proveedor.nombre : null,
+            envase, cuanto: n(cuanto), precio: n(precio),
           })}
           className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">{ocupado ? "Guardando…" : "Guardar"}</button>
         <button type="button" onClick={onCancelar} className="text-xs text-gray-500">Cancelar</button>
       </div>
+    </div>
+  );
+}
+
+/** Buscar un proveedor por nombre; si no está, crearlo con lo escrito. */
+function BuscarProveedor({ proveedores, valor, onCambio }: {
+  proveedores: { id: number; nombre: string }[];
+  valor: { id: number | null; nombre: string } | null;
+  onCambio: (v: { id: number | null; nombre: string } | null) => void;
+}) {
+  const [q, setQ] = useState("");
+  if (valor) {
+    return (
+      <div className="flex items-center gap-2 text-sm">
+        <span className="text-[11px] text-gray-500">Proveedor</span>
+        <span className="rounded-full bg-white px-2.5 py-1 font-medium text-gray-900 ring-1 ring-gray-200">{valor.nombre}</span>
+        {valor.id == null && <Pastilla tono="marca">Nuevo</Pastilla>}
+        <button type="button" onClick={() => { onCambio(null); setQ(""); }} className="text-xs text-primary">Cambiar</button>
+      </div>
+    );
+  }
+  const t = normalizarNombre(q);
+  const lista = t ? proveedores.filter((p) => normalizarNombre(p.nombre).includes(t)).slice(0, 6) : [];
+  const exacto = proveedores.find((p) => normalizarNombre(p.nombre) === t);
+  return (
+    <div>
+      <label className="relative block text-[11px] text-gray-500">Proveedor
+        <Search className="pointer-events-none absolute bottom-2 left-2.5 h-3.5 w-3.5 text-gray-400" />
+        <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Escribe: Lácteos Cajamarca, Metro…"
+          className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white py-1.5 pl-8 pr-2 text-sm" />
+      </label>
+      {t.length >= 2 && (
+        <ul className="mt-1 divide-y divide-gray-100 overflow-hidden rounded-lg bg-white ring-1 ring-gray-200">
+          {lista.map((p) => (
+            <li key={p.id}><button type="button" onClick={() => onCambio({ id: p.id, nombre: p.nombre })} className="w-full px-2.5 py-1.5 text-left text-sm hover:bg-emerald-50">{p.nombre}</button></li>
+          ))}
+          {!exacto && (
+            <li><button type="button" onClick={() => onCambio({ id: null, nombre: q.trim() })} className="flex w-full items-center gap-1 px-2.5 py-1.5 text-left text-sm font-medium text-primary hover:bg-emerald-50">
+              <Plus className="h-3.5 w-3.5" /> Crear «{q.trim()}»
+            </button></li>
+          )}
+        </ul>
+      )}
     </div>
   );
 }
