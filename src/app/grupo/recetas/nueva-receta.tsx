@@ -12,12 +12,13 @@
  */
 
 import { Fragment, useEffect, useMemo, useState } from "react";
-import { ArrowLeft, ArrowRight, CakeSlice, Check, ChevronDown, ChevronRight, Coffee, Layers, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { ArrowLeft, ArrowRight, CakeSlice, Check, ChevronDown, ChevronRight, Coffee, Layers, Loader2, Plus, Save, Trash2, X } from "lucide-react";
 import { TablaOrdenable, TbodyOrdenable } from "@/components/filas-ordenables";
 import { BuscadorCosto, soles4 } from "@/components/buscador-costo";
+import { CamposPrecio, EditarInsumo } from "./insumo-en-receta";
+import { comprasPara, precioPorBase, type PrecioCompra } from "@/lib/precio-compra";
 import { crearInsumoNuevo, crearRecetaAtelier, getOpcionesNuevaReceta, type OpcionesNuevaReceta } from "@/app/actions/nueva-receta";
 import { guardarProductoNuevo } from "@/app/actions/carta";
-import { guardarPrecioInsumo } from "@/app/actions/precios-insumos";
 import { costoDeReceta, costoIngrediente } from "@/lib/recetas";
 import { METAS, foodCost, margen, sugeridoCafeteria, sugeridosAtelier } from "@/lib/precios-sugeridos";
 import type { CostoPreparacion, DetalleReceta } from "@/lib/costos-preparaciones";
@@ -313,7 +314,7 @@ function PasoIngredientes(p: {
   // Abiertas por fila (por su id, para que sigan abiertas al cambiar el orden).
   const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
   const alternar = (id: string) => setAbiertas((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
-  const [nuevo, setNuevo] = useState<{ fila: number; nombre: string; unidad: "kg" | "l" | "und"; precio: string } | null>(null);
+  const [nuevo, setNuevo] = useState<{ fila: number; nombre: string; precio: PrecioCompra } | null>(null);
   const [creando, setCreando] = useState(false);
   const [errorNuevo, setErrorNuevo] = useState<string | null>(null);
   const origen = p.clase === "cafeteria" ? "Cafetería" : "Atelier";
@@ -321,9 +322,11 @@ function PasoIngredientes(p: {
 
   async function crear() {
     if (!nuevo) return;
+    const base = precioPorBase(nuevo.precio);
+    if (!base) { setErrorNuevo(nuevo.precio.compra === "g" ? "Escribe cuántos g trae y su precio." : "Escribe un precio mayor que cero."); return; }
     setCreando(true);
     setErrorNuevo(null);
-    const r = await crearInsumoNuevo({ origen, nombre: nuevo.nombre, unidad: nuevo.unidad, precio: num(nuevo.precio) });
+    const r = await crearInsumoNuevo({ origen, nombre: nuevo.nombre, unidad: base.unidad, precio: base.precio });
     setCreando(false);
     if (!r.ok) { setErrorNuevo(r.error); return; }
     p.onInsumoNuevo({ ref: r.insumo.sku, tipo: "insumo", nombre: r.insumo.nombre, categoria: "Insumos nuevos", unidad: r.insumo.unidad as CostoPreparacion["unidad"], costo: r.insumo.precio }, nuevo.fila);
@@ -388,7 +391,7 @@ function PasoIngredientes(p: {
                       {f.item ? (
                         <EtiquetaItem item={f.item} origen={origen} abierta={abiertas.has(f.id)} onAlternar={() => alternar(f.id)} onPrecioCambiado={p.onPrecioCambiado} />
                       ) : f.texto.trim() ? (
-                        <button type="button" onClick={() => { setErrorNuevo(null); setNuevo({ fila: i, nombre: f.texto.trim(), unidad: "kg", precio: "" }); }}
+                        <button type="button" onClick={() => { setErrorNuevo(null); setNuevo({ fila: i, nombre: f.texto.trim(), precio: { compra: "kg", gramos: "", precio: "" } }); }}
                           className="text-[11px] text-amber-800 mt-0.5 px-0.5 underline decoration-dotted">
                           ¿No está en la lista? Créalo como insumo nuevo
                         </button>
@@ -434,7 +437,7 @@ function PasoIngredientes(p: {
             const vacia = p.filas.findIndex((f) => !f.item);
             if (vacia === -1) p.setFilas((prev) => [...prev, filaVacia()]);
             setErrorNuevo(null);
-            setNuevo({ fila: vacia === -1 ? p.filas.length : vacia, nombre: vacia === -1 ? "" : p.filas[vacia].texto.trim(), unidad: "kg", precio: "" });
+            setNuevo({ fila: vacia === -1 ? p.filas.length : vacia, nombre: vacia === -1 ? "" : p.filas[vacia].texto.trim(), precio: { compra: "kg", gramos: "", precio: "" } });
           }}
             className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-primary border border-primary/40 bg-white hover:bg-emerald-50 rounded-lg">
             <Plus className="w-3.5 h-3.5" /> Insumo nuevo
@@ -445,18 +448,11 @@ function PasoIngredientes(p: {
           <div className="mt-3 rounded-xl border border-primary/30 bg-emerald-50/40 p-3 space-y-2">
             <div className="text-sm font-semibold text-gray-900">Insumo nuevo de {origen === "Atelier" ? "Atelier" : "la cafetería"}</div>
             <p className="text-[11px] text-gray-500">Queda en Grupo → Insumos y sirve para todas las recetas. El precio es por la unidad de compra.</p>
-            <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto]">
+            <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
               <label className="text-[11px] text-gray-500">Nombre
                 <input value={nuevo.nombre} onChange={(e) => setNuevo({ ...nuevo, nombre: e.target.value })} placeholder="ej. Jengibre en polvo" className={campo} />
               </label>
-              <label className="text-[11px] text-gray-500">Se compra por
-                <select value={nuevo.unidad} onChange={(e) => setNuevo({ ...nuevo, unidad: e.target.value as "kg" | "l" | "und" })} className={`${campo} bg-white`}>
-                  <option value="kg">kg</option><option value="l">litro</option><option value="und">unidad</option>
-                </select>
-              </label>
-              <label className="text-[11px] text-gray-500">Precio por {nuevo.unidad === "l" ? "litro" : nuevo.unidad === "und" ? "unidad" : "kg"} (S/)
-                <input inputMode="decimal" value={nuevo.precio} onChange={(e) => setNuevo({ ...nuevo, precio: e.target.value })} placeholder="ej. 12.00" className={campo} />
-              </label>
+              <CamposPrecio valor={nuevo.precio} onCambio={(v) => setNuevo({ ...nuevo, precio: v })} opciones={comprasPara(null)} onEnter={() => void crear()} />
             </div>
             {errorNuevo && <p className="text-xs text-red-700">{errorNuevo}</p>}
             <div className="flex gap-2">
@@ -585,7 +581,8 @@ function EtiquetaItem({ item, origen, abierta, onAlternar, onPrecioCambiado }: {
     return (
       <div className="mt-0.5 px-0.5 flex flex-wrap items-center gap-x-1.5 text-[10px] text-gray-600">
         <span className="rounded bg-gray-100 text-gray-700 font-medium px-1.5">Insumo</span>
-        <PrecioInsumo item={item} origen={origen} onPrecioCambiado={onPrecioCambiado} />
+        <span className="tabular-nums">{soles4(item.costo)} por {item.unidad}</span>
+        <EditarInsumo key={`${item.ref}-${item.nombre}-${item.costo}`} item={item} origen={origen} onGuardado={() => void onPrecioCambiado()} />
       </div>
     );
   }
@@ -601,53 +598,6 @@ function EtiquetaItem({ item, origen, abierta, onAlternar, onPrecioCambiado }: {
         </button>
       ) : <span className="text-gray-400">el Excel no trae su receta</span>}
     </div>
-  );
-}
-
-/** Precio de un insumo con «cambiar»: vale desde hoy para todo el sistema (igual que en «Precios de insumos»). */
-function PrecioInsumo({ item, origen, onPrecioCambiado }: { item: CostoPreparacion; origen: "Atelier" | "Cafetería"; onPrecioCambiado: () => Promise<void> }) {
-  const [editando, setEditando] = useState(false);
-  const [valor, setValor] = useState("");
-  const [guardando, setGuardando] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const unidad = item.unidad === "l" ? "litro" : item.unidad === "und" ? "unidad" : "kg";
-
-  async function guardar() {
-    setGuardando(true);
-    setError(null);
-    const r = await guardarPrecioInsumo({ origen, sku: item.ref, precio: num(valor) });
-    if (r.ok) await onPrecioCambiado();
-    setGuardando(false);
-    if (!r.ok) { setError(r.error); return; }
-    setEditando(false);
-  }
-
-  if (!editando) {
-    return (
-      <>
-        <span className="tabular-nums">{soles4(item.costo)} por {item.unidad}</span>
-        <button type="button" onClick={() => { setValor(item.costo.toFixed(2)); setEditando(true); }}
-          className="inline-flex items-center gap-0.5 text-primary underline decoration-dotted">
-          <Pencil className="w-3 h-3" /> cambiar precio
-        </button>
-      </>
-    );
-  }
-  return (
-    <span className="inline-flex flex-wrap items-center gap-1.5 py-0.5">
-      <span>S/</span>
-      <input inputMode="decimal" value={valor} onChange={(e) => setValor(e.target.value)} autoFocus aria-label={`Precio de ${item.nombre} por ${unidad}`}
-        onKeyDown={(e) => { if (e.key === "Enter") void guardar(); if (e.key === "Escape") setEditando(false); }}
-        className="w-20 border border-gray-300 rounded px-1.5 py-0.5 text-right text-xs" />
-      <span>por {unidad}</span>
-      <button type="button" onClick={() => void guardar()} disabled={guardando || !(num(valor) > 0)}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded bg-primary text-white font-medium disabled:opacity-50">
-        {guardando && <Loader2 className="w-3 h-3 animate-spin" />} Guardar
-      </button>
-      <button type="button" onClick={() => setEditando(false)} className="text-gray-500">cancelar</button>
-      <span className="basis-full text-gray-500">Cambia el precio desde hoy en todo el sistema: recetas, carta e Insumos.</span>
-      {error && <span className="basis-full text-red-700">{error}</span>}
-    </span>
   );
 }
 
