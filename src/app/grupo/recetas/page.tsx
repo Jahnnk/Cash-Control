@@ -29,8 +29,8 @@ export default function RecetasPage() {
       {/* Los precios de insumos y la conexión con Producción viven en su propia pantalla desde el 24-nov-2026. */}
       <Link href="/grupo/insumos" className="flex items-center justify-between gap-3 rounded-2xl border border-gray-200/80 bg-white px-4 py-3 hover:bg-gray-50 sm:px-6">
         <span>
-          <span className="block text-[15px] font-semibold text-gray-900">Insumos</span>
-          <span className="block text-xs text-gray-500">Precios, categorías, críticos y conexión con Producción están ahora en Grupo → Insumos.</span>
+          <span className="block text-[15px] font-semibold text-gray-900">Insumos y packaging</span>
+          <span className="block text-xs text-gray-500">Precios, categorías, críticos y conexión con Producción están ahora en Grupo → Insumos y packaging.</span>
         </span>
         <span className="text-sm font-medium text-primary">Abrir →</span>
       </Link>

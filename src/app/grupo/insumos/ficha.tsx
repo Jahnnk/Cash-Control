@@ -10,12 +10,16 @@ import { useEffect, useState } from "react";
 import { Archive, ArchiveRestore, Pencil, Star, X } from "lucide-react";
 import type { FichaInsumo } from "@/app/actions/insumos";
 import { Pastilla } from "@/components/productos/ui";
-import { diasEntre, tonoEdad, type PuntoPrecio } from "@/lib/insumos-ficha";
+import {
+  diasEntre, equivalencia, factorPresentacion, precioBaseDesdePresentacion, precioPorPresentacion, textoPresentacion, tonoEdad, unidadesPresentacion,
+  type Presentacion, type PuntoPrecio, type UnidadPresentacion,
+} from "@/lib/insumos-ficha";
 import { fechaCorta, soles, solesRedondo, TONO_EDAD, textoEdad } from "./piezas";
 
 export type AccionesFicha = {
-  guardarPrecio: (i: FichaInsumo, precio: number) => Promise<string | null>;
-  guardarFicha: (i: FichaInsumo, cambio: { categoria?: string | null; critico?: boolean | null; nombre?: string | null }) => Promise<string | null>;
+  /** `ambos`: guardar el mismo precio también en su pareja de la otra lista. */
+  guardarPrecio: (i: FichaInsumo, precio: number, ambos: boolean) => Promise<string | null>;
+  guardarFicha: (i: FichaInsumo, cambio: { categoria?: string | null; critico?: boolean | null; nombre?: string | null; presentacion?: Presentacion | null }) => Promise<string | null>;
   archivar: (i: FichaInsumo, archivar: boolean) => Promise<string | null>;
 };
 
@@ -31,6 +35,12 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
   const [nuevaCategoria, setNuevaCategoria] = useState<string | null>(null);
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const factor = factorPresentacion(i.unidad, i.presentacion);
+  // Con presentación, el precio se escribe por lata (lo que dice la boleta); el sistema lo pasa a precio por kg.
+  const [porPres, setPorPres] = useState(true);
+  const enPres = porPres && factor != null && !!i.presentacion;
+  const [ambos, setAmbos] = useState(() => !!i.pareja && Math.abs(i.pareja.precio - i.precio) < 0.005);
+  const otroLado = i.origen === "Atelier" ? "las cafeterías" : "Atelier";
 
   useEffect(() => {
     const esc = (e: KeyboardEvent) => { if (e.key === "Escape") onCerrar(); };
@@ -48,11 +58,12 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
   };
 
   const guardarPrecio = async (valor: string) => {
-    const n = Number(valor.replace(",", "."));
-    if (!Number.isFinite(n) || n <= 0) { setError("Escribe un precio mayor que cero."); return; }
+    const escrito = Number(valor.replace(",", "."));
+    if (!Number.isFinite(escrito) || escrito <= 0) { setError("Escribe un precio mayor que cero."); return; }
+    const n = enPres ? precioBaseDesdePresentacion(escrito, factor!) : escrito;
     const cambio = (n / i.precio - 1) * 100;
     if (Math.abs(cambio) >= 50 && !window.confirm(`El precio cambia ${cambio > 0 ? "+" : ""}${cambio.toFixed(0)}%. ¿Está bien?`)) return;
-    if (await correr(() => acciones.guardarPrecio(i, n))) setPrecio(null);
+    if (await correr(() => acciones.guardarPrecio(i, n, ambos && !!i.pareja))) setPrecio(null);
   };
 
   const dias = diasEntre(i.fecha, hoy);
@@ -122,27 +133,66 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
               <div>
                 <div className="text-[11px] font-medium uppercase tracking-wide text-gray-400">Precio de compra</div>
                 <div className="mt-1 text-2xl font-semibold tabular-nums text-gray-900">{soles(i.precio)}<span className="text-sm font-normal text-gray-400"> / {i.unidad}</span></div>
+                {factor != null && i.presentacion && (
+                  <div className="text-sm font-medium text-gray-700">{solesRedondo(precioPorPresentacion(i.precio, factor))} <span className="font-normal text-gray-500">cada {textoPresentacion(i.presentacion)}</span></div>
+                )}
                 <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs text-gray-500">
                   desde {fechaCorta(i.fecha)} <Pastilla tono={TONO_EDAD[tonoEdad(dias)]}>{textoEdad(dias)}</Pastilla>
                   {i.creadoAqui ? <Pastilla tono="marca">Creado aquí</Pastilla> : i.delSistema ? <Pastilla tono="azul">Cambiado aquí</Pastilla> : <Pastilla>Excel</Pastilla>}
                 </div>
               </div>
               {precio === null && !i.archivado && (
-                <button type="button" onClick={() => { setPrecio(String(i.precio)); setError(null); }}
+                <button type="button" onClick={() => { setPrecio(String(enPres ? precioPorPresentacion(i.precio, factor!) : i.precio)); setError(null); }}
                   className="shrink-0 rounded-xl bg-primary px-3 py-2 text-xs font-medium text-white hover:bg-primary-light">Cambiar precio</button>
               )}
             </div>
             {precio !== null && (
-              <div className="mt-3 flex items-center gap-2">
-                <span className="text-sm text-gray-500">S/</span>
-                <input autoFocus inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} aria-label={`Precio nuevo de ${i.nombre}`}
-                  onKeyDown={(e) => { if (e.key === "Enter") void guardarPrecio(precio); if (e.key === "Escape") setPrecio(null); }}
-                  className="w-28 rounded-lg border border-gray-300 px-2 py-1.5 text-right text-sm" />
-                <span className="text-xs text-gray-400">por {i.unidad}</span>
-                <button type="button" disabled={guardando} onClick={() => void guardarPrecio(precio)}
-                  className="ml-auto rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">{guardando ? "Guardando…" : "Guardar"}</button>
-                <button type="button" onClick={() => setPrecio(null)} className="text-xs text-gray-500">Cancelar</button>
+              <div className="mt-3 space-y-2 rounded-xl bg-gray-50 p-3">
+                {factor != null && i.presentacion && (
+                  <div className="inline-flex rounded-lg bg-white p-0.5 ring-1 ring-gray-200">
+                    {[true, false].map((v) => (
+                      <button key={String(v)} type="button"
+                        onClick={() => {
+                          const n = Number(precio.replace(",", "."));
+                          if (v !== porPres && Number.isFinite(n) && n > 0) setPrecio(String(v ? precioPorPresentacion(n, factor) : precioBaseDesdePresentacion(n, factor)));
+                          setPorPres(v);
+                        }}
+                        className={`rounded-md px-2.5 py-1 text-xs font-medium ${porPres === v ? "bg-primary text-white" : "text-gray-600"}`}>
+                        por {v ? i.presentacion!.nombre : i.unidad}
+                      </button>
+                    ))}
+                  </div>
+                )}
+                <div className="flex items-center gap-2">
+                  <span className="text-sm text-gray-500">S/</span>
+                  <input autoFocus inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} aria-label={`Precio nuevo de ${i.nombre}`}
+                    onKeyDown={(e) => { if (e.key === "Enter") void guardarPrecio(precio); if (e.key === "Escape") setPrecio(null); }}
+                    className="w-28 rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm" />
+                  <span className="text-xs text-gray-500">por {enPres ? i.presentacion!.nombre : i.unidad}</span>
+                </div>
+                {enPres && (() => {
+                  const n = Number(precio.replace(",", "."));
+                  return Number.isFinite(n) && n > 0 ? <p className="text-[11px] text-gray-500">= {soles(precioBaseDesdePresentacion(n, factor!))} por {i.unidad}, que es lo que usan las recetas.</p> : null;
+                })()}
+                {i.pareja && (
+                  <label className="flex items-start gap-2 text-xs text-gray-700">
+                    <input type="checkbox" checked={ambos} onChange={(e) => setAmbos(e.target.checked)} className="mt-0.5" />
+                    <span>Aplicar también a {otroLado} <span className="text-gray-400">(hoy {soles(i.pareja.precio)} por {i.unidad})</span></span>
+                  </label>
+                )}
+                <div className="flex items-center gap-2">
+                  <button type="button" disabled={guardando} onClick={() => void guardarPrecio(precio)}
+                    className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">{guardando ? "Guardando…" : "Guardar"}</button>
+                  <button type="button" onClick={() => setPrecio(null)} className="text-xs text-gray-500">Cancelar</button>
+                </div>
               </div>
+            )}
+            {i.pareja && precio === null && (
+              <p className="mt-3 text-xs text-gray-500">
+                También lo compran {otroLado}: <b className="text-gray-700">{soles(i.pareja.precio)}</b> por {i.unidad}
+                {Math.abs(i.pareja.precio - i.precio) >= 0.005 && <span className="text-amber-700"> (distinto)</span>}.
+                <span className="block text-[11px] text-gray-400">Cada lado tiene su precio. Categoría, crítico, nombre y presentación se comparten.</span>
+              </p>
             )}
             {i.proveedor && (
               <div className="mt-3 rounded-xl bg-sky-50 px-3 py-2 text-xs text-sky-900">
@@ -162,6 +212,8 @@ export function Ficha({ insumo: i, hoy, categorias, acciones, onCerrar }: {
               </p>
             )}
           </section>
+
+          <ComoSeCompra i={i} guardando={guardando} guardar={(p) => correr(() => acciones.guardarFicha(i, { presentacion: p }))} />
 
           {/* Peso en el gasto */}
           <section>
@@ -305,5 +357,88 @@ function Historia({ puntos }: { puntos: PuntoPrecio[] }) {
         <span>{fechaCorta(puntos[puntos.length - 1].fecha)} · {soles(puntos[puntos.length - 1].precio)}</span>
       </div>
     </div>
+  );
+}
+
+const ENVASES = ["lata", "bolsa", "caja", "paquete", "saco", "botella", "galonera", "frasco", "sobre", "balde", "rollo", "bandeja", "docena"];
+
+/**
+ * Cómo se compra: «lata de 393 g». El precio sigue por kg (las recetas piden gramos); con la presentación se ve el
+ * precio por lata y cuánto son N latas. Sirve para contar compras y stock en latas más adelante.
+ */
+function ComoSeCompra({ i, guardando, guardar }: { i: FichaInsumo; guardando: boolean; guardar: (p: Presentacion | null) => Promise<boolean> }) {
+  const unidades = unidadesPresentacion(i.unidad);
+  const [form, setForm] = useState<{ nombre: string; cantidad: string; unidad: UnidadPresentacion } | null>(null);
+  const [cuantas, setCuantas] = useState("12");
+  const p = i.presentacion;
+  const f = factorPresentacion(i.unidad, p);
+  if (unidades.length === 0) return null;
+
+  const abrir = () => setForm(p
+    ? { nombre: p.nombre, cantidad: String(p.cantidad), unidad: p.unidad }
+    : { nombre: "", cantidad: "", unidad: unidades[0] });
+  const previa = form ? (() => {
+    const pr = { nombre: form.nombre.trim().toLowerCase() || "unidad", cantidad: Number(form.cantidad.replace(",", ".")), unidad: form.unidad };
+    const ff = factorPresentacion(i.unidad, pr);
+    return ff != null ? `1 ${pr.nombre} = ${equivalencia(1, pr, i.unidad)?.split(" = ")[1]} · ${solesRedondo(precioPorPresentacion(i.precio, ff))} cada una con el precio de hoy` : null;
+  })() : null;
+  const n = Number(cuantas.replace(",", "."));
+
+  return (
+    <section>
+      <h3 className="text-[13px] font-semibold text-gray-900">Cómo se compra</h3>
+      {form ? (
+        <div className="mt-2 space-y-2 rounded-xl border border-primary/30 bg-emerald-50/40 p-3">
+          <div className="grid grid-cols-[1fr_90px_80px] gap-2">
+            <label className="text-[11px] text-gray-500">Se compra en
+              <input list="envases" autoFocus value={form.nombre} onChange={(e) => setForm({ ...form, nombre: e.target.value })} placeholder="lata"
+                className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm" />
+              <datalist id="envases">{ENVASES.map((e) => <option key={e} value={e} />)}</datalist>
+            </label>
+            <label className="text-[11px] text-gray-500">Cada una trae
+              <input inputMode="decimal" value={form.cantidad} onChange={(e) => setForm({ ...form, cantidad: e.target.value })} placeholder="393"
+                className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm" />
+            </label>
+            <label className="text-[11px] text-gray-500">en
+              <select value={form.unidad} onChange={(e) => setForm({ ...form, unidad: e.target.value as UnidadPresentacion })}
+                className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-sm">
+                {unidades.map((u) => <option key={u} value={u}>{u}</option>)}
+              </select>
+            </label>
+          </div>
+          {previa && <p className="text-[11px] text-gray-600">{previa}</p>}
+          <div className="flex items-center gap-2">
+            <button type="button" disabled={guardando}
+              onClick={() => void guardar({ nombre: form.nombre, cantidad: Number(form.cantidad.replace(",", ".")), unidad: form.unidad }).then((ok) => ok && setForm(null))}
+              className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">Guardar</button>
+            <button type="button" onClick={() => setForm(null)} className="text-xs text-gray-500">Cancelar</button>
+            {p && (
+              <button type="button" disabled={guardando} onClick={() => void guardar(null).then((ok) => ok && setForm(null))}
+                className="ml-auto text-xs text-gray-400 hover:text-gray-700">Quitar</button>
+            )}
+          </div>
+          {i.pareja && <p className="text-[11px] text-gray-400">Se guarda también en la lista de {i.origen === "Atelier" ? "las cafeterías" : "Atelier"}.</p>}
+        </div>
+      ) : p && f != null ? (
+        <div className="mt-2 rounded-xl border border-gray-200/80 p-3">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm text-gray-900"><b className="font-semibold">{textoPresentacion(p)}</b> <span className="text-gray-500">· {solesRedondo(precioPorPresentacion(i.precio, f))} cada una</span></div>
+            <button type="button" onClick={abrir} className="text-xs font-medium text-primary">Cambiar</button>
+          </div>
+          <div className="mt-2 flex flex-wrap items-center gap-2 text-xs text-gray-600">
+            <input inputMode="decimal" value={cuantas} onChange={(e) => setCuantas(e.target.value)} aria-label={`Cuántas ${p.nombre}`}
+              className="w-16 rounded-lg border border-gray-300 px-2 py-1 text-right text-sm" />
+            {Number.isFinite(n) && n > 0 ? (
+              <span>{equivalencia(n, p, i.unidad)?.replace(/^[\d.,]+ /, "")} · {solesRedondo(precioPorPresentacion(i.precio, f) * n)}</span>
+            ) : <span className="text-gray-400">escribe cuántas</span>}
+          </div>
+        </div>
+      ) : (
+        <div className="mt-1 flex items-center justify-between gap-2">
+          <p className="text-xs text-gray-500">Por {i.unidad === "und" ? "unidad" : i.unidad}. Si viene en lata, bolsa, caja o paquete, agrégalo: así se cuentan las compras en latas y el sistema hace la conversión.</p>
+          <button type="button" onClick={abrir} className="shrink-0 rounded-lg border border-primary/40 px-2.5 py-1.5 text-xs font-medium text-primary hover:bg-emerald-50">Agregar</button>
+        </div>
+      )}
+    </section>
   );
 }
