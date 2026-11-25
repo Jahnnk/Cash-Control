@@ -13,6 +13,7 @@
 
 import { Fragment, useEffect, useMemo, useState } from "react";
 import { ArrowLeft, ArrowRight, CakeSlice, Check, ChevronDown, ChevronRight, Coffee, Layers, Loader2, Pencil, Plus, Save, Trash2, X } from "lucide-react";
+import { TablaOrdenable, TbodyOrdenable } from "@/components/filas-ordenables";
 import { BuscadorCosto, soles4 } from "@/components/buscador-costo";
 import { crearInsumoNuevo, crearRecetaAtelier, getOpcionesNuevaReceta, type OpcionesNuevaReceta } from "@/app/actions/nueva-receta";
 import { guardarProductoNuevo } from "@/app/actions/carta";
@@ -23,10 +24,10 @@ import type { CostoPreparacion, DetalleReceta } from "@/lib/costos-preparaciones
 import type { LineaTienda } from "@/lib/productos/receta-carta";
 
 type Clase = "sub" | "atelier" | "cafeteria";
-type Fila = { texto: string; item: CostoPreparacion | null; cantidad: string; unidad: string };
+type Fila = { id: string; texto: string; item: CostoPreparacion | null; cantidad: string; unidad: string };
 
 const UNIDADES: Record<CostoPreparacion["unidad"], string[]> = { kg: ["g", "kg"], l: ["ml", "l"], und: ["und"] };
-const filaVacia = (): Fila => ({ texto: "", item: null, cantidad: "", unidad: "g" });
+const filaVacia = (): Fila => ({ id: crypto.randomUUID(), texto: "", item: null, cantidad: "", unidad: "g" });
 const num = (s: string) => (s.trim() === "" ? NaN : Number(s.replace(",", ".")));
 const soles = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const pct = (n: number | null) => (n == null ? "—" : `${Math.round(n * 100)}%`);
@@ -309,8 +310,9 @@ function PasoIngredientes(p: {
   onInsumoNuevo: (item: CostoPreparacion, fila: number) => void;
   onPrecioCambiado: () => Promise<void>;
 }) {
-  const [abiertas, setAbiertas] = useState<Set<number>>(new Set());
-  const alternar = (i: number) => setAbiertas((prev) => { const n = new Set(prev); if (n.has(i)) n.delete(i); else n.add(i); return n; });
+  // Abiertas por fila (por su id, para que sigan abiertas al cambiar el orden).
+  const [abiertas, setAbiertas] = useState<Set<string>>(new Set());
+  const alternar = (id: string) => setAbiertas((prev) => { const n = new Set(prev); if (n.has(id)) n.delete(id); else n.add(id); return n; });
   const [nuevo, setNuevo] = useState<{ fila: number; nombre: string; unidad: "kg" | "l" | "und"; precio: string } | null>(null);
   const [creando, setCreando] = useState(false);
   const [errorNuevo, setErrorNuevo] = useState<string | null>(null);
@@ -362,6 +364,7 @@ function PasoIngredientes(p: {
           <table className="w-full text-xs">
             <thead>
               <tr className="text-[10px] uppercase text-gray-500 bg-gray-50">
+                <th className="w-6" />
                 <th className="text-left px-2 py-2 font-medium min-w-[220px]">Ingrediente</th>
                 <th className="text-right px-2 py-2 font-medium w-24">Cantidad</th>
                 <th className="text-left px-2 py-2 font-medium w-20">Unidad</th>
@@ -369,20 +372,21 @@ function PasoIngredientes(p: {
                 <th className="w-8" />
               </tr>
             </thead>
-            <tbody>
+            <TablaOrdenable items={p.filas} idDe={(f) => f.id} onMover={(nuevas) => p.setFilas(() => nuevas)}>
               {p.filas.map((f, i) => {
                 const c = f.item && num(f.cantidad) > 0 ? costoIngrediente(f.item, num(f.cantidad), f.unidad) : null;
                 const unidades = f.item ? UNIDADES[f.item.unidad] : ["g", "kg", "ml", "l", "und"];
                 return (
-                  <Fragment key={i}>
+                  <TbodyOrdenable key={f.id} id={f.id}>{(asa) => (<>
                   <tr className="border-t border-gray-100 align-top">
+                    <td className="pl-0.5 pt-1.5 align-top">{asa}</td>
                     <td className="px-1 py-1">
                       <BuscadorCosto value={f.texto} elegido={!!f.item} catalogo={p.lista}
                         placeholder={p.clase === "cafeteria" ? "ej. Pan ciabatta, Pavo" : "ej. Harina pastelera, Jengibre"} resaltarSubrecetas
                         onTexto={(t) => p.setFila(i, { texto: t, item: null })}
                         onElegir={(item) => p.setFila(i, { texto: item.nombre, item, unidad: UNIDADES[item.unidad].includes(f.unidad) ? f.unidad : UNIDADES[item.unidad][0] })} />
                       {f.item ? (
-                        <EtiquetaItem item={f.item} origen={origen} abierta={abiertas.has(i)} onAlternar={() => alternar(i)} onPrecioCambiado={p.onPrecioCambiado} />
+                        <EtiquetaItem item={f.item} origen={origen} abierta={abiertas.has(f.id)} onAlternar={() => alternar(f.id)} onPrecioCambiado={p.onPrecioCambiado} />
                       ) : f.texto.trim() ? (
                         <button type="button" onClick={() => { setErrorNuevo(null); setNuevo({ fila: i, nombre: f.texto.trim(), unidad: "kg", precio: "" }); }}
                           className="text-[11px] text-amber-800 mt-0.5 px-0.5 underline decoration-dotted">
@@ -408,17 +412,17 @@ function PasoIngredientes(p: {
                       </button>
                     </td>
                   </tr>
-                  {f.item?.detalle && abiertas.has(i) && (
+                  {f.item?.detalle && abiertas.has(f.id) && (
                     <tr>
-                      <td colSpan={5} className="px-1 pb-2">
+                      <td colSpan={6} className="px-1 pb-2">
                         <DentroDeReceta item={f.item} porRef={p.porRef} origen={origen} onPrecioCambiado={p.onPrecioCambiado} />
                       </td>
                     </tr>
                   )}
-                  </Fragment>
+                  </>)}</TbodyOrdenable>
                 );
               })}
-            </tbody>
+            </TablaOrdenable>
           </table>
         </div>
         <div className="mt-2 flex flex-wrap gap-2">

@@ -9,6 +9,7 @@
 import { useMemo, useState } from "react";
 import { X, Plus, Trash2, Loader2, Save, RotateCcw } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
+import { TablaOrdenable, TbodyOrdenable } from "@/components/filas-ordenables";
 import { BuscadorCosto, TIPO_COSTO, soles4 } from "@/components/buscador-costo";
 import { guardarReceta, eliminarReceta } from "@/app/actions/recetas";
 import { costoDeReceta, costoIngrediente, refDeReceta, type RecetaSistema } from "@/lib/recetas";
@@ -26,7 +27,7 @@ export type Borrador = {
   reemplaza: CostoPreparacion | null;
 };
 
-type Fila = { texto: string; item: CostoPreparacion | null; ref: string | null; cantidad: string; unidad: string };
+type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: string | null; cantidad: string; unidad: string };
 
 const UNIDADES: Record<CostoPreparacion["unidad"], string[]> = { kg: ["g", "kg"], l: ["ml", "l"], und: ["und"] };
 
@@ -64,9 +65,9 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
   const [filas, setFilas] = useState<Fila[]>(() => {
     const f = borrador.detalle.ingredientes.map((g) => {
       const item = g.ref ? porRef.get(g.ref) ?? null : null;
-      return { texto: item?.nombre ?? g.nombre, item, ref: item ? g.ref : null, cantidad: String(g.cantidad), unidad: g.unidad };
+      return { id: crypto.randomUUID(), texto: item?.nombre ?? g.nombre, item, ref: item ? g.ref : null, cantidad: String(g.cantidad), unidad: g.unidad };
     });
-    return f.length > 0 ? f : [{ texto: "", item: null, ref: null, cantidad: "", unidad: "g" }];
+    return f.length > 0 ? f : [{ id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g" }];
   });
 
   const setFila = (i: number, p: Partial<Fila>) => setFilas((prev) => prev.map((f, j) => (j === i ? { ...f, ...p } : f)));
@@ -177,6 +178,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-[10px] uppercase text-gray-500 bg-gray-50">
+                    <th className="w-6" />
                     <th className="text-left px-2 py-2 font-medium min-w-[240px]">Insumo, preparación o producto</th>
                     <th className="text-right px-2 py-2 font-medium w-24">Cantidad</th>
                     <th className="text-left px-2 py-2 font-medium w-20">Unidad</th>
@@ -184,12 +186,14 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
                     <th className="w-8" />
                   </tr>
                 </thead>
-                <tbody>
+                <TablaOrdenable items={filas} idDe={(f) => f.id} onMover={setFilas}>
                   {filas.map((f, i) => {
                     const costoFila = f.item && Number(f.cantidad) > 0 ? costoIngrediente(f.item, Number(f.cantidad), f.unidad) : null;
                     const opciones = f.item ? UNIDADES[f.item.unidad] : ["g", "kg", "ml", "l", "und"];
                     return (
-                      <tr key={i} className="border-t border-gray-100 align-top">
+                      <TbodyOrdenable key={f.id} id={f.id}>{(asa) => (
+                      <tr className="border-t border-gray-100 align-top">
+                        <td className="pl-0.5 pt-1.5 align-top">{asa}</td>
                         <td className="px-1 py-1">
                           <BuscadorCosto
                             value={f.texto}
@@ -227,13 +231,14 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
                           </button>
                         </td>
                       </tr>
+                      )}</TbodyOrdenable>
                     );
                   })}
-                </tbody>
+                </TablaOrdenable>
               </table>
             </div>
             <button
-              onClick={() => setFilas((p) => [...p, { texto: "", item: null, ref: null, cantidad: "", unidad: "g" }])}
+              onClick={() => setFilas((p) => [...p, { id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g" }])}
               className="mt-2 inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
             >
               <Plus className="w-3.5 h-3.5" /> Agregar ingrediente
