@@ -22,8 +22,8 @@ import { getRentabilidadProductos } from "@/app/actions/productos-panorama";
 import { CAFETERIAS } from "@/lib/productos/cafeterias";
 import { productosParaSimular } from "@/lib/productos/simulador-insumos";
 import {
-  CATEGORIAS, categoriaDelSku, criticosPorGasto, esCritico, historialPorDia, mesesCerrados, ultimoCambio,
-  type CambioPrecio, type PuntoPrecio,
+  CATEGORIAS, categoriaDelSku, criticosPorGasto, esCritico, factorPresentacion, historialPorDia, mesesCerrados, parejasEntreListas, ultimoCambio,
+  unidadesPresentacion, type CambioPrecio, type Presentacion, type PuntoPrecio, type UnidadPresentacion,
 } from "@/lib/insumos-ficha";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -63,6 +63,10 @@ export type FichaInsumo = {
   produccion: boolean | null;
   historial: PuntoPrecio[];
   cambio: CambioPrecio | null;
+  /** Cómo se compra (lata de 393 g); null = por la unidad de receta. */
+  presentacion: Presentacion | null;
+  /** El mismo insumo en la otra lista (Atelier ↔ cafeterías): comparten categoría, crítico, nombre y presentación. */
+  pareja: { origen: Origen; sku: string; precio: number } | null;
 };
 
 export type DatosInsumos = {
@@ -74,7 +78,33 @@ export type DatosInsumos = {
   hoy: string;
 };
 
-type Ficha = { origen: string; sku: string; categoria: string | null; critico: boolean | null; nombre: string | null };
+type Ficha = {
+  origen: string; sku: string; categoria: string | null; critico: boolean | null; nombre: string | null;
+  presentacion: string | null; presentacion_cantidad: number | null; presentacion_unidad: string | null;
+};
+
+/**
+ * El nombre «de origen» de cada insumo, para emparejar las dos listas sin que lo mueva un nombre corregido: el
+ * del último Excel; si nunca estuvo en el Excel, el primero con que se creó en el sistema.
+ */
+async function leerNombresOriginales(): Promise<Map<string, string>> {
+  const rows = (await sql`
+    SELECT DISTINCT ON (origen, upper(sku)) origen, sku, nombre FROM insumos_precios
+    ORDER BY origen, upper(sku), (archivo = ${ARCHIVO_SISTEMA}) ASC,
+             CASE WHEN archivo = ${ARCHIVO_SISTEMA} THEN fecha END ASC, fecha DESC`) as { origen: string; sku: string; nombre: string }[];
+  return new Map(rows.map((r) => [claveInsumo(r.origen, r.sku), r.nombre]));
+}
+
+/** Las parejas entre listas («origen|SKU» → la del otro lado), por el nombre de origen. */
+async function leerParejas(vigentes: { origen: string; sku: string; nombre: string }[], originales?: Map<string, string>): Promise<Map<string, string>> {
+  const o = originales ?? await leerNombresOriginales();
+  return parejasEntreListas(vigentes.map((v) => ({ origen: v.origen, sku: v.sku, nombre: o.get(claveInsumo(v.origen, v.sku)) ?? v.nombre })));
+}
+
+const presentacionDe = (f: Ficha | undefined): Presentacion | null =>
+  f?.presentacion && f.presentacion_cantidad && f.presentacion_unidad
+    ? { nombre: f.presentacion, cantidad: Number(f.presentacion_cantidad), unidad: f.presentacion_unidad as UnidadPresentacion }
+    : null;
 
 const hoyLima = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
 const r2 = (n: number) => Math.round(n * 100) / 100;
@@ -107,7 +137,7 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
     const hoy = hoyLima();
     const [{ vigentes }, fichas, archivados, catalogo, carta, mejores, parejas, fotos, gastos] = await Promise.all([
       leerPreciosVigentes(sql),
-      (sql`SELECT origen, sku, categoria, critico, nombre FROM insumos_ficha` as unknown as Promise<Ficha[]>).catch(() => [] as Ficha[]),
+      (sql`SELECT origen, sku, categoria, critico, nombre, presentacion, presentacion_cantidad::float AS presentacion_cantidad, presentacion_unidad FROM insumos_ficha` as unknown as Promise<Ficha[]>).catch(() => [] as Ficha[]),
       leerArchivados(sql),
       leerCatalogo(sql, 1),
       (sql`SELECT ref, COALESCE(nombre_carta, nombre) AS nombre, desglose FROM costos_carta WHERE desglose IS NOT NULL` as unknown as Promise<{ ref: string; nombre: string; desglose: AporteInsumo[] }[]>).catch(() => []),
@@ -121,7 +151,7 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
     const ficha = new Map(fichas.map((f) => [claveInsumo(f.origen, f.sku), f]));
     const conectados = new Set(parejas.filter((p) => p.cc_ref?.trim()).map((p) => p.cc_ref!.trim().toUpperCase()));
 
-    // Historial y nombre del Excel de cada insumo.
+    // Historial y nombre de origen (el del Excel) de cada insumo.
     const filasPorInsumo = new Map<string, { fecha: string; precio: number; sistema: boolean }[]>();
     const nombreExcel = new Map<string, string>();
     for (const f of [...fotos].sort((a, b) => a.fecha.localeCompare(b.fecha))) {
@@ -130,6 +160,8 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
       if (f.archivo !== ARCHIVO_SISTEMA) nombreExcel.set(k, f.nombre);
       else if (!nombreExcel.has(k)) nombreExcel.set(k, f.nombre);
     }
+    const parejas2 = await leerParejas(vigentes, nombreExcel);
+    const precioDe = new Map(vigentes.map((v) => [claveInsumo(v.origen, v.sku), v]));
 
     // Qué recetas de Atelier lo llevan directo.
     const recetas = new Map<string, Set<string>>();
@@ -181,6 +213,12 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
           produccion: v.origen === "Atelier" ? conectados.has(v.sku.trim().toUpperCase()) : null,
           historial,
           cambio: ultimoCambio(historial),
+          presentacion: presentacionDe(f),
+          pareja: (() => {
+            const kp = parejas2.get(k);
+            const p = kp ? precioDe.get(kp) : undefined;
+            return p && (p.origen === "Atelier" || p.origen === "Cafetería") ? { origen: p.origen, sku: p.sku, precio: p.precio } : null;
+          })(),
         };
       });
 
@@ -194,7 +232,9 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
 
 /**
  * Guarda lo que se decide de un insumo en su ficha: categoría, crítico (true/false a mano, null = que decida el
- * sistema) y nombre corregido (null = el del Excel). Solo cambia los campos que vienen. Solo dirección.
+ * sistema), nombre corregido (null = el del Excel) y presentación de compra (null = por la unidad de receta).
+ * Solo cambia los campos que vienen. Lo mismo se guarda en su pareja de la otra lista (el mismo insumo que compra
+ * el otro lado): son datos del insumo, no del que lo compra. El precio NO se comparte. Solo dirección.
  */
 export async function guardarFichaInsumo(input: {
   origen: string;
@@ -202,7 +242,8 @@ export async function guardarFichaInsumo(input: {
   categoria?: string | null;
   critico?: boolean | null;
   nombre?: string | null;
-}): Promise<{ ok: true } | { ok: false; error: string }> {
+  presentacion?: Presentacion | null;
+}): Promise<{ ok: true; pareja: boolean } | { ok: false; error: string }> {
   const role = await getSessionRole();
   if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
   const { vigentes } = await leerPreciosVigentes(sql);
@@ -213,26 +254,51 @@ export async function guardarFichaInsumo(input: {
   const tocaCategoria = input.categoria !== undefined;
   const tocaCritico = input.critico !== undefined;
   const tocaNombre = input.nombre !== undefined;
+  const tocaPresentacion = input.presentacion !== undefined;
   const categoria = input.categoria == null ? null : limpio(input.categoria, 60) || null;
   const critico = input.critico === true ? true : input.critico === false ? false : null;
   const nombre = input.nombre == null ? null : limpio(input.nombre, 120) || null;
   if (tocaNombre && nombre != null && nombre.length < 2) return { ok: false, error: "Escribe el nombre." };
   if (tocaCritico && input.critico !== null && typeof input.critico !== "boolean") return { ok: false, error: "Valor inválido." };
+
+  let pres: Presentacion | null = null;
+  if (tocaPresentacion && input.presentacion) {
+    const p = input.presentacion;
+    pres = { nombre: limpio(p.nombre, 40).toLowerCase(), cantidad: Math.round(Number(p.cantidad) * 10000) / 10000, unidad: p.unidad };
+    if (pres.nombre.length < 2) return { ok: false, error: "Escribe cómo se compra (lata, bolsa, caja…)." };
+    if (!(pres.cantidad > 0) || pres.cantidad > 1_000_000) return { ok: false, error: "Escribe cuánto trae, mayor que cero." };
+    if (factorPresentacion(v.unidad, pres) == null) {
+      return { ok: false, error: `Este insumo va por ${v.unidad}: lo que trae tiene que estar en ${unidadesPresentacion(v.unidad).join(" o ")}.` };
+    }
+  }
+
   const quien = role.nombre ?? (role.quien === "kelly" ? "Kelly" : "Jahnn");
-  try {
+  const guardarEn = async (origen: string, sku: string, unidad: string) => {
+    const conPres = tocaPresentacion && (pres == null || factorPresentacion(unidad, pres) != null);
+    const pr = conPres ? pres : null;
     await sql`
-      INSERT INTO insumos_ficha (origen, sku, categoria, critico, nombre, actualizado_por)
-      VALUES (${v.origen}, ${v.sku}, ${tocaCategoria ? categoria : null}, ${tocaCritico ? critico : null}, ${tocaNombre ? nombre : null}, ${quien})
+      INSERT INTO insumos_ficha (origen, sku, categoria, critico, nombre, presentacion, presentacion_cantidad, presentacion_unidad, actualizado_por)
+      VALUES (${origen}, ${sku}, ${tocaCategoria ? categoria : null}, ${tocaCritico ? critico : null}, ${tocaNombre ? nombre : null},
+              ${pr?.nombre ?? null}, ${pr?.cantidad ?? null}, ${pr?.unidad ?? null}, ${quien})
       ON CONFLICT (origen, sku) DO UPDATE SET
         categoria = CASE WHEN ${tocaCategoria}::boolean THEN EXCLUDED.categoria ELSE insumos_ficha.categoria END,
         critico   = CASE WHEN ${tocaCritico}::boolean   THEN EXCLUDED.critico   ELSE insumos_ficha.critico   END,
         nombre    = CASE WHEN ${tocaNombre}::boolean    THEN EXCLUDED.nombre    ELSE insumos_ficha.nombre    END,
+        presentacion          = CASE WHEN ${conPres}::boolean THEN EXCLUDED.presentacion          ELSE insumos_ficha.presentacion          END,
+        presentacion_cantidad = CASE WHEN ${conPres}::boolean THEN EXCLUDED.presentacion_cantidad ELSE insumos_ficha.presentacion_cantidad END,
+        presentacion_unidad   = CASE WHEN ${conPres}::boolean THEN EXCLUDED.presentacion_unidad   ELSE insumos_ficha.presentacion_unidad   END,
         actualizado_por = EXCLUDED.actualizado_por, actualizado_el = now()`;
+  };
+  try {
+    await guardarEn(v.origen, v.sku, v.unidad);
+    const kp = (await leerParejas(vigentes)).get(claveInsumo(v.origen, v.sku));
+    const p = kp ? vigentes.find((x) => claveInsumo(x.origen, x.sku) === kp) : undefined;
+    if (p) await guardarEn(p.origen, p.sku, p.unidad);
+    revalidatePath("/grupo/insumos");
+    if (tocaNombre) revalidatePath("/grupo/recetas");
+    return { ok: true, pareja: !!p };
   } catch (e) {
     console.error("[guardarFichaInsumo] failed:", e);
     return { ok: false, error: "No se pudo guardar. Intenta de nuevo." };
   }
-  revalidatePath("/grupo/insumos");
-  if (tocaNombre) revalidatePath("/grupo/recetas");
-  return { ok: true };
 }

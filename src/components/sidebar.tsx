@@ -62,7 +62,7 @@ const I = {
   supervisiones: { segment: "supervisiones", label: "Supervisiones", icon: ClipboardCheck },
   incentivos: { segment: "incentivos", label: "Bonos e Incentivos", icon: Medal },
   // La base de las recetas (24-nov-2026): precio, categoría y críticos de cada insumo.
-  insumos: { segment: "insumos", label: "Insumos", icon: Wheat },
+  insumos: { segment: "insumos", label: "Insumos y packaging", icon: Wheat },
   recetas: { segment: "recetas", label: "Recetas y costos", icon: ChefHat },
   porDefinir: { segment: "por-definir", label: "Por definir", icon: ListChecks },
   panel: { segment: "panel", label: "Panel de Sede", icon: Trophy },

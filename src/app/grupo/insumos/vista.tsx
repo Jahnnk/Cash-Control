@@ -10,7 +10,7 @@ import { useMemo, useState } from "react";
 import { ChevronDown, ChevronRight, Plus, Search, Star } from "lucide-react";
 import type { DatosInsumos, FichaInsumo } from "@/app/actions/insumos";
 import { Pastilla, Segmentado, nombreMes } from "@/components/productos/ui";
-import { DIAS_PRECIO_VIEJO, categoriaDelSku, diasEntre, esCritico, tonoEdad, ultimoCambio } from "@/lib/insumos-ficha";
+import { DIAS_PRECIO_VIEJO, categoriaDelSku, diasEntre, esCritico, factorPresentacion, precioPorPresentacion, tonoEdad, ultimoCambio, type Presentacion } from "@/lib/insumos-ficha";
 import { Ficha, type AccionesFicha } from "./ficha";
 import { InsumoNuevo } from "./insumo-nuevo";
 import { soles, solesRedondo, TONO_EDAD, textoEdad } from "./piezas";
@@ -18,6 +18,7 @@ import { soles, solesRedondo, TONO_EDAD, textoEdad } from "./piezas";
 type Origen = "Atelier" | "Cafetería";
 type Filtro = "todos" | "criticos" | "viejo" | "sinUso" | "subieron" | "archivados";
 
+const PACKAGING = "Packaging";
 const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const clave = (i: { origen: string; sku: string }) => `${i.origen}|${i.sku}`;
 
@@ -68,7 +69,8 @@ export function InsumosVista({ datos, acciones, onCreado }: {
         gasto: items.reduce((t, i) => t + i.gastoMes, 0),
         criticos: items.filter((i) => i.critico).length,
       }))
-      .sort((a, b) => b.gasto - a.gasto || a.cat.localeCompare(b.cat, "es"));
+      // El packaging va siempre al final, en su propio bloque: así se encuentra aunque pese poco en el gasto.
+      .sort((a, b) => Number(a.cat === PACKAGING) - Number(b.cat === PACKAGING) || b.gasto - a.gasto || a.cat.localeCompare(b.cat, "es"));
   }, [lista]);
 
   const buscando = filtro !== "todos" || !!q.trim() || !!categoria;
@@ -157,7 +159,11 @@ export function InsumosVista({ datos, acciones, onCreado }: {
           {porCategoria.map((g) => {
             const abierto = buscando || abiertas.has(g.cat);
             return (
-              <section key={g.cat} className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white">
+              <div key={g.cat}>
+              {g.cat === PACKAGING && porCategoria.length > 1 && (
+                <p className="mb-2 mt-5 px-1 text-[11px] font-medium uppercase tracking-wide text-gray-400">Lo que va con el producto: empaques, vasos, bolsas, papel</p>
+              )}
+              <section className="overflow-hidden rounded-2xl border border-gray-200/80 bg-white">
                 <button type="button" onClick={() => alternar(g.cat)} disabled={buscando} aria-expanded={abierto}
                   className="flex w-full items-center gap-3 px-4 py-3 text-left disabled:cursor-default sm:px-5">
                   {!buscando && (abierto ? <ChevronDown className="h-4 w-4 shrink-0 text-gray-400" /> : <ChevronRight className="h-4 w-4 shrink-0 text-gray-400" />)}
@@ -180,6 +186,7 @@ export function InsumosVista({ datos, acciones, onCreado }: {
                   </ul>
                 )}
               </section>
+              </div>
             );
           })}
         </div>
@@ -191,7 +198,7 @@ export function InsumosVista({ datos, acciones, onCreado }: {
         {" "}Lo que Atelier vende a clientes B2B todavía no entra en esa cuenta.
       </p>
 
-      {abierta && <Ficha insumo={abierta} hoy={datos.hoy} categorias={datos.categorias} acciones={acciones} onCerrar={() => setFicha(null)} />}
+      {abierta && <Ficha key={clave(abierta)} insumo={abierta} hoy={datos.hoy} categorias={datos.categorias} acciones={acciones} onCerrar={() => setFicha(null)} />}
     </div>
   );
 }
@@ -241,7 +248,11 @@ function Fila({ i, hoy, maxGasto, onAbrir, onEstrella }: { i: FichaInsumo; hoy: 
           ) : <span className="text-[11px] text-gray-300">—</span>}
         </span>
         <span className="text-right">
-          <span className="block whitespace-nowrap text-sm font-medium tabular-nums text-gray-900">{soles(i.precio)}</span>
+          <span className="block whitespace-nowrap text-sm font-medium tabular-nums text-gray-900">{soles(i.precio)}<span className="text-[11px] font-normal text-gray-400"> /{i.unidad}</span></span>
+          {(() => {
+            const f = factorPresentacion(i.unidad, i.presentacion);
+            return f != null && i.presentacion ? <span className="block whitespace-nowrap text-[11px] text-gray-500">{solesRedondo(precioPorPresentacion(i.precio, f))} {i.presentacion.nombre}</span> : null;
+          })()}
           {i.cambio && i.cambio.pct !== 0 && (
             <span className={`block text-[11px] font-medium ${i.cambio.pct > 0 ? "text-red-700" : "text-emerald-700"}`}>{i.cambio.pct > 0 ? "▲ +" : "▼ "}{i.cambio.pct}%</span>
           )}
@@ -255,8 +266,9 @@ function Fila({ i, hoy, maxGasto, onAbrir, onEstrella }: { i: FichaInsumo; hoy: 
 }
 
 /** Lo que cambia en la lista sin volver a leer todo (estrella, categoría, nombre, archivo, precio). */
-export function aplicarCambio(i: FichaInsumo, c: Partial<{ categoria: string | null; critico: boolean | null; nombre: string | null; archivado: boolean; precio: number; hoy: string }>): FichaInsumo {
+export function aplicarCambio(i: FichaInsumo, c: Partial<{ categoria: string | null; critico: boolean | null; nombre: string | null; presentacion: Presentacion | null; archivado: boolean; precio: number; hoy: string }>): FichaInsumo {
   const n = { ...i };
+  if (c.presentacion !== undefined) n.presentacion = c.presentacion;
   if (c.critico !== undefined) { n.criticoManual = c.critico; n.critico = esCritico(c.critico, i.criticoSugerido); }
   if (c.categoria !== undefined) { n.categoriaElegida = c.categoria != null; n.categoria = c.categoria ?? categoriaDelSku(i.sku); }
   if (c.nombre !== undefined) {

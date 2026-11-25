@@ -119,3 +119,91 @@ export function mesesCerrados(hoy: string, n = 3): string[] {
   }
   return out;
 }
+
+// ─── Presentación de compra (24-nov-2026) ───────────────────────────────────────────────────────────────────
+//
+// El precio se guarda por la unidad de receta (kg, l o und) porque las recetas piden gramos. La presentación dice
+// cómo se compra: «lata de 393 g». FACTOR = cuánto de la unidad de receta trae una presentación (0.393 kg).
+//   precio por presentación = precio × factor        (S/ 13.74 el kg → S/ 5.40 la lata)
+//   cantidad en receta      = presentaciones × factor (12 latas → 4.716 kg)
+
+export type UnidadPresentacion = "g" | "kg" | "ml" | "l" | "und";
+export type Presentacion = { nombre: string; cantidad: number; unidad: UnidadPresentacion };
+
+/** Las unidades en que se puede decir cuánto trae, según la unidad de receta del insumo. */
+export function unidadesPresentacion(base: string): UnidadPresentacion[] {
+  return base === "kg" ? ["g", "kg"] : base === "l" ? ["ml", "l"] : base === "und" ? ["und"] : [];
+}
+
+/** Cuánto de la unidad de receta trae una presentación; null si no calza (ej. ml en un insumo por kg). */
+export function factorPresentacion(base: string, p: Pick<Presentacion, "cantidad" | "unidad"> | null): number | null {
+  if (!p || !(p.cantidad > 0) || !unidadesPresentacion(base).includes(p.unidad)) return null;
+  return p.unidad === "g" || p.unidad === "ml" ? p.cantidad / 1000 : p.cantidad;
+}
+
+const r4 = (n: number) => Math.round(n * 10000) / 10000;
+
+export function precioPorPresentacion(precioBase: number, factor: number): number {
+  return Math.round(precioBase * factor * 100) / 100;
+}
+
+/** El precio por unidad de receta a partir del precio de una presentación. */
+export function precioBaseDesdePresentacion(precioPresentacion: number, factor: number): number {
+  return factor > 0 ? r4(precioPresentacion / factor) : 0;
+}
+
+const NUM = (n: number, max = 3) => n.toLocaleString("es-PE", { maximumFractionDigits: max });
+
+/** «lata de 393 g», «paquete de 100 und». */
+export function textoPresentacion(p: Presentacion): string {
+  return `${p.nombre} de ${NUM(p.cantidad)} ${p.unidad}`;
+}
+
+/** Plural simple en español: lata → latas, bolsa → bolsas, galonera → galoneras, saco → sacos, unidad → unidades. */
+export function plural(nombre: string, n: number): string {
+  if (n === 1) return nombre;
+  const s = nombre.trim();
+  if (/[aeiouáéó]$/i.test(s)) return `${s}s`;
+  if (/z$/i.test(s)) return `${s.slice(0, -1)}ces`;
+  return `${s}es`;
+}
+
+/** «12 latas = 4.716 kg» (con la unidad de receta; g y ml si es menos de 1). */
+export function equivalencia(n: number, p: Presentacion, base: string): string | null {
+  const f = factorPresentacion(base, p);
+  if (f == null || !(n > 0)) return null;
+  const total = n * f;
+  const enChico = (base === "kg" || base === "l") && total < 1;
+  const cantidad = enChico ? `${NUM(total * 1000)} ${base === "kg" ? "g" : "ml"}` : `${NUM(total)} ${base}`;
+  return `${NUM(n)} ${plural(p.nombre, n)} = ${cantidad}`;
+}
+
+// ─── El mismo insumo en las dos listas (24-nov-2026) ────────────────────────────────────────────────────────
+//
+// Atelier y las cafeterías compran muchas cosas iguales (191 con el mismo nombre). Cada lado tiene su precio,
+// pero categoría, crítico, nombre y presentación son del insumo: se comparten. Se emparejan por el NOMBRE del
+// Excel (el código no sirve: hay códigos iguales para insumos distintos). Si un nombre se repite dentro de un
+// mismo lado, no se empareja (no se sabe cuál es).
+
+export const normalizarNombre = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, " ").trim();
+
+/** «origen|SKU» → «origen|SKU» del mismo insumo en la otra lista. */
+export function parejasEntreListas(items: { origen: string; sku: string; nombre: string }[]): Map<string, string> {
+  const clave = (o: string, s: string) => `${o}|${s.trim().toUpperCase()}`;
+  const porLado = new Map<string, Map<string, string | null>>();
+  for (const i of items) {
+    const lado = porLado.get(i.origen) ?? new Map<string, string | null>();
+    const n = normalizarNombre(i.nombre);
+    if (!n) continue;
+    lado.set(n, lado.has(n) ? null : clave(i.origen, i.sku));
+    porLado.set(i.origen, lado);
+  }
+  const a = porLado.get("Atelier") ?? new Map();
+  const c = porLado.get("Cafetería") ?? new Map();
+  const out = new Map<string, string>();
+  for (const [n, ka] of a) {
+    const kc = c.get(n);
+    if (ka && kc) { out.set(ka, kc); out.set(kc, ka); }
+  }
+  return out;
+}

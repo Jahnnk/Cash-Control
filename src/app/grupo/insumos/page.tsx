@@ -32,17 +32,33 @@ export default function InsumosPage() {
     const parchar = (origen: string, sku: string, c: Parameters<typeof aplicarCambio>[1]) =>
       setDatos((d) => d && { ...d, insumos: d.insumos.map((x) => (x.origen === origen && x.sku === sku ? aplicarCambio(x, c) : x)) });
     return {
+      // Categoría, crítico, nombre y presentación son del insumo: el servidor los guarda también en su pareja.
       guardarFicha: async (i, cambio) => {
         const r = await guardarFichaInsumo({ origen: i.origen, sku: i.sku, ...cambio });
         if (!r.ok) return r.error;
         parchar(i.origen, i.sku, cambio);
+        if (r.pareja && i.pareja) parchar(i.pareja.origen, i.pareja.sku, cambio);
         return null;
       },
-      guardarPrecio: async (i, precio) => {
+      // El precio es de cada lado; con «ambos» se guarda el mismo en la pareja.
+      guardarPrecio: async (i, precio, ambos) => {
+        const hoy = datos?.hoy ?? new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
         const r = await guardarPrecioInsumo({ origen: i.origen, sku: i.sku, precio });
         if (!r.ok) return r.error;
-        parchar(i.origen, i.sku, { precio, hoy: datos?.hoy ?? new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }) });
-        setAviso(`${i.nombre}: precio guardado. Los costos de las recetas y de la carta ya usan el precio nuevo.`);
+        parchar(i.origen, i.sku, { precio, hoy });
+        const otro = i.origen === "Atelier" ? "las cafeterías" : "Atelier";
+        if (ambos && i.pareja) {
+          const r2 = await guardarPrecioInsumo({ origen: i.pareja.origen, sku: i.pareja.sku, precio });
+          if (!r2.ok) return `Se guardó aquí, pero no en ${otro}: ${r2.error}`;
+          const p = i.pareja;
+          setDatos((d) => d && { ...d, insumos: d.insumos.map((x) =>
+            x.origen === p.origen && x.sku === p.sku ? { ...aplicarCambio(x, { precio, hoy }), pareja: x.pareja ? { ...x.pareja, precio } : null }
+            : x.origen === i.origen && x.sku === i.sku && x.pareja ? { ...x, pareja: { ...x.pareja, precio } } : x) });
+        } else if (i.pareja) {
+          const p = i.pareja;
+          setDatos((d) => d && { ...d, insumos: d.insumos.map((x) => (x.origen === p.origen && x.sku === p.sku && x.pareja ? { ...x, pareja: { ...x.pareja, precio } } : x)) });
+        }
+        setAviso(`${i.nombre}: precio guardado${ambos && i.pareja ? ` aquí y en ${otro}` : ""}. Los costos de las recetas y de la carta ya usan el precio nuevo.`);
         return null;
       },
       archivar: async (i, archivar) => {
@@ -58,9 +74,9 @@ export default function InsumosPage() {
   return (
     <div className="space-y-6">
       <div>
-        <h1 className="text-2xl font-bold text-gray-900">Insumos</h1>
+        <h1 className="text-2xl font-bold text-gray-900">Insumos y packaging</h1>
         <p className="mt-1 max-w-2xl text-sm text-gray-500">
-          La base de todas las recetas. Aquí se cambian precios, se ordenan por categoría y se marcan los críticos. Lo que cambias vale en todo el sistema, sin tocar el Excel.
+          Todo lo que se compra para preparar y servir: la base de las recetas. Aquí se cambian precios, se dice cómo se compra cada cosa, se ordena por categoría y se marcan los críticos. Lo que cambias vale en todo el sistema, sin tocar el Excel.
         </p>
       </div>
 
