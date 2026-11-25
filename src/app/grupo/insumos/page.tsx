@@ -12,6 +12,7 @@ import { archivarInsumo, guardarPrecioInsumo } from "@/app/actions/precios-insum
 import type { AccionesFicha } from "./ficha";
 import { InsumosVista, aplicarCambio } from "./vista";
 import { ConectarInsumos } from "./conectar-insumos";
+import { ConectarProveedores } from "./conectar-proveedores";
 
 export default function InsumosPage() {
   const [datos, setDatos] = useState<DatosInsumos | null>(null);
@@ -68,8 +69,9 @@ export default function InsumosPage() {
         setAviso(`${i.nombre}: ${archivar ? "archivado" : "vuelve a la lista"}.`);
         return null;
       },
+      recargar: cargar,
     };
-  }, [datos?.hoy]);
+  }, [datos?.hoy, cargar]);
 
   return (
     <div className="space-y-6">
@@ -100,6 +102,7 @@ export default function InsumosPage() {
       )}
 
       <ConectarInsumos />
+      {datos && <ConectarProveedores insumos={datos.insumos} onCambio={cargar} />}
     </div>
   );
 }

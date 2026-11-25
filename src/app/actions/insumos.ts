@@ -16,13 +16,14 @@ import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { claveInsumo, leerArchivados, leerCatalogo, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
 import { ARCHIVO_SISTEMA } from "@/lib/productos/precios-vigentes";
 import type { AporteInsumo } from "@/lib/productos/desglose-insumos";
-import { mejoresPorInsumo } from "@/lib/proveedores-sql";
+import { leerParejas } from "@/lib/insumos-parejas-sql";
+import { leerDondeSeCompra, mejoresPorInsumo, type OfertaInsumo, type ProductoConectado } from "@/lib/proveedores-sql";
 import type { MejorProveedor } from "@/lib/proveedores";
 import { getRentabilidadProductos } from "@/app/actions/productos-panorama";
 import { CAFETERIAS } from "@/lib/productos/cafeterias";
 import { productosParaSimular } from "@/lib/productos/simulador-insumos";
 import {
-  CATEGORIAS, categoriaDelSku, criticosPorGasto, esCritico, factorPresentacion, historialPorDia, mesesCerrados, parejasEntreListas, ultimoCambio,
+  CATEGORIAS, categoriaDelSku, criticosPorGasto, esCritico, factorPresentacion, historialPorDia, mesesCerrados, ultimoCambio,
   unidadesPresentacion, type CambioPrecio, type Presentacion, type PuntoPrecio, type UnidadPresentacion,
 } from "@/lib/insumos-ficha";
 
@@ -65,6 +66,10 @@ export type FichaInsumo = {
   cambio: CambioPrecio | null;
   /** Cómo se compra (lata de 393 g); null = por la unidad de receta. */
   presentacion: Presentacion | null;
+  /** Los proveedores que lo venden, con su último precio en la unidad del insumo (del más barato al más caro). */
+  dondeSeCompra: OfertaInsumo[];
+  /** Productos de proveedor conectados a este insumo (aunque todavía no tengan precio). */
+  productosProveedor: ProductoConectado[];
   /** El mismo insumo en la otra lista (Atelier ↔ cafeterías): comparten categoría, crítico, nombre y presentación. */
   pareja: { origen: Origen; sku: string; precio: number } | null;
 };
@@ -82,24 +87,6 @@ type Ficha = {
   origen: string; sku: string; categoria: string | null; critico: boolean | null; nombre: string | null;
   presentacion: string | null; presentacion_cantidad: number | null; presentacion_unidad: string | null;
 };
-
-/**
- * El nombre «de origen» de cada insumo, para emparejar las dos listas sin que lo mueva un nombre corregido: el
- * del último Excel; si nunca estuvo en el Excel, el primero con que se creó en el sistema.
- */
-async function leerNombresOriginales(): Promise<Map<string, string>> {
-  const rows = (await sql`
-    SELECT DISTINCT ON (origen, upper(sku)) origen, sku, nombre FROM insumos_precios
-    ORDER BY origen, upper(sku), (archivo = ${ARCHIVO_SISTEMA}) ASC,
-             CASE WHEN archivo = ${ARCHIVO_SISTEMA} THEN fecha END ASC, fecha DESC`) as { origen: string; sku: string; nombre: string }[];
-  return new Map(rows.map((r) => [claveInsumo(r.origen, r.sku), r.nombre]));
-}
-
-/** Las parejas entre listas («origen|SKU» → la del otro lado), por el nombre de origen. */
-async function leerParejas(vigentes: { origen: string; sku: string; nombre: string }[], originales?: Map<string, string>): Promise<Map<string, string>> {
-  const o = originales ?? await leerNombresOriginales();
-  return parejasEntreListas(vigentes.map((v) => ({ origen: v.origen, sku: v.sku, nombre: o.get(claveInsumo(v.origen, v.sku)) ?? v.nombre })));
-}
 
 const presentacionDe = (f: Ficha | undefined): Presentacion | null =>
   f?.presentacion && f.presentacion_cantidad && f.presentacion_unidad
@@ -147,6 +134,7 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
            WHERE fecha >= (CURRENT_DATE - INTERVAL '800 days')` as unknown as Promise<{ fecha: string; origen: string; sku: string; nombre: string; precio: number; archivo: string | null }[]>),
       gastoPorInsumo(mesesCerrados(hoy, 3)),
     ]);
+    const donde = await leerDondeSeCompra(sql);
 
     const ficha = new Map(fichas.map((f) => [claveInsumo(f.origen, f.sku), f]));
     const conectados = new Set(parejas.filter((p) => p.cc_ref?.trim()).map((p) => p.cc_ref!.trim().toUpperCase()));
@@ -160,7 +148,7 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
       if (f.archivo !== ARCHIVO_SISTEMA) nombreExcel.set(k, f.nombre);
       else if (!nombreExcel.has(k)) nombreExcel.set(k, f.nombre);
     }
-    const parejas2 = await leerParejas(vigentes, nombreExcel);
+    const parejas2 = await leerParejas(sql, vigentes, nombreExcel);
     const precioDe = new Map(vigentes.map((v) => [claveInsumo(v.origen, v.sku), v]));
 
     // Qué recetas de Atelier lo llevan directo.
@@ -214,6 +202,8 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
           historial,
           cambio: ultimoCambio(historial),
           presentacion: presentacionDe(f),
+          dondeSeCompra: donde.ofertas.get(k) ?? [],
+          productosProveedor: donde.conectados.get(k) ?? [],
           pareja: (() => {
             const kp = parejas2.get(k);
             const p = kp ? precioDe.get(kp) : undefined;
@@ -291,7 +281,7 @@ export async function guardarFichaInsumo(input: {
   };
   try {
     await guardarEn(v.origen, v.sku, v.unidad);
-    const kp = (await leerParejas(vigentes)).get(claveInsumo(v.origen, v.sku));
+    const kp = (await leerParejas(sql, vigentes)).get(claveInsumo(v.origen, v.sku));
     const p = kp ? vigentes.find((x) => claveInsumo(x.origen, x.sku) === kp) : undefined;
     if (p) await guardarEn(p.origen, p.sku, p.unidad);
     revalidatePath("/grupo/insumos");

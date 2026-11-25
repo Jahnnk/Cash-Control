@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { factorSeguro, masParecidos, parecidoTolerante, palabrasClave } from "./insumos-ficha";
 import { equivalencia, factorPresentacion, parejasEntreListas, plural, precioBaseDesdePresentacion, precioPorPresentacion, textoPresentacion, unidadesPresentacion } from "./insumos-ficha";
 import { categoriaDelSku, criticosPorGasto, diasEntre, esCritico, historialPorDia, mesesCerrados, tonoEdad, ultimoCambio, SIN_CATEGORIA } from "./insumos-ficha";
 
@@ -85,5 +86,33 @@ describe("el mismo insumo en las dos listas", () => {
     expect(p.get("Cafetería|LC011")).toBe("Atelier|LC011");
     expect(p.has("Atelier|FR001")).toBe(false);
     expect(p.has("Cafetería|Y1")).toBe(false);
+  });
+});
+
+describe("emparejar productos de proveedor con insumos", () => {
+  it("tolera errores de tipeo, marcas de tamaño y unidades", () => {
+    expect(palabrasClave("Leche Condensanda 1.2 Kg")).toEqual(["leche", "condensanda"]);
+    expect(parecidoTolerante("Leche Condensanda 1.2 Kg", "Leche condensada Gloria")).toBeCloseTo(0.8);
+    expect(parecidoTolerante("Harina panadera Nicolini x 50 kg", "Harina Panadera Nicolini")).toBe(1);
+    expect(parecidoTolerante("Pilas 3aaa", "Harina Panadera Nicolini")).toBe(0);
+  });
+  it("devuelve los más parecidos primero", () => {
+    const r = masParecidos("Mantequilla sin sal Gloria", [{ nombre: "Mantequilla con sal" }, { nombre: "Mantequilla sin sal" }, { nombre: "Azúcar" }]);
+    expect(r.map((x) => x.item.nombre)).toEqual(["Mantequilla sin sal", "Mantequilla con sal"]);
+  });
+});
+
+describe("conversión segura de unidades de proveedor", () => {
+  it("convierte solo lo que dice cuánto trae", () => {
+    expect(factorSeguro("kg", "kg")).toBe(1);
+    expect(factorSeguro("Litro", "l")).toBe(1);
+    expect(factorSeguro("ciento", "und")).toBe(0.01);
+    expect(factorSeguro("galón", "l")).toBeCloseTo(0.264201);
+    expect(factorSeguro("paquete", "und")).toBeNull();
+    expect(factorSeguro("bolsa", "kg")).toBeNull();
+    expect(factorSeguro("unidad", "kg")).toBeNull();
+  });
+  it("no confunde palabras cortas parecidas", () => {
+    expect(parecidoTolerante("Canela Molida", "Panela")).toBe(0);
   });
 });
