@@ -4,12 +4,15 @@
  * Ficha del insumo → «Dónde se compra» (24-nov-2026). Los proveedores que lo venden con su último precio (de las
  * compras reales de Control de Caja o anotado a mano como «cotizado»), ya en la unidad del insumo y por su
  * presentación. Desde aquí se conecta un producto de proveedor o se anota dónde se compra. Un precio de proveedor
- * nunca cambia solo el de las recetas: «Usar este precio» pide confirmar.
+ * nunca cambia solo el de las recetas: «Usar este precio» pide confirmar. Al agregar un proveedor a mano se puede
+ * usar ese precio como precio de compra y anotar cómo viene (caja de 12) en el mismo paso (25-nov-2026: ver S/ 1.71
+ * arriba y S/ 0.4167 abajo confundía).
  */
 
 import { useState } from "react";
 import { Plus, Search, Store } from "lucide-react";
 import type { FichaInsumo } from "@/app/actions/insumos";
+import type { Presentacion } from "@/lib/insumos-ficha";
 import {
   agregarDondeSeCompra, conectarProductoInsumo, desconectarProductoInsumo, getOpcionesProveedores, type OpcionesProveedores, type ProductoProveedor,
 } from "@/app/actions/insumos-proveedores";
@@ -19,10 +22,11 @@ import { fechaCorta, soles, solesRedondo } from "./piezas";
 
 const DIAS_PRECIO_PROVEEDOR_VIEJO = 90;
 
-export function DondeSeCompra({ i, hoy, usarPrecio, onCambio }: {
+export function DondeSeCompra({ i, hoy, usarPrecio, guardarPresentacion, onCambio }: {
   i: FichaInsumo;
   hoy: string;
   usarPrecio: (precio: number) => Promise<string | null>;
+  guardarPresentacion: (p: Presentacion) => Promise<string | null>;
   onCambio: () => Promise<void>;
 }) {
   const [modo, setModo] = useState<null | "conectar" | "anotar">(null);
@@ -122,7 +126,15 @@ export function DondeSeCompra({ i, hoy, usarPrecio, onCambio }: {
         : <p className="mt-2 text-xs text-gray-400">Cargando productos de proveedores…</p>)}
       {modo === "anotar" && (opciones
         ? <AnotarDonde i={i} proveedores={opciones.proveedores} ocupado={ocupado} onCancelar={() => setModo(null)}
-            onGuardar={(d) => correr(() => agregarDondeSeCompra({ origen: i.origen, sku: i.sku, ...d }))} />
+            onGuardar={({ usar, presentacion, ...d }) => correr(async () => {
+              const r = await agregarDondeSeCompra({ origen: i.origen, sku: i.sku, ...d });
+              if (!r.ok) return r;
+              const precioInsumo = Math.round((d.precio / d.cuanto) * 10000) / 10000;
+              const e1 = usar ? await usarPrecio(precioInsumo) : null;
+              const e2 = presentacion ? await guardarPresentacion(presentacion) : null;
+              const e = e1 ?? e2;
+              return e ? { ok: false, error: `El proveedor quedó guardado, pero: ${e}` } : { ok: true };
+            })} />
         : <p className="mt-2 text-xs text-gray-400">Cargando proveedores…</p>)}
 
       {!modo && (
@@ -219,7 +231,10 @@ function AnotarDonde({ i, proveedores, ocupado, onGuardar, onCancelar }: {
   i: FichaInsumo;
   proveedores: { id: number; nombre: string }[];
   ocupado: boolean;
-  onGuardar: (d: { proveedorId: number | null; proveedorNuevo: string | null; envase: string; cuanto: number; precio: number }) => Promise<boolean>;
+  onGuardar: (d: {
+    proveedorId: number | null; proveedorNuevo: string | null; envase: string; cuanto: number; precio: number;
+    usar: boolean; presentacion: Presentacion | null;
+  }) => Promise<boolean>;
   onCancelar: () => void;
 }) {
   const f = factorPresentacion(i.unidad, i.presentacion);
@@ -230,6 +245,12 @@ function AnotarDonde({ i, proveedores, ocupado, onGuardar, onCancelar }: {
   const [precio, setPrecio] = useState("");
   const n = (s: string) => Number(s.replace(",", "."));
   const listo = !!proveedor && n(cuanto) > 0 && n(precio) > 0;
+  const porInsumo = listo ? Math.round((n(precio) / n(cuanto)) * 10000) / 10000 : null;
+  // Usar este precio arriba: marcado salvo que sea igual al de ahora.
+  const [usar, setUsar] = useState(true);
+  // Cómo viene (caja de 12): solo si el insumo todavía no lo tiene y no es «1 und».
+  const pres = !i.presentacion && n(cuanto) > 0 && n(cuanto) !== 1 ? presentacionDesde(envase, n(cuanto), i.unidad) : null;
+  const [anotar, setAnotar] = useState(true);
 
   return (
     <div className="mt-2 space-y-2 rounded-xl border border-primary/30 bg-emerald-50/40 p-3">
@@ -245,13 +266,27 @@ function AnotarDonde({ i, proveedores, ocupado, onGuardar, onCancelar }: {
           <input inputMode="decimal" value={precio} onChange={(e) => setPrecio(e.target.value)} placeholder="5.90" className="mt-0.5 block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-right text-sm" />
         </label>
       </div>
-      {n(cuanto) > 0 && n(precio) > 0 && <p className="text-[11px] text-gray-600">= {soles(Math.round((n(precio) / n(cuanto)) * 10000) / 10000)} por {i.unidad}</p>}
+      {porInsumo != null && <p className="text-[11px] text-gray-600">= {soles(porInsumo)} por {i.unidad}</p>}
+      {porInsumo != null && Math.abs(porInsumo - i.precio) > 0.00005 && !i.archivado && (
+        <label className="flex items-start gap-2 text-xs text-gray-700">
+          <input type="checkbox" checked={usar} onChange={(e) => setUsar(e.target.checked)} className="mt-0.5" />
+          <span>Usarlo como precio de compra: {soles(i.precio)} → <b>{soles(porInsumo)}</b> por {i.unidad}. Cambia el costo de las recetas que lo usan.</span>
+        </label>
+      )}
+      {pres && (
+        <label className="flex items-start gap-2 text-xs text-gray-700">
+          <input type="checkbox" checked={anotar} onChange={(e) => setAnotar(e.target.checked)} className="mt-0.5" />
+          <span>Anotar que se compra por <b>{textoPresentacion(pres)}</b>.</span>
+        </label>
+      )}
       <p className="text-[11px] text-gray-400">Queda como «cotizado»: es un precio visto, no una compra. Las compras reales llegan solas desde Control de Caja.</p>
       <div className="flex gap-2">
         <button type="button" disabled={ocupado || !listo}
           onClick={() => void onGuardar({
             proveedorId: proveedor?.id ?? null, proveedorNuevo: proveedor && proveedor.id == null ? proveedor.nombre : null,
             envase, cuanto: n(cuanto), precio: n(precio),
+            usar: usar && porInsumo != null && Math.abs(porInsumo - i.precio) > 0.00005 && !i.archivado,
+            presentacion: anotar ? pres : null,
           })}
           className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">{ocupado ? "Guardando…" : "Guardar"}</button>
         <button type="button" onClick={onCancelar} className="text-xs text-gray-500">Cancelar</button>
@@ -301,4 +336,16 @@ function BuscarProveedor({ proveedores, valor, onCambio }: {
       )}
     </div>
   );
+}
+
+/** «1 caja» + 12 und → caja de 12 und. Por kg o litro, menos de 1 se dice en g o ml (0.393 kg → 393 g). */
+export function presentacionDesde(envase: string, cuanto: number, unidad: string): Presentacion | null {
+  const nombre = envase.replace(/^\s*\d+([.,]\d+)?\s*/, "").replace(/\s+de\s+.*$/i, "").trim().toLowerCase().slice(0, 40);
+  if (nombre.length < 2 || !(cuanto > 0)) return null;
+  const p: Presentacion | null =
+    unidad === "und" ? { nombre, cantidad: cuanto, unidad: "und" }
+    : unidad === "kg" ? (cuanto < 1 ? { nombre, cantidad: Math.round(cuanto * 1000 * 100) / 100, unidad: "g" } : { nombre, cantidad: cuanto, unidad: "kg" })
+    : unidad === "l" ? (cuanto < 1 ? { nombre, cantidad: Math.round(cuanto * 1000 * 100) / 100, unidad: "ml" } : { nombre, cantidad: cuanto, unidad: "l" })
+    : null;
+  return p && factorPresentacion(unidad, p) != null ? p : null;
 }
