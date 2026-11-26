@@ -49,20 +49,24 @@ export function NuevaReceta() {
         className="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-xl whitespace-nowrap">
         <Plus className="w-4 h-4" /> Nueva receta
       </button>
-      {abierto && <Asistente onCerrar={() => setAbierto(false)} />}
+      {abierto && <AsistenteReceta onCerrar={() => setAbierto(false)} />}
     </>
   );
 }
 
-function Asistente({ onCerrar }: { onCerrar: () => void }) {
+/** Receta de partida al duplicar (25-nov-2026: la empanada de pollo sale de la de lomito). */
+export type RecetaDePartida = { de: string; clase: Clase; detalle: DetalleReceta };
+
+export function AsistenteReceta({ onCerrar, inicial }: { onCerrar: () => void; inicial?: RecetaDePartida }) {
   const [opciones, setOpciones] = useState<OpcionesNuevaReceta | null>(null);
   const [errorCarga, setErrorCarga] = useState<string | null>(null);
-  const [paso, setPaso] = useState<1 | 2 | 3>(1);
-  const [clase, setClase] = useState<Clase>("atelier");
-  const [nombre, setNombre] = useState("");
+  // Al duplicar se entra directo a los ingredientes, con todo copiado.
+  const [paso, setPaso] = useState<1 | 2 | 3>(inicial ? 2 : 1);
+  const [clase, setClase] = useState<Clase>(inicial?.clase ?? "atelier");
+  const [nombre, setNombre] = useState(inicial ? `${inicial.de} (copia)` : "");
   const [filas, setFilas] = useState<Fila[]>([filaVacia()]);
-  const [rendimiento, setRendimiento] = useState("");
-  const [merma, setMerma] = useState("");
+  const [rendimiento, setRendimiento] = useState(inicial?.detalle.rendimiento ? String(inicial.detalle.rendimiento) : "");
+  const [merma, setMerma] = useState(inicial?.detalle.merma ? String(Math.round(inicial.detalle.merma * 1000) / 10) : "");
   const [extras, setExtras] = useState<CostoPreparacion[]>([]);
   const [b2b, setB2b] = useState("");
   const [vaCarta, setVaCarta] = useState(false);
@@ -84,10 +88,20 @@ function Asistente({ onCerrar }: { onCerrar: () => void }) {
     let vivo = true;
     void getOpcionesNuevaReceta().then((r) => {
       if (!vivo) return;
-      if (r.ok) setOpciones(r.data); else setErrorCarga(r.error);
+      if (!r.ok) { setErrorCarga(r.error); return; }
+      setOpciones(r.data);
+      // Duplicar: cada ingrediente con su insumo o sub-receta de la lista (o solo el nombre si ya no está).
+      if (inicial && inicial.detalle.ingredientes.length > 0) {
+        const m = new Map<string, CostoPreparacion>();
+        for (const i of r.data.atelier) { m.set(i.ref, i); if (i.reemplaza) m.set(i.reemplaza, i); }
+        setFilas(inicial.detalle.ingredientes.map((g) => {
+          const item = g.ref ? m.get(g.ref) ?? null : null;
+          return { id: crypto.randomUUID(), texto: item?.nombre ?? g.nombre, item, cantidad: String(g.cantidad), unidad: g.unidad };
+        }));
+      }
     });
     return () => { vivo = false; };
-  }, []);
+  }, [inicial]);
 
   // La lista donde se busca: Atelier usa su lista de costos; la cafetería, sus insumos y lo que le compra a
   // Atelier a precio interno (en unidades). Los insumos nuevos de esta sesión se suman al instante.
@@ -140,6 +154,9 @@ function Asistente({ onCerrar }: { onCerrar: () => void }) {
 
   const faltaPaso2 = (): string | null => {
     if (!nombre.trim()) return "Escribe el nombre.";
+    if (inicial && (/\(copia\)\s*$/i.test(nombre) || nombre.trim().toLowerCase() === inicial.de.trim().toLowerCase())) {
+      return "Cámbiale el nombre: es una receta nueva (ej. Empanada de pollo).";
+    }
     if (detalle.ingredientes.length === 0) return "Agrega al menos un ingrediente.";
     const sinElegir = detalle.ingredientes.find((g) => !g.ref);
     if (sinElegir) return `«${sinElegir.nombre}»: elígelo de la lista o créalo con «Insumo nuevo».`;
@@ -210,6 +227,7 @@ function Asistente({ onCerrar }: { onCerrar: () => void }) {
         <div className="px-4 sm:px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-gray-900">Nueva receta</h2>
+            {inicial && !listo && <p className="text-xs text-gray-500">Copia de «{inicial.de}». La original no cambia.</p>}
             {!listo && (
               <ol className="mt-1 flex flex-wrap gap-x-3 text-xs text-gray-500">
                 {pasos.map((p, i) => (
