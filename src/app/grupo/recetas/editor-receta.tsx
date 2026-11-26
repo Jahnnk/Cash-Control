@@ -182,7 +182,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios, sol
         </div>
 
         <div className="p-6 space-y-5">
-          <fieldset disabled={viendo} className="m-0 min-w-0 space-y-5 border-0 p-0">
+          <fieldset disabled={viendo} className="mx-0 min-w-0 space-y-5 border-0 p-0">
           <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide text-gray-500">Nombre</span>
