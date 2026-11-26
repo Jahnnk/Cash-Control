@@ -16,6 +16,12 @@ import type { DetalleReceta, Ingrediente } from "@/lib/costos-preparaciones";
 
 const r2 = (n: number) => Math.round(n * 100) / 100;
 
+/** Las recetas de Producción conectadas (0, 1 o varias). */
+export function idsProduccion(p: { produccion?: number | number[] | null } | null | undefined): number[] {
+  const v = p?.produccion;
+  return (Array.isArray(v) ? v : v != null ? [v] : []).map(Number).filter((n) => Number.isInteger(n) && n > 0);
+}
+
 export const esPanadero = (d: Pick<DetalleReceta, "panadero">): boolean => !!d.panadero && d.panadero.pesoMasa > 0;
 export const enMasa = (i: Pick<Ingrediente, "pct">): boolean => typeof i.pct === "number" && i.pct > 0;
 
@@ -82,13 +88,15 @@ export function recetasParaProduccion(filas: { id: number; nombre: string; detal
   for (const f of filas) {
     const d = f.detalle;
     const base = harinaBase(d);
-    if (!d.panadero?.produccion || base === null) continue;
-    out.push({
-      ref: `REC:${f.id}`, nombre: f.nombre, produccion: d.panadero.produccion, pesoMasa: d.panadero.pesoMasa,
-      harinaBase: Math.round(base * 100) / 100,
-      lineas: d.ingredientes.filter(enMasa).map((i) => ({ prod: i.prod ?? null, nombre: i.nombre, pct: i.pct! })),
-      actualizadoPor: f.por, actualizadoEl: String(f.el),
-    });
+    if (base === null) continue;
+    for (const produccion of idsProduccion(d.panadero)) {
+      out.push({
+        ref: `REC:${f.id}`, nombre: f.nombre, produccion, pesoMasa: d.panadero!.pesoMasa,
+        harinaBase: Math.round(base * 100) / 100,
+        lineas: d.ingredientes.filter(enMasa).map((i) => ({ prod: i.prod ?? null, nombre: i.nombre, pct: i.pct! })),
+        actualizadoPor: f.por, actualizadoEl: String(f.el),
+      });
+    }
   }
   return out;
 }
