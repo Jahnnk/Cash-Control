@@ -11,6 +11,8 @@ import { revalidatePath } from "next/cache";
 import { getSessionRole } from "@/lib/session-access";
 import { leerCatalogo, type Catalogo } from "@/lib/catalogo-costos-sql";
 import { leerCarta, leerCambiosCarta } from "@/lib/carta-sql";
+import { leerPreciosB2BByte } from "@/lib/productos/precio-b2b-byte-sql";
+import type { PrecioB2BByte } from "@/lib/productos/precio-b2b-byte";
 import { erroresDeReceta, refDeReceta, type RecetaSistema } from "@/lib/recetas";
 import type { DetalleReceta } from "@/lib/costos-preparaciones";
 
@@ -115,7 +117,12 @@ export async function eliminarReceta(id: number): Promise<{ ok: true } | { ok: f
 }
 
 /** Precios de venta guardados de un producto de Atelier (los que falten se muestran como sugeridos). */
-export type PreciosVenta = { b2b?: number; interno?: number; carta?: number; /** Ref en la carta, para cambiar interno y carta. */ cartaRef?: string };
+export type PreciosVenta = {
+  b2b?: number; interno?: number; carta?: number;
+  /** Ref en la carta, para cambiar interno y carta. */ cartaRef?: string;
+  /** El precio B2B real de Byte (fase 4, 26-nov-2026): manda sobre `b2b`, que queda para lo que no se vende en Byte. */
+  b2bByte?: PrecioB2BByte;
+};
 
 /**
  * Precios de venta por ref de receta (25-nov-2026, «Ruta de precios»): B2B de precios_b2b; interno y carta de
@@ -124,11 +131,13 @@ export type PreciosVenta = { b2b?: number; interno?: number; carta?: number; /**
 export async function getPreciosVenta(): Promise<{ ok: true; precios: Record<string, PreciosVenta> } | { ok: false; error: string }> {
   if (!(await quien())) return { ok: false, error: "Solo dirección." };
   try {
-    const [b2b, carta, cambios] = await Promise.all([
+    const [b2b, carta, cambios, catalogo] = await Promise.all([
       (sql`SELECT ref, precio::float AS precio FROM precios_b2b` as unknown as Promise<{ ref: string; precio: number }[]>).catch(() => []),
       leerCarta(sql),
       leerCambiosCarta(sql),
+      leerCatalogo(sql, ATELIER),
     ]);
+    const deByte = await leerPreciosB2BByte(sql, catalogo.efectivo).catch(() => new Map<string, PrecioB2BByte>());
     const out: Record<string, PreciosVenta> = {};
     const poner = (ref: string, p: PreciosVenta) => { out[ref] = { ...out[ref], ...p }; };
     for (const r of b2b) if (r.precio > 0) poner(r.ref, { b2b: r.precio });
@@ -140,6 +149,7 @@ export async function getPreciosVenta(): Promise<{ ok: true; precios: Record<str
       if (!ref) continue;
       poner(ref, { cartaRef: c.ref, ...(c.costo > 0 ? { interno: c.costo } : {}), ...(c.precio && c.precio > 0 ? { carta: c.precio } : {}) });
     }
+    for (const [ref, p] of deByte) poner(ref, { b2bByte: p });
     return { ok: true, precios: out };
   } catch (e) {
     console.error("[getPreciosVenta]", e);

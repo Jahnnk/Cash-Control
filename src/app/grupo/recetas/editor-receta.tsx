@@ -17,7 +17,7 @@ import { costoDeReceta, costoIngrediente, refDeReceta, type RecetaSistema } from
 import type { CostoPreparacion, DetalleReceta } from "@/lib/costos-preparaciones";
 import { Segmentado } from "@/components/productos/ui";
 import { CamposPrecio, EditarInsumo } from "./insumo-en-receta";
-import { RutaPreciosAtelier, type PrecioRuta } from "@/components/productos/ruta-precios";
+import { RutaPreciosAtelier, type PrecioRuta, rutaB2B } from "@/components/productos/ruta-precios";
 import { sugeridosAtelier } from "@/lib/precios-sugeridos";
 import type { PreciosVenta } from "@/app/actions/recetas";
 import { guardarPrecioVenta } from "@/app/actions/carta";
@@ -370,7 +370,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
             )}
           </div>
           {sug && c.costo !== null && (
-            <RutaPreciosAtelier costo={c.costo} interno={ruta(precios?.interno, sug.interno)} carta={ruta(precios?.carta, sug.carta)} b2b={ruta(precios?.b2b, sug.b2b)}
+            <RutaPreciosAtelier costo={c.costo} interno={ruta(precios?.interno, sug.interno)} carta={ruta(precios?.carta, sug.carta)} b2b={rutaB2B(precios?.b2bByte, precios?.b2b, sug.b2b)}
               editables={{ interno: !!precios?.cartaRef, carta: !!precios?.cartaRef, b2b: !!b2bRef }}
               onGuardar={async (campo, precio) => {
                 const r = await guardarPrecioVenta({ campo, precio, cartaRef: precios?.cartaRef ?? null, b2bRef });

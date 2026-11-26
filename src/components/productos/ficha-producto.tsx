@@ -13,7 +13,7 @@ import Link from "next/link";
 import { Loader2, Pencil, X } from "lucide-react";
 import { getFichaProducto, type DatosFicha } from "@/app/actions/ficha-producto";
 import { getMenuDeProducto, type MenuDeProducto } from "@/app/actions/productos-panorama";
-import { RutaPreciosAtelier, RutaPreciosCafeteria, type GuardarPrecio, type PrecioRuta } from "@/components/productos/ruta-precios";
+import { RutaPreciosAtelier, RutaPreciosCafeteria, rutaB2B, type GuardarPrecio, type PrecioRuta } from "@/components/productos/ruta-precios";
 import { guardarPrecioVenta, guardarSeccionCarta, volverCartaAlExcel } from "@/app/actions/carta";
 import { sugeridoCafeteria, sugeridosAtelier } from "@/lib/precios-sugeridos";
 import { CUADRANTES, type Cuadrante } from "@/lib/productos/matriz-carta";
@@ -121,7 +121,7 @@ function Ruta({ f, onGuardar }: { f: DatosFicha; onGuardar?: GuardarPrecio }) {
     return <RutaPreciosCafeteria costo={f.costo} carta={ruta(f.precios.carta, sugeridoCafeteria(f.costo))} onGuardar={f.cartaRef ? onGuardar : undefined} />;
   }
   const s = sugeridosAtelier(f.costo, f.precios.interno);
-  return <RutaPreciosAtelier costo={f.costo} interno={ruta(f.precios.interno, s.interno)} carta={ruta(f.precios.carta, s.carta)} b2b={ruta(f.precios.b2b, s.b2b)}
+  return <RutaPreciosAtelier costo={f.costo} interno={ruta(f.precios.interno, s.interno)} carta={ruta(f.precios.carta, s.carta)} b2b={rutaB2B(f.b2bByte, f.precios.b2b, s.b2b)}
     editables={{ interno: !!f.cartaRef, carta: !!f.cartaRef, b2b: !!f.b2bRef }} onGuardar={onGuardar} />;
 }
 
