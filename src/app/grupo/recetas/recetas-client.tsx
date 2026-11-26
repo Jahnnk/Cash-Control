@@ -6,7 +6,7 @@
  * nueva o modificar una del Excel sin volver a subirlo.
  */
 
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Search, Loader2, AlertTriangle, Copy } from "lucide-react";
 import { getPreciosVenta, getRecetas, type PreciosVenta } from "@/app/actions/recetas";
 import { TIPO_COSTO, soles4 } from "@/components/buscador-costo";
@@ -16,6 +16,7 @@ import type { Catalogo } from "@/lib/catalogo-costos-sql";
 import type { CostoPreparacion } from "@/lib/costos-preparaciones";
 import { EditorReceta, type Borrador } from "./editor-receta";
 import { AsistenteReceta, type RecetaDePartida } from "./nueva-receta";
+import { FichaProducto } from "@/components/productos/ficha-producto";
 
 type Filtro = "todas" | "producto" | "preparacion" | "sistema" | "insumo";
 
@@ -28,7 +29,8 @@ export function RecetasClient() {
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [borrador, setBorrador] = useState<Borrador | null>(null);
   const [copia, setCopia] = useState<RecetaDePartida | null>(null);
-  const [soloVer, setSoloVer] = useState(false);
+  // «Abrir» = la ficha única del producto (receta, ruta de precios y matriz), 25-nov-2026.
+  const [ficha, setFicha] = useState<string | null>(null);
   const [precios, setPrecios] = useState<Record<string, PreciosVenta>>({});
 
   const cargar = useCallback(async () => {
@@ -60,9 +62,8 @@ export function RecetasClient() {
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [cat, q, filtro]);
 
-  function abrir(i: CostoPreparacion, ver = false) {
+  function abrir(i: CostoPreparacion) {
     if (!cat) return;
-    setSoloVer(ver);
     if (i.origen === "sistema" && i.recetaId !== undefined) {
       const r = cat.recetas.find((x) => x.id === i.recetaId)!;
       abrirReceta(r);
@@ -78,6 +79,19 @@ export function RecetasClient() {
     const original = r.reemplaza ? cat?.excel.find((x) => x.ref === r.reemplaza) ?? null : null;
     setBorrador({ id: r.id, nombre: r.nombre, tipo: r.tipo, categoria: r.categoria, detalle: r.detalle, reemplaza: original });
   }
+
+  // «Editar receta» desde la ficha en otra pantalla llega con ?editar=<ref>: se abre el editor una vez.
+  const abiertoDesdeUrl = useRef(false);
+  useEffect(() => {
+    if (!cat || abiertoDesdeUrl.current) return;
+    const ref = new URLSearchParams(window.location.search).get("editar");
+    if (!ref) return;
+    abiertoDesdeUrl.current = true;
+    const i = cat.efectivo.find((x) => x.ref === ref);
+    /* eslint-disable-next-line react-hooks/set-state-in-effect -- abrir una vez al llegar desde otra pantalla */
+    if (i) abrir(i);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cat]);
 
   const conteo = (f: Filtro) => cat?.efectivo.filter((i) => (f === "sistema" ? i.origen === "sistema" : i.tipo === f)).length ?? 0;
 
@@ -105,7 +119,7 @@ export function RecetasClient() {
               {rotas.map((r) => {
                 const falta = costoDeReceta(r.tipo, r.detalle, (ref) => cat.efectivo.find((i) => i.ref === ref || i.reemplaza === ref) ?? null).faltantes;
                 return (
-                  <button key={r.id} type="button" onClick={() => { setSoloVer(false); abrirReceta(r); }} className="block text-left underline decoration-dotted">
+                  <button key={r.id} type="button" onClick={() => abrirReceta(r)} className="block text-left underline decoration-dotted">
                     {r.nombre}{falta.length > 0 ? ` — falta precio de ${falta.join(", ")}` : ""}
                   </button>
                 );
@@ -160,7 +174,7 @@ export function RecetasClient() {
                   )}
                   {editable ? (
                     <>
-                      <button type="button" onClick={() => abrir(i, true)}
+                      <button type="button" onClick={() => setFicha(i.ref)}
                         className="text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
                         Abrir
                       </button>
@@ -177,11 +191,14 @@ export function RecetasClient() {
         </>
       )}
 
+      {ficha && cat && (
+        <FichaProducto recetaRef={ficha} onCerrar={() => setFicha(null)}
+          onEditarReceta={(ref) => { setFicha(null); const i = cat.efectivo.find((x) => x.ref === ref); if (i) abrir(i); }} />
+      )}
       {copia && <AsistenteReceta inicial={copia} onCerrar={() => setCopia(null)} />}
       {borrador && cat && (
         <EditorReceta
           borrador={borrador}
-          soloVer={soloVer}
           precios={{
             ...(borrador.reemplaza ? precios[borrador.reemplaza.ref] : undefined),
             ...(borrador.id !== null ? precios[refDeReceta(borrador.id)] : undefined),

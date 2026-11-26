@@ -27,6 +27,8 @@ import {
   type PlanSede, type ProductoEnSede, type ResultadoCandidatos, type SedeCandidatos,
 } from "@/lib/productos/candidatos";
 import { claveByte, enlazarCosto, type CostoCarta } from "@/lib/productos/costos-carta";
+import { fichaDeProducto, type Cuadrante, type FichaProducto, type ProductoMatriz } from "@/lib/productos/matriz-carta";
+import { TEXTO_TENDENCIA } from "@/lib/productos/tendencia";
 import { medirPruebas, type ResultadoPrueba, type SemanaSede } from "@/lib/productos/prueba-precios";
 import type { MesCostos } from "@/lib/productos/cuando-subir";
 import { historialDePrecios, type FotoPrecio, type HistorialPrecios } from "@/lib/productos/insumos-precios";
@@ -599,7 +601,7 @@ export type CandidatosReemplazo = ResultadoCandidatos & {
  * los 3 más recientes. Solo dirección.
  */
 /** El cálculo de los candidatos, sin chequear permisos (lo hacen las actions que lo usan). */
-async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandidatos; hasta: CandidatosReemplazo["hasta"]; costos: CostoCarta[]; hoy: string }> {
+async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandidatos; hasta: CandidatosReemplazo["hasta"]; costos: CostoCarta[]; vinculos: Map<string, string>; hoy: string }> {
   // Desde abril (el primer mes con reportes de dirección), entre 6 y 12 meses: la decisión sigue
   // tomándose con los 3 más recientes, pero la tendencia y la matriz usan toda la historia.
   const [yh, mh] = hastaMes.split("-").map(Number), [y0, m0] = PRIMER_MES_PRODUCTOS.split("-").map(Number);
@@ -664,9 +666,66 @@ async function calcularCandidatos(hastaMes: string): Promise<{ r: ResultadoCandi
     };
   }));
   const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
-  const r = armarCandidatos(sedes, costos, new Map(vinculos.map((v) => [v.clave, v.ref])), acompanamientos.map((a) => a.name), archivos, decisiones, hoy, planes, new Map(lanzamientos.map((l) => [l.clave, l.fecha])));
-  return { r, hasta, costos, hoy };
+  const mapaVinculos = new Map(vinculos.map((v) => [v.clave, v.ref]));
+  const r = armarCandidatos(sedes, costos, mapaVinculos, acompanamientos.map((a) => a.name), archivos, decisiones, hoy, planes, new Map(lanzamientos.map((l) => [l.clave, l.fecha])));
+  return { r, hasta, costos, vinculos: mapaVinculos, hoy };
 }
+
+/** Lo que la ficha única de producto muestra de la matriz de la carta (25-nov-2026). */
+export type MenuDeProducto = {
+  situacion: FichaProducto["situacion"];
+  motivoFuera: string | null;
+  cuadrante: Cuadrante | null;
+  porQue: string | null;
+  lectura: string | null;
+  unidadesSemana: number;
+  margenUnidad: number | null;
+  gananciaMes: number | null;
+  ventaMes: number | null;
+  tendencia: string | null;
+  porSede: { sede: string; unidadesSemana: number; ventaMes: number }[];
+  /** null = no se encontró en las ventas de las cafeterías. */
+  encontrado: boolean;
+};
+
+/**
+ * El lugar de un producto de la carta en la matriz (estrella, vaca, interrogante, perro), con el mismo cálculo
+ * que Productos → Candidatos a reemplazo (desde abril hasta hoy). Se busca su nombre de Byte por el mismo enlace
+ * que usa la matriz para ponerle costo. Solo lee.
+ */
+export async function getMenuDeProducto(cartaRef: string): Promise<Res<{ menu: MenuDeProducto }>> {
+  const role = await getSessionRole();
+  if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
+  if (typeof cartaRef !== "string" || !cartaRef.trim()) return { ok: false, error: "Falta el producto." };
+  try {
+    const { r, costos, vinculos } = await calcularCandidatos(hoy7());
+    const precioDe = (p: ProductoMatriz) => {
+      const con = p.sedes.filter((s) => s.precio != null && s.precio > 0);
+      return con.length > 0 ? con.reduce((a, s) => a + (s.precio ?? 0), 0) / con.length : null;
+    };
+    const prod = r.matriz.find((p) => enlazarCosto(p.nombre, costos, vinculos, precioDe(p))?.item.ref === cartaRef);
+    const vacio: MenuDeProducto = { situacion: "fuera", motivoFuera: null, cuadrante: null, porQue: null, lectura: null, unidadesSemana: 0, margenUnidad: null, gananciaMes: null, ventaMes: null, tendencia: null, porSede: [], encontrado: false };
+    if (!prod) return { ok: true, menu: vacio };
+    const f = fichaDeProducto(r.matriz, r.cartas, prod.clave);
+    if (!f) return { ok: true, menu: vacio };
+    return {
+      ok: true,
+      menu: {
+        situacion: f.situacion, motivoFuera: f.motivoFuera, cuadrante: f.punto?.cuadrante ?? null, porQue: f.porQue, lectura: f.punto?.lectura ?? null,
+        unidadesSemana: f.punto?.unidadesSemana ?? f.unidadesSemana, margenUnidad: f.punto?.margenUnidad ?? null,
+        gananciaMes: f.punto?.gananciaMes ?? null, ventaMes: f.punto?.ventaMes ?? null,
+        tendencia: f.punto ? TEXTO_TENDENCIA[f.punto.tendencia.clase].corto : null,
+        porSede: f.porSede.map((s) => ({ sede: s.sede, unidadesSemana: s.unidadesSemana, ventaMes: s.ventaMes })),
+        encontrado: true,
+      },
+    };
+  } catch (e) {
+    console.error("[getMenuDeProducto]", e);
+    return { ok: false, error: "No se pudo ubicar el producto en la matriz." };
+  }
+}
+
+const hoy7 = () => new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" }).slice(0, 7);
 
 export async function getCandidatosReemplazo(hastaMes: string): Promise<Res<{ data: CandidatosReemplazo }>> {
   if (!mesValido(hastaMes)) return { ok: false, error: "Mes inválido." };

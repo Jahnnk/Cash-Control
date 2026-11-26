@@ -16,7 +16,7 @@ import { ArrowLeft, ArrowRight, CakeSlice, Check, ChevronDown, ChevronRight, Cof
 import { TablaOrdenable, TbodyOrdenable } from "@/components/filas-ordenables";
 import { BuscadorCosto, soles4 } from "@/components/buscador-costo";
 import { CamposPrecio, EditarInsumo } from "./insumo-en-receta";
-import { RutaPreciosAtelier, RutaPreciosCafeteria } from "./ruta-precios";
+import { RutaPreciosAtelier, RutaPreciosCafeteria } from "@/components/productos/ruta-precios";
 import { comprasPara, precioPorBase, type PrecioCompra } from "@/lib/precio-compra";
 import { crearInsumoNuevo, crearRecetaAtelier, getOpcionesNuevaReceta, type OpcionesNuevaReceta } from "@/app/actions/nueva-receta";
 import { guardarProductoNuevo } from "@/app/actions/carta";
