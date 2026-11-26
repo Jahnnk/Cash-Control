@@ -166,15 +166,31 @@ export function unidadDesdeInsumo(u: UnidadInsumo): string {
   return u === "und" ? "unidad" : u === "l" ? "litro" : "kg";
 }
 
-export type MejorProveedor = { proveedorId: number; proveedor: string; unitario: number; precioInsumo: number; fecha: string };
+export type MejorProveedor = {
+  proveedorId: number; proveedor: string; unitario: number; precioInsumo: number; fecha: string;
+  /** Es el proveedor elegido para el insumo (aunque no sea el más barato, 26-nov-2026). */
+  elegido?: boolean;
+};
+
+/** Por qué se eligió un proveedor para un insumo (26-nov-2026: a veces gana uno más caro, por calidad). */
+export const MOTIVOS_ELEGIDO = { calidad: "Calidad", precio: "Precio", disponibilidad: "Disponibilidad", servicio: "Servicio", otro: "Otro" } as const;
+export type MotivoElegido = keyof typeof MOTIVOS_ELEGIDO;
+export type ProveedorElegido = { proveedorId: number; proveedor: string; motivo: MotivoElegido; nota: string | null; por: string | null; el: string };
 
 /**
  * El precio más barato por unidad de un producto entre los proveedores de las sedes que compran ese insumo,
  * ya pasado a la unidad del insumo. null = ningún proveedor de esas sedes tiene precio.
+ * Si el insumo tiene proveedor elegido y ese proveedor tiene precio, manda ese (aunque sea más caro).
  */
 export function mejorParaInsumo(
   ofertasVigentes: Oferta[], proveedores: (ProveedorCompra & { sedes: number[] })[], productoId: number, origen: OrigenInsumo, factor: number,
+  elegidoId: number | null = null,
 ): MejorProveedor | null {
+  if (elegidoId !== null) {
+    const p = proveedores.find((x) => x.id === elegidoId);
+    const o = ofertasVigentes.find((x) => x.productoId === productoId && x.proveedorId === elegidoId && precioUnitario(x) !== null);
+    if (p && o) { const u = precioUnitario(o)!; return { proveedorId: p.id, proveedor: p.nombre, unitario: u, precioInsumo: r4(u * factor), fecha: o.fecha, elegido: true }; }
+  }
   const sedes = SEDES_DE_ORIGEN[origen];
   const porId = new Map(proveedores.filter((p) => p.sedes.some((s) => sedes.includes(s))).map((p) => [p.id, p]));
   let mejor: MejorProveedor | null = null;

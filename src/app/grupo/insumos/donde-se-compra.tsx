@@ -14,8 +14,10 @@ import { Plus, Search, Store } from "lucide-react";
 import type { FichaInsumo } from "@/app/actions/insumos";
 import type { Presentacion } from "@/lib/insumos-ficha";
 import {
-  agregarDondeSeCompra, conectarProductoInsumo, desconectarProductoInsumo, getOpcionesProveedores, type OpcionesProveedores, type ProductoProveedor,
+  agregarDondeSeCompra, conectarProductoInsumo, desconectarProductoInsumo, elegirProveedorInsumo, getOpcionesProveedores, quitarProveedorElegido,
+  type OpcionesProveedores, type ProductoProveedor,
 } from "@/app/actions/insumos-proveedores";
+import { MOTIVOS_ELEGIDO, type MotivoElegido } from "@/lib/proveedores";
 import { Pastilla } from "@/components/productos/ui";
 import { diasEntre, factorPresentacion, factorSeguro, masParecidos, normalizarNombre, precioPorPresentacion, textoPresentacion } from "@/lib/insumos-ficha";
 import { fechaCorta, soles, solesRedondo } from "./piezas";
@@ -33,6 +35,8 @@ export function DondeSeCompra({ i, hoy, usarPrecio, guardarPresentacion, onCambi
   const [opciones, setOpciones] = useState<OpcionesProveedores | null>(null);
   const [ocupado, setOcupado] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  // Elegir proveedor (26-nov-2026): la fila que se está eligiendo, con su motivo y nota.
+  const [eligiendo, setEligiendo] = useState<{ proveedorId: number; motivo: MotivoElegido; nota: string } | null>(null);
 
   const abrir = async (m: "conectar" | "anotar") => {
     setModo(m);
@@ -54,6 +58,11 @@ export function DondeSeCompra({ i, hoy, usarPrecio, guardarPresentacion, onCambi
   };
 
   const fPres = factorPresentacion(i.unidad, i.presentacion);
+  const elegidoId = i.elegido?.proveedorId ?? null;
+  // El elegido arriba; el resto, del más barato al más caro (como vienen).
+  const ofertas = [...i.dondeSeCompra].sort((a, b) => Number(b.proveedorId === elegidoId) - Number(a.proveedorId === elegidoId));
+  const masBarato = i.dondeSeCompra.length > 1 ? i.dondeSeCompra[0] : null;
+  const delElegido = i.dondeSeCompra.find((o) => o.proveedorId === elegidoId) ?? null;
   const sinPrecio = i.productosProveedor.filter((p) => !i.dondeSeCompra.some((o) => o.productoId === p.productoId));
 
   return (
@@ -64,9 +73,21 @@ export function DondeSeCompra({ i, hoy, usarPrecio, guardarPresentacion, onCambi
         <p className="mt-1 text-xs text-gray-500">Todavía no tiene proveedor. Agrega dónde lo compran y a cuánto.</p>
       )}
 
+      {i.elegido && (
+        <p className="mt-1 text-[11px] text-gray-600">
+          Elegido: <b>{i.elegido.proveedor}</b> por {MOTIVOS_ELEGIDO[i.elegido.motivo].toLowerCase()}{i.elegido.nota ? ` («${i.elegido.nota}»)` : ""}
+          {i.elegido.por ? ` · ${i.elegido.por}, ${fechaCorta(i.elegido.el)}` : ""}.
+          {!delElegido && " Todavía no tiene precio registrado."}
+          {delElegido && masBarato && masBarato.proveedorId !== elegidoId && masBarato.precioInsumo < delElegido.precioInsumo && (
+            <> {masBarato.proveedor} es {Math.round((1 - masBarato.precioInsumo / delElegido.precioInsumo) * 100)}% más barato, pero no se sugiere.</>
+          )}
+        </p>
+      )}
+
       {i.dondeSeCompra.length > 0 && (
         <ul className="mt-2 divide-y divide-gray-100 rounded-xl border border-gray-200/80">
-          {i.dondeSeCompra.map((o, k) => {
+          {ofertas.map((o) => {
+            const esElegido = o.proveedorId === elegidoId;
             const dif = i.precio > 0 ? Math.round(((o.precioInsumo - i.precio) / i.precio) * 100) : 0;
             const viejo = diasEntre(o.fecha, hoy) > DIAS_PRECIO_PROVEEDOR_VIEJO;
             return (
@@ -75,7 +96,8 @@ export function DondeSeCompra({ i, hoy, usarPrecio, guardarPresentacion, onCambi
                   <div className="min-w-0">
                     <div className="flex flex-wrap items-center gap-1.5 text-sm font-medium text-gray-900">
                       {o.proveedor}
-                      {k === 0 && i.dondeSeCompra.length > 1 && <Pastilla tono="verde">Más barato</Pastilla>}
+                      {esElegido && <Pastilla tono="marca">Elegido · {MOTIVOS_ELEGIDO[i.elegido!.motivo]}</Pastilla>}
+                      {masBarato?.proveedorId === o.proveedorId && masBarato.productoId === o.productoId && !esElegido && <Pastilla tono="verde">Más barato</Pastilla>}
                       {o.cotizado && <Pastilla tono="azul">Cotizado</Pastilla>}
                       {viejo && <Pastilla tono="ambar">Precio viejo</Pastilla>}
                     </div>
@@ -99,9 +121,41 @@ export function DondeSeCompra({ i, hoy, usarPrecio, guardarPresentacion, onCambi
                         if (e) setError(e);
                       }}>Usar este precio</button>
                   )}
+                  {esElegido ? (
+                    <button type="button" disabled={ocupado} className="text-gray-500 hover:text-gray-800"
+                      onClick={() => void correr(() => quitarProveedorElegido({ origen: i.origen, sku: i.sku }))}>Quitar elección</button>
+                  ) : (
+                    <button type="button" disabled={ocupado} className="font-medium text-primary hover:underline"
+                      onClick={() => setEligiendo({ proveedorId: o.proveedorId, motivo: "calidad", nota: "" })}>Elegir este proveedor</button>
+                  )}
                   <button type="button" disabled={ocupado} className="text-gray-400 hover:text-gray-700"
                     onClick={() => void correr(() => desconectarProductoInsumo({ productoId: o.productoId, origen: i.origen, sku: i.sku }))}>No es este insumo</button>
                 </div>
+                {eligiendo?.proveedorId === o.proveedorId && (
+                  <div className="mt-2 space-y-2 rounded-lg border border-primary/30 bg-emerald-50/40 p-2.5">
+                    <p className="text-[11px] text-gray-600">¿Por qué {o.proveedor}? Desde ahora se sugiere su precio aunque haya uno más barato.</p>
+                    <div className="flex flex-wrap gap-1.5">
+                      {(Object.keys(MOTIVOS_ELEGIDO) as MotivoElegido[]).map((m) => (
+                        <button key={m} type="button" onClick={() => setEligiendo({ ...eligiendo, motivo: m })}
+                          className={`rounded-full px-2.5 py-1 text-xs ring-1 ${eligiendo.motivo === m ? "bg-primary text-white ring-primary" : "bg-white text-gray-700 ring-gray-200"}`}>
+                          {MOTIVOS_ELEGIDO[m]}
+                        </button>
+                      ))}
+                    </div>
+                    <input value={eligiendo.nota} onChange={(e) => setEligiendo({ ...eligiendo, nota: e.target.value })} placeholder="Nota (opcional), ej. más carnoso, no viene partido"
+                      className="block w-full rounded-lg border border-gray-300 bg-white px-2 py-1.5 text-xs" />
+                    <div className="flex gap-2">
+                      <button type="button" disabled={ocupado}
+                        onClick={() => void correr(async () => {
+                          const r = await elegirProveedorInsumo({ origen: i.origen, sku: i.sku, proveedorId: eligiendo.proveedorId, motivo: eligiendo.motivo, nota: eligiendo.nota });
+                          if (r.ok) setEligiendo(null);
+                          return r;
+                        })}
+                        className="rounded-lg bg-primary px-3 py-1.5 text-xs font-medium text-white disabled:opacity-50">Elegir</button>
+                      <button type="button" onClick={() => setEligiendo(null)} className="text-xs text-gray-500">Cancelar</button>
+                    </div>
+                  </div>
+                )}
               </li>
             );
           })}
