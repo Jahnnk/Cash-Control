@@ -5,7 +5,7 @@
  * (pedido de Jahnn, 18-nov-2026):
  *   · Lo que ya subió: las fotos de precios de compra que se guardan al subir el Excel (insumos_precios).
  *   · Los insumos que más pesan en lo que se vende y un % de alza por insumo.
- *   · El resultado: cuánto más cuesta al mes, qué productos pasan el 35% y a qué precio ganan lo mismo.
+ *   · El resultado: cuánto más cuesta al mes, qué productos pasan la meta de la ruta de precios y a qué precio ganan lo mismo.
  * Solo lectura. Motores: lib/productos/simulador-insumos.ts, desglose-insumos.ts, insumos-precios.ts.
  */
 
@@ -13,7 +13,6 @@ import { useEffect, useMemo, useState } from "react";
 import { getHistorialInsumos, getRentabilidadProductos } from "@/app/actions/productos-panorama";
 import { esCafeteria } from "@/lib/productos/cafeterias";
 import { alzaPorSku, type HistorialPrecios } from "@/lib/productos/insumos-precios";
-import { NECESIDAD_ALTA_PCT } from "@/lib/productos/subida-precios";
 import { pesoDeInsumos, productosParaSimular, simular, type PesoInsumo, type ProductoSim } from "@/lib/productos/simulador-insumos";
 import { ConPaso } from "./con-paso";
 import { Pastilla, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
@@ -146,7 +145,7 @@ function Cuerpo({ d }: { d: Datos }) {
               <div className="text-xs text-gray-500">de todo lo vendido con receta</div>
             </div>
             <div className="rounded-xl border border-gray-200 bg-white px-4 py-3">
-              <div className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Pasan el {NECESIDAD_ALTA_PCT}%</div>
+              <div className="text-[11px] font-medium uppercase tracking-wider text-gray-500">Pasan la meta</div>
               <div className={`mt-1 text-xl font-semibold tabular-nums ${r.cruzan > 0 ? "text-amber-700" : "text-emerald-700"}`}>{r.cruzan}</div>
               <div className="text-xs text-gray-500">productos que hoy están bien</div>
             </div>
@@ -169,12 +168,12 @@ function Cuerpo({ d }: { d: Datos }) {
                       <td className="py-2 pl-4 pr-3">
                         <div className="text-gray-900 leading-tight">{p.nombre}</div>
                         <div className="mt-0.5 flex flex-wrap items-center gap-1.5">
-                          {p.cruza && <Pastilla tono="ambar">Pasa el {NECESIDAD_ALTA_PCT}%</Pastilla>}
+                          {p.cruza && <Pastilla tono="ambar">Pasa la meta ({pct(p.metaPct)})</Pastilla>}
                           {p.deAtelier && <span className="text-[10px] text-gray-400">lo hace Atelier: lo absorbe Atelier hasta que suba el precio interno</span>}
                         </div>
                       </td>
                       <td className="py-2 px-3 text-right tabular-nums whitespace-nowrap"><span className="text-gray-500">{soles(p.costoAntes)}</span> → <span className="font-semibold">{soles(p.costoDespues)}</span></td>
-                      <td className={`py-2 px-3 text-right tabular-nums whitespace-nowrap ${p.pctDespues > NECESIDAD_ALTA_PCT ? "text-amber-700 font-medium" : "text-gray-700"}`}>{pct(p.pctAntes)} → {pct(p.pctDespues)}</td>
+                      <td className={`py-2 px-3 text-right tabular-nums whitespace-nowrap ${p.pctDespues > p.metaPct ? "text-amber-700 font-medium" : "text-gray-700"}`}>{pct(p.pctAntes)} → {pct(p.pctDespues)}</td>
                       <td className="py-2 px-3 text-right tabular-nums text-gray-900 whitespace-nowrap">+{soles0(p.extraMes)}</td>
                       <td className="py-2 pl-3 pr-4 text-right tabular-nums whitespace-nowrap"><span className="text-gray-500">{soles(p.precio)}</span> → <span className="font-semibold">{soles(p.precioParaMantener)}</span></td>
                     </tr>

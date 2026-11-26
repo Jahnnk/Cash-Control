@@ -20,7 +20,7 @@ const cifras = (insumos: number, planilla: number, alquiler: number, ahorro = 0)
   return { sedes: [s], grupo: cifrasDelGrupo([s]) };
 };
 const sen = (clave: string, estado: Senal["estado"], paso?: Senal["paso"]): Senal => ({ clave, etiqueta: clave, estado, detalle: "x", paso });
-const piso = (bajoPct: number, margen: number): PisoSede => ({ businessId: 2, sede: "Fonavi", mes: "2026-09", hasta: "2026-09-30", filas: [], conCosto: 100, sinInsumos: 0, bajo: 10, ventasBajoPct: bajoPct, margenCartaPct: margen, extraTotal: 0 });
+const piso = (bajoPct: number, margen: number): PisoSede => ({ businessId: 2, sede: "Fonavi", mes: "2026-09", hasta: "2026-09-30", filas: [], conCosto: 100, sinInsumos: 0, bajo: 10, ventasBajoPct: bajoPct, margenCartaPct: margen, margenMetaPct: 65, extraTotal: 0 });
 function armar(c: ReturnType<typeof cifras>, senales: Senal[], p: PisoSede | null) {
   const regla = regla33(c)[0];
   const motores = motoresDeSede({ regla, ventas: { monto: 30000, esperada: 30000, mesAnterior: null }, senales });

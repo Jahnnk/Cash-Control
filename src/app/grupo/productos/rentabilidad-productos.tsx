@@ -13,6 +13,7 @@ import { getRentabilidadProductos } from "@/app/actions/productos-panorama";
 import { esCafeteria } from "@/lib/productos/cafeterias";
 import { MIN_UNIDADES, PUNTOS_DEJA_POCO, PUNTOS_MARGEN_ALTO, type MarcaRentabilidad, type ProductoRentable, type RentabilidadSede } from "@/lib/productos/rentabilidad";
 import { Pastilla, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
+import { FichaProducto } from "@/components/productos/ficha-producto";
 
 const MARCAS: Record<MarcaRentabilidad, { texto: string; tono: "verde" | "ambar" | "azul" }> = {
   campeon: { texto: "Campeón", tono: "verde" },
@@ -28,6 +29,17 @@ const finDeMes = (mes: string) => {
   return new Date(Date.UTC(y, m, 0)).toISOString().slice(0, 10);
 };
 
+/** El nombre del producto: al tocarlo abre su ficha única (receta, ruta de precios, matriz), 25-nov-2026. */
+function Nombre({ nombre }: { nombre: string }) {
+  const [abierta, setAbierta] = useState(false);
+  return (
+    <>
+      <button type="button" onClick={() => setAbierta(true)} className="text-left leading-tight hover:text-primary hover:underline decoration-dotted" title="Ver receta y ruta de precios">{nombre}</button>
+      {abierta && <FichaProducto nombreByte={nombre} onCerrar={() => setAbierta(false)} />}
+    </>
+  );
+}
+
 function Lista({ titulo, ayuda, tono, productos, vacio }: { titulo: string; ayuda: string; tono: "ambar" | "azul"; productos: ProductoRentable[]; vacio: string }) {
   return (
     <div className={`rounded-xl border p-4 min-w-0 ${tono === "ambar" ? "border-amber-200 bg-amber-50/40" : "border-sky-200 bg-sky-50/40"}`}>
@@ -40,7 +52,7 @@ function Lista({ titulo, ayuda, tono, productos, vacio }: { titulo: string; ayud
           {productos.map((p) => (
             <li key={p.nombre} className="flex items-baseline justify-between gap-3 text-sm">
               <span className="min-w-0 text-gray-800 leading-tight">
-                {p.nombre}
+                <Nombre nombre={p.nombre} />
                 <span className="block text-[11px] text-gray-500">{p.unidades.toLocaleString("es-PE")} u · margen {pct(p.margenPct)} · deja {soles(p.margenUnidad)} por unidad</span>
               </span>
               <span className="shrink-0 font-semibold tabular-nums text-gray-900">{soles0(p.deja ?? 0)}</span>
@@ -70,7 +82,7 @@ function Tabla({ productos }: { productos: ProductoRentable[] }) {
           {productos.map((p) => (
             <tr key={p.nombre}>
               <td className="py-2.5 pl-4 pr-3 align-top">
-                <div className="text-gray-900 leading-tight">{p.nombre}</div>
+                <div className="text-gray-900 leading-tight"><Nombre nombre={p.nombre} /></div>
                 {p.marca && <div className="mt-1"><Pastilla tono={MARCAS[p.marca].tono}>{MARCAS[p.marca].texto}</Pastilla></div>}
               </td>
               <td className="py-2.5 px-3 text-right tabular-nums text-gray-700 align-top">{p.unidades.toLocaleString("es-PE")} u</td>

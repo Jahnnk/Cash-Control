@@ -3,8 +3,9 @@
 /**
  * Ficha única de producto (fase 1 de «unificar pricing e ingeniería de menú», 25-nov-2026). La misma ventana se
  * abre desde Recetas y costos, Productos (matriz de la carta) y Dirección → Precios: ruta de precios, su lugar en
- * la matriz y su receta. Los precios de venta se cambian aquí mismo, en la ruta (fase 2); la receta, con «Editar
- * receta» (lleva a Recetas y costos); los insumos, en Insumos y packaging.
+ * la matriz y su receta. Los precios de venta se cambian aquí mismo, en la ruta (fase 2); la sección y «volver a
+ * lo del Excel», en «En la carta» (fase 3: antes era «Cambiar» en la Carta de las cafeterías); la receta, con
+ * «Editar receta» (lleva a Recetas y costos); los insumos, en Insumos y packaging.
  */
 
 import { useEffect, useState } from "react";
@@ -13,7 +14,7 @@ import { Loader2, Pencil, X } from "lucide-react";
 import { getFichaProducto, type DatosFicha } from "@/app/actions/ficha-producto";
 import { getMenuDeProducto, type MenuDeProducto } from "@/app/actions/productos-panorama";
 import { RutaPreciosAtelier, RutaPreciosCafeteria, type GuardarPrecio, type PrecioRuta } from "@/components/productos/ruta-precios";
-import { guardarPrecioVenta } from "@/app/actions/carta";
+import { guardarPrecioVenta, guardarSeccionCarta, volverCartaAlExcel } from "@/app/actions/carta";
 import { sugeridoCafeteria, sugeridosAtelier } from "@/lib/precios-sugeridos";
 import { CUADRANTES, type Cuadrante } from "@/lib/productos/matriz-carta";
 import { Pastilla } from "@/components/productos/ui";
@@ -39,6 +40,8 @@ export function FichaProducto({ cartaRef = null, recetaRef = null, nombreByte = 
   const [error, setError] = useState<string | null>(null);
   const [menu, setMenu] = useState<MenuDeProducto | null>(null);
   const [errorMenu, setErrorMenu] = useState<string | null>(null);
+  // Sube en 1 para volver a leer la ficha (tras «volver a lo del Excel»).
+  const [vuelta, setVuelta] = useState(0);
 
   useEffect(() => {
     let vivo = true;
@@ -46,8 +49,8 @@ export function FichaProducto({ cartaRef = null, recetaRef = null, nombreByte = 
       if (!vivo) return;
       if (!r.ok) { setError(r.error); return; }
       setFicha(r.ficha);
-      // La matriz tarda más (lee las ventas desde abril): llega después.
-      if (r.ficha.cartaRef) {
+      // La matriz tarda más (lee las ventas desde abril): llega después. Al releer la ficha no hace falta.
+      if (r.ficha.cartaRef && vuelta === 0) {
         void getMenuDeProducto(r.ficha.cartaRef).then((m) => {
           if (!vivo) return;
           if (m.ok) setMenu(m.menu); else setErrorMenu(m.error);
@@ -55,7 +58,7 @@ export function FichaProducto({ cartaRef = null, recetaRef = null, nombreByte = 
       }
     });
     return () => { vivo = false; };
-  }, [cartaRef, recetaRef, nombreByte]);
+  }, [cartaRef, recetaRef, nombreByte, vuelta]);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-2 sm:p-4" onClick={onCerrar}>
@@ -83,9 +86,13 @@ export function FichaProducto({ cartaRef = null, recetaRef = null, nombreByte = 
                 <Ruta f={ficha} onGuardar={ficha.puedeEditar ? async (campo, precio) => {
                   const r = await guardarPrecioVenta({ campo, precio, cartaRef: ficha.cartaRef, b2bRef: ficha.b2bRef });
                   if (!r.ok) return r.error;
-                  setFicha((f) => f && { ...f, precios: { ...f.precios, [campo]: precio } });
+                  setFicha((f) => f && { ...f, precios: { ...f.precios, [campo]: precio }, cambiadoAqui: f.cambiadoAqui || (campo !== "b2b" && !!f.excel) });
                   return null;
                 } : undefined} />
+                {ficha.cartaRef && ficha.puedeEditar && (
+                  <EnLaCarta f={ficha} onSeccion={(seccion) => setFicha((f) => f && { ...f, seccion, cambiadoAqui: f.cambiadoAqui || (!!f.excel && f.excel.seccion !== seccion) })}
+                    onVolverAlExcel={() => setVuelta((v) => v + 1)} />
+                )}
                 <Matriz f={ficha} menu={menu} error={errorMenu} />
                 <Receta f={ficha} />
               </>
@@ -93,7 +100,7 @@ export function FichaProducto({ cartaRef = null, recetaRef = null, nombreByte = 
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-4 py-4 sm:px-6">
-          <p className="text-[11px] text-gray-500">Los precios de venta se cambian aquí, en la ruta. La receta, con «Editar receta». Los precios de insumos, en Insumos y packaging.</p>
+          <p className="text-[11px] text-gray-500">Los precios de venta y la sección se cambian aquí. La receta, con «Editar receta». Los precios de insumos, en Insumos y packaging.</p>
           <div className="flex gap-2">
             <button onClick={onCerrar} className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Cerrar</button>
             {ficha?.recetaRef && (onEditarReceta
@@ -116,6 +123,70 @@ function Ruta({ f, onGuardar }: { f: DatosFicha; onGuardar?: GuardarPrecio }) {
   const s = sugeridosAtelier(f.costo, f.precios.interno);
   return <RutaPreciosAtelier costo={f.costo} interno={ruta(f.precios.interno, s.interno)} carta={ruta(f.precios.carta, s.carta)} b2b={ruta(f.precios.b2b, s.b2b)}
     editables={{ interno: !!f.cartaRef, carta: !!f.cartaRef, b2b: !!f.b2bRef }} onGuardar={onGuardar} />;
+}
+
+/** Sección y «volver a lo del Excel» (lo que antes hacía «Cambiar» en la Carta de las cafeterías). */
+function EnLaCarta({ f, onSeccion, onVolverAlExcel }: { f: DatosFicha; onSeccion: (s: string) => void; onVolverAlExcel: () => void }) {
+  const [editando, setEditando] = useState(false);
+  const [valor, setValor] = useState(f.seccion ?? "");
+  const [ocupado, setOcupado] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  async function guardar() {
+    const s = valor.replace(/\s+/g, " ").trim();
+    if (s.length < 2) { setError("Escribe la sección."); return; }
+    setOcupado(true); setError(null);
+    const r = await guardarSeccionCarta({ cartaRef: f.cartaRef!, seccion: s });
+    setOcupado(false);
+    if (!r.ok) { setError(r.error); return; }
+    setEditando(false);
+    onSeccion(s);
+  }
+
+  async function volver() {
+    const ex = f.excel;
+    const partes = ex ? [ex.precio != null ? `carta ${soles(ex.precio)}` : null, f.origen === "Atelier" ? `interno ${soles(ex.costo)}` : null, ex.seccion ? `sección «${ex.seccion}»` : null].filter(Boolean).join(", ") : "";
+    if (!window.confirm(`¿Volver a lo del Excel${partes ? ` (${partes})` : ""}? Se quitan los cambios hechos en el sistema a este producto.`)) return;
+    setOcupado(true); setError(null);
+    const r = await volverCartaAlExcel(f.cartaRef!);
+    setOcupado(false);
+    if (!r.ok) { setError(r.error); return; }
+    onVolverAlExcel();
+  }
+
+  return (
+    <section className="rounded-xl border border-gray-200/80 px-3 py-2.5 text-xs" aria-label="Datos en la carta">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1.5">
+        <span className="text-gray-500">Sección de la carta:</span>
+        {editando ? (
+          <>
+            <input autoFocus list="ficha-secciones" value={valor} onChange={(e) => setValor(e.target.value)} aria-label="Sección de la carta"
+              onKeyDown={(e) => { if (e.key === "Enter") void guardar(); if (e.key === "Escape") setEditando(false); }}
+              className="w-48 rounded-lg border border-gray-300 px-2 py-1 text-sm text-gray-900" />
+            <datalist id="ficha-secciones">{f.secciones.map((s) => <option key={s} value={s} />)}</datalist>
+            <button type="button" disabled={ocupado} onClick={() => void guardar()} className="rounded-lg bg-primary px-3 py-1 font-medium text-white disabled:opacity-50">{ocupado ? "Guardando…" : "Guardar"}</button>
+            <button type="button" onClick={() => { setEditando(false); setValor(f.seccion ?? ""); setError(null); }} className="px-2 py-1 text-gray-600">Cancelar</button>
+          </>
+        ) : (
+          <>
+            <span className="font-medium text-gray-900">{f.seccion ?? "Sin sección (exhibidor)"}</span>
+            <button type="button" onClick={() => { setValor(f.seccion ?? ""); setEditando(true); }} className="inline-flex items-center gap-0.5 text-primary underline decoration-dotted">
+              <Pencil className="h-3 w-3" /> cambiar
+            </button>
+          </>
+        )}
+        {f.cambiadoAqui && !editando && (
+          <button type="button" disabled={ocupado} onClick={() => void volver()} className="ml-auto text-gray-600 underline decoration-dotted disabled:opacity-50">Volver a lo del Excel</button>
+        )}
+      </div>
+      {f.cambiadoAqui && f.excel && (
+        <p className="mt-1 text-[11px] text-gray-500">
+          Cambiado en el sistema. El Excel dice: {[f.excel.precio != null ? `carta ${soles(f.excel.precio)}` : null, f.origen === "Atelier" ? `interno ${soles(f.excel.costo)}` : null, f.excel.seccion ? `sección «${f.excel.seccion}»` : null].filter(Boolean).join(" · ")}.
+        </p>
+      )}
+      {error && <p className="mt-1 text-red-700">{error}</p>}
+    </section>
+  );
 }
 
 function Matriz({ f, menu, error }: { f: DatosFicha; menu: MenuDeProducto | null; error: string | null }) {

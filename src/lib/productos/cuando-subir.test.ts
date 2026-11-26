@@ -46,7 +46,7 @@ describe("las tres señales", () => {
     expect(r.estado).toBe("preparala");
   });
 
-  it("la carta pesa cuando 15% o más de los productos pasan el 35% de costo", () => {
+  it("la carta pesa cuando 15% o más de los productos pasan la meta de costo", () => {
     expect(cuandoSubir({ ...base, sobreTope: 11, conCosto: 70 }).senales.carta.activa).toBe(true);
   });
 

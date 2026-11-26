@@ -2,7 +2,7 @@
 
 /**
  * «¿Cuándo subir y cómo comunicarlo?» (Grupo → Sistema de Dirección → Precios; antes en Productos), fase 3 de «¿Qué precios subir?»
- * (17-nov-2026). Por sede: tres señales (tiempo sin subir, costos sobre la venta, carta sobre el 35%) y un
+ * (17-nov-2026). Por sede: tres señales (tiempo sin subir, costos sobre la venta, carta sobre la meta de la ruta de precios) y un
  * semáforo; la fecha sugerida (un domingo) con el calendario de la prueba; y la guía para comunicar la
  * subida sin perder la percepción de valor. Solo lectura. Motor: lib/productos/cuando-subir.ts.
  */
@@ -170,7 +170,7 @@ export function CuandoSubir({ month, sede, paso }: { month: string; sede: number
             </div>
 
             <div className="rounded-lg bg-gray-50 border border-gray-100 px-3.5 py-3 text-[11px] text-gray-600 leading-relaxed space-y-1.5">
-              <p><strong>Las tres señales.</strong> <strong>Tiempo</strong>: {MESES_REVISION} meses o más sin subir. <strong>Costos</strong>: la cifra «Costos» del Dashboard (insumos, productos de Atelier, empaques) subió 2 puntos o más como % de la venta. En las cafeterías incluye lo que compran a Atelier a su precio interno. <strong>Carta</strong>: 15% o más de los productos tienen un costo de insumos de más del 35% de su precio. Con 2 o 3 señales, ya toca; con 1, prepárala.</p>
+              <p><strong>Las tres señales.</strong> <strong>Tiempo</strong>: {MESES_REVISION} meses o más sin subir. <strong>Costos</strong>: la cifra «Costos» del Dashboard (insumos, productos de Atelier, empaques) subió 2 puntos o más como % de la venta. En las cafeterías incluye lo que compran a Atelier a su precio interno. <strong>Carta</strong>: 15% o más de los productos tienen un costo de insumos que pasa la meta de Recetas y costos (30% del precio en la cafetería, 22% en lo de Atelier). Con 2 o 3 señales, ya toca; con 1, prepárala.</p>
               <p>La última subida la detecta «Prueba de precios» en el reporte semanal de Byte. Sin ninguna, se cuenta desde abril 2026, cuando empiezan los reportes de productos.</p>
             </div>
           </div>

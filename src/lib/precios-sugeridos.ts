@@ -65,6 +65,44 @@ export function sugeridoCafeteria(costo: number): number {
   return precioPorFoodCost(costo, METAS.foodCostCafeteria);
 }
 
+/**
+ * LA META ÚNICA del costo sobre el precio de carta (fase 3 de «unificar pricing», 25-nov-2026). Antes había tres
+ * reglas: la ruta (30%), el Piso de precios (costo × 3 = 33%, margen 65–70%) y «¿Qué precios subir?» (alerta
+ * sobre 35%, bien bajo 28%). Ahora todas leen ESTA, sacada de METAS:
+ *
+ *   · se prepara en la cafetería   costo de insumos ≤ 30% del precio de carta (foodCostCafeteria)
+ *   · lo hace Atelier              costo de insumos ≤ 40% × 55% = 22% del precio de carta: la misma cuenta de la
+ *                                  ruta (interno con 60% de margen y la sede con 55% de food cost)
+ *
+ * Se mide con el costo de INSUMOS (la mirada del Grupo). La mirada de la cafetería (lo que paga a Atelier por
+ * su precio interno) se compara con foodCostAtelierEnCarta (55%).
+ */
+export function metaCostoCarta(deAtelier: boolean): number {
+  const m = deAtelier ? (1 - METAS.margenInterno) * METAS.foodCostAtelierEnCarta : METAS.foodCostCafeteria;
+  return Math.round(m * 10000) / 10000;
+}
+
+/** Margen de la meta: «en la meta» hasta 5 puntos por debajo de ella; más abajo, «holgado». */
+export const HOLGURA_META_PTS = 5;
+
+export type FrenteMeta = "pasa" | "en-meta" | "holgado";
+
+/** Dónde queda un producto frente a la meta: costoPct = costo de insumos ÷ precio × 100. */
+export function frenteMeta(costoPct: number, deAtelier: boolean): FrenteMeta {
+  const meta = metaCostoCarta(deAtelier) * 100;
+  if (costoPct > meta + 1e-9) return "pasa";
+  if (costoPct > meta - HOLGURA_META_PTS + 1e-9) return "en-meta";
+  return "holgado";
+}
+
+/**
+ * El precio de carta que pide la meta: el mismo sugerido de la ruta de precios (en Atelier, con el precio interno
+ * sugerido), redondeado de S/ 0.50 en S/ 0.50.
+ */
+export function cartaPorMeta(costoInsumos: number, deAtelier: boolean): number {
+  return deAtelier ? sugeridosAtelier(costoInsumos, null).carta : sugeridoCafeteria(costoInsumos);
+}
+
 /** Prefijo de los insumos creados en el sistema: SIS-A001 (Atelier), SIS-C001 (Cafetería). */
 export const prefijoInsumo = (origen: "Atelier" | "Cafetería") => (origen === "Atelier" ? "SIS-A" : "SIS-C");
 

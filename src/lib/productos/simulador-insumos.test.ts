@@ -57,13 +57,15 @@ describe("simulador", () => {
     expect(p[0]).toEqual({ clave: "AC005", sku: "AC005", nombre: "Mantequilla", costoMes: 200, pct: 52.6, productos: 2 });
   });
 
-  it("mantequilla +20%: cuánto más cuesta al mes y quién pasa el 35%", () => {
+  it("mantequilla +20%: cuánto más cuesta al mes y quién pasa la meta de la ruta de precios", () => {
     const r = simular([brownie, pie], new Map([[claveInsumo({ sku: "AC005", nombre: "" }), 20]]));
-    // Brownie: 2.5 → 2.8 (27.8% → 31.1%). Pie: 2.6 → 2.8 (32.5% → 35%, no lo pasa).
+    // Los dos son de Atelier: meta 22% y ya la pasaban (27.8% y 32.5%), así que no la «cruzan» ahora.
     expect(r.extraMes).toBe(40);
-    expect(r.productos.map((p) => [p.nombre, p.costoDespues, p.pctDespues, p.cruza, p.extraMes])).toEqual([["Brownie", 2.8, 31.1, false, 30], ["Pie de manzana", 2.8, 35, false, 10]]);
-    // Con +30% el pie pasa el 35%.
-    expect(simular([brownie, pie], new Map([["AC005", 30]])).productos.find((p) => p.nombre === "Pie de manzana")!.cruza).toBe(true);
+    expect(r.productos.map((p) => [p.nombre, p.costoDespues, p.pctDespues, p.metaPct, p.cruza, p.extraMes])).toEqual([["Brownie", 2.8, 31.1, 22, false, 30], ["Pie de manzana", 2.8, 35, 22, false, 10]]);
+    // Si se preparara en la cafetería (meta 30%): el brownie pasa de 27.8% a 31.1% y cruza; con +10% (29.4%) todavía no.
+    const enTienda = { ...brownie, deAtelier: false };
+    expect(simular([enTienda], new Map([["AC005", 20]])).productos[0]).toMatchObject({ metaPct: 30, cruza: true });
+    expect(simular([enTienda], new Map([["AC005", 10]])).productos[0].cruza).toBe(false);
   });
 
   it("el precio para seguir ganando lo mismo por unidad, redondeado como la carta", () => {

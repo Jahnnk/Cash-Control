@@ -2,25 +2,25 @@
 
 /**
  * Grupo → Recetas y costos → Carta de las cafeterías (fase 2a de «la carta vive en el sistema», 18-nov-2026).
- * La carta por sección con precio, costo y % de costo. Se cambia aquí el precio de carta, el precio interno de
- * lo que hace Atelier y la sección, sin tocar el Excel. Retirar usa el mismo «archivar» de Productos.
+ * La carta por sección con precio, costo y % de costo. Desde el 25-nov-2026 (fase 3 de «unificar pricing») los
+ * precios y la sección se cambian en la ficha única («Abrir»): aquí ya no hay «Cambiar», salvo «Corregir» en
+ * los productos creados en el sistema (su receta). Retirar usa el mismo «archivar» de Productos.
  * Plegada por defecto.
  */
 
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, Loader2, Plus, Search } from "lucide-react";
-import { getCarta, getOpcionesAlta, guardarCambioCarta, type OpcionesAlta, type ProductoCarta } from "@/app/actions/carta";
+import { getCarta, getOpcionesAlta, type OpcionesAlta, type ProductoCarta } from "@/app/actions/carta";
 import { AltaProducto } from "./alta-producto";
 import { archivarProductos, restaurarProducto } from "@/app/actions/productos-panorama";
 import { Pastilla } from "@/components/productos/ui";
 import { FichaProducto } from "@/components/productos/ficha-producto";
+import { METAS } from "@/lib/precios-sugeridos";
 
 const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const soles = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
-const num = (s: string) => Number(s.replace(",", "."));
-const ALTO = 35;
-
-type Borrador = { precio: string; costo: string; seccion: string };
+/** La meta de la ruta de precios sobre lo que paga la cafetería: 55% en lo de Atelier (su precio interno), 30% en el resto. */
+const metaPct = (p: ProductoCarta) => (p.origen === "Atelier" ? METAS.foodCostAtelierEnCarta : METAS.foodCostCafeteria) * 100;
 
 const retirado = (p: ProductoCarta) => p.byte.length > 0 && p.byte.every((b) => b.archivado);
 const cambiado = (p: ProductoCarta) => p.marca.precio || p.marca.costo || p.marca.seccion || p.marca.nuevo;
@@ -32,10 +32,8 @@ export function CartaCafeterias() {
   const [q, setQ] = useState("");
   const [soloCambiados, setSoloCambiados] = useState(false);
   const [verRetirados, setVerRetirados] = useState(false);
-  const [editando, setEditando] = useState<string | null>(null);
   // «Abrir» = la ficha única del producto (25-nov-2026).
   const [ficha, setFicha] = useState<string | null>(null);
-  const [b, setB] = useState<Borrador>({ precio: "", costo: "", seccion: "" });
   const [ocupado, setOcupado] = useState(false);
   const [aviso, setAviso] = useState<{ tono: "ok" | "error"; texto: string } | null>(null);
   /** Formulario de producto nuevo abierto (con el producto creado aquí que se corrige, o null = uno nuevo). */
@@ -44,7 +42,6 @@ export function CartaCafeterias() {
 
   const abrirAlta = async (producto: ProductoCarta | null) => {
     setAviso(null);
-    setEditando(null);
     if (!opciones) {
       const r = await getOpcionesAlta();
       if (!r.ok) { setAviso({ tono: "error", texto: r.error }); return; }
@@ -78,36 +75,6 @@ export function CartaCafeterias() {
   const nCambiados = productos?.filter(cambiado).length ?? 0;
   const nRetirados = productos?.filter(retirado).length ?? 0;
 
-  const abrir = (p: ProductoCarta) => {
-    setEditando(p.ref);
-    setB({ precio: p.precio != null ? String(p.precio) : "", costo: String(p.costo), seccion: p.seccion ?? "" });
-    setAviso(null);
-  };
-
-  const guardar = async (p: ProductoCarta, volverAlExcel = false) => {
-    let precio: number | null = null, costo: number | null = null, seccion: string | null = null;
-    if (!volverAlExcel) {
-      const pr = num(b.precio);
-      if (!(pr > 0)) { setAviso({ tono: "error", texto: "Escribe un precio de carta mayor que cero." }); return; }
-      precio = p.excel?.precio != null && Math.abs(pr - p.excel.precio) < 0.005 ? null : pr;
-      if (p.origen !== "Cafetería") {
-        const c = num(b.costo);
-        if (!(c > 0)) { setAviso({ tono: "error", texto: "Escribe un precio interno mayor que cero." }); return; }
-        costo = p.excel && Math.abs(c - p.excel.costo) < 0.00005 ? null : c;
-      }
-      seccion = b.seccion.trim() && b.seccion.trim() !== (p.excel?.seccion ?? "") ? b.seccion.trim() : null;
-      const cambio = p.precio ? (pr / p.precio - 1) * 100 : 0;
-      if (Math.abs(cambio) >= 30 && !window.confirm(`El precio de carta cambia ${cambio > 0 ? "+" : ""}${cambio.toFixed(0)}%. ¿Está bien?`)) return;
-    }
-    setOcupado(true);
-    const r = await guardarCambioCarta({ ref: p.ref, precio, costo, seccion });
-    setOcupado(false);
-    if (!r.ok) { setAviso({ tono: "error", texto: r.error }); return; }
-    setEditando(null);
-    setAviso({ tono: "ok", texto: volverAlExcel ? `${p.nombre}: vuelve a lo del Excel.` : `${p.nombre}: guardado. Productos y Precios ya usan el cambio.` });
-    await cargar();
-  };
-
   const retirar = async (p: ProductoCarta) => {
     if (!window.confirm(`¿Retirar «${p.nombre}» de la carta? Se archiva en Productos y deja de evaluarse. Puedes volver a ponerlo.`)) return;
     setOcupado(true);
@@ -137,7 +104,7 @@ export function CartaCafeterias() {
 
       <div className="mt-3 space-y-3">
         <p className="text-xs text-gray-500 leading-relaxed max-w-2xl">
-          Cambia aquí el precio de carta, el precio interno de lo que hace Atelier o la sección, o crea un producto nuevo con su receta. No hace falta tocar el Excel: el cambio vale también después de subir otro. Productos, Precios y el simulador lo usan al momento.
+          Toca «Abrir» para ver la ficha del producto y cambiar ahí su precio de carta, su precio interno o su sección. Aquí se crea un producto nuevo con su receta. No hace falta tocar el Excel: el cambio vale también después de subir otro. Productos, Precios y el simulador lo usan al momento.
         </p>
 
         {error ? (
@@ -194,7 +161,6 @@ export function CartaCafeterias() {
                         </thead>
                         <tbody className="divide-y divide-gray-100">
                           {lista.map((p) => {
-                            const abierto = editando === p.ref;
                             const pct = p.precio ? (p.costo / p.precio) * 100 : null;
                             const fuera = retirado(p);
                             return (
@@ -207,56 +173,26 @@ export function CartaCafeterias() {
                                     {cambiado(p) && !p.marca.nuevo && <Pastilla tono="azul">Cambiado aquí{p.actualizadoEl ? ` · ${p.actualizadoEl.slice(8, 10)}/${p.actualizadoEl.slice(5, 7)}` : ""}</Pastilla>}
                                     {fuera && <Pastilla tono="ambar">Retirado</Pastilla>}
                                   </div>
-                                  {abierto && (
-                                    <label className="mt-2 block text-[11px] text-gray-500">Sección
-                                      <input list="secciones-carta" value={b.seccion} onChange={(e) => setB({ ...b, seccion: e.target.value })}
-                                        className="mt-0.5 block w-48 border border-gray-300 rounded-lg px-2 py-1 text-sm text-gray-900" />
-                                    </label>
-                                  )}
                                 </td>
                                 <td className="py-2 pr-3 text-right whitespace-nowrap">
-                                  {abierto ? (
-                                    <input autoFocus inputMode="decimal" value={b.precio} onChange={(e) => setB({ ...b, precio: e.target.value })}
-                                      aria-label={`Precio de carta de ${p.nombre}`} className="w-20 border border-gray-300 rounded-lg px-2 py-1 text-right text-sm" />
-                                  ) : (
-                                    <>
-                                      <div className="font-medium text-gray-900">{p.precio != null ? soles(p.precio) : "—"}</div>
-                                      {p.marca.precio && p.excel?.precio != null && <div className="text-[11px] text-gray-500">Excel: {soles(p.excel.precio)}</div>}
-                                    </>
-                                  )}
+                                  <div className="font-medium text-gray-900">{p.precio != null ? soles(p.precio) : "—"}</div>
+                                  {p.marca.precio && p.excel?.precio != null && <div className="text-[11px] text-gray-500">Excel: {soles(p.excel.precio)}</div>}
                                 </td>
                                 <td className="py-2 pr-3 text-right whitespace-nowrap">
-                                  {abierto && p.origen !== "Cafetería" ? (
-                                    <input inputMode="decimal" value={b.costo} onChange={(e) => setB({ ...b, costo: e.target.value })}
-                                      aria-label={`Precio interno de ${p.nombre}`} className="w-20 border border-gray-300 rounded-lg px-2 py-1 text-right text-sm" />
-                                  ) : (
-                                    <>
-                                      <div className="text-gray-900">{soles(p.costo)}</div>
-                                      <div className="text-[11px] text-gray-500">
-                                        {p.marca.nuevo && p.costo === 0 ? <span className="text-amber-700">falta un precio</span> : p.marca.costo && p.excel ? `Excel: ${soles(p.excel.costo)}` : p.origen === "Atelier" ? "precio interno" : p.origen === "Cafetería" ? "su receta" : ""}
-                                      </div>
-                                    </>
-                                  )}
+                                  <div className="text-gray-900">{soles(p.costo)}</div>
+                                  <div className="text-[11px] text-gray-500">
+                                    {p.marca.nuevo && p.costo === 0 ? <span className="text-amber-700">falta un precio</span> : p.marca.costo && p.excel ? `Excel: ${soles(p.excel.costo)}` : p.origen === "Atelier" ? "precio interno" : p.origen === "Cafetería" ? "su receta" : ""}
+                                  </div>
                                 </td>
-                                <td className={`py-2 pr-3 text-right whitespace-nowrap font-medium ${pct != null && pct > ALTO ? "text-red-700" : "text-gray-700"}`}>
+                                <td className={`py-2 pr-3 text-right whitespace-nowrap font-medium ${pct != null && pct > metaPct(p) ? "text-red-700" : "text-gray-700"}`}
+                                  title={`Meta: hasta ${metaPct(p).toFixed(0)}%`}>
                                   {pct != null ? `${pct.toFixed(0)}%` : "—"}
                                 </td>
                                 <td className="py-2 text-right whitespace-nowrap">
-                                  {abierto ? (
-                                    <span className="inline-flex flex-wrap justify-end gap-1">
-                                      <button type="button" disabled={ocupado} onClick={() => void guardar(p)}
-                                        className="px-3 py-1 text-xs font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50">
-                                        {ocupado ? "Guardando…" : "Guardar"}
-                                      </button>
-                                      {cambiado(p) && !p.marca.nuevo && (
-                                        <button type="button" disabled={ocupado} onClick={() => void guardar(p, true)} className="px-2 py-1 text-xs text-gray-600 underline decoration-dotted">Volver al Excel</button>
-                                      )}
-                                      <button type="button" onClick={() => setEditando(null)} className="px-2 py-1 text-xs text-gray-500">Cancelar</button>
-                                    </span>
-                                  ) : (
+                                  {(
                                     <span className="inline-flex flex-col items-end gap-1">
                                       <button type="button" onClick={() => setFicha(p.ref)} className="text-xs font-medium text-gray-700">Abrir</button>
-                                      <button type="button" onClick={() => (p.marca.nuevo ? void abrirAlta(p) : abrir(p))} className="text-xs font-medium text-primary">Cambiar</button>
+                                      {p.marca.nuevo && <button type="button" onClick={() => void abrirAlta(p)} className="text-xs font-medium text-primary" title="Corregir su receta o quitarlo">Corregir</button>}
                                       {p.byte.length === 0 ? null : fuera ? (
                                         <button type="button" disabled={ocupado} onClick={() => void reactivar(p)} className="text-xs text-gray-600">Volver a la carta</button>
                                       ) : (
@@ -275,13 +211,12 @@ export function CartaCafeterias() {
                 ))}
               </div>
             )}
-            <datalist id="secciones-carta">{secciones.map((s) => <option key={s} value={s} />)}</datalist>
             <p className="text-[11px] text-gray-500">«Retirar» archiva el producto en Productos, igual que desde «Candidatos a reemplazo». Solo aparece en los productos que Byte vendió en los últimos 3 meses.</p>
           </>
         )}
       </div>
       {ficha && (
-        <FichaProducto cartaRef={ficha} onCerrar={() => setFicha(null)}
+        <FichaProducto cartaRef={ficha} onCerrar={() => { setFicha(null); void cargar(); }}
           // Misma página: se recarga con ?editar= para que «Recetas de Atelier» abra el editor.
           onEditarReceta={(ref) => { window.location.href = `/grupo/recetas?editar=${encodeURIComponent(ref)}`; }} />
       )}
