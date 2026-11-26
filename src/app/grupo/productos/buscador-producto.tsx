@@ -14,6 +14,7 @@ import { CUADRANTES, fichaDeProducto, type Cuadrante } from "@/lib/productos/mat
 import { sugerirProducto, type AccionProducto, type Sugerencia } from "@/lib/productos/sugerencia-producto";
 import { buscarEnHistorial, resumenProducto, type HistorialProductos, type ResumenSede } from "@/lib/productos/historial-producto";
 import { Segmentado } from "@/components/productos/ui";
+import { FichaProducto } from "@/components/productos/ficha-producto";
 import { mesLargo, textoTramo } from "@/lib/productos/texto-tramo";
 
 const MESES = ["Ene", "Feb", "Mar", "Abr", "May", "Jun", "Jul", "Ago", "Set", "Oct", "Nov", "Dic"];
@@ -140,6 +141,8 @@ export function BuscadorProducto({ month, sedeFija = null }: { month: string; se
   const [cargando, setCargando] = useState(false);
   const [texto, setTexto] = useState("");
   const [elegido, setElegido] = useState<string | null>(null);
+  // La ficha única (receta + ruta de precios), la misma de Recetas y Precios (25-nov-2026).
+  const [fichaAbierta, setFichaAbierta] = useState(false);
   const [periodo, setPeriodo] = useState(3);
   const pedido = useRef<string | null>(null);
 
@@ -228,7 +231,10 @@ export function BuscadorProducto({ month, sedeFija = null }: { month: string; se
             <div>
               <h3 className="text-base font-semibold text-gray-900">{producto.nombre}</h3>
               {producto.eliminado && <p className="text-[11px] text-amber-700">Byte lo marca como eliminado.</p>}
+              <button type="button" onClick={() => setFichaAbierta(true)} className="text-xs font-medium text-primary underline decoration-dotted">Receta y precios</button>
             </div>
+            {/* En Atelier, Y-/P- son el canal: el producto de la carta es el mismo sin el prefijo. */}
+            {fichaAbierta && <FichaProducto nombreByte={producto.nombre.replace(/^\s*[YP]-\s*/i, "")} onCerrar={() => setFichaAbierta(false)} />}
             <Segmentado tamano="sm" valor={periodo} onChange={setPeriodo} opciones={PERIODOS} />
           </div>
           {/* Ingeniería de menú: qué hacer con el producto (carta de Fonavi y Centro). */}

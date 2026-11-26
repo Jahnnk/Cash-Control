@@ -116,7 +116,8 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
     return {
       ok: true,
       ficha: {
-        nombre: carta?.nombreCarta || carta?.nombre || receta!.nombre,
+        // El nombre completo (la carta tiene uno corto por sección: «De Lomito» dentro de «Empanadas»).
+        nombre: receta?.nombre ?? carta?.nombre ?? "",
         origen: deAtelier ? "Atelier" : "Cafetería",
         seccion: carta?.seccion ?? null,
         cartaRef: carta?.ref ?? null,
