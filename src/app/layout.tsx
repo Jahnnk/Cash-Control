@@ -10,6 +10,9 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Yayi's Cash Control",
   description: "Control de caja real para los 3 negocios de Yayi's",
+  // El traductor de Chrome cambia los textos por dentro y React se cae al recalcular (editor de recetas,
+  // 26-nov-2026: «Algo salió mal» en media edición). La app ya está en español: no traducir.
+  other: { google: "notranslate" },
 };
 
 /**
@@ -23,7 +26,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }) {
   return (
-    <html lang="es" className={inter.variable}>
+    <html lang="es" translate="no" className={inter.variable}>
       <body className="min-h-screen bg-gray-50">{children}</body>
     </html>
   );
