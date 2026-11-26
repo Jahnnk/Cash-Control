@@ -8,16 +8,16 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { ChevronDown, Loader2, Plus, Search } from "lucide-react";
-import { getRecetasCafeteria } from "@/app/actions/recetas";
+import { Archive, ArchiveRestore, ChevronDown, Loader2, Plus } from "lucide-react";
+import { archivarReceta, getRecetasCafeteria } from "@/app/actions/recetas";
 import { soles4 } from "@/components/buscador-costo";
-import { Pastilla, Segmentado } from "@/components/productos/ui";
+import { Pastilla } from "@/components/productos/ui";
+import { ListaPorCategorias, type FilaLista } from "./lista-categorias";
 import { refDeReceta } from "@/lib/recetas";
 import type { CatalogoCafeteria } from "@/lib/carta-sql";
 import type { CostoPreparacion } from "@/lib/costos-preparaciones";
 import { EditorReceta, type Borrador } from "./editor-receta";
 
-const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const PRECIO_DEL_EXCEL = /\(precio del excel\)/i;
 const ORDEN = ["Sánguches", "Bebidas", "Desayunos", "Adicional GRAND", "Sub-recetas"];
 
@@ -27,13 +27,14 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
   const [abierta, setAbierta] = useState(abiertaDesdeInicio);
   const [cat, setCat] = useState<CatalogoCafeteria | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [q, setQ] = useState("");
-  const [filtro, setFiltro] = useState("todas");
+  const [soloRevisar, setSoloRevisar] = useState(false);
+  const [archivadas, setArchivadas] = useState<Set<string>>(new Set());
+  const [archivando, setArchivando] = useState<string | null>(null);
   const [borrador, setBorrador] = useState<Borrador | null>(null);
 
   const cargar = useCallback(async () => {
     const r = await getRecetasCafeteria();
-    if (r.ok) setCat(r.catalogo); else setError(r.error);
+    if (r.ok) { setCat(r.catalogo); setArchivadas(new Set(r.archivadas)); } else setError(r.error);
   }, []);
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
@@ -57,19 +58,46 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
   // Recetas que quedaron sin costo (un insumo salió de la lista): no están en la lista vigente.
   const sinCosto = useMemo(() => (cat ? cat.recetas.filter((r) => !cat.efectivo.some((i) => i.ref === refDeReceta(r.id))) : []), [cat]);
 
-  const categorias = useMemo(() => {
-    const c = [...new Set(filas.map((f) => f.item.categoria ?? "Otras"))];
-    return c.sort((a, b) => (ORDEN.indexOf(a) + 1 || 99) - (ORDEN.indexOf(b) + 1 || 99) || a.localeCompare(b));
-  }, [filas]);
-  const lista = useMemo(() => {
-    const palabras = sinTildes(q).trim().split(/\s+/).filter(Boolean);
-    return filas
-      .filter((f) => filtro === "todas" || (filtro === "revisar" ? f.revisar.length > 0 : (f.item.categoria ?? "Otras") === filtro))
-      .filter((f) => palabras.every((p) => sinTildes(`${f.item.nombre} ${f.carta?.nombre ?? ""}`).includes(p)))
-      .sort((a, b) => a.item.nombre.localeCompare(b.item.nombre));
-  }, [filas, q, filtro]);
   const nRevisar = filas.filter((f) => f.revisar.length > 0).length;
   const nSub = filas.filter((f) => f.item.categoria === "Sub-recetas").length;
+
+  async function archivar(i: CostoPreparacion, archivar: boolean) {
+    if (archivar && !window.confirm(`¿Archivar «${i.nombre}»? Sale de la lista y pasa a «Archivados». Sigue costeando: la carta y las recetas que lo usan no cambian.`)) return;
+    setArchivando(i.ref);
+    const r = await archivarReceta({ sede: "cafeterias", ref: i.ref, archivar });
+    setArchivando(null);
+    if (!r.ok) { window.alert(r.error); return; }
+    setArchivadas((s) => { const n = new Set(s); if (archivar) n.add(i.ref); else n.delete(i.ref); return n; });
+  }
+
+  const filasLista: FilaLista[] = filas.filter((f) => !soloRevisar || f.revisar.length > 0).map(({ item: i, carta, revisar }) => {
+    const archivada = archivadas.has(i.ref);
+    return {
+      clave: i.ref, nombre: i.nombre, categoria: i.categoria, buscar: carta?.nombre, archivada,
+      contenido: (
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm text-gray-900 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {i.nombre}
+              {carta && <Pastilla tono="marca">en la carta{carta.nombre !== i.nombre ? `: ${carta.nombre}` : ""}</Pastilla>}
+              {revisar.length > 0 && <Pastilla tono="ambar">revisar</Pastilla>}
+            </div>
+            <div className="text-[11px] text-gray-500">
+              {i.detalle?.ingredientes.length ?? 0} ingredientes
+              {revisar.length > 0 && <span className="text-amber-700"> · {revisar.join(" · ")}</span>}
+            </div>
+          </div>
+          <div className="text-sm tabular-nums text-gray-900 whitespace-nowrap">{soles4(i.costo)} <span className="text-gray-400 text-xs">/ {i.unidad}</span></div>
+          <button type="button" onClick={() => abrir(i)} className="text-xs font-medium text-primary hover:bg-primary-50 rounded-lg px-2.5 py-1.5 whitespace-nowrap">Editar</button>
+          <button type="button" disabled={archivando === i.ref} onClick={() => void archivar(i, !archivada)}
+            title={archivada ? "Volver a la lista" : "Archivar"} aria-label={archivada ? `Desarchivar ${i.nombre}` : `Archivar ${i.nombre}`}
+            className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg p-1.5 disabled:opacity-40">
+            {archivada ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      ),
+    };
+  });
 
   function abrir(i: CostoPreparacion) {
     if (!cat || i.recetaId === undefined) return;
@@ -115,49 +143,17 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
                   ))}
                 </p>
               )}
-              <div className="flex flex-wrap items-center gap-3">
-                <label className="relative flex-1 min-w-[220px]">
-                  <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-                  <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar, ej. roast beef"
-                    className="w-full border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm" />
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                <label className="flex items-center gap-2 text-xs text-gray-700">
+                  <input type="checkbox" checked={soloRevisar} onChange={(e) => setSoloRevisar(e.target.checked)} />
+                  Solo las que hay que revisar ({nRevisar})
                 </label>
                 <button type="button" onClick={() => setBorrador({ id: null, nombre: "", tipo: "producto", categoria: null, detalle: { rendimiento: 1, merma: 0, ingredientes: [] }, reemplaza: null })}
                   className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-primary border border-primary/40 bg-white hover:bg-emerald-50 rounded-lg">
                   <Plus className="w-3.5 h-3.5" /> Receta o sub-receta nueva
                 </button>
               </div>
-              <Segmentado
-                tamano="sm"
-                valor={filtro}
-                onChange={setFiltro}
-                opciones={[
-                  { valor: "todas", etiqueta: "Todas" },
-                  ...categorias.map((c) => ({ valor: c, etiqueta: `${c} · ${filas.filter((f) => (f.item.categoria ?? "Otras") === c).length}` })),
-                  ...(nRevisar > 0 ? [{ valor: "revisar", etiqueta: `Para revisar · ${nRevisar}` }] : []),
-                ]}
-              />
-              <ul className="divide-y divide-gray-100 border border-gray-100 rounded-xl">
-                {lista.length === 0 && <li className="px-4 py-6 text-sm text-gray-500 text-center">Nada con ese nombre.</li>}
-                {lista.map(({ item: i, carta, revisar }) => (
-                  <li key={i.ref} className="px-4 py-2.5 flex items-center gap-3">
-                    <div className="min-w-0 flex-1">
-                      <div className="text-sm text-gray-900 flex flex-wrap items-center gap-x-2 gap-y-1">
-                        {i.nombre}
-                        {carta && <Pastilla tono="marca">en la carta{carta.nombre !== i.nombre ? `: ${carta.nombre}` : ""}</Pastilla>}
-                        {revisar.length > 0 && <Pastilla tono="ambar">revisar</Pastilla>}
-                      </div>
-                      <div className="text-[11px] text-gray-500">
-                        {i.categoria ?? "Otras"} · {i.detalle?.ingredientes.length ?? 0} ingredientes
-                        {revisar.length > 0 && <span className="text-amber-700"> · {revisar.join(" · ")}</span>}
-                      </div>
-                    </div>
-                    <div className="text-sm tabular-nums text-gray-900 whitespace-nowrap">{soles4(i.costo)} <span className="text-gray-400 text-xs">/ {i.unidad}</span></div>
-                    <button type="button" onClick={() => abrir(i)} className="text-xs font-medium text-primary hover:bg-primary-50 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
-                      Editar
-                    </button>
-                  </li>
-                ))}
-              </ul>
+              <ListaPorCategorias filas={filasLista} orden={ORDEN} placeholder="Buscar receta, ej. roast beef" />
             </>
           )}
         </div>
