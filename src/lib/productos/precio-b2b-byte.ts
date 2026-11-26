@@ -14,7 +14,7 @@
  */
 
 export type VentaB2B = { mes: string; nombre: string; unidades: number; venta: number };
-export type RecetaB2B = { ref: string; nombre: string };
+export type RecetaB2B = { ref: string; nombre: string; /** Nombres en Byte anotados a mano (mandan). */ byte?: string[] };
 
 export type PrecioB2BByte = {
   /** Venta ÷ unidades del último mes en que se vendió. */
@@ -56,14 +56,21 @@ const iguales = (a: Set<string>, b: Set<string>) => a.size === b.size && contien
 export function enlazarB2B(nombres: string[], recetas: RecetaB2B[]): Map<string, string> {
   const rs = recetas.map((r) => ({ ref: r.ref, p: palabras(r.nombre) })).filter((r) => r.p.size > 0);
   const out = new Map<string, string>();
+  // 0. Los nombres de Byte anotados en la receta mandan (y esa receta ya no se ofrece a otros nombres).
+  const anotados = new Map<string, string>();
+  for (const r of recetas) for (const b of r.byte ?? []) anotados.set(limpiarNombreByte(b).toUpperCase(), r.ref);
+  const reservadas = new Set(anotados.values());
+  const rsLibres = rs.filter((r) => !reservadas.has(r.ref));
   const pendientes: { nombre: string; p: Set<string> }[] = [];
   for (const nombre of nombres) {
+    const anotada = anotados.get(limpiarNombreByte(nombre).toUpperCase());
+    if (anotada) { out.set(nombre, anotada); continue; }
     const p = palabras(nombre);
     if (p.size === 0) continue;
-    const exactas = rs.filter((r) => iguales(r.p, p));
+    const exactas = rsLibres.filter((r) => iguales(r.p, p));
     if (exactas.length === 1) { out.set(nombre, exactas[0].ref); continue; }
     if (exactas.length > 1) continue;
-    const amplias = rs.filter((r) => contiene(r.p, p));
+    const amplias = rsLibres.filter((r) => contiene(r.p, p));
     if (amplias.length === 1) { out.set(nombre, amplias[0].ref); continue; }
     if (amplias.length > 1) continue;
     pendientes.push({ nombre, p });
@@ -71,7 +78,7 @@ export function enlazarB2B(nombres: string[], recetas: RecetaB2B[]): Map<string,
   // Paso 3: la receta cabe entera en el nombre de Byte, entre las recetas que nadie tomó todavía.
   const tomadas = new Set(out.values());
   for (const { nombre, p } of pendientes) {
-    const cortas = rs.filter((r) => !tomadas.has(r.ref) && contiene(p, r.p));
+    const cortas = rsLibres.filter((r) => !tomadas.has(r.ref) && contiene(p, r.p));
     if (cortas.length === 1) out.set(nombre, cortas[0].ref);
   }
   return out;

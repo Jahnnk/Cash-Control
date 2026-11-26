@@ -33,7 +33,7 @@ export async function leerPreciosB2BByte(sql: SqlTag, efectivo: CostoPreparacion
       .then((filas) => filas.map((f): VentaB2B => ({ mes, nombre: f.nombre, unidades: Number(f.unidades) || 0, venta: Number(f.venta) || 0 })))
       .catch(() => [] as VentaB2B[])));
   const recetas = efectivo.filter((i) => i.tipo === "producto");
-  const precios = preciosB2BDeByte(porMes.flat(), recetas.map((r) => ({ ref: r.ref, nombre: r.nombre })));
+  const precios = preciosB2BDeByte(porMes.flat(), recetas.map((r) => ({ ref: r.ref, nombre: r.nombre, byte: r.detalle?.byte })));
   for (const r of recetas) {
     const p = precios.get(r.ref);
     if (p && r.reemplaza && !precios.has(r.reemplaza)) precios.set(r.reemplaza, p);
