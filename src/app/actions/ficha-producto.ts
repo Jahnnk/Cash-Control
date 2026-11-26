@@ -16,6 +16,8 @@ import { leerCambiosCarta, leerCartaConCostos } from "@/lib/carta-sql";
 import { costoIngrediente } from "@/lib/recetas";
 import type { CostoPreparacion } from "@/lib/costos-preparaciones";
 import { enlazarCosto, type CostoCarta } from "@/lib/productos/costos-carta";
+import { leerPreciosB2BByte } from "@/lib/productos/precio-b2b-byte-sql";
+import type { PrecioB2BByte } from "@/lib/productos/precio-b2b-byte";
 
 const sql = neon(process.env.DATABASE_URL!);
 const ATELIER = 1;
@@ -33,7 +35,10 @@ export type DatosFicha = {
   recetaRef: string | null;
   /** Costo por unidad: en Atelier, sus insumos; en la cafetería, su receta. null = sin costo. */
   costo: number | null;
+  /** b2b = el que cobra Byte si se vende ahí (b2bByte); si no, el guardado en el sistema. */
   precios: { interno: number | null; carta: number | null; b2b: number | null };
+  /** El precio B2B real de Byte (fase 4): manda sobre el guardado. null = no se vende B2B en Byte (o no se enlazó). */
+  b2bByte: PrecioB2BByte | null;
   /** Dónde se guarda su precio B2B (la receta del Excel si la del sistema la reemplaza). null = no aplica. */
   b2bRef: string | null;
   /** Dirección puede cambiar los precios desde la ruta (fase 2); la llave de solo lectura, no. */
@@ -72,6 +77,7 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
       (sql`SELECT ref, precio::float AS precio, costo::float AS costo, seccion FROM costos_carta` as unknown as Promise<{ ref: string; precio: number | null; costo: number; seccion: string | null }[]>).catch(() => []),
     ]);
     const efectivo = catalogo.efectivo;
+    const b2bByte = await leerPreciosB2BByte(sql, efectivo).catch(() => new Map<string, PrecioB2BByte>());
     const porRef = new Map<string, CostoPreparacion>();
     for (const i of efectivo) { porRef.set(i.ref, i); if (i.reemplaza) porRef.set(i.reemplaza, i); }
     // Producto nuevo de la carta → su receta de Atelier (AT-S001 → REC:5).
@@ -102,10 +108,11 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
       return null;
     };
     const enCarta = carta && carta.enCarta !== false;
+    const deByte = deAtelier && receta ? b2bByte.get(receta.ref) ?? (receta.reemplaza ? b2bByte.get(receta.reemplaza) : undefined) ?? null : null;
     const precios = {
       interno: deAtelier && enCarta && carta!.costo > 0 ? carta!.costo : null,
       carta: enCarta && carta!.precio && carta!.precio > 0 ? carta!.precio : null,
-      b2b: deAtelier ? b2bDe([receta?.ref, receta?.reemplaza, carta?.ref]) : null,
+      b2b: deByte ? deByte.precio : deAtelier ? b2bDe([receta?.ref, receta?.reemplaza, carta?.ref]) : null,
     };
 
     // 3) La receta, con el costo de cada línea.
@@ -140,6 +147,7 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
         recetaRef: receta?.ref ?? null,
         costo,
         precios,
+        b2bByte: deByte,
         rendimiento: receta?.detalle?.rendimiento ?? null,
         merma: receta?.detalle?.merma ?? 0,
         ingredientes,

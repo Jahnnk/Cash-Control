@@ -16,7 +16,23 @@ import { useState } from "react";
 import { ArrowRight, CornerDownRight, Loader2, Pencil } from "lucide-react";
 import { METAS, margen } from "@/lib/precios-sugeridos";
 
-export type PrecioRuta = { valor: number; sugerido: boolean } | null;
+/**
+ * Un precio de la ruta. `byte` = el precio B2B real que cobra Byte (fase 4, 26-nov-2026): se muestra tal cual y
+ * no se cambia aquí, porque su dueño es Byte.
+ */
+export type PrecioRuta = {
+  valor: number;
+  sugerido: boolean;
+  byte?: { mes: string; unidades: number; anterior: number | null; nombreByte: string };
+} | null;
+/** El precio B2B de la ruta: el de Byte si se vende ahí; si no, el guardado; si no, el sugerido. */
+export function rutaB2B(byte: { precio: number; mes: string; unidades: number; anterior: number | null; nombreByte: string } | null | undefined,
+  guardado: number | null | undefined, sugerido: number): PrecioRuta {
+  if (byte && byte.precio > 0) return { valor: byte.precio, sugerido: false, byte: { mes: byte.mes, unidades: byte.unidades, anterior: byte.anterior, nombreByte: byte.nombreByte } };
+  if (guardado && guardado > 0) return { valor: guardado, sugerido: false };
+  return sugerido > 0 ? { valor: sugerido, sugerido: true } : null;
+}
+
 export type CampoPrecio = "interno" | "carta" | "b2b";
 /** Guarda un precio (fase 2, 25-nov-2026: una sola puerta para los precios de venta). Devuelve el error o null. */
 export type GuardarPrecio = (campo: CampoPrecio, precio: number) => Promise<string | null>;
@@ -32,7 +48,7 @@ function Nodo({ titulo, precio, m, meta, etiquetaMargen, campo, onGuardar }: {
   const [valor, setValor] = useState("");
   const [guardando, setGuardando] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const editable = !!campo && !!onGuardar;
+  const editable = !!campo && !!onGuardar && !precio?.byte;
   const abrir = () => { setValor(precio ? precio.valor.toFixed(2) : ""); setError(null); setEditando(true); };
   async function guardar() {
     const n = Number(valor.replace(",", "."));
@@ -80,6 +96,7 @@ function Nodo({ titulo, precio, m, meta, etiquetaMargen, campo, onGuardar }: {
       <div className="flex items-center gap-1.5 text-[11px] text-gray-500">
         {titulo}
         {precio.sugerido && <span className="rounded bg-amber-50 px-1 text-[10px] font-medium text-amber-800">sugerido</span>}
+        {precio.byte && <span className="rounded bg-sky-50 px-1 text-[10px] font-medium text-sky-800" title={`En Byte: ${precio.byte.nombreByte}`}>en Byte</span>}
         {editable && (
           <button type="button" onClick={abrir} className="ml-auto inline-flex items-center gap-0.5 text-primary underline decoration-dotted" title={precio.sugerido ? "Guardar este precio o cambiarlo" : "Cambiar el precio"}>
             <Pencil className="h-3 w-3" /> {precio.sugerido ? "fijar" : "cambiar"}
@@ -91,6 +108,12 @@ function Nodo({ titulo, precio, m, meta, etiquetaMargen, campo, onGuardar }: {
         {etiquetaMargen} <b className="tabular-nums">{m == null ? "—" : `${Math.round(m * 100)}%`}</b>
         <span className="text-gray-400"> · meta {Math.round(meta * 100)}%</span>
       </div>
+      {precio.byte && (
+        <div className="mt-0.5 text-[10px] leading-snug text-gray-500">
+          Lo cobra Byte · {precio.byte.unidades.toLocaleString("es-PE", { maximumFractionDigits: 0 })} u en 3 meses
+          {precio.byte.anterior != null && <> · antes {soles(precio.byte.anterior)}</>}. Se cambia en Byte.
+        </div>
+      )}
     </div>
   );
 }
