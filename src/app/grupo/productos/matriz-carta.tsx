@@ -14,6 +14,7 @@ import type { Veredicto } from "@/lib/productos/candidatos";
 import { GraficoDemanda } from "@/components/productos/grafico-demanda";
 import { Pastilla, PuntoFamilia, Segmentado } from "@/components/productos/ui";
 import { formatCurrency } from "@/lib/utils";
+import { FichaProducto as FichaUnica } from "@/components/productos/ficha-producto";
 
 const COLOR: Record<Cuadrante, string> = { estrella: "#098B5F", vaca: "#4A7FB5", interrogante: "#C98A12", perro: "#C0392B" };
 const TITULO_VEREDICTO: Record<Veredicto, string> = { sacar: "Sacar de carta", preparar: "Preparar reemplazo", revisar: "Revisar en una sede", confirmar: "Confirmar si ya salió", observar: "En observación" };
@@ -301,8 +302,11 @@ function Ficha({ f, veredicto, acciones, anotadas, onCerrar }: {
 }) {
   const p = f.punto;
   const t = p ? TEXTO_TENDENCIA[p.tendencia.clase] : null;
+  // La ficha única (receta + ruta de precios), la misma de Recetas y Precios (25-nov-2026).
+  const [completa, setCompleta] = useState(false);
   return (
     <div className="rounded-2xl border border-gray-300 bg-white p-4 space-y-3.5" aria-label={`Ficha de ${f.nombre}`}>
+      {completa && <FichaUnica nombreByte={f.nombre} onCerrar={() => setCompleta(false)} />}
       <header className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
           <h5 className="text-sm font-semibold text-gray-900 flex items-center gap-2"><PuntoFamilia familia={f.familia} /><span className="break-words">{f.nombre}</span></h5>
@@ -313,6 +317,7 @@ function Ficha({ f, veredicto, acciones, anotadas, onCerrar }: {
           {f.situacion !== "ubicado" && <Pastilla tono={f.situacion === "prueba" ? "azul" : "gris"}>{ETIQUETA_SITUACION[f.situacion]}</Pastilla>}
           {t && <Pastilla tono={t.tono}>{t.corto}</Pastilla>}
           {veredicto && <Pastilla tono={veredicto === "sacar" ? "rojo" : "ambar"}>En candidatos: {TITULO_VEREDICTO[veredicto]}</Pastilla>}
+          <button type="button" onClick={() => setCompleta(true)} className="text-xs font-medium text-primary underline decoration-dotted ml-1">Receta y precios</button>
           <button type="button" onClick={onCerrar} className="text-xs text-gray-500 hover:text-gray-800 underline decoration-dotted ml-1">Cerrar ficha</button>
         </div>
       </header>

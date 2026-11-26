@@ -13,6 +13,7 @@ import { getCarta, getOpcionesAlta, guardarCambioCarta, type OpcionesAlta, type 
 import { AltaProducto } from "./alta-producto";
 import { archivarProductos, restaurarProducto } from "@/app/actions/productos-panorama";
 import { Pastilla } from "@/components/productos/ui";
+import { FichaProducto } from "@/components/productos/ficha-producto";
 
 const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
 const soles = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
@@ -32,6 +33,8 @@ export function CartaCafeterias() {
   const [soloCambiados, setSoloCambiados] = useState(false);
   const [verRetirados, setVerRetirados] = useState(false);
   const [editando, setEditando] = useState<string | null>(null);
+  // «Abrir» = la ficha única del producto (25-nov-2026).
+  const [ficha, setFicha] = useState<string | null>(null);
   const [b, setB] = useState<Borrador>({ precio: "", costo: "", seccion: "" });
   const [ocupado, setOcupado] = useState(false);
   const [aviso, setAviso] = useState<{ tono: "ok" | "error"; texto: string } | null>(null);
@@ -252,6 +255,7 @@ export function CartaCafeterias() {
                                     </span>
                                   ) : (
                                     <span className="inline-flex flex-col items-end gap-1">
+                                      <button type="button" onClick={() => setFicha(p.ref)} className="text-xs font-medium text-gray-700">Abrir</button>
                                       <button type="button" onClick={() => (p.marca.nuevo ? void abrirAlta(p) : abrir(p))} className="text-xs font-medium text-primary">Cambiar</button>
                                       {p.byte.length === 0 ? null : fuera ? (
                                         <button type="button" disabled={ocupado} onClick={() => void reactivar(p)} className="text-xs text-gray-600">Volver a la carta</button>
@@ -276,6 +280,11 @@ export function CartaCafeterias() {
           </>
         )}
       </div>
+      {ficha && (
+        <FichaProducto cartaRef={ficha} onCerrar={() => setFicha(null)}
+          // Misma página: se recarga con ?editar= para que «Recetas de Atelier» abra el editor.
+          onEditarReceta={(ref) => { window.location.href = `/grupo/recetas?editar=${encodeURIComponent(ref)}`; }} />
+      )}
     </details>
   );
 }

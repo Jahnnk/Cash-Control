@@ -16,6 +16,7 @@ import {
 } from "@/lib/productos/subida-precios";
 import { ConPaso } from "./con-paso";
 import { Pastilla, SeccionDesplegable, fechaCorta, nombreMes } from "@/components/productos/ui";
+import { FichaProducto } from "@/components/productos/ficha-producto";
 
 const soles = (n: number) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 const soles0 = (n: number) => `${n < 0 ? "−" : "+"}S/ ${Math.abs(Math.round(n)).toLocaleString("es-PE")}`;
@@ -37,8 +38,11 @@ const RIESGO: Record<Riesgo, string> = {
 };
 
 function Tabla({ filas }: { filas: FilaSubida[] }) {
+  // Tocar el nombre abre la ficha única del producto (receta, ruta de precios, matriz), 25-nov-2026.
+  const [ficha, setFicha] = useState<string | null>(null);
   return (
     <div className="overflow-x-auto rounded-xl border border-gray-200 bg-white">
+      {ficha && <FichaProducto nombreByte={ficha} onCerrar={() => setFicha(null)} />}
       <table className="w-full text-sm min-w-[760px]">
         <thead>
           <tr className="text-[11px] uppercase tracking-wider text-gray-500 border-b border-gray-100">
@@ -53,7 +57,7 @@ function Tabla({ filas }: { filas: FilaSubida[] }) {
           {filas.map((f) => (
             <tr key={f.nombre}>
               <td className="py-2.5 pl-4 pr-3 align-top max-w-[300px]">
-                <div className="text-gray-900 leading-tight">{f.nombre}</div>
+                <button type="button" onClick={() => setFicha(f.nombre)} className="text-left text-gray-900 leading-tight hover:text-primary hover:underline decoration-dotted" title="Ver receta y ruta de precios">{f.nombre}</button>
                 <div className="mt-1 flex flex-wrap items-center gap-1.5">
                   <Pastilla tono={VEREDICTO[f.veredicto].tono}>{VEREDICTO[f.veredicto].texto}</Pastilla>
                   <span className="text-[10px] text-gray-400">{RIESGO[f.riesgo]} · {f.unidades.toLocaleString("es-PE")} u</span>
