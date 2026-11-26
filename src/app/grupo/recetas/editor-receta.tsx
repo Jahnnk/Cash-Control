@@ -146,6 +146,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
         ...(pan && Number(f.pct) > 0 ? { pct: Number(f.pct) } : {}),
         ...(pan && prodId && f.prod ? { prod: f.prod } : {}),
       })),
+    ...(borrador.detalle.byte?.length ? { byte: borrador.detalle.byte } : {}),
     ...(pan ? { panadero: { pesoMasa: Number(pesoMasa) || 0, piezas: Number(piezas) > 0 ? Number(piezas) : null, ...(prodId ? { produccion: prodId } : {}) } } : {}),
   });
   // Gramos de 1 bandeja por fila (las filas con % los calculan; el orden de `detalle` es el de las filas con algo).

@@ -88,6 +88,11 @@ export type DetalleReceta = {
    * Panes y focaccias (26-nov-2026): la receta se escribe en % panadero y el peso de masa de UNA bandeja; los gramos
    * salen solos. Las cantidades de `ingredientes` son las de 1 bandeja. null/ausente = receta normal.
    */
+  /**
+   * Nombres con que este producto se vende en Byte, cuando no se parecen al nombre de la receta (26-nov-2026: el
+   * «Pan de Hamburguesa Pequeño» de 70 g se llama «P- PAN DE HAMBURGUESA 80G» en Byte). Mandan sobre el enlace por nombre.
+   */
+  byte?: string[];
   panadero?: {
     pesoMasa: number;
     piezas: number | null;

@@ -48,6 +48,12 @@ describe("enlazar el nombre de Byte con la receta", () => {
     });
   });
 
+  it("el nombre de Byte anotado en la receta manda (y esa receta no se ofrece a otros)", () => {
+    const rs: RecetaB2B[] = [{ ref: "H1", nombre: "Pan de Hamburguesa" }, { ref: "H2", nombre: "Pan de Hamburguesa Pequeño", byte: ["P- PAN DE HAMBURGUESA 80G"] }];
+    expect(Object.fromEntries(enlazarB2B(["P- PAN DE HAMBURGUESA 80G", "P-PAN DE HAMBURGUESA"], rs))).toEqual({ "P- PAN DE HAMBURGUESA 80G": "H2", "P-PAN DE HAMBURGUESA": "H1" });
+    expect(enlazarB2B(["P- PAN DE HAMBURGUESA 80G"], [rs[0]]).get("P- PAN DE HAMBURGUESA 80G")).toBe("H1"); // sin anotar: el problema
+  });
+
   it("si caben dos recetas, no se enlaza", () => {
     expect(enlazarB2B(["P-FOCACCIA"], recetas).size).toBe(0);
     expect(enlazarB2B(["P-CARROT CAKE"], recetas).size).toBe(0);
