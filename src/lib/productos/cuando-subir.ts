@@ -9,7 +9,7 @@
  *   2. COSTO    los costos (cifra «Costos» de las seis cifras: insumos, productos de Atelier, empaques…)
  *               como % de la venta: los últimos 3 meses cerrados contra los 3 primeros. Si subió
  *               PUNTOS_ALZA puntos o más, la inflación ya se está comiendo el margen.
- *   3. CARTA    % de los productos (con costo conocido) cuyo costo de insumos pasa el 35% del precio.
+ *   3. CARTA    % de los productos (con costo conocido) cuyo costo de insumos pasa la meta de la ruta de precios (30% cafetería, 22% Atelier).
  *               Desde PCT_CARTA_ALTA% la carta entera se quedó corta.
  *
  *   0 señales → Todavía no · 1 → Prepárala · 2 o 3 → Ya toca.
@@ -39,7 +39,7 @@ export type CuandoSede = {
   costoAntesPct: number | null;
   costoAhoraPct: number | null;
   mesesCosto: { desde: string; hasta: string } | null;
-  /** Productos sobre el 35% de costo, del total con costo conocido. */
+  /** Productos cuyo costo pasa la meta de la ruta de precios, del total con costo conocido. */
   sobreTope: number;
   conCosto: number;
   senales: { tiempo: Senal; costo: Senal; carta: Senal };
@@ -120,7 +120,7 @@ export function cuandoSubir(input: {
   const pctCarta = input.conCosto > 0 ? (input.sobreTope / input.conCosto) * 100 : 0;
   const carta: Senal = {
     activa: pctCarta >= PCT_CARTA_ALTA,
-    texto: `${input.sobreTope} de ${input.conCosto} productos tienen un costo de insumos de más del 35% del precio.`,
+    texto: `${input.sobreTope} de ${input.conCosto} productos tienen un costo de insumos que pasa la meta (30% del precio en la cafetería, 22% en lo de Atelier).`,
   };
 
   const activas = [tiempo, costo, carta].filter((s) => s.activa).length;

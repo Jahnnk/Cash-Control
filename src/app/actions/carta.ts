@@ -181,6 +181,38 @@ export async function guardarPrecioVenta(input: {
   });
 }
 
+/**
+ * La sección de un producto de la carta, desde la ficha única (fase 3, 25-nov-2026). Los precios que ya tenga
+ * cambiados en el sistema se quedan; si la sección es la misma del Excel, se guarda como «la del Excel».
+ */
+export async function guardarSeccionCarta(input: { cartaRef: string; seccion: string }): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  const ref = typeof input?.cartaRef === "string" ? input.cartaRef.trim() : "";
+  const nueva = typeof input?.seccion === "string" ? input.seccion.replace(/\s+/g, " ").trim() : "";
+  if (!ref) return { ok: false, error: "No está en la carta." };
+  if (nueva.length < 2) return { ok: false, error: "Escribe la sección." };
+  const [anterior, excel] = await Promise.all([
+    leerCambiosCarta(sql).then((c) => c.find((x) => x.ref === ref)),
+    (sql`SELECT seccion FROM costos_carta WHERE ref = ${ref}` as unknown as Promise<{ seccion: string | null }[]>).then((r) => r[0]?.seccion ?? null).catch(() => null),
+  ]);
+  return guardarCambioCarta({
+    ref,
+    precio: anterior?.precio ?? null,
+    costo: anterior?.costo ?? null,
+    seccion: !anterior?.nuevo && excel && excel.trim() === nueva ? null : nueva,
+  });
+}
+
+/** Quita los cambios hechos en el sistema a un producto del Excel: vuelve su precio, precio interno y sección del Excel. */
+export async function volverCartaAlExcel(cartaRef: string): Promise<{ ok: true } | { ok: false; error: string }> {
+  if (!(await requireFullSession())) return { ok: false, error: "Solo dirección." };
+  const ref = typeof cartaRef === "string" ? cartaRef.trim() : "";
+  const anterior = (await leerCambiosCarta(sql)).find((x) => x.ref === ref);
+  if (!anterior) return { ok: true };
+  if (anterior.nuevo) return { ok: false, error: "Es un producto creado en el sistema: no tiene datos del Excel." };
+  return guardarCambioCarta({ ref, precio: null, costo: null, seccion: null });
+}
+
 export type OpcionesAlta = {
   /** Lo que compra la cafetería, con su precio vigente. */
   insumos: { sku: string; nombre: string; unidad: string; precio: number; archivado: boolean }[];

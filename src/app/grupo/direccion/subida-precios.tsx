@@ -11,7 +11,7 @@ import { useEffect, useState } from "react";
 import { getRentabilidadProductos } from "@/app/actions/productos-panorama";
 import { esCafeteria } from "@/lib/productos/cafeterias";
 import {
-  NECESIDAD_ALTA_PCT, TOPE_SUBIR, subidaDePrecios,
+  TOPE_CAFETERIA_PCT, TOPE_SUBIR, subidaDePrecios,
   type FilaSubida, type Riesgo, type SubidaSede, type Veredicto,
 } from "@/lib/productos/subida-precios";
 import { ConPaso } from "./con-paso";
@@ -83,11 +83,11 @@ function Tabla({ filas }: { filas: FilaSubida[] }) {
                 )}
                 {!f.precioDeCarta && <div className="text-[10px] text-amber-700">promedio de Byte</div>}
               </td>
-              <td className={`py-2.5 px-3 text-right tabular-nums align-top whitespace-nowrap ${f.costoPct > NECESIDAD_ALTA_PCT ? "text-amber-700 font-medium" : "text-gray-700"}`}>
+              <td className={`py-2.5 px-3 text-right tabular-nums align-top whitespace-nowrap ${f.costoPct > f.metaPct ? "text-amber-700 font-medium" : "text-gray-700"}`}>
                 {pct(f.costoPct)}
-                <div className="text-[10px] text-gray-400 font-normal">insumos</div>
+                <div className="text-[10px] text-gray-400 font-normal">insumos · meta {pct(f.metaPct)}</div>
                 {f.deAtelier && f.costoCafeteriaPct !== null && (
-                  <div className={`mt-1 ${f.costoCafeteriaPct > NECESIDAD_ALTA_PCT ? "text-amber-700 font-medium" : "text-gray-700"}`}>
+                  <div className={`mt-1 ${f.costoCafeteriaPct > TOPE_CAFETERIA_PCT ? "text-amber-700 font-medium" : "text-gray-700"}`}>
                     {pct(f.costoCafeteriaPct)}
                     <div className="text-[10px] text-gray-400 font-normal">cafetería</div>
                   </div>
@@ -168,7 +168,7 @@ function Cuerpo({ d }: { d: SubidaSede }) {
 
       {d.conAlertaInterno > 0 && (
         <div className="rounded-xl border border-gray-200 bg-white px-4 py-3 text-xs text-gray-700 leading-relaxed">
-          <strong>Dos miradas del costo.</strong> En <strong>{d.conAlertaInterno} productos de Atelier</strong> los insumos están bien, pero la cafetería paga más del {NECESIDAD_ALTA_PCT}% del precio por el precio interno.
+          <strong>Dos miradas del costo.</strong> En <strong>{d.conAlertaInterno} productos de Atelier</strong> los insumos están bien, pero la cafetería paga más del {TOPE_CAFETERIA_PCT}% del precio por el precio interno.
           Ahí subirle al cliente no arregla la causa: lo que conviene revisar es el precio interno de Atelier.{" "}
           <button type="button" onClick={() => setFiltro("interno")} className="font-medium text-primary hover:underline">Ver cuáles</button>
         </div>
@@ -193,7 +193,7 @@ function Cuerpo({ d }: { d: SubidaSede }) {
       </div>
 
       <div className="rounded-lg bg-gray-50 border border-gray-100 px-3.5 py-3 text-[11px] text-gray-600 leading-relaxed space-y-1.5">
-        <p><strong>Cómo decide.</strong> Mira tres cosas de cada producto. <strong>Demanda</strong>: si vende al menos lo que vende el producto del medio de la carta, los clientes lo piden y aguanta mejor una subida. <strong>Costo</strong>: si pasa el {NECESIDAD_ALTA_PCT}% del precio, hace falta subirlo. <strong>Riesgo</strong>: los básicos que el cliente compara con otros locales (agua, americano, empanada) se notan más; los productos propios de Yayi&apos;s (desayunos, cheesecakes, Triple Yayi&apos;s) se notan menos.</p>
+        <p><strong>Cómo decide.</strong> Mira tres cosas de cada producto. <strong>Demanda</strong>: si vende al menos lo que vende el producto del medio de la carta, los clientes lo piden y aguanta mejor una subida. <strong>Costo</strong>: si pasa la meta de Recetas y costos (insumos hasta 30% del precio en lo que se prepara en la cafetería y 22% en lo que hace Atelier), hace falta subirlo. Es la misma meta de la ruta de precios y del Piso de precios. <strong>Riesgo</strong>: los básicos que el cliente compara con otros locales (agua, americano, empanada) se notan más; los productos propios de Yayi&apos;s (desayunos, cheesecakes, Triple Yayi&apos;s) se notan menos.</p>
         <p><strong>Cuánto.</strong> Hasta +{Math.round(TOPE_SUBIR.bajo * 100)}% en los propios, +{Math.round(TOPE_SUBIR.medio * 100)}% en el resto y +{Math.round(TOPE_SUBIR.poco * 100)}% en «Subir poco», redondeado como la carta (S/ 0.50 bajo S/ 10, de sol en sol desde S/ 10, y el .9 se conserva). Si el paso más chico es demasiado (una cookie de S/ 2 a S/ 2.50 es +25%), espera a otra ronda.</p>
         <p><strong>Aguanta perder</strong> = subida ÷ (precio nuevo − costo). Ejemplo: un Triple Yayi&apos;s de S/ 21 con S/ 6 de costo que sube a S/ 23 puede perder hasta 11.8% de sus ventas y aún deja lo mismo. <strong>«No tocar»</strong> no es «nunca»: es «no en esta ronda». Un producto que vende poco no se sube, porque vendería menos todavía.</p>
         <p>El precio de partida es el de la carta (Excel de pricing); si no enlaza, el promedio que cobró Byte. El veredicto usa el costo de insumos: lo que de verdad cuesta hacerlo, la mirada del Grupo. Debajo, en los productos de Atelier, va el costo para la cafetería: el precio interno que le paga a Atelier, porque la cafetería es otra empresa. En lo que se prepara en la cafetería las dos miradas son iguales. {d.fuera > 0 ? `${d.fuera} productos no entran: no tienen costo de insumos o vendieron menos de 8 unidades.` : ""}</p>

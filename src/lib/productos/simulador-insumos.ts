@@ -7,7 +7,7 @@
  *   PESO     cuánto se gasta al mes en cada insumo a través de lo que se vende (costo por unidad × unidades).
  *            Los que más pesan son los que hay que vigilar y negociar.
  *   ALZA     si un insumo sube X%, su parte del costo de cada producto sube X%. El costo nuevo del producto
- *            es la suma; se ve cuánto más cuesta al mes y qué productos pasan el 35% del precio.
+ *            es la suma; se ve cuánto más cuesta al mes y qué productos pasan la meta de la ruta de precios (30% cafetería, 22% Atelier).
  *   PRECIO   el precio que deja la MISMA ganancia en soles por unidad que hoy, redondeado como la carta.
  *
  * El costo es el de insumos (la mirada del Grupo). En lo que hace Atelier la subida la absorbe primero
@@ -17,7 +17,8 @@
 import type { AporteInsumo } from "./desglose-insumos";
 import type { RentabilidadSede } from "./rentabilidad";
 import { MIN_UNIDADES } from "./rentabilidad";
-import { NECESIDAD_ALTA_PCT, pasoDe } from "./subida-precios";
+import { pasoDe } from "./subida-precios";
+import { metaCostoCarta } from "../precios-sugeridos";
 
 export type ProductoSim = {
   nombre: string;
@@ -40,7 +41,9 @@ export type ProductoSimulado = {
   costoDespues: number;
   pctAntes: number;
   pctDespues: number;
-  /** Pasa el 35% con la subida (antes no). */
+  /** La meta de su clase, en % (la de la ruta de precios). */
+  metaPct: number;
+  /** Pasa la meta con la subida (antes no). */
   cruza: boolean;
   extraMes: number;
   /** El precio redondo que deja la misma ganancia en soles por unidad que hoy. */
@@ -122,10 +125,12 @@ export function simular(productos: ProductoSim[], alzas: Map<string, number>): R
     if (despues - p.costo < 0.0005) continue;
     const pctAntes = (p.costo / p.precio) * 100;
     const pctDespues = (despues / p.precio) * 100;
+    const metaPct = metaCostoCarta(p.deAtelier) * 100;
     out.push({
       nombre: p.nombre, deAtelier: p.deAtelier, unidadesMes: Math.round(p.unidadesMes), precio: p.precio,
       costoAntes: r2(p.costo), costoDespues: r2(despues), pctAntes: r1(pctAntes), pctDespues: r1(pctDespues),
-      cruza: pctAntes <= NECESIDAD_ALTA_PCT && pctDespues > NECESIDAD_ALTA_PCT,
+      metaPct: r1(metaPct),
+      cruza: pctAntes <= metaPct + 1e-9 && pctDespues > metaPct + 1e-9,
       extraMes: r2((despues - p.costo) * p.unidadesMes),
       precioParaMantener: precioParaMantener(p.precio, p.costo, despues),
     });

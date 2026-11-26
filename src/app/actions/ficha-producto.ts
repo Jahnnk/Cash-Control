@@ -5,7 +5,8 @@
  * abre desde Recetas y costos, Productos (matriz de la carta) y Dirección → Precios. Junta lo que ya vive en un
  * solo lugar cada uno: la receta y su costo (lista de costos de Atelier o receta de la cafetería), los precios de
  * venta (carta de las cafeterías + precios_b2b) y, aparte (getMenuDeProducto en productos-panorama), su lugar en
- * la matriz de la carta. Solo lee: cada dato se sigue cambiando en su pantalla.
+ * la matriz de la carta. Desde la fase 2 los precios de venta se cambian en la ruta; desde la fase 3 también la
+ * sección y «volver a lo del Excel» (antes solo en «Cambiar» de la Carta de las cafeterías).
  */
 
 import { neon } from "@neondatabase/serverless";
@@ -42,6 +43,12 @@ export type DatosFicha = {
   ingredientes: LineaFicha[];
   /** Por qué la receta no se ve (ej. el Excel no la trae). */
   sinReceta: string | null;
+  /** Las secciones de la carta (para elegir una). */
+  secciones: string[];
+  /** Lo que dice el Excel de este producto; null = no viene del Excel (creado en el sistema o fuera de la carta). */
+  excel: { precio: number | null; costo: number; seccion: string | null } | null;
+  /** Tiene algo cambiado en el sistema sobre lo del Excel (precio, precio interno o sección). */
+  cambiadoAqui: boolean;
 };
 
 /** Uno de los tres: ref de la carta, ref de la receta, o el nombre con que lo vende Byte (matriz y Precios). */
@@ -57,11 +64,12 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
   if (!puedeLeerDireccion(role)) return { ok: false, error: "Solo dirección." };
   if (!pedido?.cartaRef && !pedido?.recetaRef && !pedido?.nombreByte) return { ok: false, error: "Falta el producto." };
   try {
-    const [catalogo, { costos, vinculos }, cambios, b2b] = await Promise.all([
+    const [catalogo, { costos, vinculos }, cambios, b2b, excelCarta] = await Promise.all([
       leerCatalogo(sql, ATELIER),
       leerCartaConCostos(sql),
       leerCambiosCarta(sql),
       (sql`SELECT ref, precio::float AS precio FROM precios_b2b` as unknown as Promise<{ ref: string; precio: number }[]>).catch(() => []),
+      (sql`SELECT ref, precio::float AS precio, costo::float AS costo, seccion FROM costos_carta` as unknown as Promise<{ ref: string; precio: number | null; costo: number; seccion: string | null }[]>).catch(() => []),
     ]);
     const efectivo = catalogo.efectivo;
     const porRef = new Map<string, CostoPreparacion>();
@@ -117,6 +125,8 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
     } else sinReceta = deAtelier ? "Todavía no tiene receta en el sistema." : "El Excel no trae el detalle de su receta.";
 
     const costo = receta ? (receta.costo > 0 ? receta.costo : null) : carta ? (carta.costoInsumos ?? (carta.costo > 0 ? carta.costo : null)) : null;
+    const cambio = carta ? cambios.find((c) => c.ref === carta!.ref) : undefined;
+    const ex = carta && !cambio?.nuevo ? excelCarta.find((e) => e.ref === carta!.ref) ?? null : null;
     return {
       ok: true,
       ficha: {
@@ -134,6 +144,9 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
         merma: receta?.detalle?.merma ?? 0,
         ingredientes,
         sinReceta,
+        secciones: [...new Set(costos.map((c) => c.seccion).filter((s): s is string => !!s))].sort((a, b) => a.localeCompare(b, "es")),
+        excel: ex ? { precio: ex.precio, costo: ex.costo, seccion: ex.seccion } : null,
+        cambiadoAqui: !!cambio && !cambio.nuevo,
       },
     };
   } catch (e) {

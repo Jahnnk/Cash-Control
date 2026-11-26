@@ -1,9 +1,10 @@
 /**
- * El piso de precios (pedido de Jahnn, 15-oct-2026): precio mínimo = costo × 3 y margen bruto
- * saludable de 65–70%. Se clava el estado, el piso redondeado y lo que dejaría subirlo.
+ * El piso de precios (pedido de Jahnn, 15-oct-2026). Desde el 25-nov-2026 usa la meta única de la ruta de precios:
+ * costo de insumos ≤ 30% del precio (cafetería) o ≤ 22% (lo que hace Atelier). Se clava el estado, el precio
+ * sugerido (el de la ruta) y lo que dejaría subirlo.
  */
 import { describe, it, expect } from "vitest";
-import { pisoDePrecios, estadoDelMargen } from "./piso-precios";
+import { pisoDePrecios, estadoFrenteMeta } from "./piso-precios";
 import type { ProductoRentable, RentabilidadSede } from "./rentabilidad";
 
 /** `costo` = costo de insumos (el que cuenta para el piso); `internoAtelier` = el precio interno que ve la cafetería en lo que hace Atelier. */
@@ -18,13 +19,14 @@ const sede = (productos: ProductoRentable[]): RentabilidadSede => ({
 });
 
 describe("el piso de precios", () => {
-  it("el margen decide el estado: 70% o más holgado · de 65 a 70 sano · menos de 65 bajo el piso", () => {
-    expect([80, 70, 69.9, 65, 64.9, 40].map(estadoDelMargen)).toEqual(["holgado", "holgado", "sano", "sano", "bajo", "bajo"]);
+  it("la meta de la ruta decide el estado: cafetería 30% (sano hasta 25%), Atelier 22% (sano hasta 17%)", () => {
+    expect([20, 25, 25.1, 30, 30.1].map((c) => estadoFrenteMeta(c, false))).toEqual(["holgado", "holgado", "sano", "sano", "bajo"]);
+    expect([17, 17.1, 22, 22.1].map((c) => estadoFrenteMeta(c, true))).toEqual(["holgado", "sano", "sano", "bajo"]);
   });
 
-  it("el piso es costo × 3, redondeado hacia arriba a S/ 0.10", () => {
+  it("el piso es costo ÷ 0.30 y el sugerido es el de la ruta (de S/ 0.50 en S/ 0.50)", () => {
     const r = pisoDePrecios(sede([prod("Sánguche de Pavo", 12, 5.12, 100)]));
-    expect(r.filas[0]).toMatchObject({ piso: 15.36, precioSugerido: 15.4, subida: 3.4, extraMes: 340, estado: "bajo", costoPct: 42.7, margenPct: 57.3 });
+    expect(r.filas[0]).toMatchObject({ piso: 17.07, precioSugerido: 17.5, subida: 5.5, extraMes: 550, estado: "bajo", costoPct: 42.7, metaPct: 30, margenPct: 57.3 });
   });
 
   it("un producto que ya cumple no pide nada", () => {
@@ -41,16 +43,18 @@ describe("el piso de precios", () => {
 
   it("resumen: cuántos están bajo el piso, qué % de lo vendido, el margen de la carta y lo que dejaría subir", () => {
     const r = pisoDePrecios(sede([prod("Café", 9, 2, 100), prod("Sánguche", 12, 5.12, 100)]));
-    expect(r).toMatchObject({ conCosto: 2, bajo: 1, ventasBajoPct: 57, extraTotal: 340 });
+    expect(r).toMatchObject({ conCosto: 2, bajo: 1, ventasBajoPct: 57, extraTotal: 550 });
     // (900−200 + 1200−512) ÷ 2100
     expect(r.margenCartaPct).toBe(66.1);
+    // Los dos son de cafetería: la meta pide 70% de margen.
+    expect(r.margenMetaPct).toBe(70);
   });
 
   it("con el mes a medias, «al mes» se escala a un mes completo (10 días de 30 → ×3)", () => {
     const base = sede([prod("Sánguche de Pavo", 12, 5.12, 100)]);
     const aMedias = { ...base, desde: "2026-09-01", hasta: "2026-09-10", dias: 10 };
-    expect(pisoDePrecios(aMedias).filas[0].extraMes).toBe(1020);
-    expect(pisoDePrecios(base).filas[0].extraMes).toBe(340);
+    expect(pisoDePrecios(aMedias).filas[0].extraMes).toBe(1650);
+    expect(pisoDePrecios(base).filas[0].extraMes).toBe(550);
   });
 
   it("sin precio o sin costo de insumos no hay piso: el producto no entra (y los de precio sin costo se cuentan)", () => {
@@ -60,10 +64,12 @@ describe("el piso de precios", () => {
     expect(r.sinInsumos).toBe(1);
   });
 
-  it("en lo que hace Atelier el piso se mide sobre sus INSUMOS, no sobre el precio interno (que ya trae el margen de Atelier)", () => {
-    // Empanada mixta: precio S/8, precio interno de Atelier S/4.50, insumos S/1.72.
+  it("en lo que hace Atelier se mide sobre sus INSUMOS con la meta de 22% (no sobre el precio interno)", () => {
+    // Empanada mixta: precio S/8, precio interno de Atelier S/4.50, insumos S/1.72 → 21.5%: en la meta.
     const r = pisoDePrecios(sede([prod("Empanada Mixta", 8, 1.72, 100, 4.5)]));
-    expect(r.filas[0]).toMatchObject({ costo: 1.72, margenPct: 78.5, estado: "holgado", subida: 0 });
-    // Con el precio interno saldría «bajo el piso» y pediría subirla a S/13.50: un error.
+    expect(r.filas[0]).toMatchObject({ costo: 1.72, metaPct: 22, margenPct: 78.5, estado: "sano", subida: 0 });
+    // A S/7 pasaría la meta (24.6%) y se sugiere el precio de la ruta: interno 4.30 ÷ 0.55 → S/ 8.
+    const b = pisoDePrecios(sede([prod("Empanada Mixta", 7, 1.72, 100, 4.5)]));
+    expect(b.filas[0]).toMatchObject({ estado: "bajo", precioSugerido: 8, subida: 1 });
   });
 });

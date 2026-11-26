@@ -6,7 +6,7 @@
  *
  *   1. GENERAR valor    — entender el negocio: qué se ofrece de verdad y en qué se diferencia (no competir por precio bajo).
  *   2. ENTREGAR valor   — con consistencia: procesos, roles, comunicación, control de mermas e ineficiencias.
- *   3. CAPTURAR valor   — finanzas: precios piso (food cost × 3), los cuatro motores del EBITDA, el reparto
+ *   3. CAPTURAR valor   — finanzas: precios piso (la meta de la ruta de precios), los cuatro motores del EBITDA, el reparto
  *                         33-33-33 y la reserva semanal de Profit First.
  *
  * Lo que el sistema puede y no puede comprobar:
@@ -46,8 +46,6 @@ export type Triangulo = {
 
 const pct = (n: number) => `${n.toLocaleString("es-PE", { maximumFractionDigits: 1 })}%`;
 
-/** Margen bruto sano de la carta (lib/productos/piso-precios.ts): de 65% a 70% o más. */
-const MARGEN_SANO = 65;
 
 const MENSAJE: Record<ClavePaso, string> = {
   generar: "Antes de crecer, refuerza el valor que percibe el cliente (NPS, ticket y precios sostenidos). No empujes ventas ni compitas por precio bajo.",
@@ -74,10 +72,12 @@ export function trianguloDelValor(e: { motores: Motores | null; regla: FilaRegla
   // ── 3. Capturar valor: finanzas ──
   const capturar: Senal[] = [];
   if (e.piso && e.piso.margenCartaPct !== null) {
+    const meta = e.piso.margenMetaPct;
     capturar.push({
       clave: "margen", etiqueta: "Margen bruto de la carta", paso: "entregar",
-      estado: e.piso.margenCartaPct >= MARGEN_SANO ? "verde" : e.piso.margenCartaPct >= MARGEN_SANO - 5 ? "ambar" : "rojo",
-      detalle: `${pct(e.piso.margenCartaPct)} · lo sano es ${MARGEN_SANO}–70% o más`,
+      // La meta es la de la ruta de precios (30% de costo en la cafetería, 22% en lo de Atelier), ponderada por lo vendido.
+      estado: meta === null || e.piso.margenCartaPct >= meta ? "verde" : e.piso.margenCartaPct >= meta - 5 ? "ambar" : "rojo",
+      detalle: `${pct(e.piso.margenCartaPct)}${meta !== null ? ` · la meta pide ${pct(meta)}` : ""}`,
     });
   }
   const r = e.regla;

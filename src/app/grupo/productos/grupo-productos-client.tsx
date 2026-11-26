@@ -370,7 +370,7 @@ function PestanaMes({ month, sede, onSede, onMes, onCanal }: { month: string; se
           <CafeSeccion key={`cafe-${sede}-${month}`} month={month} sede={sede} />
           {/* Precio, costo, margen y lo que deja cada producto (4-oct-2026). */}
           <RentabilidadProductos key={`rent-${sede}-${month}`} month={month} sede={sede} />
-          {/* El piso de precios: costo × 3 y margen bruto de 65–70% (15-oct-2026). */}
+          {/* El piso de precios (15-oct-2026), con la meta de la ruta de precios desde el 25-nov-2026. */}
           <PisoPrecios key={`piso-${sede}-${month}`} month={month} sede={sede} />
           {/* La subida de precios (qué subir, prueba, cuándo) se mudó a Sistema de Dirección → Precios (18-nov-2026). */}
           {sede !== ATELIER && (

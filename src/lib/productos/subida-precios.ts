@@ -14,8 +14,9 @@
  *
  * Cada producto (con costo de insumos y al menos MIN_UNIDADES en el mes) se mira con tres datos:
  *
- *   NECESIDAD   el costo de insumos como % del precio: > 35% alta (bajo el piso del coach),
- *               28–35% media, < 28% baja.
+ *   NECESIDAD   el costo de insumos como % del precio frente a LA META ÚNICA de la ruta de precios
+ *               (25-nov-2026, lib/precios-sugeridos.ts → frenteMeta): 30% en lo que se prepara en la cafetería,
+ *               22% en lo que hace Atelier. Pasa la meta = alta; hasta 5 puntos bajo ella = media; más = baja.
  *   DEMANDA     fuerte si vende al menos la mediana de unidades de la carta (estrella o vaca de la
  *               matriz): los clientes lo piden y aguanta mejor una subida.
  *   RIESGO      qué tan fácil es que el cliente compare el precio (la sensibilidad estimada):
@@ -43,14 +44,15 @@
  *
  * DOS MIRADAS DEL COSTO (18-nov-2026, del Excel de pricing): el veredicto usa el costo de INSUMOS (la mirada
  * del Grupo: lo que de verdad cuesta hacerlo). Pero la cafetería es otra empresa y no paga insumos: paga el
- * precio interno de Atelier (Y-). En los productos de Atelier esa segunda mirada puede pasar el 35% aunque
- * los insumos estén bien (rollo de canela: S/ 1.73 de insumos, S/ 5.90 de precio interno, S/ 8 en carta).
+ * precio interno de Atelier (Y-). En los productos de Atelier esa segunda mirada puede pasar el 55% de la ruta
+ * (METAS.foodCostAtelierEnCarta) aunque los insumos estén bien (rollo de canela: S/ 1.73 de insumos, S/ 5.90 de precio interno, S/ 8 en carta).
  * Ahí se marca `alertaInterno`: subirle al cliente para cubrir un precio entre empresas propias puede ser la
  * palanca equivocada; lo que hay que revisar es el precio interno.
  */
 
 import type { ProductoRentable, RentabilidadSede } from "./rentabilidad";
 import { MIN_UNIDADES } from "./rentabilidad";
+import { METAS, frenteMeta, metaCostoCarta } from "../precios-sugeridos";
 
 export type Veredicto = "subir" | "subir-poco" | "no-tocar";
 export type Nivel = "alta" | "media" | "baja";
@@ -58,9 +60,8 @@ export type Riesgo = "alto" | "medio" | "bajo";
 
 /** Topes de subida por ronda (fracción del precio). */
 export const TOPE_SUBIR = { bajo: 0.10, medio: 0.08, poco: 0.05 } as const;
-/** Cortes del costo de insumos como % del precio. */
-export const NECESIDAD_ALTA_PCT = 35;
-export const NECESIDAD_BAJA_PCT = 28;
+/** Tope de la mirada de la cafetería en lo que hace Atelier: lo que paga (precio interno) ÷ precio de carta, en %. */
+export const TOPE_CAFETERIA_PCT = METAS.foodCostAtelierEnCarta * 100;
 /** Si el paso más chico de la carta pasa este múltiplo del tope, no se sube en esta ronda. */
 export const FACTOR_PASO_MAXIMO = 2;
 /** Caídas de venta que se muestran como escenarios. */
@@ -87,6 +88,8 @@ export type FilaSubida = {
   precioDeCarta: boolean;
   costo: number;
   costoPct: number;
+  /** La meta de su clase (30% cafetería, 22% Atelier), en %. */
+  metaPct: number;
   necesidad: Nivel;
   demandaFuerte: boolean;
   riesgo: Riesgo;
@@ -111,7 +114,7 @@ export type FilaSubida = {
   costoCafeteria: number | null;
   costoCafeteriaPct: number | null;
   /**
-   * Para el Grupo el producto está bien (insumos ≤ 35%), pero la cafetería paga más del 35% por el precio
+   * Para el Grupo el producto está bien (insumos en la meta), pero la cafetería paga más del 55% por el precio
    * interno de Atelier: el problema es el precio interno, no el de carta.
    */
   alertaInterno: boolean;
@@ -151,10 +154,9 @@ export function riesgoDe(nombre: string): Riesgo {
   return "medio";
 }
 
-export function necesidadDe(costoPct: number): Nivel {
-  if (costoPct > NECESIDAD_ALTA_PCT) return "alta";
-  if (costoPct >= NECESIDAD_BAJA_PCT) return "media";
-  return "baja";
+export function necesidadDe(costoPct: number, deAtelier: boolean): Nivel {
+  const f = frenteMeta(costoPct, deAtelier);
+  return f === "pasa" ? "alta" : f === "en-meta" ? "media" : "baja";
 }
 
 /** El paso de precio de la carta: S/ 0.50 bajo S/ 10, S/ 1 desde S/ 10. */
@@ -183,14 +185,14 @@ function topeDe(v: Veredicto, riesgo: Riesgo): number {
 
 function veredictoDe(demandaFuerte: boolean, riesgo: Riesgo, necesidad: Nivel): { v: Veredicto; motivo: string } {
   if (!demandaFuerte) {
-    if (necesidad === "alta") return { v: "subir-poco", motivo: "Vende poco y su costo pasa el 35% del precio: subir poco y revisar la receta o el costo." };
+    if (necesidad === "alta") return { v: "subir-poco", motivo: "Vende poco y su costo pasa la meta: subir poco y revisar la receta o el costo." };
     return { v: "no-tocar", motivo: "Vende poco y su costo está bien: subirlo lo haría vender menos todavía." };
   }
   if (riesgo === "alto" && necesidad === "baja") return { v: "no-tocar", motivo: "Básico que el cliente compara con otros locales y ya deja buen margen: mejor dejarlo como precio ancla (el que hace ver la carta accesible)." };
   if (riesgo === "alto") return { v: "subir-poco", motivo: "Se pide mucho, pero es un básico fácil de comparar con otros locales: el cliente nota su precio." };
   if (riesgo === "bajo") return { v: "subir", motivo: "Se pide mucho y es propio de Yayi's: difícil de comparar, aguanta mejor la subida." };
   if (necesidad === "baja") return { v: "subir-poco", motivo: "Se pide mucho, pero ya deja buen margen: basta una subida chica." };
-  return { v: "subir", motivo: necesidad === "alta" ? "Se pide mucho y su costo pasa el 35% del precio: es de los primeros a subir." : "Se pide mucho y su costo se acerca al tope: buen candidato." };
+  return { v: "subir", motivo: necesidad === "alta" ? "Se pide mucho y su costo pasa la meta: es de los primeros a subir." : "Se pide mucho y su costo se acerca al tope: buen candidato." };
 }
 
 function fila(p: ProductoRentable, medianaUnidades: number, aMes: number): FilaSubida | null {
@@ -199,7 +201,7 @@ function fila(p: ProductoRentable, medianaUnidades: number, aMes: number): FilaS
   const precio = precioCarta ?? p.precio;
   if (precio === null || precio <= 0 || costo === null || costo <= 0 || costo >= precio) return null;
   const costoPct = r1((costo / precio) * 100);
-  const necesidad = necesidadDe(costoPct);
+  const necesidad = necesidadDe(costoPct, p.deAtelier);
   const demandaFuerte = p.unidades >= medianaUnidades;
   const riesgo = riesgoDe(p.nombre);
   const { v, motivo } = veredictoDe(demandaFuerte, riesgo, necesidad);
@@ -208,9 +210,9 @@ function fila(p: ProductoRentable, medianaUnidades: number, aMes: number): FilaS
   const costoCafeteriaPct = costoCafeteria !== null ? r1((costoCafeteria / precio) * 100) : null;
   const base = {
     nombre: p.nombre, familia: p.familia, unidades: p.unidades, precio: r2(precio), precioDeCarta: precioCarta !== null,
-    costo: r2(costo), costoPct, necesidad, demandaFuerte, riesgo,
+    costo: r2(costo), costoPct, metaPct: Math.round(metaCostoCarta(p.deAtelier) * 1000) / 10, necesidad, demandaFuerte, riesgo,
     deAtelier: p.deAtelier, costoCafeteria: costoCafeteria !== null ? r2(costoCafeteria) : null, costoCafeteriaPct,
-    alertaInterno: p.deAtelier && costoCafeteriaPct !== null && costoCafeteriaPct > NECESIDAD_ALTA_PCT && costoPct <= NECESIDAD_ALTA_PCT,
+    alertaInterno: p.deAtelier && costoCafeteriaPct !== null && costoCafeteriaPct > TOPE_CAFETERIA_PCT && necesidad !== "alta",
   };
   if (v === "no-tocar") return { ...base, veredicto: v, motivo, precioNuevo: null, subidaPct: null, quiebrePct: null, extraMes: null, pasoMuyGrande: false };
 

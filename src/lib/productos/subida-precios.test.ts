@@ -49,8 +49,9 @@ describe("riesgo por tipo de producto", () => {
     expect(riesgoDe("CROCANTE DE FRESA")).toBe("bajo");
     expect(riesgoDe("TE VERDE")).toBe("alto");
   });
-  it("necesidad por el costo: más de 35% alta, 28–35% media, menos baja", () => {
-    expect([40, 35, 28, 27.9].map(necesidadDe)).toEqual(["alta", "media", "media", "baja"]);
+  it("necesidad frente a la meta única: cafetería 30% (media hasta 25%), Atelier 22% (media hasta 17%)", () => {
+    expect([40, 30.1, 30, 25.1, 25].map((c) => necesidadDe(c, false))).toEqual(["alta", "alta", "media", "media", "baja"]);
+    expect([22.1, 22, 17.1, 17].map((c) => necesidadDe(c, true))).toEqual(["alta", "media", "media", "baja"]);
   });
 });
 
@@ -70,7 +71,7 @@ describe("veredicto, punto de quiebre y escenarios", () => {
     expect(r.filas.find((x) => x.nombre === "CAPPUCCINO")).toMatchObject({ veredicto: "no-tocar", precioNuevo: null, extraMes: null });
   });
 
-  it("vende poco pero su costo pasa el 35%: subir poco y revisar la receta", () => {
+  it("vende poco pero su costo pasa la meta: subir poco y revisar la receta", () => {
     const r = subidaDePrecios(sede([prod("JAMON AHUMADO CRIOLLO", 18, 8, 9), ...Array.from({ length: 4 }, (_, i) => prod(`Mucho ${i}`, 10, 2, 100))]));
     expect(r.filas.find((x) => x.nombre === "JAMON AHUMADO CRIOLLO")).toMatchObject({ veredicto: "subir-poco", precioNuevo: 19 });
   });
@@ -115,7 +116,7 @@ describe("veredicto, punto de quiebre y escenarios", () => {
     expect(r.conteo).toEqual({ subir: 2, "subir-poco": 5, "no-tocar": 1 });
   });
 
-  it("dos miradas: insumos bien pero la cafetería paga más del 35% por el precio interno de Atelier", () => {
+  it("dos miradas: insumos en la meta pero la cafetería paga más del 55% por el precio interno de Atelier", () => {
     // Rollo de canela: S/ 1.73 de insumos (21.6%) y S/ 5.90 de precio interno (73.8%) sobre S/ 8 de carta.
     const rollo: ProductoRentable = { ...prod("ROLLO DE CANELA", 8, 1.73, 50), costo: 5.9, deAtelier: true };
     const r = subidaDePrecios(sede([rollo, prod("CAPPUCCINO", 12, 3, 100), ...relleno(4)]));
@@ -126,7 +127,7 @@ describe("veredicto, punto de quiebre y escenarios", () => {
     expect(r.conAlertaInterno).toBe(1);
   });
 
-  it("si los insumos ya pasan el 35%, no es un problema solo del precio interno", () => {
+  it("si los insumos ya pasan la meta, no es un problema solo del precio interno", () => {
     const caro: ProductoRentable = { ...prod("CHEESECAKE DE FRESA", 14, 6.5, 50), costo: 9, deAtelier: true };
     expect(subidaDePrecios(sede([caro, ...relleno(4)])).filas.find((x) => x.nombre === "CHEESECAKE DE FRESA")!.alertaInterno).toBe(false);
   });
