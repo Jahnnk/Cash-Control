@@ -7,10 +7,11 @@
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Search, Loader2, AlertTriangle, Copy } from "lucide-react";
-import { getPreciosVenta, getRecetas, type PreciosVenta } from "@/app/actions/recetas";
+import { Loader2, AlertTriangle, Copy, Archive, ArchiveRestore } from "lucide-react";
+import { archivarReceta, getPreciosVenta, getRecetas, type PreciosVenta } from "@/app/actions/recetas";
 import { TIPO_COSTO, soles4 } from "@/components/buscador-costo";
-import { Pastilla, Segmentado } from "@/components/productos/ui";
+import { Pastilla } from "@/components/productos/ui";
+import { ListaPorCategorias, type FilaLista } from "./lista-categorias";
 import { costoDeReceta, refDeReceta, type RecetaSistema } from "@/lib/recetas";
 import type { Catalogo } from "@/lib/catalogo-costos-sql";
 import type { CostoPreparacion } from "@/lib/costos-preparaciones";
@@ -18,15 +19,15 @@ import { EditorReceta, type Borrador } from "./editor-receta";
 import { AsistenteReceta, type RecetaDePartida } from "./nueva-receta";
 import { FichaProducto } from "@/components/productos/ficha-producto";
 
-type Filtro = "todas" | "producto" | "preparacion" | "sistema" | "insumo";
-
-const sinTildes = (s: string) => s.normalize("NFD").replace(/[̀-ͯ]/g, "").toLowerCase();
+/** Orden de las categorías de Atelier (el resto, alfabético; «Archivados» al final). */
+const ORDEN_ATELIER = ["Panadería", "Pastelería", "Empanadas", "Sub-recetas", "Insumos / Subrecetas", "Nuevos / Pendientes"];
 
 export function RecetasClient() {
   const [cat, setCat] = useState<Catalogo | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [q, setQ] = useState("");
-  const [filtro, setFiltro] = useState<Filtro>("todas");
+  // Recetas archivadas (26-nov-2026): salen de la lista y van a «Archivados»; siguen costeando.
+  const [archivadas, setArchivadas] = useState<Set<string>>(new Set());
+  const [archivando, setArchivando] = useState<string | null>(null);
   const [borrador, setBorrador] = useState<Borrador | null>(null);
   const [copia, setCopia] = useState<RecetaDePartida | null>(null);
   // «Abrir» = la ficha única del producto (receta, ruta de precios y matriz), 25-nov-2026.
@@ -35,7 +36,7 @@ export function RecetasClient() {
 
   const cargar = useCallback(async () => {
     const [r, p] = await Promise.all([getRecetas(), getPreciosVenta()]);
-    if (r.ok) setCat(r.catalogo); else setError(r.error);
+    if (r.ok) { setCat(r.catalogo); setArchivadas(new Set(r.archivadas)); } else setError(r.error);
     if (p.ok) setPrecios(p.precios);
   }, []);
 
@@ -52,15 +53,6 @@ export function RecetasClient() {
     const vigentes = new Set(cat.efectivo.map((i) => i.ref));
     return cat.recetas.filter((r) => !vigentes.has(refDeReceta(r.id)));
   }, [cat]);
-
-  const lista = useMemo(() => {
-    if (!cat) return [];
-    const palabras = sinTildes(q).trim().split(/\s+/).filter(Boolean);
-    return cat.efectivo
-      .filter((i) => (filtro === "todas" ? i.tipo !== "insumo" : filtro === "sistema" ? i.origen === "sistema" : i.tipo === filtro))
-      .filter((i) => palabras.every((p) => sinTildes(i.nombre).includes(p)))
-      .sort((a, b) => a.nombre.localeCompare(b.nombre));
-  }, [cat, q, filtro]);
 
   function abrir(i: CostoPreparacion) {
     if (!cat) return;
@@ -93,7 +85,52 @@ export function RecetasClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cat]);
 
-  const conteo = (f: Filtro) => cat?.efectivo.filter((i) => (f === "sistema" ? i.origen === "sistema" : i.tipo === f)).length ?? 0;
+  async function archivar(i: CostoPreparacion, archivar: boolean) {
+    if (archivar && !window.confirm(`¿Archivar «${i.nombre}»? Sale de la lista y pasa a «Archivados». Sigue costeando: las mermas y las recetas que lo usan no cambian.`)) return;
+    setArchivando(i.ref);
+    const r = await archivarReceta({ sede: "atelier", ref: i.ref, archivar });
+    setArchivando(null);
+    if (!r.ok) { window.alert(r.error); return; }
+    setArchivadas((s) => { const n = new Set(s); if (archivar) n.add(i.ref); else n.delete(i.ref); return n; });
+  }
+
+  // Todas las recetas de Atelier (los insumos tienen su propia pantalla: Grupo → Insumos y packaging).
+  const filas: FilaLista[] = (cat?.efectivo ?? []).filter((i) => i.tipo !== "insumo").map((i) => {
+    const archivada = archivadas.has(i.ref);
+    return {
+      clave: i.ref, nombre: i.nombre, categoria: i.tipo === "preparacion" && !i.categoria ? "Sub-recetas" : i.categoria, archivada,
+      contenido: (
+        <div className="flex items-center gap-3">
+          <div className="min-w-0 flex-1">
+            <div className="text-sm text-gray-900 flex flex-wrap items-center gap-x-2 gap-y-1">
+              {i.nombre}
+              {i.origen === "sistema" && <Pastilla tono="marca">{i.reemplaza ? "tu versión" : "hecha aquí"}</Pastilla>}
+            </div>
+            <div className="text-[11px] text-gray-500">
+              {TIPO_COSTO[i.tipo]}
+              {i.origen !== "sistema" && !i.detalle && " · el Excel no trae su receta"}
+              {i.detalle && ` · ${i.detalle.ingredientes.length} ingredientes`}
+            </div>
+          </div>
+          <div className="text-sm tabular-nums text-gray-900 whitespace-nowrap">{soles4(i.costo)} <span className="text-gray-400 text-xs">/ {i.unidad}</span></div>
+          {i.detalle && i.detalle.ingredientes.length > 0 && (
+            <button type="button" title="Crear una receta nueva a partir de esta" aria-label={`Duplicar ${i.nombre}`}
+              onClick={() => setCopia({ de: i.nombre, clase: i.tipo === "producto" ? "atelier" : "sub", detalle: i.detalle! })}
+              className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-primary hover:bg-primary-50 rounded-lg px-2 py-1.5 whitespace-nowrap">
+              <Copy className="w-3.5 h-3.5" /> Duplicar
+            </button>
+          )}
+          <button type="button" onClick={() => setFicha(i.ref)} className="text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg px-2.5 py-1.5 whitespace-nowrap">Abrir</button>
+          <button type="button" onClick={() => abrir(i)} className="text-xs font-medium text-primary hover:bg-primary-50 rounded-lg px-2.5 py-1.5 whitespace-nowrap">Editar</button>
+          <button type="button" disabled={archivando === i.ref} onClick={() => void archivar(i, !archivada)}
+            title={archivada ? "Volver a la lista" : "Archivar"} aria-label={archivada ? `Desarchivar ${i.nombre}` : `Archivar ${i.nombre}`}
+            className="text-gray-400 hover:text-gray-700 hover:bg-gray-100 rounded-lg p-1.5 disabled:opacity-40">
+            {archivada ? <ArchiveRestore className="w-3.5 h-3.5" /> : <Archive className="w-3.5 h-3.5" />}
+          </button>
+        </div>
+      ),
+    };
+  });
 
   return (
     <>
@@ -127,67 +164,7 @@ export function RecetasClient() {
             </div>
           )}
 
-          <div className="flex flex-wrap items-center gap-3">
-            <label className="relative flex-1 min-w-[220px]">
-              <Search className="w-4 h-4 text-gray-400 absolute left-3 top-1/2 -translate-y-1/2" />
-              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar receta, ej. pie de manzana"
-                className="w-full border border-gray-200 rounded-xl pl-9 pr-3 py-2 text-sm" />
-            </label>
-            <Segmentado
-              tamano="sm"
-              valor={filtro}
-              onChange={setFiltro}
-              opciones={[
-                { valor: "todas", etiqueta: "Todas" },
-                { valor: "producto", etiqueta: `Productos · ${conteo("producto")}` },
-                { valor: "preparacion", etiqueta: `Preparaciones · ${conteo("preparacion")}` },
-                { valor: "sistema", etiqueta: `Hechas aquí · ${conteo("sistema")}` },
-                { valor: "insumo", etiqueta: `Insumos · ${conteo("insumo")}` },
-              ]}
-            />
-          </div>
-
-          <ul className="divide-y divide-gray-100 border border-gray-100 rounded-xl">
-            {lista.length === 0 && <li className="px-4 py-6 text-sm text-gray-500 text-center">Nada con ese nombre.</li>}
-            {lista.map((i) => {
-              const editable = i.tipo !== "insumo";
-              return (
-                <li key={i.ref} className="px-4 py-2.5 flex items-center gap-3">
-                  <div className="min-w-0 flex-1">
-                    <div className="text-sm text-gray-900 flex flex-wrap items-center gap-x-2 gap-y-1">
-                      {i.nombre}
-                      {i.origen === "sistema" && <Pastilla tono="marca">{i.reemplaza ? "tu versión" : "hecha aquí"}</Pastilla>}
-                    </div>
-                    <div className="text-[11px] text-gray-500">
-                      {TIPO_COSTO[i.tipo]}{i.categoria ? ` · ${i.categoria.toLowerCase()}` : ""}
-                      {editable && i.origen !== "sistema" && !i.detalle && " · el Excel no trae su receta"}
-                      {editable && i.detalle && ` · ${i.detalle.ingredientes.length} ingredientes`}
-                    </div>
-                  </div>
-                  <div className="text-sm tabular-nums text-gray-900 whitespace-nowrap">{soles4(i.costo)} <span className="text-gray-400 text-xs">/ {i.unidad}</span></div>
-                  {editable && i.detalle && i.detalle.ingredientes.length > 0 && (
-                    <button type="button" title="Crear una receta nueva a partir de esta" aria-label={`Duplicar ${i.nombre}`}
-                      onClick={() => setCopia({ de: i.nombre, clase: i.tipo === "producto" ? "atelier" : "sub", detalle: i.detalle! })}
-                      className="inline-flex items-center gap-1 text-xs font-medium text-gray-600 hover:text-primary hover:bg-primary-50 rounded-lg px-2 py-1.5 whitespace-nowrap">
-                      <Copy className="w-3.5 h-3.5" /> Duplicar
-                    </button>
-                  )}
-                  {editable ? (
-                    <>
-                      <button type="button" onClick={() => setFicha(i.ref)}
-                        className="text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
-                        Abrir
-                      </button>
-                      <button type="button" onClick={() => abrir(i)}
-                        className="text-xs font-medium text-primary hover:bg-primary-50 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
-                        Editar
-                      </button>
-                    </>
-                  ) : <span className="w-[52px]" />}
-                </li>
-              );
-            })}
-          </ul>
+          <ListaPorCategorias filas={filas} orden={ORDEN_ATELIER} placeholder="Buscar receta, ej. pie de manzana" />
         </>
       )}
 

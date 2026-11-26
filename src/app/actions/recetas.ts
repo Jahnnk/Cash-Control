@@ -28,16 +28,49 @@ async function quien(): Promise<string | null> {
   return role?.kind === "full" ? role.quien : null;
 }
 
-export async function getRecetas(): Promise<{ ok: true; catalogo: Catalogo } | { ok: false; error: string }> {
+/** Refs de las recetas archivadas (26-nov-2026): siguen costeando, solo salen de la lista principal. */
+async function leerArchivadas(bId: number): Promise<string[]> {
+  try {
+    return ((await sql`SELECT ref FROM recetas_archivadas WHERE business_id = ${bId}`) as { ref: string }[]).map((r) => r.ref);
+  } catch {
+    return [];
+  }
+}
+
+export async function getRecetas(): Promise<{ ok: true; catalogo: Catalogo; archivadas: string[] } | { ok: false; error: string }> {
   if (!(await quien())) return { ok: false, error: "Solo dirección." };
-  return { ok: true, catalogo: await leerCatalogo(sql, ATELIER) };
+  const [catalogo, archivadas] = await Promise.all([leerCatalogo(sql, ATELIER), leerArchivadas(ATELIER)]);
+  return { ok: true, catalogo, archivadas };
+}
+
+/** Archivar o desarchivar una receta (Atelier o cafeterías). No cambia costos ni recetas que la usan. */
+export async function archivarReceta(input: { sede: SedeReceta; ref: string; archivar: boolean }): Promise<{ ok: true } | { ok: false; error: string }> {
+  const autor = await quien();
+  if (!autor) return { ok: false, error: "Solo dirección." };
+  const ref = String(input.ref ?? "").trim().slice(0, 80);
+  if (!ref) return { ok: false, error: "Falta la receta." };
+  const bId = bIdDe(input.sede);
+  try {
+    if (input.archivar) {
+      await sql`INSERT INTO recetas_archivadas (business_id, ref, archivada_por) VALUES (${bId}, ${ref}, ${autor})
+                ON CONFLICT (business_id, ref) DO NOTHING`;
+    } else {
+      await sql`DELETE FROM recetas_archivadas WHERE business_id = ${bId} AND ref = ${ref}`;
+    }
+    revalidatePath("/grupo/recetas");
+    return { ok: true };
+  } catch (e) {
+    console.error("[archivarReceta]", e);
+    return { ok: false, error: /recetas_archivadas.*does not exist/i.test(String(e)) ? "Falta crear la tabla de recetas archivadas." : "No se pudo archivar. Intenta de nuevo." };
+  }
 }
 
 /** Recetas de las cafeterías (26-nov-2026): la lista de costos de Fonavi y Centro con sus recetas. */
-export async function getRecetasCafeteria(): Promise<{ ok: true; catalogo: CatalogoCafeteria } | { ok: false; error: string }> {
+export async function getRecetasCafeteria(): Promise<{ ok: true; catalogo: CatalogoCafeteria; archivadas: string[] } | { ok: false; error: string }> {
   if (!(await quien())) return { ok: false, error: "Solo dirección." };
   try {
-    return { ok: true, catalogo: await leerCatalogoCafeteria(sql) };
+    const [catalogo, archivadas] = await Promise.all([leerCatalogoCafeteria(sql), leerArchivadas(CAFETERIAS)]);
+    return { ok: true, catalogo, archivadas };
   } catch (e) {
     console.error("[getRecetasCafeteria]", e);
     return { ok: false, error: "No se pudieron leer las recetas de las cafeterías." };
