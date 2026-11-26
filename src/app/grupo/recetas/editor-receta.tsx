@@ -22,6 +22,7 @@ import { sugeridosAtelier } from "@/lib/precios-sugeridos";
 import type { PreciosVenta } from "@/app/actions/recetas";
 import { guardarPrecioVenta } from "@/app/actions/carta";
 import { comprasPara, precioPorBase, type PrecioCompra } from "@/lib/precio-compra";
+import { aplicarPanadero, enMasa, harinaBase, produccion, sumaPct } from "@/lib/recetas-panadero";
 
 /** Lo que abre el editor. */
 export type Borrador = {
@@ -34,7 +35,9 @@ export type Borrador = {
   reemplaza: CostoPreparacion | null;
 };
 
-type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: string | null; cantidad: string; unidad: string };
+type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: string | null; cantidad: string; unidad: string; pct: string };
+const filaVacia = (): Fila => ({ id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g", pct: "" });
+const gramos = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: n < 100 ? 1 : 0 });
 
 const UNIDADES: Record<CostoPreparacion["unidad"], string[]> = { kg: ["g", "kg"], l: ["ml", "l"], und: ["und"] };
 
@@ -57,6 +60,11 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   const [rendimiento, setRendimiento] = useState(borrador.detalle.rendimiento ? String(borrador.detalle.rendimiento) : "");
   const [merma, setMerma] = useState(borrador.detalle.merma ? String(Math.round(borrador.detalle.merma * 1000) / 10) : "");
   const [busy, setBusy] = useState<"guardando" | "borrando" | null>(null);
+  // Panes y focaccias en % panadero (26-nov-2026): peso de masa por bandeja + % de cada insumo.
+  const [pan, setPan] = useState(!!borrador.detalle.panadero);
+  const [pesoMasa, setPesoMasa] = useState(borrador.detalle.panadero?.pesoMasa ? String(borrador.detalle.panadero.pesoMasa) : "");
+  const [piezas, setPiezas] = useState(borrador.detalle.panadero?.piezas ? String(borrador.detalle.panadero.piezas) : "");
+  const [bandejas, setBandejas] = useState("1");
   // Precios de venta: se cambian aquí mismo en la ruta (fase 2, 25-nov-2026).
   const [precios, setPrecios] = useState<PreciosVenta | undefined>(preciosIniciales);
   // El B2B va en la receta del Excel si esta la reemplaza; si no, en la receta del sistema.
@@ -91,9 +99,9 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   const [filas, setFilas] = useState<Fila[]>(() => {
     const f = borrador.detalle.ingredientes.map((g) => {
       const item = g.ref ? porRef.get(g.ref) ?? null : null;
-      return { id: crypto.randomUUID(), texto: item?.nombre ?? g.nombre, item, ref: item ? g.ref : null, cantidad: String(g.cantidad), unidad: g.unidad };
+      return { id: crypto.randomUUID(), texto: item?.nombre ?? g.nombre, item, ref: item ? g.ref : null, cantidad: String(g.cantidad), unidad: g.unidad, pct: g.pct ? String(g.pct) : "" };
     });
-    return f.length > 0 ? f : [{ id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g" }];
+    return f.length > 0 ? f : [filaVacia()];
   });
 
   const setFila = (i: number, p: Partial<Fila>) => setFilas((prev) => prev.map((f, j) => (j === i ? { ...f, ...p } : f)));
@@ -124,13 +132,22 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
     showToast(`${cambio.nombre}: guardado. Ya vale en todo el sistema.`);
   }
 
-  const detalle: DetalleReceta = {
+  const detalle: DetalleReceta = aplicarPanadero({
     rendimiento: Number(rendimiento) > 0 ? Number(rendimiento) : null,
     merma: Math.min(Math.max(Number(merma) || 0, 0), 95) / 100,
     ingredientes: filas
-      .filter((f) => f.texto.trim() || f.cantidad)
-      .map((f) => ({ ref: f.ref, nombre: f.item?.nombre ?? f.texto.trim(), unidad: f.unidad, cantidad: Number(f.cantidad) })),
-  };
+      .filter((f) => f.texto.trim() || f.cantidad || (pan && f.pct))
+      .map((f) => ({
+        ref: f.ref, nombre: f.item?.nombre ?? f.texto.trim(), unidad: f.unidad, cantidad: Number(f.cantidad),
+        ...(pan && Number(f.pct) > 0 ? { pct: Number(f.pct) } : {}),
+      })),
+    ...(pan ? { panadero: { pesoMasa: Number(pesoMasa) || 0, piezas: Number(piezas) > 0 ? Number(piezas) : null } } : {}),
+  });
+  // Gramos de 1 bandeja por fila (las filas con % los calculan; el orden de `detalle` es el de las filas con algo).
+  const calculadas = new Map(filas.filter((f) => f.texto.trim() || f.cantidad || (pan && f.pct)).map((f, k) => [f.id, detalle.ingredientes[k]]));
+  const base = pan ? harinaBase(detalle) : null;
+  const nBandejas = Number(bandejas);
+  const prod = pan && base !== null ? produccion(detalle, nBandejas) : null;
   const c = costoDeReceta(tipo, detalle, (ref) => porRef.get(ref) ?? null);
   const unidadCosto = tipo === "preparacion" ? "kg" : "und";
   const excel = borrador.reemplaza;
@@ -207,6 +224,37 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
             </div>
           </div>
 
+          <div className="rounded-xl border border-gray-200 px-4 py-3 space-y-3">
+            <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+              <input type="checkbox" checked={pan} onChange={(e) => setPan(e.target.checked)} className="mt-0.5" />
+              <span>
+                <span className="font-medium">Pan o focaccia: por % panadero</span>
+                <span className="block text-[11px] text-gray-500">Escribe el peso de masa de una bandeja y el % de cada insumo (la harina es 100%). Los gramos salen solos.</span>
+              </span>
+            </label>
+            {pan && (
+              <div className="grid gap-4 sm:grid-cols-2">
+                <label className="block">
+                  <span className="text-[11px] uppercase tracking-wide text-gray-500">Peso de masa cruda por bandeja (g)</span>
+                  <input type="number" min="0" step="any" value={pesoMasa} onChange={(e) => setPesoMasa(e.target.value)} placeholder="ej. 1520"
+                    className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                  {base !== null && (
+                    <span className="block text-[11px] text-gray-500 mt-1">
+                      Harina base: {gramos(base)} g por bandeja · los % suman {sumaPct(detalle).toLocaleString("es-PE", { maximumFractionDigits: 1 })}%
+                    </span>
+                  )}
+                </label>
+                {tipo === "preparacion" && (
+                  <label className="block">
+                    <span className="text-[11px] uppercase tracking-wide text-gray-500">Piezas de venta por bandeja (opcional)</span>
+                    <input type="number" min="0" step="any" value={piezas} onChange={(e) => setPiezas(e.target.value)} placeholder="ej. 4 cuartos"
+                      className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
+                  </label>
+                )}
+              </div>
+            )}
+          </div>
+
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide text-gray-500">
@@ -229,14 +277,17 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
           </div>
 
           <div>
-            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">Ingredientes (cantidades para toda la receta)</div>
+            <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
+              {pan ? "Ingredientes (con % = parte de la masa; sin % = cantidad fija por bandeja)" : "Ingredientes (cantidades para toda la receta)"}
+            </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
                 <thead>
                   <tr className="text-[10px] uppercase text-gray-500 bg-gray-50">
                     <th className="w-6" />
                     <th className="text-left px-2 py-2 font-medium min-w-[240px]">Insumo, preparación o producto</th>
-                    <th className="text-right px-2 py-2 font-medium w-24">Cantidad</th>
+                    {pan && <th className="text-right px-2 py-2 font-medium w-20">%</th>}
+                    <th className="text-right px-2 py-2 font-medium w-24">{pan ? "1 bandeja" : "Cantidad"}</th>
                     <th className="text-left px-2 py-2 font-medium w-20">Unidad</th>
                     <th className="text-right px-2 py-2 font-medium w-24">Costo</th>
                     <th className="w-8" />
@@ -244,7 +295,11 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                 </thead>
                 <TablaOrdenable items={filas} idDe={(f) => f.id} onMover={setFilas}>
                   {filas.map((f, i) => {
-                    const costoFila = f.item && Number(f.cantidad) > 0 ? costoIngrediente(f.item, Number(f.cantidad), f.unidad) : null;
+                    const calc = calculadas.get(f.id);
+                    const conPct = pan && !!calc && enMasa(calc);
+                    const cant = conPct ? calc!.cantidad : Number(f.cantidad);
+                    const unid = conPct ? calc!.unidad : f.unidad;
+                    const costoFila = f.item && cant > 0 ? costoIngrediente(f.item, cant, unid) : null;
                     const opciones = f.item ? UNIDADES[f.item.unidad] : ["g", "kg", "ml", "l", "und"];
                     return (
                       <TbodyOrdenable key={f.id} id={f.id}>{(asa) => (
@@ -276,15 +331,30 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                             </button>
                           ) : null}
                         </td>
+                        {pan && (
+                          <td className="px-1 py-1">
+                            <input type="number" min="0" step="any" value={f.pct} onChange={(e) => setFila(i, { pct: e.target.value })} placeholder="—"
+                              aria-label={`% panadero de ${f.texto || "ingrediente"}`}
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-right" />
+                          </td>
+                        )}
                         <td className="px-1 py-1">
-                          <input type="number" min="0" step="any" value={f.cantidad} onChange={(e) => setFila(i, { cantidad: e.target.value })}
-                            className="w-full border border-gray-200 rounded px-2 py-1 text-right" />
+                          {conPct ? (
+                            <div className="px-2 py-1 text-right tabular-nums text-gray-700">{gramos(cant)}</div>
+                          ) : (
+                            <input type="number" min="0" step="any" value={f.cantidad} onChange={(e) => setFila(i, { cantidad: e.target.value })}
+                              className="w-full border border-gray-200 rounded px-2 py-1 text-right" />
+                          )}
                         </td>
                         <td className="px-1 py-1">
-                          <select value={f.unidad} onChange={(e) => setFila(i, { unidad: e.target.value })}
-                            className="w-full border border-gray-200 rounded px-1.5 py-1 bg-white">
-                            {[...new Set([...opciones, f.unidad])].map((u) => <option key={u}>{u}</option>)}
-                          </select>
+                          {conPct ? (
+                            <div className="px-1.5 py-1 text-gray-500">{unid}</div>
+                          ) : (
+                            <select value={f.unidad} onChange={(e) => setFila(i, { unidad: e.target.value })}
+                              className="w-full border border-gray-200 rounded px-1.5 py-1 bg-white">
+                              {[...new Set([...opciones, f.unidad])].map((u) => <option key={u}>{u}</option>)}
+                            </select>
+                          )}
                         </td>
                         <td className="px-2 py-1.5 text-right tabular-nums text-gray-800">
                           {costoFila !== null ? soles4(costoFila) : "—"}
@@ -303,7 +373,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
             </div>
             <div className="mt-2 flex flex-wrap gap-2">
               <button
-                onClick={() => setFilas((p) => [...p, { id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g" }])}
+                onClick={() => setFilas((p) => [...p, filaVacia()])}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
               >
                 <Plus className="w-3.5 h-3.5" /> Agregar ingrediente
@@ -311,7 +381,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
               <button
                 onClick={() => {
                   const vacia = filas.findIndex((f) => !f.item);
-                  if (vacia === -1) setFilas((p) => [...p, { id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g" }]);
+                  if (vacia === -1) setFilas((p) => [...p, filaVacia()]);
                   setErrorNuevo(null);
                   setNuevo({ fila: vacia === -1 ? filas.length : vacia, nombre: vacia === -1 ? "" : filas[vacia].texto.trim(), precio: { compra: "kg", gramos: "", precio: "" } });
                 }}
@@ -344,6 +414,29 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
             )}
           </div>
 
+          {prod && (
+            <div className="rounded-xl border border-gray-200 px-4 py-3 space-y-2">
+              <div className="flex flex-wrap items-center gap-2 text-sm">
+                <span className="font-medium text-gray-900">Producción: ¿cuántas bandejas?</span>
+                <input type="number" min="0" step="any" value={bandejas} onChange={(e) => setBandejas(e.target.value)} aria-label="Bandejas a producir"
+                  className="w-20 border border-gray-300 rounded-lg px-2 py-1 text-sm text-right" />
+                <span className="text-xs text-gray-500">= {gramos(prod.masa)} g de masa{Number(piezas) > 0 && nBandejas > 0 ? ` · ${gramos(nBandejas * Number(piezas))} piezas` : ""}</span>
+              </div>
+              <table className="w-full text-xs">
+                <tbody>
+                  {prod.lineas.map((l, k) => (
+                    <tr key={k} className="border-t border-gray-100">
+                      <td className="py-1 text-gray-800">{l.nombre}</td>
+                      <td className="py-1 text-right tabular-nums font-medium text-gray-900">{gramos(l.cantidad)} {l.unidad}</td>
+                      <td className="py-1 pl-3 w-16 text-right text-gray-400">{l.pct !== null ? `${l.pct}%` : "fijo"}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+              <p className="text-[11px] text-gray-400">Solo para pesar: cambiar las bandejas no cambia la receta ni se guarda.</p>
+            </div>
+          )}
+
           <div className="rounded-xl bg-primary-50/60 border border-primary-100 px-4 py-3 grid gap-3 sm:grid-cols-3 text-sm">
             <div>
               <div className="text-[11px] uppercase tracking-wide text-gray-500">Ingredientes</div>
@@ -354,7 +447,14 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
               <div className="text-[11px] uppercase tracking-wide text-gray-500">Costo por {unidadCosto}</div>
               <div className="text-lg font-semibold tabular-nums text-primary">{c.costo !== null ? soles4(c.costo) : "—"}</div>
               {tipo === "preparacion" && c.costo !== null && (
-                <div className="text-[11px] text-gray-500">500 g = {soles4(c.costo / 2)}</div>
+                pan && Number(pesoMasa) > 0 ? (
+                  <div className="text-[11px] text-gray-500">
+                    1 bandeja = {soles4((c.costo * Number(pesoMasa)) / 1000)}
+                    {Number(piezas) > 0 && <> · 1 pieza = {soles4((c.costo * Number(pesoMasa)) / 1000 / Number(piezas))}</>}
+                  </div>
+                ) : (
+                  <div className="text-[11px] text-gray-500">500 g = {soles4(c.costo / 2)}</div>
+                )
               )}
             </div>
             {excel && (

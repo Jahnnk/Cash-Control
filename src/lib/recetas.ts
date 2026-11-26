@@ -22,6 +22,7 @@
  */
 
 import type { CostoPreparacion, DetalleReceta, Ingrediente, TipoCosto, UnidadBase } from "@/lib/costos-preparaciones";
+import { erroresPanadero } from "@/lib/recetas-panadero";
 
 export type RecetaSistema = {
   id: number;
@@ -158,5 +159,6 @@ export function erroresDeReceta(r: { nombre: string; tipo: string; detalle: Deta
   }
   if (!(r.detalle.merma >= 0 && r.detalle.merma <= 0.95)) e.push("La merma de preparación va de 0% a 95%.");
   if (r.tipo === "producto" && !((r.detalle.rendimiento ?? 0) > 0)) e.push("Pon cuántas unidades rinde la receta.");
+  e.push(...erroresPanadero(r.detalle));
   return e;
 }
