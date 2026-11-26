@@ -1,9 +1,12 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, vi } from "vitest";
 import { renderToStaticMarkup } from "react-dom/server";
 import { createElement } from "react";
 import { armarMatriz, lecturaDe, type CartaSede, type ProductoMatriz, type ProductoMatrizSede } from "./matriz-carta";
 import { MatrizCarta } from "../../app/grupo/productos/matriz-carta";
 import { GraficoDemanda } from "../../components/productos/grafico-demanda";
+
+// La ficha única de producto lee la base (server actions): aquí no se abre.
+vi.mock("../../components/productos/ficha-producto", () => ({ FichaProducto: () => null }));
 
 const MESES = ["2026-04", "2026-05", "2026-06", "2026-07", "2026-08", "2026-09"];
 const serie = (porDia: number[]) => MESES.map((month, i) => ({ month, completo: true, porDia: porDia[i] }));
