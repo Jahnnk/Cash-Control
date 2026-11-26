@@ -496,8 +496,12 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
   const bloqueDe = (i: CostoPreparacion): Bloque | undefined => {
     const f = fuentes.get(i.ref);
     if (f?.conversion) return undefined;
-    if (f) { const b = porCelda(f); if (b) return b; }
     const n = nombreSinKg(i.nombre);
+    // Lo que va por kg y tiene su bloque con el mismo nombre en Sub-Recetas: ese bloque, sin mirar la celda.
+    // La celda de "Fuente costo" a veces apunta a otro bloque (26-nov-2026: «Crema Pastelera (kg)» salía con
+    // los ingredientes de la Masa de Turrón y el costo cuadraba igual porque se ajustaban los kg que salen).
+    if (i.unidad !== "und" && nombreSub.has(n)) return nombreSub.get(n);
+    if (f) { const b = porCelda(f); if (b) return b; }
     return i.unidad === "und" ? nombreProd.get(n) ?? nombreSub.get(n) : nombreSub.get(n) ?? nombreProd.get(n);
   };
   // SKU → sus insumos (más de uno cuando el Excel repite el código).
