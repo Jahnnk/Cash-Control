@@ -10,6 +10,7 @@ import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole } from "@/lib/session-access";
 import { leerCatalogo, type Catalogo } from "@/lib/catalogo-costos-sql";
+import { leerCarta, leerCambiosCarta } from "@/lib/carta-sql";
 import { erroresDeReceta, refDeReceta, type RecetaSistema } from "@/lib/recetas";
 import type { DetalleReceta } from "@/lib/costos-preparaciones";
 
@@ -111,4 +112,36 @@ export async function eliminarReceta(id: number): Promise<{ ok: true } | { ok: f
   }
   revalidatePath("/grupo/recetas");
   return { ok: true };
+}
+
+/** Precios de venta guardados de un producto de Atelier (los que falten se muestran como sugeridos). */
+export type PreciosVenta = { b2b?: number; interno?: number; carta?: number };
+
+/**
+ * Precios de venta por ref de receta (25-nov-2026, «Ruta de precios»): B2B de precios_b2b; interno y carta de
+ * la carta de las cafeterías (los AT- del Excel por su ref; los productos nuevos por la receta que usan).
+ */
+export async function getPreciosVenta(): Promise<{ ok: true; precios: Record<string, PreciosVenta> } | { ok: false; error: string }> {
+  if (!(await quien())) return { ok: false, error: "Solo dirección." };
+  try {
+    const [b2b, carta, cambios] = await Promise.all([
+      (sql`SELECT ref, precio::float AS precio FROM precios_b2b` as unknown as Promise<{ ref: string; precio: number }[]>).catch(() => []),
+      leerCarta(sql),
+      leerCambiosCarta(sql),
+    ]);
+    const out: Record<string, PreciosVenta> = {};
+    const poner = (ref: string, p: PreciosVenta) => { out[ref] = { ...out[ref], ...p }; };
+    for (const r of b2b) if (r.precio > 0) poner(r.ref, { b2b: r.precio });
+    const recetaDe = new Map(cambios.filter((c) => c.nuevo && c.receta?.tipo === "atelier" && c.receta.recetaRef).map((c) => [c.ref, (c.receta as { recetaRef: string }).recetaRef]));
+    for (const c of carta) {
+      if (c.enCarta === false) continue;
+      const ref = c.ref.startsWith("AT-") ? c.ref : recetaDe.get(c.ref);
+      if (!ref) continue;
+      poner(ref, { ...(c.costo > 0 ? { interno: c.costo } : {}), ...(c.precio && c.precio > 0 ? { carta: c.precio } : {}) });
+    }
+    return { ok: true, precios: out };
+  } catch (e) {
+    console.error("[getPreciosVenta]", e);
+    return { ok: false, error: "No se pudieron leer los precios de venta." };
+  }
 }

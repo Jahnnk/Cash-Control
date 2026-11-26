@@ -8,7 +8,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Search, Loader2, AlertTriangle, Copy } from "lucide-react";
-import { getRecetas } from "@/app/actions/recetas";
+import { getPreciosVenta, getRecetas, type PreciosVenta } from "@/app/actions/recetas";
 import { TIPO_COSTO, soles4 } from "@/components/buscador-costo";
 import { Pastilla, Segmentado } from "@/components/productos/ui";
 import { costoDeReceta, refDeReceta, type RecetaSistema } from "@/lib/recetas";
@@ -28,10 +28,13 @@ export function RecetasClient() {
   const [filtro, setFiltro] = useState<Filtro>("todas");
   const [borrador, setBorrador] = useState<Borrador | null>(null);
   const [copia, setCopia] = useState<RecetaDePartida | null>(null);
+  const [soloVer, setSoloVer] = useState(false);
+  const [precios, setPrecios] = useState<Record<string, PreciosVenta>>({});
 
   const cargar = useCallback(async () => {
-    const r = await getRecetas();
+    const [r, p] = await Promise.all([getRecetas(), getPreciosVenta()]);
     if (r.ok) setCat(r.catalogo); else setError(r.error);
+    if (p.ok) setPrecios(p.precios);
   }, []);
 
   useEffect(() => {
@@ -57,8 +60,9 @@ export function RecetasClient() {
       .sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [cat, q, filtro]);
 
-  function abrir(i: CostoPreparacion) {
+  function abrir(i: CostoPreparacion, ver = false) {
     if (!cat) return;
+    setSoloVer(ver);
     if (i.origen === "sistema" && i.recetaId !== undefined) {
       const r = cat.recetas.find((x) => x.id === i.recetaId)!;
       abrirReceta(r);
@@ -101,7 +105,7 @@ export function RecetasClient() {
               {rotas.map((r) => {
                 const falta = costoDeReceta(r.tipo, r.detalle, (ref) => cat.efectivo.find((i) => i.ref === ref || i.reemplaza === ref) ?? null).faltantes;
                 return (
-                  <button key={r.id} type="button" onClick={() => abrirReceta(r)} className="block text-left underline decoration-dotted">
+                  <button key={r.id} type="button" onClick={() => { setSoloVer(false); abrirReceta(r); }} className="block text-left underline decoration-dotted">
                     {r.nombre}{falta.length > 0 ? ` — falta precio de ${falta.join(", ")}` : ""}
                   </button>
                 );
@@ -155,10 +159,16 @@ export function RecetasClient() {
                     </button>
                   )}
                   {editable ? (
-                    <button type="button" onClick={() => abrir(i)}
-                      className="text-xs font-medium text-primary hover:bg-primary-50 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
-                      {i.origen === "sistema" ? "Editar" : "Abrir"}
-                    </button>
+                    <>
+                      <button type="button" onClick={() => abrir(i, true)}
+                        className="text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
+                        Abrir
+                      </button>
+                      <button type="button" onClick={() => abrir(i)}
+                        className="text-xs font-medium text-primary hover:bg-primary-50 rounded-lg px-2.5 py-1.5 whitespace-nowrap">
+                        Editar
+                      </button>
+                    </>
                   ) : <span className="w-[52px]" />}
                 </li>
               );
@@ -171,6 +181,11 @@ export function RecetasClient() {
       {borrador && cat && (
         <EditorReceta
           borrador={borrador}
+          soloVer={soloVer}
+          precios={{
+            ...(borrador.reemplaza ? precios[borrador.reemplaza.ref] : undefined),
+            ...(borrador.id !== null ? precios[refDeReceta(borrador.id)] : undefined),
+          }}
           catalogo={cat.efectivo}
           archivados={cat.archivados}
           onCerrar={() => setBorrador(null)}

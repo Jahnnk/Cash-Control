@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { X, Plus, Trash2, Loader2, Save, RotateCcw } from "lucide-react";
+import { X, Plus, Trash2, Loader2, Save, RotateCcw, Pencil } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { TablaOrdenable, TbodyOrdenable } from "@/components/filas-ordenables";
 import { BuscadorCosto, TIPO_COSTO, soles4 } from "@/components/buscador-costo";
@@ -17,6 +17,9 @@ import { costoDeReceta, costoIngrediente, refDeReceta, type RecetaSistema } from
 import type { CostoPreparacion, DetalleReceta } from "@/lib/costos-preparaciones";
 import { Segmentado } from "@/components/productos/ui";
 import { CamposPrecio, EditarInsumo } from "./insumo-en-receta";
+import { RutaPreciosAtelier, type PrecioRuta } from "./ruta-precios";
+import { sugeridosAtelier } from "@/lib/precios-sugeridos";
+import type { PreciosVenta } from "@/app/actions/recetas";
 import { comprasPara, precioPorBase, type PrecioCompra } from "@/lib/precio-compra";
 
 /** Lo que abre el editor. */
@@ -34,7 +37,11 @@ type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: str
 
 const UNIDADES: Record<CostoPreparacion["unidad"], string[]> = { kg: ["g", "kg"], l: ["ml", "l"], und: ["und"] };
 
-export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, onGuardada }: {
+export function EditorReceta({ borrador, catalogo, archivados = [], precios, soloVer = false, onCerrar, onGuardada }: {
+  /** Precios de venta guardados de este producto (los que falten salen sugeridos). */
+  precios?: PreciosVenta;
+  /** «Abrir»: ver la receta y sus precios sin editar (25-nov-2026). «Editar» la vuelve editable. */
+  soloVer?: boolean;
   /** SKUs de insumos archivados: no se ofrecen para agregar (24-nov-2026). */
   archivados?: string[];
   borrador: Borrador;
@@ -49,6 +56,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
   const [rendimiento, setRendimiento] = useState(borrador.detalle.rendimiento ? String(borrador.detalle.rendimiento) : "");
   const [merma, setMerma] = useState(borrador.detalle.merma ? String(Math.round(borrador.detalle.merma * 1000) / 10) : "");
   const [busy, setBusy] = useState<"guardando" | "borrando" | null>(null);
+  const [viendo, setViendo] = useState(soloVer);
   // Insumos creados aquí mismo (faltaba uno al editar, 25-nov-2026): se suman a la lista sin recargar.
   const [creados, setCreados] = useState<CostoPreparacion[]>([]);
   const [nuevo, setNuevo] = useState<{ fila: number; nombre: string; precio: PrecioCompra } | null>(null);
@@ -123,6 +131,10 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
   const unidadCosto = tipo === "preparacion" ? "kg" : "und";
   const excel = borrador.reemplaza;
   const dif = excel && c.costo !== null && excel.costo > 0 ? (c.costo - excel.costo) / excel.costo : null;
+  // Ruta de precios: el guardado si lo hay; si no, el sugerido con el costo de ahora.
+  const sug = tipo === "producto" && c.costo !== null && c.faltantes.length === 0 ? sugeridosAtelier(c.costo, precios?.interno ?? null) : null;
+  const ruta = (guardado: number | undefined, sugerido: number): PrecioRuta =>
+    guardado && guardado > 0 ? { valor: guardado, sugerido: false } : sugerido > 0 ? { valor: sugerido, sugerido: true } : null;
 
   async function guardar() {
     setBusy("guardando");
@@ -155,9 +167,10 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
         <div className="px-6 py-4 border-b border-gray-100 flex items-start justify-between gap-3">
           <div>
             <h2 className="text-base font-semibold text-gray-900">
-              {borrador.id !== null ? "Editar receta" : excel ? "Modificar receta del Excel" : "Nueva receta"}
+              {viendo ? nombre : borrador.id !== null ? "Editar receta" : excel ? "Modificar receta del Excel" : "Nueva receta"}
             </h2>
-            {excel && (
+            {viendo && <p className="text-xs text-gray-500 mt-0.5">Solo para ver. Toca «Editar» para cambiar algo.</p>}
+            {excel && !viendo && (
               <p className="text-xs text-gray-500 mt-0.5">
                 Tu versión reemplaza a la del Excel ({soles4(excel.costo)} por {excel.unidad}) también cuando vuelvas a subir el Excel.
               </p>
@@ -169,6 +182,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
         </div>
 
         <div className="p-6 space-y-5">
+          <fieldset disabled={viendo} className="m-0 min-w-0 space-y-5 border-0 p-0">
           <div className="grid gap-4 sm:grid-cols-[1fr_auto]">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide text-gray-500">Nombre</span>
@@ -285,7 +299,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
                 </TablaOrdenable>
               </table>
             </div>
-            <div className="mt-2 flex flex-wrap gap-2">
+            <div className={`mt-2 flex flex-wrap gap-2 ${viendo ? "hidden" : ""}`}>
               <button
                 onClick={() => setFilas((p) => [...p, { id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g" }])}
                 className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 border border-gray-300 bg-white hover:bg-gray-50 rounded-lg"
@@ -353,6 +367,10 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
               </div>
             )}
           </div>
+          </fieldset>
+          {sug && c.costo !== null && (
+            <RutaPreciosAtelier costo={c.costo} interno={ruta(precios?.interno, sug.interno)} carta={ruta(precios?.carta, sug.carta)} b2b={ruta(precios?.b2b, sug.b2b)} />
+          )}
           {c.faltantes.length > 0 && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
               Sin precio: {c.faltantes.join(", ")}. Elige cada uno de la lista (o quítalo) para poder guardar.
@@ -362,7 +380,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
 
         <div className="px-6 py-4 border-t border-gray-100 flex flex-wrap items-center justify-between gap-2">
           <div>
-            {borrador.id !== null && (
+            {borrador.id !== null && !viendo && (
               <button onClick={() => void borrar()} disabled={!!busy}
                 className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-red-700 hover:bg-red-50 rounded-lg disabled:opacity-50">
                 {busy === "borrando" ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : excel ? <RotateCcw className="w-3.5 h-3.5" /> : <Trash2 className="w-3.5 h-3.5" />}
@@ -370,6 +388,15 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
               </button>
             )}
           </div>
+          {viendo ? (
+            <div className="flex gap-2">
+              <button onClick={onCerrar} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg">Cerrar</button>
+              <button onClick={() => setViendo(false)}
+                className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg">
+                <Pencil className="w-4 h-4" /> Editar
+              </button>
+            </div>
+          ) : (
           <div className="flex gap-2">
             <button onClick={onCerrar} disabled={!!busy} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50">Cancelar</button>
             <button onClick={() => void guardar()} disabled={!!busy || c.costo === null || c.faltantes.length > 0 || !nombre.trim()}
@@ -378,6 +405,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], onCerrar, on
               Guardar receta
             </button>
           </div>
+          )}
         </div>
       </div>
     </div>
