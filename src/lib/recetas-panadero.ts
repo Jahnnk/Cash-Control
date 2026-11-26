@@ -60,3 +60,35 @@ export function erroresPanadero(d: DetalleReceta): string[] {
   for (const i of d.ingredientes) if (enMasa(i) && i.unidad === "und") e.push(`"${i.nombre}": va por unidad; no puede llevar %.`);
   return e;
 }
+
+/** Lo que lee la app de Producción de cada receta conectada (ver app/api/recetas-panadero). */
+export type RecetaParaProduccion = {
+  ref: string;
+  nombre: string;
+  /** Id de la receta en Producción. */
+  produccion: number;
+  /** Gramos de masa cruda de la pieza base (la bandeja de focaccia: 1,520). */
+  pesoMasa: number;
+  /** Harina de la pieza base = pesoMasa × 100 ÷ suma de %. */
+  harinaBase: number;
+  /** Solo la masa (las filas con %), en orden. `prod` = insumo de Producción (null si no existe allá). */
+  lineas: { prod: number | null; nombre: string; pct: number }[];
+  actualizadoPor: string | null;
+  actualizadoEl: string;
+};
+
+export function recetasParaProduccion(filas: { id: number; nombre: string; detalle: DetalleReceta; por: string | null; el: string }[]): RecetaParaProduccion[] {
+  const out: RecetaParaProduccion[] = [];
+  for (const f of filas) {
+    const d = f.detalle;
+    const base = harinaBase(d);
+    if (!d.panadero?.produccion || base === null) continue;
+    out.push({
+      ref: `REC:${f.id}`, nombre: f.nombre, produccion: d.panadero.produccion, pesoMasa: d.panadero.pesoMasa,
+      harinaBase: Math.round(base * 100) / 100,
+      lineas: d.ingredientes.filter(enMasa).map((i) => ({ prod: i.prod ?? null, nombre: i.nombre, pct: i.pct! })),
+      actualizadoPor: f.por, actualizadoEl: String(f.el),
+    });
+  }
+  return out;
+}

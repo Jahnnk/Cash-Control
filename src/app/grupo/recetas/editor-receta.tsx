@@ -35,7 +35,9 @@ export type Borrador = {
   reemplaza: CostoPreparacion | null;
 };
 
-type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: string | null; cantidad: string; unidad: string; pct: string };
+type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: string | null; cantidad: string; unidad: string; pct: string;
+  /** Insumo de Producción de esta fila (recetas conectadas): se conserva aunque se cambie el insumo de aquí. */
+  prod?: number | null };
 const filaVacia = (): Fila => ({ id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g", pct: "" });
 const gramos = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: n < 100 ? 1 : 0 });
 
@@ -65,6 +67,8 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   const [pesoMasa, setPesoMasa] = useState(borrador.detalle.panadero?.pesoMasa ? String(borrador.detalle.panadero.pesoMasa) : "");
   const [piezas, setPiezas] = useState(borrador.detalle.panadero?.piezas ? String(borrador.detalle.panadero.piezas) : "");
   const [bandejas, setBandejas] = useState("1");
+  // Receta conectada con Producción (26-nov-2026): Producción copia de aquí el peso y los %.
+  const prodId = borrador.detalle.panadero?.produccion ?? null;
   // Precios de venta: se cambian aquí mismo en la ruta (fase 2, 25-nov-2026).
   const [precios, setPrecios] = useState<PreciosVenta | undefined>(preciosIniciales);
   // El B2B va en la receta del Excel si esta la reemplaza; si no, en la receta del sistema.
@@ -99,7 +103,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   const [filas, setFilas] = useState<Fila[]>(() => {
     const f = borrador.detalle.ingredientes.map((g) => {
       const item = g.ref ? porRef.get(g.ref) ?? null : null;
-      return { id: crypto.randomUUID(), texto: item?.nombre ?? g.nombre, item, ref: item ? g.ref : null, cantidad: String(g.cantidad), unidad: g.unidad, pct: g.pct ? String(g.pct) : "" };
+      return { id: crypto.randomUUID(), texto: item?.nombre ?? g.nombre, item, ref: item ? g.ref : null, cantidad: String(g.cantidad), unidad: g.unidad, pct: g.pct ? String(g.pct) : "", prod: g.prod ?? null };
     });
     return f.length > 0 ? f : [filaVacia()];
   });
@@ -140,8 +144,9 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
       .map((f) => ({
         ref: f.ref, nombre: f.item?.nombre ?? f.texto.trim(), unidad: f.unidad, cantidad: Number(f.cantidad),
         ...(pan && Number(f.pct) > 0 ? { pct: Number(f.pct) } : {}),
+        ...(pan && prodId && f.prod ? { prod: f.prod } : {}),
       })),
-    ...(pan ? { panadero: { pesoMasa: Number(pesoMasa) || 0, piezas: Number(piezas) > 0 ? Number(piezas) : null } } : {}),
+    ...(pan ? { panadero: { pesoMasa: Number(pesoMasa) || 0, piezas: Number(piezas) > 0 ? Number(piezas) : null, ...(prodId ? { produccion: prodId } : {}) } } : {}),
   });
   // Gramos de 1 bandeja por fila (las filas con % los calculan; el orden de `detalle` es el de las filas con algo).
   const calculadas = new Map(filas.filter((f) => f.texto.trim() || f.cantidad || (pan && f.pct)).map((f, k) => [f.id, detalle.ingredientes[k]]));
@@ -244,6 +249,12 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                     </span>
                   )}
                 </label>
+                {prodId && (
+                  <p className="sm:col-span-2 text-[11px] text-primary bg-emerald-50 border border-emerald-200 rounded-lg px-3 py-2">
+                    Conectada con la app de Producción: al guardar, Producción toma este peso y estos % (la hoja de Luis y el plan del día).
+                    {filas.some((f) => Number(f.pct) > 0 && !f.prod) && " Los insumos nuevos de la masa hay que agregarlos también en Producción."}
+                  </p>
+                )}
                 {tipo === "preparacion" && (
                   <label className="block">
                     <span className="text-[11px] uppercase tracking-wide text-gray-500">Piezas de venta por bandeja (opcional)</span>
