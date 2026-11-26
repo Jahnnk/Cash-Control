@@ -91,8 +91,11 @@ export type DetalleReceta = {
   panadero?: {
     pesoMasa: number;
     piezas: number | null;
-    /** Id de la receta en la app de Producción que copia esta (peso y %). null/ausente = sin conectar. */
-    produccion?: number | null;
+    /**
+     * Id de la receta en la app de Producción que copia esta (peso y %), o varios si allá la misma masa está en
+     * varias recetas (Pan de Hamburguesa y Mini Hamburguesa). null/ausente = sin conectar.
+     */
+    produccion?: number | number[] | null;
   } | null;
 };
 

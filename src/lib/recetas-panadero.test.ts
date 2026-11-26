@@ -68,4 +68,11 @@ describe("lo que lee Producción", () => {
     expect(r[0].lineas).toHaveLength(8);
     expect(r[0].lineas[2]).toEqual({ prod: 3, nombre: "Agua 1", pct: 59.9 });
   });
+
+  it("una masa conectada con dos recetas de Producción sale dos veces", () => {
+    const d = focaccia(105);
+    d.panadero!.produccion = [5, 6];
+    const r = recetasParaProduccion([{ id: 12, nombre: "Masa de Hamburguesa", detalle: d, por: null, el: "x" }]);
+    expect(r.map((x) => x.produccion)).toEqual([5, 6]);
+  });
 });

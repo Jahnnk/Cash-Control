@@ -13,7 +13,7 @@ import { leerCatalogo, type Catalogo } from "@/lib/catalogo-costos-sql";
 import { leerCarta, leerCambiosCarta } from "@/lib/carta-sql";
 import { leerPreciosB2BByte } from "@/lib/productos/precio-b2b-byte-sql";
 import type { PrecioB2BByte } from "@/lib/productos/precio-b2b-byte";
-import { aplicarPanadero } from "@/lib/recetas-panadero";
+import { aplicarPanadero, idsProduccion } from "@/lib/recetas-panadero";
 import { erroresDeReceta, refDeReceta, type RecetaSistema } from "@/lib/recetas";
 import type { DetalleReceta } from "@/lib/costos-preparaciones";
 
@@ -50,7 +50,7 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
   const panadero = pan ? {
     pesoMasa: Number(pan.pesoMasa) || 0,
     piezas: pan.piezas !== null && pan.piezas !== undefined ? Number(pan.piezas) : null,
-    ...(Number(pan.produccion) > 0 ? { produccion: Number(pan.produccion) } : {}),
+    ...(idsProduccion(pan).length > 0 ? { produccion: idsProduccion(pan).length === 1 ? idsProduccion(pan)[0] : idsProduccion(pan) } : {}),
   } : null;
   // En % panadero las cantidades se recalculan aquí desde los % (no se confía en las del navegador).
   const detalle: DetalleReceta = aplicarPanadero({

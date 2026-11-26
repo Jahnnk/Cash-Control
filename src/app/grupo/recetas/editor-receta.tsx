@@ -240,7 +240,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
             {pan && (
               <div className="grid gap-4 sm:grid-cols-2">
                 <label className="block">
-                  <span className="text-[11px] uppercase tracking-wide text-gray-500">Peso de masa cruda por bandeja (g)</span>
+                  <span className="text-[11px] uppercase tracking-wide text-gray-500">Peso de masa cruda por bandeja o pieza base (g)</span>
                   <input type="number" min="0" step="any" value={pesoMasa} onChange={(e) => setPesoMasa(e.target.value)} placeholder="ej. 1520"
                     className="mt-1 w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" />
                   {base !== null && (
