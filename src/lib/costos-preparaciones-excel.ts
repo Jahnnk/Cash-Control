@@ -493,6 +493,8 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
   const nombreProd = porNombreEn(deProductos.filter((b) => !b.archivado && b.ingredientes.length > 0));
   const porCelda = (f: Fuente) =>
     todos.filter((b) => b.hoja === f.hoja && b.fila <= f.fila).sort((x, y) => y.fila - x.fila)[0];
+  const sinSignos = (s: string) => nombreSinKg(s).replace(/[^\p{L}\p{N}]+/gu, " ").trim();
+  const prodVivos = deProductos.filter((b) => !b.archivado && b.ingredientes.length > 0);
   const bloqueDe = (i: CostoPreparacion): Bloque | undefined => {
     const f = fuentes.get(i.ref);
     if (f?.conversion) return undefined;
@@ -501,6 +503,16 @@ export function leerPricingAtelier(data: Uint8Array): LecturaPricing {
     // La celda de "Fuente costo" a veces apunta a otro bloque (26-nov-2026: «Crema Pastelera (kg)» salía con
     // los ingredientes de la Masa de Turrón y el costo cuadraba igual porque se ajustaban los kg que salen).
     if (i.unidad !== "und" && nombreSub.has(n)) return nombreSub.get(n);
+    // Lo mismo con los productos: las filas de la celda son de un libro anterior (el v3 de setiembre) y las hojas
+    // ya tienen otro orden; «Cuchareable Tropical» salía con la receta del de Carrot. Primero su nombre, igual o
+    // con más palabras al final («Torta Tropical Entera» → bloque «Torta Tropical»); la celda queda de respaldo.
+    if (i.unidad === "und") {
+      const p = sinSignos(i.nombre);
+      const enHoja = prodVivos.filter((b) => !f || b.hoja === f.hoja);
+      const igual = prodVivos.find((b) => sinSignos(b.nombre) === p);
+      const prefijo = enHoja.filter((b) => `${p} `.startsWith(`${sinSignos(b.nombre)} `)).sort((x, y) => y.nombre.length - x.nombre.length)[0];
+      if (igual ?? prefijo) return igual ?? prefijo;
+    }
     if (f) { const b = porCelda(f); if (b) return b; }
     return i.unidad === "und" ? nombreProd.get(n) ?? nombreSub.get(n) : nombreSub.get(n) ?? nombreProd.get(n);
   };
