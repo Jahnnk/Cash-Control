@@ -13,6 +13,7 @@ import { leerCatalogo, type Catalogo } from "@/lib/catalogo-costos-sql";
 import { leerCarta, leerCambiosCarta } from "@/lib/carta-sql";
 import { leerPreciosB2BByte } from "@/lib/productos/precio-b2b-byte-sql";
 import type { PrecioB2BByte } from "@/lib/productos/precio-b2b-byte";
+import { aplicarPanadero } from "@/lib/recetas-panadero";
 import { erroresDeReceta, refDeReceta, type RecetaSistema } from "@/lib/recetas";
 import type { DetalleReceta } from "@/lib/costos-preparaciones";
 
@@ -45,13 +46,18 @@ export type RecetaInput = {
 export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref: string } | { ok: false; error: string }> {
   const autor = await quien();
   if (!autor) return { ok: false, error: "Solo dirección." };
-  const detalle: DetalleReceta = {
+  const pan = input.detalle.panadero;
+  const panadero = pan ? { pesoMasa: Number(pan.pesoMasa) || 0, piezas: pan.piezas !== null && pan.piezas !== undefined ? Number(pan.piezas) : null } : null;
+  // En % panadero las cantidades se recalculan aquí desde los % (no se confía en las del navegador).
+  const detalle: DetalleReceta = aplicarPanadero({
     rendimiento: input.detalle.rendimiento && input.detalle.rendimiento > 0 ? Number(input.detalle.rendimiento) : null,
     merma: Number(input.detalle.merma) || 0,
     ingredientes: (input.detalle.ingredientes ?? []).map((i) => ({
       ref: i.ref, nombre: String(i.nombre ?? "").trim(), unidad: String(i.unidad ?? "").trim().toLowerCase(), cantidad: Number(i.cantidad),
+      ...(panadero && Number(i.pct) > 0 ? { pct: Number(i.pct) } : {}),
     })),
-  };
+    ...(panadero ? { panadero } : {}),
+  });
   const errores = erroresDeReceta({ nombre: input.nombre ?? "", tipo: input.tipo, detalle });
   if (errores.length > 0) return { ok: false, error: errores[0] };
 

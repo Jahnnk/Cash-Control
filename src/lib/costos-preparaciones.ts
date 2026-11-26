@@ -69,6 +69,8 @@ export type Ingrediente = {
   /** g, kg, ml, l o und. */
   unidad: string;
   cantidad: number;
+  /** Solo en recetas «% panadero»: el % sobre la harina; la cantidad sale de él (lib/recetas-panadero.ts). */
+  pct?: number | null;
 };
 
 export type DetalleReceta = {
@@ -80,6 +82,11 @@ export type DetalleReceta = {
   /** Merma de preparación, 0 a 0.95 (0.02 = 2%). */
   merma: number;
   ingredientes: Ingrediente[];
+  /**
+   * Panes y focaccias (26-nov-2026): la receta se escribe en % panadero y el peso de masa de UNA bandeja; los gramos
+   * salen solos. Las cantidades de `ingredientes` son las de 1 bandeja. null/ausente = receta normal.
+   */
+  panadero?: { pesoMasa: number; piezas: number | null } | null;
 };
 
 export type LecturaPricing = {
