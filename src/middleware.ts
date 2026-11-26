@@ -27,7 +27,7 @@ const PUBLIC_PATHS = ["/", "/select-business", "/acceso-denegado", "/inicio"];
  * KEEP_ALIVE_TOKEN). Sin esta excepción el middleware redirige a /
  * y los cron jobs externos no llegan al handler.
  */
-const PUBLIC_API_PREFIXES = ["/api/keep-alive"];
+const PUBLIC_API_PREFIXES = ["/api/keep-alive", "/api/recetas-panadero"];
 
 /**
  * Páginas públicas sin sesión: el vale de consumo que ve el invitado de

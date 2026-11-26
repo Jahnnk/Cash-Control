@@ -2,7 +2,7 @@
  * Panes en % panadero (26-nov-2026): el caso de la focaccia V4 de la hoja de Luis.
  */
 import { describe, it, expect } from "vitest";
-import { aplicarPanadero, erroresPanadero, harinaBase, produccion, sumaPct } from "./recetas-panadero";
+import { aplicarPanadero, erroresPanadero, harinaBase, produccion, recetasParaProduccion, sumaPct } from "./recetas-panadero";
 import { costoDeReceta, erroresDeReceta } from "./recetas";
 import type { DetalleReceta } from "./costos-preparaciones";
 
@@ -50,5 +50,22 @@ describe("focaccia V4 en % panadero", () => {
     expect(erroresPanadero({ rendimiento: null, merma: 0, panadero: { pesoMasa: 0, piezas: null }, ingredientes: [ing("Harina", null)] }))
       .toEqual(["Pon el peso de masa de una bandeja (en gramos).", "Pon el % de cada insumo de la masa (la harina es 100%)."]);
     expect(erroresDeReceta({ nombre: "Masa", tipo: "preparacion", detalle: aplicarPanadero(focaccia(1520)) })).toEqual([]);
+  });
+});
+
+describe("lo que lee Producción", () => {
+  it("solo recetas conectadas; la masa con su insumo de Producción y la harina base", () => {
+    const d = focaccia(1520);
+    d.panadero!.produccion = 4;
+    d.ingredientes = d.ingredientes.map((i, k) => ({ ...i, prod: k + 1 }));
+    d.ingredientes.push(ing("Bolsa", null, "und", 4));
+    const r = recetasParaProduccion([
+      { id: 10, nombre: "Masa de Focaccia V4", detalle: d, por: "jahnn", el: "2026-11-26" },
+      { id: 11, nombre: "Sin conectar", detalle: focaccia(1520), por: null, el: "2026-11-26" },
+    ]);
+    expect(r).toHaveLength(1);
+    expect(r[0]).toMatchObject({ ref: "REC:10", produccion: 4, pesoMasa: 1520, harinaBase: 785.12 });
+    expect(r[0].lineas).toHaveLength(8);
+    expect(r[0].lineas[2]).toEqual({ prod: 3, nombre: "Agua 1", pct: 59.9 });
   });
 });

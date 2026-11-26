@@ -71,6 +71,8 @@ export type Ingrediente = {
   cantidad: number;
   /** Solo en recetas «% panadero»: el % sobre la harina; la cantidad sale de él (lib/recetas-panadero.ts). */
   pct?: number | null;
+  /** Solo en recetas conectadas con Producción: el id del insumo allá (Agua 1 y Agua 2 son el mismo insumo aquí). */
+  prod?: number | null;
 };
 
 export type DetalleReceta = {
@@ -86,7 +88,12 @@ export type DetalleReceta = {
    * Panes y focaccias (26-nov-2026): la receta se escribe en % panadero y el peso de masa de UNA bandeja; los gramos
    * salen solos. Las cantidades de `ingredientes` son las de 1 bandeja. null/ausente = receta normal.
    */
-  panadero?: { pesoMasa: number; piezas: number | null } | null;
+  panadero?: {
+    pesoMasa: number;
+    piezas: number | null;
+    /** Id de la receta en la app de Producción que copia esta (peso y %). null/ausente = sin conectar. */
+    produccion?: number | null;
+  } | null;
 };
 
 export type LecturaPricing = {

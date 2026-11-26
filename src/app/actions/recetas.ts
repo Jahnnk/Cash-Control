@@ -47,7 +47,11 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
   const autor = await quien();
   if (!autor) return { ok: false, error: "Solo dirección." };
   const pan = input.detalle.panadero;
-  const panadero = pan ? { pesoMasa: Number(pan.pesoMasa) || 0, piezas: pan.piezas !== null && pan.piezas !== undefined ? Number(pan.piezas) : null } : null;
+  const panadero = pan ? {
+    pesoMasa: Number(pan.pesoMasa) || 0,
+    piezas: pan.piezas !== null && pan.piezas !== undefined ? Number(pan.piezas) : null,
+    ...(Number(pan.produccion) > 0 ? { produccion: Number(pan.produccion) } : {}),
+  } : null;
   // En % panadero las cantidades se recalculan aquí desde los % (no se confía en las del navegador).
   const detalle: DetalleReceta = aplicarPanadero({
     rendimiento: input.detalle.rendimiento && input.detalle.rendimiento > 0 ? Number(input.detalle.rendimiento) : null,
@@ -55,6 +59,7 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
     ingredientes: (input.detalle.ingredientes ?? []).map((i) => ({
       ref: i.ref, nombre: String(i.nombre ?? "").trim(), unidad: String(i.unidad ?? "").trim().toLowerCase(), cantidad: Number(i.cantidad),
       ...(panadero && Number(i.pct) > 0 ? { pct: Number(i.pct) } : {}),
+      ...(panadero?.produccion && Number(i.prod) > 0 ? { prod: Number(i.prod) } : {}),
     })),
     ...(panadero ? { panadero } : {}),
   });
