@@ -4,9 +4,22 @@
  */
 
 import type { NeonQueryFunction } from "@neondatabase/serverless";
-import { mejorParaInsumo, vigentes, type MejorProveedor, type Oferta, type OrigenInsumo, type ProveedorCompra } from "./proveedores";
+import { mejorParaInsumo, vigentes, type MejorProveedor, type Oferta, type OrigenInsumo, type ProveedorCompra, type ProveedorElegido } from "./proveedores";
 
 type Sql = NeonQueryFunction<false, false>;
+
+/** Proveedor elegido por insumo («origen|SKU»). Sin la tabla (antes de la migración del 26-nov-2026), vacío. */
+export async function leerElegidos(sql: Sql): Promise<Map<string, ProveedorElegido>> {
+  try {
+    const rows = (await sql`
+      SELECT e.origen, e.sku, e.proveedor_id AS "proveedorId", p.nombre AS proveedor, e.motivo, e.nota, e.elegido_por AS por,
+             to_char(e.elegido_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS el
+      FROM insumo_proveedor_elegido e JOIN proveedores p ON p.id = e.proveedor_id`) as (ProveedorElegido & { origen: string; sku: string })[];
+    return new Map(rows.map(({ origen, sku, ...r }) => [`${origen}|${sku.toUpperCase()}`, r]));
+  } catch {
+    return new Map();
+  }
+}
 
 export type EnlaceInsumo = { productoId: number; origen: OrigenInsumo; sku: string; factor: number };
 
@@ -35,11 +48,12 @@ export async function leerOfertas(sql: Sql): Promise<{ proveedores: (ProveedorCo
 
 /** Para cada insumo conectado («origen|SKU»), el mejor precio de proveedor en la unidad del insumo. */
 export async function mejoresPorInsumo(sql: Sql): Promise<Map<string, MejorProveedor & { productoId: number }>> {
-  const [enlaces, { proveedores, ofertas }] = await Promise.all([leerEnlaces(sql), leerOfertas(sql)]);
+  const [enlaces, { proveedores, ofertas }, elegidos] = await Promise.all([leerEnlaces(sql), leerOfertas(sql), leerElegidos(sql)]);
   const res = new Map<string, MejorProveedor & { productoId: number }>();
   for (const e of enlaces) {
-    const m = mejorParaInsumo(ofertas, proveedores, e.productoId, e.origen, e.factor);
-    if (m) res.set(`${e.origen}|${e.sku.toUpperCase()}`, { ...m, productoId: e.productoId });
+    const k = `${e.origen}|${e.sku.toUpperCase()}`;
+    const m = mejorParaInsumo(ofertas, proveedores, e.productoId, e.origen, e.factor, elegidos.get(k)?.proveedorId ?? null);
+    if (m && !res.get(k)?.elegido) res.set(k, { ...m, productoId: e.productoId });
   }
   return res;
 }

@@ -17,7 +17,8 @@ import { claveInsumo, leerArchivados, leerCatalogo, leerPreciosVigentes } from "
 import { ARCHIVO_SISTEMA } from "@/lib/productos/precios-vigentes";
 import type { AporteInsumo } from "@/lib/productos/desglose-insumos";
 import { leerParejas } from "@/lib/insumos-parejas-sql";
-import { leerDondeSeCompra, mejoresPorInsumo, type OfertaInsumo, type ProductoConectado } from "@/lib/proveedores-sql";
+import { leerDondeSeCompra, leerElegidos, mejoresPorInsumo, type OfertaInsumo, type ProductoConectado } from "@/lib/proveedores-sql";
+import type { ProveedorElegido } from "@/lib/proveedores";
 import type { MejorProveedor } from "@/lib/proveedores";
 import { getRentabilidadProductos } from "@/app/actions/productos-panorama";
 import { CAFETERIAS } from "@/lib/productos/cafeterias";
@@ -68,6 +69,8 @@ export type FichaInsumo = {
   presentacion: Presentacion | null;
   /** Los proveedores que lo venden, con su último precio en la unidad del insumo (del más barato al más caro). */
   dondeSeCompra: OfertaInsumo[];
+  /** El proveedor elegido y por qué (26-nov-2026); manda sobre el más barato. null = ninguno. */
+  elegido: ProveedorElegido | null;
   /** Productos de proveedor conectados a este insumo (aunque todavía no tengan precio). */
   productosProveedor: ProductoConectado[];
   /** El mismo insumo en la otra lista (Atelier ↔ cafeterías): comparten categoría, crítico, nombre y presentación. */
@@ -138,7 +141,7 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
            WHERE fecha >= (CURRENT_DATE - INTERVAL '800 days')` as unknown as Promise<{ fecha: string; origen: string; sku: string; nombre: string; precio: number; archivo: string | null }[]>),
       gastoPorInsumo(mesesCerrados(hoy, 3)),
     ]);
-    const donde = await leerDondeSeCompra(sql);
+    const [donde, elegidos] = await Promise.all([leerDondeSeCompra(sql), leerElegidos(sql)]);
 
     const ficha = new Map(fichas.map((f) => [claveInsumo(f.origen, f.sku), f]));
     const conectados = new Set(parejas.filter((p) => p.cc_ref?.trim()).map((p) => p.cc_ref!.trim().toUpperCase()));
@@ -207,6 +210,7 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
           cambio: ultimoCambio(historial),
           presentacion: presentacionDe(f),
           dondeSeCompra: donde.ofertas.get(k) ?? [],
+          elegido: elegidos.get(k) ?? null,
           productosProveedor: donde.conectados.get(k) ?? [],
           revisado: f?.revisado_el ? { el: f.revisado_el, por: f.revisado_por ?? '' } : null,
           pareja: (() => {

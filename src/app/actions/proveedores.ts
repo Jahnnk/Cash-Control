@@ -12,9 +12,9 @@ import { neon } from "@neondatabase/serverless";
 import { getSessionRole, puedeLeerDireccion } from "@/lib/session-access";
 import { getToday } from "@/lib/utils";
 import { leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
-import { claveNombre, factorInsumo, mejorParaInsumo, nombreBonito, precioDesdeCompra, sedesDesdeNombres, type OrigenInsumo, type UnidadInsumo } from "@/lib/proveedores";
+import { claveNombre, factorInsumo, mejorParaInsumo, nombreBonito, precioDesdeCompra, sedesDesdeNombres, type OrigenInsumo, type ProveedorElegido, type UnidadInsumo } from "@/lib/proveedores";
 import { comprasCaja, controlCajaConfigurado, proveedoresCaja } from "@/lib/control-caja";
-import { leerEnlaces, leerOfertas, type EnlaceInsumo } from "@/lib/proveedores-sql";
+import { leerElegidos, leerEnlaces, leerOfertas, type EnlaceInsumo } from "@/lib/proveedores-sql";
 import { guardarPrecioInsumo } from "./precios-insumos";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -69,6 +69,8 @@ export type DatosProveedores = {
   puedeCambiarRecetas: boolean;
   insumos: InsumoReceta[];
   enlaces: EnlaceInsumo[];
+  /** Proveedor elegido por insumo («origen|SKU», 26-nov-2026): manda sobre el más barato. */
+  elegidos: Record<string, ProveedorElegido>;
   /** Última vez que se trajeron proveedores y compras de Control de Caja. null = nunca. */
   sincronizado: { el: string; nuevosProveedores: number; nuevosPrecios: number } | null;
   proveedores: Proveedor[];
@@ -104,7 +106,7 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
   const s = await sesion();
   if (!s) return SIN_ACCESO;
   try {
-    const [provs, prods, precios, { vigentes: insumosVig }, enlaces, sync] = await Promise.all([
+    const [provs, prods, precios, { vigentes: insumosVig }, enlaces, sync, elegidos] = await Promise.all([
       sql`SELECT id, nombre, tipo, rubro, contacto, telefono, telefono2, email, direccion, ciudad, notas, sedes,
                  costo_envio::float AS "costoEnvio", pedido_minimo::float AS "pedidoMinimo",
                  COALESCE(actualizado_por, creado_por) AS "actualizadoPor", caja_id IS NOT NULL AS "deCaja",
@@ -120,6 +122,7 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
       leerPreciosVigentes(sql),
       leerEnlaces(sql),
       leerSync(),
+      leerElegidos(sql),
     ]);
     return {
       ok: true,
@@ -128,6 +131,7 @@ export async function getProveedores(): Promise<R<{ datos: DatosProveedores }>> 
         hoy: getToday(), sedeId: 0, puedeEditar: s.direccion, puedeCambiarRecetas: s.direccion,
         insumos: insumosVig.map((v) => ({ origen: v.origen, sku: v.sku, nombre: v.nombre, unidad: v.unidad, precio: v.precio })),
         enlaces,
+        elegidos: Object.fromEntries(elegidos),
         sincronizado: sync,
         proveedores: provs as Proveedor[], productos: prods as ProductoComparable[], precios: precios as PrecioRegistrado[],
       },
@@ -187,8 +191,8 @@ export async function usarPrecioEnRecetas(input: { productoId: number; origen: O
   try {
     const e = (await leerEnlaces(sql)).find((x) => x.productoId === input.productoId && x.origen === input.origen);
     if (!e) return { ok: false, error: "Ese producto no está conectado con un insumo." };
-    const { proveedores, ofertas } = await leerOfertas(sql);
-    const mejor = mejorParaInsumo(ofertas, proveedores, e.productoId, e.origen, e.factor);
+    const [{ proveedores, ofertas }, elegidos] = await Promise.all([leerOfertas(sql), leerElegidos(sql)]);
+    const mejor = mejorParaInsumo(ofertas, proveedores, e.productoId, e.origen, e.factor, elegidos.get(`${e.origen}|${e.sku.toUpperCase()}`)?.proveedorId ?? null);
     if (!mejor) return { ok: false, error: "Ningún proveedor de esas sedes tiene precio para este producto." };
     const r = await guardarPrecioInsumo({ origen: e.origen, sku: e.sku, precio: mejor.precioInsumo });
     if (!r.ok) return r;

@@ -155,3 +155,23 @@ describe("análisis de compras para la dirección", () => {
     expect(p[0].pct).toBe(20);
   });
 });
+
+describe("proveedor elegido (26-nov-2026: uno más caro, elegido por calidad)", () => {
+  const provs = [
+    { id: 1, nombre: "Proveedor A", costoEnvio: null, pedidoMinimo: null, sedes: [1, 2, 3] },
+    { id: 2, nombre: "Proveedor B", costoEnvio: null, pedidoMinimo: null, sedes: [1, 2, 3] },
+  ];
+  const ofertas = [
+    { proveedorId: 1, productoId: 9, presentacion: "1 kg", cantidad: 1, precio: 10, fecha: "2026-11-26" },
+    { proveedorId: 2, productoId: 9, presentacion: "1 kg", cantidad: 1, precio: 12, fecha: "2026-11-26" },
+  ];
+  it("sin elegido, el más barato", () => {
+    expect(mejorParaInsumo(ofertas, provs, 9, "Atelier", 1)).toMatchObject({ proveedor: "Proveedor A", precioInsumo: 10 });
+  });
+  it("con elegido, manda aunque sea más caro", () => {
+    expect(mejorParaInsumo(ofertas, provs, 9, "Atelier", 1, 2)).toMatchObject({ proveedor: "Proveedor B", precioInsumo: 12, elegido: true });
+  });
+  it("si el elegido no tiene precio, vuelve al más barato", () => {
+    expect(mejorParaInsumo(ofertas.slice(0, 1), provs, 9, "Atelier", 1, 2)).toMatchObject({ proveedor: "Proveedor A" });
+  });
+});

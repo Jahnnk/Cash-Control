@@ -19,7 +19,7 @@ import { getSessionRole } from "@/lib/session-access";
 import { claveInsumo, leerArchivados, leerPreciosVigentes } from "@/lib/catalogo-costos-sql";
 import { leerParejas } from "@/lib/insumos-parejas-sql";
 import { leerEnlaces } from "@/lib/proveedores-sql";
-import { SEDES_DE_ORIGEN, factorInsumo, nombreBonito, unidadDesdeInsumo, type OrigenInsumo } from "@/lib/proveedores";
+import { MOTIVOS_ELEGIDO, SEDES_DE_ORIGEN, factorInsumo, nombreBonito, unidadDesdeInsumo, type OrigenInsumo } from "@/lib/proveedores";
 import { PARECIDO_POSIBLE, PARECIDO_SEGURO, factorSeguro, masParecidos } from "@/lib/insumos-ficha";
 
 const sql = neon(process.env.DATABASE_URL!);
@@ -148,6 +148,53 @@ export async function desconectarProductoInsumo(input: { productoId: number; ori
     return { ok: true };
   } catch (e) {
     console.error("[desconectarProductoInsumo]", e);
+    return { ok: false, error: "No se pudo quitar. Intenta de nuevo." };
+  }
+}
+
+/**
+ * Proveedor elegido para un insumo (y su pareja de la otra lista), con el motivo (26-nov-2026: a veces se elige uno
+ * más caro por calidad). Desde entonces ese proveedor manda sobre el más barato al sugerir el
+ * precio de Recetas. No cambia el precio de las recetas: eso sigue siendo «Usar este precio».
+ */
+export async function elegirProveedorInsumo(input: { origen: string; sku: string; proveedorId: number; motivo: string; nota?: string | null }): Promise<R> {
+  const quien = await direccion();
+  if (!quien) return { ok: false, error: "Solo dirección." };
+  if (!(input.motivo in MOTIVOS_ELEGIDO)) return { ok: false, error: "Elige el motivo." };
+  const nota = typeof input.nota === "string" && input.nota.trim() ? input.nota.trim().slice(0, 200) : null;
+  try {
+    const prov = (await sql`SELECT id FROM proveedores WHERE id = ${input.proveedorId} AND activo`) as { id: number }[];
+    if (!prov[0]) return { ok: false, error: "No encontré ese proveedor." };
+    const ip = await insumoYPareja(input.origen, input.sku);
+    if (!ip) return { ok: false, error: "No encontré ese insumo." };
+    for (const x of [ip.v, ip.p]) {
+      if (!x) continue;
+      await sql`INSERT INTO insumo_proveedor_elegido (origen, sku, proveedor_id, motivo, nota, elegido_por)
+                VALUES (${x.origen}, ${x.sku}, ${input.proveedorId}, ${input.motivo}, ${nota}, ${quien})
+                ON CONFLICT (origen, sku) DO UPDATE SET proveedor_id = EXCLUDED.proveedor_id, motivo = EXCLUDED.motivo, nota = EXCLUDED.nota,
+                  elegido_por = EXCLUDED.elegido_por, elegido_el = now()`;
+    }
+    revalidatePath("/grupo/insumos");
+    revalidatePath("/grupo/precios-compra");
+    return { ok: true };
+  } catch (e) {
+    console.error("[elegirProveedorInsumo]", e);
+    const falta = /insumo_proveedor_elegido.*does not exist/i.test(e instanceof Error ? e.message : String(e));
+    return { ok: false, error: falta ? "Falta crear la tabla del proveedor elegido (migración pendiente)." : "No se pudo guardar. Intenta de nuevo." };
+  }
+}
+
+export async function quitarProveedorElegido(input: { origen: string; sku: string }): Promise<R> {
+  if (!(await direccion())) return { ok: false, error: "Solo dirección." };
+  try {
+    const ip = await insumoYPareja(input.origen, input.sku);
+    if (!ip) return { ok: false, error: "No encontré ese insumo." };
+    for (const x of [ip.v, ip.p]) if (x) await sql`DELETE FROM insumo_proveedor_elegido WHERE origen = ${x.origen} AND sku = ${x.sku}`;
+    revalidatePath("/grupo/insumos");
+    revalidatePath("/grupo/precios-compra");
+    return { ok: true };
+  } catch (e) {
+    console.error("[quitarProveedorElegido]", e);
     return { ok: false, error: "No se pudo quitar. Intenta de nuevo." };
   }
 }

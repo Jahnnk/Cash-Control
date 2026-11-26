@@ -14,7 +14,7 @@ import {
 import { desconectarInsumo, usarPrecioEnRecetas, type DatosProveedores, type Proveedor, type ProductoComparable, type PrecioRegistrado } from "@/app/actions/proveedores";
 import { useToast } from "@/components/toast-provider";
 import {
-  SEDES, plural, compararProducto, mejorParaInsumo, enlaceTelefono, enlaceWhatsApp, vigentes, type ProveedorCompra,
+  SEDES, plural, compararProducto, mejorParaInsumo, MOTIVOS_ELEGIDO, enlaceTelefono, enlaceWhatsApp, vigentes, type ProveedorCompra,
 } from "@/lib/proveedores";
 
 const soles = (n: number, dec = 2) => `S/ ${n.toLocaleString("es-PE", { minimumFractionDigits: dec, maximumFractionDigits: dec })}`;
@@ -347,7 +347,8 @@ function EnRecetas({ producto, datos, onConectar, onCambio }: { producto: Produc
       {enlaces.map((e) => {
         const ins = datos.insumos.find((i) => i.origen === e.origen && i.sku === e.sku);
         if (!ins) return null;
-        const mejor = mejorParaInsumo(ofertasTodas, provs, producto.id, e.origen, e.factor);
+        const elegido = datos.elegidos?.[`${e.origen}|${e.sku.toUpperCase()}`] ?? null;
+        const mejor = mejorParaInsumo(ofertasTodas, provs, producto.id, e.origen, e.factor, elegido?.proveedorId ?? null);
         const dif = mejor && ins.precio > 0 ? ((mejor.precioInsumo - ins.precio) / ins.precio) * 100 : null;
         const distinto = dif !== null && Math.abs(dif) >= 0.5;
         return (
@@ -359,7 +360,7 @@ function EnRecetas({ producto, datos, onConectar, onCambio }: { producto: Produc
                   <span className="font-semibold">Recetas · {e.origen === "Atelier" ? "Atelier" : "cafeterías"}:</span> {ins.nombre} cuesta{" "}
                   <b className="whitespace-nowrap">{solesUnidad(ins.precio)}</b> por {ins.unidad}.
                   {mejor ? (
-                    <> Mejor proveedor: <b className="whitespace-nowrap">{solesUnidad(mejor.precioInsumo)}</b> ({mejor.proveedor})
+                    <> {mejor.elegido ? `Proveedor elegido (${MOTIVOS_ELEGIDO[elegido!.motivo].toLowerCase()}):` : "Mejor proveedor:"} <b className="whitespace-nowrap">{solesUnidad(mejor.precioInsumo)}</b> ({mejor.proveedor})
                       {distinto && <span className={dif! < 0 ? " font-semibold text-emerald-700" : " font-semibold text-red-700"}> {pct(dif!)}</span>}.</>
                   ) : <> Aún sin precio de un proveedor de {e.origen === "Atelier" ? "Atelier" : "las cafeterías"}.</>}
                 </span>
