@@ -206,6 +206,7 @@ export function RecetasClient() {
           catalogo={cat.efectivo}
           archivados={cat.archivados}
           onCerrar={() => setBorrador(null)}
+          onPrecioGuardado={() => { void getPreciosVenta().then((p) => { if (p.ok) setPrecios(p.precios); }); }}
           onGuardada={() => { setBorrador(null); void cargar(); }}
         />
       )}

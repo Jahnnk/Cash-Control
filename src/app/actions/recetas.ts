@@ -115,7 +115,7 @@ export async function eliminarReceta(id: number): Promise<{ ok: true } | { ok: f
 }
 
 /** Precios de venta guardados de un producto de Atelier (los que falten se muestran como sugeridos). */
-export type PreciosVenta = { b2b?: number; interno?: number; carta?: number };
+export type PreciosVenta = { b2b?: number; interno?: number; carta?: number; /** Ref en la carta, para cambiar interno y carta. */ cartaRef?: string };
 
 /**
  * Precios de venta por ref de receta (25-nov-2026, «Ruta de precios»): B2B de precios_b2b; interno y carta de
@@ -138,7 +138,7 @@ export async function getPreciosVenta(): Promise<{ ok: true; precios: Record<str
       // Primero la receta enlazada: los productos nuevos de Atelier también empiezan con AT- (AT-S001).
       const ref = recetaDe.get(c.ref) ?? (c.ref.startsWith("AT-") ? c.ref : undefined);
       if (!ref) continue;
-      poner(ref, { ...(c.costo > 0 ? { interno: c.costo } : {}), ...(c.precio && c.precio > 0 ? { carta: c.precio } : {}) });
+      poner(ref, { cartaRef: c.ref, ...(c.costo > 0 ? { interno: c.costo } : {}), ...(c.precio && c.precio > 0 ? { carta: c.precio } : {}) });
     }
     return { ok: true, precios: out };
   } catch (e) {

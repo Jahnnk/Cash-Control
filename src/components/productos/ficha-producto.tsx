@@ -3,7 +3,8 @@
 /**
  * Ficha única de producto (fase 1 de «unificar pricing e ingeniería de menú», 25-nov-2026). La misma ventana se
  * abre desde Recetas y costos, Productos (matriz de la carta) y Dirección → Precios: ruta de precios, su lugar en
- * la matriz y su receta. Solo mira: cada dato se cambia en su pantalla («Editar receta» lleva a Recetas y costos).
+ * la matriz y su receta. Los precios de venta se cambian aquí mismo, en la ruta (fase 2); la receta, con «Editar
+ * receta» (lleva a Recetas y costos); los insumos, en Insumos y packaging.
  */
 
 import { useEffect, useState } from "react";
@@ -11,7 +12,8 @@ import Link from "next/link";
 import { Loader2, Pencil, X } from "lucide-react";
 import { getFichaProducto, type DatosFicha } from "@/app/actions/ficha-producto";
 import { getMenuDeProducto, type MenuDeProducto } from "@/app/actions/productos-panorama";
-import { RutaPreciosAtelier, RutaPreciosCafeteria, type PrecioRuta } from "@/components/productos/ruta-precios";
+import { RutaPreciosAtelier, RutaPreciosCafeteria, type GuardarPrecio, type PrecioRuta } from "@/components/productos/ruta-precios";
+import { guardarPrecioVenta } from "@/app/actions/carta";
 import { sugeridoCafeteria, sugeridosAtelier } from "@/lib/precios-sugeridos";
 import { CUADRANTES, type Cuadrante } from "@/lib/productos/matriz-carta";
 import { Pastilla } from "@/components/productos/ui";
@@ -78,7 +80,12 @@ export function FichaProducto({ cartaRef = null, recetaRef = null, nombreByte = 
             : !ficha ? <div className="flex justify-center py-10 text-gray-400"><Loader2 className="h-5 w-5 animate-spin" /></div>
             : (
               <>
-                <Ruta f={ficha} />
+                <Ruta f={ficha} onGuardar={ficha.puedeEditar ? async (campo, precio) => {
+                  const r = await guardarPrecioVenta({ campo, precio, cartaRef: ficha.cartaRef, b2bRef: ficha.b2bRef });
+                  if (!r.ok) return r.error;
+                  setFicha((f) => f && { ...f, precios: { ...f.precios, [campo]: precio } });
+                  return null;
+                } : undefined} />
                 <Matriz f={ficha} menu={menu} error={errorMenu} />
                 <Receta f={ficha} />
               </>
@@ -86,7 +93,7 @@ export function FichaProducto({ cartaRef = null, recetaRef = null, nombreByte = 
         </div>
 
         <div className="flex flex-wrap items-center justify-between gap-2 border-t border-gray-100 px-4 py-4 sm:px-6">
-          <p className="text-[11px] text-gray-500">Solo para ver. Los precios de insumos se cambian en Insumos y packaging; la receta y los precios de venta, en Recetas y costos.</p>
+          <p className="text-[11px] text-gray-500">Los precios de venta se cambian aquí, en la ruta. La receta, con «Editar receta». Los precios de insumos, en Insumos y packaging.</p>
           <div className="flex gap-2">
             <button onClick={onCerrar} className="rounded-lg px-4 py-2 text-sm text-gray-600 hover:bg-gray-50">Cerrar</button>
             {ficha?.recetaRef && (onEditarReceta
@@ -99,15 +106,16 @@ export function FichaProducto({ cartaRef = null, recetaRef = null, nombreByte = 
   );
 }
 
-function Ruta({ f }: { f: DatosFicha }) {
+function Ruta({ f, onGuardar }: { f: DatosFicha; onGuardar?: GuardarPrecio }) {
   if (f.costo === null) {
     return <p className="rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-xs text-amber-800">Sin costo: no se puede armar la ruta de precios. Revisa su receta en Recetas y costos.</p>;
   }
   if (f.origen === "Cafetería") {
-    return <RutaPreciosCafeteria costo={f.costo} carta={ruta(f.precios.carta, sugeridoCafeteria(f.costo))} />;
+    return <RutaPreciosCafeteria costo={f.costo} carta={ruta(f.precios.carta, sugeridoCafeteria(f.costo))} onGuardar={f.cartaRef ? onGuardar : undefined} />;
   }
   const s = sugeridosAtelier(f.costo, f.precios.interno);
-  return <RutaPreciosAtelier costo={f.costo} interno={ruta(f.precios.interno, s.interno)} carta={ruta(f.precios.carta, s.carta)} b2b={ruta(f.precios.b2b, s.b2b)} />;
+  return <RutaPreciosAtelier costo={f.costo} interno={ruta(f.precios.interno, s.interno)} carta={ruta(f.precios.carta, s.carta)} b2b={ruta(f.precios.b2b, s.b2b)}
+    editables={{ interno: !!f.cartaRef, carta: !!f.cartaRef, b2b: !!f.b2bRef }} onGuardar={onGuardar} />;
 }
 
 function Matriz({ f, menu, error }: { f: DatosFicha; menu: MenuDeProducto | null; error: string | null }) {

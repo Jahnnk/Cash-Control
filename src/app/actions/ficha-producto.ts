@@ -33,6 +33,10 @@ export type DatosFicha = {
   /** Costo por unidad: en Atelier, sus insumos; en la cafetería, su receta. null = sin costo. */
   costo: number | null;
   precios: { interno: number | null; carta: number | null; b2b: number | null };
+  /** Dónde se guarda su precio B2B (la receta del Excel si la del sistema la reemplaza). null = no aplica. */
+  b2bRef: string | null;
+  /** Dirección puede cambiar los precios desde la ruta (fase 2); la llave de solo lectura, no. */
+  puedeEditar: boolean;
   rendimiento: number | null;
   merma: number;
   ingredientes: LineaFicha[];
@@ -121,6 +125,8 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
         origen: deAtelier ? "Atelier" : "Cafetería",
         seccion: carta?.seccion ?? null,
         cartaRef: carta?.ref ?? null,
+        b2bRef: deAtelier ? (receta ? receta.reemplaza ?? receta.ref : carta?.ref ?? null) : null,
+        puedeEditar: role?.kind === "full",
         recetaRef: receta?.ref ?? null,
         costo,
         precios,
