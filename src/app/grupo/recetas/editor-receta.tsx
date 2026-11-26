@@ -20,6 +20,7 @@ import { CamposPrecio, EditarInsumo } from "./insumo-en-receta";
 import { RutaPreciosAtelier, type PrecioRuta } from "@/components/productos/ruta-precios";
 import { sugeridosAtelier } from "@/lib/precios-sugeridos";
 import type { PreciosVenta } from "@/app/actions/recetas";
+import { guardarPrecioVenta } from "@/app/actions/carta";
 import { comprasPara, precioPorBase, type PrecioCompra } from "@/lib/precio-compra";
 
 /** Lo que abre el editor. */
@@ -37,7 +38,9 @@ type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: str
 
 const UNIDADES: Record<CostoPreparacion["unidad"], string[]> = { kg: ["g", "kg"], l: ["ml", "l"], und: ["und"] };
 
-export function EditorReceta({ borrador, catalogo, archivados = [], precios, onCerrar, onGuardada }: {
+export function EditorReceta({ borrador, catalogo, archivados = [], precios: preciosIniciales, onCerrar, onGuardada, onPrecioGuardado }: {
+  /** Avisa a la lista que un precio de venta cambió (para no recargar todo). */
+  onPrecioGuardado?: () => void;
   /** Precios de venta guardados de este producto (los que falten salen sugeridos). */
   precios?: PreciosVenta;
   /** SKUs de insumos archivados: no se ofrecen para agregar (24-nov-2026). */
@@ -54,6 +57,10 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios, onC
   const [rendimiento, setRendimiento] = useState(borrador.detalle.rendimiento ? String(borrador.detalle.rendimiento) : "");
   const [merma, setMerma] = useState(borrador.detalle.merma ? String(Math.round(borrador.detalle.merma * 1000) / 10) : "");
   const [busy, setBusy] = useState<"guardando" | "borrando" | null>(null);
+  // Precios de venta: se cambian aquí mismo en la ruta (fase 2, 25-nov-2026).
+  const [precios, setPrecios] = useState<PreciosVenta | undefined>(preciosIniciales);
+  // El B2B va en la receta del Excel si esta la reemplaza; si no, en la receta del sistema.
+  const b2bRef = borrador.reemplaza?.ref ?? (borrador.id !== null ? refDeReceta(borrador.id) : null);
   // Insumos creados aquí mismo (faltaba uno al editar, 25-nov-2026): se suman a la lista sin recargar.
   const [creados, setCreados] = useState<CostoPreparacion[]>([]);
   const [nuevo, setNuevo] = useState<{ fila: number; nombre: string; precio: PrecioCompra } | null>(null);
@@ -363,7 +370,15 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios, onC
             )}
           </div>
           {sug && c.costo !== null && (
-            <RutaPreciosAtelier costo={c.costo} interno={ruta(precios?.interno, sug.interno)} carta={ruta(precios?.carta, sug.carta)} b2b={ruta(precios?.b2b, sug.b2b)} />
+            <RutaPreciosAtelier costo={c.costo} interno={ruta(precios?.interno, sug.interno)} carta={ruta(precios?.carta, sug.carta)} b2b={ruta(precios?.b2b, sug.b2b)}
+              editables={{ interno: !!precios?.cartaRef, carta: !!precios?.cartaRef, b2b: !!b2bRef }}
+              onGuardar={async (campo, precio) => {
+                const r = await guardarPrecioVenta({ campo, precio, cartaRef: precios?.cartaRef ?? null, b2bRef });
+                if (!r.ok) return r.error;
+                setPrecios((p) => ({ ...p, [campo]: precio }));
+                onPrecioGuardado?.();
+                return null;
+              }} />
           )}
           {c.faltantes.length > 0 && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">

@@ -11,7 +11,7 @@
 
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
-import { requireFullSession } from "@/lib/session-access";
+import { getSessionRole, requireFullSession } from "@/lib/session-access";
 import { leerCambiosCarta, leerCartaConCostos } from "@/lib/carta-sql";
 import { marcaDe, precioValido, type MarcaSistema } from "@/lib/productos/carta-sistema";
 import { claveByte, enlazarCosto } from "@/lib/productos/costos-carta";
@@ -135,6 +135,50 @@ export async function guardarCambioCarta(input: { ref: string; precio: number | 
   revalidatePath("/grupo/direccion");
   revalidatePath("/grupo/productos");
   return { ok: true };
+}
+
+/**
+ * Cambia UN precio de venta desde la ruta de precios (fase 2 de «unificar pricing», 25-nov-2026): el interno o
+ * el de carta en la carta de las cafeterías (sin tocar lo demás que ya estaba cambiado), o el B2B en precios_b2b.
+ * Vale desde ya en todo el sistema (Recetas, Productos, Precios). Solo dirección.
+ */
+export async function guardarPrecioVenta(input: {
+  campo: "interno" | "carta" | "b2b";
+  /** Para interno y carta: el producto en la carta. */
+  cartaRef?: string | null;
+  /** Para B2B: la receta de Atelier (la del Excel si la versión del sistema la reemplaza). */
+  b2bRef?: string | null;
+  precio: number;
+}): Promise<{ ok: true } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const precio = Math.round(Number(input?.precio) * 100) / 100;
+  if (!precioValido(precio)) return { ok: false, error: "Escribe un precio mayor que cero." };
+  if (input.campo === "b2b") {
+    const ref = typeof input.b2bRef === "string" ? input.b2bRef.trim().slice(0, 40) : "";
+    if (!ref) return { ok: false, error: "Falta la receta del producto." };
+    const quien = role.nombre ?? (role.quien === "kelly" ? "Kelly" : "Jahnn");
+    try {
+      await sql`
+        INSERT INTO precios_b2b (ref, precio, actualizado_por) VALUES (${ref}, ${precio}, ${quien})
+        ON CONFLICT (ref) DO UPDATE SET precio = EXCLUDED.precio, actualizado_por = EXCLUDED.actualizado_por, actualizado_el = now()`;
+    } catch (e) {
+      console.error("[guardarPrecioVenta:b2b]", e);
+      return { ok: false, error: "No se pudo guardar el precio B2B." };
+    }
+    revalidatePath("/grupo/recetas");
+    return { ok: true };
+  }
+  if (input.campo !== "interno" && input.campo !== "carta") return { ok: false, error: "Precio inválido." };
+  const ref = typeof input.cartaRef === "string" ? input.cartaRef.trim() : "";
+  if (!ref) return { ok: false, error: "No está en la carta: agrégalo en Carta de las cafeterías." };
+  const anterior = (await leerCambiosCarta(sql)).find((c) => c.ref === ref);
+  return guardarCambioCarta({
+    ref,
+    precio: input.campo === "carta" ? precio : anterior?.precio ?? null,
+    costo: input.campo === "interno" ? precio : anterior?.costo ?? null,
+    seccion: anterior?.seccion ?? null,
+  });
 }
 
 export type OpcionesAlta = {
