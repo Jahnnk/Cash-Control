@@ -43,7 +43,9 @@ const gramos = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits:
 
 const UNIDADES: Record<CostoPreparacion["unidad"], string[]> = { kg: ["g", "kg"], l: ["ml", "l"], und: ["und"] };
 
-export function EditorReceta({ borrador, catalogo, archivados = [], precios: preciosIniciales, onCerrar, onGuardada, onPrecioGuardado }: {
+export function EditorReceta({ borrador, catalogo, archivados = [], precios: preciosIniciales, onCerrar, onGuardada, onPrecioGuardado, sede = "atelier" }: {
+  /** De quién es la receta (26-nov-2026): Atelier o las cafeterías (sin ruta de precios de Atelier ni % panadero). */
+  sede?: "atelier" | "cafeterias";
   /** Avisa a la lista que un precio de venta cambió (para no recargar todo). */
   onPrecioGuardado?: () => void;
   /** Precios de venta guardados de este producto (los que falten salen sugeridos). */
@@ -57,6 +59,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   onGuardada: () => void;
 }) {
   const { showToast } = useToast();
+  const origen = sede === "cafeterias" ? "Cafetería" as const : "Atelier" as const;
   const [nombre, setNombre] = useState(borrador.nombre);
   const [tipo, setTipo] = useState(borrador.tipo);
   const [rendimiento, setRendimiento] = useState(borrador.detalle.rendimiento ? String(borrador.detalle.rendimiento) : "");
@@ -117,7 +120,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
     if (!base) { setErrorNuevo(nuevo.precio.compra === "g" ? "Escribe cuántos g trae y su precio." : "Escribe un precio mayor que cero."); return; }
     setCreando(true);
     setErrorNuevo(null);
-    const r = await crearInsumoNuevo({ origen: "Atelier", nombre: nuevo.nombre, unidad: base.unidad, precio: base.precio });
+    const r = await crearInsumoNuevo({ origen, nombre: nuevo.nombre, unidad: base.unidad, precio: base.precio });
     setCreando(false);
     if (!r.ok) { setErrorNuevo(r.error); return; }
     const item: CostoPreparacion = { ref: r.insumo.sku, tipo: "insumo", nombre: r.insumo.nombre, categoria: "Insumos nuevos", unidad: r.insumo.unidad as CostoPreparacion["unidad"], costo: r.insumo.precio };
@@ -166,11 +169,11 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   async function guardar() {
     setBusy("guardando");
     const r = await guardarReceta({
-      id: borrador.id, nombre, tipo, categoria: borrador.categoria, detalle, reemplaza: excel?.ref ?? null,
+      id: borrador.id, nombre, tipo, categoria: borrador.categoria, detalle, reemplaza: excel?.ref ?? null, sede,
     });
     setBusy(null);
     if (!r.ok) { showToast(r.error, "error"); return; }
-    showToast(`"${nombre.trim()}" guardada: ya se usa en las mermas.`, "success");
+    showToast(sede === "cafeterias" ? `"${nombre.trim()}" guardada: ya cuenta en la carta.` : `"${nombre.trim()}" guardada: ya se usa en las mermas.`, "success");
     onGuardada();
   }
 
@@ -181,7 +184,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
       : `¿Borrar la receta "${nombre}"? Las mermas ya registradas no cambian.`;
     if (!window.confirm(msg)) return;
     setBusy("borrando");
-    const r = await eliminarReceta(borrador.id);
+    const r = await eliminarReceta(borrador.id, sede);
     setBusy(null);
     if (!r.ok) { showToast(r.error, "error"); return; }
     showToast(excel ? "Se volvió a la receta del Excel." : "Receta borrada.", "success");
@@ -230,6 +233,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
             </div>
           </div>
 
+          {sede !== "cafeterias" && (
           <div className="rounded-xl border border-gray-200 px-4 py-3 space-y-3">
             <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
               <input type="checkbox" checked={pan} onChange={(e) => setPan(e.target.checked)} className="mt-0.5" />
@@ -266,6 +270,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
               </div>
             )}
           </div>
+          )}
 
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
@@ -333,7 +338,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                             <div className="text-[10px] text-primary mt-0.5 px-0.5">
                               {TIPO_COSTO[f.item.tipo]} · {soles4(f.item.costo)} por {f.item.unidad}
                               {f.item.tipo === "insumo" && (
-                                <>{" · "}<EditarInsumo key={`${f.item.ref}-${f.item.nombre}-${f.item.costo}`} item={f.item} origen="Atelier" onGuardado={(c) => alEditar(f.item!.ref, c)} /></>
+                                <>{" · "}<EditarInsumo key={`${f.item.ref}-${f.item.nombre}-${f.item.costo}`} item={f.item} origen={origen} onGuardado={(c) => alEditar(f.item!.ref, c)} /></>
                               )}
                             </div>
                           ) : f.texto.trim() ? (
@@ -405,7 +410,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
 
             {nuevo && (
               <div className="mt-3 rounded-xl border border-primary/30 bg-emerald-50/40 p-3 space-y-2">
-                <div className="text-sm font-semibold text-gray-900">Insumo o packaging nuevo de Atelier</div>
+                <div className="text-sm font-semibold text-gray-900">Insumo o packaging nuevo {sede === "cafeterias" ? "de las cafeterías" : "de Atelier"}</div>
                 <p className="text-[11px] text-gray-500">Queda en Grupo → Insumos y packaging y sirve para todas las recetas. El precio es por la unidad de compra.</p>
                 <div className="grid gap-2 sm:grid-cols-[1fr_auto_auto_auto]">
                   <label className="text-[11px] text-gray-500">Nombre
@@ -481,7 +486,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
               </div>
             )}
           </div>
-          {sug && c.costo !== null && (
+          {sede !== "cafeterias" && sug && c.costo !== null && (
             <RutaPreciosAtelier costo={c.costo} interno={ruta(precios?.interno, sug.interno)} carta={ruta(precios?.carta, sug.carta)} b2b={rutaB2B(precios?.b2bByte, precios?.b2b, sug.b2b)}
               editables={{ interno: !!precios?.cartaRef, carta: !!precios?.cartaRef, b2b: !!b2bRef }}
               onGuardar={async (campo, precio) => {

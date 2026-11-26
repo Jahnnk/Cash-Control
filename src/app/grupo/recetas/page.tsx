@@ -4,6 +4,7 @@ import { CartaCafeterias } from "./carta-cafeterias";
 import { BotonExcelCarta } from "./boton-excel-carta";
 import { ProduccionVsExcel } from "./produccion-vs-excel";
 import { NuevaReceta } from "./nueva-receta";
+import { RecetasCafeteria } from "./recetas-cafeteria";
 
 /**
  * Grupo → Recetas y costos (solo dirección: el middleware bloquea /grupo a
@@ -18,7 +19,7 @@ export default function RecetasPage() {
         <div>
         <h1 className="text-2xl font-bold text-gray-900">Recetas y costos</h1>
         <p className="text-sm text-gray-500 mt-1">
-          La carta de las cafeterías y las recetas de Atelier. Lo que cambias aquí vale sin volver a subir el Excel.
+          La carta de las cafeterías, las recetas de Atelier y las de las cafeterías. Lo que cambias aquí vale sin volver a subir el Excel.
         </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -36,6 +37,7 @@ export default function RecetasPage() {
       </Link>
       <CartaCafeterias />
       <RecetasClient />
+      <RecetasCafeteria />
       <ProduccionVsExcel />
     </div>
   );

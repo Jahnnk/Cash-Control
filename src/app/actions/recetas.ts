@@ -10,7 +10,8 @@ import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole } from "@/lib/session-access";
 import { leerCatalogo, type Catalogo } from "@/lib/catalogo-costos-sql";
-import { leerCarta, leerCambiosCarta } from "@/lib/carta-sql";
+import { leerCarta, leerCambiosCarta, leerCatalogoCafeteria, type CatalogoCafeteria } from "@/lib/carta-sql";
+import { CAFETERIAS } from "@/lib/recetas-cafeteria";
 import { leerPreciosB2BByte } from "@/lib/productos/precio-b2b-byte-sql";
 import type { PrecioB2BByte } from "@/lib/productos/precio-b2b-byte";
 import { aplicarPanadero, idsProduccion } from "@/lib/recetas-panadero";
@@ -32,7 +33,24 @@ export async function getRecetas(): Promise<{ ok: true; catalogo: Catalogo } | {
   return { ok: true, catalogo: await leerCatalogo(sql, ATELIER) };
 }
 
+/** Recetas de las cafeterías (26-nov-2026): la lista de costos de Fonavi y Centro con sus recetas. */
+export async function getRecetasCafeteria(): Promise<{ ok: true; catalogo: CatalogoCafeteria } | { ok: false; error: string }> {
+  if (!(await quien())) return { ok: false, error: "Solo dirección." };
+  try {
+    return { ok: true, catalogo: await leerCatalogoCafeteria(sql) };
+  } catch (e) {
+    console.error("[getRecetasCafeteria]", e);
+    return { ok: false, error: "No se pudieron leer las recetas de las cafeterías." };
+  }
+}
+
+/** De quién es la receta: Atelier o las cafeterías (Fonavi y Centro comparten recetas). */
+export type SedeReceta = "atelier" | "cafeterias";
+const bIdDe = (sede: SedeReceta | undefined) => (sede === "cafeterias" ? CAFETERIAS : ATELIER);
+
 export type RecetaInput = {
+  /** Por defecto Atelier. */
+  sede?: SedeReceta;
   /** null = receta nueva. */
   id: number | null;
   nombre: string;
@@ -67,21 +85,31 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
   const errores = erroresDeReceta({ nombre: input.nombre ?? "", tipo: input.tipo, detalle });
   if (errores.length > 0) return { ok: false, error: errores[0] };
 
-  const { excel, recetas, insumosSistema } = await leerCatalogo(sql, ATELIER);
-  const refs = new Set([...excel.map((i) => i.ref), ...insumosSistema.map((i) => i.ref), ...recetas.map((r) => refDeReceta(r.id))]);
+  const bId = bIdDe(input.sede);
+  let refs: Set<string>;
+  let reemplazables: Set<string>;
+  if (bId === CAFETERIAS) {
+    const c = await leerCatalogoCafeteria(sql);
+    refs = new Set([...c.base.map((i) => i.ref), ...c.recetas.map((r) => refDeReceta(r.id))]);
+    reemplazables = new Set(c.carta.map((x) => x.ref));
+  } else {
+    const { excel, recetas, insumosSistema } = await leerCatalogo(sql, ATELIER);
+    refs = new Set([...excel.map((i) => i.ref), ...insumosSistema.map((i) => i.ref), ...recetas.map((r) => refDeReceta(r.id))]);
+    reemplazables = new Set(excel.map((i) => i.ref));
+  }
   const faltan = detalle.ingredientes.filter((i) => !i.ref || !refs.has(i.ref));
   if (faltan.length > 0) return { ok: false, error: `"${faltan[0].nombre}" ya no está en la lista de costos. Vuelve a elegirlo.` };
   if (input.id !== null && detalle.ingredientes.some((i) => i.ref === refDeReceta(input.id!))) {
     return { ok: false, error: "Una receta no puede usarse a sí misma como ingrediente." };
   }
-  const reemplaza = input.reemplaza && excel.some((i) => i.ref === input.reemplaza) ? input.reemplaza : null;
+  const reemplaza = input.reemplaza && reemplazables.has(input.reemplaza) ? input.reemplaza : null;
   const nombre = input.nombre.trim();
   const json = JSON.stringify(detalle);
   try {
     if (input.id === null) {
       const rows = (await sql`
         INSERT INTO recetas_sistema (business_id, nombre, tipo, categoria, detalle, reemplaza_ref, actualizado_por)
-        VALUES (${ATELIER}, ${nombre}, ${input.tipo}, ${input.categoria}, ${json}::jsonb, ${reemplaza}, ${autor})
+        VALUES (${bId}, ${nombre}, ${input.tipo}, ${input.categoria}, ${json}::jsonb, ${reemplaza}, ${autor})
         RETURNING id
       `) as { id: number }[];
       revalidatePath("/grupo/recetas");
@@ -91,7 +119,7 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
       UPDATE recetas_sistema
       SET nombre = ${nombre}, tipo = ${input.tipo}, categoria = ${input.categoria}, detalle = ${json}::jsonb,
           actualizado_por = ${autor}, actualizado_el = NOW()
-      WHERE id = ${input.id} AND business_id = ${ATELIER}
+      WHERE id = ${input.id} AND business_id = ${bId}
       RETURNING id
     `) as { id: number }[];
     if (rows.length === 0) return { ok: false, error: "Esa receta ya no existe." };
@@ -110,16 +138,17 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
  * Borra una receta del sistema. Si reemplazaba a una del Excel, vuelve a
  * valer la del Excel. Las mermas ya registradas guardan su costo: no cambian.
  */
-export async function eliminarReceta(id: number): Promise<{ ok: true } | { ok: false; error: string }> {
+export async function eliminarReceta(id: number, sede?: SedeReceta): Promise<{ ok: true } | { ok: false; error: string }> {
   if (!(await quien())) return { ok: false, error: "Solo dirección." };
-  const { recetas } = await leerCatalogo(sql, ATELIER);
+  const bId = bIdDe(sede);
+  const { recetas } = bId === CAFETERIAS ? await leerCatalogoCafeteria(sql) : await leerCatalogo(sql, ATELIER);
   const usadaPor = recetas.filter((r) => r.id !== id && r.detalle.ingredientes.some((i) => i.ref === refDeReceta(id)));
   const propia = recetas.find((r) => r.id === id);
   if (usadaPor.length > 0 && !propia?.reemplaza) {
     return { ok: false, error: `No se puede borrar: la usa "${usadaPor[0].nombre}". Quítala de esa receta primero.` };
   }
   try {
-    await sql`DELETE FROM recetas_sistema WHERE id = ${id} AND business_id = ${ATELIER}`;
+    await sql`DELETE FROM recetas_sistema WHERE id = ${id} AND business_id = ${bId}`;
   } catch (e) {
     console.error("[eliminarReceta] failed:", e);
     return { ok: false, error: "No se pudo borrar la receta." };
