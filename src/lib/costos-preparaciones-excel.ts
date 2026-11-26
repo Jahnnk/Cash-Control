@@ -34,13 +34,13 @@ type Fila = unknown[];
  * Filas de una hoja. Con blankrows y el inicio del rango, la posición en el
  * arreglo + primeraFila es el número de fila de Excel (lo usa "Fuente costo").
  */
-function filas(wb: XLSX.WorkBook, hoja: string): Fila[] | null {
+export function filas(wb: XLSX.WorkBook, hoja: string): Fila[] | null {
   const ws = wb.Sheets[hoja];
   if (!ws) return null;
   return XLSX.utils.sheet_to_json(ws, { header: 1, raw: true, defval: null, blankrows: true }) as Fila[];
 }
 
-function primeraFila(wb: XLSX.WorkBook, hoja: string): number {
+export function primeraFila(wb: XLSX.WorkBook, hoja: string): number {
   const ref = wb.Sheets[hoja]?.["!ref"];
   return ref ? XLSX.utils.decode_range(ref).s.r + 1 : 1;
 }
@@ -172,7 +172,7 @@ function leerPricing(rows: Fila[], avisos: string[], fuentes: Map<string, Fuente
   return out;
 }
 
-type Bloque = {
+export type Bloque = {
   hoja: string;
   /** Fila de Excel del "▼ Nombre". */
   fila: number;
@@ -189,6 +189,8 @@ type Bloque = {
   rindeKg: boolean;
   ingredientes: {
     sku: string; nombre: string; unidad: string; cantidad: number;
+    /** «Q x Receta» tal cual (sin la merma del ingrediente). Recetas de cafetería, 26-nov-2026. */
+    q?: number;
     /** «Costo Unitario» de la línea: lo que aporta a una unidad (S/, con merma). Desglose por insumo (18-nov-2026). */
     aporte?: number | null;
     /** «Costo Total de Receta» de la línea: su peso dentro de la receta entera. */
@@ -202,7 +204,7 @@ type Bloque = {
  * en B) y las columnas de ingredientes salen del encabezado de cada bloque
  * ("SKU", "Ingrediente", "Und", "Q x Receta").
  */
-function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
+export function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
   const out: Bloque[] = [];
   let b: Bloque | null = null;
   let col: { sku: number; nom: number; und: number; q: number; precioG: number; unit: number; total: number } | null = null;
@@ -260,7 +262,7 @@ function leerBloques(rows: Fila[], hoja: string, fila0: number): Bloque[] {
     const porUnidad = hoja !== HOJA_SUBRECETAS && b.rendimiento && precioG && unit !== null ? (unit / precioG) * b.rendimiento : null;
     const final = porUnidad !== null && porUnidad > 0 ? Math.round(porUnidad * 1000) / 1000 : cantidad;
     b.ingredientes.push({
-      sku, nombre: limpiarNombre(r[col.nom] as string), unidad: String(r[col.und] ?? "").trim().toLowerCase(), cantidad: final,
+      sku, nombre: limpiarNombre(r[col.nom] as string), unidad: String(r[col.und] ?? "").trim().toLowerCase(), cantidad: final, q: cantidad,
       aporte: unit, total: col.total === -1 ? null : num(r[col.total]),
     });
   }
@@ -374,7 +376,7 @@ export function preciosDeInsumos(rows: Fila[] | null, origen: PrecioInsumo["orig
 /** Hojas con recetas de productos (los bloques "▼" que PRICING costea). */
 const HOJAS_RECETAS = ["ATE · Empanadas", "ATE · Pastelería", "ATE · Panadería", "ATE · Cuchareables", "ATE · Croissant"];
 /** Recetas que se preparan en las cafeterías (mismo formato de bloques "▼"). */
-const HOJAS_CAFETERIA = ["CAF · Sánguches", "CAF · Bebidas", "CAF · Desayunos", "CAF · Sub-Recetas", "CAF · Adicional GRAND"];
+export const HOJAS_CAFETERIA = ["CAF · Sánguches", "CAF · Bebidas", "CAF · Desayunos", "CAF · Sub-Recetas", "CAF · Adicional GRAND"];
 
 /** Palabras de tamaño o presentación: «Cake de Chocolate - Porción» y «- Torta Entera» son la misma línea. */
 const TAMANO = /^(grand|oz|porcion|entero|entera|mini|chico|grande|mediano|kg|manga|\d+)$/;
