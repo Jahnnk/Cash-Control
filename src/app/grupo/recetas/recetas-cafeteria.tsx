@@ -23,8 +23,8 @@ const ORDEN = ["Sánguches", "Bebidas", "Desayunos", "Adicional GRAND", "Sub-rec
 
 type Fila = { item: CostoPreparacion; carta: CatalogoCafeteria["carta"][number] | null; revisar: string[] };
 
-export function RecetasCafeteria() {
-  const [abierta, setAbierta] = useState(false);
+export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeInicio?: boolean } = {}) {
+  const [abierta, setAbierta] = useState(abiertaDesdeInicio);
   const [cat, setCat] = useState<CatalogoCafeteria | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [q, setQ] = useState("");
