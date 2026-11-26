@@ -16,6 +16,7 @@ import { ArrowLeft, ArrowRight, CakeSlice, Check, ChevronDown, ChevronRight, Cof
 import { TablaOrdenable, TbodyOrdenable } from "@/components/filas-ordenables";
 import { BuscadorCosto, soles4 } from "@/components/buscador-costo";
 import { CamposPrecio, EditarInsumo } from "./insumo-en-receta";
+import { RutaPreciosAtelier, RutaPreciosCafeteria } from "./ruta-precios";
 import { comprasPara, precioPorBase, type PrecioCompra } from "@/lib/precio-compra";
 import { crearInsumoNuevo, crearRecetaAtelier, getOpcionesNuevaReceta, type OpcionesNuevaReceta } from "@/app/actions/nueva-receta";
 import { guardarProductoNuevo } from "@/app/actions/carta";
@@ -495,6 +496,14 @@ function PasoIngredientes(p: {
           <div className="text-lg font-semibold tabular-nums text-primary">{p.costo !== null ? soles4(p.costo) : "—"}</div>
         </div>
       </div>
+      {/* Ruta de precios con los sugeridos (los precios se eligen en el paso 3). */}
+      {p.costo !== null && p.costo > 0 && p.clase === "atelier" && (() => {
+        const s = sugeridosAtelier(p.costo, null);
+        return <RutaPreciosAtelier costo={p.costo} interno={{ valor: s.interno, sugerido: true }} carta={{ valor: s.carta, sugerido: true }} b2b={{ valor: s.b2b, sugerido: true }} />;
+      })()}
+      {p.costo !== null && p.costo > 0 && p.clase === "cafeteria" && (
+        <RutaPreciosCafeteria costo={p.costo} carta={{ valor: sugeridoCafeteria(p.costo), sugerido: true }} />
+      )}
       {p.calc.faltantes.length > 0 && (
         <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
           Falta: {p.calc.faltantes.join(", ")}. Elige cada uno de la lista o créalo con «Insumo nuevo».
@@ -556,6 +565,16 @@ function PasoPrecios(p: {
           <span className="text-gray-600">Al grupo le cuesta {soles4(p.costoGrupo)} (lo de Atelier a su costo real)</span>
         )}
       </div>
+
+      {/* La ruta con los precios que se van escribiendo («sugerido» mientras sea el de las metas). */}
+      {p.clase === "atelier" ? (
+        <RutaPreciosAtelier costo={p.costo}
+          b2b={num(p.b2b) > 0 ? { valor: num(p.b2b), sugerido: num(p.b2b) === s.b2b } : null}
+          interno={p.vaCarta && interno !== null ? { valor: interno, sugerido: interno === s.interno } : null}
+          carta={p.vaCarta && carta !== null ? { valor: carta, sugerido: carta === s.carta } : null} />
+      ) : (
+        <RutaPreciosCafeteria costo={p.costo} carta={carta !== null ? { valor: carta, sugerido: carta === sugeridoCafeteria(p.costo) } : null} />
+      )}
 
       {p.clase === "atelier" ? (
         <>
