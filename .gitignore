@@ -47,3 +47,6 @@ scripts/audit/respaldos/
 
 # Fotos de datos reales para las pruebas de regresión (montos, sueldos, nombres): NUNCA a GitHub (repo público).
 /scripts/regresion/fixtures/
+
+# Scripts temporales de consulta (no se suben)
+scripts/.tmp-*
