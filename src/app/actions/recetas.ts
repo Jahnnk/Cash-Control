@@ -135,7 +135,8 @@ export async function getPreciosVenta(): Promise<{ ok: true; precios: Record<str
     const recetaDe = new Map(cambios.filter((c) => c.nuevo && c.receta?.tipo === "atelier" && c.receta.recetaRef).map((c) => [c.ref, (c.receta as { recetaRef: string }).recetaRef]));
     for (const c of carta) {
       if (c.enCarta === false) continue;
-      const ref = c.ref.startsWith("AT-") ? c.ref : recetaDe.get(c.ref);
+      // Primero la receta enlazada: los productos nuevos de Atelier también empiezan con AT- (AT-S001).
+      const ref = recetaDe.get(c.ref) ?? (c.ref.startsWith("AT-") ? c.ref : undefined);
       if (!ref) continue;
       poner(ref, { ...(c.costo > 0 ? { interno: c.costo } : {}), ...(c.precio && c.precio > 0 ? { carta: c.precio } : {}) });
     }
