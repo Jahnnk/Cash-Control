@@ -107,7 +107,8 @@ export async function getFichaProducto(pedido: Pedido): Promise<{ ok: true; fich
       for (const r of refs) { const p = b2b.find((x) => x.ref === r)?.precio; if (p && p > 0) return p; }
       return null;
     };
-    const enCarta = carta && carta.enCarta !== false;
+    // También lo del exhibidor (fuera de la carta digital): se vende al público con su precio (26-nov-2026).
+    const enCarta = !!carta;
     const deByte = deAtelier && receta ? b2bByte.get(receta.ref) ?? (receta.reemplaza ? b2bByte.get(receta.reemplaza) : undefined) ?? null : null;
     const precios = {
       interno: deAtelier && enCarta && carta!.costo > 0 ? carta!.costo : null,
