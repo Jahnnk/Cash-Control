@@ -271,14 +271,14 @@ export function RutaPreciosAtelier({ costo, interno, carta, b2b, editables, onGu
 export type GrandRuta = { costoExtra: number; recargo: number; receta: string };
 
 /** Una fila fija (sin precio editable) con lo que gana la sede, su margen y el food cost. Para el GRAND. */
-function FilaGrand({ titulo, costo, precio, meta }: { titulo: string; costo: number; precio: number | null; meta: number }) {
+function FilaGrand({ titulo, costo, precio, meta, etiqueta = "GRAND · costo" }: { titulo: string; costo: number; precio: number | null; meta: number; etiqueta?: string }) {
   const k = cuentasRuta(costo, costo, precio, null).cafeteriaPublico;
   const fc = precio != null && precio > 0 ? costo / precio : null;
   const bajo = k != null && k.margen < meta - 0.005;
   return (
     <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
       <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 sm:w-[150px]">
-        <div className="text-[11px] text-gray-500">GRAND · costo</div>
+        <div className="text-[11px] text-gray-500">{etiqueta}</div>
         <div className="text-base font-semibold tabular-nums text-gray-800">{soles(costo)}</div>
       </div>
       <ArrowRight className="hidden h-4 w-4 shrink-0 text-gray-400 sm:block" />
@@ -299,8 +299,10 @@ function FilaGrand({ titulo, costo, precio, meta }: { titulo: string; costo: num
  * También con «Jugar con los precios» (27-nov-2026). `meta` = margen meta de la sede (por defecto, cocina propia).
  * Con `grand`, una segunda fila: la bebida GRAND entera (costo de la bebida + lo extra, precio + recargo).
  */
-export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS.foodCostCafeteria, grand }: {
+export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS.foodCostCafeteria, grand, llevar }: {
   costo: number; carta: PrecioRuta; onGuardar?: GuardarPrecio; meta?: number; grand?: GrandRuta | null;
+  /** Se vende también para llevar: precio del vaso de 350 ml y del de 500 ml (GRAND); null = todavía sin precio. */
+  llevar?: { vaso350: number | null; vaso500: number | null } | null;
 }) {
   const [sim, setSim] = useState<{ carta: string; recargo: string } | null>(null);
   const precio = sim !== null ? aNumero(sim.carta) : carta?.valor ?? null;
@@ -336,6 +338,16 @@ export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS
             meta={meta} etiquetaMargen="Margen de la sede" {...(onGuardar ? { campo: "carta" as const, onGuardar } : {})} />
         )}
       </div>
+      {llevar && (
+        <div className="space-y-1.5 border-t border-gray-200/80 pt-2">
+          <div className="text-[11px] text-gray-500">Para llevar = esta bebida + vaso de 350 ml{llevar.vaso350 != null ? ` (${soles(llevar.vaso350)})` : ""}</div>
+          {llevar.vaso350 != null ? (
+            <FilaGrand titulo="Público final, para llevar" etiqueta="Para llevar · costo" costo={costo + llevar.vaso350} precio={precio} meta={meta} />
+          ) : (
+            <p className="text-[11px] text-amber-800">Falta el precio del vaso de 350 ml. Créalo como insumo («Insumo nuevo») con «vaso» y «350 ml» en el nombre.</p>
+          )}
+        </div>
+      )}
       {grand && (
         <div className="space-y-1.5 border-t border-gray-200/80 pt-2">
           <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
@@ -350,6 +362,12 @@ export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS
           </div>
           <FilaGrand titulo={`Público final GRAND (+${soles(recargo ?? 0)})`} costo={costo + grand.costoExtra}
             precio={precio != null && recargo != null ? precio + recargo : null} meta={meta} />
+          {llevar && (llevar.vaso500 != null ? (
+            <FilaGrand titulo={`Público final GRAND, para llevar (vaso 500 ml ${soles(llevar.vaso500)})`} etiqueta="GRAND llevar · costo"
+              costo={costo + grand.costoExtra + llevar.vaso500} precio={precio != null && recargo != null ? precio + recargo : null} meta={meta} />
+          ) : (
+            <p className="text-[11px] text-amber-800">GRAND para llevar: falta el precio del vaso de 500 ml (insumo con «vaso» y «500 ml» en el nombre).</p>
+          ))}
         </div>
       )}
     </section>

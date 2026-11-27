@@ -93,6 +93,11 @@ export type DetalleReceta = {
    * «Pan de Hamburguesa Pequeño» de 70 g se llama «P- PAN DE HAMBURGUESA 80G» en Byte). Mandan sobre el enlace por nombre.
    */
   byte?: string[];
+  /**
+   * Bebida de cafetería que también se vende para llevar (27-nov-2026): en mesa va en vaso de vidrio (sin costo); para
+   * llevar suma el vaso de plástico (350 ml; el GRAND, 500 ml). La receta no lleva el vaso: lo suma la ruta de precios.
+   */
+  paraLlevar?: boolean;
   panadero?: {
     pesoMasa: number;
     piezas: number | null;
