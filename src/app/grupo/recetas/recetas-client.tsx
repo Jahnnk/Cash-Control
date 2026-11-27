@@ -103,7 +103,7 @@ export function RecetasClient() {
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-sm text-gray-900 flex flex-wrap items-center gap-x-2 gap-y-1">
-              {i.nombre}
+              <button type="button" onClick={() => setFicha(i.ref)} title="Abrir" className="text-left hover:text-primary hover:underline">{i.nombre}</button>
               {i.origen === "sistema" && <Pastilla tono="marca">{i.reemplaza ? "tu versión" : "hecha aquí"}</Pastilla>}
             </div>
             <div className="text-[11px] text-gray-500">

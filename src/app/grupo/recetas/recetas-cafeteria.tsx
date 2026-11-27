@@ -78,7 +78,7 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
         <div className="flex items-center gap-3">
           <div className="min-w-0 flex-1">
             <div className="text-sm text-gray-900 flex flex-wrap items-center gap-x-2 gap-y-1">
-              {i.nombre}
+              <button type="button" onClick={() => abrir(i)} title="Abrir" className="text-left hover:text-primary hover:underline">{i.nombre}</button>
               {carta && <Pastilla tono="marca">en la carta{carta.nombre !== i.nombre ? `: ${carta.nombre}` : ""}</Pastilla>}
               {revisar.length > 0 && <Pastilla tono="ambar">revisar</Pastilla>}
             </div>
