@@ -8,9 +8,10 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Loader2, AlertTriangle, Copy, Archive, ArchiveRestore } from "lucide-react";
-import { archivarReceta, getPreciosVenta, getRecetas, type PreciosVenta } from "@/app/actions/recetas";
+import { archivarReceta, marcarRecetaRevisada, type Revisada, getPreciosVenta, getRecetas, type PreciosVenta } from "@/app/actions/recetas";
 import { TIPO_COSTO, soles4 } from "@/components/buscador-costo";
 import { Pastilla } from "@/components/productos/ui";
+import { BarraRevision, BotonRevisado } from "./revision";
 import { ListaPorCategorias, type FilaLista } from "./lista-categorias";
 import { costoDeReceta, refDeReceta, type RecetaSistema } from "@/lib/recetas";
 import type { Catalogo } from "@/lib/catalogo-costos-sql";
@@ -28,6 +29,10 @@ export function RecetasClient() {
   // Recetas archivadas (26-nov-2026): salen de la lista y van a «Archivados»; siguen costeando.
   const [archivadas, setArchivadas] = useState<Set<string>>(new Set());
   const [archivando, setArchivando] = useState<string | null>(null);
+  // Revisión una por una (27-nov-2026). Clave = la receta del Excel que reemplaza, o la propia: no cambia al editarla.
+  const [revisadas, setRevisadas] = useState<Record<string, Revisada>>({});
+  const [revisando, setRevisando] = useState<string | null>(null);
+  const [soloSinRevisar, setSoloSinRevisar] = useState(false);
   const [borrador, setBorrador] = useState<Borrador | null>(null);
   const [copia, setCopia] = useState<RecetaDePartida | null>(null);
   // «Abrir» = la ficha única del producto (receta, ruta de precios y matriz), 25-nov-2026.
@@ -36,7 +41,7 @@ export function RecetasClient() {
 
   const cargar = useCallback(async () => {
     const [r, p] = await Promise.all([getRecetas(), getPreciosVenta()]);
-    if (r.ok) { setCat(r.catalogo); setArchivadas(new Set(r.archivadas)); } else setError(r.error);
+    if (r.ok) { setCat(r.catalogo); setArchivadas(new Set(r.archivadas)); setRevisadas(r.revisadas); } else setError(r.error);
     if (p.ok) setPrecios(p.precios);
   }, []);
 
@@ -85,6 +90,16 @@ export function RecetasClient() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [cat]);
 
+  const claveRev = (i: CostoPreparacion) => i.reemplaza ?? i.ref;
+  async function revisar(i: CostoPreparacion, revisado: boolean) {
+    const k = claveRev(i);
+    setRevisando(k);
+    const r = await marcarRecetaRevisada({ sede: "atelier", ref: k, revisado });
+    setRevisando(null);
+    if (!r.ok) { window.alert(r.error); return; }
+    setRevisadas((m) => { const n = { ...m }; if (r.revisada) n[k] = r.revisada; else delete n[k]; return n; });
+  }
+
   async function archivar(i: CostoPreparacion, archivar: boolean) {
     if (archivar && !window.confirm(`¿Archivar «${i.nombre}»? Sale de la lista y pasa a «Archivados». Sigue costeando: las mermas y las recetas que lo usan no cambian.`)) return;
     setArchivando(i.ref);
@@ -95,7 +110,10 @@ export function RecetasClient() {
   }
 
   // Todas las recetas de Atelier (los insumos tienen su propia pantalla: Grupo → Insumos y packaging).
-  const filas: FilaLista[] = (cat?.efectivo ?? []).filter((i) => i.tipo !== "insumo").map((i) => {
+  const todasRecetas = (cat?.efectivo ?? []).filter((i) => i.tipo !== "insumo");
+  const activasRev = todasRecetas.filter((i) => !archivadas.has(i.ref));
+  const nRevisadas = activasRev.filter((i) => revisadas[claveRev(i)]).length;
+  const filas: FilaLista[] = todasRecetas.filter((i) => !soloSinRevisar || !revisadas[claveRev(i)]).map((i) => {
     const archivada = archivadas.has(i.ref);
     return {
       clave: i.ref, nombre: i.nombre, categoria: i.tipo === "preparacion" && !i.categoria ? "Sub-recetas" : i.categoria, archivada,
@@ -120,6 +138,7 @@ export function RecetasClient() {
               <Copy className="w-3.5 h-3.5" /> Duplicar
             </button>
           )}
+          <BotonRevisado revisada={revisadas[claveRev(i)]} cargando={revisando === claveRev(i)} onCambiar={(v) => void revisar(i, v)} nombre={i.nombre} />
           <button type="button" onClick={() => setFicha(i.ref)} className="text-xs font-medium text-gray-700 hover:bg-gray-100 rounded-lg px-2.5 py-1.5 whitespace-nowrap">Abrir</button>
           <button type="button" onClick={() => abrir(i)} className="text-xs font-medium text-primary hover:bg-primary-50 rounded-lg px-2.5 py-1.5 whitespace-nowrap">Editar</button>
           <button type="button" disabled={archivando === i.ref} onClick={() => void archivar(i, !archivada)}
@@ -164,6 +183,7 @@ export function RecetasClient() {
             </div>
           )}
 
+          <BarraRevision total={activasRev.length} revisadas={nRevisadas} solo={soloSinRevisar} onSolo={setSoloSinRevisar} />
           <ListaPorCategorias filas={filas} orden={ORDEN_ATELIER} placeholder="Buscar receta, ej. pie de manzana" />
         </>
       )}

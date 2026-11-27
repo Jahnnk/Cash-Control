@@ -37,10 +37,45 @@ async function leerArchivadas(bId: number): Promise<string[]> {
   }
 }
 
-export async function getRecetas(): Promise<{ ok: true; catalogo: Catalogo; archivadas: string[] } | { ok: false; error: string }> {
+/** Recetas revisadas (27-nov-2026), por ref: quién y cuándo. Sin la tabla, ninguna. */
+export type Revisada = { el: string; por: string };
+async function leerRevisadas(bId: number): Promise<Record<string, Revisada>> {
+  try {
+    const rows = (await sql`SELECT ref, to_char(revisado_el AT TIME ZONE 'America/Lima', 'YYYY-MM-DD') AS el, COALESCE(revisado_por, '') AS por
+                            FROM recetas_revisadas WHERE business_id = ${bId}`) as { ref: string; el: string; por: string }[];
+    return Object.fromEntries(rows.map((r) => [r.ref, { el: r.el, por: r.por }]));
+  } catch {
+    return {};
+  }
+}
+
+export async function getRecetas(): Promise<{ ok: true; catalogo: Catalogo; archivadas: string[]; revisadas: Record<string, Revisada> } | { ok: false; error: string }> {
   if (!(await quien())) return { ok: false, error: "Solo dirección." };
-  const [catalogo, archivadas] = await Promise.all([leerCatalogo(sql, ATELIER), leerArchivadas(ATELIER)]);
-  return { ok: true, catalogo, archivadas };
+  const [catalogo, archivadas, revisadas] = await Promise.all([leerCatalogo(sql, ATELIER), leerArchivadas(ATELIER), leerRevisadas(ATELIER)]);
+  return { ok: true, catalogo, archivadas, revisadas };
+}
+
+/** Marcar o desmarcar una receta como revisada (Atelier o cafeterías). Solo dirección. */
+export async function marcarRecetaRevisada(input: { sede: SedeReceta; ref: string; revisado: boolean }): Promise<{ ok: true; revisada: Revisada | null } | { ok: false; error: string }> {
+  const role = await getSessionRole();
+  if (role?.kind !== "full") return { ok: false, error: "Solo dirección." };
+  const ref = String(input.ref ?? "").trim().slice(0, 80);
+  if (!ref) return { ok: false, error: "Falta la receta." };
+  const bId = bIdDe(input.sede);
+  const por = role.nombre ?? (role.quien === "kelly" ? "Kelly" : "Jahnn");
+  try {
+    if (input.revisado) {
+      await sql`INSERT INTO recetas_revisadas (business_id, ref, revisado_por) VALUES (${bId}, ${ref}, ${por})
+                ON CONFLICT (business_id, ref) DO UPDATE SET revisado_el = now(), revisado_por = EXCLUDED.revisado_por`;
+    } else {
+      await sql`DELETE FROM recetas_revisadas WHERE business_id = ${bId} AND ref = ${ref}`;
+    }
+  } catch (e) {
+    console.error("[marcarRecetaRevisada]", e);
+    return { ok: false, error: /recetas_revisadas.*does not exist/i.test(String(e)) ? "Falta crear la tabla de recetas revisadas." : "No se pudo guardar. Intenta de nuevo." };
+  }
+  const hoy = new Date().toLocaleDateString("en-CA", { timeZone: "America/Lima" });
+  return { ok: true, revisada: input.revisado ? { el: hoy, por } : null };
 }
 
 /** Archivar o desarchivar una receta (Atelier o cafeterías). No cambia costos ni recetas que la usan. */
@@ -66,11 +101,11 @@ export async function archivarReceta(input: { sede: SedeReceta; ref: string; arc
 }
 
 /** Recetas de las cafeterías (26-nov-2026): la lista de costos de Fonavi y Centro con sus recetas. */
-export async function getRecetasCafeteria(): Promise<{ ok: true; catalogo: CatalogoCafeteria; archivadas: string[] } | { ok: false; error: string }> {
+export async function getRecetasCafeteria(): Promise<{ ok: true; catalogo: CatalogoCafeteria; archivadas: string[]; revisadas: Record<string, Revisada> } | { ok: false; error: string }> {
   if (!(await quien())) return { ok: false, error: "Solo dirección." };
   try {
-    const [catalogo, archivadas] = await Promise.all([leerCatalogoCafeteria(sql), leerArchivadas(CAFETERIAS)]);
-    return { ok: true, catalogo, archivadas };
+    const [catalogo, archivadas, revisadas] = await Promise.all([leerCatalogoCafeteria(sql), leerArchivadas(CAFETERIAS), leerRevisadas(CAFETERIAS)]);
+    return { ok: true, catalogo, archivadas, revisadas };
   } catch (e) {
     console.error("[getRecetasCafeteria]", e);
     return { ok: false, error: "No se pudieron leer las recetas de las cafeterías." };
