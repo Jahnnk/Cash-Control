@@ -73,6 +73,16 @@ export type Ingrediente = {
   pct?: number | null;
   /** Solo en recetas conectadas con Producción: el id del insumo allá (Agua 1 y Agua 2 son el mismo insumo aquí). */
   prod?: number | null;
+  /** Cómo se mide en cocina, para el recetario (27-nov-2026): «4 líneas», «2 rebanadas», «c/n». El costo usa la cantidad. */
+  cocina?: string | null;
+};
+
+/** Lo que la receta necesita para salir en el recetario de cocina (fichas técnicas, 27-nov-2026). No toca el costo. */
+export type FichaTecnica = {
+  /** Pasos de preparación, en orden. */
+  pasos?: string[];
+  recomendaciones?: string | null;
+  vidaUtil?: string | null;
 };
 
 export type DetalleReceta = {
@@ -98,6 +108,8 @@ export type DetalleReceta = {
    * llevar suma el vaso de plástico (350 ml; el GRAND, 500 ml). La receta no lleva el vaso: lo suma la ruta de precios.
    */
   paraLlevar?: boolean;
+  /** Pasos, recomendaciones y vida útil para el recetario (27-nov-2026). */
+  ficha?: FichaTecnica;
   panadero?: {
     pesoMasa: number;
     piezas: number | null;

@@ -94,6 +94,17 @@ export type RecetaInput = {
   reemplaza: string | null;
 };
 
+/** Pasos, recomendaciones y vida útil, limpios (sin vacíos, con topes). null si no hay nada. */
+function fichaLimpia(f: DetalleReceta["ficha"]): DetalleReceta["ficha"] | null {
+  if (!f || typeof f !== "object") return null;
+  const texto = (t: unknown, max: number) => (typeof t === "string" && t.trim() ? t.trim().slice(0, max) : null);
+  const pasos = Array.isArray(f.pasos) ? f.pasos.map((p) => texto(p, 600)).filter((p): p is string => !!p).slice(0, 40) : [];
+  const recomendaciones = texto(f.recomendaciones, 2000);
+  const vidaUtil = texto(f.vidaUtil, 300);
+  if (pasos.length === 0 && !recomendaciones && !vidaUtil) return null;
+  return { ...(pasos.length ? { pasos } : {}), ...(recomendaciones ? { recomendaciones } : {}), ...(vidaUtil ? { vidaUtil } : {}) };
+}
+
 export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref: string } | { ok: false; error: string }> {
   const autor = await quien();
   if (!autor) return { ok: false, error: "Solo dirección." };
@@ -111,10 +122,12 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
       ref: i.ref, nombre: String(i.nombre ?? "").trim(), unidad: String(i.unidad ?? "").trim().toLowerCase(), cantidad: Number(i.cantidad),
       ...(panadero && Number(i.pct) > 0 ? { pct: Number(i.pct) } : {}),
       ...(panadero?.produccion && Number(i.prod) > 0 ? { prod: Number(i.prod) } : {}),
+      ...(typeof i.cocina === "string" && i.cocina.trim() ? { cocina: i.cocina.replace(/\s+/g, " ").trim().slice(0, 60) } : {}),
     })),
     ...(panadero ? { panadero } : {}),
     ...(Array.isArray(input.detalle.byte) && input.detalle.byte.length > 0 ? { byte: input.detalle.byte.map(String) } : {}),
     ...(input.detalle.paraLlevar === true && input.tipo === "producto" ? { paraLlevar: true } : {}),
+    ...(() => { const f = fichaLimpia(input.detalle.ficha); return f ? { ficha: f } : {}; })(),
   });
   const errores = erroresDeReceta({ nombre: input.nombre ?? "", tipo: input.tipo, detalle });
   if (errores.length > 0) return { ok: false, error: errores[0] };

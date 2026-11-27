@@ -7,7 +7,7 @@
  */
 
 import { useMemo, useState } from "react";
-import { X, Plus, Trash2, Loader2, Save, RotateCcw } from "lucide-react";
+import { X, Plus, Trash2, Loader2, Save, RotateCcw, ChevronDown } from "lucide-react";
 import { useToast } from "@/components/toast-provider";
 import { TablaOrdenable, TbodyOrdenable } from "@/components/filas-ordenables";
 import { BuscadorCosto, TIPO_COSTO, soles4 } from "@/components/buscador-costo";
@@ -37,8 +37,10 @@ export type Borrador = {
 
 type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: string | null; cantidad: string; unidad: string; pct: string;
   /** Insumo de Producción de esta fila (recetas conectadas): se conserva aunque se cambie el insumo de aquí. */
-  prod?: number | null };
-const filaVacia = (): Fila => ({ id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g", pct: "" });
+  prod?: number | null;
+  /** Medida de cocina para el recetario: «4 líneas», «c/n». */
+  cocina?: string };
+const filaVacia = (): Fila => ({ id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g", pct: "", cocina: "" });
 const gramos = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: n < 100 ? 1 : 0 });
 
 /** Lo que cuesta agrandar una bebida en la carta (+S/ 2). */
@@ -70,6 +72,13 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   // Panes y focaccias en % panadero (26-nov-2026): peso de masa por bandeja + % de cada insumo.
   const [pan, setPan] = useState(!!borrador.detalle.panadero);
   const [llevar, setLlevar] = useState(!!borrador.detalle.paraLlevar);
+  // Ficha técnica para el recetario de cocina (27-nov-2026): pasos, recomendaciones, vida útil y medida de cocina.
+  const [fichaTexto, setFichaTexto] = useState({
+    pasos: (borrador.detalle.ficha?.pasos ?? []).join("\n"),
+    recomendaciones: borrador.detalle.ficha?.recomendaciones ?? "",
+    vidaUtil: borrador.detalle.ficha?.vidaUtil ?? "",
+  });
+  const [verFicha, setVerFicha] = useState(false);
   // El % panadero es solo para panes (27-nov-2026: en una mermelada no tiene sentido). Se muestra si la receta ya lo
   // usa o si es de panadería; en lo demás queda un enlace chico por si una masa nueva lo necesita.
   const esDePan = /\b(pan|panes|panader|focaccia|ciabatta|brioche)/i.test(`${borrador.categoria ?? ""} ${borrador.nombre}`);
@@ -113,7 +122,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   const [filas, setFilas] = useState<Fila[]>(() => {
     const f = borrador.detalle.ingredientes.map((g) => {
       const item = g.ref ? porRef.get(g.ref) ?? null : null;
-      return { id: crypto.randomUUID(), texto: item?.nombre ?? g.nombre, item, ref: item ? g.ref : null, cantidad: String(g.cantidad), unidad: g.unidad, pct: g.pct ? String(g.pct) : "", prod: g.prod ?? null };
+      return { id: crypto.randomUUID(), texto: item?.nombre ?? g.nombre, item, ref: item ? g.ref : null, cantidad: String(g.cantidad), unidad: g.unidad, pct: g.pct ? String(g.pct) : "", prod: g.prod ?? null, cocina: g.cocina ?? "" };
     });
     return f.length > 0 ? f : [filaVacia()];
   });
@@ -155,9 +164,15 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
         ref: f.ref, nombre: f.item?.nombre ?? f.texto.trim(), unidad: f.unidad, cantidad: Number(f.cantidad),
         ...(pan && Number(f.pct) > 0 ? { pct: Number(f.pct) } : {}),
         ...(pan && prodId && f.prod ? { prod: f.prod } : {}),
+        ...(f.cocina?.trim() ? { cocina: f.cocina.trim() } : {}),
       })),
     ...(borrador.detalle.byte?.length ? { byte: borrador.detalle.byte } : {}),
     ...(sede === "cafeterias" && tipo === "producto" && llevar ? { paraLlevar: true } : {}),
+    ...(fichaTexto.pasos.trim() || fichaTexto.recomendaciones.trim() || fichaTexto.vidaUtil.trim() ? { ficha: {
+      pasos: fichaTexto.pasos.split("\n").map((p) => p.replace(/^\s*\d+[.)-]?\s*/, "").trim()).filter(Boolean),
+      recomendaciones: fichaTexto.recomendaciones.trim() || null,
+      vidaUtil: fichaTexto.vidaUtil.trim() || null,
+    } } : {}),
     ...(pan ? { panadero: { pesoMasa: Number(pesoMasa) || 0, piezas: Number(piezas) > 0 ? Number(piezas) : null, ...(prodId ? { produccion: prodId } : {}) } } : {}),
   });
   // Gramos de 1 bandeja por fila (las filas con % los calculan; el orden de `detalle` es el de las filas con algo).
@@ -385,7 +400,13 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                                 <>{" · "}<EditarInsumo key={`${f.item.ref}-${f.item.nombre}-${f.item.costo}`} item={f.item} origen={origen} onGuardado={(c) => alEditar(f.item!.ref, c)} /></>
                               )}
                             </div>
-                          ) : f.texto.trim() ? (
+                          ) : null}
+                          {verFicha && (
+                            <input value={f.cocina ?? ""} onChange={(e) => setFila(i, { cocina: e.target.value })} placeholder="En cocina: ej. 4 líneas, c/n"
+                              aria-label={`Medida en cocina de ${f.texto || "ingrediente"}`}
+                              className="mt-1 w-full rounded border border-dashed border-gray-300 px-2 py-0.5 text-[11px] text-gray-700" />
+                          )}
+                          {f.item ? null : f.texto.trim() ? (
                             <button type="button" onClick={() => { setErrorNuevo(null); setNuevo({ fila: i, nombre: f.texto.trim(), precio: { compra: "kg", gramos: "", precio: "" } }); }}
                               className="text-[11px] text-amber-800 mt-0.5 px-0.5 underline decoration-dotted">
                               ¿No está en la lista? Créalo como insumo nuevo
@@ -470,6 +491,46 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                     {creando && <Loader2 className="w-3.5 h-3.5 animate-spin" />} Crear y usar
                   </button>
                   <button onClick={() => setNuevo(null)} className="px-3 py-1.5 text-xs text-gray-600">Cancelar</button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Ficha para el recetario de cocina (27-nov-2026): plegada; no toca el costo. */}
+          <div className="rounded-xl border border-gray-200">
+            <button type="button" onClick={() => setVerFicha((v) => !v)} aria-expanded={verFicha}
+              className="flex w-full items-center justify-between gap-3 px-4 py-2.5 text-left">
+              <span>
+                <span className="block text-sm font-medium text-gray-900">Ficha para el recetario</span>
+                <span className="block text-[11px] text-gray-500">
+                  {fichaTexto.pasos.trim()
+                    ? `${fichaTexto.pasos.split("\n").filter((p) => p.trim()).length} pasos${fichaTexto.vidaUtil.trim() ? " · vida útil" : ""}${fichaTexto.recomendaciones.trim() ? " · recomendaciones" : ""}`
+                    : "Pasos de preparación, recomendaciones, vida útil y medida de cocina. No cambia el costo."}
+                </span>
+              </span>
+              <ChevronDown className={`h-4 w-4 shrink-0 text-gray-400 transition-transform ${verFicha ? "rotate-180" : ""}`} />
+            </button>
+            {verFicha && (
+              <div className="space-y-3 border-t border-gray-100 px-4 py-3">
+                <p className="text-[11px] text-gray-500">La medida de cocina se escribe debajo de cada ingrediente (ej. «4 líneas», «2 rebanadas», «c/n»). Si la dejas vacía, el recetario usa la cantidad.</p>
+                <label className="block">
+                  <span className="text-[11px] uppercase tracking-wide text-gray-500">Preparación (un paso por línea)</span>
+                  <textarea value={fichaTexto.pasos} onChange={(e) => setFichaTexto((f) => ({ ...f, pasos: e.target.value }))} rows={6}
+                    placeholder={"Lavar y cortar la fruta.\nLicuar con el agua y el azúcar.\nServir en vaso con hielo."}
+                    className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+                </label>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="block">
+                    <span className="text-[11px] uppercase tracking-wide text-gray-500">Recomendaciones</span>
+                    <textarea value={fichaTexto.recomendaciones} onChange={(e) => setFichaTexto((f) => ({ ...f, recomendaciones: e.target.value }))} rows={3}
+                      className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+                  </label>
+                  <label className="block">
+                    <span className="text-[11px] uppercase tracking-wide text-gray-500">Vida útil</span>
+                    <textarea value={fichaTexto.vidaUtil} onChange={(e) => setFichaTexto((f) => ({ ...f, vidaUtil: e.target.value }))} rows={3}
+                      placeholder="ej. Se prepara al momento del pedido."
+                      className="mt-1 w-full rounded-lg border border-gray-200 px-3 py-2 text-sm" />
+                  </label>
                 </div>
               </div>
             )}
