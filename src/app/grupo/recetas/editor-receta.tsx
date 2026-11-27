@@ -69,6 +69,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   const [busy, setBusy] = useState<"guardando" | "borrando" | null>(null);
   // Panes y focaccias en % panadero (26-nov-2026): peso de masa por bandeja + % de cada insumo.
   const [pan, setPan] = useState(!!borrador.detalle.panadero);
+  const [llevar, setLlevar] = useState(!!borrador.detalle.paraLlevar);
   // El % panadero es solo para panes (27-nov-2026: en una mermelada no tiene sentido). Se muestra si la receta ya lo
   // usa o si es de panadería; en lo demás queda un enlace chico por si una masa nueva lo necesita.
   const esDePan = /\b(pan|panes|panader|focaccia|ciabatta|brioche)/i.test(`${borrador.categoria ?? ""} ${borrador.nombre}`);
@@ -156,6 +157,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
         ...(pan && prodId && f.prod ? { prod: f.prod } : {}),
       })),
     ...(borrador.detalle.byte?.length ? { byte: borrador.detalle.byte } : {}),
+    ...(sede === "cafeterias" && tipo === "producto" && llevar ? { paraLlevar: true } : {}),
     ...(pan ? { panadero: { pesoMasa: Number(pesoMasa) || 0, piezas: Number(piezas) > 0 ? Number(piezas) : null, ...(prodId ? { produccion: prodId } : {}) } } : {}),
   });
   // Gramos de 1 bandeja por fila (las filas con % los calculan; el orden de `detalle` es el de las filas con algo).
@@ -179,6 +181,13 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
     const g = catalogo.find((i) => clave(i.nombre) === clave(`GRAND: ${nombre}`));
     return g && g.costo > 0 ? { costoExtra: g.costo, recargo: RECARGO_GRAND, receta: g.nombre } : null;
   }, [sede, catalogo, nombre]);
+  // Vasos para llevar (27-nov-2026): los insumos de cafetería con «vaso» y «350 ml» / «500 ml» en el nombre.
+  const vasosLlevar = useMemo(() => {
+    if (sede !== "cafeterias" || !llevar) return null;
+    const vaso = (ml: number) => catalogo.find((i) => i.tipo === "insumo" && /vaso/i.test(i.nombre) && new RegExp(`\\b${ml}\\s*ml\\b`, "i").test(i.nombre)) ?? null;
+    const v350 = vaso(350), v500 = vaso(500);
+    return { vaso350: v350 && v350.costo > 0 ? v350.costo : null, vaso500: v500 && v500.costo > 0 ? v500.costo : null };
+  }, [sede, llevar, catalogo]);
   const metaCafeteria = c.total > 0 && costoAtelier / c.total > 0.5 ? 1 - METAS.foodCostAtelierEnCarta : 1 - METAS.foodCostCafeteria;
   const excel = borrador.reemplaza;
   const dif = excel && c.costo !== null && excel.costo > 0 ? (c.costo - excel.costo) / excel.costo : null;
@@ -298,6 +307,15 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
           </div>
           )}
 
+          {sede === "cafeterias" && tipo === "producto" && (
+            <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
+              <input type="checkbox" checked={llevar} onChange={(e) => setLlevar(e.target.checked)} className="mt-0.5" />
+              <span>
+                <span className="font-medium">También se vende para llevar</span>
+                <span className="block text-[11px] text-gray-500">En mesa va en vaso de vidrio. Para llevar se suma el vaso de plástico (350 ml; el GRAND, 500 ml). No lo pongas como ingrediente.</span>
+              </span>
+            </label>
+          )}
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block">
               <span className="text-[11px] uppercase tracking-wide text-gray-500">
@@ -526,7 +544,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
           {sede === "cafeterias" && tipo === "producto" && c.costo !== null && c.costo > 0 && c.faltantes.length === 0 && (
             <RutaPreciosCafeteria costo={c.costo}
               carta={precios?.carta && precios.carta > 0 ? { valor: precios.carta, sugerido: false } : { valor: sugeridoCafeteria(c.costo), sugerido: true }}
-              meta={metaCafeteria} grand={grand}
+              meta={metaCafeteria} grand={grand} llevar={vasosLlevar}
               onGuardar={precios?.cartaRef ? async (_campo, precio) => {
                 const r = await guardarPrecioVenta({ campo: "carta", precio, cartaRef: precios.cartaRef ?? null });
                 if (!r.ok) return r.error;

@@ -114,6 +114,7 @@ export async function guardarReceta(input: RecetaInput): Promise<{ ok: true; ref
     })),
     ...(panadero ? { panadero } : {}),
     ...(Array.isArray(input.detalle.byte) && input.detalle.byte.length > 0 ? { byte: input.detalle.byte.map(String) } : {}),
+    ...(input.detalle.paraLlevar === true && input.tipo === "producto" ? { paraLlevar: true } : {}),
   });
   const errores = erroresDeReceta({ nombre: input.nombre ?? "", tipo: input.tipo, detalle });
   if (errores.length > 0) return { ok: false, error: errores[0] };
