@@ -60,6 +60,15 @@ export function InsumosVista({ datos, acciones, onCreado }: {
     return grupos[filtro].filter((i) => (!soloSinRevisar || !i.revisado) && (!categoria || i.categoria === categoria) && (!t || sinTildes(`${i.nombre} ${i.sku} ${i.nombreExcel ?? ""}`).includes(t)));
   }, [grupos, filtro, categoria, q, soloSinRevisar]);
 
+  // La búsqueda mira una lista; si lo buscado está en la otra, se avisa (27-nov-2026: un insumo creado en una receta
+  // de cafetería no aparecía buscándolo en la lista de Atelier).
+  const otroOrigen: Origen = origen === "Atelier" ? "Cafetería" : "Atelier";
+  const enLaOtra = useMemo(() => {
+    const t = sinTildes(q.trim());
+    if (!t) return 0;
+    return datos.insumos.filter((i) => i.origen === otroOrigen && !i.archivado && sinTildes(`${i.nombre} ${i.sku} ${i.nombreExcel ?? ""}`).includes(t)).length;
+  }, [datos.insumos, otroOrigen, q]);
+
   // Por categoría: las que más gastan primero; adentro, críticos y luego por gasto.
   const porCategoria = useMemo(() => {
     const m = new Map<string, FichaInsumo[]>();
@@ -168,6 +177,12 @@ export function InsumosVista({ datos, acciones, onCreado }: {
         </div>
       </div>
 
+      {enLaOtra > 0 && (
+        <button type="button" onClick={() => { setOrigen(otroOrigen); setFiltro("todos"); setCategoria(""); setAbiertas(new Set()); }}
+          className="w-full rounded-xl border border-sky-200 bg-sky-50 px-3 py-2 text-left text-xs text-sky-900 hover:bg-sky-100">
+          {enLaOtra === 1 ? "1 insumo" : `${enLaOtra} insumos`} con «{q.trim()}» en la lista de <b>{otroOrigen === "Atelier" ? "Atelier" : "las cafeterías"}</b> → ver
+        </button>
+      )}
       {filtro === "sinUso" && (
         <p className="rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-600">
           No están en ninguna receta de Atelier ni en un producto de la carta. Algunos pueden ser de uso suelto (limpieza, empaques). Si ya no se compran, ábrelos y archívalos.
