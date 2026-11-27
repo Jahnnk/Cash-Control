@@ -62,7 +62,7 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
   const nRevisar = filas.filter((f) => f.revisar.length > 0).length;
   // Recetario de cocina en Word por sección (27-nov-2026): las secciones con productos.
   const secciones = useMemo(() => [...new Set(filas.filter((f) => f.item.tipo === "producto" && f.item.categoria && !/^(sub-recetas|adicional grand)$/i.test(f.item.categoria)).map((f) => f.item.categoria!))]
-    .sort((a, b) => ORDEN.indexOf(a) - ORDEN.indexOf(b) || a.localeCompare(b, "es")), [filas]);
+    .sort((a, b) => (ORDEN.indexOf(a) + 1 || 99) - (ORDEN.indexOf(b) + 1 || 99) || a.localeCompare(b, "es")), [filas]);
   const [seccionWord, setSeccionWord] = useState("Bebidas");
   const nSub = filas.filter((f) => f.item.categoria === "Sub-recetas").length;
 
