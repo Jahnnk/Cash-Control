@@ -217,7 +217,7 @@ export async function getPreciosVenta(): Promise<{ ok: true; precios: Record<str
     for (const r of b2b) if (r.precio > 0) poner(r.ref, { b2b: r.precio });
     const recetaDe = new Map(cambios.filter((c) => c.nuevo && c.receta?.tipo === "atelier" && c.receta.recetaRef).map((c) => [c.ref, (c.receta as { recetaRef: string }).recetaRef]));
     for (const c of carta) {
-      if (c.enCarta === false) continue;
+      // Lo del exhibidor (fuera de la carta digital) también se vende al público: su ruta usa sus precios (26-nov-2026).
       // Primero la receta enlazada: los productos nuevos de Atelier también empiezan con AT- (AT-S001).
       const ref = recetaDe.get(c.ref) ?? (c.ref.startsWith("AT-") ? c.ref : undefined);
       if (!ref) continue;
