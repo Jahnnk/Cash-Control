@@ -9,9 +9,10 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Archive, ArchiveRestore, ChevronDown, Download, FileText, Loader2, Plus } from "lucide-react";
-import { archivarReceta, getRecetasCafeteria } from "@/app/actions/recetas";
+import { archivarReceta, marcarRecetaRevisada, type Revisada, getRecetasCafeteria } from "@/app/actions/recetas";
 import { soles4 } from "@/components/buscador-costo";
 import { Pastilla } from "@/components/productos/ui";
+import { BarraRevision, BotonRevisado } from "./revision";
 import { ListaPorCategorias, type FilaLista } from "./lista-categorias";
 import { refDeReceta } from "@/lib/recetas";
 import type { CatalogoCafeteria } from "@/lib/carta-sql";
@@ -30,12 +31,16 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
   const [soloRevisar, setSoloRevisar] = useState(false);
   const [archivadas, setArchivadas] = useState<Set<string>>(new Set());
   const [archivando, setArchivando] = useState<string | null>(null);
+  // Revisión una por una (27-nov-2026). Clave = la receta del Excel que reemplaza, o la propia: no cambia al editarla.
+  const [revisadas, setRevisadas] = useState<Record<string, Revisada>>({});
+  const [revisando, setRevisando] = useState<string | null>(null);
+  const [soloSinRevisar, setSoloSinRevisar] = useState(false);
   const [borrador, setBorrador] = useState<Borrador | null>(null);
   const [precioCarta, setPrecioCarta] = useState<{ cartaRef: string; carta?: number } | undefined>(undefined);
 
   const cargar = useCallback(async () => {
     const r = await getRecetasCafeteria();
-    if (r.ok) { setCat(r.catalogo); setArchivadas(new Set(r.archivadas)); } else setError(r.error);
+    if (r.ok) { setCat(r.catalogo); setArchivadas(new Set(r.archivadas)); setRevisadas(r.revisadas); } else setError(r.error);
   }, []);
   useEffect(() => {
     /* eslint-disable react-hooks/set-state-in-effect -- fetch al montar */
@@ -66,6 +71,16 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
   const [seccionWord, setSeccionWord] = useState("Bebidas");
   const nSub = filas.filter((f) => f.item.categoria === "Sub-recetas").length;
 
+  const claveRev = (i: CostoPreparacion) => i.reemplaza ?? i.ref;
+  async function cambiarRevision(i: CostoPreparacion, revisado: boolean) {
+    const k = claveRev(i);
+    setRevisando(k);
+    const r = await marcarRecetaRevisada({ sede: "cafeterias", ref: k, revisado });
+    setRevisando(null);
+    if (!r.ok) { window.alert(r.error); return; }
+    setRevisadas((m) => { const n = { ...m }; if (r.revisada) n[k] = r.revisada; else delete n[k]; return n; });
+  }
+
   async function archivar(i: CostoPreparacion, archivar: boolean) {
     if (archivar && !window.confirm(`¿Archivar «${i.nombre}»? Sale de la lista y pasa a «Archivados». Sigue costeando: la carta y las recetas que lo usan no cambian.`)) return;
     setArchivando(i.ref);
@@ -75,7 +90,9 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
     setArchivadas((s) => { const n = new Set(s); if (archivar) n.add(i.ref); else n.delete(i.ref); return n; });
   }
 
-  const filasLista: FilaLista[] = filas.filter((f) => !soloRevisar || f.revisar.length > 0).map(({ item: i, carta, revisar }) => {
+  const activasRev = filas.filter((f) => !archivadas.has(f.item.ref));
+  const nRevisadas = activasRev.filter((f) => revisadas[claveRev(f.item)]).length;
+  const filasLista: FilaLista[] = filas.filter((f) => (!soloRevisar || f.revisar.length > 0) && (!soloSinRevisar || !revisadas[claveRev(f.item)])).map(({ item: i, carta, revisar }) => {
     const archivada = archivadas.has(i.ref);
     return {
       clave: i.ref, nombre: i.nombre, categoria: i.categoria, buscar: carta?.nombre, archivada,
@@ -93,6 +110,7 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
             </div>
           </div>
           <div className="text-sm tabular-nums text-gray-900 whitespace-nowrap">{soles4(i.costo)} <span className="text-gray-400 text-xs">/ {i.unidad}</span></div>
+          <BotonRevisado revisada={revisadas[claveRev(i)]} cargando={revisando === claveRev(i)} onCambiar={(v) => void cambiarRevision(i, v)} nombre={i.nombre} />
           <button type="button" onClick={() => abrir(i)} className="text-xs font-medium text-primary hover:bg-primary-50 rounded-lg px-2.5 py-1.5 whitespace-nowrap">Editar</button>
           <button type="button" disabled={archivando === i.ref} onClick={() => void archivar(i, !archivada)}
             title={archivada ? "Volver a la lista" : "Archivar"} aria-label={archivada ? `Desarchivar ${i.nombre}` : `Archivar ${i.nombre}`}
@@ -149,6 +167,7 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
                   ))}
                 </p>
               )}
+              <BarraRevision total={activasRev.length} revisadas={nRevisadas} solo={soloSinRevisar} onSolo={setSoloSinRevisar} />
               <div className="flex flex-wrap items-center justify-between gap-3">
                 <label className="flex items-center gap-2 text-xs text-gray-700">
                   <input type="checkbox" checked={soloRevisar} onChange={(e) => setSoloRevisar(e.target.checked)} />
