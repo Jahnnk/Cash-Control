@@ -185,7 +185,7 @@ export function InsumosVista({ datos, acciones, onCreado }: {
       )}
       {filtro === "sinUso" && (
         <p className="rounded-xl bg-gray-50 px-3 py-2 text-xs text-gray-600">
-          No están en ninguna receta de Atelier ni en un producto de la carta. Algunos pueden ser de uso suelto (limpieza, empaques). Si ya no se compran, ábrelos y archívalos.
+          No están en ninguna receta (de Atelier o de las cafeterías) ni en un producto de la carta. Algunos pueden ser de uso suelto (limpieza, empaques). Si ya no se compran, ábrelos y archívalos.
         </p>
       )}
       {filtro === "viejo" && grupos.viejo.length === 0 && (

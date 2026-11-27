@@ -10,6 +10,7 @@
  * archivado. Motor: lib/insumos-ficha.ts. Solo dirección.
  */
 
+import { leerCatalogoCafeteria } from "@/lib/carta-sql";
 import { neon } from "@neondatabase/serverless";
 import { revalidatePath } from "next/cache";
 import { getSessionRole, requireFullSession } from "@/lib/session-access";
@@ -141,7 +142,9 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
            WHERE fecha >= (CURRENT_DATE - INTERVAL '800 days')` as unknown as Promise<{ fecha: string; origen: string; sku: string; nombre: string; precio: number; archivo: string | null }[]>),
       gastoPorInsumo(mesesCerrados(hoy, 3)),
     ]);
-    const [donde, elegidos] = await Promise.all([leerDondeSeCompra(sql), leerElegidos(sql)]);
+    const [donde, elegidos, catalogoCaf] = await Promise.all([
+      leerDondeSeCompra(sql), leerElegidos(sql), leerCatalogoCafeteria(sql).catch(() => null),
+    ]);
 
     const ficha = new Map(fichas.map((f) => [claveInsumo(f.origen, f.sku), f]));
     const conectados = new Set(parejas.filter((p) => p.cc_ref?.trim()).map((p) => p.cc_ref!.trim().toUpperCase()));
@@ -164,6 +167,16 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
       for (const ing of item.detalle?.ingredientes ?? []) {
         if (!ing.ref) continue;
         const k = claveInsumo("Atelier", ing.ref);
+        recetas.set(k, (recetas.get(k) ?? new Set()).add(item.nombre));
+      }
+    }
+
+    // Y qué recetas de las cafeterías (27-nov-2026: un insumo de cafetería usado en una receta salía «sin uso»).
+    for (const item of catalogoCaf?.efectivo ?? []) {
+      if (item.origen !== "sistema") continue;
+      for (const ing of item.detalle?.ingredientes ?? []) {
+        if (!ing.ref) continue;
+        const k = claveInsumo("Cafetería", ing.ref);
         recetas.set(k, (recetas.get(k) ?? new Set()).add(item.nombre));
       }
     }
@@ -201,7 +214,7 @@ export async function getInsumos(): Promise<{ ok: true; datos: DatosInsumos } | 
           categoria: f?.categoria || categoriaDelSku(v.sku), categoriaElegida: !!f?.categoria,
           critico: esCritico(f?.critico ?? null, criticoSugerido), criticoManual: f?.critico ?? null, criticoSugerido,
           gastoMes: r2(gastoMes), pctGasto: gastoTotalMes > 0 ? Math.round((gastoMes / gastoTotalMes) * 1000) / 10 : 0,
-          recetas: v.origen === "Atelier" ? orden(recetas.get(k)) : [],
+          recetas: orden(recetas.get(k)),
           productos: orden(productos.get(k)),
           proveedor: mejores.get(k) ?? null,
           archivado: archivados.has(k),
