@@ -56,7 +56,7 @@ export type CatalogoCafeteria = {
   /** SKUs de insumos de cafetería archivados (siguen costeando, no se ofrecen). */
   archivados: string[];
   /** Productos de la carta que se preparan en la cafetería, con el costo del Excel (para comparar). */
-  carta: { ref: string; nombre: string; seccion: string | null; costoExcel: number | null }[];
+  carta: { ref: string; nombre: string; seccion: string | null; costoExcel: number | null; precio: number | null }[];
 };
 
 export async function leerCatalogoCafeteria(sql: Sql): Promise<CatalogoCafeteria> {
@@ -69,7 +69,7 @@ export async function leerCatalogoCafeteria(sql: Sql): Promise<CatalogoCafeteria
   return {
     base, recetas, efectivo,
     archivados: base.filter((i) => i.tipo === "insumo" && archivados.has(claveInsumo("Cafetería", i.ref))).map((i) => i.ref),
-    carta: carta.filter((c) => !c.ref.startsWith("AT-")).map((c) => ({ ref: c.ref, nombre: c.nombre, seccion: c.seccion ?? null, costoExcel: costoExcel.get(c.ref) ?? null })),
+    carta: carta.filter((c) => !c.ref.startsWith("AT-")).map((c) => ({ ref: c.ref, nombre: c.nombre, seccion: c.seccion ?? null, costoExcel: costoExcel.get(c.ref) ?? null, precio: c.precio && c.precio > 0 ? c.precio : null })),
   };
 }
 

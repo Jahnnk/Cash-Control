@@ -31,6 +31,7 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
   const [archivadas, setArchivadas] = useState<Set<string>>(new Set());
   const [archivando, setArchivando] = useState<string | null>(null);
   const [borrador, setBorrador] = useState<Borrador | null>(null);
+  const [precioCarta, setPrecioCarta] = useState<{ cartaRef: string; carta?: number } | undefined>(undefined);
 
   const cargar = useCallback(async () => {
     const r = await getRecetasCafeteria();
@@ -108,6 +109,7 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
     if (!cat) return;
     const r = cat.recetas.find((x) => x.id === id)!;
     const c = r.reemplaza ? cat.carta.find((x) => x.ref === r.reemplaza) : null;
+    setPrecioCarta(c ? { cartaRef: c.ref, ...(c.precio ? { carta: c.precio } : {}) } : undefined);
     setBorrador({
       id: r.id, nombre: r.nombre, tipo: r.tipo, categoria: r.categoria, detalle: r.detalle,
       reemplaza: c ? { ref: c.ref, tipo: "producto", nombre: c.nombre, categoria: c.seccion, unidad: "und", costo: c.costoExcel ?? 0 } : null,
@@ -148,7 +150,7 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
                   <input type="checkbox" checked={soloRevisar} onChange={(e) => setSoloRevisar(e.target.checked)} />
                   Solo las que hay que revisar ({nRevisar})
                 </label>
-                <button type="button" onClick={() => setBorrador({ id: null, nombre: "", tipo: "producto", categoria: null, detalle: { rendimiento: 1, merma: 0, ingredientes: [] }, reemplaza: null })}
+                <button type="button" onClick={() => { setPrecioCarta(undefined); setBorrador({ id: null, nombre: "", tipo: "producto", categoria: null, detalle: { rendimiento: 1, merma: 0, ingredientes: [] }, reemplaza: null }); }}
                   className="inline-flex items-center gap-1.5 px-3 py-2 text-xs font-medium text-primary border border-primary/40 bg-white hover:bg-emerald-50 rounded-lg">
                   <Plus className="w-3.5 h-3.5" /> Receta o sub-receta nueva
                 </button>
@@ -162,6 +164,8 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
       {borrador && cat && (
         <EditorReceta
           sede="cafeterias"
+          precios={precioCarta}
+          onPrecioGuardado={() => void cargar()}
           borrador={borrador}
           catalogo={cat.efectivo}
           archivados={cat.archivados}
