@@ -14,7 +14,7 @@
 
 import { useState } from "react";
 import { ArrowRight, CornerDownRight, Loader2, Pencil, SlidersHorizontal } from "lucide-react";
-import { METAS, margen } from "@/lib/precios-sugeridos";
+import { METAS } from "@/lib/precios-sugeridos";
 
 /**
  * Un precio de la ruta. `byte` = el precio B2B real que cobra Byte (fase 4, 26-nov-2026): se muestra tal cual y
@@ -267,19 +267,44 @@ export function RutaPreciosAtelier({ costo, interno, carta, b2b, editables, onGu
   );
 }
 
-/** Producto que se prepara en la cafetería: costo → público. */
-export function RutaPreciosCafeteria({ costo, carta, onGuardar }: { costo: number; carta: PrecioRuta; onGuardar?: GuardarPrecio }) {
+/**
+ * Producto que se prepara en la cafetería: costo → público, con lo que gana la sede, su margen y el food cost.
+ * También con «Jugar con los precios» (27-nov-2026). `meta` = margen meta de la sede (por defecto, cocina propia).
+ */
+export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS.foodCostCafeteria }: {
+  costo: number; carta: PrecioRuta; onGuardar?: GuardarPrecio; meta?: number;
+}) {
+  const [sim, setSim] = useState<string | null>(null);
+  const precio = sim !== null ? aNumero(sim) : carta?.valor ?? null;
+  const k = cuentasRuta(costo, costo, precio, null).cafeteriaPublico;
+  const fc = precio != null && precio > 0 ? costo / precio : null;
   return (
     <section className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3 space-y-2" aria-label="Ruta de precios">
-      <h3 className="text-[13px] font-semibold text-gray-900">Ruta de precios</h3>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <h3 className="text-[13px] font-semibold text-gray-900">Ruta de precios</h3>
+        {sim !== null ? (
+          <button type="button" onClick={() => setSim(null)} className="text-[11px] font-medium text-gray-600 underline decoration-dotted">Volver al precio de hoy</button>
+        ) : (
+          <button type="button" onClick={() => setSim(carta ? carta.valor.toFixed(2) : "")} className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-white px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary-50">
+            <SlidersHorizontal className="h-3 w-3" /> Jugar con los precios
+          </button>
+        )}
+      </div>
+      {sim !== null && <p className="text-[11px] text-gray-500">Prueba precios: todo se recalcula al instante. No se guarda nada hasta que toques «Guardar».</p>}
       <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
         <div className="rounded-xl border border-primary/30 bg-emerald-50/60 px-3 py-2 sm:w-[150px]">
           <div className="text-[11px] text-gray-500">Cafetería · costo</div>
           <div className="text-base font-semibold tabular-nums text-primary">{soles(costo)}</div>
         </div>
         <ArrowRight className="hidden h-4 w-4 shrink-0 text-gray-400 sm:block" />
-        <Nodo titulo="Público final (carta)" precio={carta} m={carta ? margen(carta.valor, costo) : null} base={costo} fc={carta ? costo / carta.valor : null}
-          meta={1 - METAS.foodCostCafeteria} etiquetaMargen="Margen de la sede" {...(onGuardar ? { campo: "carta" as const, onGuardar } : {})} />
+        {sim !== null ? (
+          <NodoSim titulo="Público final (carta)" real={carta && !carta.sugerido ? carta.valor : null} valor={sim} onValor={setSim}
+            utilidad={k?.utilidad ?? null} m={k?.margen ?? null} meta={meta} etiquetaMargen="Margen de la sede" fc={fc}
+            campo="carta" onGuardar={onGuardar} />
+        ) : (
+          <Nodo titulo="Público final (carta)" precio={carta} m={k?.margen ?? null} base={costo} fc={fc}
+            meta={meta} etiquetaMargen="Margen de la sede" {...(onGuardar ? { campo: "carta" as const, onGuardar } : {})} />
+        )}
       </div>
     </section>
   );

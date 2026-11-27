@@ -17,8 +17,8 @@ import { costoDeReceta, costoIngrediente, refDeReceta, type RecetaSistema } from
 import type { CostoPreparacion, DetalleReceta } from "@/lib/costos-preparaciones";
 import { Segmentado } from "@/components/productos/ui";
 import { CamposPrecio, EditarInsumo } from "./insumo-en-receta";
-import { RutaPreciosAtelier, type PrecioRuta, rutaB2B } from "@/components/productos/ruta-precios";
-import { sugeridosAtelier } from "@/lib/precios-sugeridos";
+import { RutaPreciosAtelier, RutaPreciosCafeteria, type PrecioRuta, rutaB2B } from "@/components/productos/ruta-precios";
+import { METAS, sugeridoCafeteria, sugeridosAtelier } from "@/lib/precios-sugeridos";
 import type { PreciosVenta } from "@/app/actions/recetas";
 import { guardarPrecioVenta } from "@/app/actions/carta";
 import { comprasPara, precioPorBase, type PrecioCompra } from "@/lib/precio-compra";
@@ -163,6 +163,14 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   const prod = pan && base !== null ? produccion(detalle, nBandejas) : null;
   const c = costoDeReceta(tipo, detalle, (ref) => porRef.get(ref) ?? null);
   const unidadCosto = tipo === "preparacion" ? "kg" : "und";
+  // Meta de margen de la sede en cafeterías: si más de la mitad del costo viene de productos de Atelier (cheesecake =
+  // base + mermelada), la de los productos de Atelier en la carta (food cost 55%); si no, la de cocina propia (30%).
+  const costoAtelier = filas.reduce((t, f) => {
+    if (!f.item || !f.item.ref.startsWith("AT-")) return t;
+    const k = costoIngrediente(f.item, Number(f.cantidad), f.unidad);
+    return t + (k ?? 0);
+  }, 0);
+  const metaCafeteria = c.total > 0 && costoAtelier / c.total > 0.5 ? 1 - METAS.foodCostAtelierEnCarta : 1 - METAS.foodCostCafeteria;
   const excel = borrador.reemplaza;
   const dif = excel && c.costo !== null && excel.costo > 0 ? (c.costo - excel.costo) / excel.costo : null;
   // Ruta de precios: el guardado si lo hay; si no, el sugerido con el costo de ahora.
@@ -505,6 +513,18 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                 onPrecioGuardado?.();
                 return null;
               }} />
+          )}
+          {sede === "cafeterias" && tipo === "producto" && c.costo !== null && c.costo > 0 && c.faltantes.length === 0 && (
+            <RutaPreciosCafeteria costo={c.costo}
+              carta={precios?.carta && precios.carta > 0 ? { valor: precios.carta, sugerido: false } : { valor: sugeridoCafeteria(c.costo), sugerido: true }}
+              meta={metaCafeteria}
+              onGuardar={precios?.cartaRef ? async (_campo, precio) => {
+                const r = await guardarPrecioVenta({ campo: "carta", precio, cartaRef: precios.cartaRef ?? null });
+                if (!r.ok) return r.error;
+                setPrecios((p) => ({ ...p, carta: precio }));
+                onPrecioGuardado?.();
+                return null;
+              } : undefined} />
           )}
           {c.faltantes.length > 0 && (
             <p className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
