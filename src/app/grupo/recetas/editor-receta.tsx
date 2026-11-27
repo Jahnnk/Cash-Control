@@ -41,6 +41,8 @@ type Fila = { id: string; texto: string; item: CostoPreparacion | null; ref: str
 const filaVacia = (): Fila => ({ id: crypto.randomUUID(), texto: "", item: null, ref: null, cantidad: "", unidad: "g", pct: "" });
 const gramos = (n: number) => n.toLocaleString("es-PE", { maximumFractionDigits: n < 100 ? 1 : 0 });
 
+/** Lo que cuesta agrandar una bebida en la carta (+S/ 2). */
+const RECARGO_GRAND = 2;
 const UNIDADES: Record<CostoPreparacion["unidad"], string[]> = { kg: ["g", "kg"], l: ["ml", "l"], und: ["und"] };
 
 export function EditorReceta({ borrador, catalogo, archivados = [], precios: preciosIniciales, onCerrar, onGuardada, onPrecioGuardado, sede = "atelier" }: {
@@ -170,6 +172,13 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
     const k = costoIngrediente(f.item, Number(f.cantidad), f.unidad);
     return t + (k ?? 0);
   }, 0);
+  // GRAND (27-nov-2026): la receta «GRAND: <esta bebida>» tiene solo lo extra; el recargo de la carta es +S/ 2.
+  const grand = useMemo(() => {
+    if (sede !== "cafeterias") return null;
+    const clave = (t: string) => t.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/\s+/g, " ").trim();
+    const g = catalogo.find((i) => clave(i.nombre) === clave(`GRAND: ${nombre}`));
+    return g && g.costo > 0 ? { costoExtra: g.costo, recargo: RECARGO_GRAND, receta: g.nombre } : null;
+  }, [sede, catalogo, nombre]);
   const metaCafeteria = c.total > 0 && costoAtelier / c.total > 0.5 ? 1 - METAS.foodCostAtelierEnCarta : 1 - METAS.foodCostCafeteria;
   const excel = borrador.reemplaza;
   const dif = excel && c.costo !== null && excel.costo > 0 ? (c.costo - excel.costo) / excel.costo : null;
@@ -312,7 +321,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
 
           <div>
             <div className="text-[11px] uppercase tracking-wide text-gray-500 mb-1.5">
-              {pan ? "Ingredientes (con % = parte de la masa; sin % = cantidad fija por bandeja)" : "Ingredientes (cantidades para toda la receta)"}
+              {pan ? "Ingredientes (con % = parte de la masa; sin % = cantidad fija por bandeja)" : tipo === "producto" ? "Ingredientes (cantidades para toda la receta; en negativo lo que se quita, ej. −153 g de leche entera)" : "Ingredientes (cantidades para toda la receta)"}
             </div>
             <div className="overflow-x-auto">
               <table className="w-full text-xs">
@@ -333,7 +342,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                     const conPct = pan && !!calc && enMasa(calc);
                     const cant = conPct ? calc!.cantidad : Number(f.cantidad);
                     const unid = conPct ? calc!.unidad : f.unidad;
-                    const costoFila = f.item && cant > 0 ? costoIngrediente(f.item, cant, unid) : null;
+                    const costoFila = f.item && cant !== 0 ? costoIngrediente(f.item, cant, unid) : null;
                     const opciones = f.item ? UNIDADES[f.item.unidad] : ["g", "kg", "ml", "l", "und"];
                     return (
                       <TbodyOrdenable key={f.id} id={f.id}>{(asa) => (
@@ -376,7 +385,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
                           {conPct ? (
                             <div className="px-2 py-1 text-right tabular-nums text-gray-700">{gramos(cant)}</div>
                           ) : (
-                            <input type="number" min="0" step="any" value={f.cantidad} onChange={(e) => setFila(i, { cantidad: e.target.value })}
+                            <input type="number" step="any" value={f.cantidad} onChange={(e) => setFila(i, { cantidad: e.target.value })}
                               className="w-full border border-gray-200 rounded px-2 py-1 text-right" />
                           )}
                         </td>
@@ -517,7 +526,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
           {sede === "cafeterias" && tipo === "producto" && c.costo !== null && c.costo > 0 && c.faltantes.length === 0 && (
             <RutaPreciosCafeteria costo={c.costo}
               carta={precios?.carta && precios.carta > 0 ? { valor: precios.carta, sugerido: false } : { valor: sugeridoCafeteria(c.costo), sugerido: true }}
-              meta={metaCafeteria}
+              meta={metaCafeteria} grand={grand}
               onGuardar={precios?.cartaRef ? async (_campo, precio) => {
                 const r = await guardarPrecioVenta({ campo: "carta", precio, cartaRef: precios.cartaRef ?? null });
                 if (!r.ok) return r.error;
@@ -545,7 +554,7 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
           </div>
           <div className="flex gap-2">
             <button onClick={onCerrar} disabled={!!busy} className="px-4 py-2 text-sm text-gray-600 hover:bg-gray-50 rounded-lg disabled:opacity-50">Cancelar</button>
-            <button onClick={() => void guardar()} disabled={!!busy || c.costo === null || c.faltantes.length > 0 || !nombre.trim()}
+            <button onClick={() => void guardar()} disabled={!!busy || c.costo === null || c.costo < 0 || c.faltantes.length > 0 || !nombre.trim()}
               className="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-white bg-primary hover:bg-primary-light rounded-lg disabled:opacity-50">
               {busy === "guardando" ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
               Guardar receta

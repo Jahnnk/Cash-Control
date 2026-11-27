@@ -109,7 +109,7 @@ describe("validación", () => {
   it("pide nombre, ingredientes de la lista y rendimiento en productos", () => {
     const e = erroresDeReceta({ nombre: " ", tipo: "producto", detalle: { rendimiento: null, merma: 0, ingredientes: [{ ref: null, nombre: "x", unidad: "g", cantidad: 0 }] } });
     expect(e).toEqual(expect.arrayContaining([
-      "Ponle nombre a la receta.", '"x": elígelo de la lista.', '"x": la cantidad tiene que ser mayor a 0.', "Pon cuántas unidades rinde la receta.",
+      "Ponle nombre a la receta.", '"x": elígelo de la lista.', '"x": escribe la cantidad (en negativo si se quita).', "Pon cuántas unidades rinde la receta.",
     ]));
     expect(erroresDeReceta(MASA_PIE)).toEqual([]);
   });
