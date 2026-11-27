@@ -8,7 +8,7 @@
  */
 
 import { useCallback, useEffect, useMemo, useState } from "react";
-import { Archive, ArchiveRestore, ChevronDown, Loader2, Plus } from "lucide-react";
+import { Archive, ArchiveRestore, ChevronDown, Download, FileText, Loader2, Plus } from "lucide-react";
 import { archivarReceta, getRecetasCafeteria } from "@/app/actions/recetas";
 import { soles4 } from "@/components/buscador-costo";
 import { Pastilla } from "@/components/productos/ui";
@@ -60,6 +60,10 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
   const sinCosto = useMemo(() => (cat ? cat.recetas.filter((r) => !cat.efectivo.some((i) => i.ref === refDeReceta(r.id))) : []), [cat]);
 
   const nRevisar = filas.filter((f) => f.revisar.length > 0).length;
+  // Recetario de cocina en Word por sección (27-nov-2026): las secciones con productos.
+  const secciones = useMemo(() => [...new Set(filas.filter((f) => f.item.tipo === "producto" && f.item.categoria && !/^(sub-recetas|adicional grand)$/i.test(f.item.categoria)).map((f) => f.item.categoria!))]
+    .sort((a, b) => ORDEN.indexOf(a) - ORDEN.indexOf(b) || a.localeCompare(b, "es")), [filas]);
+  const [seccionWord, setSeccionWord] = useState("Bebidas");
   const nSub = filas.filter((f) => f.item.categoria === "Sub-recetas").length;
 
   async function archivar(i: CostoPreparacion, archivar: boolean) {
@@ -155,6 +159,21 @@ export function RecetasCafeteria({ abiertaDesdeInicio = false }: { abiertaDesdeI
                   <Plus className="w-3.5 h-3.5" /> Receta o sub-receta nueva
                 </button>
               </div>
+              {secciones.length > 0 && (
+                <div className="flex flex-wrap items-center gap-2 rounded-xl border border-gray-200 bg-gray-50/60 px-3 py-2">
+                  <FileText className="h-4 w-4 text-primary" aria-hidden />
+                  <span className="text-xs text-gray-700">Recetario de cocina (Word):</span>
+                  <select value={secciones.includes(seccionWord) ? seccionWord : secciones[0]} onChange={(e) => setSeccionWord(e.target.value)} aria-label="Sección del recetario"
+                    className="rounded-lg border border-gray-200 bg-white px-2 py-1 text-xs">
+                    {secciones.map((x) => <option key={x}>{x}</option>)}
+                  </select>
+                  <a href={`/api/recetario?seccion=${encodeURIComponent(secciones.includes(seccionWord) ? seccionWord : secciones[0])}`}
+                    className="inline-flex items-center gap-1 rounded-lg bg-primary px-2.5 py-1 text-xs font-medium text-white hover:opacity-90">
+                    <Download className="h-3.5 w-3.5" /> Descargar
+                  </a>
+                  <span className="text-[11px] text-gray-500">Sale de estas recetas: pasos, vida útil y medida de cocina se llenan en «Ficha para el recetario».</span>
+                </div>
+              )}
               <ListaPorCategorias filas={filasLista} orden={ORDEN} placeholder="Buscar receta, ej. roast beef" />
             </>
           )}
