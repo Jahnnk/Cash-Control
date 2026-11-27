@@ -78,7 +78,9 @@ function textos(b: BaseFicha): Paragraph[] {
     out.push(p([t("PREPARACIÓN", { b: true, size: 16, color: VERDE })], { before: 120, after: 40 }));
     b.pasos.forEach((paso, k) => out.push(p([t(` ${k + 1}  `, { b: true, size: 18, color: VERDE }), t(paso, { size: 19 })], { after: 40 })));
   } else {
-    out.push(p([t("Pasos de preparación: por completar en el sistema.", { i: true, size: 17, color: GRIS })], { before: 100 }));
+    // Sin pasos en el sistema: el apartado queda vacío para llenarlo (pedido de Jahnn, 27-nov-2026).
+    out.push(p([t("PREPARACIÓN", { b: true, size: 16, color: VERDE })], { before: 120, after: 40 }));
+    for (let k = 0; k < 3; k++) out.push(p("", { after: 120 }));
   }
   if (b.recomendaciones) {
     out.push(p([t("RECOMENDACIONES", { b: true, size: 16, color: VERDE })], { before: 120, after: 40 }));
