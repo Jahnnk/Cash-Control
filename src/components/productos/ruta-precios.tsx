@@ -267,25 +267,55 @@ export function RutaPreciosAtelier({ costo, interno, carta, b2b, editables, onGu
   );
 }
 
+/** Lo que suma el GRAND a una bebida (27-nov-2026): el costo de lo extra (receta «GRAND: …») y el recargo en carta. */
+export type GrandRuta = { costoExtra: number; recargo: number; receta: string };
+
+/** Una fila fija (sin precio editable) con lo que gana la sede, su margen y el food cost. Para el GRAND. */
+function FilaGrand({ titulo, costo, precio, meta }: { titulo: string; costo: number; precio: number | null; meta: number }) {
+  const k = cuentasRuta(costo, costo, precio, null).cafeteriaPublico;
+  const fc = precio != null && precio > 0 ? costo / precio : null;
+  const bajo = k != null && k.margen < meta - 0.005;
+  return (
+    <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+      <div className="rounded-xl border border-gray-200 bg-white px-3 py-2 sm:w-[150px]">
+        <div className="text-[11px] text-gray-500">GRAND · costo</div>
+        <div className="text-base font-semibold tabular-nums text-gray-800">{soles(costo)}</div>
+      </div>
+      <ArrowRight className="hidden h-4 w-4 shrink-0 text-gray-400 sm:block" />
+      <div className="min-w-0 flex-1 rounded-xl border border-gray-200 bg-white px-3 py-2">
+        <div className="text-[11px] text-gray-500">{titulo}</div>
+        <div className="text-base font-semibold tabular-nums text-gray-900">{precio != null ? soles(precio) : "—"}</div>
+        <div className={`text-[11px] ${bajo ? "text-amber-700" : "text-emerald-700"}`}>
+          Margen de la sede <b className="tabular-nums">{k ? pct(k.margen) : "—"}</b><span className="text-gray-400"> · meta {Math.round(meta * 100)}%</span>
+        </div>
+        {k && <div className="text-[11px] text-gray-600">Gana <b className="tabular-nums">{soles(k.utilidad)}</b>{fc != null && <> · food cost <b className="tabular-nums">{pct(fc)}</b></>}</div>}
+      </div>
+    </div>
+  );
+}
+
 /**
  * Producto que se prepara en la cafetería: costo → público, con lo que gana la sede, su margen y el food cost.
  * También con «Jugar con los precios» (27-nov-2026). `meta` = margen meta de la sede (por defecto, cocina propia).
+ * Con `grand`, una segunda fila: la bebida GRAND entera (costo de la bebida + lo extra, precio + recargo).
  */
-export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS.foodCostCafeteria }: {
-  costo: number; carta: PrecioRuta; onGuardar?: GuardarPrecio; meta?: number;
+export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS.foodCostCafeteria, grand }: {
+  costo: number; carta: PrecioRuta; onGuardar?: GuardarPrecio; meta?: number; grand?: GrandRuta | null;
 }) {
-  const [sim, setSim] = useState<string | null>(null);
-  const precio = sim !== null ? aNumero(sim) : carta?.valor ?? null;
+  const [sim, setSim] = useState<{ carta: string; recargo: string } | null>(null);
+  const precio = sim !== null ? aNumero(sim.carta) : carta?.valor ?? null;
+  const recargo = grand ? (sim !== null ? aNumero(sim.recargo) : grand.recargo) : null;
   const k = cuentasRuta(costo, costo, precio, null).cafeteriaPublico;
   const fc = precio != null && precio > 0 ? costo / precio : null;
+  const empezar = () => setSim({ carta: carta ? carta.valor.toFixed(2) : "", recargo: grand ? grand.recargo.toFixed(2) : "" });
   return (
     <section className="rounded-xl border border-gray-200/80 bg-gray-50/60 p-3 space-y-2" aria-label="Ruta de precios">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
         <h3 className="text-[13px] font-semibold text-gray-900">Ruta de precios</h3>
         {sim !== null ? (
-          <button type="button" onClick={() => setSim(null)} className="text-[11px] font-medium text-gray-600 underline decoration-dotted">Volver al precio de hoy</button>
+          <button type="button" onClick={() => setSim(null)} className="text-[11px] font-medium text-gray-600 underline decoration-dotted">Volver a los precios de hoy</button>
         ) : (
-          <button type="button" onClick={() => setSim(carta ? carta.valor.toFixed(2) : "")} className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-white px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary-50">
+          <button type="button" onClick={empezar} className="inline-flex items-center gap-1 rounded-lg border border-primary/40 bg-white px-2 py-0.5 text-[11px] font-medium text-primary hover:bg-primary-50">
             <SlidersHorizontal className="h-3 w-3" /> Jugar con los precios
           </button>
         )}
@@ -298,7 +328,7 @@ export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS
         </div>
         <ArrowRight className="hidden h-4 w-4 shrink-0 text-gray-400 sm:block" />
         {sim !== null ? (
-          <NodoSim titulo="Público final (carta)" real={carta && !carta.sugerido ? carta.valor : null} valor={sim} onValor={setSim}
+          <NodoSim titulo="Público final (carta)" real={carta && !carta.sugerido ? carta.valor : null} valor={sim.carta} onValor={(v) => setSim((x) => (x ? { ...x, carta: v } : x))}
             utilidad={k?.utilidad ?? null} m={k?.margen ?? null} meta={meta} etiquetaMargen="Margen de la sede" fc={fc}
             campo="carta" onGuardar={onGuardar} />
         ) : (
@@ -306,6 +336,22 @@ export function RutaPreciosCafeteria({ costo, carta, onGuardar, meta = 1 - METAS
             meta={meta} etiquetaMargen="Margen de la sede" {...(onGuardar ? { campo: "carta" as const, onGuardar } : {})} />
         )}
       </div>
+      {grand && (
+        <div className="space-y-1.5 border-t border-gray-200/80 pt-2">
+          <div className="flex flex-wrap items-center gap-2 text-[11px] text-gray-500">
+            <span>GRAND = esta bebida + «{grand.receta}» ({soles(grand.costoExtra)})</span>
+            {sim !== null && (
+              <label className="inline-flex items-center gap-1">
+                · recargo S/
+                <input type="number" step="0.50" min="0" value={sim.recargo} onChange={(e) => setSim((x) => (x ? { ...x, recargo: e.target.value } : x))}
+                  aria-label="Probar recargo GRAND" className="w-16 rounded border border-gray-300 px-1.5 py-0.5 text-right tabular-nums" />
+              </label>
+            )}
+          </div>
+          <FilaGrand titulo={`Público final GRAND (+${soles(recargo ?? 0)})`} costo={costo + grand.costoExtra}
+            precio={precio != null && recargo != null ? precio + recargo : null} meta={meta} />
+        </div>
+      )}
     </section>
   );
 }

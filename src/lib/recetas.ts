@@ -154,9 +154,14 @@ export function erroresDeReceta(r: { nombre: string; tipo: string; detalle: Deta
   if (r.detalle.ingredientes.length === 0) e.push("Agrega al menos un ingrediente.");
   for (const i of r.detalle.ingredientes) {
     if (!i.ref) e.push(`"${i.nombre || "Ingrediente"}": elígelo de la lista.`);
-    if (!Number.isFinite(i.cantidad) || i.cantidad <= 0) e.push(`"${i.nombre}": la cantidad tiene que ser mayor a 0.`);
+    // En un producto, una cantidad negativa es «lo que se quita» (27-nov-2026: cambio de leche = entra deslactosada,
+    // sale la entera). En preparaciones y masas, siempre mayor a 0.
+    if (!Number.isFinite(i.cantidad) || i.cantidad === 0 || (i.cantidad < 0 && r.tipo !== "producto")) {
+      e.push(r.tipo === "producto" ? `"${i.nombre}": escribe la cantidad (en negativo si se quita).` : `"${i.nombre}": la cantidad tiene que ser mayor a 0.`);
+    }
     if (!A_BASE[i.unidad]) e.push(`"${i.nombre}": unidad inválida.`);
   }
+  if (r.detalle.ingredientes.length > 0 && !r.detalle.ingredientes.some((i) => i.cantidad > 0)) e.push("Al menos un ingrediente tiene que entrar (cantidad mayor a 0).");
   if (!(r.detalle.merma >= 0 && r.detalle.merma <= 0.95)) e.push("La merma de preparación va de 0% a 95%.");
   if (r.tipo === "producto" && !((r.detalle.rendimiento ?? 0) > 0)) e.push("Pon cuántas unidades rinde la receta.");
   e.push(...erroresPanadero(r.detalle));
