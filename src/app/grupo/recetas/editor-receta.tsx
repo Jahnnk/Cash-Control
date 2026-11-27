@@ -67,6 +67,10 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
   const [busy, setBusy] = useState<"guardando" | "borrando" | null>(null);
   // Panes y focaccias en % panadero (26-nov-2026): peso de masa por bandeja + % de cada insumo.
   const [pan, setPan] = useState(!!borrador.detalle.panadero);
+  // El % panadero es solo para panes (27-nov-2026: en una mermelada no tiene sentido). Se muestra si la receta ya lo
+  // usa o si es de panadería; en lo demás queda un enlace chico por si una masa nueva lo necesita.
+  const esDePan = /\b(pan|panes|panader|focaccia|ciabatta|brioche)/i.test(`${borrador.categoria ?? ""} ${borrador.nombre}`);
+  const [verPan, setVerPan] = useState(!!borrador.detalle.panadero || esDePan);
   const [pesoMasa, setPesoMasa] = useState(borrador.detalle.panadero?.pesoMasa ? String(borrador.detalle.panadero.pesoMasa) : "");
   const [piezas, setPiezas] = useState(borrador.detalle.panadero?.piezas ? String(borrador.detalle.panadero.piezas) : "");
   const [bandejas, setBandejas] = useState("1");
@@ -233,7 +237,12 @@ export function EditorReceta({ borrador, catalogo, archivados = [], precios: pre
             </div>
           </div>
 
-          {sede !== "cafeterias" && (
+          {sede !== "cafeterias" && !verPan && (
+            <button type="button" onClick={() => setVerPan(true)} className="text-[11px] text-gray-500 underline decoration-dotted">
+              ¿Es una masa de pan? Calcular por % panadero
+            </button>
+          )}
+          {sede !== "cafeterias" && verPan && (
           <div className="rounded-xl border border-gray-200 px-4 py-3 space-y-3">
             <label className="flex items-start gap-2 text-sm text-gray-800 cursor-pointer">
               <input type="checkbox" checked={pan} onChange={(e) => setPan(e.target.checked)} className="mt-0.5" />
